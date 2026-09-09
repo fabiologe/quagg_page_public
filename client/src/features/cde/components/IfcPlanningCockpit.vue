@@ -76,8 +76,10 @@
           :result="idsResult"
           :loading="idsLoading"
           :befunde="befunde"
+          :kollisionen="kollisionen"
           @refresh="recomputeIds"
           @pruefe="pruefeGeometrie"
+          @kollisionen="pruefeKollisionen"
           @select-element="onSelectKgElement"
         />
 <!-- Der Änderungen-Reiter ist zum PANEL „Verlauf" geworden (Teil XII, X1):
@@ -131,6 +133,29 @@ function pruefeGeometrie() {
     // Eine korrigierte Fliessrichtung gilt auch für die Prüfliste.
     umgekehrtFuer: (globalId) => masse.get(globalId)?.fliessrichtung === 'umgekehrt',
   }) ?? [];
+}
+/**
+ * Kollisionen (G7) — auf dem Server, deshalb ein eigener Knopf mit Zustand:
+ * ohne Server-Kernel nennt er den Grund, mit ihm die Zahl. Das Ergebnis
+ * fliesst über `pruefeAlles` in DIESELBE Liste wie alle anderen Befunde.
+ */
+const kollisionen = ref({ laeuft: false, meldung: '', kann: null });
+async function pruefeKollisionen() {
+  kollisionen.value = { ...kollisionen.value, laeuft: true, meldung: 'Prüfe Kollisionen auf dem Server …' };
+  try {
+    const r = await api.kollisionenPruefen?.();
+    kollisionen.value = {
+      laeuft: false, kann: r?.ok ?? false,
+      meldung: !r?.ok
+        ? `Nicht geprüft: ${r?.grund ?? 'unbekannt'}`
+        : (r.paare.length
+            ? `${r.paare.length} ${r.paare.length === 1 ? 'Kollision' : 'Kollisionen'} — ${r.geprueft} Paare geprüft`
+            : `Keine Kollision — ${r.geprueft} Paare geprüft`),
+    };
+  } catch (fehler) {
+    kollisionen.value = { laeuft: false, kann: false, meldung: `Fehler: ${fehler?.message ?? fehler}` };
+  }
+  pruefeGeometrie();
 }
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.

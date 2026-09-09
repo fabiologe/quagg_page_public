@@ -65,6 +65,9 @@ describe('IfcEngine.schachtGriffe (echter Methodenkörper)', () => {
 
     it('schachtAnschluesse: nah ist IMMER das Ende am Schacht — nie der Index', () => {
         const dieses = {
+            // B2: `schachtAnschluesse` liest über `anschluesseFuer` (GlobalId) —
+            // die echte Methode, der Ort und das Netz bleiben Attrappen.
+            anschluesseFuer: IfcEngine.prototype.anschluesseFuer,
             schachtOrt: () => ({ modelId: 'm1', localId: 11 }),
             anschluesseVon: () => ([
                 // Diese Haltung BEGINNT am Schacht: anfang ist nah.
@@ -83,7 +86,7 @@ describe('IfcEngine.schachtGriffe (echter Methodenkörper)', () => {
     });
 
     it('ohne Ort: leere Liste, kein Wurf', () => {
-        expect(IfcEngine.prototype.schachtAnschluesse.call({ schachtOrt: () => null }, 'X')).toEqual([]);
+        expect(IfcEngine.prototype.schachtAnschluesse.call({ anschluesseFuer: IfcEngine.prototype.anschluesseFuer, schachtOrt: () => null }, 'X')).toEqual([]);
     });
 });
 

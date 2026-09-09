@@ -92,7 +92,7 @@ describe('Tiefer im Baum schlägt höher', () => {
         ['IFCPILE',             'achse+profil'],
         ['IFCBOREHOLE',         'achse+profil'],
         ['IFCREINFORCINGBAR',   'achse+profil'],
-        ['IFCEARTHWORKSCUT',    'hoehenfeld'],
+        ['IFCEARTHWORKSCUT',    'koerper'],
         ['IFCCOURSE',           'flaeche+dicke'],
         ['IFCKERB',             'achse+profil'],
     ];
@@ -248,8 +248,8 @@ describe('Die Zuordnung folgt den UNTERTYPEN, nicht dem Klassennamen', () => {
         // Kein Widerspruch zum Bodenkörper: die Frage ist, WORAN man arbeitet.
         // Ein Aushub wird als Rasteroperation geformt (Stufe 10), eine
         // Bodenschicht ist ein Aufschlussergebnis.
-        expect(profilHerkunft('IFCEARTHWORKSFILL', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
-        expect(profilHerkunft('IFCEARTHWORKSCUT', EINGEBAUTE_PROFILE).profil.bauform).toBe('hoehenfeld');
+        expect(profilHerkunft('IFCEARTHWORKSFILL', EINGEBAUTE_PROFILE).profil.bauform).toBe('koerper');
+        expect(profilHerkunft('IFCEARTHWORKSCUT', EINGEBAUTE_PROFILE).profil.bauform).toBe('koerper');
     });
 });
 

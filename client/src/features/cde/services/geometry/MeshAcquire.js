@@ -40,6 +40,23 @@ export async function collectElementTriangles(model, localIds, opts = {}) {
     return got ?? empty;
 }
 
+/**
+ * Die Weltmatrix des Modells — nur, wenn sie etwas verschiebt oder dreht.
+ * `object.matrixWorld` muss aktuell sein; die Bibliothek pflegt sie, ein
+ * `updateMatrixWorld` schadet nicht.
+ */
+export function _modellRahmen(model) {
+    const obj = model?.object;
+    if (!obj?.matrixWorld) return null;
+    try { obj.updateMatrixWorld?.(true); } catch { /* Attrappe */ }
+    const m = obj.matrixWorld;
+    const e = m.elements;
+    const identitaet = e && Math.abs(e[12]) < 1e-9 && Math.abs(e[13]) < 1e-9 && Math.abs(e[14]) < 1e-9
+        && Math.abs(e[0] - 1) < 1e-12 && Math.abs(e[5] - 1) < 1e-12 && Math.abs(e[10] - 1) < 1e-12
+        && Math.abs(e[1]) < 1e-12 && Math.abs(e[2]) < 1e-12 && Math.abs(e[4]) < 1e-12 && Math.abs(e[6]) < 1e-12 && Math.abs(e[8]) < 1e-12 && Math.abs(e[9]) < 1e-12;
+    return identitaet ? null : m;
+}
+
 // ── Bulk-Pfad: rohe positions/indices + transform, elementweise ─────────────
 
 async function _bulk(model, localIds, filter) {
@@ -63,6 +80,13 @@ async function _bulk(model, localIds, filter) {
     const perElement = [];
     let n = 0, degenerate = 0;
     const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+    // DER MODELLRAHMEN (Teil XVII, Kanalgraben-Nachprüfung 2026-09-09): die
+    // Bibliothek liefert `getItemsGeometry` im EIGENEN Rahmen des Modells und
+    // stellt ein ZWEITES Modell über `object.position` in die gemeinsame Welt
+    // (das erste steht bei 0 — deshalb fiel es nie auf). Ein Gelände aus einer
+    // zweiten Datei lag damit im Raster um Hunderte Meter neben dem Netz aus
+    // der ersten, und der Kanalgraben fand kein Gelände unter dem Rohr.
+    const rahmen = _modellRahmen(model);
 
     for (let idx = 0; idx < perItem.length; idx++) {
         const start = n;
@@ -83,6 +107,7 @@ async function _bulk(model, localIds, filter) {
                 vb.set(pos[i1], pos[i1 + 1], pos[i1 + 2]);
                 vc.set(pos[i2], pos[i2 + 1], pos[i2 + 2]);
                 if (mat) { va.applyMatrix4(mat); vb.applyMatrix4(mat); vc.applyMatrix4(mat); }
+                if (rahmen) { va.applyMatrix4(rahmen); vb.applyMatrix4(rahmen); vc.applyMatrix4(rahmen); }
                 const r = _write(out, n, va, vb, vc, filter);
                 if (r === 1) n++;
                 else if (r === -1) degenerate++;
@@ -99,6 +124,8 @@ async function _fallback(model, localIds, filter) {
     const chunks = [];
     const perElement = [];
     let total = 0, degenerate = 0;
+    const rahmen = _modellRahmen(model);
+    const inWelt = (p) => (rahmen ? p.clone().applyMatrix4(rahmen) : p);
 
     for (const localId of localIds) {
         const item = model.getItem?.(localId);
@@ -120,7 +147,7 @@ async function _fallback(model, localIds, filter) {
         const arr = new Float64Array(tris.length * 9);
         let n = 0;
         for (const tri of tris) {
-            const r = _write(arr, n, tri.a, tri.b, tri.c, filter);
+            const r = _write(arr, n, inWelt(tri.a), inWelt(tri.b), inWelt(tri.c), filter);
             if (r === 1) n++;
             else if (r === -1) degenerate++;
         }

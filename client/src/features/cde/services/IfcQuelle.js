@@ -41,7 +41,7 @@
  */
 
 import { ENTITY_META } from '../data/entity-schema.js';
-import { typKonstante } from './WebIfcTypen.js';
+import { typKonstante, typName } from './WebIfcTypen.js';
 
 /**
  * Alle Nachfahren eines IFC-Typs, er selbst eingeschlossen.
@@ -50,6 +50,16 @@ import { typKonstante } from './WebIfcTypen.js';
  * Typ gerechnet und gemerkt — der Baum hat 1.418 Einträge, und die Abfrage
  * käme sonst bei jedem Lesen wieder.
  */
+/**
+ * Woran ein Typ STRUKTURELL erkannt wird, wenn das Wörterbuch ihn nicht
+ * kennt — die Attribute, die die Wurzel in jeder Schemafassung definiert.
+ * Bewusst nur die zwei Wurzeln, die das Haus aufzählt.
+ */
+export const STRUKTUR_MERKMALE = Object.freeze({
+    IFCPRODUCT: ['ObjectPlacement', 'Representation'],
+    IFCELEMENT: ['ObjectPlacement', 'Representation', 'Tag'],
+});
+
 const _untertypCache = new Map();
 export function mitUntertypen(typName) {
     const wurzel = String(typName ?? '').toUpperCase().trim();
@@ -158,7 +168,111 @@ export class IfcQuelle {
     }
 
     /**
+     * Die Typen, die DIESE Datei führt — von web-ifc selbst, nicht aus dem
+     * Wörterbuch. Einmal je Handle gelesen.
+     * @returns {Array<{typ: string, konstante: number}>}
+     */
+    typenImModell() {
+        if (!this.lebt()) return [];
+        if (this._typen) return this._typen;
+        const out = [];
+        try {
+            for (const t of this._api.GetAllTypesOfModel(this._modelID) ?? []) {
+                const typ = String(t?.typeName ?? typName(this._modul, t?.typeID) ?? '').toUpperCase();
+                if (typ && Number.isFinite(t?.typeID)) out.push({ typ, konstante: t.typeID });
+            }
+        } catch (fehler) {
+            console.warn('cde: Typen des Modells lesen', fehler?.message ?? fehler);
+        }
+        this._typen = out;
+        return out;
+    }
+
+    /**
+     * Typen des Modells, die das IFC-4.3-Wörterbuch NICHT kennt — aber
+     * STRUKTURELL Nachfahren von `wurzel` sind (2026-09-07).
+     *
+     * DER BEFUND: `IfcCivilElement` (IFC4, Fabios Gelände), `IfcProxy`,
+     * `IfcWallStandardCase`, `IfcElectricalElement`, … sind in 4.3 gestrichen.
+     * Wer „alle Produkte" über das 4.3-Wörterbuch aufzählt, fragt web-ifc nach
+     * diesen Typen NIE — Suchindex, Bauformen-Panel, Gelände-Kandidaten sahen
+     * das DGM nicht, und nichts meldete es. Ein Schema-Fehler erster Güte.
+     *
+     * Die Kur rät keine Vererbung, sie prüft die DEFINITION: ein IfcProduct
+     * ist in jeder Schemafassung das, was `ObjectPlacement` und
+     * `Representation` trägt; ein IfcElement dazu `Tag`. Geprüft wird an der
+     * ersten Zeile des Typs — einmal je Typ, dann gemerkt.
+     *
+     * @returns {Array<{typ: string, anzahl: number}>}
+     */
+    fremdeUntertypen(wurzel) {
+        const merkmale = STRUKTUR_MERKMALE[String(wurzel ?? '').toUpperCase()];
+        if (!merkmale || !this.lebt()) return [];
+        if (!this._fremde) this._fremde = new Map();
+        const schluessel = String(wurzel).toUpperCase();
+        if (this._fremde.has(schluessel)) return this._fremde.get(schluessel);
+        const out = [];
+        for (const { typ, konstante } of this.typenImModell()) {
+            if (ENTITY_META[typ]) continue;                    // das Wörterbuch kennt ihn — kein Fremder
+            let v;
+            try { v = this._api.GetLineIDsWithType(this._modelID, konstante); } catch { continue; }
+            const n = this._anzahl(v);
+            if (!n) continue;
+            const erste = this.zeile(this._element(v, 0));
+            if (!erste || !merkmale.every(m => m in erste)) continue;
+            out.push({ typ, anzahl: n });
+        }
+        this._fremde.set(schluessel, out);
+        return out;
+    }
+
+    /**
+     * Die Dreiecke eines Elements in Modellkoordinaten — unindiziert, 9 Werte
+     * je Dreieck, Platzierung angewandt. Für Prüfungen ohne WebGL (Tests) und
+     * als Rückfall, wenn kein Fragment vorliegt. `null`, wenn es keine
+     * Geometrie gibt.
+     * @returns {{positions: Float64Array, triCount: number}|null}
+     */
+    dreiecke(id) {
+        if (!this.lebt() || !Number.isFinite(id)) return null;
+        let flat;
+        try { flat = this._api.GetFlatMesh(this._modelID, id); } catch { return null; }
+        const teile = [];
+        let gesamt = 0;
+        const n = this._anzahl(flat?.geometries);
+        for (let g = 0; g < n; g++) {
+            const pg = this._element(flat.geometries, g);
+            let geo;
+            try { geo = this._api.GetGeometry(this._modelID, pg.geometryExpressID); } catch { continue; }
+            const verts = this._api.GetVertexArray(geo.GetVertexData(), geo.GetVertexDataSize());
+            const idx = this._api.GetIndexArray(geo.GetIndexData(), geo.GetIndexDataSize());
+            const m = pg.flatTransformation;
+            const out = new Float64Array(idx.length * 3);
+            for (let k = 0; k < idx.length; k++) {
+                const v = idx[k] * 6;              // web-ifc: x y z nx ny nz je Ecke
+                const x = verts[v], y = verts[v + 1], z = verts[v + 2];
+                out[k * 3]     = m[0] * x + m[4] * y + m[8] * z + m[12];
+                out[k * 3 + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+                out[k * 3 + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+            }
+            teile.push(out);
+            gesamt += out.length;
+            if (typeof geo.delete === 'function') geo.delete();
+        }
+        if (!gesamt) return null;
+        const positions = new Float64Array(gesamt);
+        let o = 0;
+        for (const t of teile) { positions.set(t, o); o += t.length; }
+        return { positions, triCount: gesamt / 9 };
+    }
+
+    /**
      * Die ExpressIDs eines Typs.
+     *
+     * Mit `untertypen` kommen die Nachfahren aus dem 4.3-Wörterbuch — UND die
+     * Typen, die das Wörterbuch nicht kennt, aber strukturell dazugehören
+     * (`fremdeUntertypen`). Ohne den zweiten Teil fehlte jedes Bauteil aus
+     * einer älteren Schemafassung, still.
      *
      * @param {string|string[]} typ
      * @param {object} opts
@@ -168,7 +282,9 @@ export class IfcQuelle {
     ids(typ, { untertypen = false } = {}) {
         if (!this.lebt()) return [];
         const namen = Array.isArray(typ) ? typ : [typ];
-        const gesucht = untertypen ? namen.flatMap(mitUntertypen) : namen.map(n => String(n).toUpperCase());
+        const gesucht = untertypen
+            ? namen.flatMap(n => [...mitUntertypen(n), ...this.fremdeUntertypen(n).map(f => f.typ)])
+            : namen.map(n => String(n).toUpperCase());
         const out = [];
         const gesehen = new Set();
         for (const name of gesucht) {
@@ -195,6 +311,22 @@ export class IfcQuelle {
     zeile(id, { tief = false } = {}) {
         if (!this.lebt() || !Number.isFinite(id)) return null;
         try { return this._api.GetLine(this._modelID, id, tief); } catch { return null; }
+    }
+
+    /**
+     * Die KATEGORIE eines Elements — als IFC-Klassenname, nicht als Zahl.
+     *
+     * `zeile(id).type` ist die Typkonstante (`1077100507`), und wer sie roh
+     * als Kategorie weitergibt, sucht in Typprofilen und Bauformregeln nach
+     * einer Ziffernfolge: kein Treffer, keine Meldung. Deshalb geht der Weg
+     * zur Kategorie durch diese Methode und nirgends daran vorbei.
+     *
+     * Nimmt eine ExpressID oder eine bereits gelesene Zeile.
+     */
+    kategorieVon(idOderZeile) {
+        const z = (idOderZeile && typeof idOderZeile === 'object')
+            ? idOderZeile : this.zeile(idOderZeile);
+        return typName(this._modul, z?.type) ?? '';
     }
 
     /** Alle Zeilen eines Typs — bequem, aber bei grossen Mengen `ids` nehmen. */
@@ -267,7 +399,7 @@ export class IfcQuelle {
      * ein gedrehtes Bauwerk vor, wäre die volle Matrix nötig; sie steht in
      * `AxisAnnotations`.
      *
-     * @returns {Map<number, {x, y, z}>} y ist die HÖHE (three-Konvention)
+     * @returns {Map<number, {x, y, z}>} y ist die HÖHE, z = −Nord (three-Konvention)
      */
     platzierungen(ids) {
         const out = new Map();
@@ -282,8 +414,10 @@ export class IfcQuelle {
             const c = ax ? this.zeile(ax.Location?.value)?.Coordinates : null;
             const z = (i) => Number(c?.[i]?.value ?? 0) || 0;
             const eltern = punktVon(lp.PlacementRelTo?.value, tiefe + 1);
-            // IFC-Raum → three: X bleibt, IFC-Z ist die Höhe, IFC-Y die Tiefe.
-            return { x: eltern.x + z(0), y: eltern.y + z(2), z: eltern.z + z(1) };
+            // IFC-Raum → three: X bleibt, IFC-Z ist die Höhe, IFC-Y (Nord) liegt
+            // auf MINUS z — dieselbe Konvention wie das Netz aus `GetFlatMesh`
+            // und die Achslese (AxisAnnotations, seit 2026-09-08 verifiziert).
+            return { x: eltern.x + z(0), y: eltern.y + z(2), z: eltern.z - z(1) };
         };
 
         for (const id of ids ?? this.ids('IFCELEMENT', { untertypen: true })) {

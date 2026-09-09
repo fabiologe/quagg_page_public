@@ -50,10 +50,53 @@ describe('Die Wache im Viewer (Verklebung)', () => {
     });
 
     it('der Banner ist NICHT wegklickbar — laut statt still', () => {
+        // Die Eigenschaft, auf die es ankommt, ist nicht „kein @click",
+        // sondern „die Warnung lässt sich nicht loswerden, ohne die Ursache
+        // zu beseitigen". Seit 2026-09-03 trägt der Banner einen Knopf — er
+        // rechnet aber um, er blendet nicht aus. Der Wächter prüft deshalb
+        // die WIRKUNG: kein Handler im Banner setzt die Warnung auf null.
         const von = viewer.indexOf('<div v-if="einheitsWarnung"');
         const bis = viewer.indexOf('</div>', von);
         const banner = viewer.slice(von, bis);
-        expect(banner).not.toContain('@click');
+        for (const treffer of banner.match(/@click="([^"]+)"/g) ?? []) {
+            expect(treffer, 'Banner-Klick darf nur umrechnen, nie ausblenden')
+                .toMatch(/rechneInMeter/);
+        }
+        expect(banner).not.toMatch(/einheitsWarnung\s*=\s*(null|false)/);
         expect(viewer).toMatch(/einheitsWarnung\.value = null;/);   // je Ladezyklus neu bestimmt
+    });
+
+    it('die Sperre nennt den AUSWEG, nicht nur den Grund', () => {
+        // Vorher stand dort „bis die Einheiten-Umrechnung gebaut ist" — eine
+        // Sackgasse, die den Nutzer auf eine Programmfassung vertröstete.
+        const sperre = viewer.slice(viewer.indexOf('function bearbeitenSperrgrund'));
+        expect(sperre.slice(0, 700)).toMatch(/In Meter umrechnen/);
+    });
+
+    it('der Umrechnen-Weg lädt NEU, statt nachträglich zu skalieren', () => {
+        // Nachträglich ginge nicht: die Geometrie steckt dann in Fragmenten,
+        // und die kennen keinen Faktor. Wer das doch versucht, skaliert nur
+        // die Anzeige und lässt alle Rechnungen falsch.
+        const ablage = readFileSync(WURZEL + 'composables/useModellAblage.js', 'utf8');
+        const fn = ablage.slice(ablage.indexOf('async function ladeInMeterNeu'));
+        expect(fn.slice(0, 900)).toContain('unloadModel');
+        expect(fn.slice(0, 900)).toContain('inMeter: true');
+        // Und die ABLAGE bleibt die Datei des Planers.
+        expect(fn.slice(0, 900)).toContain('persist: false');
+    });
+
+    it('die Identität kommt aus den ORIGINALBYTES, nie aus den umgerechneten', () => {
+        // Sonst zerfiele ein Modell im Dokumentregister in zwei Einträge, und
+        // das Journal verlöre über `modellSha` seinen Bezug.
+        const ablage = readFileSync(WURZEL + 'composables/useModellAblage.js', 'utf8');
+        const fn = ablage.slice(ablage.indexOf('async function _ladeBytes'));
+        const identZeile = fn.indexOf('computeModelIdentity');
+        const ladeZeile = fn.indexOf('loadIfc');
+        expect(identZeile).toBeGreaterThan(-1);
+        expect(identZeile, 'Identität VOR dem Laden, auf den Rohbytes').toBeLessThan(ladeZeile);
+        // Beide bekommen `bytes` — die ROHEN. Umgerechnet wird erst INNERHALB
+        // von `loadIfc`, die Prüfsumme sieht die Umrechnung also nie.
+        expect(fn).toMatch(/computeModelIdentity\(bytes\b/);
+        expect(fn).toMatch(/loadIfc\(bytes,[^)]*inMeter/);
     });
 });

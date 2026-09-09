@@ -399,14 +399,18 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
         warum: 'ohne Untertypen; Erdbau wird als Raster geformt (Stufe 10)',
         felder: {},
     },
+    // Teil XIV: Aushub und Auftrag sind KÖRPER — der Raum zwischen zwei
+    // Geländeständen, mit Attest und Masse. Als Höhenfeld gedacht (Stufe 10)
+    // waren sie eine Oberfläche ohne Inhalt; seit der Ableitung `erdbau`
+    // entstehen sie als geschlossene Volumenkörper.
     IFCEARTHWORKSFILL: {
-        bauform: 'hoehenfeld',
-        warum: 'BACKFILL EMBANKMENT SLOPEFILL SUBGRADE SUBGRADEBED — Auftrag auf Sollhöhe',
+        bauform: 'koerper',
+        warum: 'BACKFILL EMBANKMENT SLOPEFILL SUBGRADE SUBGRADEBED — der Auftragskörper zwischen Gelände und Planum',
         felder: {},
     },
     IFCEARTHWORKSCUT: {
-        bauform: 'hoehenfeld',
-        warum: 'BASE_EXCAVATION DREDGING EXCAVATION STEPEXCAVATION TOPSOILREMOVAL TRENCH — Abtrag auf Sollhöhe',
+        bauform: 'koerper',
+        warum: 'BASE_EXCAVATION DREDGING EXCAVATION STEPEXCAVATION TOPSOILREMOVAL TRENCH — der Aushubkörper zwischen Ur-Gelände und Sohle',
         felder: {},
     },
     // IFCGEOTECHNICALSTRATUM steht bewusst NICHT hier: seine Untertypen sind

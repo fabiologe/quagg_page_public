@@ -151,13 +151,18 @@
     <div v-else class="cde-table-wrap">
       <table class="cde-table">
         <thead>
-          <tr><th>Gelände</th><th>Aushub</th><th>Auftrag</th></tr>
+          <!-- Teil XIV: ZWEI Wege zur Masse — Raster (Zellsummen) und Körper
+               (Divergenzsatz am geschlossenen Aushubkörper). Die Abweichung
+               ist die Gegenprobe; über 2 % meldet die Prüfliste. -->
+          <tr><th>Gelände</th><th>Aushub</th><th title="Auftragskörper — beim Kanalgraben die Verfüllung (Graben minus Rohr)">Auftrag / Verf.</th><th title="Volumen des Aushubkörpers">Körper</th><th title="Gegenprobe Körper gegen Raster">Abw.</th></tr>
         </thead>
         <tbody>
           <tr v-for="(z, i) in erdmassen" :key="i">
             <td>{{ z.name }}</td>
             <td class="mono">{{ z.aushub == null ? (z.grund ?? '—') : `${z.aushub.toFixed(1)} m³` }}</td>
-            <td class="mono">{{ z.auftrag == null ? '—' : `${z.auftrag.toFixed(1)} m³` }}</td>
+            <td class="mono" :title="z.rohrVolumen != null ? `Rohr ${z.rohrVolumen.toFixed(2)} m³ abgezogen` : ''">{{ z.auftrag != null ? `${z.auftrag.toFixed(1)} m³` : (z.verfuellung != null ? `${z.verfuellung.toFixed(1)} m³ Verf.` : '—') }}</td>
+            <td class="mono">{{ z.aushubKoerper == null ? '—' : `${z.aushubKoerper.toFixed(1)} m³` }}</td>
+            <td class="mono" :class="{ warn: abweichung(z) > 2 }">{{ abweichung(z) == null ? '—' : `${abweichung(z).toFixed(1)} %` }}</td>
           </tr>
         </tbody>
       </table>
@@ -213,11 +218,21 @@ const erdmassen = ref([]);
 let _erdmassenLauf = 0;
 watchEffect(async () => {
     const stand = aenderungen.wirksamerStand('erzeugt');
-    const bauplaene = [...stand.values()].filter(b => b?.rezept === 'gelaende');
+    const bauplaene = [...stand.values()].filter(b => ['gelaende', 'erdbau', 'kanalgraben'].includes(b?.rezept));
     const lauf = ++_erdmassenLauf;
     const zeilen = bauplaene.length ? await api.erdmassen?.(bauplaene) ?? [] : [];
     if (lauf === _erdmassenLauf) erdmassen.value = zeilen;
 });
+
+/** Gegenprobe in Prozent — die grössere der beiden (Aushub, Auftrag). */
+function abweichung(z) {
+  const rel = (koerper, raster) => (koerper == null || raster == null || raster < 1e-6
+    ? null : Math.abs(koerper - raster) / raster * 100);
+  const a = rel(z.aushubKoerper, z.aushub);
+  const b = rel(z.auftragKoerper, z.auftrag);
+  if (a == null && b == null) return null;
+  return Math.max(a ?? 0, b ?? 0);
+}
 
 function titelVon(wert) {
   return massnahmeNach(wert)?.titel ?? wert;
@@ -300,4 +315,5 @@ function fmt(n) {
 tr.is-billed td.col-cat { color: var(--card-accent); font-weight: 600; }
 
 .cat-badge { display: inline-block; margin-left: 0.25rem; color: var(--card-accent); vertical-align: -1px; }
+.mono.warn { color: var(--cde-warn); font-weight: 600; }
 </style>

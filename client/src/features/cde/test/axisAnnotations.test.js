@@ -86,7 +86,8 @@ describe('extractAxisPolylines — echte Achse', () => {
     const [p] = extractAxisPolylines(q)
     expect(p.gefaelle).toBeNull()
     expect(p.laenge).toBeCloseTo(30)
-    expect(p.polyline[2]).toMatchObject({ x: 10, z: 20 })
+    // IFC-Y = 20 (Nord) liegt in three bei −z — wie das Netz aus web-ifc.
+    expect(p.polyline[2]).toMatchObject({ x: 10, z: -20 })
   })
 
   it('korrigiert den Koordinations-Offset (roh → Welt)', () => {
@@ -108,8 +109,8 @@ describe('extractAxisPolylines — Achse aus der EXTRUSION', () => {
     })] })
     const [p] = extractAxisPolylines(q)
     expect(p.quelle).toBe('extrusion')
-    // IFC-Z ist die Höhe: die Extrusion läuft nach oben.
-    expect(p.polyline[0]).toMatchObject({ x: 10, y: 100, z: 20 })
+    // IFC-Z ist die Höhe: die Extrusion läuft nach oben; IFC-Y = 20 → z = −20.
+    expect(p.polyline[0]).toMatchObject({ x: 10, y: 100, z: -20 })
     expect(p.polyline[1].y).toBeCloseTo(130)
     expect(p.laenge).toBeCloseTo(30)
     expect(p.dn).toBe(300)                    // Radius 0,15 m → DN 300

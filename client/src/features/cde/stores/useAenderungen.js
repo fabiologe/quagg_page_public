@@ -30,6 +30,8 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { repo } from '../services/RepoFacade.js';
 import { deltaZwischen, nennenswert, verschiebeEintrag } from '../services/JournalVersatz.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
 const REPO_KEY = 'aenderungen';
 
@@ -165,7 +167,36 @@ export const AENDERUNGS_ARTEN = Object.freeze({
      * berührt das Modell nicht, färbt aber den Plan.
      */
     massnahme:   { titel: 'Maßnahme',      icon: 'quality' },
+    /**
+     * Bauform-AUSLEGUNG — wie die CDE dieses eine Bauteil liest.
+     *
+     * Der Anlass: ein Tiefbau-Planer liefert sein Geländemodell als
+     * geschlossenen Volumenkörper unter `IFCCIVILELEMENT` (oder als Proxy).
+     * Der Typ sagt über die Form nichts, und der Geometrie-Rückfall kann
+     * `hoehenfeld` GAR NICHT liefern — er kennt nur Achse, Körper und Netz.
+     * Eine Bauformregel (`Bauformregeln.js`) ist der Normalweg, aber sie gilt
+     * klassenweit; „nur DIESER Körper ist das Gelände, die anderen
+     * IfcCivilElement sind Stützwände" ist damit unsagbar.
+     *
+     * `auslegung: true` unterscheidet sie von einer FESTLEGUNG: eine Sohlhöhe
+     * ist eine Forderung an den Planer und gehört in den Änderungsbericht,
+     * eine Auslegung ist unsere Lesart SEINES Modells und gehört dort nicht
+     * hinein. Ohne die Kennzeichnung meldete der Viewer „die Geometrie bleibt
+     * beim Planer" und der Bericht schriebe „hoehenfeld" in die Forderungsliste.
+     *
+     * KEIN `beruehrtModell`: es wird nichts ins IFC geschrieben, und ein
+     * Drei-Wege-Vergleich wäre sinnlos — „was der Planer JETZT hat" ist bei
+     * einer Auslegung kein Modellwert. `planeNachspielen` überspringt die Art
+     * deshalb von selbst. `null` als Wert nimmt die Auslegung zurück; die
+     * Rangfolge fällt dann auf die Regel zurück.
+     */
+    bauform:     { titel: 'Bauform (Auslegung)', icon: 'bauform', auslegung: true },
 });
+
+/** Ist diese Art eine AUSLEGUNG (unsere Lesart) statt einer Forderung an den Planer? */
+export function istAuslegung(art, arten = AENDERUNGS_ARTEN) {
+    return !!arten[art]?.auslegung;
+}
 
 /** Die Vergleichsfunktion einer Art; Rückfall ist Identität. */
 export function gleichFuer(art, arten = AENDERUNGS_ARTEN) {
@@ -284,12 +315,20 @@ export function beschreibeWert(art, wert, basis = null) {
         return teile.length ? teile.join(' · ') : 'unverändert';
     }
     if (art === 'erzeugt') {
+        // Ein Rezept, das sich selbst beschreiben kann (Ableitungen), tut das.
+        const r = rezeptNach(wert?.rezept);
+        if (typeof r?.beschreibe === 'function') return r.beschreibe(wert);
         // Der Rohwert ist ein Bauplan (Rezept, Typ, Parameter). Ihn Feld für
         // Feld auszuschreiben ergäbe „parameter: [object Object]" — lesbar ist
         // die Frage, die der Nutzer stellt: was steht da, und wie gross ist es?
         const punkte = wert?.parameter?.punkte?.length ?? 0;
         const bezeichnung = wert?.name || wert?.kategorie || wert?.rezept || 'Bauteil';
         return `${bezeichnung} · ${punkte} ${punkte === 1 ? 'Punkt' : 'Punkte'}`;
+    }
+    if (art === 'bauform') {
+        // Der Schlüssel ist ein Programmwort („hoehenfeld"). Im Bericht steht
+        // er vor einem Planer, der ihn nie gesehen hat — also die Bezeichnung.
+        return BAUFORMEN[wert]?.titel ? `wird gelesen als ${BAUFORMEN[wert].titel}` : String(wert);
     }
     if (typeof wert === 'object') {
         return Object.entries(wert)
@@ -466,6 +505,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     // Rahmen über `setzeWeltversatz`, BEVOR das Nachspielen läuft.
     let _weltVersatz = null;
     const _versatzMerkerJe = { auftrag: null, stand: null };
+    // FORM des Merkers. Form 2 (seit 2026-09-08): der Ladeversatz kommt aus
+    // `baseCoordinates` der Bibliothek. Davor stand in X/Z immer null — nicht
+    // der Rahmen, sondern eine Buchführungslücke (siehe `ladeversatzAus`). Ein
+    // Merker ohne Form ist deshalb kein Rahmen: er wird wie „kein Merker"
+    // behandelt (melden, nicht raten), sonst höbe die Nachführung jeden Anker
+    // um 2,5 Mio. m, obwohl sich die Welt keinen Millimeter bewegt hat.
+    const MERKER_FORM = 2;
 
     function _gleicheVersatzAb(ebene) {
         if (!_weltVersatz) return;
@@ -479,17 +525,26 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                     + 'einer neuen Revision daneben liegen (Lücke ⑤); der Rahmen wird '
                     + 'ab jetzt mitgeführt.');
             }
-            _versatzMerkerJe[ebene] = { ..._weltVersatz };
+            _versatzMerkerJe[ebene] = { ..._weltVersatz, form: MERKER_FORM };
             return;
         }
         const delta = deltaZwischen(merker, _weltVersatz);
-        if (!nennenswert(delta)) { _versatzMerkerJe[ebene] = { ..._weltVersatz }; return; }
+        if (!nennenswert(delta)) { _versatzMerkerJe[ebene] = { ..._weltVersatz, form: MERKER_FORM }; return; }
         _liste(ebene).value = liste.map(e => verschiebeEintrag(e, delta));
-        _versatzMerkerJe[ebene] = { ..._weltVersatz };
+        _versatzMerkerJe[ebene] = { ..._weltVersatz, form: MERKER_FORM };
         console.info(`[CDE] Journal dem neuen Ladeversatz nachgeführt `
             + `(Δ ${delta.x.toFixed(3)}/${delta.y.toFixed(3)}/${delta.z.toFixed(3)} m, `
             + `${liste.length} Einträge, Ebene ${ebene})`);
         _sichern(ebene);
+    }
+
+    /** Nur ein Merker der heutigen Form zählt als Rahmen; ältere werden gemeldet und verworfen. */
+    function _merkerLesen(m) {
+        if (!m || ![m.x, m.y, m.z].every(Number.isFinite)) return null;
+        if (m.form === MERKER_FORM) return m;
+        console.warn('[CDE] Journal trägt einen Rahmen-Merker alter Form (Ladeversatz X/Z war '
+            + 'null gebucht) — er wird nicht nachgeführt, der heutige Rahmen wird neu gestempelt.');
+        return null;
     }
 
     /**
@@ -518,6 +573,17 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
 
     const kgStand     = computed(() => ebenenStand(auftragsEintraege.value, standEintraege.value, 'kg'));
     const din277Stand = computed(() => ebenenStand(auftragsEintraege.value, standEintraege.value, 'din277'));
+
+    /**
+     * Auf welcher Ebene ein CDE-Bauteil lebt (Teil XIV): 'auftrag' schlägt
+     * 'stand' — eine Auftragskorrektur darf nicht auf ein Variantenbauteil
+     * zeigen. null, wenn das Journal die GlobalId nicht kennt.
+     */
+    function ebeneVon(globalId) {
+        if (auftragsEintraege.value.some(e => e.globalId === globalId && e.art === 'erzeugt')) return 'auftrag';
+        if (standEintraege.value.some(e => e.globalId === globalId && e.art === 'erzeugt')) return 'stand';
+        return null;
+    }
 
     /** Der wirksame Stand einer beliebigen Art — für Nachspielen und Anzeige. */
     function wirksamerStand(art) {
@@ -612,7 +678,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // Rahmen-Nachführung (Lücke ⑤): unter welchem Ladeversatz wurden diese
         // Punkte geschrieben? Ist der aktuelle Rahmen schon bekannt (Satz-
         // Wechsel nach dem Laden), wird sofort abgeglichen.
-        _versatzMerkerJe[ebene] = roh.versatzMerker ?? null;
+        _versatzMerkerJe[ebene] = _merkerLesen(roh.versatzMerker);
         if (_weltVersatz) _gleicheVersatzAb(ebene);
     }
 
@@ -628,7 +694,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * @returns {object|null} der Eintrag, oder null wenn nichts zu tun war
      */
     async function eintragen({ art, globalId, nachher, wer = '', modellSha = null,
-                               basis, modell, ebene, vorgang, vorgangTitel, befunde }) {
+                               basis, modell, ebene, vorgang, vorgangTitel, befunde, bezug = null }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
         const ziel = ebene ?? vorgabeEbene.value;
         const stand = wirksamerStand(art);
@@ -656,6 +722,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             ...(vorgang ? { vorgang, vorgangTitel } : {}),
             // Momentaufnahme, kein laufender Stand — siehe `useBearbeitung`.
             ...(befunde?.length ? { befunde } : {}),
+            // Der BEZUG (Stufe 16 / Teil XVI, S3): `{art, ziel, ende, zielBasis}`
+            // — das Pfand für den zweiten Drei-Wege-Vergleich beim Nachspielen.
+            // Bis 2026-09-07 fiel er HIER durch die feste Feldliste: der
+            // Bezugs-Arm las ein Feld, das nie ins Journal kam. Gefunden durch
+            // den Motor-Test, der den Anschluss end-to-end schreibt.
+            ...(bezug ? { bezug } : {}),
         };
         // `basis` ist der Wert im GELIEFERTEN Modell — der Bezugspunkt des
         // Drei-Wege-Vergleichs. Nur Arten, die das Modell berühren, führen ihn;
@@ -1272,6 +1344,6 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
         schliesseLeereSitzung, nachrichtVorschlag,
         verlauf, setzeSatz, neuLaden: laden,
-        schreibKonflikt, setzeWeltversatz,
+        schreibKonflikt, setzeWeltversatz, ebeneVon,
     };
 });

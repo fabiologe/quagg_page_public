@@ -14,64 +14,32 @@
  * geloescht-Stand aus — rein, aus den BAUPLAN-Parametern (die Rezepte
  * speichern Parameter, nie Netze; genau dafür).
  *
- * Nur ROHRE werden Kanten und nur SCHÄCHTE Knoten: eine gezeichnete Linie
- * ist eine Trasse, kein Kanal — im Netz hätte sie lauter DN-Befunde ohne
- * Nennweite. Das Gelände ist ohnehin keine Leitung.
+ * Nur ROHRE werden Kanten und nur SCHÄCHTE Knoten (die Rezepte sagen es
+ * selbst): eine gezeichnete Linie ist eine Trasse, kein Kanal. Seit Teil XIV
+ * kommen Gelände und Körper dazu — als GlobalId-Listen fürs Fachmodell.
  */
 
-/** Ein Punkt kommt je nach Quelle als [x,y,z] oder {x,y,z}. */
-function _p(p) {
-    if (Array.isArray(p)) return { x: p[0] ?? 0, y: p[1] ?? 0, z: p[2] ?? 0 };
-    return { x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0 };
-}
-
-function _laenge(punkte) {
-    let l = 0;
-    for (let i = 0; i + 1 < punkte.length; i++) {
-        const a = punkte[i];
-        const b = punkte[i + 1];
-        l += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-    }
-    return l;
-}
+import { rezeptNach } from './Bauteilrezepte.js';
 
 /**
- * Kanten und Knoten aus dem erzeugt-Stand.
+ * Kanten, Knoten, Gelände und Körper aus dem erzeugt-Stand.
+ *
+ * Seit Teil XIV sagt jedes Rezept SELBST, was es dem Fachmodell gibt
+ * (`fachmodell(globalId, plan)`) — die if-Kette auf Rezeptnamen ist weg,
+ * ein neues Rezept fällt im Deklarations-Wächter auf statt hier zu fehlen.
  *
  * @param {Map<string, object>} erzeugtStand  globalId → Bauplan (nachher)
- * @returns {{kanten: Array, knoten: Array}}
+ * @returns {{kanten: Array, knoten: Array, gelaende: string[], koerper: string[]}}
  */
 export function cdeAchsenAus(erzeugtStand = new Map()) {
-    const kanten = [];
-    const knoten = [];
+    const out = { kanten: [], knoten: [], gelaende: [], koerper: [] };
     for (const [globalId, plan] of erzeugtStand) {
-        const roh = plan?.parameter?.punkte;
-        if (!Array.isArray(roh) || !roh.length) continue;
-        const punkte = roh.map(_p);
-
-        if (plan.rezept === 'rohr' && punkte.length >= 2) {
-            kanten.push({
-                globalId,
-                name: plan.name ?? '',
-                kategorie: plan.kategorie ?? 'IFCPIPESEGMENT',
-                anfang: punkte[0],
-                ende: punkte[punkte.length - 1],
-                punkte,
-                laenge: _laenge(punkte),
-                dn: Number(plan.parameter?.dn) || null,
-                quelle: 'bauplan',
-            });
-        } else if (plan.rezept === 'schacht') {
-            // Der Schacht-Bauplan trägt Sohle und Deckel — der Netz-Knoten
-            // ist die SOHLE (dieselbe Konvention wie die gelesene Platzierung).
-            knoten.push({
-                globalId,
-                name: plan.name ?? '',
-                punkt: punkte[0],
-            });
+        const f = rezeptNach(plan?.rezept)?.fachmodell?.(globalId, plan) ?? {};
+        for (const k of Object.keys(out)) {
+            if (Array.isArray(f[k])) out[k].push(...f[k]);
         }
     }
-    return { kanten, knoten };
+    return out;
 }
 
 /** Welche GlobalIds der geloescht-Stand verdeckt. */

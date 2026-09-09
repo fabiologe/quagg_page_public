@@ -166,3 +166,66 @@ describe('get (Größen-Kaskaden)', () => {
     expect(res.get('m1|1').warnings[0]).toContain('groesse_unbekannt')
   })
 })
+
+// ── Der Klickpfad liefert `type`, nicht `category` (Nachprüfung 2026-09-08) ──
+//
+// `_parseItemData` nennt die Klasse `type`; die Kategoriegruppen nennen sie
+// `category`. Der Resolver fragte bisher nur `category` — ein angeklicktes Rohr
+// kam mit '' an, die Achslese suchte unter einer leeren Kategorie und fand die
+// Extrusions-Achse nie: Skelett, Güte `geschaetzt`, kein „Sohlhöhen setzen".
+
+/** Ein Rohr OHNE Axis-Repräsentation — so sehen Fabios Dateien aus. */
+function extrudedPipe({ von = [0, 0, 100], richtung = [0, 0, 1], tiefe = 30, radius = 0.15 } = {}) {
+  return {
+    ObjectPlacement: null,
+    Representation: {
+      Representations: [{
+        RepresentationIdentifier: { value: 'Body' },
+        Items: [{
+          Depth: { value: tiefe },
+          ExtrudedDirection: { DirectionRatios: richtung.map(v => ({ value: v })) },
+          Position: { Location: { Coordinates: von.map(v => ({ value: v })) } },
+          SweptArea: { Radius: { value: radius } },
+        }],
+      }],
+    },
+  }
+}
+
+/** Quelle-Attrappe in der Form der echten: `ids(typ)` und `zeile(id)`; Id 1 = das Rohr. */
+function quelleMitRohr() {
+  const rohr = extrudedPipe()
+  return {
+    lebt: () => true,
+    ids: (typ) => (typ === 'IFCPIPESEGMENT' ? [1] : []),
+    zeile: (id) => (id === 1 ? rohr : null),
+  }
+}
+
+describe('forElements — Klickpfad ohne `category`', () => {
+  const api = () => ({ fragmentModelId: 'm1', modelID: 0, quelle: quelleMitRohr() })
+
+  it('nimmt `type` als Kategorie und findet die Extrusions-Achse (gemessen, nicht Skelett)', async () => {
+    const { deps } = stubDeps({ trisByLocalId: { 1: tube(30, 0.15) }, webIfcApis: [api()] })
+    const res = await createGeometryResolver(deps)
+      .forElements([{ modelId: 'm1', localId: 1, type: 'IFCPIPESEGMENT' }]).getForm('axis')
+    expect(res.perElement).toHaveLength(1)
+    expect(res.perElement[0].source).toBe('extrusion')
+    expect(res.perElement[0].polyline).toHaveLength(2)
+  })
+
+  it('ohne jede Kategorie fragt es die Vorgabeliste statt einer leeren', async () => {
+    const { deps } = stubDeps({ trisByLocalId: { 1: tube(30, 0.15) }, webIfcApis: [api()] })
+    const res = await createGeometryResolver(deps)
+      .forElements([{ modelId: 'm1', localId: 1 }]).getForm('axis')
+    expect(res.perElement[0].source).toBe('extrusion')
+  })
+
+  it('eine gesetzte `category` gewinnt weiter gegen `type`', async () => {
+    const { deps } = stubDeps({ trisByLocalId: { 1: tube(30, 0.15) }, webIfcApis: [api()] })
+    const res = await createGeometryResolver(deps)
+      .forElements([{ modelId: 'm1', localId: 1, category: 'IFCPIPESEGMENT', type: 'IFCPROXY' }]).getForm('axis')
+    expect(res.perElement[0].category).toBe('IFCPIPESEGMENT')
+    expect(res.perElement[0].source).toBe('extrusion')
+  })
+})

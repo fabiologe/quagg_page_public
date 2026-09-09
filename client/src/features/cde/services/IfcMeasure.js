@@ -75,6 +75,18 @@ export class IfcMeasure {
     async updateMeasureHover(clientX, clientY) {
         if (!this._measureGroup) return null;
         const pt = await this._probePoint(clientX, clientY);
+        return this.updateMeasureHoverAn(pt);
+    }
+
+    /**
+     * Den Hover-Marker an einen SCHON BEKANNTEN Punkt setzen (Teil XVI): der
+     * Zeiger-Stapel hat den Treffer bereits — ein zweiter Raycast je Bewegung
+     * wäre ein zweiter Worker-Roundtrip für dieselbe Antwort.
+     * @param {{x,y,z}|null} punkt
+     */
+    updateMeasureHoverAn(punkt) {
+        if (!this._measureGroup) return null;
+        const pt = (punkt && Number.isFinite(punkt.x)) ? new THREE.Vector3(punkt.x, punkt.y, punkt.z) : null;
         if (!pt) {
             if (this._hoverMarker) this._hoverMarker.visible = false;
             return null;

@@ -105,8 +105,10 @@ describe('Ein Zug — ein Eintrag', () => {
     it('das Formular ist mit der NN-Höhe des Modellursprungs vorbelegt', async () => {
         // Sonst stünde dort 0 und der Nutzer zeichnete versehentlich 318 m
         // unter Gelände.
+        // Am ROHR — die Linie liegt seit Teil XIV auf dem Gelände und lässt
+        // das Feld bewusst leer (Bruchkante).
         const t = bau({ hoehenversatz: 318.9 });
-        t.zeichnen.starte('linie-zeichnen');
+        t.zeichnen.starte('rohr-zeichnen');
         expect(t.bearbeitung.werte.hoehe).toBeCloseTo(318.9, 3);
         expect(t.bearbeitung.felder.find(f => f.name === 'hoehe').einheit).toBe('m NN');
     });
@@ -129,8 +131,13 @@ describe('Ein Zug — ein Eintrag', () => {
         // dem nächsten Laden im Raum — und es sähe aus, als wäre es weg.
         const nachBauen = vi.fn(async () => {});
         const t = bau({ nachBauen });
-        await zeichne(t);
+        const eintrag = await zeichne(t);
         expect(nachBauen).toHaveBeenCalledTimes(1);
+        // Der EINTRAG geht mit (Stufe 0, Teil XIV): der Plan reicht ihn an
+        // `wendeEintragAn`, damit auch das Ausblenden und Entwerten läuft —
+        // nicht nur der Neuaufbau.
+        expect(nachBauen).toHaveBeenCalledWith(eintrag);
+        expect(eintrag?.art).toBe('erzeugt');
     });
 });
 
@@ -209,5 +216,98 @@ describe('Zurücknehmen führt zurück', () => {
 
         await t.aenderungen.zurueck('Fabio');
         expect(t.aenderungen.wirksamerStand('erzeugt').size).toBe(0);
+    });
+});
+
+
+describe('Zeichnen AUF dem Gelände (Teil XIV, G3)', () => {
+    function bauAufGelaende({ hoehe = (x, z) => 300 + 0.1 * x, bereit = true } = {}) {
+        const bearbeitung = useBearbeitung();
+        const aenderungen = useAenderungen();
+        let warm = bereit;
+        const zeichnen = useZeichnen({
+            bearbeitung, cde: { bearbeiter: 'Fabio' },
+            getModellSha: () => 'sha1', nachBauen: null,
+            getHoehenversatz: () => 300,
+            getHoeheAn: (x, z) => (warm ? hoehe(x, z) : undefined),
+            bereiteHoehenVor: () => new Promise(r => setTimeout(() => { warm = true; r(); }, 0)),
+        });
+        return { bearbeitung, aenderungen, zeichnen };
+    }
+    const GELAENDE = { modelId: 'm1', localId: 7, category: 'IFCGEOGRAPHICELEMENT', globalId: 'DGM1',
+                       name: 'Ur', hoehenversatz: 300, quellmass: { pruefmass: { triCount: 1 }, cell: 1 } };
+
+    it('jeder Punkt bekommt seine Höhe aus dem Sampler — und die Sohlen werden 1 m darunter vorbelegt', async () => {
+        const t = bauAufGelaende();
+        t.bearbeitung.bauteil = GELAENDE;   // das Subjekt steht — die Einordnung selbst prüft gelaendeFormen
+        expect(t.zeichnen.starte('gerinne-einschneiden')).toBe(true);
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 20, z: 0 });
+        expect(t.zeichnen.punkte.value[0].y).toBeCloseTo(300, 9);
+        expect(t.zeichnen.punkte.value[1].y).toBeCloseTo(302, 9);
+        // Welt 300 + Versatz 300 = 600 m NN, minus 1 m
+        expect(t.bearbeitung.werte.sohleAnfang).toBe(599);
+        expect(t.bearbeitung.werte.sohleEnde).toBe(601);
+    });
+
+    it('was der Nutzer selbst tippt, überschreibt der Zug nicht mehr', async () => {
+        const t = bauAufGelaende();
+        t.bearbeitung.bauteil = GELAENDE;   // das Subjekt steht — die Einordnung selbst prüft gelaendeFormen
+        t.zeichnen.starte('gerinne-einschneiden');
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 20, z: 0 });
+        t.bearbeitung.setzeWert('sohleAnfang', 590);
+        t.zeichnen.setzePunkt({ x: 40, z: 0 });
+        expect(t.bearbeitung.werte.sohleAnfang).toBe(590);   // manuell — bleibt
+        expect(t.bearbeitung.werte.sohleEnde).toBe(603);     // automatisch — folgt dem neuen Ende
+    });
+
+    it('ein Punkt ausserhalb des Geländes wird gesetzt UND genannt — kein stiller Nullpunkt', async () => {
+        const t = bauAufGelaende({ hoehe: (x) => (x > 10 ? null : 300) });
+        t.bearbeitung.bauteil = GELAENDE;   // das Subjekt steht — die Einordnung selbst prüft gelaendeFormen
+        t.zeichnen.starte('gerinne-einschneiden');
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 20, z: 0 });
+        expect(t.zeichnen.punkte.value).toHaveLength(2);
+        expect(t.zeichnen.punkte.value[1].y).toBeUndefined();
+        expect(t.zeichnen.hinweis.value).toContain('ausserhalb des Geländes');
+    });
+
+    it('war der Sampler beim Setzen noch nicht warm, trägt der Abschluss die Höhen nach', async () => {
+        const t = bauAufGelaende({ bereit: false });
+        t.bearbeitung.bauteil = GELAENDE;   // das Subjekt steht — die Einordnung selbst prüft gelaendeFormen
+        t.zeichnen.starte('gerinne-einschneiden');
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 10, z: 0 });
+        expect(t.zeichnen.punkte.value[0].y).toBeUndefined();
+        const eintrag = await t.zeichnen.abschliessen();
+        expect(Array.isArray(eintrag)).toBe(true);           // geloescht + drei Teile
+        expect(t.bearbeitung.werte).toEqual({});             // ausfuehren räumt auf
+        const dgm = eintrag.find(e => e.nachher?.rolle === 'dgm');
+        expect(dgm.nachher.parameter.operationen[0].parameter.sohleAnfang).toBe(599);
+    });
+
+    it('ein Werkzeug OHNE hoehenAus bleibt bei {x, z} — nichts wird still befragt', () => {
+        const t = bauAufGelaende();
+        t.zeichnen.starte('rohr-zeichnen');
+        t.zeichnen.setzePunkt({ x: 1, z: 2 });
+        expect(t.zeichnen.punkte.value[0]).toEqual({ x: 1, z: 2 });
+    });
+
+    it('die LINIE liegt auf dem Gelände — eine getippte Höhe überstimmt das (Trasse statt Bruchkante)', async () => {
+        const t = bauAufGelaende();
+        t.zeichnen.starte('linie-zeichnen');
+        expect(t.bearbeitung.werte.hoehe).toBe('');
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 10, z: 0 });
+        const bruchkante = await t.zeichnen.abschliessen();
+        expect(bruchkante.nachher.parameter.punkte.map(p => p[1])).toEqual([300, 301]);
+
+        t.zeichnen.starte('linie-zeichnen');
+        t.bearbeitung.setzeWert('hoehe', 605);          // m NN, Versatz 300 → Welt 305
+        t.zeichnen.setzePunkt({ x: 0, z: 0 });
+        t.zeichnen.setzePunkt({ x: 10, z: 0 });
+        const trasse = await t.zeichnen.abschliessen();
+        expect(trasse.nachher.parameter.punkte.map(p => p[1])).toEqual([305, 305]);
     });
 });

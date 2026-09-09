@@ -17,7 +17,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-    BAUFORMEN, GUETE_STUFEN, bestimme, guetegenuegt, istBauform,
+    BAUFORMEN, GUETE_STUFEN, bestimme, deklarierteBauform, guetegenuegt, istBauform,
 } from '../services/bauform/Bauformen.js';
 
 /**
@@ -223,6 +223,113 @@ describe('Die eigentliche Behauptung: neue IFC-Typen brauchen keinen Code', () =
         const exot = { modelId: 'm1', localId: 7, category: 'IFCHYPERLOOPTUBE' };
         const r = await bestimme(exot, { resolver: resolverAttrappe(ROHR) });
         expect(r.bauform).toBe('achse+profil');
+    });
+});
+
+/**
+ * Die Rangfolge — an EINEM Element, das alle Angaben gleichzeitig trägt.
+ *
+ * Fünf Einzeltests mit je einer gesetzten Angabe wären alle grün und sagten
+ * über die REIHENFOLGE nichts. Gemessen wird sie nur, wenn die Angaben
+ * miteinander streiten: hier widersprechen sich alle fünf, und jede Zeile
+ * nimmt die oberste weg. Was übrig bleibt, muss die nächste sein.
+ */
+describe('Die Rangfolge: bauplan > einzelfall > regel > typprofil > geometrie', () => {
+    // Alle fünf sagen etwas ANDERES. Genau darum geht es.
+    const ALLE = {
+        ausBauplan:    'flaeche',
+        ausEinzelfall: 'hoehenfeld',
+        ausRegel:      { bauform: 'punkt', regel: { name: 'Testregel' } },
+        typprofil:     { bauform: 'flaeche+dicke' },
+    };
+    // Die Geometrie sagt `koerper` — die unterste Stufe, die überhaupt spricht.
+    const GEOMETRIE = { solid: GESCHLOSSENER_KOERPER };
+
+    it('deklarierteBauform nennt die oberste gesetzte Stufe', () => {
+        expect(deklarierteBauform(ALLE)).toMatchObject({ bauform: 'flaeche', quelle: 'bauplan' });
+        expect(deklarierteBauform({ ...ALLE, ausBauplan: null }))
+            .toMatchObject({ bauform: 'hoehenfeld', quelle: 'einzelfall' });
+        expect(deklarierteBauform({ ...ALLE, ausBauplan: null, ausEinzelfall: null }))
+            .toMatchObject({ bauform: 'punkt', quelle: 'regel', regel: 'Testregel' });
+        expect(deklarierteBauform({ typprofil: ALLE.typprofil }))
+            .toMatchObject({ bauform: 'flaeche+dicke', quelle: 'typprofil' });
+    });
+
+    it('gibt null, wenn niemand etwas erklärt hat — dann ist die Geometrie dran', () => {
+        // Der tragende Punkt für den Gelände-Fall: `hoehenfeld` kann aus dieser
+        // Funktion kommen oder gar nicht. Der Geometrie-Rückfall kennt es nicht.
+        expect(deklarierteBauform({})).toBe(null);
+        expect(deklarierteBauform({ typprofil: { bauform: null } })).toBe(null);
+    });
+
+    it('überspringt eine Stufe mit Unsinn, statt zu werfen', () => {
+        // Ein Typprofil ist Nutzerdatum. Wer „bananenform" hineinschreibt, darf
+        // damit nicht die tiefere Stufe verdecken.
+        expect(deklarierteBauform({ ausEinzelfall: 'bananenform', typprofil: { bauform: 'koerper' } }))
+            .toMatchObject({ bauform: 'koerper', quelle: 'typprofil' });
+    });
+
+    it('bestimme() hält dieselbe Reihenfolge ein — Stufe für Stufe', async () => {
+        const resolver = resolverAttrappe(GEOMETRIE);
+        const stufen = [
+            [ALLE,                                                    'flaeche',       'bauplan'],
+            [{ ...ALLE, ausBauplan: null },                           'hoehenfeld',    'einzelfall'],
+            [{ ...ALLE, ausBauplan: null, ausEinzelfall: null },       'punkt',         'regel'],
+            [{ typprofil: ALLE.typprofil },                           'flaeche+dicke', 'typprofil'],
+            [{},                                                      'koerper',       'geometrie'],
+        ];
+        for (const [angaben, bauform, quelle] of stufen) {
+            const r = await bestimme(EL, { resolver, ...angaben });
+            expect(r.bauform, quelle).toBe(bauform);
+            expect(r.quelle, quelle).toBe(quelle);
+        }
+    });
+
+    it('misst die Güte einer Auslegung ehrlich — anders als beim Bauplan', async () => {
+        // Der Bauplan wird NICHT gemessen: die CDE hat das Netz selbst gebaut.
+        const ausBauplan = await bestimme(EL, {
+            resolver: resolverAttrappe({}), ausBauplan: 'hoehenfeld',
+        });
+        expect(ausBauplan.guete).toBe('gemessen');
+
+        // Eine Auslegung dagegen schon. Ohne Oberfläche ist sie `unbekannt` —
+        // sonst behauptete ein Klick, das Modell sei besser als es ist.
+        const ohneFlaeche = await bestimme(EL, {
+            resolver: resolverAttrappe({}), ausEinzelfall: 'hoehenfeld',
+        });
+        expect(ohneFlaeche.guete).toBe('unbekannt');
+        expect(ohneFlaeche.warnungen).toContain('keine_oberflaeche');
+
+        // Mit ableitbarer Oberfläche ist sie gemessen. Das ist der echte Fall:
+        // ein geschlossener Erdkörper, aus dem der Resolver ein Höhenfeld holt.
+        const mitFlaeche = await bestimme(EL, {
+            resolver: resolverAttrappe({
+                surface: { form: 'surface', data: { positions: new Float64Array(9), triCount: 1 }, warnings: [] },
+            }),
+            ausEinzelfall: 'hoehenfeld',
+        });
+        expect(mitFlaeche.guete).toBe('gemessen');
+        expect(mitFlaeche.bauform).toBe('hoehenfeld');
+    });
+
+    it('meldet eine Auslegung, die nichts mehr bewirkt', async () => {
+        // Sonst bleibt sie ewig stehen, nachdem der Planer die Kategorie
+        // repariert hat — und niemand erfährt, dass sie überflüssig ist.
+        const r = await bestimme(EL, {
+            resolver: resolverAttrappe(ROHR),
+            ausEinzelfall: 'achse+profil',
+            typprofil: { bauform: 'achse+profil' },
+        });
+        expect(r.quelle).toBe('einzelfall');
+        expect(r.warnungen).toContain('einzelfall_ueberfluessig');
+
+        // Widerspricht sie, ist sie nicht überflüssig — sie ist der Zweck.
+        const streit = await bestimme(EL, {
+            resolver: resolverAttrappe(ROHR),
+            ausEinzelfall: 'koerper',
+            typprofil: { bauform: 'achse+profil' },
+        });
+        expect(streit.warnungen).not.toContain('einzelfall_ueberfluessig');
     });
 });
 

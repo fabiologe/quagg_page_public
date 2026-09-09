@@ -74,10 +74,15 @@ describe('Der Hinweis steht, die Meldung vergeht', () => {
 
 describe('Die Leiste im Viewer', () => {
     const quelle = readFileSync(new URL('../components/IfcViewer.vue', import.meta.url), 'utf8');
+    // Seit Teil XVI (S2) ist die Leiste eine Komponente: die Kontextleiste
+    // zeigt Tipp-Werkzeuge UND die scharfe Bearbeitung. Der Vertrag bleibt.
+    const leiste = readFileSync(new URL('../components/CdeKontextleiste.vue', import.meta.url), 'utf8');
 
     it('trägt den sichtbaren Ausgang — „Fertig" ist ein Knopf, keine Taste', () => {
-        expect(quelle).toContain('modus-fertig');
+        expect(leiste).toContain('modus-fertig');
+        expect(leiste).toMatch(/\$emit\('fertig'\)/);
         expect(quelle).toMatch(/messen\.beenden\(\)/);
+        expect(quelle).toMatch(/<CdeKontextleiste/);
     });
 
     it('zeigt sich für Messen UND Notizen — ein Element, zwei Modi', () => {

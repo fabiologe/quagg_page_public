@@ -93,7 +93,14 @@
   <div class="q-tab cde-card">
     <CdeCardHeader icon="warn" titel="Prüfliste (Geometrie)">
       <CdeIconButton icon="refresh" titel="Erneut prüfen" @click="$emit('pruefe')" />
+      <!-- KOLLISIONEN (G7): rechnet auf dem Server-Kernel — deshalb ein eigener
+           Knopf, dessen Zustand sagt, was er getan hat oder warum nicht. -->
+      <CdeIconButton icon="quality" titel="Kollisionen eigener Körper gegen das gelieferte Modell prüfen (Server-Kernel)"
+                     :busy="!!kollisionen?.laeuft" @click="$emit('kollisionen')" />
     </CdeCardHeader>
+    <p v-if="kollisionen?.meldung" class="q-note" :class="{ 'q-note-warn': kollisionen.kann === false }">
+      {{ kollisionen.meldung }}
+    </p>
 
     <div v-if="!befunde.length" class="cde-state-msg">
       <CdeIcon name="status-ok" :size="22" />
@@ -156,8 +163,10 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   /** Aus `IfcEngine.pruefeAlles` — je Bauteil eine Liste von Befunden. */
   befunde: { type: Array,   default: () => [] },
+  /** Zustand der Kollisionsprüfung (G7): {laeuft, meldung, kann}. */
+  kollisionen: { type: Object, default: null },
 });
-defineEmits(['refresh', 'select-element', 'pruefe']);
+defineEmits(['refresh', 'select-element', 'pruefe', 'kollisionen']);
 
 /** Der Titel der Kur — aus dem Katalog, damit er nur an einer Stelle steht. */
 function kurTitel(befund) {

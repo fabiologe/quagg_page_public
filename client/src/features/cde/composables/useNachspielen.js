@@ -68,6 +68,8 @@ export function useNachspielen({ engine, aenderungen } = {}) {
      */
     const lieferstand = ref(new Map());
     const konflikte = ref([]);
+    /** Laute, aber nicht blockierende Meldungen (quelle_geaendert) — Teil XIV. */
+    const hinweise = ref([]);
     const karte = ref(new Map());        // `${art}|${globalId}` → {zustand, grund}
     const laeuft = ref(false);
     /**
@@ -83,6 +85,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
     function zuruecksetzen() {
         meldung.value = '';
         konflikte.value = [];
+        hinweise.value = [];
         karte.value = new Map();
         lieferstand.value = new Map();
     }
@@ -139,6 +142,34 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             //     gemessen wurde. Auch das VOR jeder Anwendung.
             const knotenStand = engine.value.schachtPunkteVon?.(modelId) ?? new Map();
 
+            // 2c. Die PRÜFMASSE der Ableitungs-Quellen einfrieren (Teil XIV):
+            //     nur gelieferte Quellen — eine CDE-Quelle entsteht erst im
+            //     Aufbau und trägt kein Prüfmass. Auch das VOR der Anwendung.
+            //     Netzmass wie bisher; die ROHRE eines Strang-Grabens tragen ein
+            //     ACHSMASS (B3, `achse: true`) — dafür fragt der Vergleich das
+            //     Achsenband statt den Resolver (viele Rohre, kein Netz nötig).
+            const quellmassStand = new Map();
+            const achsmassStand = new Map();
+            const erzeugtStand = aenderungen?.wirksamerStand?.('erzeugt') ?? new Map();
+            for (const plan of erzeugtStand.values()) {
+                const q = plan?.parameter?.quellen ?? (plan?.parameter?.quelle ? { gelaende: plan.parameter.quelle } : {});
+                const basis = plan?.parameter?.quellBasis ?? {};
+                for (const [schlitz, roh] of Object.entries(q)) {
+                    const gids = Array.isArray(roh) ? roh : [roh];
+                    const masse = Array.isArray(basis[schlitz]) ? basis[schlitz] : [basis[schlitz]];
+                    for (let i = 0; i < gids.length; i++) {
+                        const gid = gids[i];
+                        if (!gid || erzeugtStand.has(gid)) continue;
+                        if (masse[i]?.achse) {
+                            if (!achsmassStand.has(gid)) { const m = engine.value.achsmassVon?.(gid); if (m) achsmassStand.set(gid, m); }
+                        } else if (!quellmassStand.has(gid)) {
+                            const mass = await engine.value.pruefmassVon?.(gid);
+                            if (mass) quellmassStand.set(gid, mass);
+                        }
+                    }
+                }
+            }
+
             // 3. Planen. Ein nicht gefundenes Bauteil liefert `undefined` —
             //    daraus wird im Vergleich der Zustand „fehlt", nicht ein
             //    stiller Ausfall.
@@ -148,8 +179,10 @@ export function useNachspielen({ engine, aenderungen } = {}) {
                 {
                     standEintraege: aenderungen?.standEintraege ?? [],
                     leseBezug: (globalId) => knotenStand.get(globalId),
+                    leseQuellmass: (globalId, mass) => (mass?.achse ? achsmassStand.get(globalId) : quellmassStand.get(globalId)),
                 },
             );
+            hinweise.value = plan.hinweise ?? [];
             plan.modelId = modelId;
 
             // 4. Anwenden.
@@ -227,6 +260,6 @@ export function useNachspielen({ engine, aenderungen } = {}) {
 
     return {
         meldung, konflikte, karte, laeuft, lieferstand,
-        nachModellladung, zustandVon, zuruecksetzen, lieferstandVon, merkeLieferstand,
+        nachModellladung, zustandVon, zuruecksetzen, lieferstandVon, merkeLieferstand, hinweise,
     };
 }

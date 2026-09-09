@@ -258,8 +258,10 @@ export function createGeometryResolver({
                 }
 
                 if (form === 'axis') {
-                    // je Element: Axis-Rep (Kosten 1) vor Skelett (7)
-                    const cats = [...new Set(elements.map(e => e.category))];
+                    // je Element: Axis-Rep (Kosten 1) vor Skelett (7).
+                    // Ohne Kategorie keine leere Suche — die Achslese nimmt
+                    // dann ihre Vorgabeliste (Rohr/Fließabschnitt).
+                    const cats = [...new Set(elements.map(e => e.category).filter(Boolean))];
                     const perElement = [];
                     const meshesNeeded = [];
                     const repByModel = new Map();
@@ -466,8 +468,14 @@ export function createGeometryResolver({
     return {
         forCategory: (categories) => makeHandle(elementsForCategories(
             Array.isArray(categories) ? categories : [categories])),
+        // Der KLICKPFAD liefert `type` (aus `_parseItemData`), die Kategorie-
+        // gruppen liefern `category` — der Resolver nimmt beides. Bis 2026-09-08
+        // kam ein angeklicktes Rohr mit leerer Kategorie an, die Achs-Suche
+        // fragte die Quelle nach '' und fiel aufs Skelett zurück: Güte
+        // `geschaetzt` an einem Modell mit exakter Extrusions-Achse, und
+        // Sohlhöhen/Teilen/Trasse fehlten im Kontextmenü.
         forElements: (list) => makeHandle(Promise.resolve(
-            (list ?? []).map(e => ({ category: e.category ?? '', ...e })))),
+            (list ?? []).map(e => ({ ...e, category: e.category || e.type || '' })))),
         invalidate,
     };
 }

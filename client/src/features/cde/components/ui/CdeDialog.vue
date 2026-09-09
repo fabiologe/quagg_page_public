@@ -28,15 +28,23 @@
 import { onBeforeUnmount, onMounted } from 'vue';
 import CdeIcon from './CdeIcon.vue';
 
-defineProps({
+const props = defineProps({
   titel: { type: String, required: true },
   icon: { type: String, default: 'info' },
   offen: { type: Boolean, default: false },
 });
 const emit = defineEmits(['close']);
 
+// NUR OFFEN hört der Dialog auf Esc. Der Listener hängt in der CAPTURE-Phase
+// am document, damit ein offener Dialog jeden anderen Esc-Empfänger schlägt —
+// aber genau deshalb schluckte er bis 2026-09-08 JEDES Escape der CDE, auch
+// geschlossen: Commit- und Übergabedialog sind in der CdeView immer gemountet,
+// und kein Esc erreichte mehr Messen, Notiz, Bearbeitung oder die Plan-
+// Werkzeuge (Headless-Lauf: Escape kam bis `document:capture` und nicht weiter).
 function onTaste(e) {
-  if (e.key === 'Escape') { e.stopPropagation(); emit('close'); }
+  if (!props.offen || e.key !== 'Escape') return;
+  e.stopPropagation();
+  emit('close');
 }
 onMounted(() => document.addEventListener('keydown', onTaste, true));
 onBeforeUnmount(() => document.removeEventListener('keydown', onTaste, true));

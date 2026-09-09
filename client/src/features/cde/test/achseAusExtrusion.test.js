@@ -101,3 +101,28 @@ describe.runIf(vorhanden)('6275_ENQUIER: 24 Haltungen', () => {
         expect(mit.laenge).toBeCloseTo(ohne.laenge, 6);
     });
 });
+
+describe.runIf(vorhanden)('6275_ENQUIER: die Achse liegt IM Netz (Gegenprobe in X und Z)', () => {
+    // Die Pset-Gegenprobe oben prüft nur die HÖHE. In X/Z blieb die Achse bis
+    // 2026-09-08 ungeprüft — und war gespiegelt (Nord auf +z statt −z). Das
+    // unabhängige Mass ist das Netz derselben Haltung aus `GetFlatMesh`.
+    it('Anfang und Ende von FK001 liegen in der Hülle der Rohdreiecke', () => {
+        const a = achsen.find(x => x.expressId === 683);
+        const d = quelle.dreiecke(683);
+        expect(d?.positions?.length).toBeGreaterThan(0);
+        const P = d.positions;
+        const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < P.length; i += 3) {
+            for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], P[i + k]); max[k] = Math.max(max[k], P[i + k]); }
+        }
+        const toleranz = (a.dn / 1000) / 2 + 0.05;
+        for (const p of [a.polyline[0], a.polyline.at(-1)]) {
+            expect(p.x).toBeGreaterThanOrEqual(min[0] - toleranz);
+            expect(p.x).toBeLessThanOrEqual(max[0] + toleranz);
+            expect(p.z).toBeGreaterThanOrEqual(min[2] - toleranz);
+            expect(p.z).toBeLessThanOrEqual(max[2] + toleranz);
+        }
+        // und das Netz liegt bei NEGATIVEM Nordwert — das ist die Konvention.
+        expect(max[2]).toBeLessThan(0);
+    });
+});

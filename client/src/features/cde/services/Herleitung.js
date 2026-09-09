@@ -147,13 +147,16 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
         bauformTitel: bauform ? (BAUFORMEN[bauform]?.titel ?? bauform) : null,
         quelle: einordnung?.quelle ?? null,
         regel: einordnung?.regel ?? null,
+        // Was die Geometrie GEMESSEN hat — der Grund des Vorschlags, damit
+        // die Toolbox ihn zeigen und der Mensch ihn bestätigen kann.
+        grund: einordnung?.grund ?? null,
         guete,
         warnungen: einordnung?.warnungen ?? [],
         gruppen,
         gesperrt,
         // Wo die Kette gerissen ist — die eine Angabe, die beim nächsten
         // unbekannten Typ sagt, was zu tun wäre.
-        luecke: _luecke({ kategorie, profil, bauform, quelle: einordnung?.quelle }),
+        luecke: _luecke({ kategorie, profil, bauform, quelle: einordnung?.quelle, guete }),
     };
 }
 
@@ -164,7 +167,7 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
  * „unbekannter Typ" ist der Normalfall in IFC, nicht die Ausnahme — und die
  * richtige Reaktion ist fast nie eine Programmänderung.
  */
-function _luecke({ kategorie, profil, bauform, quelle }) {
+function _luecke({ kategorie, profil, bauform, quelle, guete = 'unbekannt' }) {
     if (!kategorie) return null;
     if (!imWoerterbuch(kategorie)) {
         return { stufe: 'schema', text: `„${kategorie}" steht nicht im IFC-4.3-Wörterbuch. `
@@ -174,7 +177,14 @@ function _luecke({ kategorie, profil, bauform, quelle }) {
     }
     if (!profil && bauform === 'netz') {
         return { stufe: 'form', text: `Für „${kategorie}" gibt es kein Typprofil, und aus der Geometrie `
-            + 'liess sich keine Form ableiten. Ein Typprofil auf der Büro-Ebene löst beides — es ist ein Datensatz, keine Programmänderung.' };
+            + 'liess sich keine Form ableiten. Ein Typprofil auf der Büro-Ebene löst beides — es ist ein Datensatz, keine Programmänderung. '
+            + 'Für dieses eine Bauteil genügt „Bauform auslegen".' };
+    }
+    // Nur ein GESCHÄTZTER Vorschlag will bestätigt werden — ein geschlossener
+    // Körper aus der Geometrie ist gemessen, da gibt es nichts zu bestätigen.
+    if (!profil && quelle === 'geometrie' && guete === 'geschaetzt') {
+        return { stufe: 'vorschlag', text: `Die Form ist aus der Geometrie GESCHÄTZT (${bauform}). Stimmt sie, `
+            + 'einmal bestätigen — dann gilt sie als Auslegung, und für alle gleichen Bauteile als Regel im Panel „Bauformen".' };
     }
     if (!profil) {
         return { stufe: 'vokabular', text: `Die Form steht (${bauform}, aus ${quelle}), aber „${kategorie}" hat kein `

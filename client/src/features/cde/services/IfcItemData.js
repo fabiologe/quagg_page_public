@@ -14,8 +14,6 @@
  * (Hausvertrag, siehe IfcCamera.js).
  */
 
-import * as OBC from '@thatopen/components';
-
 /** Welche Beziehungen `fragments.getData` mitliefern soll. */
 export const DATA_CONFIG = {
     attributesDefault: true,
@@ -96,45 +94,26 @@ export function parseItemData(rawData) {
     };
 }
 
-export async function buildSearchIndex(components) {
-    const ifcLoader = components.get(OBC.IfcLoader);
-    const fragments = components.get(OBC.FragmentsManager);
-    const webIfc    = ifcLoader?.webIfc;
-    if (!webIfc) return [];
-
-    const entries = [];
-    // IFCPRODUCT-rooted categories that should be queryable
-    const QUERY_TYPES = [
-        'IFCWALL','IFCWALLSTANDARDCASE','IFCSLAB','IFCCOLUMN','IFCBEAM',
-        'IFCDOOR','IFCWINDOW','IFCROOF','IFCFOOTING','IFCSTAIR','IFCSTAIRFLIGHT',
-        'IFCPLATE','IFCMEMBER','IFCSPACE','IFCBUILDINGSTOREY','IFCBUILDING','IFCSITE',
-        'IFCPIPESEGMENT','IFCPIPEFITTING','IFCDUCT','IFCDUCTFITTING',
-        'IFCFLOWSEGMENT','IFCFLOWFITTING','IFCFLOWTERMINAL','IFCAIRTERMINAL',
-        'IFCPUMP','IFCVALVE','IFCFURNITURE','IFCBUILDINGELEMENTPROXY',
-        'IFCRAILING','IFCCURTAINWALL',
-    ];
-
-    for (const model of fragments.list.values()) {
-        const modelId = model.modelId;
-        const wid = 0; // web-ifc model id
-        for (const typeName of QUERY_TYPES) {
-            const typeConst = webIfc[typeName];
-            if (!typeConst) continue;
-            let ids;
-            try { ids = webIfc.GetLineIDsWithType(wid, typeConst); } catch { continue; }
-            for (const localId of ids) {
-                let p;
-                try { p = webIfc.GetLine(wid, localId, false); } catch { continue; }
-                if (!p) continue;
-                entries.push({
-                    name:     p.Name?.value ?? '',
-                    globalId: p.GlobalId?.value ?? '',
-                    category: typeName,
-                    localId,
-                    modelId,
-                });
-            }
-        }
-    }
-    return entries;
-}
+/**
+ * HIER STAND `buildSearchIndex` (entfernt 2026-09-03).
+ *
+ * Es lieferte in Produktion IMMER eine leere Liste — aus zwei voneinander
+ * unabhängigen Gründen, von denen jeder allein gereicht hätte:
+ *
+ *  1. `webIfc[typeName]`: die Typkonstanten sind MODUL-Exporte von `web-ifc`,
+ *     keine Eigenschaften der `IfcAPI`-Instanz. `webIfc['IFCWALL']` ist immer
+ *     `undefined`, die Schleife übersprang jede Kategorie. Derselbe Fehler,
+ *     den `WebIfcTypen.js` beschreibt — hier war er der vierte seiner Art.
+ *  2. `ifcLoader.webIfc` hat nie ein Modell offen (Kapitel 13.1): nur
+ *     `readIfcFile()` öffnet eines, und die CDE ruft das nirgends.
+ *
+ * Folgen, still und in Produktion: das Panel „Bauformen zuordnen" meldete
+ * „kein Modell geladen", und die Elementsuche in der Befehlspalette fand
+ * nichts. Dazu die dritte Schwäche, die auch ein reparierter Aufruf behalten
+ * hätte: eine fest verdrahtete Liste von 30 Kategorien, in der weder
+ * `IFCCIVILELEMENT` noch die Erdbau-Typen standen.
+ *
+ * Ersatz ist `IfcEngine.buildSearchIndex()` über `IfcQuelle` — ein eigener,
+ * lebendiger Handle auf denselben Dateibytes, und statt einer Typliste alle
+ * `IfcProduct`-Nachfahren über das 4.3-Wörterbuch.
+ */

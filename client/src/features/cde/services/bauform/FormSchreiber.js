@@ -52,7 +52,9 @@ const TABELLE = Object.freeze({
     // Ein geändertes Maß ändert die Form, nicht den Ort — die Bemaßung anderer
     // Bauteile bleibt gültig, die Mengen nicht.
     parametrik: ['resolverCache', 'laengsschnitt', 'querprofile', 'lageplan', 'mengen'],
-    erzeugt:    ['resolverCache', 'lageplan', 'mengen', 'hoehenlinien', 'boeschung'],
+    // Ein erzeugtes Gelände oder Rohr steht auch im Längsschnitt (Teil XIV,
+    // Stufe 0) — vorher fehlte er hier, und der Schnitt zeigte das alte DGM.
+    erzeugt:    ['resolverCache', 'lageplan', 'mengen', 'hoehenlinien', 'boeschung', 'laengsschnitt'],
     geloescht:  ['resolverCache', 'lageplan', 'mengen', 'hoehenlinien', 'boeschung', 'laengsschnitt'],
     // Merkmale berühren keine Geometrie. Der Plan zeigt sie aber an — eine
     // geänderte Kostengruppe färbt Linien um.
@@ -64,6 +66,24 @@ const TABELLE = Object.freeze({
     // Eine Maßnahme färbt den Plan und geht in die Mengen — der Auszug je
     // Maßnahme rechnet aus Länge und Nennweite.
     massnahme: ['lageplan', 'mengen'],
+    /**
+     * Eine Bauform-AUSLEGUNG ändert kein einziges Dreieck — und trotzdem fast
+     * alles, was daraus gerechnet wird.
+     *
+     * Wer einen Volumenkörper zum `hoehenfeld` erklärt, macht ihn damit zum
+     * GELÄNDE: der Sampler nimmt ihn ab jetzt auf (`GelaendeQuelle`), der
+     * Längsschnitt zeichnet eine andere Geländelinie, Höhenlinien und
+     * Böschungsschraffur entstehen neu, und der Resolver muss `surface` statt
+     * `solid` liefern. Umgekehrt genauso: wer ihn zum `koerper` zurücknimmt,
+     * nimmt ihn dem Gelände weg.
+     *
+     * Ohne diese Zeile wäre `veraltetDurch(['bauform'])` leer, also
+     * `entwertetGeometrie` falsch, also stiege der Viewer-Hub sofort aus und
+     * `setzeJournalStand` liefe nie — die Auslegung stünde im Journal, und am
+     * Bild änderte sich bis zum nächsten F5 nichts. Der klassische tote Knopf.
+     */
+    bauform: ['resolverCache', 'hoehenlinien', 'boeschung', 'laengsschnitt',
+              'querprofile', 'lageplan', 'mengen'],
 });
 
 /**

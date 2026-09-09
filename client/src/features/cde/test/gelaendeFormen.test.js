@@ -46,28 +46,40 @@ describe('Der Katalog', () => {
     });
 });
 
-describe('Erste Formung: Ausblenden + Erzeugen', () => {
-    it('zwei Einträge — Quelle und Operationsliste als Parameter, NIE ein Raster', () => {
+describe('Erste Formung: Ausblenden + drei Teile EINER Ableitung (Teil XIV)', () => {
+    it('vier Einträge — Quelle, Prüfmass, Zellweite und Operationsliste als Parameter, NIE ein Raster', () => {
+        const el = { ...GELAENDE, quellmass: { pruefmass: { triCount: 800, spanX: 40, spanY: 2, spanZ: 40 }, cell: 0.5 } };
         const s = nachId('gerinne-einschneiden').anwenden(
-            GELAENDE, { sohleAnfang: 8, sohleEnde: 6, sohlbreite: 2, boeschung: 1 }, { zug: ZUG });
-        expect(s).toHaveLength(2);
+            el, { sohleAnfang: 8, sohleEnde: 6, sohlbreite: 2, boeschung: 1 }, { zug: ZUG });
+        expect(s).toHaveLength(4);
         expect(s[0]).toEqual({ art: 'geloescht', globalId: 'DGM1', nachher: true });
-        expect(s[1].art).toBe('erzeugt');
-        expect(s[1].modell).toBe('cde');
-        const p = s[1].nachher.parameter;
-        expect(p.quelle).toBe('DGM1');
+        const teile = s.slice(1);
+        expect(teile.map(t => t.nachher.rolle)).toEqual(['aushub', 'auftrag', 'dgm']);
+        expect(teile.every(t => t.art === 'erzeugt' && t.modell === 'cde' && t.nachher.rezept === 'erdbau')).toBe(true);
+        // EINE Klammer, drei GlobalIds
+        expect(new Set(teile.map(t => t.nachher.ableitung)).size).toBe(1);
+        expect(new Set(teile.map(t => t.globalId)).size).toBe(3);
+        // IFC 4.3: Aushub = Graben, DGM = Terrain
+        expect(teile[0].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSCUT', predefinedType: 'TRENCH', bauform: 'koerper' });
+        expect(teile[1].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSFILL', predefinedType: 'EMBANKMENT' });
+        expect(teile[2].nachher).toMatchObject({ kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'TERRAIN', bauform: 'hoehenfeld' });
+        const p = teile[2].nachher.parameter;
+        expect(p.quellen).toEqual({ gelaende: 'DGM1' });
+        expect(p.quellBasis.gelaende.triCount).toBe(800);
+        expect(p.raster.cell).toBe(0.5);
         expect(p.operationen).toHaveLength(1);
         expect(p.operationen[0].art).toBe('gerinne');
-        expect(p.operationen[0].parameter.sohleAnfang).toBe(8);
+        expect(p.operationen[0].parameter.sohleAnfang).toBe(8);   // m NN — die Grenze liegt im Rezept
         expect(JSON.stringify(p)).not.toMatch(/heights/);
     });
 
-    it('Planum mit Neigung = zwei Operationen, EIN Eintrag', () => {
+    it('Planum mit Neigung = zwei Operationen in JEDEM Teil — der Aushub wird EXCAVATION', () => {
         const s = nachId('planum-herstellen').anwenden(
             GELAENDE, { hoehe: 8, neigung: 1.5 }, { zug: UMRISS });
-        const ops = s[1].nachher.parameter.operationen;
-        expect(ops.map(o => o.art)).toEqual(['planum', 'boeschung']);
-        expect(ops[1].parameter.neigung).toBe(1.5);
+        for (const t of s.slice(1)) {
+            expect(t.nachher.parameter.operationen.map(o => o.art)).toEqual(['planum', 'boeschung']);
+        }
+        expect(s[1].nachher.predefinedType).toBe('EXCAVATION');
     });
 
     it('ohne Pflichtwert oder mit zu kurzem Zug passiert nichts', () => {
@@ -77,47 +89,58 @@ describe('Erste Formung: Ausblenden + Erzeugen', () => {
     });
 });
 
-describe('Weitere Formung: die Liste wächst absolut', () => {
-    function geformtesTeil(ops) {
-        return {
-            ...GELAENDE, globalId: 'cde-g1', name: 'Urgelände (geformt)',
-            stand: {
-                bauplan: {
-                    rezept: 'gelaende', kategorie: 'IFCGEOGRAPHICELEMENT',
-                    name: 'Urgelände (geformt)', bauform: 'hoehenfeld',
-                    parameter: { quelle: 'DGM1', operationen: ops },
-                },
-            },
-        };
+describe('Weitere Formung: die Liste wächst absolut, die Teile behalten ihre Kennung', () => {
+    function erstformung() {
+        return nachId('gerinne-einschneiden').anwenden(
+            { ...GELAENDE, quellmass: { pruefmass: { triCount: 1 }, cell: 1 } },
+            { sohleAnfang: 8, sohleEnde: 6, sohlbreite: 2, boeschung: 1 }, { zug: ZUG });
+    }
+    function dgmTeil(schritte) {
+        const teile = new Map(schritte.slice(1).map(t => [t.nachher.rolle, { globalId: t.globalId, bauplan: t.nachher }]));
+        const dgm = teile.get('dgm');
+        return { ...GELAENDE, globalId: dgm.globalId, name: dgm.bauplan.name,
+                 stand: { bauplan: dgm.bauplan, teile } };
     }
 
-    it('EIN Eintrag, gleiche GlobalId, volle Liste', () => {
-        const alt = [{ art: 'gerinne', parameter: { sohleAnfang: 8 } }];
-        const s = nachId('planum-herstellen').anwenden(
-            geformtesTeil(alt), { hoehe: 8 }, { zug: UMRISS });
-        expect(Array.isArray(s)).toBe(false);
-        expect(s.globalId).toBe('cde-g1');
-        const ops = s.nachher.parameter.operationen;
+    it('drei Einträge, dieselben GlobalIds, volle Liste — kein zweites Gelände, keine Kette', () => {
+        const erst = erstformung();
+        const s = nachId('planum-herstellen').anwenden(dgmTeil(erst), { hoehe: 8 }, { zug: UMRISS });
+        expect(s).toHaveLength(3);                                   // KEIN geloescht mehr
+        expect(s.map(t => t.globalId)).toEqual(erst.slice(1).map(t => t.globalId));
+        expect(s[2].nachher.ableitung).toBe(erst[3].nachher.ableitung);
+        const ops = s[2].nachher.parameter.operationen;
         expect(ops.map(o => o.art)).toEqual(['gerinne', 'planum']);
-        expect(s.nachher.parameter.quelle).toBe('DGM1');   // die Quelle bleibt das ORIGINAL
+        expect(s[2].nachher.parameter.quellen.gelaende).toBe('DGM1');  // die Quelle bleibt das ORIGINAL
     });
 
-    it('„zurück" stellt die vorige Liste wieder her — Faltung unverändert', async () => {
-        const ae = useAenderungen();
-        const basisEintrag = {
-            art: 'erzeugt', globalId: 'cde-g1', modell: 'cde', wer: 'Fabio',
-            nachher: { rezept: 'gelaende', kategorie: 'IFCGEOGRAPHICELEMENT', name: '', bauform: 'hoehenfeld',
-                       parameter: { quelle: 'DGM1', operationen: [{ art: 'gerinne', parameter: {} }] } },
+    it('ein Gelände aus der Zeit VOR der Ableitung wird bei der nächsten Formung überführt', () => {
+        const alt = {
+            ...GELAENDE, globalId: 'cde-g1', name: 'Urgelände (geformt)',
+            stand: { bauplan: { rezept: 'gelaende', kategorie: 'IFCGEOGRAPHICELEMENT', name: 'Urgelände (geformt)',
+                                bauform: 'hoehenfeld', parameter: { quelle: 'DGM1', operationen: [{ art: 'gerinne', parameter: { sohleAnfang: 8 } }] } } },
         };
-        await ae.eintragen(basisEintrag);
-        const zweiter = nachId('planum-herstellen').anwenden(
-            { ...GELAENDE, globalId: 'cde-g1', stand: { bauplan: basisEintrag.nachher } },
-            { hoehe: 8 }, { zug: UMRISS });
-        await ae.eintragen({ ...zweiter, wer: 'Fabio' });
+        const s = nachId('planum-herstellen').anwenden(alt, { hoehe: 8 }, { zug: UMRISS });
+        expect(s).toHaveLength(4);
+        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'cde-g1', nachher: true });
+        expect(s[3].nachher.parameter.quellen.gelaende).toBe('DGM1');
+        expect(s[3].nachher.parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);
+        expect(s[3].nachher.name).toBe('Urgelände (geformt)');
+    });
 
-        expect(standAus(ae.eintraege, 'erzeugt').get('cde-g1').parameter.operationen).toHaveLength(2);
+    it('„zurück" stellt die vorige Liste in ALLEN Teilen her — Faltung unverändert', async () => {
+        const ae = useAenderungen();
+        const erst = erstformung();
+        for (const e of erst) await ae.eintragen({ ...e, wer: 'Fabio' });
+        const zweite = nachId('planum-herstellen').anwenden(dgmTeil(erst), { hoehe: 8 }, { zug: UMRISS });
+        const vg = ae.neueVorgangsId();
+        for (const e of zweite) await ae.eintragen({ ...e, wer: 'Fabio', vorgang: vg, vorgangTitel: 'Planum' });
+
+        const dgmId = erst[3].globalId;
+        expect(standAus(ae.eintraege, 'erzeugt').get(dgmId).parameter.operationen).toHaveLength(2);
         await ae.zurueck('Fabio');
-        expect(standAus(ae.eintraege, 'erzeugt').get('cde-g1').parameter.operationen).toHaveLength(1);
+        const stand = standAus(ae.eintraege, 'erzeugt');
+        expect(stand.get(dgmId).parameter.operationen).toHaveLength(1);
+        expect(stand.get(erst[1].globalId).parameter.operationen).toHaveLength(1);   // der Aushub ebenso
     });
 });
 

@@ -43,6 +43,29 @@ describe('Gerinne', () => {
         expect(raster.heights[idx(raster, 0, 20)]).toBeCloseTo(10, 6);
     });
 
+    it('STIRNSEITEN (B3-Nachtrag): abgeböscht steigt die Böschung auch hinter dem Ende — Trapez im Längsschnitt', () => {
+        const { raster } = gerinne(ebene(), { ...params, achse: [{ x: 5, z: 10 }, { x: 15, z: 10 }] });
+        // Auf der Achse hinter dem Ende (x = 16, 1 m Überstand, Sohle am Ende 6): 6 + 1 = 7
+        expect(raster.heights[idx(raster, 16, 10)]).toBeCloseTo(7, 6);
+        expect(raster.heights[idx(raster, 17, 10)]).toBeCloseTo(8, 6);
+        expect(raster.heights[idx(raster, 19, 10)]).toBeCloseTo(10, 6);   // erreicht das Gelände
+        // Vor dem Anfang (x = 4, Sohle am Anfang 8): 9
+        expect(raster.heights[idx(raster, 4, 10)]).toBeCloseTo(9, 6);
+        // Die Sohle ragt NICHT mehr über das Ende hinaus — genau am Ende liegt sie noch.
+        expect(raster.heights[idx(raster, 15, 10)]).toBeCloseTo(6, 6);
+        // Die Ecke: 1 m hinter dem Ende und 1 m neben der Sohlkante → √2 → 6 + 1,41
+        expect(raster.heights[idx(raster, 16, 12)]).toBeCloseTo(6 + Math.SQRT2, 6);
+    });
+
+    it('VERBAUT (n = 0): senkrechte Wände — Rechteck im Längsschnitt, aussen unberührt', () => {
+        const { raster } = gerinne(ebene(), { ...params, achse: [{ x: 5, z: 10 }, { x: 15, z: 10 }], boeschung: 0 });
+        expect(raster.heights[idx(raster, 10, 10)]).toBeCloseTo(7, 6);    // in der Sohle
+        expect(raster.heights[idx(raster, 10, 11)]).toBeCloseTo(7, 6);    // Sohlkante (b2 = 1)
+        expect(raster.heights[idx(raster, 10, 12)]).toBeCloseTo(10, 6);   // 1 m daneben: nichts
+        expect(raster.heights[idx(raster, 16, 10)]).toBeCloseTo(10, 6);   // hinter dem Ende: nichts
+        expect(raster.heights[idx(raster, 4, 10)]).toBeCloseTo(10, 6);
+    });
+
     it('schneidet NUR — liegt das Gelände schon tiefer, bleibt es', () => {
         const tief = ebene(5);                                    // unter der Sohle
         const { raster } = gerinne(tief, params);

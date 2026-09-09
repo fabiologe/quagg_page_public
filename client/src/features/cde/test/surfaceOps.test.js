@@ -22,6 +22,36 @@ describe('deriveSurface', () => {
     expect(ro.triCount).toBe(2) // Identität
   })
 
+  it('die beiden Wege sind NICHT dasselbe — deshalb muss der Sampler den richtigen nehmen', () => {
+    // Der Gelände-Sampler zog bis 2026-09-03 `filter: 'upward'` roh: jedes
+    // nach oben zeigende Dreieck. Bei einem GESCHLOSSENEN Erdkörper sind das
+    // aber nicht nur die Deckflächen. Erst `deriveSurface('auto')` erkennt die
+    // Geschlossenheit und rastert eine echte Oberfläche.
+    //
+    // Der Test zählt beide Wege gegeneinander: solange sie verschiedene
+    // Zahlen liefern, ist „der Sampler nimmt jetzt den Resolver" eine Aussage
+    // mit Inhalt. Wären sie gleich, prüfte der Wächter im nächsten Kapitel
+    // zwei identische Mengen — und wäre für immer grün.
+    const solid = erdkoerper()
+    const positions = toPositions(solid)
+    const abgeleitet = deriveSurface(positions, solid.length, { cell: 1 })
+    expect(abgeleitet.method).toBe('heightfield')
+
+    // „upward" von Hand — genau das, was collectElementTriangles(filter:'upward') tut.
+    let nachOben = 0
+    for (let t = 0; t < solid.length; t++) {
+      const o = t * 9
+      const ax = positions[o], ay = positions[o + 1], az = positions[o + 2]
+      const ux = positions[o + 3] - ax, uy = positions[o + 4] - ay, uz = positions[o + 5] - az
+      const vx = positions[o + 6] - ax, vy = positions[o + 7] - ay, vz = positions[o + 8] - az
+      const ny = uz * vx - ux * vz
+      const len = Math.hypot(uy * vz - uz * vy, ny, ux * vy - uy * vx)
+      if (len > 0 && ny / len > 0.05) nachOben++
+    }
+    expect(nachOben).toBeGreaterThan(0)
+    expect(abgeleitet.triCount).not.toBe(nachOben)
+  })
+
   it('Quader-heightfield: Sampler liefert überall die Deckhöhe', () => {
     const solid = box(10, 5, 10) // Profil xy → „Höhe" ist y=5, Grundriss 10(x)×10(z)
     const rs = deriveSurface(toPositions(solid), solid.length, { cell: 1 })

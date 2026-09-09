@@ -9,7 +9,8 @@
  */
 
 import { AXIS_CATEGORIES_DEFAULT, polylineLength, polylineGefaellePromille } from './AxisAnnotations.js';
-import { TERRAIN_CATEGORIES_DEFAULT, makeHeightSampler } from './TerrainMesh.js';
+import { makeHeightSampler } from './TerrainMesh.js';
+import { GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { hoehenversatzAus } from './Koordinaten.js';
 import { buildLaengsschnitt } from './Laengsschnitt.js';
@@ -45,6 +46,7 @@ function _findDn(item) {
 export async function buildLaengsschnittFromModel({
     apis = [], coordOffsets = {}, categoryGroups = null, fragmentsList = null,
     fragmentsManager = null, axisCategories = AXIS_CATEGORIES_DEFAULT,
+    gelaendeSampler = null,
 } = {}) {
     if (!categoryGroups || !fragmentsList) return null;
 
@@ -144,11 +146,16 @@ export async function buildLaengsschnittFromModel({
 
     // ── Gelände-Sampler (Sprint G: über die abgeleitete Oberfläche, damit
     // auch Erdkörper-Volumenkörper als Gelände funktionieren) ──────────────
-    let sampler = null;
-    try {
-        const surf = await resolver.forCategory(TERRAIN_CATEGORIES_DEFAULT).getForm('surface');
-        if (surf.data?.triCount) sampler = makeHeightSampler(surf.data.positions, surf.data.triCount);
-    } catch { /* Gelände optional */ }
+    // Teil XIV: der Aufrufer reicht den EINEN Gelände-Sampler der Engine
+    // herein (ohne Verdecktes, mit den eigenen DGM-Teilen) — der Rückfall
+    // über die Kategorien bleibt für Aufrufer ohne Engine.
+    let sampler = gelaendeSampler ?? null;
+    if (!sampler) {
+        try {
+            const surf = await resolver.forCategory(GELAENDE_VORBELEGUNG).getForm('surface');
+            if (surf.data?.triCount) sampler = makeHeightSampler(surf.data.positions, surf.data.triCount);
+        } catch { /* Gelände optional */ }
+    }
 
     const data = buildLaengsschnitt({ axisItems, manholes, sampler });
     if (!data) return null;

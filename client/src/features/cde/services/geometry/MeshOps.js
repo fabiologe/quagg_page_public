@@ -13,7 +13,7 @@
  * (Eingabeformat: 9 Werte je Dreieck, Welt, wie MeshAcquire).
  */
 
-import { chainSegmentsToPolygons } from '../SectionContour.js';
+import { chainSegmentsToPolygons } from './Verkettung.js';
 
 const DEG = 180 / Math.PI;
 

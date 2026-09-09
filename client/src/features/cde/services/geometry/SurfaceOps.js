@@ -20,7 +20,7 @@
  * — SlopeHatch/ContourLines/HeightSampler konsumieren das unverändert.
  */
 
-import { makeHeightSampler } from '../TerrainMesh.js';
+import { makeHeightSampler } from './HeightSampler.js';
 import { meshVolume } from './MeshOps.js';
 
 const NY_MIN_UP = -0.05;      // wie der bisherige Gelände-Filter (Böschungsflanken behalten!)
@@ -99,10 +99,20 @@ function _heightfield(positions, triCount, cellOpt, warnings) {
  *  abgetastet (siehe unten) — wer die Knotenlage reproduzieren will, braucht
  *  die Klemme, nicht nur x0+ix·cell.
  */
-export function heightfieldRaster(positions, triCount, cellOpt = null, warnings = []) {
+export function heightfieldRaster(positions, triCount, cellOpt = null, warnings = [], { bereich = null } = {}) {
     const sampler = makeHeightSampler(positions, triCount);
-    const b = sampler.bounds;
+    let b = sampler.bounds;
     if (!b) return null;
+    // ZUSCHNITT (Teil XVII, B3): ein Korridor statt des ganzen Geländes — so
+    // kann ein 0,9-m-Graben mit 0,5-m-Zellen gerechnet werden, ohne dass das
+    // Budget das ganze DGM vergröbert. Geschnitten wird mit den Netzgrenzen;
+    // ein Bereich neben dem Gelände ergibt null.
+    if (bereich && [bereich.minX, bereich.maxX, bereich.minZ, bereich.maxZ].every(Number.isFinite)) {
+        const c = { minX: Math.max(b.minX, bereich.minX), maxX: Math.min(b.maxX, bereich.maxX),
+                    minZ: Math.max(b.minZ, bereich.minZ), maxZ: Math.min(b.maxZ, bereich.maxZ) };
+        if (!(c.maxX > c.minX) || !(c.maxZ > c.minZ)) { warnings.push('heightfield_bereich_leer'); return null; }
+        b = c;
+    }
 
     const spanX = Math.max(b.maxX - b.minX, 1e-6);
     const spanZ = Math.max(b.maxZ - b.minZ, 1e-6);

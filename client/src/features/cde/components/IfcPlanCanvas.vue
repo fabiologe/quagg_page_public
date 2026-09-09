@@ -113,6 +113,7 @@ import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
 import { fanglinienFuer, fange, rasterFuerMassstab } from '../services/Fanglinien.js';
+import { griffeFuer } from '../services/Griffe.js';
 import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import { _drawTitleBlock, _drawWatermark } from '../services/IfcPdfExporter.js';
@@ -153,10 +154,15 @@ const zeichnen = useZeichnen({
   bearbeitung,
   cde,
   getModellSha: () => api.getLoadedModelSha?.() ?? null,
-  // Die Raumansicht baut ihr CDE-Modell aus dem Journal neu auf. Der Plan
-  // braucht das nicht — er zeichnet ohnehin direkt aus dem Journal.
-  nachBauen: () => api.baueErzeugteNeu?.(),
+  // Der EINE Anwendungsweg (Teil XIV, Stufe 0): `wendeEintragAn` nimmt Eintrag
+  // oder Liste, baut Erzeugtes neu, blendet Gelöschtes aus und entwertet, was
+  // veraltet. Vorher stand hier nur `baueErzeugteNeu` — ein mehrteiliger
+  // Vorgang (Gelände formen = ausblenden + erzeugen) lief damit halb.
+  nachBauen: (eintraege) => api.wendeEintragAn?.(eintraege),
   getHoehenversatz: () => api.getHoehenversatz?.() ?? 0,
+  // Teil XIV: Zeichnen AUF dem Gelände — Höhen aus dem Sampler des Viewers.
+  getHoeheAn: (x, z) => api.hoeheAn?.(x, z),
+  bereiteHoehenVor: () => api.bereiteGelaendeVor?.(),
 });
 
 /** Prüfmeldungen des Formulars UND des Zuges — der Nutzer sieht eine Liste. */
@@ -182,9 +188,20 @@ const erzeugtePunkte = computed(() => {
   return out;
 });
 
+/**
+ * Die Böschungsoberkanten der Ableitungen (Teil XIV, G5) — kommen aus dem
+ * letzten Aufbau der Engine, nicht aus dem Journal; nachgezogen werden sie
+ * in DERSELBEN Beobachtung, die den Plan entwertet (unten).
+ */
+const ableitungsBilder = ref([]);
+
 async function zeichnenAbschliessen() {
-  const eintrag = await zeichnen.abschliessen();
-  if (eintrag) baldZeichnen();
+  // Die Enter-Regel des Motors (Teil XVI): genug Punkte und gültiges
+  // Formular → anwenden; genug Punkte, Formular offen → Zug schliessen und
+  // das Formular zeigen (PRÜFEN); sonst nichts — mit Grund.
+  const eintrag = await zeichnen.enter();
+  baldZeichnen();
+  return eintrag;
 }
 
 /**
@@ -393,7 +410,7 @@ function zeichne() {
       measurements: o.measurements ?? [],
       dimensions: o.dimensions ?? [],
       planInhalte: planInhalt.inhalte,
-      erzeugte: erzeugtePunkte.value,
+      erzeugte: [...erzeugtePunkte.value, ...ableitungsBilder.value],
       zeichenZug: zeichnen.zug.value,
       // Fertige Striche plus der gerade laufende — sonst sähe man beim Malen
       // nichts, bis man loslässt.
@@ -555,17 +572,16 @@ function griffBereit() {
 
 function griffeLaden() {
   if (!bearbeitung.modusAn) { griffe.value = []; return; }
-  // Der Griff sitzt an der WIRKSAMEN Lage: ein bereits verschobener Schacht
-  // steht im Journal, die Achslese kennt nur den Lieferort (17.3 deckt nur
-  // Erzeugtes/Gelöschtes). Ohne diese Faltung griffe man ihn am alten Ort.
-  const lageStand = new Map(aenderungen.wirksamerStand('lage'));
-  griffe.value = (api.getSchachtGriffe?.() ?? [])
-    .filter(g => g.herkunft === 'geliefert')
-    .map(g => {
-      const l = lageStand.get(g.globalId);
-      const p = (Number.isFinite(l?.x) && Number.isFinite(l?.z)) ? l : g.punkt;
-      return { globalId: g.globalId, name: g.name, modelId: g.modelId, x: p.x, z: p.z };
-    });
+  // DIE FACHLOGIK LIEGT EINMAL (Teil XVI, S4): welcher Griff, an welcher
+  // WIRKSAMEN Lage (ein verschobener Schacht steht im Journal, die Achslese
+  // kennt nur den Lieferort) — `griffeFuer` bedient Plan und Raum. Der Plan
+  // zeichnet davon die XZ-Schachtgriffe.
+  griffe.value = griffeFuer({
+    schaechte: api.getSchachtGriffe?.() ?? [],
+    lageStand: new Map(aenderungen.wirksamerStand('lage')),
+  })
+    .filter(g => g.art === 'schacht')
+    .map(g => ({ globalId: g.globalId, name: g.name, modelId: g.modelId, x: g.pos.x, z: g.pos.z }));
 }
 
 function griffUnter(welt) {
@@ -616,6 +632,7 @@ function griffBewegen(welt) {
     linien: z.linien,
     radius: trefferRadius(),
     raster: rasterFuerMassstab(ansicht.massstab),
+    meide: z.ausgang,                 // der Ausgang ist keine Ecke (siehe Fanglinien.fange)
   });
   z.punkt = ergebnis.punkt;
   z.aktiv = ergebnis.aktiv;
@@ -1102,6 +1119,7 @@ watch(() => [bearbeitung.modusAn, ifc.geometrieStand, ifc.modelList?.length, aen
 watch(() => [ifc.modelList?.length, ifc.geometrieStand], () => {
   inhalt?.entwerte('modell');
   letzterInhalt = null;
+  ableitungsBilder.value = api.getAbleitungsBilder?.() ?? [];     // G5: Böschungsoberkanten
   passendEinstellen();
   inhalteHolen();
 });

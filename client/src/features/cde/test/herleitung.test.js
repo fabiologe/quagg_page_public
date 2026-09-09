@@ -62,7 +62,11 @@ describe('Ein Typ, den niemand eingetragen hat, ist trotzdem bedienbar', () => {
         expect(ids(k).length).toBeGreaterThan(0);
         for (const id of ids(k)) {
             const b = nachId(id);
-            expect(b.bauform, id).toBe('*');
+            // Allgemein heisst: für jede Bauform — oder ausdrücklich auch für
+            // das nackte Netz (verschieben, Teil IX: „netz — verschieben,
+            // drehen, löschen, mehr geht nicht ehrlich"). Erfunden wird nichts.
+            const allgemein = b.bauform === '*' || (Array.isArray(b.bauform) && b.bauform.includes('netz'));
+            expect(allgemein, id).toBe(true);
             expect(b.brauchtRolle, id).toBeFalsy();
             expect(b.mindestGuete, id).toBe('unbekannt');
         }

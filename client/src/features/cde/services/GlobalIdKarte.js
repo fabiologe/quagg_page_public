@@ -63,6 +63,11 @@ export async function baueGlobalIdKarte({ modelle, gesuchte } = {}) {
         for (let i = 0; i < guids.length; i++) {
             const localId = localIds[i];
             if (typeof localId !== 'number' || !offen.has(guids[i])) continue;
+            // DAS MODELL, IN DEM WIRKLICH GEFUNDEN WURDE — nie „normiert" auf
+            // die Basis. Gemessen (2026-09-09): das CDE-Modell führt den
+            // GUID-Index nur im DELTA des Editors, die Basis antwortet dort
+            // nicht. Eine Karte, die einen Delta-Treffer als Basis
+            // beschriftet, nennt ein Modell, in dem diese localId nicht gilt.
             karte.set(guids[i], { modelId: modell.modelId, localId });
             offen.delete(guids[i]);
         }

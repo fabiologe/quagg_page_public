@@ -22,6 +22,7 @@
  * Wächtertest, nicht erst an einer verschobenen Revision.
  */
 import { rezeptNach, REZEPTE } from './Bauteilrezepte.js';
+import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 
 function _istPunkt(p) {
     return p && typeof p === 'object'
@@ -75,7 +76,36 @@ export function deltaZwischen(merker, aktuell) {
 
 /** Wächter-Helfer: jedes Rezept MUSS deklarieren, wie es verschoben wird. */
 export function rezepteOhneVerschiebe() {
-    return Object.values(REZEPTE)
-        .filter(r => typeof r.verschiebe !== 'function')
+    return rezepteOhneDeklaration('verschiebe');
+}
+
+/** Wächter-Helfer über BEIDE Register: welches Rezept deklariert `feld` nicht? */
+export function rezepteOhneDeklaration(feld) {
+    return [...Object.values(REZEPTE), ...Object.values(ABLEITUNGEN)]
+        .filter(r => typeof r[feld] !== 'function')
         .map(r => r.id);
+}
+
+/**
+ * Welche Ableitung nennt einen Quellen-Schlitz in `formen`, aber nicht in
+ * `braucht`?
+ *
+ * Das Formpaar-Gate prüft nur Schlitze, für die `braucht` etwas sagt. Ein
+ * neues Rezept mit `formen: {x: 'raster'}` und ohne `braucht.x` liefe also
+ * still OHNE Gate — und das fiele niemandem auf, weil alles funktioniert,
+ * bis jemand die falsche Quelle wählt. Ein fehlendes Gate sieht aus wie ein
+ * zufriedenes.
+ *
+ * @returns {string[]} „<rezeptId>.<schlitz>" je Lücke
+ */
+export function ableitungenOhneFormpaar() {
+    const out = [];
+    for (const r of Object.values(ABLEITUNGEN)) {
+        for (const schlitz of Object.keys(r?.formen ?? {})) {
+            if (!Array.isArray(r?.braucht?.[schlitz]) || !r.braucht[schlitz].length) {
+                out.push(`${r.id}.${schlitz}`);
+            }
+        }
+    }
+    return out;
 }

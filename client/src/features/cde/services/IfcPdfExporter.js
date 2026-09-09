@@ -6,7 +6,7 @@ import { vectorContentToDxf }          from './DxfExporter.js';
 import { DEFAULT_LINE_STYLES }         from './DefaultLineStyles.js';
 import { simplifyOutlines }            from './PolygonSimplify.js';
 import { styleToLegacy }               from './VectorStyleEngine.js';
-import { TERRAIN_CATEGORIES_DEFAULT } from './TerrainMesh.js';
+import { GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
 import { createGeometryResolver }      from './geometry/GeometryResolver.js';
 import { computeSlopeHatch }           from './SlopeHatch.js';
 import { computeContourLines }         from './ContourLines.js';
@@ -212,7 +212,7 @@ export async function sammleGelaendeflaeche({
     try {
         const terrainCats = slopeHatch?.categories?.length
             ? slopeHatch.categories
-            : TERRAIN_CATEGORIES_DEFAULT;
+            : GELAENDE_VORBELEGUNG;
         const resolver = createGeometryResolver({ categoryGroups, fragmentsList, fragmentsManager });
         const surf = await resolver.forCategory(terrainCats).getForm('surface', { cell });
         if (surf.warnings?.length) console.warn('[GeometryResolver]', surf.warnings);

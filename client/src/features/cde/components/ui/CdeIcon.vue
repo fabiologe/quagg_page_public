@@ -41,7 +41,7 @@ import {
   Plus, X, Check, Trash2, RotateCw, Copy, Share2, Info, TriangleAlert,
   ChevronRight, ChevronDown, ChevronUp, PanelLeft, PanelRight, ListTree, Filter,
   Undo2, Redo2, CircleHelp, Pencil, SendHorizontal, LoaderCircle, Play, History,
-  Eraser, Type, PencilRuler, Waves, LandPlot,
+  Eraser, Type, PencilRuler, Waves, LandPlot, Shapes, Shovel, Layers2,
   MousePointer2, Image, Zap, CircleX, CircleAlert, Map, PenTool, HardHat,
   // Bauwerksstruktur (Raumhierarchie)
   Globe, SquareStack, SquareDashed, Box,
@@ -143,7 +143,13 @@ const ICONS = {
   'route':        Route,
   'gerinne':      Waves,
   'planum':       LandPlot,
+  // Erdbau (E1): die drei Handlungen tragen eigene Zeichen — „ausheben" und
+  // „auffüllen" sind entgegengesetzt und dürfen nicht dasselbe Bild haben.
+  'ausheben':     Shovel,
+  'auffuellen':   Layers2,
   'schacht':      Cylinder,
+  // Bauform-Auslegung: „als welche FORM lese ich dieses Bauteil?"
+  'bauform':      Shapes,
   'edit':         Pencil,
   'send':         SendHorizontal,
   'busy':         LoaderCircle,
@@ -215,7 +221,8 @@ export const ICON_NAMES = [
   'add', 'close', 'check', 'delete', 'refresh', 'copy', 'share', 'info', 'warn',
   'chevron-right', 'chevron-down', 'chevron-up', 'panel-left', 'panel-right', 'tree', 'filter',
   'undo', 'redo', 'verlauf', 'edit', 'send', 'busy', 'open', 'pointer', 'image', 'billed',
-  'radierer', 'text', 'karte', 'bemassen', 'route', 'gerinne', 'planum', 'schacht',
+  'radierer', 'text', 'karte', 'bemassen', 'route', 'gerinne', 'planum', 'schacht', 'bauform',
+  'ausheben', 'auffuellen',
   'overview', 'vector', 'bim',
   'status-error', 'status-warn', 'status-ok',
   'site', 'building', 'storey', 'space', 'element',

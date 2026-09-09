@@ -121,14 +121,16 @@ describe('useMessen', () => {
     return { e, ifc, selection, m: useMessen({ engine: ref(e), ifc, selection: () => selection }) };
   }
 
-  it('sperrt die Auswahl, solange gemessen wird', async () => {
-    // Sonst wählt ein Klick gleichzeitig ein Bauteil UND setzt einen Messpunkt.
+  it('rührt den Auswahl-Modus NICHT an — den leitet der Viewer aus allen Werkzeugen ab (Teil XVI)', async () => {
+    // Vorher schaltete Messen die Auswahl selbst auf „disabled". Mit der
+    // scharfen Bearbeitung als drittem Zustand wären das drei Schreiber auf
+    // einen Modus — der letzte hätte gewonnen. Jetzt gibt es EINE Ableitung
+    // (`auswahlModusNachziehen` im Viewer); der Tipp kommt als Verbraucher an.
     const { e, selection, m } = bau();
     m.umschalten();
     expect(e.enableMeasureMode).toHaveBeenCalled();
-    expect(selection.setMode).toHaveBeenLastCalledWith('disabled');
     m.umschalten();
-    expect(selection.setMode).toHaveBeenLastCalledWith('single');
+    expect(selection.setMode).not.toHaveBeenCalled();
   });
 
   it('legt die fertige Strecke im Store ab, nicht bei sich', async () => {

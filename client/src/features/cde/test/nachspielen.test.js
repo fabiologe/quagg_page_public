@@ -16,7 +16,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { fasseZusammen, konfliktKarte, planeNachspielen } from '../services/Nachspielen.js';
+import { anwendungsweg, fasseZusammen, konfliktKarte, planeNachspielen } from '../services/Nachspielen.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 
 beforeEach(() => {
@@ -29,6 +29,41 @@ const GEZOGEN = { x: 11.5, y: 2, z: 5 };
 
 /** Lieferstand als Map — so, wie ihn `IfcAutor` vor jeder Anwendung liest. */
 const lieferstandAus = (map) => (globalId) => map.get(globalId);
+
+/**
+ * Eine AUSLEGUNG ist keine Festlegung — und schon gar keine Modelländerung.
+ *
+ * Der Unterschied ist nicht kosmetisch: hätte die Art `beruehrtModell`,
+ * suchte `planeNachspielen` für jeden Eintrag einen Lieferstand-Wert namens
+ * „Bauform" im IFC. Den gibt es nicht, also käme JEDE Auslegung als
+ * `bauteil_nicht_im_modell` in den Konfliktbericht — und der Nutzer sähe
+ * lauter Konflikte für etwas, das gar keinen Konflikt haben kann.
+ */
+describe('Bauform-Auslegung — weder Konflikt noch Anwendung', () => {
+    const AUSLEGUNG = [
+        { art: 'bauform', globalId: 'ERD1', nachher: 'hoehenfeld', modell: 'geliefert' },
+    ];
+
+    it('taucht im Nachspielen gar nicht erst auf — auch nicht als „fehlt"', () => {
+        // Der Lieferstand ist LEER: das Bauteil steht (aus Sicht der Prüfung)
+        // nicht im Modell. Genau der Fall, der bei `lage` einen Konflikt gäbe.
+        const p = planeNachspielen(AUSLEGUNG, lieferstandAus(new Map()));
+        expect(p.konflikte).toEqual([]);
+        expect(p.anzuwenden).toEqual([]);
+        expect(p.betroffeneGlobalIds ?? []).not.toContain('ERD1');
+    });
+
+    it('bekommt einen eigenen Anwendungsweg — nicht „Festlegung"', () => {
+        // Sonst meldete der Viewer „die Geometrie bleibt beim Planer". Bei
+        // einer Auslegung gibt es aber nichts, das der Planer ändern soll:
+        // sie ist unsere Lesart SEINER Datei.
+        expect(anwendungsweg(AUSLEGUNG[0])).toBe('auslegung');
+        // Zur Abgrenzung — die beiden Nachbarn bleiben, wo sie waren:
+        expect(anwendungsweg({ art: 'kg', globalId: 'X' })).toBe('nur-festlegung');
+        expect(anwendungsweg({ art: 'lage', globalId: 'X' })).toBe('einzeln');
+        expect(anwendungsweg({ art: 'erzeugt', globalId: 'X' })).toBe('neuaufbau');
+    });
+});
 
 describe('planeNachspielen — die vier Fälle', () => {
     const eintraege = [
@@ -194,5 +229,41 @@ describe('Ebenen beim Nachspielen (Stufe 11.1)', () => {
             { standEintraege: satz });
         expect(p.anzuwenden).toHaveLength(1);
         expect(p.anzuwenden[0].wert).toEqual(GEZOGEN);
+    });
+});
+
+
+describe('Quellwechsel einer Ableitung (Teil XIV, G4)', () => {
+    it('ein geändertes Prüfmass wird angewandt UND gemeldet — nie still', () => {
+        const eintraege = [{
+            id: 'e1', art: 'erzeugt', globalId: 'cde-dgm', modell: 'cde',
+            nachher: { rezept: 'erdbau', rolle: 'dgm', ableitung: 'ab-1', parameter: {
+                quellen: { gelaende: 'DGM0' },
+                quellBasis: { gelaende: { triCount: 800, spanX: 40, spanY: 2, spanZ: 40 } },
+                raster: { cell: 0.5 }, operationen: [{ art: 'gerinne', parameter: {} }],
+            } },
+        }];
+        const gleich = planeNachspielen(eintraege, () => undefined,
+            { leseQuellmass: () => ({ triCount: 800, spanX: 40, spanY: 2, spanZ: 40 }) });
+        expect(gleich.hinweise).toEqual([]);
+        expect(gleich.zusammenfassung.quelleGeaendert).toBe(0);
+
+        const anders = planeNachspielen(eintraege, () => undefined,
+            { leseQuellmass: () => ({ triCount: 812, spanX: 40, spanY: 2.4, spanZ: 40 }) });
+        expect(anders.anzuwenden).toHaveLength(1);                       // angewandt …
+        expect(anders.anzuwenden[0].grund).toBe('quelle_geaendert');
+        expect(anders.hinweise[0]).toMatchObject({ globalId: 'cde-dgm', zustand: 'quelle_geaendert' });
+        expect(anders.zusammenfassung.quelleGeaendert).toBe(1);
+        expect(fasseZusammen(anders.zusammenfassung)).toContain('Quelle vom Planer geändert');
+    });
+
+    it('eine CDE-Quelle (kein Prüfmass lesbar) ergibt kein Urteil', () => {
+        const eintraege = [{
+            id: 'e1', art: 'erzeugt', globalId: 'cde-b', modell: 'cde',
+            nachher: { rezept: 'erdbau', rolle: 'dgm', parameter: {
+                quellen: { gelaende: 'cde-a' }, quellBasis: { gelaende: null }, operationen: [] } },
+        }];
+        const r = planeNachspielen(eintraege, () => undefined, { leseQuellmass: () => undefined });
+        expect(r.hinweise).toEqual([]);
     });
 });

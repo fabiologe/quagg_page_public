@@ -53,11 +53,21 @@ function _zeile(eintrag, wert) {
  */
 export function baueBericht({ eintraege = [], konflikte = [], meta = {}, zeitleiste = null } = {}) {
     // ── 1. Der wirksame Stand: die eigentliche Forderungsliste. ────────────
+    //
+    // AUSLEGUNGEN gehören NICHT hierher. Der Bericht geht an den Planer und
+    // sagt, was er ändern soll. „Dieser Körper ist für uns ein Höhenfeld" ist
+    // keine Forderung, sondern unsere Lesart seiner Datei — in der
+    // Forderungsliste stünde sie als Arbeitsauftrag, den niemand ausführen
+    // kann. Sie wandert stattdessen in einen eigenen Block: der Planer soll
+    // sehen, WIE wir sein Modell gelesen haben, denn wenn wir falsch liegen,
+    // liegen alle daraus abgeleiteten Massen falsch.
     const stand = [];
-    for (const art of Object.keys(AENDERUNGS_ARTEN)) {
+    const auslegung = [];
+    for (const [art, meta_] of Object.entries(AENDERUNGS_ARTEN)) {
+        const ziel = meta_?.auslegung ? auslegung : stand;
         for (const [, { wert, eintrag }] of standMitEintrag(eintraege, art)) {
             if (wert === null || wert === undefined) continue;   // aufgehoben
-            stand.push(_zeile(eintrag, wert));
+            ziel.push(_zeile(eintrag, wert));
         }
     }
 
@@ -109,6 +119,8 @@ export function baueBericht({ eintraege = [], konflikte = [], meta = {}, zeitlei
             anzahlVorgaenge: verlauf.length,
         },
         stand,
+        // „So liest die CDE dieses Modell" — kein Änderungswunsch.
+        auslegung,
         verlauf,
         konflikte: (konflikte ?? []).map(k => ({
             globalId: k.globalId,

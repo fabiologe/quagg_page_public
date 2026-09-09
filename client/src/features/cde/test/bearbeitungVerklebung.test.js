@@ -19,11 +19,17 @@ import { join } from 'node:path';
 const WURZEL = new URL('..', import.meta.url).pathname;
 const lies = (rel) => fs.readFileSync(join(WURZEL, rel), 'utf8');
 
-describe('Beide Formular-Aufrufer reichen dasselbe weiter', () => {
-    for (const datei of ['CdeToolbox.vue', 'CdeHudLayer.vue']) {
+describe('EIN Formular, EIN Griff-Weg — beide reichen dasselbe weiter', () => {
+    // Seit Teil XVI S6 steht das Formular nur noch in der Kontextleiste
+    // (`IfcViewer.uebernehmeScharf`); der Griff legt über `useGriffe.ablegen`
+    // ab. HUD und Toolbox rufen `ausfuehren` NICHT mehr — sie zeigten dasselbe
+    // Formular ein zweites und drittes Mal (Fabio, PROD-Test 2026-09-08).
+    for (const [datei, marke] of [['components/IfcViewer.vue', 'async function uebernehmeScharf'], ['composables/useGriffe.js', 'async function ablegen']]) {
         it(`${datei}`, () => {
-            const text = lies(join('components', datei));
-            const ab = text.indexOf('bearbeitung.ausfuehren(');
+            const text = lies(datei);
+            const fn = text.indexOf(marke);
+            expect(fn, `${datei} ohne ${marke}`).toBeGreaterThan(-1);
+            const ab = text.indexOf('bearbeitung.ausfuehren(', fn);
             expect(ab, `${datei} ruft ausfuehren gar nicht`).toBeGreaterThan(-1);
             const block = text.slice(ab, text.indexOf('});', ab));
             for (const feld of ['wer:', 'modellSha:', 'basis:', 'modell:']) {
@@ -31,6 +37,13 @@ describe('Beide Formular-Aufrufer reichen dasselbe weiter', () => {
             }
         });
     }
+    it('HUD und Toolbox tragen kein Formular mehr', () => {
+        for (const datei of ['CdeToolbox.vue', 'CdeHudLayer.vue']) {
+            const text = lies(join('components', datei));
+            expect(text, datei).not.toContain('<CdeBearbeitungForm');
+            expect(text, datei).not.toContain('bearbeitung.ausfuehren(');
+        }
+    });
 });
 
 describe('Die Rücknahme erreicht das Modell', () => {

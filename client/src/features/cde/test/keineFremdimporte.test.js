@@ -62,6 +62,68 @@ describe('Die CDE bleibt für sich', () => {
         expect(befunde).toEqual([]);
     });
 
+    it('der Geometrie-Kernel importiert nur nach unten: eigene Ops, geometry/, gelaende/, tinte/, npm', () => {
+        // Teil XIV, G1: `services/geometrie/` ist die reine Rechenschicht —
+        // kein Journal, keine Engine, kein three, kein Vue. Dieselben Dateien
+        // laufen im Worker und in vitest ohne jsdom. Erlaubt sind die
+        // Leseschicht (`geometry/`), die Raster-Ops (`gelaende/Operationen.js`,
+        // Kernel-Material aus der Zeit vor dem Kernel) und die neutrale Schicht.
+        const kernel = join(WURZEL, 'services/geometrie');
+        const befunde = [];
+        for (const datei of quellDateien(kernel)) {
+            const code = readFileSync(datei, 'utf8');
+            for (const [, pfad] of code.matchAll(IMPORT)) {
+                const relativ = pfad.startsWith('.');
+                const ziel = relativ ? resolve(dirname(datei), pfad) : null;
+                const erlaubt = pfad.startsWith('@/services/tinte/')
+                    || (relativ && (ziel.startsWith(kernel)
+                        || ziel.startsWith(join(WURZEL, 'services/geometry'))
+                        || ziel.startsWith(join(WURZEL, 'services/gelaende'))))
+                    || (!relativ && !pfad.startsWith('@/') && !pfad.startsWith('three'));
+                if (!erlaubt) befunde.push(`${datei.replace(WURZEL, '')} → ${pfad}`);
+            }
+            // Float32 hat im Kernel nichts zu suchen — ein Volumen aus
+            // Float32-Koordinaten in Landesgrösse ist eine Schätzung.
+            if (/Float32Array/.test(code.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '').replace(/'[^']*Float32[^']*'/g, ''))) {
+                befunde.push(`${datei.replace(WURZEL, '')} → Float32Array`);
+            }
+        }
+        expect(befunde).toEqual([]);
+    });
+
+    it('der Kernel-Worker lädt TRANSITIV weder three noch web-ifc noch das Wörterbuch', () => {
+        // Der Fall vom 2026-09-07: alle direkten Importe des Kernels waren
+        // erlaubt — aber SurfaceOps holte den Sampler aus TerrainMesh, und
+        // TerrainMesh zieht über MeshAcquire three, web-ifc und das 4.3-
+        // Wörterbuch. Der Worker-Chunk wuchs von 26 kB auf 4,7 MB, und kein
+        // Wächter sah es, weil jeder nur EINE Stufe prüfte. Deshalb hier die
+        // ganze Hülle: von kernel.worker.js aus jeden relativen Import
+        // verfolgen, und in KEINEM Modul darf Schweres stehen.
+        const start = join(WURZEL, 'services/geometrie/kernel.worker.js');
+        // `@/services/tinte/` ist die neutrale Schicht (reine Geometrie, kein
+        // three) — im Kernel ausdrücklich erlaubt, siehe die Regel darüber.
+        const schwer = [/^three/, /^web-ifc/, /^@thatopen/, /entity-schema/, /^@\/(?!services\/tinte\/)/, /^vue/];
+        const gesehen = new Set();
+        const offen = [start];
+        const befunde = [];
+        while (offen.length) {
+            const datei = offen.pop();
+            if (gesehen.has(datei)) continue;
+            gesehen.add(datei);
+            const code = readFileSync(datei, 'utf8');
+            for (const [, pfad] of code.matchAll(IMPORT)) {
+                if (schwer.some(r => r.test(pfad))) befunde.push(`${datei.replace(WURZEL, '')} → ${pfad}`);
+                if (!pfad.startsWith('.')) continue;
+                const ziel = resolve(dirname(datei), pfad);
+                offen.push(ziel.endsWith('.js') ? ziel : `${ziel}.js`);
+            }
+        }
+        expect(befunde).toEqual([]);
+        // Und die Hülle bleibt klein: wer hier 40 überschreitet, hat wieder
+        // eine Anwendungsdatei in den Worker gezogen.
+        expect(gesehen.size).toBeLessThan(40);
+    });
+
     it('holt die Auftragsliste über den EIGENEN schmalen Draht', () => {
         // Nicht bloss „kein Import" — der Ersatz muss auch dastehen, sonst
         // wäre die Regel erfüllt und die Sache trotzdem nicht gebaut.

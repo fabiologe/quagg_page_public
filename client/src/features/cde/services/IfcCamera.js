@@ -1,4 +1,5 @@
 import * as OBC from '@thatopen/components';
+import { boxenAktuell } from './DeltaBoxen.js';
 import * as THREE from 'three';
 
 /**
@@ -105,6 +106,17 @@ export class IfcCamera {
     }
 
     /** Direkter Zugriff für Picking/Raycasting (Engine-Layer braucht THREE-Camera). */
+    /**
+     * Die Bedienung sperren/freigeben — während ein Griff gezogen wird
+     * (Teil XVI, S4). Dasselbe Muster wie der Schnitt-Gizmo (`controls.enabled`).
+     */
+    sperren(an) {
+        const c = this.getControls();
+        if (!c) return false;
+        c.enabled = !an;
+        return true;
+    }
+
     getThree() {
         return this._getWorld()?.camera?.three ?? null;
     }
@@ -261,7 +273,8 @@ export class IfcCamera {
         if (!model) return false;
 
         let boxes;
-        try { boxes = await model.getBoxes([localId]); } catch { return false; }
+        // Die AKTUELLE Box — ein verschobenes Bauteil steht im Delta-Modell.
+        try { boxes = await boxenAktuell(model, [localId], (id) => fragments.list.get(id)); } catch { return false; }
         if (!boxes?.length || boxes[0].isEmpty()) return false;
 
         const box  = boxes[0];
@@ -284,8 +297,8 @@ export class IfcCamera {
             const model = fragments.list.get(modelId);
             if (!model || !ids?.length) continue;
             try {
-                const boxes = await model.getBoxes(ids);
-                for (const b of boxes) if (!b.isEmpty()) union.union(b);
+                const boxes = await boxenAktuell(model, ids, (id) => fragments.list.get(id));
+                for (const b of boxes) if (b && !b.isEmpty()) union.union(b);
             } catch { /* skip */ }
         }
         if (union.isEmpty()) return false;
@@ -304,8 +317,11 @@ export class IfcCamera {
         const ctrls = this._getWorld()?.camera?.controls;
         if (!ctrls || !point) return;
         const cam = this._getWorld().camera.three;
+        // Mit MINDEST-ELEVATION (S7): ein Ziel auf Kamerahöhe ergab einen
+        // waagerechten Blick, und jede waagerechte Ziehebene lag auf der Kante.
+        const p = positionMitElevation(cam.position, point, MINDEST_ELEVATION_GRAD);
         await ctrls.setLookAt(
-            cam.position.x, cam.position.y, cam.position.z,
+            p.x, p.y, p.z,
             point.x, point.y, point.z,
             true,
         );
@@ -326,7 +342,9 @@ export class IfcCamera {
         const model     = fragments?.list?.get(modelId);
         if (!model) return false;
         let boxes;
-        try { boxes = await model.getBoxes([localId]); } catch { return false; }
+        // Um das Bauteil DORT kreisen, wo es steht — nach einem Zug im Delta-Modell,
+        // nicht am Lieferort (Headless 2026-09-08: der Griff lag ausserhalb des Bilds).
+        try { boxes = await boxenAktuell(model, [localId], (id) => fragments.list.get(id)); } catch { return false; }
         if (!boxes?.length || boxes[0].isEmpty()) return false;
         const center = new THREE.Vector3();
         boxes[0].getCenter(center);
@@ -457,3 +475,29 @@ export class IfcCamera {
     dispose() {}
 
 }
+
+/** Unter diesem Winkel über der Waagerechten schaut die Kamera nicht mehr auf ein Ziel (S7). */
+export const MINDEST_ELEVATION_GRAD = 20;
+
+/**
+ * Die Kameraposition so heben, dass der Blick aufs Ziel mindestens `grad`
+ * über der Waagerechten liegt — Abstand bleibt, Richtung im Grundriss bleibt.
+ * Rein, damit es prüfbar ist.
+ */
+export function positionMitElevation(position, ziel, grad = MINDEST_ELEVATION_GRAD) {
+    const d = { x: position.x - ziel.x, y: position.y - ziel.y, z: position.z - ziel.z };
+    const abstand = Math.hypot(d.x, d.y, d.z);
+    const flach = Math.hypot(d.x, d.z);
+    if (!(abstand > 1e-9)) return { x: position.x, y: position.y, z: position.z };
+    const winkel = Math.atan2(d.y, flach);
+    const min = (grad * Math.PI) / 180;
+    if (winkel >= min) return { x: position.x, y: position.y, z: position.z };
+    // Richtung im Grundriss behalten (oder +x, wenn die Kamera senkrecht darunter stand)
+    const ex = flach > 1e-9 ? d.x / flach : 1, ez = flach > 1e-9 ? d.z / flach : 0;
+    return {
+        x: ziel.x + ex * abstand * Math.cos(min),
+        y: ziel.y + abstand * Math.sin(min),
+        z: ziel.z + ez * abstand * Math.cos(min),
+    };
+}
+

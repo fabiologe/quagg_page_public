@@ -136,6 +136,8 @@ export function usePlanExport() {
         return buildLaengsschnittFromModel({
             apis:         api.getWebIfcAPIs?.() ?? [],
             coordOffsets: api.getAllCoordOffsets?.() ?? {},
+            // Teil XIV: das Gelände OHNE Verdecktes, MIT den eigenen DGM-Teilen.
+            gelaendeSampler: (await api.bereiteGelaendeVor?.()) ?? null,
             ..._modell(),
         });
     }

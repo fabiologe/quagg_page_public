@@ -177,3 +177,96 @@ describe('Die Prüfung prüft wirklich etwas', () => {
         expect(fuehrt(MODELL, 'gibtEsNicht')).toBe(false);
     });
 });
+
+describe('IfcLoader.load der Bibliothek — nachgebaut in IfcEngine._fragmenteLaden (2026-09-07)', () => {
+    // Die CDE lädt Fragmentdateien aus der Ablage direkt über `core.load`
+    // und ruft den Importer selbst, um seinen Puffer abzulegen. Das ist
+    // Zeile für Zeile, was `IfcLoader.load` tut — und genau das hält dieser
+    // Vertrag fest: ändert die Bibliothek den Weg, fällt es hier, nicht in
+    // der Szene.
+    const COMP = fileURLToPath(new URL('../../../../node_modules/@thatopen/components/dist/index.mjs', import.meta.url));
+    const comp = fs.readFileSync(COMP, 'utf8');
+    const ab = comp.indexOf('async load(data, coordinate, name, config) {');
+
+    it('setzt autoCoordinate, importiert mit den Loader-Einstellungen und ruft core.load(bytes, {modelId})', () => {
+        expect(ab).toBeGreaterThan(-1);
+        const rumpf = comp.slice(ab, ab + 1200);
+        expect(rumpf).toContain('fragments.core.settings.autoCoordinate = coordinate');
+        expect(rumpf).toContain('new FRAGS.IfcImporter()');
+        expect(rumpf).toContain('serializer.wasm.path = this.settings.wasm.path');
+        expect(rumpf).toContain('serializer.webIfcSettings = this.settings.webIfc');
+        expect(rumpf).toMatch(/serializer\.process\(\{[\s\S]{0,120}bytes: data/);
+        expect(rumpf).toMatch(/fragments\.core\.load\(bytes, \{\s*modelId: name/);
+    });
+
+    it('IfcImporter trägt wasm, webIfcSettings und process; FragmentsModel hat object und dispose', () => {
+        expect(quelle).toMatch(/class IfcImporter \{[\s\S]{0,3000}wasm: \{/);
+        expect(quelle).toMatch(/class IfcImporter \{[\s\S]{0,3000}webIfcSettings: WEBIFC\.LoaderSettings/);
+        expect(quelle).toMatch(/class IfcImporter \{[\s\S]{0,6000}process\(/);
+        expect(quelle).toMatch(/class FragmentsModel \{[\s\S]{0,6000}object: THREE\.Object3D/);
+        expect(quelle).toMatch(/class FragmentsModel \{[\s\S]{0,12000}dispose\(/);
+    });
+});
+
+describe('Zeiger, Fang und Rahmen (Teil XVI, S1) — was die Engine am Modell ruft, gibt es', () => {
+    // `probeTreffer` raycastet wahlweise gegen EIN Modell, `_bibliotheksFang`
+    // fragt `raycastWithSnapping`, `rechteckAuswahl` `rectangleRaycast` — alle
+    // drei am `FragmentsModel`, nicht am OBC-Manager (der kennt nur `raycast`).
+    for (const m of ['raycast', 'raycastWithSnapping', 'rectangleRaycast']) {
+        it(`FragmentsModel.${m}`, () => expect(fuehrt(MODELL, m)).toBe(true));
+    }
+
+    it('die Normale im Treffer ist OPTIONAL — der Zeiger braucht einen Billboard-Rückfall', () => {
+        const rumpf = quelle.slice(quelle.indexOf('export declare interface RaycastResult'));
+        const ende = rumpf.slice(0, rumpf.indexOf('\n}'));
+        expect(ende).toMatch(/^\s+normal\?: THREE\.Vector3;/m);
+        expect(ende).toMatch(/^\s+point: THREE\.Vector3;/m);
+        expect(ende).toMatch(/snappingClass: SnappingClass;/);
+        expect(ende).toMatch(/snappedEdgeP1\?: THREE\.Vector3;/);
+    });
+
+    it('die Fangklassen heissen POINT, LINE, FACE — und sind zur Laufzeit da', async () => {
+        const rumpf = quelle.slice(quelle.indexOf('export declare enum SnappingClass'));
+        const ende = rumpf.slice(0, rumpf.indexOf('\n}'));
+        for (const k of ['POINT', 'LINE', 'FACE']) expect(ende).toContain(k);
+        const FRAGS = await import('@thatopen/fragments');
+        expect(FRAGS.SnappingClass.POINT).toBe(0);
+        expect(FRAGS.SnappingClass.LINE).toBe(1);
+    });
+
+    it('der Rahmen nimmt topLeft/bottomRight/fullyIncluded — Window gegen Crossing', () => {
+        const rumpf = quelle.slice(quelle.indexOf('export declare interface RectangleRaycastData'));
+        const ende = rumpf.slice(0, rumpf.indexOf('\n}'));
+        for (const f of ['topLeft: THREE.Vector2', 'bottomRight: THREE.Vector2', 'fullyIncluded: boolean', 'dom: HTMLCanvasElement']) {
+            expect(ende).toContain(f);
+        }
+        const antwort = quelle.slice(quelle.indexOf('export declare interface RectangleRaycastResult'));
+        expect(antwort.slice(0, antwort.indexOf('\n}'))).toContain('localIds: number[]');
+    });
+
+    it('der Rahmen rechnet in CLIENT-Pixeln wie der Zeiger — beide über screenToCast', () => {
+        // Sonst läge das Rechteck um den Canvas-Versatz daneben, und niemand
+        // sähe es: der Rahmen träfe einfach andere Bauteile.
+        const mjs = fs.readFileSync(MJS, 'utf8');
+        expect(mjs).toMatch(/screenRectToFrustum\([^)]*\)\{return this\.screenToCast\(/);
+    });
+});
+
+describe('Der Ladeversatz steht in baseCoordinates, nicht in object.position (2026-09-08)', () => {
+    it('der Manager führt `baseCoordinates` und die Einstellung `autoCoordinate`', () => {
+        expect(fuehrt(MANAGER, 'baseCoordinates')).toBe(true);
+        expect(/baseCoordinates:\s*number\[\]\s*\|\s*null/.test(MANAGER)).toBe(true);
+        expect(/autoCoordinate:\s*boolean/.test(MANAGER)).toBe(true);
+    });
+
+    it('das Modell nennt seinen Koordinationspunkt über `getCoordinates()`', () => {
+        expect(/getCoordinates\(\):\s*Promise<number\[\]>/.test(MODELL)).toBe(true);
+    });
+
+    it('das ERSTE Modell wird beim Laden nicht bewegt — nur die Basis gesetzt (gebauter Rumpf)', () => {
+        const mjs = fs.readFileSync(MJS, 'utf8');
+        // `if (this.baseCoordinates === null) this.baseCoordinates = t; else … object.position.add(…)`
+        expect(/null===this\.baseCoordinates\)this\.baseCoordinates=/.test(mjs)).toBe(true);
+        expect(/object\.position\.add\(/.test(mjs)).toBe(true);
+    });
+});

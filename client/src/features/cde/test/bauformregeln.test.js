@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
     MITGELIEFERTE_REGELN, abdeckung, bauformAusRegel, ladeRegeln, namensstamm,
-    namensvorschlaege, regelAus,
+    namensvorschlaege, regelAus, kategorievorschlaege, alleVorschlaege,
 } from '../services/bauform/Bauformregeln.js';
 import { bestimme } from '../services/bauform/Bauformen.js';
 import { beforeEach } from 'vitest';
@@ -285,6 +285,55 @@ describe('Zuordnen über den Store — der Weg, auf dem die Regel entsteht', () 
         expect(treffend[0].bauform).toBe('achse+profil');
     });
 
+    it('GRUPPE heisst contains — sonst trifft die Zuordnung nichts', async () => {
+        // Der Weg, den kein Test kreuzte (2026-09-03): die Oberfläche bot eine
+        // Gruppenzeile an, gab `art: 'gruppe'` mit, `ordneZu` liess es fallen
+        // und `regelAus` schrieb `equals`. Auf „Haltung 1" … „Haltung 18"
+        // passte das NIE. Die Abdeckung blieb null, ohne jede Meldung.
+        //
+        // `regelAus` mit `art: 'gruppe'` war seit jeher geprüft — nur eben
+        // direkt, nicht über den Weg, den die Oberfläche wirklich nimmt.
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: PROXY, name: 'Rohrleitung', art: 'gruppe',
+                          bauform: 'achse+profil' }, ziel);
+
+        const geschrieben = ziel.gespeichert().find(r => r.condition?.value === 'Rohrleitung');
+        expect(geschrieben.condition.operator).toBe('contains');
+        expect(bauformAusRegel(ziel.gespeichert(), ctx('Rohrleitung 17')).bauform).toBe('achse+profil');
+    });
+
+    it('ordnet auch über PredefinedType zu — für Bauteile ohne Namen', async () => {
+        // Die Erdbau-Lieferungen im Testordner tragen an ihren
+        // IfcEarthworksFill `Name = $`. Eine Regel-Maschine, die nur `Name`
+        // lesen kann, hat für solche Dateien schlicht kein Werkzeug.
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: 'IFCCIVILELEMENT', name: 'TERRAIN',
+                          propertyName: 'PredefinedType', bauform: 'hoehenfeld' }, ziel);
+
+        const treffer = bauformAusRegel(ziel.gespeichert(), {
+            category: 'IFCCIVILELEMENT', attributes: { Name: '', PredefinedType: 'TERRAIN' }, psets: {},
+        });
+        expect(treffer.bauform).toBe('hoehenfeld');
+        // Und ein anderer Untertyp derselben Kategorie bleibt unberührt.
+        expect(bauformAusRegel(ziel.gespeichert(), {
+            category: 'IFCCIVILELEMENT', attributes: { PredefinedType: 'RETAININGWALL' }, psets: {},
+        })).toBe(null);
+    });
+
+    it('Regeln auf verschiedene FELDER räumen einander nicht weg', async () => {
+        const b = useBearbeitung();
+        await b.ladeProfile(null);
+        const ziel = fakeRepo();
+        await b.ordneZu({ category: PROXY, name: 'X', bauform: 'koerper' }, ziel);
+        await b.ordneZu({ category: PROXY, name: 'X', propertyName: 'ObjectType',
+                          bauform: 'hoehenfeld' }, ziel);
+        expect(ziel.gespeichert().filter(r => r.condition?.value === 'X')).toHaveLength(2);
+    });
+
     it('nimmt eine Zuordnung mit null zurück — dann entscheidet wieder die Geometrie', async () => {
         const b = useBearbeitung();
         await b.ladeProfile(null);
@@ -300,5 +349,44 @@ describe('Zuordnen über den Store — der Weg, auf dem die Regel entsteht', () 
         const kaputt = { mitVorrang: async () => null, set: async () => { throw new Error('kein Netz'); } };
         await b.ordneZu({ category: PROXY, name: 'Rohr', bauform: 'achse+profil' }, kaputt);
         expect(bauformAusRegel(b.regeln, ctx('Rohr')).bauform).toBe('achse+profil');
+    });
+});
+
+describe('Kategorie-Zeilen (2026-09-07) — die Datei, die keine Namen hat', () => {
+    const OHNE = [
+        { category: 'IFCEARTHWORKSFILL', attributes: { Name: '' }, ort: { modelId: 'm', localId: 5 } },
+        { category: 'IFCEARTHWORKSFILL', attributes: { Name: '' }, ort: { modelId: 'm', localId: 9 } },
+        { category: PROXY, attributes: { Name: 'Haltung 1' }, ort: { modelId: 'm', localId: 1 } },
+    ];
+
+    it('namensvorschlaege bleibt, was es war — Unbenanntes übergeht es weiter', () => {
+        expect(namensvorschlaege(OHNE).map(v => v.name)).toEqual(['Haltung 1']);
+    });
+
+    it('kategorievorschlaege gibt JEDER Kategorie eine Zeile, mit Beispiel für die Signatur', () => {
+        const k = kategorievorschlaege(OHNE);
+        expect(k).toEqual([
+            { category: 'IFCEARTHWORKSFILL', name: '', anzahl: 2, art: 'kategorie', beispiel: { modelId: 'm', localId: 5 } },
+            { category: PROXY, name: '', anzahl: 1, art: 'kategorie', beispiel: { modelId: 'm', localId: 1 } },
+        ]);
+    });
+
+    it('alleVorschlaege hält je Kategorie zusammen, Kategorie-Zeile zuletzt', () => {
+        const a = alleVorschlaege(OHNE);
+        expect(a.map(v => `${v.category}:${v.art}`)).toEqual([
+            'IFCBUILDINGELEMENTPROXY:genau', 'IFCBUILDINGELEMENTPROXY:kategorie', 'IFCEARTHWORKSFILL:kategorie',
+        ]);
+    });
+
+    it('eine Kategorie-Regel hat kein Merkmal, ist schwächer als jede benannte — und trifft die ganze Kategorie', () => {
+        const r = regelAus({ category: 'IFCEARTHWORKSFILL', name: '', bauform: 'hoehenfeld', art: 'kategorie' });
+        expect(r.condition).toEqual({ category: 'IFCEARTHWORKSFILL' });
+        expect(r.priority).toBeLessThan(regelAus({ category: PROXY, name: 'Haltung', bauform: 'koerper' }).priority);
+        expect(bauformAusRegel([r], ctx('', 'IFCEARTHWORKSFILL'))?.bauform).toBe('hoehenfeld');
+        expect(bauformAusRegel([r], ctx('irgendwas', 'IFCEARTHWORKSFILL'))?.bauform).toBe('hoehenfeld');
+        expect(bauformAusRegel([r], ctx('', PROXY))).toBeNull();
+        // Und die benannte gewinnt über der Kategorie:
+        const genau = regelAus({ category: 'IFCEARTHWORKSFILL', name: 'Damm', bauform: 'koerper' });
+        expect(bauformAusRegel([r, genau], ctx('Damm', 'IFCEARTHWORKSFILL'))?.bauform).toBe('koerper');
     });
 });

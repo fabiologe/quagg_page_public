@@ -35,6 +35,8 @@ const DIENSTE = [
   { datei: 'services/IfcGridAxes.js',    feld: 'gridAxes' },
   { datei: 'services/IfcSection.js',     feld: 'section' },
   { datei: 'services/IfcStoreys.js',     feld: 'storeys' },
+  // Teil XVI: der eine Besitzer temporärer Grafik (Zeiger, Vorschau, Griffe, Fang).
+  { datei: 'services/IfcOverlay.js',     feld: 'overlay' },
 ];
 
 describe('Hausmuster der Dienste', () => {

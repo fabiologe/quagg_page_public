@@ -6,10 +6,12 @@
  * außerhalb der Komponente lesen ihn (das HUD und der Planexport), und er
  * soll eine Sitzung überleben. **Composable = Verhalten, Store = Zustand.**
  *
- * Der Modus sperrt die Auswahl (`selection.setMode('disabled')`), damit ein
- * Klick nicht gleichzeitig ein Bauteil wählt UND einen Messpunkt setzt. Diese
- * Sperre teilt sich das Messen mit den Annotationen — beide dürfen deshalb
- * nie gleichzeitig an sein.
+ * DEN AUSWAHL-MODUS SETZT DER VIEWER (Teil XVI, S1), abgeleitet aus allen
+ * Werkzeug-Zuständen — nicht dieses Composable. Vorher schalteten Messen und
+ * Notiz die Auswahl selbst auf „disabled"; mit der scharfen Bearbeitung
+ * als drittem Zustand wären das drei Schreiber auf einen Modus gewesen, und
+ * der letzte hätte gewonnen. Der Tipp kommt als VERBRAUCHER des
+ * Zeiger-Stapels an (`klick`), der Schwebe-Marker über `bewegungAn`.
  */
 
 import { ref } from 'vue';
@@ -17,7 +19,7 @@ import { ref } from 'vue';
 /** Wie lange eine Rückmeldung stehen bleibt (ms). */
 const MELDUNG_MS = 3500;
 
-export function useMessen({ engine, ifc, selection, slot = null }) {
+export function useMessen({ engine, ifc, slot = null }) {
     const aktiv = ref(false);
     /** Kurze Rückmeldung am Bildrand: { text, ts } oder null. */
     const meldung = ref(null);
@@ -42,7 +44,6 @@ export function useMessen({ engine, ifc, selection, slot = null }) {
             aktiv.value = false;
             meldung.value = null;
             hinweis.value = null;
-            selection()?.setMode('single');
             slot?.frei?.('messen');
         } else {
             engine.value?.enableMeasureMode();
@@ -51,7 +52,6 @@ export function useMessen({ engine, ifc, selection, slot = null }) {
             // DER EINE SLOT (U1): Messen meldet sich an und hinterlegt den
             // Ausschalter — das nächste Werkzeug räumt es damit selbst.
             slot?.belege?.('messen', () => beenden());
-            selection()?.setMode('disabled');
         }
     }
 
@@ -102,12 +102,20 @@ export function useMessen({ engine, ifc, selection, slot = null }) {
         return true;
     }
 
-    /** Schwebender Zeiger im Messmodus — zeigt den Fangpunkt. */
+    /** Schwebender Zeiger im Messmodus — zeigt den Fangpunkt (eigener Raycast). */
     async function bewegung(x, y) {
         if (aktiv.value) await engine.value?.updateMeasureHover(x, y);
     }
 
-    return { aktiv, meldung, hinweis, umschalten, beenden, alleEntfernen, entferne, klick, bewegung };
+    /**
+     * Dasselbe, aber mit einem schon bekannten Weltpunkt — der Zeiger-Stapel
+     * hat ihn bereits geholt; ein zweiter Raycast je Bewegung wäre Verschwendung.
+     */
+    function bewegungAn(punkt) {
+        if (aktiv.value) engine.value?.updateMeasureHoverAn?.(punkt ?? null);
+    }
+
+    return { aktiv, meldung, hinweis, umschalten, beenden, alleEntfernen, entferne, klick, bewegung, bewegungAn };
 }
 
 /** Länge in der Einheit, die zur Größenordnung passt. Rein, damit prüfbar. */

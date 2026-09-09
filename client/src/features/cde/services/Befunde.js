@@ -47,6 +47,16 @@ export const REGELWERK = Object.freeze({
     laengeHoechstM: 100,
     /** m; wie weit ein Rohrende von einem Bauwerk entfernt sein darf. */
     netzToleranzM: 0.001,
+    /** m; zwei topologisch fremde Hüllen näher als das sind „nah" (Beziehungsindex, Teil XVII). */
+    naeheSchwelleM: 0.5,
+    /** m; ein Punktobjekt so nah an einer Achse gilt als „an der Achse" (Station). */
+    stationAbstandM: 0.5,
+    /** m; Rohrscheitel unter Gelände — darunter ist die Überdeckung gering (Faustregel, frostfrei/Verkehrslast). */
+    ueberdeckungMindestM: 0.8,
+    /** m; lichter Abstand zweier Läufe an einer Kreuzung (Faustregel; Sparten nach DVGW/Netzbetreiber). */
+    kreuzungMindestabstandM: 0.2,
+    /** m; lichter Abstand zweier parallel laufender Leitungen (Faustregel; Sparten nach DVGW/Netzbetreiber). */
+    mindestabstandParallelM: 0.4,
     /** Nennweiten, die üblicherweise vorkommen. */
     dnReihe: Object.freeze([
         100, 125, 150, 200, 250, 300, 350, 400, 500, 600,
@@ -89,6 +99,12 @@ export const KUREN = Object.freeze({
     dn_nimmt_ab:         { bearbeitung: 'profilgroesse-setzen' },
     profilform_widerspruch: { bearbeitung: 'profilform-setzen' },
     loses_ende:          { bearbeitung: 'an-schacht-anschliessen' },
+    // Aus dem Beziehungsindex (Teil XVII, B4):
+    ueberdeckung_gering: { bearbeitung: 'sohlhoehen-setzen' },
+    kreuzung_abstand:    { bearbeitung: 'sohlhoehen-setzen' },
+    mindestabstand:      { bearbeitung: 'verschieben' },
+    durchdringung:       { bearbeitung: 'verschieben' },
+    schacht_auf_haltung: { bearbeitung: 'haltung-teilen' },
 });
 
 /** Ein Befund — immer dieselbe Form, damit die Anzeige nichts wissen muss. */
@@ -316,4 +332,85 @@ export function befundeFuerNetz(netz, regelwerk = REGELWERK) {
     }
 
     return out;
+}
+
+
+/**
+ * BEFUNDE AUS DEM BEZIEHUNGSINDEX (Teil XVII, B4) — die Familie „Raum" und
+ * „Nachbarschaft" von Teil IX §4, endlich mit Daten: Überdeckung für ALLE
+ * Läufe (nicht nur im Kanalgraben), lichter Abstand an Kreuzungen und in
+ * Parallellage, Durchdringungen, ein Schacht mitten auf einer Haltung ohne
+ * Anschluss (der fehlende Teilungspunkt — mit Kur und Station).
+ *
+ * Nur Beziehungen der Güte `form` tragen ein Mass, dem man trauen kann; die
+ * Hüllen-Kandidaten (Körper zu Körper) bleiben der Server-Kollisionsprüfung.
+ * Beraten, nicht verbieten; abgeleitet, nie gespeichert; jeder Befund nennt
+ * Wert, Grenze und Herkunft.
+ *
+ * @param {object} index      aus `baueBeziehungen` (relationen, objekt)
+ * @param {object} [regelwerk]
+ * @returns {Map<string, Array>} GlobalId → Befunde
+ */
+export function befundeAusBeziehungen(index, regelwerk = REGELWERK) {
+    const je = new Map();
+    const add = (gid, b) => { if (!gid) return; if (!je.has(gid)) je.set(gid, []); je.get(gid).push(b); };
+    const rel = index?.relationen ?? [];
+    const radius = (gid) => { const o = index?.objekt?.(gid); const dn = o?.achse?.dn; return Number.isFinite(dn) && dn > 0 ? dn / 2000 : 0; };
+    const name = (gid, n) => n || gid;
+    const ueberMin = regelwerk.ueberdeckungMindestM ?? 0.8;
+    const kreuzMin = regelwerk.kreuzungMindestabstandM ?? 0.2;
+    const parallelMin = regelwerk.mindestabstandParallelM ?? 0.4;
+    // Ein Lauf IM OFFENEN AUSHUB (enthalten in einem IfcEarthworksCut): das
+    // Gelände darüber ist die Grabensohle — ein Bauzustand, keine Überdeckung.
+    // Die Überdeckung des Fertiggeländes meldet die Ableitung selbst.
+    const imAushub = new Set();
+    for (const r of rel) {
+        if (r.art !== 'enthalten') continue;
+        const huelle = index?.objekt?.(r.b);
+        if (String(huelle?.kategorie ?? '').toUpperCase() === 'IFCEARTHWORKSCUT') imAushub.add(r.a);
+    }
+
+    for (const r of rel) {
+        const m = r.mass ?? {};
+        if (r.art === 'auflage') {
+            // Nur LÄUFE — ein Schacht steht „auf". Und nicht nur „unter": ein
+            // Rohr, dessen Scheitel ÜBER dem Gelände liegt, hat die geringste
+            // Überdeckung von allen (negativ) — das ist kein Grund zu schweigen.
+            if (!index?.objekt?.(r.a)?.achse || !Number.isFinite(m.ueberdeckung)) continue;
+            if (imAushub.has(r.a)) continue;
+            if (m.ueberdeckung < ueberMin) {
+                add(r.a, befund('ueberdeckung_gering', 'warnung',
+                    `Überdeckung ${_m(m.ueberdeckung)} unter ${_m(ueberMin)} (Rohrscheitel gegen ${name(r.b, r.bn)})`,
+                    { wert: _m(m.ueberdeckung), grenze: `mindestens ${_m(ueberMin)}` }));
+            }
+        } else if (r.art === 'kreuzung') {
+            if (!Number.isFinite(m.hoehenabstand)) continue;
+            const licht = Math.abs(m.hoehenabstand) - radius(r.a) - radius(r.b);
+            if (licht < kreuzMin) {
+                const text = (ich, andere, anderesName) => `${licht < 0 ? 'Durchdringt' : 'Kreuzt'} ${name(andere, anderesName)} mit ${_m(Math.max(0, licht))} lichtem Abstand — mindestens ${_m(kreuzMin)}`;
+                add(r.a, befund('kreuzung_abstand', 'warnung', text(r.a, r.b, r.bn), { wert: _m(Math.max(0, licht)), grenze: `mindestens ${_m(kreuzMin)}` }));
+                add(r.b, befund('kreuzung_abstand', 'warnung', text(r.b, r.a, r.an), { wert: _m(Math.max(0, licht)), grenze: `mindestens ${_m(kreuzMin)}` }));
+            }
+        } else if (r.art === 'naehe') {
+            if (r.guete !== 'form' || !Number.isFinite(m.abstand) || m.abstand >= parallelMin) continue;
+            add(r.a, befund('mindestabstand', 'warnung', `${name(r.b, r.bn)} in ${_m(m.abstand)} — mindestens ${_m(parallelMin)}`, { wert: _m(m.abstand), grenze: `mindestens ${_m(parallelMin)}` }));
+            add(r.b, befund('mindestabstand', 'warnung', `${name(r.a, r.an)} in ${_m(m.abstand)} — mindestens ${_m(parallelMin)}`, { wert: _m(m.abstand), grenze: `mindestens ${_m(parallelMin)}` }));
+        } else if (r.art === 'schnitt') {
+            if (r.guete !== 'form') continue;               // Hüllen-Kandidaten prüft der Server
+            add(r.a, befund('durchdringung', 'warnung', `Durchdringt ${name(r.b, r.bn)}`, { wert: Number.isFinite(m.abstand) ? _m(m.abstand) : null, grenze: 'kein Schnitt' }));
+            add(r.b, befund('durchdringung', 'warnung', `Durchdringt ${name(r.a, r.an)}`, { wert: Number.isFinite(m.abstand) ? _m(m.abstand) : null, grenze: 'kein Schnitt' }));
+        } else if (r.art === 'station') {
+            // Nur ein KNOTEN (Schacht) auf der Haltung ist der fehlende
+            // Teilungspunkt — ein Fundament neben der Achse ist keiner.
+            if (!Number.isFinite(m.station) || !index?.objekt?.(r.a)?.knoten) continue;
+            // Am Schacht: Hinweis ohne Kur. An der Haltung: die Kur „Haltung teilen" mit der Station.
+            const amSchacht = befund('schacht_auf_haltung', 'hinweis', `Liegt auf ${name(r.b, r.bn)} bei St. ${_m(m.station)}, ohne Anschluss (${_m(m.quer ?? 0)} neben der Achse)`, { wert: _m(m.quer ?? 0) });
+            amSchacht.kur = null;
+            add(r.a, amSchacht);
+            const b = befund('schacht_auf_haltung', 'hinweis', `${name(r.a, r.an)} liegt bei St. ${_m(m.station)} auf der Haltung, ohne Anschluss — hier teilen?`, { wert: _m(m.station) });
+            b.kur = { bearbeitung: 'haltung-teilen', werte: { station: Math.round(m.station * 100) / 100 } };
+            add(r.b, b);
+        }
+    }
+    return je;
 }

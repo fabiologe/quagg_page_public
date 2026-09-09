@@ -28,9 +28,14 @@
  * ({Name}, {Pset.Prop}, plus {laenge:m} und {gefaelle}); gezeichnet wird im
  * Plotter (_drawAxisLabels) — rotiert am längsten Segment.
  *
- * Koordinaten-Konvention (wie _applyPlacement im Plotter): lokales IFC-X →
- * three-x, IFC-Y → three-z, IFC-Z (Höhe) → three-y. Am Realmodell verifizieren
- * — bei abweichenden Autorensystemen ist die Höhenachse die erste Verdächtige.
+ * Koordinaten-Konvention — DIESELBE wie web-ifc/fragments für das Netz:
+ * IFC-X → three-x, IFC-Z (Höhe) → three-y, IFC-Y (Nord) → three-**minus**-z.
+ * Am Realmodell verifiziert (2026-09-08, ENQUIER FK001): die Rohdreiecke aus
+ * `GetFlatMesh` liegen bei z ≈ −5.465.712, die Achse lag bis dahin bei
+ * +5.465.712 — gespiegelt, und niemand sah es, weil der Ladeversatz in X/Z
+ * zugleich null war (siehe `ladeversatzAus` in IfcEngine). `Projektkoordinaten`
+ * rechnet `nord = −roh.z`; wer hier +Y nähme, spiegelte jede Achse am Ost-West-
+ * Meridian gegen die Fragment-Welt.
  */
 
 import * as THREE from 'three';
@@ -148,8 +153,9 @@ function _achseAusExtrusion(product) {
     const b = dir.clone().multiplyScalar(tiefe).applyMatrix4(ges);
 
     return {
-        // IFC-Raum → three: x bleibt, IFC-Z wird Höhe, IFC-Y wird Tiefe.
-        punkte: [{ x: a.x, y: a.z, z: a.y }, { x: b.x, y: b.z, z: b.y }],
+        // IFC-Raum → three: x bleibt, IFC-Z wird Höhe, IFC-Y wird −z
+        // (`0 - …` statt `-…`, damit aus 0 kein −0 wird).
+        punkte: [{ x: a.x, y: a.z, z: 0 - a.y }, { x: b.x, y: b.z, z: 0 - b.y }],
         dn: _dnAusProfil(solid.SweptArea),
     };
 }
@@ -218,7 +224,7 @@ function _extractAxisPoints(product) {
 
 // Die gesamte Placement-Kette rechnet im IFC-ACHSRAUM (x=IFC-X, y=IFC-Y,
 // z=IFC-Z=Höhe) — erst NACH der Transformation wird auf die three-Konvention
-// gemappt: three.x = X, three.y = Z (Höhe), three.z = Y.
+// gemappt: three.x = X, three.y = Z (Höhe), three.z = −Y (siehe Kopf).
 function _collectPolylinePoints(item, matrix, out) {
     if (!item) return;
     if (item.Points) {
@@ -228,7 +234,7 @@ function _collectPolylinePoints(item, matrix, out) {
             const val = (v) => (typeof v === 'object' ? v?.value : v) ?? 0;
             const v = new THREE.Vector3(val(c[0]), val(c[1]), c.length > 2 ? val(c[2]) : 0);
             v.applyMatrix4(matrix);                       // IFC-Raum
-            out.push({ x: v.x, y: v.z, z: v.y });         // → three-Konvention
+            out.push({ x: v.x, y: v.z, z: 0 - v.y });     // → three-Konvention
         }
         return;
     }

@@ -61,6 +61,22 @@ describe('fange', () => {
         expect(r.aktiv).toHaveLength(2);
     });
 
+    it('der AUSGANG ist keine Ecke: ein Griff, der ihn verlässt, fällt nicht auf ihn zurück', () => {
+        // Quer- und Verlängerungslinie schneiden sich im Ausgang (0/0). Ohne
+        // `meide` sprang jeder Zug unter 1,5 × Radius auf null zurück.
+        const quer = { art: 'quer', name: 'S7', punkt: { ost: 0, nord: 0 }, richtung: { ost: 0, nord: 1 } };
+        const laengs = { art: 'verlaengerung', name: 'H1', punkt: { ost: 0, nord: 0 }, richtung: { ost: 1, nord: 0 } };
+        const ohne = fange({ punkt: { ost: 0.3, nord: 0.2 }, linien: [quer, laengs], radius: 0.6 });
+        expect(ohne.punkt).toEqual({ ost: 0, nord: 0 });
+        const mit = fange({ punkt: { ost: 0.3, nord: 0.2 }, linien: [quer, laengs], radius: 0.6, meide: { ost: 0, nord: 0 } });
+        expect(mit.punkt).not.toEqual({ ost: 0, nord: 0 });
+        expect(mit.aktiv).toHaveLength(1);                      // aufs Lot der näheren Linie
+        // Eine ECHTE Ecke abseits des Ausgangs fängt weiter.
+        const flucht = { art: 'flucht', name: 'S9', punkt: { ost: 5, nord: 0 }, richtung: { ost: 0, nord: 1 } };
+        const ecke = fange({ punkt: { ost: 4.8, nord: 0.1 }, linien: [laengs, flucht], radius: 0.6, meide: { ost: 0, nord: 0 } });
+        expect(ecke.punkt).toEqual({ ost: 5, nord: 0 });
+    });
+
     it('ein FERNER Schnittpunkt zieht den Griff nicht übers Blatt', () => {
         // Beide Linien in Reichweite, aber der Schnitt liegt weit weg:
         // fast parallele Linien im engen Winkel. Es gilt die nächste Linie.

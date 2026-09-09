@@ -171,6 +171,28 @@
             <span class="tb-dim">{{ GUETE_TEXT[herleitung.guete] }}</span>
           </dd>
 
+          <!-- WAS GEMESSEN WURDE (2026-09-07). Ohne Deklaration schlägt die
+               Formsignatur vor — hier steht der Grund, und ein Klick macht
+               den Vorschlag zur Auslegung. Die Geometrie schlägt vor, der
+               Mensch erklärt. -->
+          <template v-if="herleitung.grund && (herleitung.quelle === 'geometrie' || herleitung.quelle === 'rueckfall')">
+            <dt>Gemessen</dt>
+            <dd>
+              <span class="tb-dim">{{ herleitung.grund }}</span>
+              <button
+                v-if="herleitung.quelle === 'geometrie'"
+                class="tb-kur tb-bestaetigen"
+                :disabled="!bearbeitung.modusAn"
+                :title="bearbeitung.modusAn
+                  ? `Als Auslegung übernehmen — ab dann gilt ${herleitung.bauformTitel} für dieses Bauteil`
+                  : 'Erst den Bearbeiten-Modus einschalten (E)'"
+                @click="bearbeitung.starteMitVorschlag('bauform-auslegen', { bauform: herleitung.bauform })"
+              >
+                <CdeIcon name="bauform" :size="11" /> Als Auslegung übernehmen
+              </button>
+            </dd>
+          </template>
+
           <dt>Typprofil</dt>
           <dd v-if="herleitung.profilAus">
             <code>{{ herleitung.profilAus }}</code>
@@ -200,18 +222,20 @@
         </p>
       </details>
 
-      <!-- Das Formular der scharfen Bearbeitung verdrängt die Liste. -->
-      <CdeBearbeitungForm
-        v-if="bearbeitung.scharf"
-        :felder="bearbeitung.felder"
-        :werte="bearbeitung.werte"
-        :fehler="bearbeitung.fehler"
-        :hinweis="festlegungsHinweis"
-        :bereit="bearbeitung.bereit"
-        @setze-wert="bearbeitung.setzeWert"
-        @uebernehmen="uebernehmen"
-        @abbrechen="bearbeitung.abbrechen()"
-      />
+      <!-- Die scharfe Bearbeitung verdrängt die Liste — aber ihr FORMULAR
+           steht nur noch in der Kontextleiste unter dem Bild (Teil XVI, S6:
+           es stand dreimal im Bild). Hier bleibt, was die Toolbox weiss:
+           was die Bearbeitung bewirkt, und der Ausgang. -->
+      <div v-if="bearbeitung.scharf" class="tb-scharf">
+        <p class="tb-scharf-titel">
+          <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
+          <span v-if="bearbeitung.bauteil?.name" class="tb-scharf-subjekt">{{ bearbeitung.bauteil.name }}</span>
+        </p>
+        <p v-if="festlegungsHinweis" class="tb-hinweis">{{ festlegungsHinweis }}</p>
+        <p class="tb-warum">Eingabe unten in der Leiste — Griffe im Bild ziehen dieselben Felder.</p>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
+        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
+      </div>
 
       <template v-else>
         <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
@@ -278,29 +302,27 @@
  */
 import { computed, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
-import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { useCdeStore } from '../stores/useCdeStore.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { hatHoehenbezug, nnAusWelt } from '../services/Hoehenbezug.js';
 import { formatGefaelle } from '../services/AxisAnnotations.js';
-import { modellHerkunft } from '../services/IfcAutor.js';
 
 const bearbeitung = useBearbeitung();
-const cde = useCdeStore();
 const ifc = useIfcStore();
 const api = useViewerApi();
 
 const zeichenWerkzeuge = ausGruppe('erzeugen');
 
 const QUELLE_TEXT = Object.freeze({
-  regel:     'einer Büroregel',
-  typprofil: 'dem Typprofil',
-  geometrie: 'der Geometrie',
-  rueckfall: 'keiner Angabe (Rückfall)',
+  bauplan:    'dem eigenen Rezept',
+  einzelfall: 'einer Auslegung für dieses Bauteil',
+  regel:      'einer Büroregel',
+  typprofil:  'dem Typprofil',
+  geometrie:  'der Geometrie',
+  rueckfall:  'keiner Angabe (Rückfall)',
 });
 
 const GUETE_TEXT = Object.freeze({
@@ -410,7 +432,10 @@ function kurTitel(befund) {
 const mehrfach = computed(() => {
   const n = bearbeitung.bauteile.length;
   if (n < 2) return null;
-  const viele = herleitung.gruppen
+  // `herleitung` ist eine Computed — im Skript braucht sie `.value` (im
+  // Template nicht). Ohne stand hier `undefined.flatMap`: JEDE Mehrfachauswahl
+  // riss seit 14.10 die Toolbox beim Rendern (Headless-Befund B2, 2026-09-08).
+  const viele = (herleitung.value?.gruppen ?? [])
     .flatMap(g => g.eintraege)
     .filter(e => nachId(e.id)?.mehrfach)
     .map(e => e.titel);
@@ -460,46 +485,6 @@ const festlegungsHinweis = computed(() => {
 /** Was die letzte Bearbeitung bewirkt hat — der Nutzer muss es SEHEN. */
 const rueckmeldung = ref('');
 
-/**
- * Übernehmen: eintragen UND anwenden.
- *
- * Das Eintragen allein reichte nicht — es schrieb ins Journal, und das Modell
- * rührte sich erst beim nächsten Laden. Eine gesetzte Sohlhöhe sah damit genau
- * so aus wie ein kaputter Knopf.
- *
- * Und die Rückmeldung gehört dazu: eine Festlegung, die das Autorenmodell
- * absichtlich NICHT anfasst (Querschnittsgröße, Stärke), sieht ohne sie
- * ebenfalls aus wie nichts. Richtiges Verhalten darf nicht wie kaputtes
- * aussehen.
- */
-async function uebernehmen() {
-  rueckmeldung.value = '';
-  try {
-    // `basis` und `modell` gehören zu jedem Eintrag, der das Modell berührt —
-    // ohne sie ist der Drei-Wege-Vergleich abgeschaltet und eine Festlegung auf
-    // ein selbst erzeugtes Bauteil unanwendbar.
-    const el = bearbeitung.bauteil;
-    const eintrag = await bearbeitung.ausfuehren({
-      wer: cde.bearbeiter || '',
-      modellSha: api.getLoadedModelSha?.() ?? null,
-      basis: el?.globalId ? api.lieferstandVon?.(el.globalId) : undefined,
-      modell: el ? modellHerkunft(el.modelId) : undefined,
-    });
-    if (!eintrag) { rueckmeldung.value = bearbeitung.letzterGrund || 'Nichts eingetragen.'; return; }
-
-    const r = await api.wendeEintragAn?.(eintrag);
-    rueckmeldung.value = !r ? 'Eingetragen.'
-      : r.angewandt ? 'Übernommen.'
-      : r.nurFestlegung ? 'Als Festlegung geführt — die Geometrie bleibt beim Planer.'
-      : `Eingetragen, aber nicht angewandt: ${r.grund ?? 'unbekannt'}`;
-  } catch (fehler) {
-    // GESETZ 10: kein stilles Scheitern. Ohne diesen Fänger starb ein
-    // geworfener Fehler als unhandled rejection — der Knopf sah tot aus,
-    // und genau so wurde er gemeldet (2026-09-02).
-    console.error('cde: uebernehmen', fehler);
-    rueckmeldung.value = `Fehler: ${fehler?.message ?? fehler}`;
-  }
-}
 </script>
 
 <style scoped>
@@ -563,6 +548,7 @@ async function uebernehmen() {
 }
 .tb-kur:hover:not(:disabled) { background: var(--cde-fill-hover); }
 .tb-kur:disabled { opacity: 0.5; cursor: not-allowed; }
+.tb-bestaetigen { margin-top: 0.25rem; }
 
 .tb-geo {
   border: 1px solid var(--cde-line);
@@ -645,6 +631,11 @@ async function uebernehmen() {
   letter-spacing: 0.06em; color: var(--cde-text-dim);
 }
 .tb-warum { margin: 0; font-size: 0.68rem; color: var(--cde-text-dim); }
+/* Die scharfe Bearbeitung — ohne Formular (das steht in der Leiste). */
+.tb-scharf { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.4rem 0; }
+.tb-scharf-titel { margin: 0; display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: var(--cde-text); }
+.tb-scharf-subjekt { color: var(--cde-text-dim); font-weight: 400; }
+.tb-btn--aus { align-self: flex-start; }
 .tb-liste { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.15rem; }
 .tb-btn {
   display: flex; align-items: center; gap: 0.35rem;

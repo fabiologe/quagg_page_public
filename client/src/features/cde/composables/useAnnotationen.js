@@ -5,16 +5,15 @@
  * liegt nur das Verhalten: der Pin-Modus, das Anlegen per Klick, und die
  * Beobachtung, die das 3D-Bild dem Store folgen lässt.
  *
- * Der Pin-Modus sperrt die Auswahl, damit ein Klick nicht gleichzeitig ein
- * Bauteil wählt UND einen Pin setzt. Diese Sperre teilt er sich mit dem
- * Messen; deshalb beendet das Einschalten hier zuerst das Messen. Ohne das
- * stünden beide auf `disabled` und der Auswahlmodus käme beim Ausschalten des
- * einen zurück, während der andere noch läuft.
+ * DEN AUSWAHL-MODUS SETZT DER VIEWER (Teil XVI, S1), abgeleitet aus allen
+ * Werkzeug-Zuständen — siehe `useMessen`. Der Tipp kommt als Verbraucher des
+ * Zeiger-Stapels an (`klick`); die Exklusivität zum Messen ist Sache des
+ * Slots.
  */
 
 import { watch } from 'vue';
 
-export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint, aktiv, slot = null }) {
+export function useAnnotationen({ engine, ifc, cde, viewpoint, aktiv, slot = null }) {
     /**
      * Die Engine folgt dem Store.
      *
@@ -38,7 +37,6 @@ export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint
     function umschalten() {
         if (aktiv.value) {
             aktiv.value = false;
-            selection()?.setMode('single');
             slot?.frei?.('notiz');
         } else {
             // Die Hand-Kopplung „messen.beenden()" ist dem SLOT gewichen
@@ -46,7 +44,6 @@ export function useAnnotationen({ engine, ifc, cde, selection, messen, viewpoint
             // Vereinbarung zwischen zwei Composables.
             engine.value?.enableAnnotationMode();
             aktiv.value = true;
-            selection()?.setMode('disabled');
             slot?.belege?.('notiz', () => { if (aktiv.value) umschalten(); });
         }
     }

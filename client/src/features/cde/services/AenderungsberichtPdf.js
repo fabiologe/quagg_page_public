@@ -64,6 +64,24 @@ export function schreibeBericht(bericht) {
         y += 1.5;
     }
 
+    // ── 1b. Auslegung ───────────────────────────────────────────────────────
+    // Getrennt vom Stand und ausdrücklich als Nicht-Forderung überschrieben:
+    // hier steht, wie die CDE das gelieferte Modell LIEST. Wer den Bericht
+    // abarbeitet, soll das nicht als Arbeitsauftrag missverstehen — und wer
+    // widerspricht, korrigiert damit alle daraus abgeleiteten Massen.
+    if (bericht.auslegung?.length) {
+        abschnitt(`Auslegung — ${bericht.auslegung.length} Bauteile`);
+        text('KEINE Forderung: so liest die CDE Ihr Modell. Bitte prüfen — '
+            + 'davon hängen Gelände, Längsschnitt und Massen ab.',
+            { groesse: 8.5, abstand: 4 });
+        for (const z of bericht.auslegung) {
+            umbruch(10);
+            text(`${z.bauteil} — ${z.art}`, { groesse: 10, fett: true, abstand: 4.8 });
+            text(z.text, { groesse: 9.5, einzug: 4 });
+            y += 1.5;
+        }
+    }
+
     // ── 2. Verlauf ──────────────────────────────────────────────────────────
     abschnitt('Verlauf');
     for (const v of bericht.verlauf) {

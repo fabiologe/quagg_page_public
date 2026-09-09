@@ -34,6 +34,7 @@
  */
 
 import { AENDERUNGS_ARTEN, standMitEintragEbenen, vergleicheMitModell } from '../stores/useAenderungen.js';
+import { pruefmassGleich } from './geometrie/ops/Raster.js';
 
 /**
  * Welche Festlegungen lassen sich auf dieses Modell anwenden, und wo hakt es?
@@ -84,11 +85,43 @@ function _bezugsArm(eintrag, wert, leseBezug) {
     };
 }
 
-export function planeNachspielen(eintraege, leseLieferstand, { arten = null, standEintraege = null, leseBezug = null } = {}) {
+/**
+ * Der QUELLEN-ARM einer Ableitung (Teil XIV, G4) — das Gegenstück zum
+ * Bezugs-Arm: `quellBasis` ist die Momentaufnahme der Quelle beim Setzen
+ * (Prüfmass: Dreieckszahl, Ausdehnung), `leseQuellmass` liefert das
+ * heutige. Weicht es ab, hat der Planer die Quelle geändert — angewandt
+ * wird trotzdem (der Neuaufbau rechnet ohnehin auf der neuen Quelle), aber
+ * GEMELDET: laut, nicht blockierend, wie `nachgefuehrt`.
+ */
+function _quellenArm(eintrag, leseQuellmass) {
+    const p = eintrag?.nachher?.parameter;
+    const basis = p?.quellBasis;
+    if (eintrag?.art !== 'erzeugt' || !basis || typeof basis !== 'object' || !leseQuellmass) return null;
+    const quellen = p.quellen ?? (p.quelle ? { gelaende: p.quelle } : {});
+    const geaendert = [];
+    for (const [schlitz, massOderListe] of Object.entries(basis)) {
+        // Ein Schlitz darf eine LISTE tragen (B3): Masse und GlobalIds laufen
+        // Index für Index nebeneinander.
+        const gids = Array.isArray(quellen[schlitz]) ? quellen[schlitz] : [quellen[schlitz]];
+        const masse = Array.isArray(massOderListe) ? massOderListe : [massOderListe];
+        for (let i = 0; i < gids.length; i++) {
+            const gid = gids[i], mass = masse[i];
+            if (!gid || !mass) continue;
+            const ist = leseQuellmass(gid, mass);
+            if (!ist) continue;                          // CDE-Quelle oder nicht lesbar: kein Urteil
+            if (!pruefmassGleich(mass, ist)) geaendert.push(gid);
+        }
+    }
+    return geaendert.length ? geaendert : null;
+}
+
+export function planeNachspielen(eintraege, leseLieferstand, { arten = null, standEintraege = null, leseBezug = null, leseQuellmass = null } = {}) {
     const anzuwenden = [];
     const konflikte = [];
+    const hinweise = [];
     let nachgefuehrt = 0;
     let bezugFehlt = 0;
+    let quelleGeaendert = 0;
 
     const zuPruefen = arten ?? Object.entries(AENDERUNGS_ARTEN)
         .filter(([, a]) => a.beruehrtModell)
@@ -100,7 +133,14 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
             // Lieferstand zu suchen und dann „fehlt" zu melden, wäre ein
             // Fehlalarm mit Ansage.
             if (eintrag.modell === 'cde') {
-                anzuwenden.push({ globalId, art, wert, eintrag, modell: 'cde' });
+                const geaendert = _quellenArm(eintrag, leseQuellmass);
+                if (geaendert) {
+                    quelleGeaendert++;
+                    hinweise.push({ globalId, art, zustand: 'quelle_geaendert',
+                                    grund: `Quelle vom Planer geändert: ${geaendert.join(', ')}` });
+                }
+                anzuwenden.push({ globalId, art, wert, eintrag, modell: 'cde',
+                                  ...(geaendert ? { grund: 'quelle_geaendert' } : {}) });
                 continue;
             }
 
@@ -127,6 +167,7 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
         // es leer werden. Ein Ein-Schritt-Plan (`planFuerEintrag`) trägt die
         // Kennzeichnung nicht und lässt Erzeugtes deshalb in Ruhe.
         vollstaendig: true,
+        hinweise,
         zusammenfassung: {
             angewandt: anzuwenden.length,
             konflikte: konflikte.length,
@@ -134,6 +175,7 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
             ueberschnitten: konflikte.filter(k => k.zustand === 'konflikt').length,
             nachgefuehrt,
             bezugFehlt,
+            quelleGeaendert,
         },
     };
 }
@@ -145,7 +187,7 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
  * nicht durchgingen, sind die interessanten.
  */
 export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueberschnitten = 0,
-                                nurFestlegung = 0, nachgefuehrt = 0, bezugFehlt = 0 } = {}) {
+                                nurFestlegung = 0, nachgefuehrt = 0, bezugFehlt = 0, quelleGeaendert = 0 } = {}) {
     if (!angewandt && !konflikte && !nurFestlegung) return '';
     const teile = [`${angewandt} ${angewandt === 1 ? 'Festlegung' : 'Festlegungen'} angewandt`];
     // Getrennt genannt, weil es weder Erfolg noch Panne ist: die CDE ändert das
@@ -155,6 +197,7 @@ export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueber
     if (fehlend) teile.push(`${fehlend} × Bauteil nicht mehr im Modell`);
     if (nachgefuehrt) teile.push(`${nachgefuehrt} × dem Bezug nachgeführt`);
     if (bezugFehlt) teile.push(`${bezugFehlt} × Bezugsziel nicht mehr im Modell`);
+    if (quelleGeaendert) teile.push(`${quelleGeaendert} × Quelle vom Planer geändert — neu abgeleitet`);
     return teile.join(' · ');
 }
 
@@ -200,11 +243,22 @@ export function konfliktKarte(konflikte) {
  *   'nur-festlegung' berührt das Modell absichtlich nicht (Querschnittsgröße,
  *                    Stärke, Kostengruppe). Muss trotzdem GEMELDET werden,
  *                    sonst sieht richtiges Verhalten aus wie kaputtes.
+ *   'auslegung'      berührt das Modell ebenfalls nicht — aber aus dem
+ *                    GEGENTEILIGEN Grund. Eine Festlegung ist eine FORDERUNG
+ *                    an den Planer („die Sohle gehört auf 132,40"); eine
+ *                    Auslegung ist unsere LESART seines Modells („dieser
+ *                    Körper ist das Gelände"). Sie geht deshalb nicht in den
+ *                    Änderungsbericht, und die Rückmeldung darf nicht „die
+ *                    Geometrie bleibt beim Planer" lauten — es gibt nichts,
+ *                    das er ändern soll. Wirksam wird sie über die
+ *                    Entwertung (`FormSchreiber`), nicht über `wendeAn`.
  */
 export function anwendungsweg(eintrag) {
     if (!eintrag?.art) return 'nur-festlegung';
     if (eintrag.art === 'erzeugt') return 'neuaufbau';
-    return AENDERUNGS_ARTEN[eintrag.art]?.beruehrtModell ? 'einzeln' : 'nur-festlegung';
+    const art = AENDERUNGS_ARTEN[eintrag.art];
+    if (art?.auslegung) return 'auslegung';
+    return art?.beruehrtModell ? 'einzeln' : 'nur-festlegung';
 }
 
 /**

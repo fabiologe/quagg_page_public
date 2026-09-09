@@ -51,3 +51,42 @@ export function typKonstante(webIfcModul, name) {
     const ausDefault = webIfcModul?.default?.[k];
     return Number.isFinite(ausDefault) ? ausDefault : null;
 }
+
+/** Rückabbildung Zahl → Name, einmal je Modulobjekt gebaut. */
+const _rueckwaerts = new WeakMap();
+
+function _index(webIfcModul) {
+    const quelle = (webIfcModul && typeof webIfcModul === 'object')
+        ? (Number.isFinite(webIfcModul.IFCWALL) ? webIfcModul : (webIfcModul.default ?? webIfcModul))
+        : null;
+    if (!quelle) return new Map();
+    if (_rueckwaerts.has(quelle)) return _rueckwaerts.get(quelle);
+    const karte = new Map();
+    for (const [name, wert] of Object.entries(quelle)) {
+        if (!Number.isFinite(wert) || !/^IFC[A-Z0-9]+$/.test(name)) continue;
+        if (!karte.has(wert)) karte.set(wert, name);
+    }
+    _rueckwaerts.set(quelle, karte);
+    return karte;
+}
+
+/**
+ * Der IFC-Klassenname zu einer Typkonstante — die GEGENRICHTUNG.
+ *
+ * DER GRUND, warum es sie braucht: `IfcAPI.GetLine(...)` gibt in `.type` die
+ * ZAHL zurück, nicht den Namen (`1077100507`, nicht `IFCEARTHWORKSELEMENT`).
+ * Wer sie ungeprüft als Kategorie weiterreicht, füttert Typprofile,
+ * Bauformregeln und das Wörterbuch mit einer Ziffernfolge — kein Treffer,
+ * keine Meldung, und aus der Ferne sieht es aus, als kenne die CDE die Typen
+ * dieser Datei einfach nicht. Genau so lag es einen Nachmittag lang in
+ * `_gelaendeKontext` und im neuen Elementindex, bevor es auffiel.
+ *
+ * Nachgemessen: die Bibliothek exportiert 1.143 solcher Konstanten, und
+ * KEINE Zahl ist doppelt belegt — die Umkehrung ist also eindeutig.
+ *
+ * @returns {string|null} Klassenname in Grossschrift, oder `null`
+ */
+export function typName(webIfcModul, konstante) {
+    if (!Number.isFinite(konstante)) return null;
+    return _index(webIfcModul).get(konstante) ?? null;
+}

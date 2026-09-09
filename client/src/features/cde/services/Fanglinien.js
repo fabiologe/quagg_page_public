@@ -113,7 +113,10 @@ export function fanglinienFuer({ ausgang, anschluesse = [], nachbarn = [] } = {}
  * @param {number}     opts.raster  Rasterweite in m; 0 schaltet das Raster ab
  * @returns {{punkt: {ost,nord}, aktiv: Array}}
  */
-export function fange({ punkt, linien = [], radius = 1, raster = 0 } = {}) {
+/** So nah am Ausgang gilt eine Ecke als der Ausgang selbst — kein Fangziel. */
+export const MEIDE_M = 0.05;
+
+export function fange({ punkt, linien = [], radius = 1, raster = 0, meide = null } = {}) {
     if (!punkt) return { punkt: null, aktiv: [] };
 
     const nah = linien
@@ -125,7 +128,13 @@ export function fange({ punkt, linien = [], radius = 1, raster = 0 } = {}) {
         const erste = nah[0].linie;
         for (const { linie } of nah.slice(1)) {
             const s = schnittpunkt(erste, linie);
-            if (s && Math.hypot(s.ost - punkt.ost, s.nord - punkt.nord) <= radius * 1.5) {
+            if (!s) continue;
+            // Der AUSGANG selbst ist keine Ecke: alle Linien durch den Griff
+            // schneiden sich dort, und ein Griff, der 30 cm weg will, sprang
+            // zurück auf null (Headless 2026-09-08: „Δ 0,00 m"). Wer wirklich
+            // am Ausgang bleiben will, lässt ihn einfach liegen.
+            if (meide && Math.hypot(s.ost - meide.ost, s.nord - meide.nord) < MEIDE_M) continue;
+            if (Math.hypot(s.ost - punkt.ost, s.nord - punkt.nord) <= radius * 1.5) {
                 return { punkt: s, aktiv: [erste, linie] };
             }
         }

@@ -133,7 +133,9 @@ describe('starte — die Güteschranke gilt in jedem Einstieg', () => {
     it('ohne Journaleintrag bleibt der Stand leer, ohne zu werfen', async () => {
         const b = useBearbeitung();
         await b.einordne({ ...ROHR }, resolverEchteAchse);
-        expect(b.bauteil.stand).toEqual({ kg: null, din277: null, bauplan: null });
+        expect(b.bauteil.stand).toEqual({
+            kg: null, din277: null, bauplan: null, bauformAusnahme: null,
+        });
     });
 
     it('weist eine erfundene Id ab', async () => {
@@ -173,6 +175,114 @@ describe('fehler und bereit', () => {
         b.setzeWert('din277', 'VF');
         expect(b.fehler).toEqual([]);
         expect(b.bereit).toBe(true);
+    });
+});
+
+/**
+ * DER FALL, DER DIESEN MECHANISMUS AUSGELÖST HAT (2026-09-03).
+ *
+ * Ein Tiefbau-Projektleiter liefert sein Geländemodell als geschlossenen
+ * Volumenkörper unter `IFCCIVILELEMENT` — ein Typ, der über die Form
+ * ABSICHTLICH nichts sagt (`bauform: null` ist eine Sperre gegen die
+ * Vererbung, kein fehlender Eintrag). Der Geometrie-Rückfall kann `hoehenfeld`
+ * gar nicht erzeugen; er kennt Achse, Körper und Netz. Der Körper landet also
+ * zwangsläufig auf `koerper`, und die Gelände-Werkzeuge erscheinen nie.
+ *
+ * Dieser Test geht den ganzen Weg: einordnen → auslegen → NEU einordnen.
+ * Ohne den letzten Schritt bewiese er nichts — geprüft werden muss, dass die
+ * Auslegung beim nächsten Anfassen des Bauteils WIRKT.
+ */
+describe('Bauform auslegen — ein Volumenkörper wird zum Gelände', () => {
+    const ERDKOERPER = {
+        modelId: 'm1', localId: 7, category: 'IFCCIVILELEMENT', globalId: 'ERD1',
+    };
+
+    /** Ein geschlossener Körper, aus dem sich eine Oberfläche ableiten lässt. */
+    const resolverErdkoerper = {
+        forElements: () => ({
+            async getForm(form) {
+                if (form === 'solid') {
+                    return { form, data: { positions: new Float64Array(9), triCount: 1, closed: true }, warnings: [] };
+                }
+                if (form === 'surface') {
+                    return { form, data: { positions: new Float64Array(9), triCount: 1 }, warnings: [] };
+                }
+                return { form, data: null, perElement: [], warnings: [] };
+            },
+        }),
+    };
+
+    it('ohne Auslegung ist er ein Körper — und die Gelände-Werkzeuge fehlen', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        expect(b.einordnung.bauform).toBe('koerper');
+        expect(b.einordnung.quelle).toBe('geometrie');
+        expect(b.moeglich.map(x => x.id)).not.toContain('gerinne-einschneiden');
+        // Das Werkzeug, das den Ausweg öffnet, muss aber DA sein — sonst
+        // Henne und Ei: man käme nie an die Stelle, die man korrigieren will.
+        expect(b.moeglich.map(x => x.id)).toContain('bauform-auslegen');
+    });
+
+    it('nach der Auslegung ist er ein Höhenfeld — mit den Gelände-Werkzeugen', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        b.setzeWert('bauform', 'hoehenfeld');
+        const eintrag = await b.ausfuehren({ wer: 'Fabio' });
+        expect(eintrag).toMatchObject({ art: 'bauform', globalId: 'ERD1', nachher: 'hoehenfeld' });
+
+        // DER eigentliche Beweis: beim nächsten Anfassen gilt sie.
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        expect(b.einordnung.bauform).toBe('hoehenfeld');
+        expect(b.einordnung.quelle).toBe('einzelfall');
+        expect(b.einordnung.guete).toBe('gemessen');
+        expect(b.moeglich.map(x => x.id)).toEqual(
+            expect.arrayContaining(['gerinne-einschneiden', 'planum-herstellen']),
+        );
+    });
+
+    it('das Formular zeigt die geltende Auslegung, statt leer aufzuschlagen', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        b.setzeWert('bauform', 'hoehenfeld');
+        await b.ausfuehren();
+
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        expect(b.werte.bauform).toBe('hoehenfeld');
+    });
+
+    it('leeres Feld nimmt sie zurück — dann entscheidet wieder die Geometrie', async () => {
+        const b = useBearbeitung();
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        b.setzeWert('bauform', 'hoehenfeld');
+        await b.ausfuehren();
+
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        b.setzeWert('bauform', '');
+        await b.ausfuehren();
+
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        expect(b.einordnung.bauform).toBe('koerper');
+        expect(b.einordnung.quelle).toBe('geometrie');
+    });
+
+    it('gilt für DIESES Bauteil, nicht für seine Klasse', async () => {
+        // Der Unterschied zur Bauformregel, und der Grund, warum es beides
+        // gibt: die Stützwand daneben ist ebenfalls ein IFCCIVILELEMENT und
+        // darf kein Gelände werden.
+        const b = useBearbeitung();
+        await b.einordne(ERDKOERPER, resolverErdkoerper);
+        b.starte('bauform-auslegen');
+        b.setzeWert('bauform', 'hoehenfeld');
+        await b.ausfuehren();
+
+        const STUETZWAND = { ...ERDKOERPER, localId: 8, globalId: 'STW1' };
+        await b.einordne(STUETZWAND, resolverErdkoerper);
+        expect(b.einordnung.bauform).toBe('koerper');
     });
 });
 

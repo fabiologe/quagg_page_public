@@ -1,5 +1,18 @@
 <template>
   <div class="cde-view">
+    <!-- ── Der Ausweg aus dem vergrösserten Ausschnitt ──
+         Zwei Finger auf dem Bildschirm vergrössern in manchen Lagen den
+         SICHTBAREN Ausschnitt (nicht das Layout). `.cde-view` hängt am
+         Layout-Viewport und scrollt nicht — die Leisten sind dann
+         unerreichbar, und nichts sagt warum. Diese Leiste klebt deshalb am
+         Ausschnitt selbst und ist die einzige Stelle, die dort ankommt. -->
+    <div v-if="zoomVergroessert" class="cde-zoom-notleiste" :style="zoomStil">
+      <CdeIcon name="status-warn" :size="14" />
+      <span>Die Ansicht ist {{ zoomSkala.toFixed(1) }}× vergrössert — die Leisten liegen ausserhalb.</span>
+      <button class="cde-zoom-btn" @click="ansichtZuruecksetzen">Ansicht zurücksetzen</button>
+      <span class="cde-zoom-tipp">oder mit zwei Fingern auszoomen · Strg+0</span>
+    </div>
+
     <!-- ── Auftrags- und Satz-Leiste (Managen) ──
          Der AUFTRAG steht fest (er kommt aus dem Ordner) und ist deshalb Text,
          kein Wähler. Gewählt wird der MODELLSATZ — die Variante. -->
@@ -173,29 +186,57 @@
         {{ bauformAbdeckung.ohne }} werden aus der Geometrie eingeordnet und
         bleiben sichtbar, messbar und zeichenbar.</span>
       </p>
+      <!-- WORAN erkennen? Nicht jeder Exporteur schreibt Namen: die
+           Erdbau-Lieferungen tragen an ihren Körpern „Name = $", dort ist der
+           vordefinierte Typ das einzige Merkmal, an dem man sie fassen kann. -->
+      <label class="cde-hint bf-feld">
+        Erkennen an
+        <select class="doc-status" :value="bauformFeld" @change="setzeBauformFeld($event.target.value)">
+          <option v-for="f in MERKMALSFELDER" :key="f.name" :value="f.name">{{ f.titel }}</option>
+        </select>
+      </label>
+      <!-- Typen, die das 4.3-Wörterbuch nicht kennt (2026-09-07): gestrichen
+           oder exporteureigen. Sie sind trotzdem da — strukturell gefunden —,
+           aber Vererbung und Typprofile greifen nicht; die Geometrie schlägt vor. -->
+      <p v-if="fremdeTypen.length" class="cde-hint">
+        Nicht im IFC-4.3-Wörterbuch, strukturell erkannt:
+        <span v-for="f in fremdeTypen" :key="f.typ" class="bf-fremd">{{ f.typ.replace(/^IFC/, '') }} ({{ f.anzahl }})</span>
+        — ältere Schemafassung oder eigener Name; hier zuordnen.
+      </p>
       <div v-if="!bauformVorschlaege.length" class="cde-empty">
-        Kein Modell geladen, oder keine benannten Bauteile gefunden.
+        Kein Modell geladen.
       </div>
       <table v-else class="cde-doc-table">
         <thead>
-          <tr><th>Kategorie</th><th>Name</th><th>Anzahl</th><th>Bauform</th></tr>
+          <tr><th>Kategorie</th><th>Wert</th><th>Anzahl</th><th title="Was die Geometrie an einem Beispiel misst">Gemessen</th><th>Bauform</th></tr>
         </thead>
         <tbody>
-          <tr v-for="v in bauformVorschlaege" :key="`${v.category}|${v.name}|${v.art}`">
+          <tr v-for="v in bauformVorschlaege" :key="`${v.category}|${v.name}|${v.art}`" :class="{ 'bf-kategorie': v.art === 'kategorie' }">
             <td class="doc-name">{{ v.category.replace(/^IFC/, '') }}</td>
             <td class="doc-name">
-              {{ v.name }}<template v-if="v.art === 'gruppe'"><span class="bf-gruppe"
+              <template v-if="v.art === 'kategorie'"><span class="bf-alle">ganze Kategorie</span></template>
+              <template v-else>{{ v.name }}<template v-if="v.art === 'gruppe'"><span class="bf-gruppe"
                 :title="`Fasst ${v.namen.length} Namen zusammen: ${v.namen.slice(0, 6).join(', ')}${v.namen.length > 6 ? ' …' : ''}`"
-              >…</span></template>
+              >…</span></template></template>
             </td>
             <td class="doc-rev">{{ v.anzahl }}</td>
+            <!-- Die Formsignatur eines BEISPIELS je Gruppe — der Vorschlag,
+                 mit Grund im Tooltip. Ohne Deklaration gilt genau das. -->
+            <td class="bf-messung" :title="v.geometrie?.grund ?? ''">
+              <template v-if="v.geometrie">
+                <span :class="['tb-guete', 'bf-guete--' + v.geometrie.guete]">{{ BAUFORMEN[v.geometrie.bauform]?.titel ?? v.geometrie.bauform }}</span>
+                <span class="bf-dim">({{ v.geometrie.guete }})</span>
+              </template>
+              <span v-else-if="v.geometrie === null" class="bf-dim">—</span>
+              <span v-else class="bf-dim">…</span>
+            </td>
             <td>
               <select
                 class="doc-status"
                 :value="v.bauform ?? ''"
                 @change="setzeBauform(v, $event.target.value)"
               >
-                <option value="">— aus der Geometrie —</option>
+                <option value="">— wie gemessen —</option>
                 <option v-for="(b, schluessel) in BAUFORMEN" :key="schluessel" :value="schluessel">
                   {{ b.titel }}
                 </option>
@@ -569,6 +610,7 @@ import IfcAenderungenTab from '../components/IfcAenderungenTab.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
+import { useZoomSperre } from '../composables/useZoomSperre.js';
 import { statusZiele } from '../services/StatusWorkflow.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { useAuthStore } from '@/stores/useAuthStore.js';
@@ -583,7 +625,7 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { BEARBEITUNGEN, eingabeArt } from '../services/Bearbeitungen.js';
-import { abdeckung } from '../services/bauform/Bauformregeln.js';
+import { MERKMALSFELDER, abdeckung } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -615,6 +657,15 @@ if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
 // den eingebauten Standard.
 repo.setBueroBackend(new BueroBackend());
 const cde = useCdeStore();
+
+/**
+ * Zoom-Sperre und Ausweg (2026-09-03). Die Sperre wirkt, solange die CDE
+ * steht; die Notleiste erscheint nur, wenn der Ausschnitt trotzdem
+ * vergrössert ist — etwa weil er es beim Laden schon war.
+ */
+const { vergroessert: zoomVergroessert, skala: zoomSkala, leistenStil: zoomStil } = useZoomSperre();
+/** Neu laden setzt den Ausschnitt zurück — JS kann ihn nicht selbst verkleinern. */
+function ansichtZuruecksetzen() { window.location.reload(); }
 const auth = useAuthStore();
 const aenderungen = useAenderungen();
 /** Die Aufträge zur Auswahl — nur gefüllt, wenn `?projekt=` fehlt. */
@@ -641,17 +692,61 @@ const showRegister = ref(false);
 const showBauformen = ref(false);
 /** Die Namen des geladenen Modells samt bereits zugeordneter Bauform. */
 const bauformVorschlaege = ref([]);
+/** Woran erkannt wird — Name, vordefinierter Typ, Objekttyp, Beschreibung. */
+const bauformFeld = ref('Name');
 /** Wie viel davon zugeordnet ist — damit man weiss, wann man aufhören kann. */
 const bauformAbdeckung = ref({ mit: 0, ohne: 0, gesamt: 0 });
+
+/** Typen ausserhalb des 4.3-Wörterbuchs — aus den geladenen Dateien. */
+const fremdeTypen = ref([]);
+let _messLauf = 0;
+
+/**
+ * Je Gruppe die Formsignatur EINES Beispiels messen — asynchron, nach dem
+ * Aufbau der Liste. Ein späterer Aufbau verwirft die Antworten des früheren
+ * (Laufnummer); begrenzt, damit ein grosses Modell das Panel nicht blockiert.
+ */
+async function messeVorschlaege(zeilen) {
+  const lauf = ++_messLauf;
+  for (const v of zeilen.slice(0, 60)) {
+    if (!v.beispiel) { v.geometrie = null; continue; }
+    v.geometrie = undefined;
+    try {
+      const r = await viewerRef.value?.getFormsignatur?.(v.beispiel.modelId, v.beispiel.localId);
+      if (lauf !== _messLauf) return;
+      v.geometrie = r ? { bauform: r.bauform, guete: r.guete, grund: r.grund } : null;
+    } catch {
+      if (lauf !== _messLauf) return;
+      v.geometrie = null;
+    }
+  }
+}
 
 /** Vorschläge und Abdeckung neu berechnen — nach jeder Zuordnung. */
 function frischeVorschlaege() {
   const index = ifc.getSearchIndex();
-  bauformVorschlaege.value = bearbeitung.vorschlaege(index);
+  bauformVorschlaege.value = bearbeitung.vorschlaege(index, bauformFeld.value)
+    .map(v => ({ ...v, geometrie: undefined }));
+  fremdeTypen.value = viewerRef.value?.getFremdeTypen?.() ?? [];
+  messeVorschlaege(bauformVorschlaege.value);
+  // Die Abdeckung zählt über ALLE Merkmale, nicht nur über das gewählte —
+  // sonst sänke sie beim blossen Umschalten der Ansicht, und das läse sich
+  // wie ein Verlust.
   bauformAbdeckung.value = abdeckung(
-    (index ?? []).map(e => ({ category: e.category, attributes: { Name: e.name } })),
+    (index ?? []).map(e => ({
+      category: e.category,
+      attributes: {
+        Name: e.name ?? '', PredefinedType: e.predefinedType ?? '',
+        ObjectType: e.objectType ?? '', Description: e.description ?? '',
+      },
+    })),
     bearbeitung.regeln,
   );
+}
+
+function setzeBauformFeld(feld) {
+  bauformFeld.value = feld;
+  frischeVorschlaege();
 }
 
 function oeffneBauformen() {
@@ -664,7 +759,13 @@ function oeffneBauformen() {
 }
 
 async function setzeBauform(v, bauform) {
-  await bearbeitung.ordneZu({ category: v.category, name: v.name, art: v.art, bauform: bauform || null });
+  // `art` UND `propertyName` müssen mit: ohne `art` schriebe eine Gruppenzeile
+  // eine `equals`-Regel, die auf „Haltung 1" … „Haltung 18" nie passt (bis
+  // 2026-09-03 genau so, still).
+  await bearbeitung.ordneZu({
+    category: v.category, name: v.name, art: v.art,
+    propertyName: v.feld ?? 'Name', bauform: bauform || null,
+  });
   frischeVorschlaege();
 }
 
@@ -850,6 +951,10 @@ async function vorlagenLaden() {
 function vorlageZeichnen(v) {
   if (!bearbeitung.modusAn) return;
   const werkzeugId = `${v.rezept}-zeichnen`;
+  // Erst den eigenen Slot freigeben (Teil XVI): `bearbeitung.starte` ruft
+  // sonst den Ausschalter des Vorgängers — und der ist dieses Werkzeug
+  // selbst, das das gerade Gestartete wieder abräumte.
+  bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
   const ok = planRef.value?.zeichneMit?.(werkzeugId);
   zeichenWerkzeug.value = ok ? werkzeugId : null;
   if (!ok) return;
@@ -979,6 +1084,8 @@ function zeichenWerkzeugSetzen(id) {
   if (id && !bearbeitung.modusAn) return;
   // Nochmal derselbe Knopf schaltet ab — wie bei Setzmodus und Stift.
   const ziel = zeichenWerkzeug.value === id ? null : id;
+  // Erst den eigenen Slot freigeben — siehe `vorlageZeichnen`.
+  bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
   const ok = planRef.value?.zeichneMit?.(ziel);
   zeichenWerkzeug.value = ziel && ok ? ziel : null;
   if (zeichenWerkzeug.value) bearbeitung.belegeWerkzeug('plan:zeichnen', _zeichnenAus);
@@ -1080,7 +1187,16 @@ async function auftragsListeLaden() {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
-  auftragAusOrdner();
+  // ERST der Auftrag, DANN die Modelle: `auftragAusOrdner` setzt den
+  // Modellsatz und damit das Journal — würde ein Modell vorher geladen,
+  // spielte es gegen ein Journal nach, das noch nicht steht.
+  //
+  // Ein Deep-Link (`?datei=`) hat Vorrang: dann ist schon eins geladen, und
+  // `stelleOffeneWiederHer` tut von sich aus nichts.
+  auftragAusOrdner().finally(() => {
+    viewerRef.value?.stelleOffeneWiederHer?.()
+      ?.catch?.(fehler => console.warn('cde: wiederherstellen', fehler?.message ?? fehler));
+  });
   // Der Modus ist ein Belang der Schale, nicht des Viewers — er wird hier
   // angemeldet und erscheint dadurch automatisch in Palette und Hilfe.
   cmds.register('ansicht', ansichtsModi.map(m => ({
@@ -1363,7 +1479,41 @@ function fmtDate(ts) {
   display: flex;
   flex-direction: column;
   background: var(--cde-bg-deep);
+  /* DIE PINCH-SPERRE (2026-09-03). `pan-x pan-y` erlaubt weiter das
+     Ein-Finger-Scrollen in den Panels, nimmt dem Browser aber den
+     Zwei-Finger-Zoom: der vergrössert nur den sichtbaren Ausschnitt, und
+     weil dieses Element `fixed` ist und nicht scrollt, wäre die Kopfzeile
+     danach unerreichbar. Der Canvas bleibt bei `touch-action: none` und
+     bekommt seine eigenen Gesten — strenger als der Vorfahr ist erlaubt. */
+  touch-action: pan-x pan-y;
 }
+
+/* Die Notleiste sitzt am SICHTBAREN Ausschnitt (Stil kommt aus
+   `useZoomSperre.leistenStil`), nicht im Layout — sonst wäre sie genauso
+   unerreichbar wie das, worüber sie berichtet. */
+.cde-zoom-notleiste {
+  position: fixed;
+  z-index: 9999;
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  background: color-mix(in srgb, var(--cde-warn) 22%, var(--cde-bg-alt));
+  color: var(--cde-text-bright);
+  border-bottom: 1px solid var(--cde-warn);
+  font-size: 0.8rem;
+  box-shadow: var(--cde-shadow-float);
+}
+.cde-zoom-btn {
+  background: var(--cde-warn);
+  /* Modus-Fläche ⇒ Modus-Text: auf der warmen Warnfläche liest sich der
+     tiefe Hintergrund, nicht die helle Schrift. */
+  color: var(--cde-bg-deep);
+  border: none; border-radius: 5px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem; font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.cde-zoom-tipp { opacity: 0.75; }
 
 /* ── Projekt-Leiste ── */
 .cde-bar {
@@ -1508,6 +1658,26 @@ function fmtDate(ts) {
   .cde-workspace > .side-right { grid-column: 2; }
   .cde-workspace:not(:has(> .side-right)) > .side-left  { grid-column: 1 / -1; }
   .cde-workspace:not(:has(> .side-left))  > .side-right { grid-column: 1 / -1; }
+
+  /* DIE KOPFZEILE BRICHT UM (Tablet-Rezept 2026-09-09). Am iPad hochkant
+     (834 px) lagen ZEHN Bedienelemente ausserhalb des Bildes — darunter
+     JEDER Panel-Knopf, die Hilfe und der Ausgang: Toolbox, Verlauf und
+     Prüfliste waren schlicht nicht erreichbar. Gemessen, nicht vermutet.
+     Der Umbruch kostet zwei Zeilen Höhe; unerreichbare Knöpfe kosten das
+     Werkzeug. Marke und Abstandhalter fallen weg — die eine sagt nichts,
+     der andere verhindert den Umbruch (flex: 1 füllt die Zeile). */
+  .cde-bar { flex-wrap: wrap; row-gap: 0.35rem; }
+  .cde-brand,
+  .cde-spacer { display: none; }
+  .cde-bearbeiter { order: 99; }
+  .cde-project-select { min-width: 120px; max-width: 46vw; }
+  /* Fingerziele 40 × 40 (gemessen: die Panel-Knöpfe waren 29 px breit).
+     Das kostet eine Zeile mehr — ein Knopf, den man nicht trifft, kostet
+     das Werkzeug. */
+  .cde-bar button,
+  .cde-bar .cde-ansicht-btn,
+  .cde-bar select { min-height: 40px; }
+  .cde-bar button { min-width: 40px; }
 }
 
 .cde-viewer-host {
@@ -1601,9 +1771,24 @@ function fmtDate(ts) {
   border-left: 3px solid var(--cde-accent);
   font-size: var(--cde-font-sm); color: var(--cde-text);
 }
+.bf-alle { font-style: italic; color: var(--cde-text-dim); }
+.bf-kategorie td { border-bottom: 1px solid var(--cde-tint); }
+.bf-messung { white-space: nowrap; }
+.bf-dim { color: var(--cde-text-dimmer); margin-left: 0.3rem; font-size: 0.7rem; }
+.bf-guete--gemessen   { color: var(--cde-success-strong); }
+.bf-guete--geschaetzt { color: var(--cde-warn); }
+.bf-guete--unbekannt  { color: var(--cde-danger); }
+.bf-fremd {
+  display: inline-block; margin: 0 0.2rem; padding: 0 0.35rem; border-radius: 3px;
+  background: var(--cde-tint-weak); color: var(--cde-text-bright); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .bf-gruppe {
   margin-left: 0.2rem; padding: 0 0.25rem;
   border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
   color: var(--cde-accent); font-size: var(--cde-font-xs); cursor: help;
+}
+.bf-feld {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin: 0.35rem 0 0.5rem;
 }
 </style>

@@ -64,11 +64,16 @@ describe('Untertypen kommen aus der IFC-Vererbung, nicht aus einer Liste', () =>
 
 describe('An echten Dateien aus dem Repo', () => {
     const FAELLE = [
-        ['BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc', 'IFC4X3_ADD2'],
-        ['IFCOUT_Entwässerung Export .IFC', 'IFC2X3'],
+        // Dritter Eintrag: eine Kategorie, die diese Datei WIRKLICH führt und
+        // die der alte, fest verdrahtete Elementindex nicht kannte.
+        ['BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc', 'IFC4X3_ADD2', 'IFCEARTHWORKSELEMENT'],
+        // Die ProVI-Datei führt NUR Typen, die die alte Liste kannte — sie war
+        // trotzdem unsichtbar, aus dem anderen der beiden Gründe (der Handle
+        // hatte nie ein Modell offen). Deshalb hier kein neuer Typ.
+        ['IFCOUT_Entwässerung Export .IFC', 'IFC2X3', null],
     ];
 
-    for (const [name, schema] of FAELLE) {
+    for (const [name, schema, neuerTyp] of FAELLE) {
         const datei = path.join(hier, name);
         const da = fs.existsSync(datei);
 
@@ -92,6 +97,66 @@ describe('An echten Dateien aus dem Repo', () => {
                 // Dieselbe Abfrage OHNE Vererbung findet weniger — `IFCELEMENT`
                 // selbst wird kaum je instanziiert. Das ist der ganze Punkt.
                 expect(q.ids('IFCELEMENT').length).toBeLessThan(alle.length);
+            });
+
+            it('nennt Kategorien beim NAMEN, nicht mit der Typkonstante', () => {
+                // `GetLine(...).type` ist eine ZAHL (`1077100507`), nicht
+                // `IFCEARTHWORKSELEMENT`. Wer sie roh als Kategorie
+                // weiterreicht, sucht in Typprofilen, Bauformregeln und im
+                // 4.3-Wörterbuch nach einer Ziffernfolge — kein Treffer, keine
+                // Meldung, und von aussen sieht es aus, als kenne die CDE die
+                // Typen dieser Datei nicht. Genau so lag es einen Nachmittag
+                // lang in zwei frisch gebauten Lesern.
+                //
+                // Der erste Anlauf dieses Tests prüfte nur „es kommt etwas
+                // Neues gegenüber der alten 30er-Liste heraus" — und war mit
+                // Ziffernfolgen fröhlich grün. Deshalb steht hier die FORM.
+                const ids = q.ids('IFCPRODUCT', { untertypen: true });
+                expect(ids.length).toBeGreaterThan(0);
+                for (const id of ids) {
+                    const k = q.kategorieVon(id);
+                    expect(k, `ExpressID ${id}`).toMatch(/^IFC[A-Z0-9]+$/);
+                }
+                // Und die Umkehrung trifft wirklich zurück auf die Konstante.
+                const eine = q.kategorieVon(ids[0]);
+                expect(q.ids(eine)).toContain(ids[0]);
+            });
+
+            it('erfasst Typen, die die alte 30er-Liste NICHT kannte', () => {
+                // Der Elementindex speiste sich bis 2026-09-03 aus 30 fest
+                // verdrahteten Kategorien — `IFCCIVILELEMENT` und die
+                // Erdbau-Typen standen nicht darin. Ausgerechnet die Bauteile,
+                // für die man das Zuordnungs-Panel braucht, waren dort
+                // unsichtbar. (Dass der Index ohnehin immer leer war, kam als
+                // zweiter, unabhängiger Grund dazu.)
+                const ALTE_LISTE = new Set([
+                    'IFCWALL', 'IFCWALLSTANDARDCASE', 'IFCSLAB', 'IFCCOLUMN', 'IFCBEAM',
+                    'IFCDOOR', 'IFCWINDOW', 'IFCROOF', 'IFCFOOTING', 'IFCSTAIR', 'IFCSTAIRFLIGHT',
+                    'IFCPLATE', 'IFCMEMBER', 'IFCSPACE', 'IFCBUILDINGSTOREY', 'IFCBUILDING', 'IFCSITE',
+                    'IFCPIPESEGMENT', 'IFCPIPEFITTING', 'IFCDUCT', 'IFCDUCTFITTING',
+                    'IFCFLOWSEGMENT', 'IFCFLOWFITTING', 'IFCFLOWTERMINAL', 'IFCAIRTERMINAL',
+                    'IFCPUMP', 'IFCVALVE', 'IFCFURNITURE', 'IFCBUILDINGELEMENTPROXY',
+                    'IFCRAILING', 'IFCCURTAINWALL',
+                ]);
+                const kategorien = new Set(
+                    q.ids('IFCPRODUCT', { untertypen: true })
+                        .map(id => q.kategorieVon(id))
+                        .filter(Boolean),
+                );
+                expect(kategorien.size).toBeGreaterThan(0);
+                if (neuerTyp) {
+                    // Der harte Fall: dieser Typ steht in der Datei, stand
+                    // aber nicht in der 30er-Liste — er war unsichtbar, und
+                    // ausgerechnet für ihn braucht man die Zuordnung.
+                    expect(ALTE_LISTE.has(neuerTyp)).toBe(false);
+                    expect(kategorien).toContain(neuerTyp);
+                } else {
+                    // Die Gegenprobe: hier deckte die alte Liste alles ab. Der
+                    // Index war trotzdem leer — aus dem zweiten, unabhängigen
+                    // Grund. Eine längere Liste hätte diese Datei nicht
+                    // gerettet.
+                    expect([...kategorien].every(k => ALTE_LISTE.has(k))).toBe(true);
+                }
             });
 
             it('findet über die GlobalId zurück', () => {

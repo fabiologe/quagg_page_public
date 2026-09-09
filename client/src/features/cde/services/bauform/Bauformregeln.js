@@ -153,30 +153,46 @@ export function namensstamm(name) {
  * sie. Damit bleibt es „Regler statt Raterei" — die Maschine schlägt vor, sie
  * setzt nicht.
  *
+ * `feld` sagt, WORIN gezählt wird. `Name` ist der Normalfall, reicht aber
+ * nicht überall: die `IfcEarthworksFill` der Erdbau-Lieferung tragen
+ * `Name = $` — dort ist `PredefinedType` oder `ObjectType` das Merkmal, an dem
+ * man sie überhaupt fassen kann. Ein Werkzeug, das nur Namen kennt, hat für
+ * solche Dateien nichts anzubieten.
+ *
  * @param {Array<{category, attributes}>} elemente
- * @returns {Array<{category, name, anzahl, art: 'genau'|'gruppe', namen?: string[]}>}
+ * @param {object} [opts]
+ * @param {string} [opts.feld='Name']  welches Attribut gezählt wird
+ * @returns {Array<{category, name, anzahl, art: 'genau'|'gruppe', feld, namen?: string[]}>}
  */
-export function namensvorschlaege(elemente) {
+export function namensvorschlaege(elemente, { feld = 'Name' } = {}) {
     const zaehler = new Map();
+    const beispiele = new Map();       // Schlüssel → erstes Element (für die Signatur)
     for (const el of elemente ?? []) {
-        const name = el?.attributes?.Name;
+        const name = el?.attributes?.[feld];
         if (!name || typeof name !== 'string') continue;
         const schluessel = `${el.category ?? ''}|${name}`;
         zaehler.set(schluessel, (zaehler.get(schluessel) ?? 0) + 1);
+        if (!beispiele.has(schluessel) && el?.ort) beispiele.set(schluessel, el.ort);
     }
 
     const genau = [...zaehler.entries()].map(([schluessel, anzahl]) => {
         const i = schluessel.indexOf('|');
-        return { category: schluessel.slice(0, i), name: schluessel.slice(i + 1), anzahl, art: 'genau' };
+        return { category: schluessel.slice(0, i), name: schluessel.slice(i + 1),
+                 anzahl, art: 'genau', feld, beispiel: beispiele.get(schluessel) ?? null };
     });
 
     // Gruppen bilden — nur wo ein Stamm mehrere Namen zusammenfasst.
+    //
+    // NUR BEIM NAMEN: eine angehängte Zählnummer ist eine Konvention der
+    // Bezeichnung. `PredefinedType` ist ein geschlossenes Vokabular — dort
+    // gibt es kein „TERRAIN 1", und ein Stamm wäre eine Erfindung.
     const gruppen = new Map();
-    for (const g of genau) {
+    for (const g of (feld === 'Name' ? genau : [])) {
         const stamm = namensstamm(g.name);
         if (!stamm) continue;
         const schluessel = `${g.category}|${stamm}`;
-        const vorhanden = gruppen.get(schluessel) ?? { category: g.category, name: stamm, anzahl: 0, art: 'gruppe', namen: [] };
+        const vorhanden = gruppen.get(schluessel)
+            ?? { category: g.category, name: stamm, anzahl: 0, art: 'gruppe', feld, namen: [], beispiel: g.beispiel };
         vorhanden.anzahl += g.anzahl;
         vorhanden.namen.push(g.name);
         gruppen.set(schluessel, vorhanden);
@@ -191,6 +207,42 @@ export function namensvorschlaege(elemente) {
         // beides anzubieten hiesse, dieselbe Zuordnung zweimal treffen zu können.
         ...genau.filter(g => !inGruppe.has(`${g.category}|${g.name}`)),
     ].sort((a, b) => b.anzahl - a.anzahl);
+}
+
+/**
+ * Je KATEGORIE eine Zeile „ganze Kategorie" — mit Beispiel (2026-09-07).
+ *
+ * Getrennt von den Namensvorschlägen, weil es eine andere Frage ist: dort
+ * „was heisst hier wie?", hier „was ist hier überhaupt?". Und weil es die
+ * Dateien erreicht, die die erste Frage gar nicht beantworten können — die
+ * Erdbau-Lieferungen tragen an ihren Körpern `Name = $`; bis hierher war so
+ * eine Datei im Panel unsichtbar. Das Panel mischt beides und lässt die
+ * Kategorie-Zeile je Kategorie ZULETZT stehen: eine benannte Zuordnung
+ * darüber überstimmt sie (Priorität 60 gegen 45).
+ *
+ * @returns {Array<{category, name: '', anzahl, art: 'kategorie', beispiel}>}
+ */
+export function kategorievorschlaege(elemente) {
+    const jeKategorie = new Map();
+    for (const el of elemente ?? []) {
+        const kategorie = String(el?.category ?? '').toUpperCase();
+        if (!kategorie) continue;
+        const k = jeKategorie.get(kategorie) ?? { anzahl: 0, beispiel: el?.ort ?? null };
+        k.anzahl += 1;
+        if (!k.beispiel && el?.ort) k.beispiel = el.ort;
+        jeKategorie.set(kategorie, k);
+    }
+    return [...jeKategorie.entries()]
+        .map(([category, k]) => ({ category, name: '', anzahl: k.anzahl, art: 'kategorie', beispiel: k.beispiel }))
+        .sort((a, b) => b.anzahl - a.anzahl);
+}
+
+/** Namens- und Kategorie-Zeilen gemischt, je Kategorie beisammen, Kategorie-Zeile zuletzt. */
+export function alleVorschlaege(elemente, opts = {}) {
+    return [...namensvorschlaege(elemente, opts), ...kategorievorschlaege(elemente)]
+        .sort((a, b) => (a.category < b.category ? -1 : a.category > b.category ? 1 : 0)
+            || (a.art === 'kategorie') - (b.art === 'kategorie')
+            || b.anzahl - a.anzahl);
 }
 
 /**
@@ -217,17 +269,62 @@ export function abdeckung(elemente, regeln) {
  * Das ist die Form, die eine Lieferung mit zwanzig statt achtzehn Haltungen
  * ohne Nacharbeit übersteht.
  */
-export function regelAus({ category, name, bauform, art = 'genau' }) {
+/**
+ * Woran eine Regel ein Bauteil erkennen kann.
+ *
+ * `Name` ist der Normalfall (ProVI schreibt „Haltung"), aber nicht der einzige:
+ * die Erdbau-Lieferungen im Testordner tragen an ihren `IfcEarthworksFill`
+ * gar keinen Namen (`Name = $`) — dort steht die Fachaussage im
+ * `PredefinedType` oder in einem Merkmal. Eine Regel-Maschine, die nur `Name`
+ * lesen kann, hat für solche Dateien kein Werkzeug.
+ */
+export const MERKMALSFELDER = Object.freeze([
+    { name: 'Name', titel: 'Name' },
+    { name: 'PredefinedType', titel: 'Vordefinierter Typ' },
+    { name: 'ObjectType', titel: 'Objekttyp' },
+    { name: 'Description', titel: 'Beschreibung' },
+]);
+
+/**
+ * Aus einer Zuordnung eine Regel machen — das, was das Werkzeug schreibt.
+ *
+ * `art: 'gruppe'` wird zu `contains`: „alles, dessen Name ‚Haltung' enthält".
+ * Das ist die Form, die eine Lieferung mit zwanzig statt achtzehn Haltungen
+ * ohne Nacharbeit übersteht.
+ *
+ * `propertyName` sagt, WORIN gesucht wird (Vorgabe `Name`); mit `psetName`
+ * wird stattdessen ein Merkmalssatz gelesen — dieselbe Mechanik, die die
+ * mitgelieferten `PredefinedType`-Regeln von Hand tragen.
+ */
+export function regelAus({ category, name, bauform, art = 'genau',
+                           propertyName = 'Name', psetName = null }) {
+    // GANZE KATEGORIE: eine Bedingung ohne Merkmal — die Regel-Maschine
+    // matcht dann die Kategorie allein. Schwächer als jede benannte Regel.
+    if (art === 'kategorie') {
+        return {
+            id: `bf-${category}-kategorie`.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+            enabled: true, priority: 45,
+            name: `alle „${category}" sind ${bauform}`,
+            condition: { category },
+            bauform,
+        };
+    }
     const gruppe = art === 'gruppe';
+    const feld = propertyName || 'Name';
+    const wo = feld === 'Name' ? '' : ` [${psetName ? `${psetName}.` : ''}${feld}]`;
     return {
-        id: `bf-${category}-${name}-${art}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+        id: `bf-${category}-${psetName ?? ''}-${feld}-${name}-${art}`
+            .toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
         enabled: true,
         // Gruppen etwas SCHWÄCHER als exakte Zuordnungen: wer „Haltung" als
         // Gruppe setzt und „Haltung 7" einzeln anders, meint die Ausnahme.
         priority: gruppe ? 55 : 60,
-        name: `${gruppe ? '„' + name + '…"' : '„' + name + '"'} (${category}) ist ${bauform}`,
-        condition: { category, propertyName: 'Name',
-                     operator: gruppe ? 'contains' : 'equals', value: name },
+        name: `${gruppe ? '„' + name + '…"' : '„' + name + '"'}${wo} (${category}) ist ${bauform}`,
+        condition: {
+            category, propertyName: feld,
+            ...(psetName ? { psetName } : {}),
+            operator: gruppe ? 'contains' : 'equals', value: name,
+        },
         bauform,
     };
 }

@@ -26,16 +26,17 @@ function geliefertesThis() {
         [11, { punkt: { x: 50, y: 9, z: 0 }, globalId: 'S1', name: 'S1' }],
         [12, { punkt: { x: 100, y: 8, z: 0 }, globalId: 'S2', name: 'S2' }],
     ]);
-    return {
+    // AUF DEM ECHTEN PROTOTYP, nicht als lose Sammlung von Methoden: die
+    // Engine-Methoden rufen einander (`setzeJournalStand` → `_gelaendeVerwerfen`),
+    // und eine handverlesene Auswahl bricht, sobald eine dazukommt. Genau so
+    // passiert, als die Gelände-Entwertung eine eigene Methode bekam.
+    return Object.assign(Object.create(IfcEngine.prototype), {
         _achsen: new Map([['m1', achsen]]),
         _knoten: new Map([['m1', knoten]]),
         _merkmale: new Map(),
-        achsenVon: IfcEngine.prototype.achsenVon,
-        achseVon: IfcEngine.prototype.achseVon,
-        netzVon: IfcEngine.prototype.netzVon,
         quelleVon: () => null,
         merkmaleAlle: () => new Map(),
-    };
+    });
 }
 
 /** Journal: H2 geteilt — H2 verdeckt, zwei CDE-Rohre + ein Schacht dazwischen. */

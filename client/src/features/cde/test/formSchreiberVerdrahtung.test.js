@@ -27,6 +27,18 @@ describe('Die reine Frage: entwertet dieser Stapel die Geometrie?', () => {
         expect(entwertetGeometrie([])).toBe(false);
         expect(entwertetGeometrie(['kg', 'lage'])).toBe(true);   // einer reicht
     });
+
+    it('eine Bauform-AUSLEGUNG entwertet die Geometrie — sonst toter Knopf', () => {
+        // Sie ändert kein Dreieck und trotzdem fast alles, was daraus folgt:
+        // wer einen Volumenkörper zum Höhenfeld erklärt, macht ihn zum GELÄNDE.
+        // Sampler, Längsschnitt, Höhenlinien und Böschung müssen neu.
+        //
+        // Fehlte die Zeile in der TABELLE, wäre `veraltetDurch` leer, der
+        // Viewer-Hub stiege sofort aus, `setzeJournalStand` liefe nie — und am
+        // Bild änderte sich bis zum nächsten F5 nichts. Genau die Sorte
+        // Fehler, die wie ein kaputter Knopf aussieht.
+        expect(entwertetGeometrie(['bauform'])).toBe(true);
+    });
 });
 
 describe('Die Verklebung im Viewer', () => {
@@ -35,8 +47,10 @@ describe('Die Verklebung im Viewer', () => {
         const vorgang = viewer.slice(viewer.indexOf('async function wendeVorgangAn'),
                                      viewer.indexOf('async function wendeEinenAn'));
         expect(vorgang).toContain('entwerteNach(');
-        const einzel = viewer.slice(viewer.indexOf('wendeEintragAn:'));
-        expect(einzel.slice(0, 400)).toContain('entwerteNach(');
+        // Seit Teil XVI ist `wendeEintragAn` eine Funktion (die Fassade
+        // delegiert nur) — der Einzelweg steht dort.
+        const einzel = viewer.slice(viewer.indexOf('async function wendeEintragAn'));
+        expect(einzel.slice(0, 600)).toContain('entwerteNach(');
     });
 
     it('nach dem initialen Nachspielen werden die Achsen NEU gelesen', () => {

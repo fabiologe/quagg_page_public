@@ -50,6 +50,13 @@
         <span v-if="konflikte.length" class="ae-chip konflikt">
           {{ konflikte.length }} Konflikt{{ konflikte.length === 1 ? '' : 'e' }}
         </span>
+        <!-- Teil XIV: was voneinander abhängt — abgeleitet aus dem Stand, nie gespeichert. -->
+        <span v-if="abhaengig.length" class="ae-chip" :title="abhaengig.join('\n')">
+          {{ abhaengig.length }} Ableitung{{ abhaengig.length === 1 ? '' : 'en' }}
+        </span>
+        <span v-if="hinweise.length" class="ae-chip konflikt" :title="hinweise.map(h => h.grund).join('\n')">
+          {{ hinweise.length }} × Quelle geändert
+        </span>
       </div>
 
       <!-- ── Konfliktklärung (Stufe 9.9): der Modellvergleich mit
@@ -229,6 +236,7 @@ import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { repo } from '../services/RepoFacade.js';
 import { flacheAusNutzlast, vergleicheStaende } from '../services/Standvergleich.js';
+import { abhaengige } from '../services/ableitung/Bezuege.js';
 
 const emit = defineEmits(['geaendert']);
 
@@ -247,6 +255,15 @@ watch(() => ifc.geometrieStand, () => { konflikte.value = api.getKonflikte?.() ?
 
 const auswahlGlobalId = computed(() => ifc.selectedElement?.globalId ?? null);
 const eigene = computed(() => ae.wirksamerStand('erzeugt').size);
+
+// Teil XIV: der Rückwärtsindex „wer hängt an wem" — je Quelle eine Zeile.
+const abhaengig = computed(() => {
+  const stand = ae.wirksamerStand('erzeugt');
+  return [...abhaengige(stand)].map(([quelle, menge]) =>
+    `${kurz(quelle)} ← ${[...menge].map(kurz).join(', ')}`);
+});
+const hinweise = ref(api.getHinweise?.() ?? []);
+watch(() => ifc.geometrieStand, () => { hinweise.value = api.getHinweise?.() ?? []; });
 
 // ── Satz-Vergleich (Lücke ⑦ / 9.9) ─────────────────────────────────────────
 const VGL_TITEL = { nur_hier: 'nur hier', nur_dort: 'nur dort', verschieden: 'verschieden' };
