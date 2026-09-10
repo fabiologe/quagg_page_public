@@ -59,6 +59,30 @@
         </span>
       </div>
 
+      <!-- ── Rebase (Stufe 5 des Aushub-Fachmodells): eine neue Revision ist
+           geladen, das Journal hängt an der alten. Vorschläge, bestätigen,
+           umhängen — ein eigener Commit, jederzeit revertierbar. ── -->
+      <section v-if="rebase.zeilen.length" class="ae-rebase">
+        <h4 class="ae-abschnitt">
+          <template v-if="rebase.hinweis?.wechsel">{{ rebase.hinweis.wechsel.nach.name }} geladen — das Journal hängt an {{ rebase.hinweis.wechsel.von.name }}</template>
+          <template v-else>{{ rebase.zeilen.length }} Kennung{{ rebase.zeilen.length === 1 ? '' : 'en' }} des Journals nicht im Modell</template>
+        </h4>
+        <p class="ae-rtext">Zuordnen, was dasselbe Bauteil ist. Erst „Umhängen" ändert etwas — als eigener Commit.</p>
+        <div v-for="z in rebase.zeilen" :key="z.alt" class="ae-rzeile">
+          <span class="ae-ralt" :title="z.alt">{{ z.name || kurz(z.alt) }}</span>
+          <select v-model="z.neu" class="ae-rwahl">
+            <option :value="null">— nicht zuordnen —</option>
+            <option v-for="k in z.auswahl" :key="k.globalId" :value="k.globalId">{{ k.name || kurz(k.globalId) }} · {{ kurz(k.globalId) }}</option>
+          </select>
+          <em>{{ GRUND_TEXT[z.grund] ?? '' }}</em>
+        </div>
+        <div class="ae-kaktionen">
+          <button class="ae-btn" :disabled="rebase.laeuft || !rebase.zeilen.some(z => z.neu)" @click="umhaengen">
+            Umhängen ({{ rebase.zeilen.filter(z => z.neu).length }})
+          </button>
+        </div>
+      </section>
+
       <!-- ── Konfliktklärung (Stufe 9.9): der Modellvergleich mit
            Entscheidungen. Drei Verben, mehr gibt es nicht. ── -->
       <section v-if="konflikte.length" class="ae-konflikte">
@@ -213,6 +237,8 @@
 </template>
 
 <script setup>
+import { fehlendeAusJournal, schlageVor } from '../services/GlobalIdAbbildung.js';
+import { revisionsHinweis } from '../services/RevisionHinweis.js';
 /**
  * Die Zeitleiste der Änderungen (Stufe 9, komplett).
  *
@@ -223,7 +249,7 @@
  * Übernehmen / Verwerfen / Übertragen. Alles, was das Modell berührt, geht
  * durch DENSELBEN `wendeEintragAn` wie jede Bearbeitung.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, reactive } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
@@ -354,6 +380,56 @@ async function bisHierZurueck(v) {
   await anwenden(await ae.zurueckBisCommit(v.id, cde.bearbeiter || ''));
 }
 
+// ── Rebase (Stufe 5 des Aushub-Fachmodells) ─────────────────────────────────
+// Die fehlenden Kennungen kommen aus den Konflikten („Bauteil nicht mehr im
+// Modell"), die Kandidaten aus den geladenen Dateien, der Vorschlag aus
+// `schlageVor`. Entschieden wird in der Tabelle — nie auf Verdacht.
+const GRUND_TEXT = {
+  gleich: 'gleiche Kennung', 'name+kategorie': 'gleicher Name', pruefmass: 'gleiches Prüfmass',
+  mehrdeutig: 'mehrdeutig — bitte wählen', keiner: 'kein Vorschlag',
+};
+const rebase = reactive({ zeilen: [], hinweis: null, laeuft: false });
+
+async function rebaseVorbereiten() {
+  const fehlend = fehlendeAusJournal({ konflikte: konflikte.value, erzeugtStand: ae.wirksamerStand('erzeugt') });
+  if (!fehlend.length) { rebase.zeilen = []; rebase.hinweis = null; return; }
+  const kategorien = [...new Set(fehlend.map(f => f.kategorie).filter(Boolean))];
+  const kandidaten = api.bauteileDerKategorie?.(kategorien) ?? [];
+  // Das Prüfmass nur für die, deren Kategorie passt — der Resolver ist nicht umsonst.
+  for (const k of kandidaten) k.pruefmass = await api.pruefmassVon?.(k.globalId) ?? null;
+  const vorschlaege = schlageVor({ fehlend, kandidaten });
+  rebase.zeilen = vorschlaege.map(v => {
+    const f = fehlend.find(x => x.gid === v.alt);
+    const auswahl = kandidaten.filter(k => !f?.kategorie || String(k.kategorie).toUpperCase() === String(f.kategorie).toUpperCase());
+    return { alt: v.alt, name: f?.name ?? null, neu: v.neu, grund: v.grund, auswahl };
+  });
+  rebase.hinweis = revisionsHinweis({ fehlend, vorschlaege, geladen: api.geladeneModelle?.() ?? [], register: cde.dokumente });
+}
+watch(konflikte, rebaseVorbereiten, { immediate: true });
+
+async function umhaengen() {
+  const abbildung = new Map(rebase.zeilen.filter(z => z.neu).map(z => [z.alt, z.neu]));
+  if (!abbildung.size) return;
+  rebase.laeuft = true;
+  try {
+    const basisIst = new Map();
+    const quellmasse = new Map();
+    for (const neu of abbildung.values()) {
+      const b = api.lieferstandVon?.(neu);
+      if (b) basisIst.set(neu, b);
+      const m = await api.pruefmassVon?.(neu);
+      if (m) quellmasse.set(neu, m);
+    }
+    const w = rebase.hinweis?.wechsel ?? null;
+    const { schritte } = await ae.rebaseAuf({ abbildung, basisIst, quellmasse, wer: cde.bearbeiter || '',
+                                              von: w?.von ?? null, nach: w?.nach ?? null });
+    konflikte.value = konflikte.value.filter(k => !abbildung.has(k.globalId));
+    await anwenden(schritte);
+  } finally {
+    rebase.laeuft = false;
+  }
+}
+
 // ── Die drei Konflikt-Verben (9.9) ──────────────────────────────────────────
 function _raeume(k) {
   konflikte.value = konflikte.value.filter(x => x !== k);
@@ -428,6 +504,13 @@ function berichtErzeugen() {
   letter-spacing: 0.06em; color: var(--cde-text-dim);
 }
 .ae-konflikte { display: flex; flex-direction: column; gap: 0.4rem; }
+/* ── Rebase (Stufe 5) ── */
+.ae-rebase { display: flex; flex-direction: column; gap: 0.35rem; }
+.ae-rtext { margin: 0; color: var(--cde-text-dim); font-size: var(--cde-font-xs); }
+.ae-rzeile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 0.4rem; align-items: center; }
+.ae-ralt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ae-rwahl { min-width: 0; }
+.ae-rzeile em { color: var(--cde-text-dim); font-size: var(--cde-font-xs); white-space: nowrap; }
 .ae-kkarte {
   border: 1px solid color-mix(in srgb, var(--cde-warn) 45%, transparent);
   border-radius: var(--cde-radius);

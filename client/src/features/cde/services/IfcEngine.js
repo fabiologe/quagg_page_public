@@ -1986,6 +1986,29 @@ export class IfcEngine {
         return Object.fromEntries(this._hoehenBefund);
     }
 
+    /**
+     * Die Bauteile bestimmter Kategorien in den GELIEFERTEN Modellen — Kennung,
+     * Name, Kategorie (Stufe 5 des Aushub-Fachmodells: die Kandidaten, auf die
+     * ein Journal nach einer neuen Revision umgehängt werden kann). Aus der
+     * IfcQuelle, nicht aus dem Suchindex: der kennt nur fest verdrahtete
+     * Kategorien. Eigenes (CDE) hat keine Quelle und kommt nicht vor.
+     */
+    bauteileDerKategorie(kategorien = []) {
+        const out = [];
+        for (const { modelId } of this.getModelList?.() ?? []) {
+            const q = this.quelleVon(modelId);
+            if (!q) continue;
+            for (const typ of kategorien ?? []) {
+                for (const id of q.ids(typ, { untertypen: true })) {
+                    const z = q.zeile(id);
+                    const globalId = z?.GlobalId?.value;
+                    if (globalId) out.push({ globalId, name: z?.Name?.value ?? '', kategorie: q.kategorieVon(z) || typ, modelId, localId: id });
+                }
+            }
+        }
+        return out;
+    }
+
     /** Der lebende Lesezugriff auf ein Modell, oder null. */
     quelleVon(modelId) {
         const q = this._quellen.get(modelId) ?? null;

@@ -1491,6 +1491,11 @@ provideViewerApi({
    * still als „sauber" durch, statt einen Konflikt zu melden.
    */
   lieferstandVon:       (globalId) => nachspielen.lieferstandVon(globalId),
+  /** Stufe 5 (Rebase): die Kandidaten einer neuen Revision, ihr Prüfmass, und welche Dateien geladen sind. */
+  bauteileDerKategorie: (kategorien) => engine.value?.bauteileDerKategorie?.(kategorien) ?? [],
+  pruefmassVon:         (globalId) => engine.value?.pruefmassVon?.(globalId) ?? Promise.resolve(null),
+  geladeneModelle:      () => (engine.value?.getModelList?.() ?? [])
+    .map(m => ({ modelId: m.modelId, name: m.name, sha256: ablage.identitaet(m.modelId)?.sha256 ?? null })),
   getKonflikte:         () => nachspielen.konflikte.value,
   /** Laute, nicht blockierende Meldungen des Nachspielens (quelle_geaendert, Teil XIV). */
   getHinweise:          () => nachspielen.hinweise.value,

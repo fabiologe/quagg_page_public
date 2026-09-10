@@ -26,6 +26,7 @@
  * Änderung am Bauteilbestand auch der Punkt ist.
  */
 
+import { planeRebase } from '../services/JournalRebase.js';
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { repo } from '../services/RepoFacade.js';
@@ -656,6 +657,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 id: c.id, nachricht: c.nachricht ?? '', wer: c.wer ?? '',
                 wann: c.wann ?? 0, modellSha: c.modellSha ?? null,
                 schrittIds: schritte.map(e => e.id),
+                // Ein Rebase-Commit bleibt einer, auch nach dem Neuladen.
+                ...(c.rebase ? { rebase: c.rebase } : {}),
             });
         }
         let sitzung = null;
@@ -987,6 +990,45 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
 
     /**
+     * REBASE (Stufe 5 des Aushub-Fachmodells): das Journal von Revision R01
+     * auf R02 umhängen — nach einer BESTÄTIGTEN Zuordnung alt → neu.
+     *
+     * Je Ebene EIN Vorgang und EIN Commit mit `rebase {von, nach, abbildung}`;
+     * die Schritte plant `JournalRebase.planeRebase` (rein). Kein Eintrag wird
+     * nachträglich geändert — wer falsch zugeordnet hat, revertiert den Commit.
+     * Ohne Zuordnung passiert nichts: umgehängt wird nie auf Verdacht.
+     *
+     * @returns {Promise<{schritte: object[], unaufgeloest: object[]}>}
+     */
+    async function rebaseAuf({ abbildung, basisIst = new Map(), quellmasse = new Map(), wer = '',
+                               von = null, nach = null } = {}) {
+        const abb = abbildung instanceof Map ? abbildung : new Map(Object.entries(abbildung ?? {}));
+        const alle = [];
+        const ungeloest = [];
+        if (!abb.size) return { schritte: alle, unaufgeloest: ungeloest };
+        const rev = (x) => (x?.revision != null ? `R${String(x.revision).padStart(2, '0')}` : null);
+        const titel = `Rebase ${rev(von) ?? 'alte Revision'} → ${rev(nach) ?? 'neue Revision'}`;
+        for (const ebene of ['auftrag', 'stand']) {
+            const liste = _liste(ebene).value;
+            const staende = Object.fromEntries(Object.keys(AENDERUNGS_ARTEN).map(art => [art, standAus(liste, art)]));
+            const { schritte, unaufgeloest } = planeRebase({ staende, abbildung: abb, basisIst, quellmasse });
+            ungeloest.push(...unaufgeloest.map(u => ({ ...u, ebene })));
+            if (!schritte.length) continue;
+            const vorgang = _neueVorgangsId();
+            const geschrieben = [];
+            for (const schritt of schritte) {
+                const e = await eintragen({ ...schritt, wer, ebene, vorgang, vorgangTitel: titel,
+                                            modellSha: nach?.sha ?? schritt.modellSha ?? null });
+                if (e) geschrieben.push(e);
+            }
+            await _commitAus(ebene, geschrieben, titel, wer,
+                             { rebase: { von, nach, abbildung: Object.fromEntries(abb) } });
+            alle.push(...geschrieben);
+        }
+        return { schritte: alle, unaufgeloest: ungeloest };
+    }
+
+    /**
      * DIE ZEITLEISTE AUF COMMIT-EBENE (U3) — was der Nutzer als
      * Versionsverlauf sieht: oben die offene Sitzung (unversioniert),
      * darunter die Commits, neueste zuerst. `zurueckgenommen` gilt einem
@@ -1234,7 +1276,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * Commit steht für sich. Ohne das mischte sich eine
      * Konflikt-Entscheidung in die Arbeit des Nutzers.
      */
-    async function _commitAus(ziel, eintraege, nachricht, wer = '') {
+    async function _commitAus(ziel, eintraege, nachricht, wer = '', extra = null) {
         const ids = (eintraege ?? []).filter(Boolean).map(e => e.id);
         if (!ids.length) return null;
         const s = sitzungJe[ziel].value;
@@ -1244,6 +1286,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             nachricht, wer, wann: Date.now(),
             modellSha: eintraege.find(e => e?.modellSha)?.modellSha ?? null,
             schrittIds: ids,
+            // Besondere Commits tragen, WAS sie sind (Stufe 5: `rebase {von, nach}`).
+            ...(extra ?? {}),
         };
         commitsJe[ziel].value.push(commit);
         await _sichern(ziel);
@@ -1347,7 +1391,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         neueVorgangsId: _neueVorgangsId,
         auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
         anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
-        wirksamerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
+        wirksamerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
         commits, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
         beginneSitzung, entferneSitzungsVorgang, verwerfeSitzung, commitSitzung,
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
