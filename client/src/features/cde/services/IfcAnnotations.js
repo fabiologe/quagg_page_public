@@ -27,10 +27,13 @@ export class IfcAnnotations {
      * @param {object}   opt
      * @param {Function} opt.getWorld    () => World (lazy, siehe Kopf)
      * @param {Function} opt.probePoint  (clientX, clientY) => Promise<Vector3|null>
+     * @param {Function} [opt.probeTreffer] (clientX, clientY) => Promise<{point, modelId}|null>
+     *                   — sagt zusätzlich, WELCHES Modell der Strahl traf
      */
-    constructor({ getWorld, probePoint }) {
+    constructor({ getWorld, probePoint, probeTreffer = null }) {
         this._getWorld = getWorld;
         this._probePoint = probePoint;
+        this._probeTreffer = probeTreffer;
         this._annotationGroup = null;
         this._annotations = [];
     }
@@ -79,7 +82,10 @@ export class IfcAnnotations {
     }
 
     async addAnnotation(clientX, clientY, text, color = '#e91e63') {
-        const pt = await this._probePoint(clientX, clientY);
+        // EIN Strahl, der Punkt UND Modell nennt: das Issue gehört dem Modell,
+        // an dem es sitzt (Stufe 4, nachgereicht) — nicht dem zuerst geladenen.
+        const t = this._probeTreffer ? await this._probeTreffer(clientX, clientY) : null;
+        const pt = this._probeTreffer ? t?.point : await this._probePoint(clientX, clientY);
         if (!pt) return null;
         if (!this._annotations) this._annotations = [];
 
@@ -90,6 +96,7 @@ export class IfcAnnotations {
             color,
             labelOffset: [40, -60], // px offset of speech bubble from the pin in screen-space
             idx:  this._annotations.length + 1,
+            modelId: t?.modelId ?? null,    // sitzungsgebunden — `useAnnotationen` macht daraus den Modell-Key
         };
         this._annotations.push(ann);
 

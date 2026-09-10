@@ -116,7 +116,7 @@ async function onAddPset({ psetName, props }) {
       globalId: el.globalId,
       nachher: { ...bisher, [psetName]: props },
       wer: cde.bearbeiter,
-      modellSha: api.getLoadedModelSha?.() ?? null,
+      modellSha: api.modellShaVon?.(el.globalId) ?? api.getLoadedModelSha?.() ?? null,
       modell: el.modelId === 'cde-eigenbau' ? 'cde' : 'geliefert',
     });
     if (!eintrag) { ifc.setPsetError('Der Satz galt schon — nichts einzutragen.'); return; }

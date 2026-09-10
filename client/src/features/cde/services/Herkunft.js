@@ -72,12 +72,20 @@ export function imErdbauEnthalten(dokumente) {
 }
 
 /**
- * Die LINIE eines Registerdokuments — Spiegel von `cde._linie` auf dem Server:
- * die IFCPROJECT-GlobalId, sonst Stamm und Art (der Server rechnet den Stamm
- * seit Stufe 4 aus dem Dateinamen und liefert ihn so aus).
+ * Meinen zwei Registerdokumente DASSELBE Fachmodell? — Spiegel von
+ * `cde._gleiche_linie` auf dem Server, paarweise: die IFCPROJECT-GlobalId
+ * entscheidet, wenn BEIDE eine tragen; sonst Stamm und Art (den Stamm rechnet
+ * der Server seit Stufe 4 aus dem Dateinamen und liefert ihn so aus).
+ *
+ * Bis 2026-09-10 ein Schlüssel „GlobalId, sonst Stamm|Art" — damit bekamen R01
+ * (vor Stufe 4 registriert, ohne GlobalId) und R02 (mit) verschiedene Linien,
+ * und kein Revisionswechsel wurde erkannt.
  */
-export function linieVon(d) {
-    return d?.projectGlobalId || d?.projekt_global_id || `${d?.basisname ?? ''}|${d?.art ?? ''}`;
+export function gleicheLinie(a, b) {
+    const ga = a?.projectGlobalId || a?.projekt_global_id;
+    const gb = b?.projectGlobalId || b?.projekt_global_id;
+    if (ga && gb) return ga === gb;
+    return (a?.basisname ?? '') === (b?.basisname ?? '') && (a?.art ?? '') === (b?.art ?? '');
 }
 
 /**
@@ -96,10 +104,9 @@ export function quellenVeraltet(dok, alle) {
     for (const q of quellen) {
         const quell = liste.find(x => x.sha256 === q.sha256);
         if (!quell) continue;                                   // nicht mehr im Register — nichts zu vergleichen
-        const linie = linieVon(quell);
         const rev = Number(quell.revision ?? q.revision ?? 0);
         const neuer = liste
-            .filter(x => x.sha256 !== quell.sha256 && !x.herkunft?.art && linieVon(x) === linie && Number(x.revision ?? 0) > rev)
+            .filter(x => x.sha256 !== quell.sha256 && !x.herkunft?.art && gleicheLinie(x, quell) && Number(x.revision ?? 0) > rev)
             .sort((a, b) => Number(b.revision ?? 0) - Number(a.revision ?? 0))[0];
         if (neuer) aus.push({ quelle: quell.name ?? quell.datei, neu: neuer.name ?? neuer.datei, revision: Number(neuer.revision) });
     }

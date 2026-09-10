@@ -474,7 +474,8 @@ function berichtErzeugen() {
     konflikte: konflikte.value,
     meta: {
       projekt: cde.auftrag?.name ?? cde.auftrag?.id ?? '',
-      modellSha: api.getLoadedModelSha?.() ?? '',
+      // Alle geladenen Dateien (Stufe 4, nachgereicht) — der Bericht betrifft die Modellmenge.
+      modelle: api.geladeneModelle?.() ?? [],
     },
   });
   const stempel = new Date().toISOString().slice(0, 10);

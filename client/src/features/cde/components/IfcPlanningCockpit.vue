@@ -291,7 +291,7 @@ async function onOverrideKg({ globalId, kgCode }) {
   await aenderungen.eintragen({
     art: 'kg', globalId, nachher: kgCode || null,
     wer: cde.bearbeiter || '',
-    modellSha: api.getLoadedModelSha?.() ?? null,
+    modellSha: api.modellShaVon?.(globalId) ?? api.getLoadedModelSha?.() ?? null,
   });
   await recomputeKg();
 }
@@ -418,7 +418,7 @@ async function onOverrideClass({ globalId, classCode }) {
   await aenderungen.eintragen({
     art: 'din277', globalId, nachher: classCode || null,
     wer: cde.bearbeiter || '',
-    modellSha: api.getLoadedModelSha?.() ?? null,
+    modellSha: api.modellShaVon?.(globalId) ?? api.getLoadedModelSha?.() ?? null,
   });
   recomputeAreas();
 }

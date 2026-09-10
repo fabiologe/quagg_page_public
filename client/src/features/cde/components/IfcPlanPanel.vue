@@ -276,7 +276,8 @@ const logoFehler = ref('');
 const bereit = computed(() => (api.getCategoryGroups?.() ?? []).length > 0);
 
 const autoWasserzeichen = computed(() => {
-  const sha = api.getLoadedModelSha?.();
+  // Alle geladenen Dateien — der unreifste Status gilt (Stufe 4, nachgereicht).
+  const sha = api.getLoadedModelShas?.() ?? api.getLoadedModelSha?.();
   return sha ? (resolveWatermarkText(cde.dokumente, sha) ?? '') : '';
 });
 

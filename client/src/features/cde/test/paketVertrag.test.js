@@ -40,8 +40,9 @@ beforeEach(() => {
 });
 
 async function paketDerKette() {
-    // Zelle 1 m: dieselbe Kette, eine kleinere Fixture.
-    const S = erdbauSzenario({ ...VERTRAG, cell: 1 });
+    // Zelle 1 m: dieselbe Kette, eine kleinere Fixture. MIT Auftrag: das Paket
+    // soll eine Füllung tragen und einen Graben, der durch sie schneidet.
+    const S = erdbauSzenario({ ...VERTRAG, cell: 1, mitAuftrag: true });
     const { ae, stand } = await S.spiele();
     const s = stand();
     const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: S.holeQuellForm, kernel: erzeugeKernel(), getHoehenversatz: () => 300 });
@@ -87,6 +88,14 @@ describe('Paket v2 — der Vertrag mit dem Schreiber', () => {
         expect(paket.bauteile.some(b => b.klasse === 'IFCGEOGRAPHICELEMENT')).toBe(false);
         expect(cuts.map(b => b.quellen.rohre)).toEqual([[], [VERTRAG.rohr], []]);
         expect(cuts[2].quellen.bauteil).toBe(VERTRAG.bauteil);
+        // Die Füllung (Stufe 2, nachgereicht): verdichtet eingebaut, mit Menge —
+        // und der Graben nennt sie, weil er durch sie schneidet (Entscheidung 3).
+        const fills = paket.bauteile.filter(b => b.klasse === 'IFCEARTHWORKSFILL');
+        expect(fills.length).toBeGreaterThanOrEqual(1);
+        expect(fills.every(b => b.mengen.compactedVolume > 0 && b.wirt === null)).toBe(true);
+        const graben = cuts.find(b => b.vorgang.art === 'kanalgraben');
+        expect(graben.schneidetAuffuellung).toEqual(expect.arrayContaining([fills[0].cdeId]));
+        expect(graben.aushubAusAuffuellung).toBeGreaterThan(0.5);
 
         if (process.env.PAKET_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(paket));
         expect(existsSync(FIXTURE), `Fixture fehlt: PAKET_VERTRAG_SCHREIBEN=1 npx vitest run ${'src/features/cde/test/paketVertrag.test.js'}`).toBe(true);

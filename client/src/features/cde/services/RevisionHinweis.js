@@ -2,12 +2,12 @@
  * Revisionshinweis — ist eine NEUE Revision geladen, während das Journal an
  * der alten hängt? (Stufe 5 des Aushub-Fachmodells.) Rein.
  *
- * Erkannt über das Register, nicht über den Namen: eine geladene Datei, deren
- * Linie (IFCPROJECT-GlobalId, sonst Stamm|Art — `Herkunft.linieVon`) eine
- * ÄLTERE Revision im Register hat. Ohne fehlende Kennungen gibt es nichts
+ * Erkannt über das Register, nicht über den Namen: eine geladene Datei, zu der
+ * es im Register eine ÄLTERE Revision derselben Linie gibt (`Herkunft.gleicheLinie`,
+ * paarweise — auch wenn nur die neue eine IFCPROJECT-GlobalId trägt). Ohne fehlende Kennungen gibt es nichts
  * umzuhängen, dann schweigt der Hinweis.
  */
-import { linieVon } from './Herkunft.js';
+import { gleicheLinie } from './Herkunft.js';
 
 /**
  * @returns {{wechsel: {von, nach}|null, fehlend: number, zuordenbar: number}|null}
@@ -21,7 +21,7 @@ export function revisionsHinweis({ fehlend = [], vorschlaege = [], geladen = [],
         const d = (register ?? []).find(x => x.sha256 === g.sha256);
         if (!d) continue;
         const aelter = register
-            .filter(x => x.sha256 !== d.sha256 && !x.herkunft?.art && linieVon(x) === linieVon(d)
+            .filter(x => x.sha256 !== d.sha256 && !x.herkunft?.art && gleicheLinie(x, d)
                          && Number(x.revision ?? 0) < Number(d.revision ?? 0))
             .sort((a, b) => Number(b.revision ?? 0) - Number(a.revision ?? 0))[0];
         if (aelter) { wechsel = { von: alsRev(aelter), nach: alsRev(d) }; break; }

@@ -86,7 +86,8 @@ export function usePlanExport() {
     function _wasserzeichen() {
         const eigen = (plan.optionen.watermarkText ?? '').trim();
         if (eigen) return eigen;
-        const sha = api.getLoadedModelSha?.();
+        // Alle geladenen Dateien — der unreifste Status gilt (Stufe 4, nachgereicht).
+        const sha = api.getLoadedModelShas?.() ?? api.getLoadedModelSha?.();
         return (sha ? resolveWatermarkText(cde.dokumente, sha) : null) || null;
     }
 

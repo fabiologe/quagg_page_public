@@ -690,4 +690,15 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
     for c in cuts:
         el = f.by_guid(guids.guid_aus_cde_id(c["cdeId"]))
         assert _qto(el)["UndisturbedVolume"] == pytest.approx(c["mengen"]["undisturbedVolume"], abs=1e-3)
+    # Die Fuellung: verdichtet eingebaut, mit Menge — und der Graben, der durch
+    # sie schneidet, sagt es am Merkmal; sein Wirt bleibt das Ur (Entscheidung 3).
+    fills = [b for b in paket["bauteile"] if b["klasse"] == "IFCEARTHWORKSFILL"]
+    assert fills and len(f.by_type("IfcEarthworksFill")) == len(fills)
+    for b in fills:
+        el = f.by_guid(guids.guid_aus_cde_id(b["cdeId"]))
+        assert _qto(el)["CompactedVolume"] == pytest.approx(b["mengen"]["compactedVolume"], abs=1e-3)
+    graben = next(c for c in cuts if c["vorgang"]["art"] == "kanalgraben")
+    el = f.by_guid(guids.guid_aus_cde_id(graben["cdeId"]))
+    assert guids.guid_aus_cde_id(fills[0]["cdeId"]) in _pset(el, PSET_CDE)["SchneidetAuffuellung"]
+    assert el.VoidsElements[0].RelatingBuildingElement.GlobalId == VERTRAG["ur"]
     _sauber(pruefe(ziel))

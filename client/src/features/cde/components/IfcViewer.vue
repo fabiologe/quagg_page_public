@@ -754,6 +754,7 @@ const annotationen = useAnnotationen({
   engine, ifc, cde,
   viewpoint: () => erfasseViewpoint(),
   aktiv: annotationActive,
+  modellKeyVon: (modelId) => ablage.identitaet(modelId)?.key ?? null,
 });
 
 // ── Der Zeiger (Teil XVI, S1): Cursor-Klasse, Zielmarke, Pille — ein Besitzer ──
@@ -1009,7 +1010,7 @@ function issueAmBauteil() {
   const text = prompt('Issue am gewählten Bauteil — Beschreibung:', '');
   if (text === null) return;
   const letzteFarbe = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
-  annotationen.anPunkt(anker, text, letzteFarbe);
+  annotationen.anPunkt(anker, text, letzteFarbe, ifc.selectedElement?.modelId ?? null);
 }
 
 function onZoomSelected() {
@@ -1578,6 +1579,14 @@ provideViewerApi({
   },
   getWebIfcAPIs:        () => engine.value?.getWebIfcAPIs() ?? [],
   getLoadedModelSha:    () => ablage.geladeneModellSha(),
+  /**
+   * Die Datei EINES Bauteils (Stufe 4, nachgereicht) — für Journaleinträge
+   * ausserhalb von `ausfuehren` (Cockpit, Längsschnitt, Merkmale, Plan-Griffe).
+   * `null` für Eigenes und Unbekanntes; dann nimmt der Aufrufer das erste Modell.
+   */
+  modellShaVon:         (globalId) => _modellShaVon(globalId),
+  /** Alle geladenen Dateien (sha256) — das Wasserzeichen nimmt den UNREIFSTEN Status. */
+  getLoadedModelShas:   () => _geladeneShas(),
 
   /**
    * Das CDE-eigene Modell aus dem Journal NEU aufbauen (Stufe 9.4).
@@ -2021,6 +2030,7 @@ defineExpose({
    */
   messungen: () => ifc.messungen,
   geladeneModellSha: () => ablage.geladeneModellSha(),
+  geladeneModellShas: () => _geladeneShas(),
   /** Formsignatur eines Elements — das Panel „Bauformen" misst je Zeile ein Beispiel (2026-09-07). */
   getFormsignatur: (modelId, localId) => engine.value?.formsignaturVon?.({ modelId, localId }) ?? Promise.resolve(null),
   /** Typen ausserhalb des 4.3-Wörterbuchs — strukturell erkannt. */
@@ -2056,6 +2066,8 @@ async function removeModel(modelId) {
   await engine.value?.unloadModel(modelId);
   ablage.vergiss(modelId);
   await _modellmengeNachziehen();
+  // Seine Issues gehen mit (gespeichert bleiben sie — beim nächsten Laden sind sie wieder da).
+  await _issuesNachziehen();
   // Der Journalstand gehört dazu: erzeugte Bauteile und Verdecktes beziehen
   // sich auf Modelle, von denen eines gerade gegangen ist.
   await entwerteNach(['erzeugt', 'lage']);
@@ -2166,6 +2178,39 @@ async function eigenbauPaket() {
 }
 
 /**
+ * Die Issues genau der geladenen LIEFERUNGEN (Stufe 4, nachgereicht). Eigenes
+ * (das CDE-Modell, das Delta des Editors) hat keinen eigenen Issue-Speicher —
+ * ein Pin daran landet beim ersten Modell.
+ */
+async function _issuesNachziehen() {
+  const modelle = (engine.value?.getModelList?.() ?? [])
+    .filter(m => modellHerkunft(m.modelId) !== 'cde' && !String(m.modelId).includes('-DELTA-MODEL-'))
+    .map(m => ({ key: ablage.identitaet(m.modelId)?.key ?? m.name, legacyName: m.name }));
+  await ifc.synchronisiereAnnotationen(modelle);
+  engine.value?.setAnnotations(ifc.annotations);
+}
+
+/** Die sha256 aller geladenen Dateien, in Ladereihenfolge. */
+function _geladeneShas() {
+  return (engine.value?.getModelList?.() ?? []).map(m => ablage.identitaet(m.modelId)?.sha256).filter(Boolean);
+}
+
+/**
+ * Die Datei, in der ein GELIEFERTES Bauteil steht — über den GUID-Index der
+ * IfcQuelle (synchron, je Modell einmal aufgebaut). Eigenes (`cde-…`) hat
+ * keine Datei: `null`.
+ */
+function _modellShaVon(globalId) {
+  if (!globalId || String(globalId).startsWith('cde-')) return null;
+  for (const m of engine.value?.getModelList?.() ?? []) {
+    if (engine.value?.quelleVon?.(m.modelId)?.nachGlobalId?.(globalId) != null) {
+      return ablage.identitaet(m.modelId)?.sha256 ?? null;
+    }
+  }
+  return null;
+}
+
+/**
  * Die REGISTERDOKUMENTE, in denen die Wirte der Aushübe liegen (Paket v2).
  *
  * Das Erdbau-Dokument (Stufe 3) nimmt genau sie als Quelle; der Server prüft
@@ -2224,10 +2269,9 @@ async function _onModelLoaded() {
   // SHA-256) — der Dateiname dient nur noch der Legacy-Übernahme.
   const firstModel = engine.value?.getModelList()?.[0];
   if (firstModel) {
-    const identity = ablage.identitaet(firstModel.modelId);
-    await ifc.loadAnnotationsForModel(identity?.key ?? firstModel.name, firstModel.name);
-    // If annotation mode is on, re-create visuals; otherwise pre-fill engine's data only
-    engine.value?.setAnnotations(ifc.annotations);
+    // Die Issues ALLER geladenen Lieferungen — jedes lebt bei seinem Modell
+    // (Stufe 4, nachgereicht). Bis hierher lud nur das erste.
+    await _issuesNachziehen();
 
     // Stufe 9.2: Die Festlegungen aus dem Journal auf das frisch geladene
     // Modell bringen. Ohne diesen Aufruf ist jede Bearbeitung beim Neuladen

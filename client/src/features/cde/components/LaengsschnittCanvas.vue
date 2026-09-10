@@ -218,7 +218,7 @@ async function zugAbschliessen(z, abgebrochen) {
         const drin = await aenderungen.eintragen({
             ...e, ...vorgang,
             wer: cde.bearbeiter || '',
-            modellSha: api.getLoadedModelSha?.() ?? null,
+            modellSha: api.modellShaVon?.(e.globalId) ?? api.getLoadedModelSha?.() ?? null,
             ...(e.art === 'parametrik'
                 ? { basis: api.lieferstandVon?.(e.globalId) ?? null, modell: 'geliefert' }
                 : {}),

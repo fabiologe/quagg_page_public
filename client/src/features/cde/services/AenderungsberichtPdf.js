@@ -40,7 +40,10 @@ export function schreibeBericht(bericht) {
     const kopfzeilen = [
         k.projekt && `Projekt: ${k.projekt}`,
         k.modell && `Modell: ${k.modell}`,
-        k.modellSha && `Modellstand (sha): ${k.modellSha}`,
+        // Jede geladene Datei mit ihrem Stand; ohne Liste die eine sha wie bisher.
+        ...((k.modelle ?? []).length
+            ? k.modelle.map(m => `Modellstand: ${m.name ?? '—'} (sha ${String(m.sha256 ?? '—').slice(0, 12)}…)`)
+            : [k.modellSha && `Modellstand (sha): ${k.modellSha}`]),
         `Erstellt: ${k.datum}`,
         k.bearbeiter.length && `Bearbeiter: ${k.bearbeiter.join(', ')}`,
         `${k.anzahlEintraege} Einträge in ${k.anzahlVorgaenge} Vorgängen`,

@@ -50,7 +50,7 @@ function _zeile(eintrag, wert) {
  * @param {object} opts
  * @param {Array}  opts.eintraege   das Journal (chronologisch, append-only)
  * @param {Array}  [opts.konflikte] aus dem letzten Nachspielen
- * @param {object} [opts.meta]      { projekt, modell, modellSha }
+ * @param {object} [opts.meta]      { projekt, modell, modellSha, modelle: [{name, sha256}] }
  */
 export function baueBericht({ eintraege = [], konflikte = [], meta = {}, zeitleiste = null } = {}) {
     // ── 1. Der wirksame Stand: die eigentliche Forderungsliste. ────────────
@@ -115,6 +115,9 @@ export function baueBericht({ eintraege = [], konflikte = [], meta = {}, zeitlei
             projekt: meta.projekt ?? '',
             modell: meta.modell ?? '',
             modellSha: meta.modellSha ?? '',
+            // ALLE geladenen Dateien (Stufe 4, nachgereicht): der Bericht betrifft
+            // die Modellmenge, nicht nur das zuerst geladene Modell.
+            modelle: Array.isArray(meta.modelle) ? meta.modelle : [],
             bearbeiter,
             anzahlEintraege: eintraege.length,
             anzahlVorgaenge: verlauf.length,

@@ -8,7 +8,7 @@
  * steht dasselbe Manifest aus Sicht des Viewers.
  */
 import { describe, expect, it } from 'vitest';
-import { herkunftChip, imErdbauEnthalten, linieVon, quellenVeraltet } from '../services/Herkunft.js';
+import { gleicheLinie, herkunftChip, imErdbauEnthalten, quellenVeraltet } from '../services/Herkunft.js';
 
 const GELAENDE = { sha256: 'a'.repeat(64), datei: 'Gelaende.ifc', revision: 1 };
 const erdbau = (datei, quellen = [GELAENDE], mehr = {}) => ({
@@ -65,9 +65,17 @@ describe('Veraltete Quellen (Stufe 4) — das Gelände ist im Register neuer als
     const erdbauAus = (q) => ({ sha256: 'e1', name: 'Erdbau_Boden_R01.ifc', basisname: 'Erdbau_Boden', art: 'modell', revision: 1,
                                 herkunft: { art: 'erdbau', quellen: [{ sha256: q.sha256, datei: q.name, revision: q.revision }] } });
 
-    it('linieVon spiegelt den Server: Projektkennung vor Stamm|Art', () => {
-        expect(linieVon(r01)).toBe('Gelaende|modell');
-        expect(linieVon({ ...r01, projectGlobalId: '0Osfh3c9f9_PSSk12wpzoa' })).toBe('0Osfh3c9f9_PSSk12wpzoa');
+    it('gleicheLinie spiegelt den Server, PAARWEISE: die Kennung nur, wenn BEIDE eine tragen', () => {
+        const g = (x, pg) => ({ ...x, projectGlobalId: pg });
+        expect(gleicheLinie(r01, r02)).toBe(true);                                      // Stamm|Art
+        expect(gleicheLinie(r01, g(r02, '0Uktvit05mFcrH4auhENsK'))).toBe(true);          // R01 alt (ohne), R02 neu (mit)
+        expect(gleicheLinie(g(r01, 'X'), g(r02, 'Y'))).toBe(false);                      // zwei Kennungen: zwei Modelle
+        expect(gleicheLinie(g(r01, 'X'), g({ ...r02, basisname: 'Anders' }, 'X'))).toBe(true);   // umbenannt, dasselbe
+    });
+
+    it('der Wechsel R01 → R02 wird auch erkannt, wenn nur R02 eine Projektkennung trägt', () => {
+        const r02neu = { ...r02, projectGlobalId: '0Uktvit05mFcrH4auhENsK' };
+        expect(quellenVeraltet(erdbauAus(r01), [r01, r02neu])).toEqual([{ quelle: 'Gelaende_R01.ifc', neu: 'Gelaende_R02.ifc', revision: 2 }]);
     });
 
     it('aus R01 gebaut, R02 liegt da: „neu erzeugen" — aus R02 gebaut: nichts', () => {

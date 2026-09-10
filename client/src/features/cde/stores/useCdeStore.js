@@ -40,10 +40,21 @@ export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived
  * (konservativ: was nicht im Register steht, ist nicht freigegeben).
  * Reine Funktion — testbar ohne Store.
  */
-export function resolveWatermarkText(dokumente, sha256) {
-    if (!sha256) return null;
-    const doc = (dokumente ?? []).find(d => d.sha256 === sha256);
-    const status = doc?.status ?? 'WIP';
+// Wie reif ein Status ist — der UNREIFSTE einer Modellmenge bestimmt das Blatt.
+const _REIFE = { WIP: 0, Shared: 1, Archived: 2, Published: 3 };
+
+/**
+ * Nimmt eine sha256 ODER die aller geladenen Dateien (Stufe 4, nachgereicht,
+ * 2026-09-10): dann gilt der UNREIFSTE Status — ein Plan aus einem
+ * freigegebenen und einem WIP-Modell ist ein Vorabzug. Bis hierher las das
+ * Wasserzeichen nur das zuerst geladene Modell. Eine Datei, die nicht im
+ * Register steht, gilt als WIP.
+ */
+export function resolveWatermarkText(dokumente, shaOderShas) {
+    const shas = (Array.isArray(shaOderShas) ? shaOderShas : [shaOderShas]).filter(Boolean);
+    if (!shas.length) return null;
+    const stati = shas.map(sha => (dokumente ?? []).find(d => d.sha256 === sha)?.status ?? 'WIP');
+    const status = stati.reduce((a, b) => ((_REIFE[b] ?? 0) < (_REIFE[a] ?? 0) ? b : a));
     switch (status) {
         case 'Published': return null;
         case 'Shared':    return 'ZUR PRÜFUNG';

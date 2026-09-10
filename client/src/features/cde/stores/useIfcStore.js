@@ -185,7 +185,17 @@ export const useIfcStore = defineStore('cde-modell', () => {
   //           author, createdAt, comments: [{author, text, createdAt}],
   //           viewpoint: engine.captureView()-Objekt | null }]
   const annotations = ref([]);
-  let _currentAnnKey = null;
+  // JEDES Issue lebt bei dem Modell, an dem es gesetzt wurde (Stufe 4 des
+  // Aushub-Fachmodells, nachgereicht, 2026-09-10). Bis hierher gab es EINEN
+  // Schlüssel — den des zuerst geladenen Modells: Issues am zweiten Modell
+  // landeten unter dem ersten, und wer das nächste Mal ein anderes Modell
+  // zuerst lud, sah sie nicht mehr. `_annKeys` sind die Repo-Schlüssel der
+  // geladenen Modelle in Ladereihenfolge; der erste ist der Rückfall für
+  // Issues ohne Modell (BCF-Import, Altbestand).
+  let _annKeys = [];
+  const _standardKey = () => _annKeys[0] ?? null;
+  const _zuletzt = new Map();          // Schlüssel → zuletzt geschriebener Stand (JSON)
+  const _annKey = (k) => (k == null ? null : (String(k).startsWith(REPO_ANN_PREFIX) ? String(k) : REPO_ANN_PREFIX + k));
 
   /** Altbestände (reine Notizen) auf das Issue-Schema heben. */
   function _normalizeIssue(a, i) {
@@ -205,9 +215,47 @@ export const useIfcStore = defineStore('cde-modell', () => {
   }
 
   const _persistAnnotations = _debounce(() => {
-    if (!_currentAnnKey) return;
-    repo.set(_currentAnnKey, JSON.parse(JSON.stringify(annotations.value)));
+    if (!_annKeys.length) return;
+    const je = new Map(_annKeys.map(k => [k, []]));
+    for (const a of annotations.value) {
+      const k = je.has(a.modellKey) ? a.modellKey : _standardKey();
+      // Der Schlüssel steht nicht noch einmal IM Issue — er ist der Ort, an dem es liegt.
+      const { modellKey: _ort, ...issue } = a;
+      je.get(k).push(issue);
+    }
+    // Nur schreiben, was sich geändert hat — bei zwei Modellen sonst zwei
+    // Serverzugriffe je Tastendruck im Issue-Text.
+    for (const [k, liste] of je) {
+      const json = JSON.stringify(liste);
+      if (_zuletzt.get(k) === json) continue;
+      _zuletzt.set(k, json);
+      repo.set(k, JSON.parse(json));
+    }
   }, 250);
+
+  /**
+   * Die Issues GENAU dieser Modelle: fehlende laden, die entladener Modelle
+   * aus der Liste nehmen (ihr Speicher bleibt — beim nächsten Laden sind sie
+   * wieder da).
+   * @param {Array<{key: string, legacyName?: string}>} modelle  stabile Modell-Keys in Ladereihenfolge
+   */
+  async function synchronisiereAnnotationen(modelle = []) {
+    const soll = (modelle ?? []).filter(m => m?.key).map(m => ({ key: _annKey(m.key), legacy: m.legacyName ?? null }));
+    const sollKeys = [...new Set(soll.map(m => m.key))];
+    const vorher = _standardKey();
+    const bleiben = annotations.value.filter(a => sollKeys.includes(a.modellKey ?? vorher));
+    const neu = [];
+    for (const m of soll) {
+      if (_annKeys.includes(m.key) || neu.some(a => a.modellKey === m.key)) continue;
+      const stored = await _loadWithLegacy(m.key, m.legacy ? `ifc-viewer-annotations:${m.legacy}` : null);
+      const liste = Array.isArray(stored) ? stored : [];
+      _zuletzt.set(m.key, JSON.stringify(liste));
+      for (const a of liste) neu.push({ ...a, modellKey: m.key });
+    }
+    _annKeys = sollKeys;
+    annotations.value = [...bleiben, ...neu].map((a, i) => _normalizeIssue({ ...a, idx: i + 1 }, i));
+    return annotations.value;
+  }
 
   /**
    * @param {string} modelKey   stabiler Schlüssel (GlobalId/Hash)
@@ -215,14 +263,16 @@ export const useIfcStore = defineStore('cde-modell', () => {
    *                            alter `ifc-viewer-annotations:<Name>`-Bestände
    */
   async function loadAnnotationsForModel(modelKey, legacyName = null) {
-    _currentAnnKey = REPO_ANN_PREFIX + (modelKey || 'default');
-    const legacyLsKey = legacyName ? `ifc-viewer-annotations:${legacyName}` : null;
-    const stored = await _loadWithLegacy(_currentAnnKey, legacyLsKey);
-    annotations.value = (Array.isArray(stored) ? stored : []).map(_normalizeIssue);
-    return annotations.value;
+    // GENAU dieses eine Modell, frisch gelesen — wie bisher. Mehrere Modelle: `synchronisiereAnnotationen`.
+    annotations.value = [];
+    _annKeys = [];
+    return synchronisiereAnnotationen([{ key: modelKey || 'default', legacyName }]);
   }
+  /** Ein Issue anlegen — beim Modell, an dem es gesetzt wurde (`modellKey`), sonst beim ersten. */
   function pushAnnotation(ann) {
-    annotations.value.push(_normalizeIssue(ann, annotations.value.length));
+    const k = _annKey(ann?.modellKey);
+    const modellKey = k && _annKeys.includes(k) ? k : _standardKey();
+    annotations.value.push(_normalizeIssue({ ...ann, modellKey }, annotations.value.length));
     _persistAnnotations();
   }
 
@@ -268,7 +318,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     const payload = {
       schema:     'ifc-viewer-annotations/v1',
       exportedAt: new Date().toISOString(),
-      modelKey:   _currentAnnKey,
+      modellKeys: [..._annKeys],
       annotations: annotations.value,
     };
     return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -279,7 +329,9 @@ export const useIfcStore = defineStore('cde-modell', () => {
       const arr  = Array.isArray(data) ? data : data.annotations;
       if (!Array.isArray(arr)) return false;
       // Renumber idx so they're sequential + auf Issue-Schema normalisieren
-      annotations.value = arr.map((a, i) => _normalizeIssue({ ...a, idx: i + 1 }, i));
+      annotations.value = arr.map((a, i) => _normalizeIssue({
+        ...a, idx: i + 1, modellKey: _annKeys.includes(_annKey(a.modellKey)) ? _annKey(a.modellKey) : _standardKey(),
+      }, i));
       _persistAnnotations();
       return true;
     } catch { return false; }
@@ -530,7 +582,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
     // T2.4 → Issues (Annotationen mit Status/Zuständigkeit/Kommentaren/Viewpoint)
     planDimensions, addPlanDimension, removePlanDimension, clearPlanDimensions,
     messungen, addMessung, removeMessung, clearMessungen,
-    annotations, loadAnnotationsForModel, pushAnnotation, removeAnnotation,
+    annotations, loadAnnotationsForModel, synchronisiereAnnotationen, pushAnnotation, removeAnnotation,
     updateAnnotationText, updateAnnotationColor, updateAnnotationOffset,
     updateAnnotation, addAnnotationComment,
     clearAnnotations, exportAnnotationsJSON, importAnnotationsJSON,

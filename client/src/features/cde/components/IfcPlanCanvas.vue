@@ -664,7 +664,7 @@ async function griffAblegen(zug) {
     bearbeitung.setzeWert('nord', Math.round(zug.punkt.nord * 1000) / 1000);
     const eintraege = await bearbeitung.ausfuehren({
       wer: cde.bearbeiter,
-      modellSha: api.getLoadedModelSha?.() ?? null,
+      modellSha: api.modellShaVon?.(zug.globalId) ?? api.getLoadedModelSha?.() ?? null,
       subjekt,
       basis: api.lieferstandVon?.(zug.globalId) ?? undefined,
       modell: 'geliefert',

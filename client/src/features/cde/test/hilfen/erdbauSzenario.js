@@ -41,7 +41,7 @@ export function quader(x0, z0, x1, z1, u, o) {
     return { positions: Float64Array.from(p), triCount: p.length / 9 };
 }
 
-export function erdbauSzenario({ ur = 'DGM1', rohr = 'H1', bauteil = 'FUND-1', cell = 0.5 } = {}) {
+export function erdbauSzenario({ ur = 'DGM1', rohr = 'H1', bauteil = 'FUND-1', cell = 0.5, mitAuftrag = false } = {}) {
     const achse = { anfang: { x: 5, y: 297.5, z: 30 }, ende: { x: 35, y: 297.2, z: 30 } };
     const fundament = quader(20, 18, 28, 24, 296, 302);
     const urRaster = (c = cell, bereich = null) => rasterAusMesh({ mesh: gelaendeNetz() }, { cell: c, bereich }).ergebnis;
@@ -70,7 +70,17 @@ export function erdbauSzenario({ ur = 'DGM1', rohr = 'H1', bauteil = 'FUND-1', c
         quellmass: { pruefmass: { triCount: 24 } }, gelaendeQuellen: [anzeigeKandidat(stand)],
     });
 
-    /** Gerinne am Ur, dann Kanalgraben und Baugrube — der Planer wählt jeweils, was er sieht: die Anzeige. */
+    /**
+     * Gerinne am Ur, dann Kanalgraben und Baugrube — der Planer wählt jeweils,
+     * was er sieht: die Anzeige.
+     *
+     * `mitAuftrag` (Stufe 2, nachgereicht): nach dem Gerinne wird QUER über
+     * der späteren Grabenlinie aufgefüllt (1,5 m). Der Kanalgraben schneidet
+     * dann durch diesen Auftrag — das Paket trägt eine Füllung UND an ihrem
+     * Graben `schneidetAuffuellung` (Fabios Entscheidung 3). Weil der letzte
+     * Vorgang das Gerinne ist, hängt sich die Füllung an SEINE Liste
+     * (Folgeformung) — ein Vorgang, zwei Teile.
+     */
     async function spiele() {
         const ae = useAenderungen();
         const trage = async (schritte, titel) => {
@@ -81,6 +91,14 @@ export function erdbauSzenario({ ur = 'DGM1', rohr = 'H1', bauteil = 'FUND-1', c
         const stand = () => ae.wirksamerStand('erzeugt');
         await trage(nachId('gerinne-einschneiden').anwenden(UR,
             { sohleAnfang: 598, sohleEnde: 597.5, sohlbreite: 2, boeschung: 1.5 }, { zug: [{ x: 5, z: 10 }, { x: 35, z: 10 }] }), 'Gerinne');
+        if (mitAuftrag) {
+            const a = anzeigeKandidat(stand());
+            const subjekt = { ...UR, globalId: a.globalId, name: a.name, stand: { bauplan: stand().get(a.globalId) }, erdbau: a.erdbau };
+            // Der Umriss liegt AUF dem Gelände (y wie der Sampler es liefert): quer über der Achse z = 30.
+            const hoehe = (x, z) => 300 + 0.02 * x - 0.01 * z;
+            const umriss = [[12, 26], [22, 26], [22, 34], [12, 34]].map(([x, z]) => ({ x, y: hoehe(x, z), z }));
+            await trage(nachId('auffuellen').anwenden(subjekt, { mass: 1.5 }, { zug: umriss }), 'Auftrag');
+        }
         await trage(nachId('kanalgraben-ableiten').anwenden(ROHR(stand()),
             { gelaende: anzeigeKandidat(stand()).globalId, dn: 300, umfang: 'haltung', wandform: 'verbau', bettung: 0.1 }), 'Kanalgraben');
         await trage(nachId('bauwerksgrube-ableiten').anwenden(BAUWERK(stand()),

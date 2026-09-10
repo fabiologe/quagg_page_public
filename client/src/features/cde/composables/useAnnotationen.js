@@ -13,7 +13,18 @@
 
 import { watch } from 'vue';
 
-export function useAnnotationen({ engine, ifc, cde, viewpoint, aktiv, slot = null }) {
+export function useAnnotationen({ engine, ifc, cde, viewpoint, aktiv, slot = null, modellKeyVon = () => null }) {
+    /**
+     * Das Issue gehört dem Modell, an dem es sitzt (Stufe 4, nachgereicht):
+     * aus der sitzungsgebundenen fragments-Kennung wird der stabile Modell-Key
+     * des Speichers. Unbekannt (Eigenbau, nichts getroffen) → der Store nimmt
+     * das erste Modell.
+     */
+    function _mitModell(ann, modelId) {
+        const { modelId: _sitzung, ...issue } = ann;
+        return { ...issue, modellKey: modelId != null ? (modellKeyVon(modelId) ?? null) : null };
+    }
+
     /**
      * Die Engine folgt dem Store.
      *
@@ -66,19 +77,19 @@ export function useAnnotationen({ engine, ifc, cde, viewpoint, aktiv, slot = nul
             ann.viewpoint = viewpoint();
             ann.author = cde.bearbeiter || '';
             ann.createdAt = Date.now();
-            ifc.pushAnnotation(ann);
+            ifc.pushAnnotation(_mitModell(ann, ann.modelId));
         }
         return true;
     }
 
-    /** Ein Pin am Modell (statt am Bildschirm) — aus dem HUD-Kontextmenü. */
-    function anPunkt(position, text, farbe) {
+    /** Ein Pin am Modell (statt am Bildschirm) — aus dem HUD-Kontextmenü; `modelId` = das des gewählten Bauteils. */
+    function anPunkt(position, text, farbe, modelId = null) {
         const ann = engine.value?.addAnnotationAt?.(position, text, farbe);
         if (!ann) return null;
         ann.viewpoint = viewpoint();
         ann.author = cde.bearbeiter || '';
         ann.createdAt = Date.now();
-        ifc.pushAnnotation(ann);
+        ifc.pushAnnotation(_mitModell(ann, modelId));
         return ann;
     }
 

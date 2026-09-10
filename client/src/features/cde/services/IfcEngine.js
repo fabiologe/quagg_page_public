@@ -320,7 +320,8 @@ export class IfcEngine {
             fitToBox: (box, o) => this.camera.fitToBox(box, o),
             schnitt: this.section,
         });
-        this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint });
+        this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint,
+                                                probeTreffer: (x, y) => this.probeTreffer(x, y) });
         this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
         // Teil XVI: der EINE Besitzer temporärer Grafik (Zeiger, Vorschau, Griffe, Fang).
         this.overlay     = new IfcOverlay({ getWorld: () => this._getWorld() });

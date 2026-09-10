@@ -942,7 +942,8 @@ const planOptionen = computed(() => {
 const planWasserzeichen = computed(() => {
   const eigen = (plan.optionen.watermarkText ?? '').trim();
   if (eigen) return eigen;
-  const sha = viewerRef.value?.geladeneModellSha?.();
+  // Alle geladenen Dateien — der unreifste Status gilt (Stufe 4, nachgereicht).
+  const sha = viewerRef.value?.geladeneModellShas?.() ?? viewerRef.value?.geladeneModellSha?.();
   return (sha ? resolveWatermarkText(cde.dokumente, sha) : null) || null;
 });
 
