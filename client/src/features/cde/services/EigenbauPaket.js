@@ -1,0 +1,203 @@
+/**
+ * Das Eigenbau-Paket: was die CDE selbst erzeugt hat, für den IFC-Schreiber.
+ *
+ * DIE LÜCKE (2026-09-10). Der Verbundexport schreibt gelieferte IFC-Dateien
+ * zusammen. Die Bauteile, die die CDE SELBST erzeugt — Aushub, Auftrag, das
+ * geformte DGM, Kanalgraben, Rohre, Schächte —, lebten nur im Journal und im
+ * fragments-Modell des Browsers; einen IFC-Weg hatten sie nicht. Dieses Paket
+ * trägt sie zum Schreiber (`backend/app/ifc/eigenbau.py`), der daraus eine
+ * gewöhnliche Quelle für den Verbund macht — geprüft mit DEMSELBEN Prüftor.
+ *
+ * DIE UMRECHNUNG PASSIERT HIER, NICHT IM SCHREIBER. Die CDE rechnet in der
+ * three-Welt (Y oben, Nord auf −Z, Ladeversatz); IFC will Landeskoordinaten
+ * mit Z oben. Umgerechnet wird über `nachProjekt` — dieselbe Funktion, mit der
+ * die CDE jede Projektkoordinate rechnet (Koordinatenleiste, Lageplan, DXF).
+ * Zwei Umrechnungen wären zwei Wahrheiten über dieselbe Lage.
+ *
+ * DIE ACHSDREHUNG ERHÄLT DIE WICKLUNG. (x, y, z) → (x, −z, y) ist eine
+ * eigentliche Drehung (Determinante +1): was in der CDE nach aussen zeigt,
+ * zeigt es auch im IFC. Ein Test hält das am Volumen fest.
+ *
+ * JE BAUTEIL:
+ *  - ECKEN VERSCHWEISST. Die CDE baut Dreiecke mit eigenen Ecken (flache
+ *    Facetten); im IFC wären das dreimal so viele Punkte wie nötig. Auf dem
+ *    Millimeter zusammengelegt, und Dreiecke, die dabei zu einer Kante
+ *    entarten, fallen — gezählt, nicht still.
+ *  - EIN URSPRUNG je Bauteil. Die Platzierung trägt den grossen Landeswert,
+ *    die Punkte bleiben klein: 2,5 Millionen Meter in jedem einzelnen Punkt
+ *    kosten Stellen, die ein Empfänger im Float verliert.
+ *  - DER WIRT eines Aushubs. `IfcEarthworksCut` ist schemawidrig ohne das
+ *    Bauteil, das er aushöhlt (Prüftor, erster Lauf). Der Wirt ist das
+ *    Gelände, auf dem geformt wurde — `parameter.quellen.gelaende`. Ist das
+ *    selbst ein eigenes, nicht exportiertes Gelände, wird bis zum ersten
+ *    exportierten oder gelieferten zurückgegangen.
+ *
+ * Rein: kein three, kein Vue, keine Engine. Die Geometrie kommt als
+ * Positions-/Indexfelder herein (aus `IfcAutor.eigenbauGeometrien`).
+ */
+import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
+
+export const PAKET_VERSION = 1;
+/** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
+export const SCHWEISS_M = 0.001;
+
+/** Welche IFC-Klassen sind AUSHUB (brauchen einen Wirt)? */
+const AUSHUB_KLASSEN = new Set(['IFCEARTHWORKSCUT']);
+
+/**
+ * Welt-Positionen (x, y, z je Ecke) → Landeskoordinaten (Ost, Nord, Höhe).
+ * @param {ArrayLike<number>} positionen
+ * @param {(p: {x,y,z}) => {ost, nord, hoehe}} nachProjekt
+ * @returns {Float64Array}
+ */
+export function nachLandes(positionen, nachProjekt) {
+    const n = Math.floor((positionen?.length ?? 0) / 3);
+    const aus = new Float64Array(n * 3);
+    const p = { x: 0, y: 0, z: 0 };
+    for (let i = 0; i < n; i++) {
+        p.x = positionen[i * 3]; p.y = positionen[i * 3 + 1]; p.z = positionen[i * 3 + 2];
+        const q = nachProjekt(p);
+        aus[i * 3] = q.ost; aus[i * 3 + 1] = q.nord; aus[i * 3 + 2] = q.hoehe;
+    }
+    return aus;
+}
+
+/**
+ * Ecken zusammenlegen und Dreiecke nachziehen.
+ *
+ * @param {Float64Array} landes   Ecken in Landeskoordinaten
+ * @param {ArrayLike<number>|null} index  Dreiecksindex (null = je drei Ecken ein Dreieck)
+ * @returns {{punkte: number[][], dreiecke: number[][], entartet: number}}
+ */
+export function verschweisse(landes, index = null, { raster = SCHWEISS_M } = {}) {
+    const n = Math.floor(landes.length / 3);
+    const neuVon = new Int32Array(n);
+    const karte = new Map();
+    const punkte = [];
+    for (let i = 0; i < n; i++) {
+        const x = landes[i * 3], y = landes[i * 3 + 1], z = landes[i * 3 + 2];
+        const k = `${Math.round(x / raster)}|${Math.round(y / raster)}|${Math.round(z / raster)}`;
+        let j = karte.get(k);
+        if (j === undefined) { j = punkte.length; karte.set(k, j); punkte.push([x, y, z]); }
+        neuVon[i] = j;
+    }
+    const idx = index ?? Array.from({ length: n }, (_, i) => i);
+    const dreiecke = [];
+    let entartet = 0;
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+        const a = neuVon[idx[t]], b = neuVon[idx[t + 1]], c = neuVon[idx[t + 2]];
+        if (a === b || b === c || a === c) { entartet++; continue; }
+        dreiecke.push([a, b, c]);
+    }
+    return { punkte, dreiecke, entartet };
+}
+
+/**
+ * Den Ursprung herausziehen: abgerundete Mindestecke; die Punkte werden
+ * relativ dazu und auf den Millimeter gerundet.
+ */
+export function mitUrsprung(punkte) {
+    if (!punkte.length) return { ursprung: [0, 0, 0], punkte: [] };
+    const min = [Infinity, Infinity, Infinity];
+    for (const p of punkte) for (let k = 0; k < 3; k++) if (p[k] < min[k]) min[k] = p[k];
+    const ursprung = min.map(v => Math.floor(v));
+    const r = (v) => Math.round(v * 1000) / 1000;
+    return { ursprung, punkte: punkte.map(p => [r(p[0] - ursprung[0]), r(p[1] - ursprung[1]), r(p[2] - ursprung[2])]) };
+}
+
+/**
+ * Der Wirt eines Aushubs: das Gelände, auf dem geformt wurde.
+ *
+ * Ist die Quelle selbst ein EIGENES Gelände, das nicht mit exportiert wird
+ * (ein verborgenes CDE-DGM als Quelle eines Kanalgrabens), wird entlang der
+ * Quellen zurückgegangen — bis zu einem exportierten Bauteil oder einem
+ * gelieferten. Zyklen sind durch das Journal ausgeschlossen (Teil XIV); ein
+ * Deckel schützt trotzdem.
+ */
+export function wirtVon(plan, stand, exportiert) {
+    let gid = plan?.parameter?.quellen?.gelaende ?? null;
+    for (let tiefe = 0; gid && tiefe < 16; tiefe++) {
+        if (!String(gid).startsWith('cde-') || exportiert.has(gid)) return gid;
+        const vorher = stand?.get?.(gid);
+        const weiter = vorher?.parameter?.quellen?.gelaende ?? null;
+        if (!weiter) return gid;            // Ende der Kette — dann eben der letzte bekannte
+        gid = weiter;
+    }
+    return gid;
+}
+
+/**
+ * Ein Bauteil fürs Paket.
+ *
+ * @param {object} teil  aus `IfcAutor.eigenbauGeometrien`: {globalId, wert,
+ *        positionen, index, kategorie, name, predefinedType, geschlossen}
+ * @returns {object|null}  null, wenn nach dem Verschweissen nichts übrig bleibt
+ */
+export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN } = {}) {
+    const plan = teil?.wert ?? {};
+    const landes = nachLandes(teil.positionen, nachProjekt);
+    const { punkte, dreiecke, entartet } = verschweisse(landes, teil.index ?? null);
+    if (punkte.length < 3 || !dreiecke.length) return null;
+    const { ursprung, punkte: lokal } = mitUrsprung(punkte);
+    const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
+    const f = farbeFuer(klasse, farbsatz);
+    const quelle = plan?.parameter?.quellen?.gelaende ?? null;
+    return {
+        cdeId: teil.globalId,
+        klasse,
+        predefinedType: teil.predefinedType ?? plan.predefinedType ?? null,
+        name: teil.name ?? plan.name ?? '',
+        rezept: plan.rezept ?? null,
+        rolle: plan.rolle ?? null,
+        ableitung: plan.ableitung ?? null,
+        farbe: f?.farbe ?? null,
+        deckkraft: f?.deckkraft ?? 1,
+        geschlossen: teil.geschlossen ?? null,
+        ursprung,
+        punkte: lokal,
+        dreiecke,
+        wirt: AUSHUB_KLASSEN.has(klasse) ? wirtVon(plan, stand, exportiert) : null,
+        // Das geformte DGM VERTRITT das Gelände, auf dem geformt wurde — und
+        // zwar das, das im Export STEHT: ist die Quelle ein verborgenes eigenes
+        // DGM, zeigte der Verweis sonst auf etwas, das kein Empfänger findet.
+        // Dieselbe Kette wie beim Wirt (gemessen 2026-09-10: Bauwerksgrube auf
+        // dem geformten DGM nannte dessen unexportierte Kennung).
+        ersetzt: plan.rolle === 'dgm' && quelle ? [wirtVon(plan, stand, exportiert)] : [],
+        hinweis: entartet ? `${entartet} entartete Dreiecke beim Verschweissen entfernt` : null,
+    };
+}
+
+/**
+ * Das Paket.
+ *
+ * @param {object} o
+ * @param {Array}  o.teile        aus `IfcAutor.eigenbauGeometrien(...).bauteile`
+ * @param {Map}    o.stand        wirksamer erzeugt-Stand (gid → Bauplan) — für die Wirtkette
+ * @param {Function} o.nachProjekt  Welt → {ost, nord, hoehe}
+ * @param {string} o.crs          das WIRKSAME System (bei Widerspruch das erkannte)
+ * @returns {object}  JSON-tauglich
+ */
+export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
+                                   projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
+                                   jetzt = new Date() } = {}) {
+    if (typeof nachProjekt !== 'function') throw new Error('EigenbauPaket: ohne nachProjekt keine Landeskoordinaten');
+    const exportiert = new Set(teile.map(t => t.globalId));
+    const bauteile = [];
+    const uebersprungen = [];
+    for (const t of teile) {
+        const b = bauteilFuersPaket(t, { nachProjekt, stand, exportiert, farbsatz });
+        if (b) bauteile.push(b);
+        else uebersprungen.push({ cdeId: t.globalId, grund: 'nach dem Verschweissen keine Fläche übrig' });
+    }
+    return {
+        version: PAKET_VERSION,
+        crs,
+        crsHerkunft,
+        projektname,
+        schluessel,
+        bearbeiter,
+        erzeugt: jetzt.toISOString(),
+        bauteile,
+        uebersprungen,
+    };
+}

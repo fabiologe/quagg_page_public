@@ -501,6 +501,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
 import { entwertetGeometrie } from '../services/bauform/FormSchreiber.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
+import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
 import { quellenVon } from '../services/ableitung/Bezuege.js';
 import { GELAENDE_VORBELEGUNG, kandidatKategorien } from '../services/GelaendeQuelle.js';
 import { deklarierteBauform } from '../services/bauform/Bauformen.js';
@@ -1486,6 +1487,12 @@ provideViewerApi({
   hilfeUmschalten:      () => { showShortcuts.value = !showShortcuts.value; },
   /** Höhe aus dem Gelände-Sampler (Teil XIV, G3) — synchron, undefined bis vorgewärmt. */
   hoeheAn:              (x, z) => engine.value?.hoeheAn?.(x, z),
+  /**
+   * Das Eigenbau-Paket für den IFC-Verbundexport: was die CDE selbst erzeugt
+   * hat, in Landeskoordinaten. Verbraucher: der Verbund-Dialog der CdeView.
+   * `null` ohne Engine; wirft, wenn kein Modell (kein Koordinatenbezug) geladen ist.
+   */
+  eigenbauPaket:        () => eigenbauPaket(),
   bereiteGelaendeVor:   () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
   /** Böschungsoberkanten der Ableitungen für den Lageplan (G5). */
   getAbleitungsBilder:  () => engine.value?.ableitungsBilder?.() ?? [],
@@ -2082,6 +2089,44 @@ async function erdbauFarbenAnwenden({ ueberschreiben = false } = {}) {
 /** „Doch überschreiben" — die Antwort auf die Rückfrage. */
 async function erdbauFarbenUeberschreiben() {
   await erdbauFarbenAnwenden({ ueberschreiben: true });
+}
+
+/**
+ * Das Eigenbau-Paket für den IFC-Verbundexport (2026-09-10).
+ *
+ * Alles, was die CDE selbst erzeugt hat und im Raum steht — neu gebaut aus dem
+ * Journal auf DEMSELBEN Weg wie der Raum (`eigenbauGeometrien`), umgerechnet in
+ * Landeskoordinaten über den Bezug des ersten Modells. Den Weg zum Server geht
+ * der Verbundexport (Multipart-Feld `eigenbau`); hier entsteht nur das Paket.
+ *
+ * Über viewerApi als `eigenbauPaket` erreichbar; Verbraucher ist der
+ * Verbund-Dialog der CdeView (Knopf „Verbund" in der Satzleiste). Den Schlüssel
+ * gibt es erst mit ihm — der Wächter `lässt keine toten viewerApi-Schlüssel
+ * zurück` verlangt einen Verbraucher.
+ */
+async function eigenbauPaket() {
+  if (!engine.value?.eigenbauGeometrien) return null;
+  const bezug = Object.values(bezuege.value)[0] ?? null;
+  if (!bezug?.nachProjekt) throw new Error('Eigenbau-Paket: kein Koordinatenbezug — erst ein Modell laden');
+  const erzeugt = aenderungen.wirksamerStand('erzeugt');
+  const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
+  const schritte = [...erzeugt].filter(([, w]) => w).map(([globalId, wert]) => ({ globalId, wert }));
+  const gebaut = await engine.value.eigenbauGeometrien(schritte, { verdeckt });
+  const c = bezug.crs ?? {};
+  const herkunft = c.deklariert && c.erkannt && !c.stimmt
+    ? `Georeferenz-Erkennung der CDE: die Datei deklariert ${c.deklariert}, die Koordinaten liegen in ${c.erkannt}`
+    : `Georeferenz-Erkennung der CDE (${c.wirksam ?? 'unbekannt'})`;
+  const paket = baueEigenbauPaket({
+    teile: gebaut.bauteile, stand: erzeugt, nachProjekt: bezug.nachProjekt,
+    crs: c.wirksam ?? null, crsHerkunft: herkunft,
+    projektname: cde.auftrag?.name ?? '', schluessel: cde.aktiverSatzId ?? 'cde',
+    bearbeiter: cde.bearbeiter ?? '',
+  });
+  // Was nicht ins Paket kam, steht darin — nicht still weggelassen.
+  paket.misserfolge = gebaut.misserfolge;
+  paket.leer = gebaut.leer;
+  paket.verborgen = gebaut.verborgen;
+  return paket;
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */

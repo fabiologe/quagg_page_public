@@ -1520,6 +1520,8 @@ export class IfcEngine {
     erzeugeBauteil(modelId, bauteil)    { return this.autor.erzeuge(modelId, bauteil); }
     loescheBauteil(modelId, localId)    { return this.autor.loesche(modelId, localId); }
     eigenesModell(modelId)              { return this.autor.eigenesModell(modelId); }
+    /** Eigenbau-Geometrie für den IFC-Export — derselbe Bauweg wie im Raum (`IfcAutor._baueSchritt`). */
+    eigenbauGeometrien(schritte, opts)  { return this.autor.eigenbauGeometrien(schritte, opts); }
     modellAlsPuffer(modelId)            { return this.autor.alsPuffer(modelId); }
     /**
      * Festlegungen ans Modell bringen — und das Ausblenden gleich mit.

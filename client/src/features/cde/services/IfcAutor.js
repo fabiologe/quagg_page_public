@@ -575,6 +575,90 @@ export class IfcAutor {
      *   die localId entsteht erst hier und steht in keiner Zuordnung des
      *   gelieferten Modells.
      */
+    /** EIN Ableitungslauf je Durchgang (Teil XIV) — für den Raum wie für den Export. */
+    _neuerLauf(schritte) {
+        const stand = new Map((schritte ?? []).map(s => [s.globalId, s.wert]));
+        return neuerAbleitungslauf({
+            stand, rezeptNach,
+            holeQuellForm: this._holeQuellForm,
+            holeQuellBauform: this._holeQuellBauform,
+            kernel: this._kernel,
+            hoehenversatz: this._getHoehenversatz() ?? 0,
+        });
+    }
+
+    /**
+     * EINEN Journalschritt bauen — Geometrie in WELTkoordinaten, noch ohne Editor.
+     *
+     * Der eine Weg für `baueErzeugte` (Raum) und `eigenbauGeometrien`
+     * (IFC-Export). Zwei Wege zur selben Geometrie liefen auseinander, und dann
+     * zeigte die CDE etwas anderes, als sie exportiert (Gesetz 7).
+     *
+     * @returns {{ok: true, geometrie, kategorie, name, predefinedType, geschlossen}
+     *          | {ok: false, fehler: string[], leer?: true}}
+     */
+    async _baueSchritt(lauf, schritt) {
+        const rezept = rezeptNach(schritt.wert?.rezept);
+        if (istAbleitung(rezept)) {
+            const r = await lauf.baue(schritt.globalId);
+            if (!r.ok) return { ok: false, fehler: r.fehler };
+            if (r.leer) return { ok: false, leer: true, fehler: [] };
+            const geometrie = geometrieAusTeil(r.teil);
+            if (!geometrie) return { ok: false, fehler: ['Teil ohne Geometrie'] };
+            return {
+                ok: true, geometrie, kategorie: schritt.wert.kategorie, name: schritt.wert.name,
+                predefinedType: schritt.wert.predefinedType ?? null,
+                // Ein Raster ist eine OFFENE Fläche; ein Körper sagt es selbst
+                // (das meshVolume-Attest aus dem Kernel), statt dass wir raten.
+                geschlossen: r.teil?.form === 'raster' ? false : (r.teil?.daten?.closed ?? null),
+            };
+        }
+        const gebaut = rezept?.braucht === 'quellraster'
+            ? await baueMitAbleitung(schritt.wert ?? {}, this._holeQuellraster)
+            : baueAusBauplan(schritt.wert ?? {});
+        if (!gebaut.ok) return gebaut;
+        return {
+            ...gebaut,
+            predefinedType: gebaut.predefinedType ?? schritt.wert?.predefinedType ?? null,
+            // Rohr und Schacht sind Sweeps MIT Kappen, Linie und Fläche sind
+            // flach, ein Höhenfeld ist offen.
+            geschlossen: ({ koerper: true, 'achse+profil': true, linie: false, flaeche: false, hoehenfeld: false })[
+                rezept?.bauform] ?? null,
+        };
+    }
+
+    /**
+     * Die Geometrie jedes erzeugten Bauteils — für den IFC-Export, OHNE den
+     * Raum anzufassen.
+     *
+     * NEU GERECHNET, NICHT GESPEICHERT (Gesetz 5): der Export baut dieselben
+     * Baupläne auf demselben Weg wie der Raum (`_baueSchritt`). Die Geometrie
+     * aus dem fragments-Modell zu holen, wäre der schlechtere Weg — dort liegt
+     * sie seit `_weltNachModell` im MODELLRAHMEN, nicht in der Welt.
+     *
+     * @returns {Promise<{bauteile: Array<{globalId, wert, positionen, index, kategorie,
+     *           name, predefinedType, geschlossen}>, misserfolge, leer, verborgen}>}
+     */
+    async eigenbauGeometrien(schritte, { verdeckt = new Set() } = {}) {
+        const lauf = this._neuerLauf(schritte);
+        const bauteile = [], misserfolge = [], leer = [], verborgen = [];
+        for (const schritt of schritte ?? []) {
+            if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
+            const g = await this._baueSchritt(lauf, schritt);
+            if (g.leer) { leer.push(schritt.globalId); continue; }
+            if (!g.ok) { misserfolge.push({ globalId: schritt.globalId, grund: (g.fehler ?? []).join(' · ') }); continue; }
+            const pos = g.geometrie.getAttribute('position');
+            bauteile.push({
+                globalId: schritt.globalId, wert: schritt.wert,
+                positionen: pos.array, index: g.geometrie.index?.array ?? null,
+                kategorie: g.kategorie, name: g.name, predefinedType: g.predefinedType ?? null,
+                geschlossen: g.geschlossen ?? null,
+            });
+            g.geometrie.dispose?.();
+        }
+        return { bauteile, misserfolge, leer, verborgen };
+    }
+
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set() } = {}) {
         const karte = new Map();
         const misserfolge = [];
@@ -589,14 +673,7 @@ export class IfcAutor {
         // EIN Ableitungslauf für den ganzen Aufbau (Teil XIV): Quellen lösen
         // sich lazy auf, `leite` läuft einmal je Ableitung, der Cache stirbt
         // mit diesem Durchlauf.
-        const stand = new Map(schritte.map(s => [s.globalId, s.wert]));
-        const lauf = neuerAbleitungslauf({
-            stand, rezeptNach,
-            holeQuellForm: this._holeQuellForm,
-            holeQuellBauform: this._holeQuellBauform,
-            kernel: this._kernel,
-            hoehenversatz: this._getHoehenversatz() ?? 0,
-        });
+        const lauf = this._neuerLauf(schritte);
         const leer = [];
         const verborgen = [];
 
@@ -610,23 +687,10 @@ export class IfcAutor {
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.
-            const rezept = rezeptNach(schritt.wert?.rezept);
-            let gebaut;
-            if (istAbleitung(rezept)) {
-                const r = await lauf.baue(schritt.globalId);
-                if (!r.ok) { misserfolge.push({ ...schritt, grund: r.fehler.join(' · ') }); continue; }
-                // Ein leeres Teil (kein Auftrag beim reinen Gerinne) ist kein
-                // Fehler: es entsteht kein Bauteil, die Kennzahl sagt null.
-                if (r.leer) { leer.push(schritt.globalId); continue; }
-                const geometrie = geometrieAusTeil(r.teil);
-                if (!geometrie) { misserfolge.push({ ...schritt, grund: 'Teil ohne Geometrie' }); continue; }
-                gebaut = { ok: true, geometrie, kategorie: schritt.wert.kategorie, name: schritt.wert.name,
-                           predefinedType: schritt.wert.predefinedType ?? null };
-            } else {
-                gebaut = rezept?.braucht === 'quellraster'
-                    ? await baueMitAbleitung(schritt.wert ?? {}, this._holeQuellraster)
-                    : baueAusBauplan(schritt.wert ?? {});
-            }
+            const gebaut = await this._baueSchritt(lauf, schritt);
+            // Ein leeres Teil (kein Auftrag beim reinen Gerinne) ist kein
+            // Fehler: es entsteht kein Bauteil, die Kennzahl sagt null.
+            if (gebaut.leer) { leer.push(schritt.globalId); continue; }
             if (!gebaut.ok) {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
