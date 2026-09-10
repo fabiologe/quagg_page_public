@@ -42,6 +42,15 @@
                 title="Modellsatz löschen — die Modelle bleiben">
           <CdeIcon name="delete" :size="14" />
         </button>
+        <!-- Verbund: die Modelle des Satzes (und der CDE-Eigenbau) als EIN
+             geprüftes IFC4X3. Gerechnet wird auf dem Server — darum nur mit
+             Projektordner, nicht in der Browser-Ablage. -->
+        <button class="cde-btn" :disabled="!cde.aktiverSatz || !repo.remote" @click="verbundOeffnen"
+                :title="repo.remote
+                  ? 'Verbund — die Modelle des Satzes zu EINEM geprüften IFC4X3 zusammenführen'
+                  : 'Der Verbund braucht den Projektordner — CDE aus dem Projekt-Cockpit öffnen'">
+          <CdeIcon name="layers" :size="14" /> Verbund
+        </button>
       </template>
 
       <button
@@ -586,6 +595,77 @@
         </button>
       </template>
     </CdeDialog>
+
+    <!-- Verbund (2026-09-10): Modellsatz → EIN geprüftes IFC4X3, im Register und
+         zum Herunterladen. Gerechnet wird auf dem Server (Unterprozess); hier
+         wird angestoßen, abgeholt und der Prüfbericht gezeigt. -->
+    <CdeDialog :offen="verbundOffen" titel="Verbundmodell" icon="layers" @close="verbundOffen = false">
+      <template v-if="!verbundLauf">
+        <p class="tm-satz">
+          Die Modelle des Satzes <b>{{ cde.aktiverSatz?.name }}</b> werden zu einer
+          IFC4X3-Datei zusammengeführt — Schema, Einheiten und Bezugssystem
+          vereinheitlicht, dann geprüft. Nur ein bestandener Verbund kommt als
+          neues Dokument (WIP) ins Register.
+        </p>
+        <div v-for="d in verbundModelle" :key="d.sha256" class="tm-zeile">
+          <span class="tm-name">{{ d.datei ?? d.name }}</span>
+          <span class="tm-meta">Rev. {{ d.revision }} · {{ d.status }}</span>
+        </div>
+        <p v-if="!verbundModelle.length" class="tm-satz">Der Satz enthält kein Modell.</p>
+        <label class="tm-zeile">
+          <input type="checkbox" v-model="verbundEigenbau" />
+          <span class="tm-name">CDE-Eigenbau mitnehmen</span>
+          <span class="tm-meta">was die CDE selbst erzeugt hat</span>
+        </label>
+      </template>
+      <template v-else>
+        <p class="tm-satz">
+          <CdeIcon :name="verbundSymbol" :size="13" />
+          <b>{{ verbundZustandText }}</b>
+          <template v-if="verbundLaeuft"> — {{ verbundLauf.schritt || 'wartet auf den Server' }}</template>
+        </p>
+        <p v-if="verbundLauf.fehler" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> {{ verbundLauf.fehler }}
+        </p>
+        <div v-if="verbundLauf.dokument" class="tm-zeile">
+          <span class="tm-name">{{ verbundLauf.dokument.datei }}</span>
+          <span class="tm-meta">Rev. {{ verbundLauf.dokument.revision }} · WIP · im Register</span>
+        </div>
+        <p v-if="verbundLauf.bericht?.crs" class="tm-satz">
+          Bezugssystem <b>{{ verbundLauf.bericht.crs }}</b> — {{ verbundLauf.bericht.crs_herkunft }}
+        </p>
+        <p v-for="l in verbundEigenbauLuecken" :key="l.art" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> Eigenbau, nicht im Verbund ({{ l.art }}): {{ l.anzahl }}
+        </p>
+        <div v-for="b in verbundLauf.befunde || []" :key="b.id" class="tm-zeile" :title="b.sagt">
+          <CdeIcon :name="b.ok === true ? 'status-ok' : b.ok === false ? 'status-error' : 'status-warn'" :size="12" />
+          <span class="tm-name">{{ b.id }} · {{ b.titel }}</span>
+        </div>
+        <template v-for="q in verbundLauf.quellen_bericht || []" :key="q.name">
+          <div class="tm-zeile">
+            <span class="tm-name">{{ q.name }}</span>
+            <span class="tm-meta">{{ q.schema }} · Faktor {{ q.einheit_faktor }} · {{ q.uebernommen }} Bauteile</span>
+          </div>
+          <p v-for="(w, i) in q.warnungen || []" :key="`${q.name}-${i}`" class="tm-meldung">
+            <CdeIcon name="warn" :size="12" /> {{ w }}
+          </p>
+        </template>
+      </template>
+      <p v-if="verbundMeldung" class="tm-meldung">
+        <CdeIcon name="warn" :size="12" /> {{ verbundMeldung }}
+      </p>
+      <template #fuss>
+        <button class="cde-btn ghost" @click="verbundOffen = false">{{ verbundLauf ? 'Schließen' : 'Abbrechen' }}</button>
+        <button v-if="!verbundLauf" class="cde-btn primary"
+                :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)"
+                @click="verbundStarten">
+          {{ verbundStartet ? 'Startet …' : 'Verbund erzeugen' }}
+        </button>
+        <button v-else-if="verbundLauf.dokument" class="cde-btn primary" @click="verbundHerunterladen">
+          <CdeIcon name="download" :size="13" /> Herunterladen
+        </button>
+      </template>
+    </CdeDialog>
   </div>
 </template>
 
@@ -1063,6 +1143,118 @@ async function transmittalErzeugen() {
     transmittalMeldung.value = `Fehler: ${fehler?.message ?? fehler}`;
   } finally {
     transmittalLaeuft.value = false;
+  }
+}
+
+// ── Verbund (Modellsatz → EIN geprüftes IFC4X3) ─────────────────────────────
+// Gerechnet wird auf dem Server, in einem Unterprozess: nginx bricht nach 60 s
+// ab, der Verbund der Gruppenmodelle braucht samt Prüfung zwei Minuten. Darum
+// anstoßen (202) und alle zwei Sekunden abholen, bis ein Endzustand dasteht.
+// Ins Register kommt nur, was die Prüfung bestanden hat — das entscheidet der
+// Server, nicht dieser Dialog.
+const verbundOffen = ref(false);
+const verbundEigenbau = ref(true);
+const verbundStartet = ref(false);
+const verbundLauf = ref(null);
+const verbundMeldung = ref('');
+let verbundUhr = null;
+
+const verbundModelle = computed(() => {
+  const satz = cde.aktiverSatz;
+  if (!satz) return [];
+  // Der Server liefert die Dokumente des Satzes aufgelöst mit; fehlen sie,
+  // werden sie aus dem Register nachgeschlagen.
+  const liste = satz.dokumente
+    ?? (satz.enthaelt ?? []).map(sha => cde.dokumente.find(d => d.sha256 === sha)).filter(Boolean);
+  return liste.filter(d => (d.art ?? 'modell') === 'modell');
+});
+const verbundLaeuft = computed(() => ['wartet', 'laeuft'].includes(verbundLauf.value?.zustand));
+const verbundZustandText = computed(() => ({
+  wartet: 'Angenommen', laeuft: 'Rechnet',
+  geprueft: verbundLauf.value?.dokument ? 'Geprüft und im Register' : 'Geprüft — wird eingetragen',
+  abgelehnt: 'Abgelehnt', fehler: 'Fehler', abgebrochen: 'Abgebrochen',
+})[verbundLauf.value?.zustand] ?? verbundLauf.value?.zustand ?? '');
+const verbundSymbol = computed(() => ({
+  geprueft: 'status-ok', abgelehnt: 'status-error', fehler: 'status-error', abgebrochen: 'status-warn',
+})[verbundLauf.value?.zustand] ?? 'busy');
+// Was vom CDE-Eigenbau NICHT in den Verbund kam (misslungen, leer, ausgeblendet).
+// Ein Export, der still weniger enthält als die Ansicht, wäre eine falsche Aussage.
+const verbundEigenbauLuecken = computed(() =>
+  Object.entries(verbundLauf.value?.bericht?.eigenbau?.nicht_im_paket ?? {})
+    .map(([art, liste]) => ({ art, anzahl: Array.isArray(liste) ? liste.length : Number(liste) || 0 }))
+    .filter(l => l.anzahl > 0));
+
+function verbundOeffnen() {
+  // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder
+  // öffnet, sieht den Stand, statt versehentlich einen zweiten zu starten.
+  if (!verbundLaeuft.value) {
+    verbundLauf.value = null;
+    verbundMeldung.value = '';
+  }
+  verbundOffen.value = true;
+}
+
+async function verbundStarten() {
+  const satz = cde.aktiverSatz;
+  if (!satz || !cde.auftrag?.id) return;
+  verbundStartet.value = true;
+  verbundMeldung.value = '';
+  let eigenbau = null;
+  if (verbundEigenbau.value) {
+    try {
+      eigenbau = (await useViewerApi().eigenbauPaket?.()) ?? null;
+    } catch (fehler) {
+      // Kein Abbruch: ohne Eigenbau bleibt der Verbund der Lieferungen. Gesagt wird es trotzdem.
+      verbundMeldung.value = `CDE-Eigenbau nicht dabei: ${fehler?.message ?? fehler}`;
+    }
+  }
+  try {
+    const angenommen = await AuftragApi.verbundStarten(cde.auftrag.id, satz.id, { eigenbau });
+    verbundLauf.value = { ...angenommen, schritt: '' };
+    verbundAbholen(angenommen.lauf_id);
+  } catch (fehler) {
+    verbundMeldung.value = fehler?.response?.data?.detail || fehler?.message || 'Der Verbund ließ sich nicht starten.';
+  } finally {
+    verbundStartet.value = false;
+  }
+}
+
+function verbundAbholen(laufId, fehlversuche = 0) {
+  clearTimeout(verbundUhr);
+  verbundUhr = setTimeout(async () => {
+    try {
+      const st = await AuftragApi.verbundStatus(cde.auftrag.id, laufId);
+      verbundLauf.value = st;
+      if (['wartet', 'laeuft'].includes(st.zustand) || (st.zustand === 'geprueft' && !st.dokument)) {
+        verbundAbholen(laufId);
+        return;
+      }
+      if (st.dokument) {
+        // Das neue Dokument soll in der Liste stehen, ohne dass jemand neu lädt.
+        await cde.uebernehmeRegister(await AuftragApi.register(cde.auftrag.id), cde.auftrag.id);
+      }
+    } catch (fehler) {
+      // Ein Aussetzer beim Abholen ist kein Ergebnis — weiterfragen, aber nicht ewig.
+      if (fehlversuche < 5) { verbundAbholen(laufId, fehlversuche + 1); return; }
+      verbundMeldung.value = `Abholen misslang: ${fehler?.response?.data?.detail || fehler?.message || fehler}`;
+    }
+  }, 2000);
+}
+onBeforeUnmount(() => clearTimeout(verbundUhr));
+
+async function verbundHerunterladen() {
+  const d = verbundLauf.value?.dokument;
+  if (!d) return;
+  try {
+    const blob = await AuftragApi.datei(d.pfad);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = d.datei;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (fehler) {
+    verbundMeldung.value = `Herunterladen misslang: ${fehler?.message ?? fehler}`;
   }
 }
 
