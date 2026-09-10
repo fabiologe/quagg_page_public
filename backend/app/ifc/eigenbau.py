@@ -2,8 +2,8 @@
 
 DIE LUECKE, DIE DIESE DATEI SCHLIESST (2026-09-10). Der Verbund
 (`verbund.py`) fuehrt gelieferte IFC-Dateien zusammen. Die Bauteile, die die
-CDE selbst erzeugt — Aushub- und Auftragskoerper, das geformte DGM, der
-Kanalgraben, Rohre und Schaechte —, hatten bis hierher KEINEN IFC-Weg:
+CDE selbst erzeugt — Aushub- und Auftragskoerper, Kanalgraben, Baugrube,
+Rohre und Schaechte —, hatten bis hierher KEINEN IFC-Weg:
 `guids.guid_aus_cde_id()` war vorbereitet und wurde nirgends aufgerufen. Sie
 lebten nur im Journal und im fragments-Modell des Browsers.
 
@@ -31,8 +31,21 @@ JE BAUTEIL:
   * die Farbe als `IfcSurfaceStyle` — ein Aushub bleibt durchscheinend auch
     beim Empfaenger, nicht nur in der CDE.
   * die Spur zurueck: Merkmalssatz `Quagg_CDE` mit der Journal-Kennung, dem
-    Rezept, dem WIRT (siehe unten) und — wo die CDE ein geliefertes Bauteil
-    ersetzt — dessen GlobalId.
+    Rezept, dem Vorgang, dem WIRT (siehe unten) und den Fuellungen frueherer
+    Vorgaenge, durch die ein Aushub schneidet.
+  * die MENGEN als `IfcElementQuantity` nach der bSI-Vorlage der Klasse
+    (`Qto_EarthworksCutBaseQuantities.UndisturbedVolume`, ...). Welche Kennzahl
+    welche Menge ist, sagt das Rezept in der CDE — hier wird nur geschrieben.
+
+PAKET v2 (Stufe 2 des Aushub-Fachmodells, 2026-09-10). Die geformte Flaeche,
+die der Raum der CDE zeigt, ist KEIN Bauteil und kommt nicht mehr: sie stand
+als zweites TERRAIN am Ort des Ur-Gelaendes, und der Aushub war damit dreimal
+in der Datei (Void im Ur, Koerper des Cut, abgesenkte Kopie). bSI: „no CSG
+operation is expected to be performed on import". Dafuer gruppiert die Datei:
+ein Fachmodell „Erdbau" (Aushub und Auftrag), ein Fachmodell „CDE-Eigenbau"
+(der Rest), und je Erdbau-Vorgang eine Gruppe `ObjectType='Vorgang'` mit Cut
+und Fill — `IfcRelFillsElement` kann einen Cut nicht fuellen (es verlangt eine
+IfcOpeningElement), die Gruppe ist die richtige Beziehung.
 
 DER WIRT JEDES AUSHUBS (erster Lauf gegen das Prueftor, 2026-09-10). V00 bis
 V08 waren gruen, die Schema-Pruefung nicht: `IfcEarthworksCut` ist eine
@@ -52,6 +65,7 @@ Aufruf:
 """
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -62,7 +76,25 @@ from . import guids
 from .verbund import ZIELSCHEMA, VerbundUnmoeglich, zielgeruest
 
 PSET_CDE = "Quagg_CDE"
-PAKET_VERSION = 1
+PSET_VORGANG = "Quagg_Vorgang"
+PAKET_VERSION = 2
+
+# Die Fachmodelle einer Eigenbau-Datei. Schluessel = `fachmodell` im Paket;
+# Wert = (Name, Beschreibung, GlobalId-Anhang). Der Eigenbau behaelt die
+# GlobalId seiner Gruppe aus Paket v1 — eine Revision, kein Fremdling.
+FACHMODELLE = {
+    "erdbau": ("Erdbau", "In der CDE geplanter Erdbau: Aushub und Auftrag je Vorgang, am Ur-Gelaende",
+               "gruppe|erdbau"),
+    "cde": ("CDE-Eigenbau", "In der CDE erzeugte Bauteile", "gruppe"),
+}
+ART_TITEL = {"erdbau": "Gelaende formen", "kanalgraben": "Kanalgraben", "bauwerksgrube": "Bauwerksgrube"}
+MENGEN_METHODE = ("Quagg CDE: Differenz der Gelaenderaster vor und nach dem Vorgang "
+                  "(Mittel der vier Knoten je Zelle); der Koerper ist die Gegenprobe")
+# Vorlagentyp -> (Mengenklasse, Wertattribut)
+_MENGENTYP = {"Q_VOLUME": ("IfcQuantityVolume", "VolumeValue"), "Q_LENGTH": ("IfcQuantityLength", "LengthValue"),
+              "Q_AREA": ("IfcQuantityArea", "AreaValue"), "Q_WEIGHT": ("IfcQuantityWeight", "WeightValue"),
+              "Q_COUNT": ("IfcQuantityCount", "CountValue")}
+_VORLAGEN = None
 
 # Das Bezugssystem schreibt das Geruest der Verbund-Sitzung
 # (`verbund.georeferenz_setzen`, Systeme aus `bezugssysteme.py`) — EIN Weg fuer
@@ -79,7 +111,11 @@ def _pruefe_paket(paket: dict) -> None:
     if not isinstance(paket, dict):
         raise PaketFehler("Paket ist kein Objekt")
     if paket.get("version") != PAKET_VERSION:
-        raise PaketFehler(f"Paketversion {paket.get('version')!r}, erwartet {PAKET_VERSION}")
+        # LAUT: ein v1-Paket traegt die geformte Kopie des Gelaendes als Bauteil.
+        # Still angenommen, stuende wieder ein zweites TERRAIN in der Datei.
+        raise PaketFehler(f"Paketversion {paket.get('version')!r}, erwartet {PAKET_VERSION} — "
+                          "die CDE im Browser und der Schreiber sprechen verschiedene Fassungen "
+                          "(Seite neu laden)")
     if not isinstance(paket.get("bauteile"), list):
         raise PaketFehler("Paket ohne Bauteilliste")
 
@@ -145,12 +181,29 @@ def _stil(f, farbe: int, deckkraft: float, cache: dict):
     return stil
 
 
+def _wert(f, v):
+    """Der Wert eines Merkmals, GETYPT: eine Zahl bleibt eine Zahl.
+
+    `(typ, wert)` schreibt einen Messwert mit Einheit (IfcVolumeMeasure — die
+    Einheit kommt aus dem Projekt); bool/int/float ihre Grundtypen; alles
+    andere Text. Bis Paket v1 war alles IfcText, auch die Bauteilzahl.
+    """
+    if isinstance(v, tuple):
+        return f.create_entity(v[0], v[1])
+    if isinstance(v, bool):
+        return f.create_entity("IfcBoolean", v)
+    if isinstance(v, int):
+        return f.create_entity("IfcInteger", v)
+    if isinstance(v, float):
+        return f.create_entity("IfcReal", v)
+    return f.create_entity("IfcText", str(v))
+
+
 def _merkmale(f, besitz, objekt, satzname: str, werte: dict, schluessel: str):
     """Merkmalssatz mit abgeleiteten GlobalIds. Praefix `Quagg_` — `Pset_` ist bSI-reserviert."""
     eigenschaften = [
-        f.create_entity("IfcPropertySingleValue", Name=str(k),
-                        NominalValue=f.create_entity("IfcText", str(v)))
-        for k, v in werte.items() if v not in (None, "", [])
+        f.create_entity("IfcPropertySingleValue", Name=str(k), NominalValue=_wert(f, v))
+        for k, v in werte.items() if v is not None and v != "" and v != []
     ]
     if not eigenschaften:
         return None
@@ -211,6 +264,71 @@ def _hat_wirt(aushub) -> bool:
     return bool(getattr(aushub, "VoidsElements", None))
 
 
+def _volumen(wert):
+    """Eine Kennzahl in m3 als Messwert — oder nichts, wenn keine Zahl kam."""
+    try:
+        zahl = float(wert)
+    except (TypeError, ValueError):
+        return None
+    return ("IfcVolumeMeasure", zahl) if math.isfinite(zahl) and zahl >= 0 else None
+
+
+def _qto_vorlage(klasse: str):
+    """Die bSI-Vorlage `Qto_<Klasse>BaseQuantities` — oder None.
+
+    Aus ifcopenshells Vorlagen, NICHT aus einer eigenen Liste: welche Mengen
+    es gibt und welchen Typ sie haben, entscheidet die Norm. Eine eigene
+    Aufzaehlung waere irgendwann eine andere (die 4.3-Liste der CDE hat so
+    schon IfcCivilElement verloren).
+    """
+    global _VORLAGEN
+    if _VORLAGEN is None:
+        import ifcopenshell.util.pset
+        _VORLAGEN = ifcopenshell.util.pset.get_template(ZIELSCHEMA)
+    return _VORLAGEN.get_by_name(f"Qto_{klasse[3:]}BaseQuantities")
+
+
+def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_id: str):
+    """Die Mengen eines Bauteils als `IfcElementQuantity` nach der Vorlage seiner Klasse.
+
+    Ein Schluessel `undisturbedVolume` wird `UndisturbedVolume`, sein Typ
+    (Volumen, Laenge, ...) kommt aus der Vorlage. Was die Vorlage nicht kennt,
+    wird gemeldet, nicht geschrieben — ein `Qto_`-Satz mit erfundenen Mengen
+    waere so unkonform wie ein erfundener PredefinedType.
+    """
+    if not mengen:
+        return None
+    vorlage = _qto_vorlage(el.is_a())
+    if vorlage is None:
+        warnungen.append(f"{cde_id}: fuer {el.is_a()} gibt es keine Qto-Vorlage — Mengen nicht geschrieben")
+        return None
+    typen = {v.Name: v.TemplateType for v in (vorlage.HasPropertyTemplates or [])}
+    werte = []
+    for schl, roh in mengen.items():
+        name = str(schl)[:1].upper() + str(schl)[1:]
+        typ = _MENGENTYP.get(typen.get(name))
+        if typ is None:
+            warnungen.append(f"{cde_id}: {name} steht nicht in {vorlage.Name} — nicht geschrieben")
+            continue
+        try:
+            zahl = float(roh)
+        except (TypeError, ValueError):
+            warnungen.append(f"{cde_id}: {name} ist keine Zahl ({roh!r})")
+            continue
+        if not math.isfinite(zahl) or zahl < 0:
+            warnungen.append(f"{cde_id}: {name} = {roh!r} ist keine Menge")
+            continue
+        werte.append(f.create_entity(typ[0], Name=name, **{typ[1]: zahl}))
+    if not werte:
+        return None
+    qto = f.create_entity("IfcElementQuantity", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto"),
+                          OwnerHistory=besitz, Name=vorlage.Name, MethodOfMeasurement=MENGEN_METHODE,
+                          Quantities=werte)
+    f.create_entity("IfcRelDefinesByProperties", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto|rel"),
+                    OwnerHistory=besitz, RelatedObjects=[el], RelatingPropertyDefinition=qto)
+    return qto
+
+
 def _ifc_id(wert: str | None) -> str | None:
     """Eine Kennung, wie sie im IFC steht: CDE-Kennungen werden abgeleitet, echte bleiben."""
     if not wert:
@@ -248,6 +366,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     schema = ifcopenshell.schema_by_name(ZIELSCHEMA)
     stile = {}
     produkte, uebersprungen, warnungen = [], [], []
+    geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
+    mengen_n = 0
     if crs is None:
         warnungen.append("Paket ohne Bezugssystem — die Datei traegt Landeskoordinaten ohne "
                          "Georeferenz; der Verbund entscheidet an den Lieferungen")
@@ -304,19 +424,29 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             attrs["PredefinedType"] = pt
         el = f.create_entity(decl.name(), **attrs)
 
+        vorgang = b.get("vorgang") or {}
         _merkmale(f, besitz, el, PSET_CDE, {
             "CdeId": cde_id,
             "Rezept": b.get("rezept"),
             "Rolle": b.get("rolle"),
             "Ableitung": b.get("ableitung"),
+            "Vorgang": vorgang.get("titel"),
             "Wirt": _ifc_id(b.get("wirt")),
-            "ErsetztGlobalId": ", ".join(_ifc_id(x) for x in (b.get("ersetzt") or []) if x),
+            # Fabios Entscheidung 3: der Wirt bleibt IMMER das Ur-Gelaende. Schneidet
+            # ein Aushub durch den Auftrag eines frueheren Vorgangs, steht es HIER —
+            # nicht als zweite Wirt-Beziehung.
+            "SchneidetAuffuellung": ", ".join(_ifc_id(x) for x in (b.get("schneidetAuffuellung") or []) if x),
+            "AushubAusAuffuellung": _volumen(b.get("aushubAusAuffuellung")),
             "Hinweis": b.get("hinweis"),
         }, schluessel=f"{satz}|{cde_id}")
+        if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id):
+            mengen_n += 1
         produkte.append(el)
+        geschrieben.append((el, b))
 
     # Wirte im selben Paket: jetzt, wo alle Bauteile stehen (der Wirt kann in
     # der Liste nach seinem Aushub kommen).
+    fachmodelle, vorgaenge = {}, 0
     offen = []
     for el in produkte:
         if not el.is_a("IfcFeatureElementSubtraction"):
@@ -341,19 +471,30 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             f.create_entity("IfcRelContainedInSpatialStructure",
                             GlobalId=guids.guid_aus_cde_id(f"{satz}|enthalten"), OwnerHistory=besitz,
                             RelatingStructure=site, RelatedElements=eingeordnet)
-        # V08 des Prueftors: jedes Bauteil gehoert einer Fachmodell-Gruppe an.
-        gruppe = f.create_entity("IfcGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|gruppe"),
-                                 OwnerHistory=besitz, Name="CDE-Eigenbau",
-                                 Description="In der CDE erzeugte Bauteile", ObjectType="Fachmodell")
-        f.create_entity("IfcRelAssignsToGroup",
-                        GlobalId=guids.guid_aus_cde_id(f"{satz}|gruppe-rel"), OwnerHistory=besitz,
-                        RelatedObjects=produkte, RelatingGroup=gruppe)
-        _merkmale(f, besitz, gruppe, "Quagg_Fachmodell", {
-            "Datei": "CDE-Eigenbau",
-            "Quelle": "CDE-Journal",
-            "Bauteile": len(produkte),
-            "Erzeugt": paket.get("erzeugt"),
-        }, schluessel=f"{satz}|gruppe")
+        # V08 des Prueftors: jedes Bauteil gehoert einer Fachmodell-Gruppe an —
+        # Erdbau und Eigenbau getrennt, damit ein Empfaenger den Aushub findet,
+        # ohne Rezeptnamen zu kennen.
+        je_fachmodell = {}
+        for el, b in geschrieben:
+            art = b.get("fachmodell") if b.get("fachmodell") in FACHMODELLE else "cde"
+            je_fachmodell.setdefault(art, []).append(el)
+        for art, glieder in je_fachmodell.items():
+            name, beschreibung, anhang = FACHMODELLE[art]
+            gruppe = f.create_entity("IfcGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|{anhang}"),
+                                     OwnerHistory=besitz, Name=name, Description=beschreibung,
+                                     ObjectType="Fachmodell")
+            f.create_entity("IfcRelAssignsToGroup",
+                            GlobalId=guids.guid_aus_cde_id(f"{satz}|{anhang}-rel"), OwnerHistory=besitz,
+                            RelatedObjects=glieder, RelatingGroup=gruppe)
+            _merkmale(f, besitz, gruppe, "Quagg_Fachmodell", {
+                "Datei": name,
+                "Quelle": "CDE-Journal",
+                "Bauteile": len(glieder),
+                "Erzeugt": paket.get("erzeugt"),
+                "Journalstand": (paket.get("journal") or {}).get("commit"),
+            }, schluessel=f"{satz}|{anhang}")
+            fachmodelle[name] = len(glieder)
+        vorgaenge = _vorgaenge_gruppieren(f, besitz, geschrieben, satz)
     else:
         warnungen.append("keine Bauteile geschrieben — die Datei traegt nur das Geruest")
 
@@ -368,8 +509,61 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "warnungen": warnungen,
         "wirte_offen": len(offen),
         "stile": len(stile),
+        "mengen": mengen_n,
+        "vorgaenge": vorgaenge,
+        "fachmodelle": fachmodelle,
         "dauer_s": round(time.time() - begonnen, 2),
     }
+
+
+def _vorgaenge_gruppieren(f, besitz, geschrieben, satz: str) -> int:
+    """Je Erdbau-Vorgang eine Gruppe `ObjectType='Vorgang'` mit Cut und Fill.
+
+    Fabios Entscheidung 2: ein `IfcEarthworksCut` je Vorgang. Die Gruppe haelt
+    zusammen, was zusammengehoert — Aushub und Verfuellung eines Grabens —,
+    und traegt in `Quagg_Vorgang.Quellen` die gelieferten Bauteile, aus denen
+    er abgeleitet ist (Rohre, Schaechte, Bauwerk). Die liegen in einer ANDEREN
+    Datei; in die Gruppe holt sie erst `vorgaenge_schliessen_in` im Verbund.
+
+    Reihenfolge = Reihenfolge im Erdbau-Stapel (der zweite Cut nimmt nur, was
+    der erste uebrig liess). `Reihenfolge` zaehlt ab 1, fuer Menschen.
+    """
+    je = {}
+    for el, b in geschrieben:
+        v = b.get("vorgang") or {}
+        abl = v.get("ableitung")
+        if not abl:
+            continue
+        e = je.setdefault(abl, {"titel": v.get("titel"), "art": v.get("art"), "reihe": v.get("reihe"),
+                                "glieder": [], "quellen": {"rohre": [], "schaechte": [], "bauteil": None}})
+        e["glieder"].append(el)
+        q = b.get("quellen") or {}
+        for k in ("rohre", "schaechte"):
+            for x in q.get(k) or []:
+                i = _ifc_id(x)
+                if i and i not in e["quellen"][k]:
+                    e["quellen"][k].append(i)
+        if q.get("bauteil"):
+            e["quellen"]["bauteil"] = _ifc_id(q["bauteil"])
+    reihe_von = lambda kv: (not isinstance(kv[1]["reihe"], int), kv[1]["reihe"] or 0, kv[0])  # noqa: E731
+    for abl, e in sorted(je.items(), key=reihe_von):
+        reihe = e["reihe"] if isinstance(e["reihe"], int) else None
+        art = ART_TITEL.get(e["art"], e["art"] or "Erdbau-Vorgang")
+        gruppe = f.create_entity(
+            "IfcGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|vorgang|{abl}"), OwnerHistory=besitz,
+            Name=e["titel"] or art,
+            Description=art + (f" - Schritt {reihe + 1} am Ur-Gelaende" if reihe is not None else ""),
+            ObjectType="Vorgang")
+        f.create_entity("IfcRelAssignsToGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|vorgang|{abl}|rel"),
+                        OwnerHistory=besitz, RelatedObjects=e["glieder"], RelatingGroup=gruppe)
+        quellen = {k: w for k, w in e["quellen"].items() if w}
+        _merkmale(f, besitz, gruppe, PSET_VORGANG, {
+            "Ableitung": abl,
+            "Art": e["art"],
+            "Reihenfolge": reihe + 1 if reihe is not None else None,
+            "Quellen": json.dumps(quellen, ensure_ascii=True, sort_keys=True) if quellen else None,
+        }, schluessel=f"{satz}|vorgang|{abl}")
+    return len(je)
 
 
 def wirte_herstellen_in(datei) -> dict:
@@ -392,16 +586,31 @@ def wirte_herstellen_in(datei) -> dict:
     (ein Satz ohne Modell ist mit Eigenbau erlaubt); ohne diesen Namen hiesse
     der Befund nur „rot", nicht „dieses Gelaende mitnehmen".
 
+    NUR EIGENE AUSHUEBE (Paket v2): ein Aushub ohne `Quagg_CDE.CdeId` gehoert
+    einer Lieferung. Eine gelieferte Oeffnung ohne Wirt ist deren Befund, nicht
+    unserer — sie wird weder angefasst noch als „offen" gezaehlt. Ein eigener
+    Aushub, der gar KEINEN Wirt nennt, steht unter `ohne_wirtangabe` (mit
+    seiner CDE-Kennung): dort fehlt nicht ein Gelaende im Satz, sondern die
+    Angabe im Journal.
+
     @returns {"geschlossen": n, "offen": [GlobalIds], "schon_da": n,
-              "fehlende_wirte": [GlobalIds, wie sie im Paket stehen]}
+              "fehlende_wirte": [GlobalIds, wie sie im Paket stehen],
+              "ohne_wirtangabe": [CDE-Kennungen]}
     """
     besitz = (datei.by_type("IfcOwnerHistory") or [None])[0]
-    geschlossen, schon_da, offen, fehlende = 0, 0, [], []
+    geschlossen, schon_da, offen, fehlende, ohne_angabe = 0, 0, [], [], []
     for aushub in datei.by_type("IfcFeatureElementSubtraction"):
+        cde_id = _merkmal(aushub, PSET_CDE, "CdeId")
+        if not cde_id:
+            continue                                # nicht unseres
         if _hat_wirt(aushub):
             schon_da += 1
             continue
         gesucht = _merkmal(aushub, PSET_CDE, "Wirt")
+        if not gesucht:
+            offen.append(aushub.GlobalId)
+            ohne_angabe.append(cde_id)
+            continue
         wirt = _nach_guid(datei, gesucht)
         if wirt is None or wirt.id() == aushub.id():
             offen.append(aushub.GlobalId)
@@ -411,7 +620,7 @@ def wirte_herstellen_in(datei) -> dict:
         _voids(datei, besitz, wirt, aushub, "verbund")
         geschlossen += 1
     return {"geschlossen": geschlossen, "offen": offen, "schon_da": schon_da,
-            "fehlende_wirte": fehlende}
+            "fehlende_wirte": fehlende, "ohne_wirtangabe": ohne_angabe}
 
 
 def wirte_herstellen(pfad) -> dict:
@@ -421,6 +630,52 @@ def wirte_herstellen(pfad) -> dict:
     if bericht["geschlossen"]:
         datei.write(str(pfad))
     return bericht
+
+
+def vorgaenge_schliessen_in(datei) -> dict:
+    """Im Verbund die GELIEFERTEN Quellen jedes Vorgangs in seine Gruppe holen.
+
+    Ein Kanalgraben ist aus Rohren abgeleitet, eine Baugrube aus einem Bauwerk
+    — beide liegen in anderen Lieferungen. Die Eigenbau-Datei allein kann sie
+    nicht gruppieren; im Verbund liegen sie nebeneinander, und die Gruppe
+    „Kanalgraben H-001" enthaelt dann Graben, Verfuellung UND die Haltung.
+    Das Gelaende gehoert NICHT hinein: es ist der Wirt, verbunden ueber
+    `IfcRelVoidsElement`.
+
+    Wiederholbar: was schon in der Gruppe ist, kommt nicht ein zweites Mal.
+    Was nicht im Verbund liegt, steht unter `fehlend` — kein Fehler, der Satz
+    enthaelt die Lieferung eben nicht.
+
+    @returns {"vorgaenge": n, "ergaenzt": n, "fehlend": [GlobalIds]}
+    """
+    vorgaenge, ergaenzt, fehlend = 0, 0, set()
+    for gruppe in datei.by_type("IfcGroup"):
+        if gruppe.ObjectType != "Vorgang":
+            continue
+        roh = _merkmal(gruppe, PSET_VORGANG, "Quellen")
+        rel = next(iter(gruppe.IsGroupedBy or ()), None)
+        if not roh or rel is None:
+            continue
+        vorgaenge += 1
+        try:
+            q = json.loads(roh)
+        except ValueError:
+            continue
+        gesucht = [*(q.get("rohre") or []), *(q.get("schaechte") or []),
+                   *([q["bauteil"]] if q.get("bauteil") else [])]
+        drin = {o.id() for o in rel.RelatedObjects or ()}
+        neu = []
+        for guid in gesucht:
+            el = _nach_guid(datei, guid)
+            if el is None:
+                fehlend.add(guid)
+            elif el.id() not in drin:
+                neu.append(el)
+                drin.add(el.id())
+        if neu:
+            rel.RelatedObjects = list(rel.RelatedObjects) + neu
+            ergaenzt += len(neu)
+    return {"vorgaenge": vorgaenge, "ergaenzt": ergaenzt, "fehlend": sorted(fehlend)}
 
 
 def _main(argv=None):

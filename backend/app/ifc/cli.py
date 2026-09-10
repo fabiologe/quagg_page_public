@@ -147,16 +147,21 @@ def lauf(ordner: Path) -> int:
         if not auftrag.get("quellen"):
             raise ValueError("auftrag.json nennt keine Quelle")
         quellen = [Quelle(**q) for q in auftrag["quellen"]]
-        nachbearbeiten = []
+        # DIE HAKEN LAUFEN IMMER (Stufe 2/3 des Aushub-Fachmodells). Ein
+        # Erdbau-Dokument aus dem Register bringt seine Aushuebe mit — deren
+        # Wirte sind schon geschlossen (`schon_da`), aber seine Vorgaenge kennen
+        # Rohre und Bauwerke erst im Verbund. Ohne Eigenbau und ohne
+        # Erdbau-Dokument finden beide nichts und kosten nichts.
+        from .eigenbau import baue_datei, vorgaenge_schliessen_in, wirte_herstellen_in
+        nachbearbeiten = [("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)]
         eigenbau_bericht = None
         paket_pfad = ordner / "eigenbau.json"
         if paket_pfad.is_file():
-            # Der CDE-Eigenbau (app/ifc/eigenbau.py, gebaut von der Nachbarsitzung)
-            # wird zu einer GEWOEHNLICHEN Quelle: eine eigene IFC-Datei, die durch
-            # denselben Verbund und dieselbe Pruefung geht wie jede Lieferung.
-            # Erst im Verbund liegen Aushub und Ur-Gelaende nebeneinander — deshalb
-            # schliesst dort ein Haken die Wirt-Beziehungen (IfcRelVoidsElement).
-            from .eigenbau import baue_datei, wirte_herstellen_in
+            # Der CDE-Eigenbau (app/ifc/eigenbau.py) wird zu einer GEWOEHNLICHEN
+            # Quelle: eine eigene IFC-Datei, die durch denselben Verbund und
+            # dieselbe Pruefung geht wie jede Lieferung. Erst im Verbund liegen
+            # Aushub und Ur-Gelaende nebeneinander — deshalb schliesst dort ein
+            # Haken die Wirt-Beziehungen (IfcRelVoidsElement).
             melde("CDE-Eigenbau als Quelle bauen")
             roh = paket_pfad.read_bytes()
             eigen = ordner / "eigenbau.ifc"
@@ -170,7 +175,6 @@ def lauf(ordner: Path) -> int:
             if nicht_drin:
                 eigenbau_bericht = {**eigenbau_bericht, "nicht_im_paket": nicht_drin}
             quellen.append(Quelle(eigen, name="CDE-Eigenbau", sha256=hashlib.sha256(roh).hexdigest()))
-            nachbearbeiten.append(("wirte", wirte_herstellen_in))
         bericht = fuehre_zusammen(
             quellen, verbund,
             projektname=auftrag.get("projektname") or "Verbundmodell",

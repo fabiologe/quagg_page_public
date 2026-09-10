@@ -221,11 +221,18 @@ const ABLEITUNGEN_ERWEITERT = {
                 predefinedType: (parameter) => ((parameter?.operationen ?? []).every(op => op.art === 'gerinne')
                     ? 'TRENCH' : 'EXCAVATION'),
                 name: (q) => `${q} · Aushub`,
+                // DIE MENGE fürs IFC (Stufe 2): welche Kennzahl welcher Qto-Wert
+                // ist. Es ist die Rasterzahl — dieselbe, die der Mengenreiter
+                // zeigt und die sich mit den anderen Vorgängen zur Gesamtmasse
+                // summiert. Der Körper ist die Gegenprobe, nicht die Menge.
+                menge: { undisturbedVolume: 'aushubRaster' },
             },
             {
                 rolle: 'auftrag', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
                 predefinedType: 'EMBANKMENT',
                 name: (q) => `${q} · Auftrag`,
+                // Eingebaut ist ein Auftrag verdichtet — sein Raum IST das CompactedVolume.
+                menge: { compactedVolume: 'auftragRaster' },
             },
             // KEIN `dgm`-Teil mehr (Stufe 1): die geformte Fläche ist die EINE
             // Anzeigeform des Ur-Geländes (Rezept `anzeige`), nicht ein Teil
@@ -525,9 +532,12 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
     formen:  { rohr: 'linie', rohre: 'linie', schaechte: 'knoten', gelaende: 'raster' },
     teile: [
         { rolle: 'graben', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
-          predefinedType: 'TRENCH', name: (q) => `${q} · Graben` },
+          predefinedType: 'TRENCH', name: (q) => `${q} · Graben`,
+          // Menge (Stufe 2) — siehe erdbau; die Länge ist die Achslänge der Rohre.
+          menge: { undisturbedVolume: 'aushubRaster', length: 'laenge' } },
         { rolle: 'verfuellung', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
-          predefinedType: 'BACKFILL', name: (q) => `${q} · Verfüllung` },
+          predefinedType: 'BACKFILL', name: (q) => `${q} · Verfüllung`,
+          menge: { compactedVolume: 'verfuellung' } },
         // kein `dgm`-Teil mehr (Stufe 1) — siehe erdbau; `leite` liefert es weiter.
     ],
 
@@ -836,7 +846,8 @@ const BAUWERKSGRUBE = {
     formen:  { bauteil: 'umriss', gelaende: 'raster' },
     teile: [
         { rolle: 'grube', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
-          predefinedType: 'EXCAVATION', name: (q) => `${q} · Baugrube` },
+          predefinedType: 'EXCAVATION', name: (q) => `${q} · Baugrube`,
+          menge: { undisturbedVolume: 'aushubRaster' } },          // Menge (Stufe 2) — siehe erdbau
         // kein `dgm`-Teil mehr (Stufe 1) — siehe erdbau; `leite` liefert es weiter.
     ],
     hoehenFelder: ERDBAU_HOEHENFELDER,

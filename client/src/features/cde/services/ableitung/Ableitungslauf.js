@@ -86,6 +86,56 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         return ops;
     }
 
+    /**
+     * Wie viel eines Aushubs lag ÜBER dem Ur-Gelände — war also Auftrag eines
+     * früheren Vorgangs? Und welcher Vorgänge? (Stufe 2, Entscheidung 3.)
+     *
+     * Dieselbe Zellformel wie `massenAus` (Mittel der vier Knoten × Zellfläche):
+     * die Kennzahl steht neben `aushubRaster` und muss sich an ihm messen
+     * lassen. Je Knoten: entfernt über dem Ur = vorher − max(nachher, ur).
+     * Zugeordnet wird an DENSELBEN Knoten: ein Vorgänger zählt, wenn er genau
+     * dort aufgefüllt hat — nicht, weil sein Umriss in der Nähe liegt.
+     */
+    async function _durchAuffuellung({ ur: urGid, ableitung }, vorher, ops, urRaster) {
+        const nachher = formeNach(vorher, ops).raster;
+        const { nx, nz, cell } = vorher;
+        const ueber = new Float64Array(nx * nz);
+        const knoten = [];
+        for (let i = 0; i < ueber.length; i++) {
+            const v = vorher.heights[i], n = nachher.heights[i], u = urRaster.heights[i];
+            if (!Number.isFinite(v) || !Number.isFinite(n) || !Number.isFinite(u)) { ueber[i] = NaN; continue; }
+            ueber[i] = Math.max(0, v - Math.max(n, u));
+            if (ueber[i] > 1e-9) knoten.push(i);
+        }
+        if (!knoten.length) return { volumen: 0, vorgaenge: [] };
+        let volumen = 0;
+        for (let ix = 0; ix + 1 < nx; ix++) {
+            for (let iz = 0; iz + 1 < nz; iz++) {
+                let summe = 0;
+                let gueltig = true;
+                for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+                    const w = ueber[(ix + dx) * nz + (iz + dz)];
+                    if (!Number.isFinite(w)) { gueltig = false; break; }
+                    summe += w;
+                }
+                if (gueltig) volumen += (summe / 4) * cell * cell;
+            }
+        }
+        const { vorgaenge } = _stapel(urGid);
+        const bis = vorgaenge.findIndex(v => v.ableitung === ableitung);
+        const treffer = [];
+        const bisher = [];
+        let davor = urRaster;
+        for (const v of vorgaenge.slice(0, Math.max(0, bis))) {
+            const erg = await _leiten(v.bauplan);
+            bisher.push(...(erg?.ops ?? []));
+            const danach = formeNach(urRaster, bisher).raster;
+            if (knoten.some(i => danach.heights[i] - davor.heights[i] > 1e-9)) treffer.push(v.ableitung);
+            davor = danach;
+        }
+        return { volumen, vorgaenge: treffer };
+    }
+
     function _eintrag(ableitungId, rezeptId) {
         if (!ableitungen.has(ableitungId)) {
             ableitungen.set(ableitungId, { rezept: rezeptId, teile: {}, leer: [], kennzahlen: {}, befunde: [], warnungen: [] });
@@ -177,6 +227,23 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 }
             }
             const erg = await rezept.leite(bauplan.parameter, quellen, { kernel, hoehenversatz, stapel });
+            // DURCH EINE AUFFÜLLUNG GESCHNITTEN (Stufe 2, Fabios Entscheidung 3):
+            // der Wirt eines Cuts bleibt IMMER das Ur-Gelände. Schneidet er durch
+            // den Auftrag eines früheren Vorgangs, sagen das eine Kennzahl (wie
+            // viel davon über dem Ur lag) und die Liste dieser Vorgänge — keine
+            // zweite Wirt-Beziehung, kein Fill als Wirt.
+            if (stapel && _istErdbau(rezept) && erg?.ops?.length) {
+                // Auf DEMSELBEN Raster wie `aushubRaster`: dem feinen Korridor,
+                // wenn das Rezept einen bekam — roh ist er das Ur in feiner
+                // Auflösung. Sonst stünden zwei Kennzahlen aus zwei Rastern
+                // nebeneinander, und ihre Differenz hiesse nichts.
+                const fein = quellen.gelaendeFein ?? null;
+                const auff = fein
+                    ? await _durchAuffuellung(stapel, stapel.vorherVon(fein), erg.ops, fein)
+                    : await _durchAuffuellung(stapel, quellen.gelaende, erg.ops, stapel.urRaster);
+                erg.kennzahlen = { ...(erg.kennzahlen ?? {}),
+                                   aushubAusAuffuellung: auff.volumen, schneidetAuffuellung: auff.vorgaenge };
+            }
             // DER EINTRAG entsteht HIER, nicht erst in `baue`: eine Ableitung,
             // die nur als Vorgänger im Stapel gefaltet wurde (Stufe 1), hat
             // trotzdem Kennzahlen und Befunde — der Mengenreiter und der Export

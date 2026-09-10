@@ -2,8 +2,8 @@
  * Das Eigenbau-Paket: was die CDE selbst erzeugt hat, für den IFC-Schreiber.
  *
  * DIE LÜCKE (2026-09-10). Der Verbundexport schreibt gelieferte IFC-Dateien
- * zusammen. Die Bauteile, die die CDE SELBST erzeugt — Aushub, Auftrag, das
- * geformte DGM, Kanalgraben, Rohre, Schächte —, lebten nur im Journal und im
+ * zusammen. Die Bauteile, die die CDE SELBST erzeugt — Aushub, Auftrag,
+ * Kanalgraben, Baugrube, Rohre, Schächte —, lebten nur im Journal und im
  * fragments-Modell des Browsers; einen IFC-Weg hatten sie nicht. Dieses Paket
  * trägt sie zum Schreiber (`backend/app/ifc/eigenbau.py`), der daraus eine
  * gewöhnliche Quelle für den Verbund macht — geprüft mit DEMSELBEN Prüftor.
@@ -27,17 +27,26 @@
  *    die Punkte bleiben klein: 2,5 Millionen Meter in jedem einzelnen Punkt
  *    kosten Stellen, die ein Empfänger im Float verliert.
  *  - DER WIRT eines Aushubs. `IfcEarthworksCut` ist schemawidrig ohne das
- *    Bauteil, das er aushöhlt (Prüftor, erster Lauf). Der Wirt ist das
- *    Gelände, auf dem geformt wurde — `parameter.quellen.gelaende`. Ist das
- *    selbst ein eigenes, nicht exportiertes Gelände, wird bis zum ersten
- *    exportierten oder gelieferten zurückgegangen.
+ *    Bauteil, das er aushöhlt (Prüftor, erster Lauf). Der Wirt ist IMMER das
+ *    UR-Gelände (Stufe 1: jeder Vorgang fusst darauf). Nur Alt-Journale nennen
+ *    noch ein eigenes DGM — dann wird bis zum gelieferten zurückgegangen.
+ *
+ * PAKET v2 (Stufe 2 des Aushub-Fachmodells, 2026-09-10). Die ANZEIGEFORM —
+ * die geformte Fläche, die der Raum zeigt — kommt nicht mehr mit: sie war im
+ * IFC ein zweites TERRAIN am selben Ort, und der Aushub stand damit dreimal
+ * in der Datei (Void im Ur, Körper des Cut, abgesenkte Kopie). `ersetzt`
+ * entfällt deshalb. Neu je Bauteil: der VORGANG (eine Gruppe im IFC), die
+ * MENGEN (Qto, deklariert am Rezept), die QUELLEN (Ur direkt, Rohre,
+ * Schächte, Bauteil), das FACHMODELL und die Füllungen, durch die ein Cut
+ * schneidet. Je Paket: die QUELLDOKUMENTE — die Registerdateien, in denen die
+ * Wirte liegen (das Erdbau-Dokument nimmt genau sie als Quelle).
  *
  * Rein: kein three, kein Vue, keine Engine. Die Geometrie kommt als
  * Positions-/Indexfelder herein (aus `IfcAutor.eigenbauGeometrien`).
  */
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 
-export const PAKET_VERSION = 1;
+export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
 export const SCHWEISS_M = 0.001;
 
@@ -130,7 +139,8 @@ export function wirtVon(plan, stand, exportiert) {
  * Ein Bauteil fürs Paket.
  *
  * @param {object} teil  aus `IfcAutor.eigenbauGeometrien`: {globalId, wert,
- *        positionen, index, kategorie, name, predefinedType, geschlossen}
+ *        positionen, index, kategorie, name, predefinedType, geschlossen,
+ *        kennzahlen, mengen, fachmodell, vorgang, schneidetAuffuellung}
  * @returns {object|null}  null, wenn nach dem Verschweissen nichts übrig bleibt
  */
 export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN } = {}) {
@@ -141,7 +151,9 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     const { ursprung, punkte: lokal } = mitUrsprung(punkte);
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
     const f = farbeFuer(klasse, farbsatz);
-    const quelle = plan?.parameter?.quellen?.gelaende ?? null;
+    const q = plan?.parameter?.quellen ?? {};
+    const ur = q.gelaende ? wirtVon(plan, stand, exportiert) : null;
+    const aushub = AUSHUB_KLASSEN.has(klasse);
     return {
         cdeId: teil.globalId,
         klasse,
@@ -156,14 +168,30 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         ursprung,
         punkte: lokal,
         dreiecke,
-        wirt: AUSHUB_KLASSEN.has(klasse) ? wirtVon(plan, stand, exportiert) : null,
-        // Das geformte DGM VERTRITT das Gelände, auf dem geformt wurde — und
-        // zwar das, das im Export STEHT: ist die Quelle ein verborgenes eigenes
-        // DGM, zeigte der Verweis sonst auf etwas, das kein Empfänger findet.
-        // Dieselbe Kette wie beim Wirt (gemessen 2026-09-10: Bauwerksgrube auf
-        // dem geformten DGM nannte dessen unexportierte Kennung).
-        ersetzt: plan.rolle === 'dgm' && quelle ? [wirtVon(plan, stand, exportiert)] : [],
+        wirt: aushub ? ur : null,
+        fachmodell: teil.fachmodell ?? 'cde',
+        vorgang: teil.vorgang ?? null,
+        mengen: teil.mengen ?? {},
+        quellen: _quellenFuersPaket(q, ur),
+        // Nur ein Cut schneidet durch Füllungen früherer Vorgänge.
+        schneidetAuffuellung: aushub ? (teil.schneidetAuffuellung ?? []) : [],
+        aushubAusAuffuellung: aushub ? (teil.kennzahlen?.aushubAusAuffuellung ?? null) : null,
         hinweis: entartet ? `${entartet} entartete Dreiecke beim Verschweissen entfernt` : null,
+    };
+}
+
+/**
+ * Die Quellen eines Bauteils, wie der Schreiber sie braucht: das Gelände als
+ * UR (nie eine Anzeigeform), Rohre und Schächte als Listen (Alt-Journale
+ * nennen `rohr` einzeln), das Bauteil einer Baugrube.
+ */
+function _quellenFuersPaket(q, ur) {
+    const liste = (x) => (Array.isArray(x) ? x : (x ? [x] : [])).filter(Boolean);
+    return {
+        gelaende: ur,
+        rohre: [...liste(q.rohre), ...liste(q.rohr)],
+        schaechte: liste(q.schaechte),
+        bauteil: q.bauteil ?? null,
     };
 }
 
@@ -175,10 +203,14 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
  * @param {Map}    o.stand        wirksamer erzeugt-Stand (gid → Bauplan) — für die Wirtkette
  * @param {Function} o.nachProjekt  Welt → {ost, nord, hoehe}
  * @param {string} o.crs          das WIRKSAME System (bei Widerspruch das erkannte)
+ * @param {string[]} o.anzeigeformen  aus `eigenbauGeometrien` — stehen unter `uebersprungen`, mit Grund
+ * @param {Array}  o.quellDokumente  Registerdateien der Wirte [{sha256, datei, revision, globalIds}]
+ * @param {object} o.journal      {commit, sitzungOffen} — welcher Journalstand exportiert wurde
  * @returns {object}  JSON-tauglich
  */
 export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
                                    projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
+                                   anzeigeformen = [], quellDokumente = [], journal = null,
                                    jetzt = new Date() } = {}) {
     if (typeof nachProjekt !== 'function') throw new Error('EigenbauPaket: ohne nachProjekt keine Landeskoordinaten');
     const exportiert = new Set(teile.map(t => t.globalId));
@@ -189,6 +221,10 @@ export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, 
         if (b) bauteile.push(b);
         else uebersprungen.push({ cdeId: t.globalId, grund: 'nach dem Verschweissen keine Fläche übrig' });
     }
+    // Nicht still weglassen: die Anzeigeform steht im Raum, aber nicht im IFC.
+    for (const gid of anzeigeformen) {
+        uebersprungen.push({ cdeId: gid, grund: 'Anzeigeform — kein Bauteil: der Aushub ist ein IfcEarthworksCut am Ur-Gelände' });
+    }
     return {
         version: PAKET_VERSION,
         crs,
@@ -197,6 +233,8 @@ export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, 
         schluessel,
         bearbeiter,
         erzeugt: jetzt.toISOString(),
+        journal,
+        quellDokumente,
         bauteile,
         uebersprungen,
     };

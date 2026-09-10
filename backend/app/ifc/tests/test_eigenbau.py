@@ -7,7 +7,9 @@ nichts bewiesen.
 
 Drei Sorten Zusagen:
   1. Die Eigenbau-Datei selbst besteht das Tor — mit jeder Bauteilart, die
-     die CDE erzeugt (Aushub, Auftrag, DGM, Rohr, Schacht, Linie).
+     die CDE ins Paket legt (Aushub, Auftrag, gezeichnetes Gelaende, Rohr,
+     Schacht, Linie). Seit Paket v2 KEIN geformtes DGM: die Anzeigeform bleibt
+     im Raum der CDE (Stufe 2 des Aushub-Fachmodells).
   2. Die Befunde, die das Tor beim ersten Lauf fand, bleiben gefunden: ein
      Aushub OHNE Wirt ist schemawidrig, und genau das muss rot werden.
   3. Im Verbund mit einer GELIEFERTEN Datei — dort, wo der Wirt eines
@@ -16,6 +18,7 @@ Drei Sorten Zusagen:
 Laeuft mit DEM IFC-VENV:
     PYTHONPATH=backend backend/app/ifc/.venv-ifc/bin/python -m pytest backend/app/ifc/tests/test_eigenbau.py -q
 """
+import json
 from pathlib import Path
 
 import pytest
@@ -26,7 +29,8 @@ ifcopenshell = pytest.importorskip(
 from app.ifc import guids                          # noqa: E402
 from app.ifc import verbund as V                   # noqa: E402
 from app.ifc.eigenbau import (                     # noqa: E402
-    PSET_CDE, PaketFehler, baue_datei, wirte_herstellen, wirte_herstellen_in)
+    PAKET_VERSION, PSET_CDE, PSET_VORGANG, PaketFehler, baue_datei, vorgaenge_schliessen_in,
+    wirte_herstellen, wirte_herstellen_in)
 from app.ifc.probe import zweiter_motor            # noqa: E402
 from app.ifc.pruefe import pruefe                  # noqa: E402
 
@@ -60,20 +64,32 @@ def _bauteil(cde_id, klasse, geo, **extra):
 
 
 def _paket(bauteile, **extra):
-    return {"version": 1, "crs": "EPSG:25832", "projektname": "Eigenbau-Test",
+    return {"version": PAKET_VERSION, "crs": "EPSG:25832", "projektname": "Eigenbau-Test",
             "erzeugt": "2026-09-10T00:00:00Z", "bauteile": bauteile, **extra}
 
 
-def _alle_arten(wirt="cde-dgm"):
-    """Jede Bauteilart, die die CDE heute erzeugt — mit den Werten, die das Journal traegt."""
+VORGANG = {"ableitung": "ab-1", "art": "erdbau", "reihe": 0, "titel": "Test · Gelände formen"}
+
+
+def _alle_arten(wirt="cde-gelaende"):
+    """Jede Bauteilart, die die CDE ins Paket legt — mit den Werten, die das Journal traegt.
+
+    Paket v2: Aushub und Auftrag gehoeren EINEM Vorgang, tragen Mengen (die
+    Kaesten messen 240 und 144 m3) und das Fachmodell „erdbau". Das Gelaende
+    ist ein in der CDE GEZEICHNETES (Altbestand `gelaende`), kein geformtes —
+    es dient als Wirt im selben Paket, damit die Datei allein das Tor besteht.
+    """
+    quellen = {"gelaende": wirt, "rohre": [], "schaechte": [], "bauteil": None}
     return [
         _bauteil("cde-aushub", "IFCEARTHWORKSCUT", _kasten(20, 4, 3), predefinedType="TRENCH",
                  farbe=0x8a7145, deckkraft=0.55, geschlossen=True, rolle="aushub", rezept="erdbau",
-                 wirt=wirt),
+                 wirt=wirt, fachmodell="erdbau", vorgang=VORGANG, quellen=quellen,
+                 mengen={"undisturbedVolume": 240.0}),
         _bauteil("cde-auftrag", "IFCEARTHWORKSFILL", _kasten(12, 6, 2), predefinedType="EMBANKMENT",
-                 farbe=0x79a06a, deckkraft=1.0, geschlossen=True, rolle="auftrag", rezept="erdbau"),
-        _bauteil("cde-dgm", "IFCGEOGRAPHICELEMENT", _gitter(12, 5.0), predefinedType="TERRAIN",
-                 farbe=0xa29a8c, deckkraft=1.0, geschlossen=False, rolle="dgm", rezept="erdbau"),
+                 farbe=0x79a06a, deckkraft=1.0, geschlossen=True, rolle="auftrag", rezept="erdbau",
+                 fachmodell="erdbau", vorgang=VORGANG, quellen=quellen, mengen={"compactedVolume": 144.0}),
+        _bauteil("cde-gelaende", "IFCGEOGRAPHICELEMENT", _gitter(12, 5.0), predefinedType="TERRAIN",
+                 farbe=0xa29a8c, deckkraft=1.0, geschlossen=False, rezept="gelaende", fachmodell="cde"),
         _bauteil("cde-rohr", "IFCPIPESEGMENT", _kasten(30, 0.5, 0.5), geschlossen=True, rezept="rohr"),
         _bauteil("cde-schacht", "IFCDISTRIBUTIONCHAMBERELEMENT", _kasten(1, 1, 3), geschlossen=True,
                  rezept="schacht"),
@@ -236,28 +252,42 @@ def test_ein_unbekanntes_system_wird_abgelehnt(tmp_path):
         baue_datei(_paket(_alle_arten(), crs="EPSG:4326"), tmp_path / "x.ifc", schluessel="x")
 
 
+def _pset(objekt, satzname):
+    """Die Werte eines Merkmalssatzes — ueber die inverse Beziehung, wie ein Empfaenger liest."""
+    for rel in objekt.IsDefinedBy or ():
+        d = rel.RelatingPropertyDefinition
+        if d.is_a("IfcPropertySet") and d.Name == satzname:
+            return {e.Name: e.NominalValue.wrappedValue for e in d.HasProperties}
+    return {}
+
+
+def _qto(objekt):
+    """Die Mengen eines Bauteils: {'_name': Qto-Satz, Mengenname: Wert}."""
+    for rel in objekt.IsDefinedBy or ():
+        d = rel.RelatingPropertyDefinition
+        if d.is_a("IfcElementQuantity"):
+            return {"_name": d.Name, **{q.Name: q[3] for q in d.Quantities}}
+    return {}
+
+
 def test_die_spur_zurueck_ins_journal(tmp_path):
-    """Ohne sie weiss niemand, dass das geformte DGM das Ur-Gelaende vertritt."""
-    teile = _alle_arten()
-    teile[2]["ersetzt"] = ["1OaU$rmOTF_8XVO$FIs70b"]
+    """Kennung, Rezept, Vorgang, Wirt — und seit Paket v2 KEIN `ErsetztGlobalId` mehr."""
     ziel = tmp_path / "spur.ifc"
-    baue_datei(_paket(teile), ziel, schluessel="spur")
+    baue_datei(_paket(_alle_arten()), ziel, schluessel="spur")
     f = ifcopenshell.open(ziel)
-    dgm = f.by_type("IfcGeographicElement")[0]
-    werte = {}
-    for rel in dgm.IsDefinedBy:
-        if rel.RelatingPropertyDefinition.Name == PSET_CDE:
-            werte = {e.Name: e.NominalValue.wrappedValue for e in rel.RelatingPropertyDefinition.HasProperties}
-    assert werte["CdeId"] == "cde-dgm"
+    werte = _pset(f.by_type("IfcEarthworksCut")[0], PSET_CDE)
+    assert werte["CdeId"] == "cde-aushub"
     assert werte["Rezept"] == "erdbau"
-    assert werte["ErsetztGlobalId"] == "1OaU$rmOTF_8XVO$FIs70b"
+    assert werte["Vorgang"] == "Test · Gelände formen"
+    assert werte["Wirt"] == guids.guid_aus_cde_id("cde-gelaende")
+    assert not any(e.Name == "ErsetztGlobalId" for e in f.by_type("IfcPropertySingleValue"))
 
 
 # ── 2. Der Befund des ersten Laufs bleibt gefunden ──────────────────────────
 
 def test_aushub_im_selben_paket_bekommt_seinen_wirt(tmp_path):
     ziel = tmp_path / "wirt.ifc"
-    baue_datei(_paket(_alle_arten(wirt="cde-dgm")), ziel, schluessel="wirt")
+    baue_datei(_paket(_alle_arten(wirt="cde-gelaende")), ziel, schluessel="wirt")
     f = ifcopenshell.open(ziel)
     aushub = f.by_type("IfcEarthworksCut")[0]
     assert len(aushub.VoidsElements) == 1
@@ -340,9 +370,7 @@ def verbund_mit_aushub(tmp_path):
     geliefert = tmp_path / "gelaende.ifc"
     wirt = _gelieferte_gelaendedatei(geliefert)
     eigen = tmp_path / "eigenbau.ifc"
-    teile = _alle_arten(wirt=wirt)
-    teile[2]["ersetzt"] = [wirt]
-    baue_datei(_paket(teile), eigen, schluessel="verbundtest")
+    baue_datei(_paket(_alle_arten(wirt=wirt)), eigen, schluessel="verbundtest")
     ziel = tmp_path / "verbund.ifc"
     bericht = V.fuehre_zusammen(
         [V.Quelle(geliefert, name="Gelaendelieferung", sha256="d" * 64),
@@ -419,7 +447,7 @@ def test_der_im_speicher_haken_fuer_den_verbundlauf(tmp_path):
                       ziel, projektname="Haken")
     datei = ifcopenshell.open(ziel)
     bericht = wirte_herstellen_in(datei)
-    assert bericht == {"geschlossen": 1, "offen": [], "schon_da": 0, "fehlende_wirte": []}
+    assert bericht == {"geschlossen": 1, "offen": [], "schon_da": 0, "fehlende_wirte": [], "ohne_wirtangabe": []}
     # Nichts geschrieben — das tut der Verbundlauf selbst.
     assert not ifcopenshell.open(ziel).by_type("IfcEarthworksCut")[0].VoidsElements
 
@@ -439,3 +467,226 @@ def test_v07_kennt_den_aushub_ueber_seinen_wirt(verbund_mit_aushub):
     ziel, _b, _w = verbund_mit_aushub
     wirte_herstellen(ziel)
     assert _regel(pruefe(ziel), "V07")["ok"] is True
+
+
+# ── 4. Paket v2 (Stufe 2 des Aushub-Fachmodells) ────────────────────────────
+
+def test_ein_v1_paket_wird_laut_abgelehnt(tmp_path):
+    """v1 trug die geformte Kopie des Gelaendes als Bauteil — still angenommen,
+    stuende wieder ein zweites TERRAIN in der Datei."""
+    with pytest.raises(PaketFehler, match="erwartet 2"):
+        baue_datei({**_paket(_alle_arten()), "version": 1}, tmp_path / "v1.ifc")
+
+
+def test_mengen_stehen_als_qto_nach_der_bsi_vorlage(tmp_path):
+    """Die Zahl aus dem Paket — also aus dem Mengenreiter — steht als Qto im IFC."""
+    ziel = tmp_path / "qto.ifc"
+    bericht = baue_datei(_paket(_alle_arten()), ziel, schluessel="qto")
+    assert bericht["mengen"] == 2
+    f = ifcopenshell.open(ziel)
+    qtos = f.by_type("IfcElementQuantity")
+    assert len(qtos) == 2                           # Cut + Fill; Rohr, Schacht, Linie tragen keine
+    cut = _qto(f.by_type("IfcEarthworksCut")[0])
+    assert cut["_name"] == "Qto_EarthworksCutBaseQuantities"
+    assert cut["UndisturbedVolume"] == pytest.approx(240.0, abs=1e-3)
+    fill = _qto(f.by_type("IfcEarthworksFill")[0])
+    assert fill["_name"] == "Qto_EarthworksFillBaseQuantities"
+    assert fill["CompactedVolume"] == pytest.approx(144.0, abs=1e-3)
+    assert all("raster" in q.MethodOfMeasurement.lower() for q in qtos)     # WIE gemessen wurde, steht dabei
+    _sauber(pruefe(ziel))
+
+
+def test_eine_menge_ausserhalb_der_vorlage_wird_gemeldet_nicht_geschrieben(tmp_path):
+    """Ein Qto-Satz mit erfundenen Mengen waere so unkonform wie ein erfundener PredefinedType."""
+    teile = _alle_arten()
+    teile[0]["mengen"] = {"undisturbedVolume": 240.0, "compactedVolume": 5.0, "quatschVolumen": 1.0}
+    ziel = tmp_path / "quatsch.ifc"
+    bericht = baue_datei(_paket(teile), ziel, schluessel="quatsch")
+    assert any("CompactedVolume steht nicht in Qto_EarthworksCutBaseQuantities" in w for w in bericht["warnungen"])
+    assert any("QuatschVolumen" in w for w in bericht["warnungen"])
+    assert set(_qto(ifcopenshell.open(ziel).by_type("IfcEarthworksCut")[0])) == {"_name", "UndisturbedVolume"}
+
+
+def test_ein_vorgang_ist_eine_gruppe_mit_cut_und_fill(tmp_path):
+    """Fabios Entscheidung 2: ein Cut je Vorgang — und was zum Vorgang gehoert, haelt eine Gruppe zusammen."""
+    ziel = tmp_path / "vorgang.ifc"
+    bericht = baue_datei(_paket(_alle_arten()), ziel, schluessel="vorgang")
+    assert bericht["vorgaenge"] == 1
+    f = ifcopenshell.open(ziel)
+    [gruppe] = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Vorgang"]
+    assert gruppe.Name == "Test · Gelände formen"
+    glieder = {o.GlobalId for rel in gruppe.IsGroupedBy for o in rel.RelatedObjects}
+    assert glieder == {guids.guid_aus_cde_id("cde-aushub"), guids.guid_aus_cde_id("cde-auftrag")}
+    w = _pset(gruppe, PSET_VORGANG)
+    assert (w["Ableitung"], w["Art"], w["Reihenfolge"]) == ("ab-1", "erdbau", 1)
+
+
+def test_erdbau_und_eigenbau_sind_zwei_fachmodelle(tmp_path):
+    """Ein Empfaenger findet den Aushub, ohne Rezeptnamen der CDE zu kennen."""
+    ziel = tmp_path / "fm.ifc"
+    bericht = baue_datei(_paket(_alle_arten()), ziel, schluessel="fm")
+    assert bericht["fachmodelle"] == {"Erdbau": 2, "CDE-Eigenbau": 4}
+    f = ifcopenshell.open(ziel)
+    fm = {g.Name: {o.GlobalId for rel in g.IsGroupedBy for o in rel.RelatedObjects}
+          for g in f.by_type("IfcGroup") if g.ObjectType == "Fachmodell"}
+    assert fm["Erdbau"] == {guids.guid_aus_cde_id("cde-aushub"), guids.guid_aus_cde_id("cde-auftrag")}
+    assert _regel(pruefe(ziel), "V08")["ok"] is True
+
+
+def test_ein_aushub_durch_einen_auftrag_sagt_es_am_merkmal_und_der_wirt_bleibt(tmp_path):
+    """Fabios Entscheidung 3: Wirt immer das Ur-Gelaende, die Auffuellung nur Merkmal und Kennzahl."""
+    teile = _alle_arten()
+    zweiter = {"ableitung": "ab-2", "art": "erdbau", "reihe": 1, "titel": "Test · Gerinne"}
+    teile.append(_bauteil("cde-aushub-2", "IFCEARTHWORKSCUT", _kasten(4, 4, 3), predefinedType="TRENCH",
+                          geschlossen=True, rolle="aushub", rezept="erdbau", wirt="cde-gelaende",
+                          fachmodell="erdbau", vorgang=zweiter, mengen={"undisturbedVolume": 48.0},
+                          schneidetAuffuellung=["cde-auftrag"], aushubAusAuffuellung=3.5))
+    ziel = tmp_path / "auff.ifc"
+    bericht = baue_datei(_paket(teile), ziel, schluessel="auff")
+    assert bericht["vorgaenge"] == 2
+    f = ifcopenshell.open(ziel)
+    zwei = f.by_guid(guids.guid_aus_cde_id("cde-aushub-2"))
+    w = _pset(zwei, PSET_CDE)
+    assert w["SchneidetAuffuellung"] == guids.guid_aus_cde_id("cde-auftrag")
+    assert w["AushubAusAuffuellung"] == pytest.approx(3.5)
+    wert = next(e for e in f.by_type("IfcPropertySingleValue") if e.Name == "AushubAusAuffuellung")
+    assert wert.NominalValue.is_a("IfcVolumeMeasure")          # ein Messwert mit Einheit, kein Text
+    assert zwei.VoidsElements[0].RelatingBuildingElement.is_a("IfcGeographicElement")
+    _sauber(pruefe(ziel))
+
+
+def test_eine_gelieferte_oeffnung_bleibt_unberuehrt(tmp_path):
+    """Nur EIGENE Aushuebe (mit CdeId): eine gelieferte Oeffnung ohne Wirt ist der Befund ihrer Lieferung."""
+    ziel = tmp_path / "oeffnung.ifc"
+    baue_datei(_paket(_alle_arten()), ziel, schluessel="oeffnung")
+    datei = ifcopenshell.open(ziel)
+    fremd = datei.create_entity("IfcOpeningElement", GlobalId=ifcopenshell.guid.new(), Name="geliefert")
+    bericht = wirte_herstellen_in(datei)
+    assert bericht["offen"] == [] and bericht["ohne_wirtangabe"] == [] and bericht["schon_da"] == 1
+    assert not fremd.VoidsElements
+
+
+def test_ein_aushub_ohne_wirtangabe_wird_genannt(tmp_path):
+    """Dort fehlt nicht ein Gelaende im Satz, sondern die Angabe im Journal — das ist ein anderer Satz."""
+    ziel = tmp_path / "ohne_angabe.ifc"
+    bericht = baue_datei(_paket(_alle_arten(wirt=None)), ziel, schluessel="ohne-angabe")
+    assert bericht["wirte_offen"] == 1
+    w = wirte_herstellen_in(ifcopenshell.open(ziel))
+    assert w["ohne_wirtangabe"] == ["cde-aushub"] and w["fehlende_wirte"] == []
+
+
+ROHR_GUID = "2Rohr0Haltung000000001"
+
+
+def _gelieferte_datei(pfad: Path, klasse: str, guid: str, geo, name: str, predefined: str) -> str:
+    """Eine Lieferung mit EINEM Bauteil bekannter GlobalId — so, wie das Paket es nennt."""
+    g = V.zielgeruest(f"Lieferung {name}", crs="EPSG:25832", schluessel=f"lieferung-{name}", bearbeiter="Planer")
+    f = g["datei"]
+    punkte, dreiecke = geo
+    koord = f.create_entity("IfcCartesianPointList3D", CoordList=[tuple(map(float, p)) for p in punkte])
+    flaeche = f.create_entity("IfcTriangulatedFaceSet", Coordinates=koord,
+                              CoordIndex=[(a + 1, b + 1, c + 1) for a, b, c in dreiecke])
+    darstellung = f.create_entity("IfcShapeRepresentation", ContextOfItems=g["koerper"],
+                                  RepresentationIdentifier="Body", RepresentationType="Tessellation",
+                                  Items=[flaeche])
+    platz = f.create_entity("IfcLocalPlacement", PlacementRelTo=g["site"].ObjectPlacement,
+                            RelativePlacement=f.create_entity(
+                                "IfcAxis2Placement3D",
+                                Location=f.create_entity("IfcCartesianPoint", Coordinates=(OST, NORD, HOEHE))))
+    el = f.create_entity(klasse, GlobalId=guid, OwnerHistory=g["besitz"], Name=name, PredefinedType=predefined,
+                         ObjectPlacement=platz,
+                         Representation=f.create_entity("IfcProductDefinitionShape", Representations=[darstellung]))
+    f.create_entity("IfcRelContainedInSpatialStructure", GlobalId=ifcopenshell.guid.new(),
+                    OwnerHistory=g["besitz"], RelatingStructure=g["site"], RelatedElements=[el])
+    f.write(str(pfad))
+    return guid
+
+
+def _kanalgraben(wirt, rohr=ROHR_GUID):
+    v = {"ableitung": "ab-kg", "art": "kanalgraben", "reihe": 0, "titel": "H-001 · Kanalgraben"}
+    q = {"gelaende": wirt, "rohre": [rohr], "schaechte": [], "bauteil": None}
+    return [
+        _bauteil("cde-graben", "IFCEARTHWORKSCUT", _kasten(30, 1.1, 3), predefinedType="TRENCH", geschlossen=True,
+                 rolle="graben", rezept="kanalgraben", wirt=wirt, fachmodell="erdbau", vorgang=v, quellen=q,
+                 mengen={"undisturbedVolume": 99.0, "length": 30.0}),
+        _bauteil("cde-verfuellung", "IFCEARTHWORKSFILL", _kasten(30, 1.1, 2.5), predefinedType="BACKFILL",
+                 geschlossen=True, rolle="verfuellung", rezept="kanalgraben", fachmodell="erdbau", vorgang=v,
+                 quellen=q, mengen={"compactedVolume": 80.0}),
+    ]
+
+
+def test_im_verbund_holt_der_vorgang_seine_haltung(tmp_path):
+    """Die Gruppe „H-001 · Kanalgraben" enthaelt im Verbund Graben, Verfuellung UND die gelieferte Haltung."""
+    gelaende = tmp_path / "gelaende.ifc"
+    wirt = _gelieferte_gelaendedatei(gelaende)
+    rohr = tmp_path / "rohr.ifc"
+    _gelieferte_datei(rohr, "IfcPipeSegment", ROHR_GUID, _kasten(30, 0.3, 0.3), "H-001", "RIGIDSEGMENT")
+    eigen = tmp_path / "eigenbau.ifc"
+    baue_datei(_paket(_kanalgraben(wirt)), eigen, schluessel="kg")
+    ziel = tmp_path / "verbund.ifc"
+    bericht = V.fuehre_zusammen(
+        [V.Quelle(gelaende, sha256="d" * 64), V.Quelle(rohr, sha256="c" * 64),
+         V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+        ziel, projektname="Vorgang",
+        nachbearbeiten=[("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)])
+    assert bericht["nachbearbeitung"]["vorgaenge"] == {"vorgaenge": 1, "ergaenzt": 1, "fehlend": []}
+    f = ifcopenshell.open(ziel)
+    [gruppe] = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Vorgang"]
+    glieder = {o.GlobalId for rel in gruppe.IsGroupedBy for o in rel.RelatedObjects}
+    assert glieder == {guids.guid_aus_cde_id("cde-graben"), guids.guid_aus_cde_id("cde-verfuellung"), ROHR_GUID}
+    assert wirt not in glieder                      # das Gelaende ist der WIRT, kein Glied
+    assert _qto(f.by_guid(guids.guid_aus_cde_id("cde-graben")))["Length"] == pytest.approx(30.0)
+    _sauber(pruefe(ziel))
+    assert vorgaenge_schliessen_in(ifcopenshell.open(ziel))["ergaenzt"] == 0     # wiederholbar
+
+
+# ── 5. Der Vertrag mit dem Browser ──────────────────────────────────────────
+
+FIXTURE = Path(__file__).parent / "daten" / "paket_v2.json"
+VERTRAG = {"ur": "1Ur0Gelaende0Vertrag00", "rohr": ROHR_GUID, "bauteil": "3Fundament0A0000000001"}
+
+
+@pytest.mark.skipif(not FIXTURE.is_file(), reason="Fixture fehlt — im Client: PAKET_VERTRAG_SCHREIBEN=1 "
+                    "npx vitest run src/features/cde/test/paketVertrag.test.js")
+def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
+    """DAS Paket, das der Browser baut (Katalog -> Journal -> Lauf -> Autor -> Paket) — kein nachgebautes.
+
+    Die Pakete der Tests oben baut dieser Test selbst; genau so schrieb 2026
+    ein DXF-Export monatelang NaN, waehrend drei Tests gruen waren. Die Fixture
+    legt `paketVertrag.test.js` im Client ab und prueft bei jedem Lauf, dass
+    sie die Form des frischen Pakets hat. Szenario wie die Abnahme der Stufe 1:
+    Ur-Gelaende + Gerinne + Kanalgraben + Bauwerksgrube.
+    """
+    paket = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    assert paket["version"] == PAKET_VERSION
+    cuts = [b for b in paket["bauteile"] if b["klasse"] == "IFCEARTHWORKSCUT"]
+    assert len(cuts) == 3 and all(b["wirt"] == VERTRAG["ur"] for b in cuts)
+    assert not any(b["klasse"] == "IFCGEOGRAPHICELEMENT" for b in paket["bauteile"])
+
+    eigen = tmp_path / "eigenbau.ifc"
+    bericht = baue_datei(paket, eigen, schluessel="vertrag")
+    assert bericht["uebersprungen"] == [] and bericht["vorgaenge"] == 3
+    assert bericht["mengen"] == sum(1 for b in paket["bauteile"] if b.get("mengen"))
+
+    gelaende = tmp_path / "gelaende.ifc"
+    _gelieferte_datei(gelaende, "IfcGeographicElement", VERTRAG["ur"], _gitter(12, 5.0), "Urgelaende", "TERRAIN")
+    rohr = tmp_path / "rohr.ifc"
+    _gelieferte_datei(rohr, "IfcPipeSegment", VERTRAG["rohr"], _kasten(30, 0.3, 0.3), "H-001", "RIGIDSEGMENT")
+    ziel = tmp_path / "verbund.ifc"
+    b = V.fuehre_zusammen(
+        [V.Quelle(gelaende, name="Urgelaende.ifc", sha256="d" * 64), V.Quelle(rohr, name="Kanal.ifc", sha256="c" * 64),
+         V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+        ziel, projektname="Vertrag",
+        nachbearbeiten=[("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)])
+    w = b["nachbearbeitung"]["wirte"]
+    assert (w["geschlossen"], w["fehlende_wirte"], w["ohne_wirtangabe"]) == (3, [], [])
+    v = b["nachbearbeitung"]["vorgaenge"]
+    assert v["ergaenzt"] == 1 and v["fehlend"] == [VERTRAG["bauteil"]]     # das Fundament liegt nicht im Satz
+
+    f = ifcopenshell.open(ziel)
+    assert len(f.by_type("IfcGeographicElement")) == 1          # TERRAIN = 1 (mit Paket v1: zwei)
+    assert len(f.by_type("IfcEarthworksCut")) == 3
+    for c in cuts:
+        el = f.by_guid(guids.guid_aus_cde_id(c["cdeId"]))
+        assert _qto(el)["UndisturbedVolume"] == pytest.approx(c["mengen"]["undisturbedVolume"], abs=1e-3)
+    _sauber(pruefe(ziel))

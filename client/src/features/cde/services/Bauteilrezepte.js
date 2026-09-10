@@ -670,6 +670,26 @@ export function istAnzeigeform(bauplan) {
 }
 
 /**
+ * Die MENGEN eines Bauteils für den IFC-Export (Stufe 2, Paket v2): aus den
+ * Kennzahlen seines Aufbaus, nach der Deklaration am Rezeptteil (`menge`).
+ *
+ * Das Rezept sagt, welche Kennzahl welcher Qto-Wert ist — nicht der
+ * Schreiber. Sonst stünde im IFC eine andere Zahl als im Mengenreiter, und
+ * niemand merkte es, bis ein Leistungsverzeichnis nicht aufgeht.
+ *
+ * @returns {{undisturbedVolume?, compactedVolume?, length?}}  nur, was gerechnet ist
+ */
+export function mengenVon(bauplan, kennzahlen) {
+    const teil = rezeptNach(bauplan?.rezept)?.teile?.find?.(t => t.rolle === bauplan?.rolle);
+    const out = {};
+    for (const [feld, kennzahl] of Object.entries(teil?.menge ?? {})) {
+        const v = kennzahlen?.[kennzahl];
+        if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[feld] = v;
+    }
+    return out;
+}
+
+/**
  * Die Journaleinträge einer Ableitung — je Teil EIN `erzeugt`-Eintrag mit
  * eigener GlobalId, derselben Klammer `ableitung` und den VOLLEN Parametern
  * (absoluter Zielzustand je Bauteil, Gesetz 4). Bei `bestehend` bleiben die

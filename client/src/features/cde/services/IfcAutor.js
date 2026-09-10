@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { verdeckteAus } from './CdeAchsen.js';
 
@@ -670,13 +670,15 @@ export class IfcAutor {
      * ANZEIGEFORMEN (Stufe 1) kommen NICHT mit: die geformte Fläche ist kein
      * Bauteil — in IFC ist der Aushub ein `IfcEarthworksCut` am Ur-Gelände,
      * ein zweites TERRAIN wäre eine Dopplung. Sie stehen in `anzeigeformen`.
-     * Jedes Bauteil einer Ableitung trägt die KENNZAHLEN seines Aufbaus
-     * (Massen — für `Qto_EarthworksCutBaseQuantities`) und seinen VORGANG
-     * (Klammer, Art, Reihe im Stapel, Titel aus der Anzeige).
+     * Jedes Bauteil einer Ableitung trägt die KENNZAHLEN seines Aufbaus, die
+     * MENGEN, die das Rezept daraus deklariert (Paket v2 → Qto), und — wenn
+     * es ein Erdbau-Vorgang ist — seinen VORGANG (Klammer, Art, Reihe im
+     * Stapel, Titel aus der Anzeige) samt der Füllungen früherer Vorgänge,
+     * durch die sein Cut schneidet.
      *
      * @returns {Promise<{bauteile: Array<{globalId, wert, positionen, index, kategorie,
-     *           name, predefinedType, geschlossen, kennzahlen, vorgang}>,
-     *           misserfolge, leer, verborgen, anzeigeformen}>}
+     *           name, predefinedType, geschlossen, kennzahlen, mengen, fachmodell,
+     *           vorgang, schneidetAuffuellung}>, misserfolge, leer, verborgen, anzeigeformen}>}
      */
     async eigenbauGeometrien(schritte, { verdeckt = new Set() } = {}) {
         const lauf = this._neuerLauf(schritte);
@@ -691,16 +693,36 @@ export class IfcAutor {
             const pos = g.geometrie.getAttribute('position');
             const ableitung = schritt.wert?.ableitung ?? null;
             const a = ableitung ? (lauf.ableitungen.get(ableitung) ?? null) : null;
+            // Ein ERDBAU-Vorgang (das Rezept sagt es) wird im IFC eine
+            // Vorgangsgruppe im Fachmodell „Erdbau"; alles andere — auch eine
+            // Aussparung, obwohl sie eine Ableitung ist — bleibt Eigenbau.
+            const erdbau = !!rezeptNach(schritt.wert?.rezept)?.erdbau;
             bauteile.push({
                 globalId: schritt.globalId, wert: schritt.wert,
                 positionen: pos.array, index: g.geometrie.index?.array ?? null,
                 kategorie: g.kategorie, name: g.name, predefinedType: g.predefinedType ?? null,
                 geschlossen: g.geschlossen ?? null,
                 kennzahlen: a?.kennzahlen ?? null,
-                vorgang: ableitung ? { ableitung, art: schritt.wert?.rezept ?? null,
-                                       reihe: a?.kennzahlen?.reihe ?? null, titel: titel.get(ableitung) ?? null } : null,
+                mengen: mengenVon(schritt.wert, a?.kennzahlen),
+                fachmodell: erdbau ? 'erdbau' : 'cde',
+                vorgang: erdbau && ableitung ? { ableitung, art: schritt.wert?.rezept ?? null,
+                                                 reihe: a?.kennzahlen?.reihe ?? null, titel: titel.get(ableitung) ?? null } : null,
+                schneidetAuffuellung: [],
             });
             g.geometrie.dispose?.();
+        }
+        // DURCH WELCHE FÜLLUNG schneidet ein Cut? Der Lauf nennt VORGÄNGE; ins
+        // Paket gehören deren Füllungen — und nur die, die auch exportiert
+        // werden (eine leere oder verborgene Füllung ist kein Bauteil).
+        const fuellungen = new Map();
+        for (const b of bauteile) {
+            if (b.kategorie !== 'IFCEARTHWORKSFILL' || !b.vorgang) continue;
+            if (!fuellungen.has(b.vorgang.ableitung)) fuellungen.set(b.vorgang.ableitung, []);
+            fuellungen.get(b.vorgang.ableitung).push(b.globalId);
+        }
+        for (const b of bauteile) {
+            if (b.kategorie !== 'IFCEARTHWORKSCUT') continue;
+            b.schneidetAuffuellung = (b.kennzahlen?.schneidetAuffuellung ?? []).flatMap(id => fuellungen.get(id) ?? []);
         }
         return { bauteile, misserfolge, leer, verborgen, anzeigeformen };
     }

@@ -111,10 +111,17 @@ describe('Ein Ur-Gelände, ein Stapel, eine Anzeige', () => {
         const mitAuftrag = nachher.ableitungen.get(idVon(G)).kennzahlen.aushubRaster;
         const ohne = allein.ableitungen.get(idVon(G)).kennzahlen.aushubRaster;
         expect(mitAuftrag).toBeGreaterThan(ohne + 1);          // das Gerinne räumt den Auftrag mit ab
+        // Stufe 2, Entscheidung 3: der Anteil über dem Ur IST genau die Mehrmasse —
+        // Regel und Kur messen dieselbe Größe — und der Auftrag ist beim Namen genannt.
+        const kG = nachher.ableitungen.get(idVon(G)).kennzahlen;
+        expect(kG.aushubAusAuffuellung).toBeCloseTo(mitAuftrag - ohne, 6);
+        expect(kG.schneidetAuffuellung).toEqual([idVon(P)]);
+        expect(allein.ableitungen.get(idVon(G)).kennzahlen).toMatchObject({ aushubAusAuffuellung: 0, schneidetAuffuellung: [] });
         // Umgekehrt (Gerinne zuerst, Planum danach) sieht das Gerinne nur das Ur-Gelände.
         const umgekehrt = lauf(standAus(P, G, anzeige([{ ableitung: idVon(G) }, { ableitung: idVon(P) }])));
         await umgekehrt.baue(teil(G, 'aushub').globalId);
         expect(umgekehrt.ableitungen.get(idVon(G)).kennzahlen.aushubRaster).toBeCloseTo(ohne, 6);
+        expect(umgekehrt.ableitungen.get(idVon(G)).kennzahlen).toMatchObject({ aushubAusAuffuellung: 0, schneidetAuffuellung: [] });
     });
 
     it('ohne Anzeige gilt die Stand-Reihenfolge; die Anzeige ordnet, was sie kennt', async () => {

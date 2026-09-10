@@ -2135,17 +2135,49 @@ async function eigenbauPaket() {
   const herkunft = c.deklariert && c.erkannt && !c.stimmt
     ? `Georeferenz-Erkennung der CDE: die Datei deklariert ${c.deklariert}, die Koordinaten liegen in ${c.erkannt}`
     : `Georeferenz-Erkennung der CDE (${c.wirksam ?? 'unbekannt'})`;
+  // Welcher Journalstand exportiert wird: der jüngste Commit — und ob noch
+  // eine offene Sitzung dazukommt (dann ist der Stand MEHR als der Commit).
+  const letzter = [...(aenderungen.commits ?? [])].sort((a, b) => (a.wann ?? 0) - (b.wann ?? 0)).at(-1) ?? null;
   const paket = baueEigenbauPaket({
     teile: gebaut.bauteile, stand: erzeugt, nachProjekt: bezug.nachProjekt,
     crs: c.wirksam ?? null, crsHerkunft: herkunft,
     projektname: cde.auftrag?.name ?? '', schluessel: cde.aktiverSatzId ?? 'cde',
     bearbeiter: cde.bearbeiter ?? '',
+    anzeigeformen: gebaut.anzeigeformen ?? [],
+    journal: { commit: letzter?.id ?? null, sitzungOffen: !!aenderungen.sitzungOffen },
   });
+  paket.quellDokumente = await quellDokumenteFuer(paket.bauteile);
   // Was nicht ins Paket kam, steht darin — nicht still weggelassen.
   paket.misserfolge = gebaut.misserfolge;
   paket.leer = gebaut.leer;
   paket.verborgen = gebaut.verborgen;
   return paket;
+}
+
+/**
+ * Die REGISTERDOKUMENTE, in denen die Wirte der Aushübe liegen (Paket v2).
+ *
+ * Das Erdbau-Dokument (Stufe 3) nimmt genau sie als Quelle; der Server prüft
+ * sie gegen das Register. Gefunden über den GUID-Index der geladenen Modelle
+ * (nicht über den Namen) → Modell-Identität (sha256) → Registereintrag. Ein
+ * Wirt ohne Dokument steht mit `sha256: null` darin, statt zu fehlen — dann
+ * sagt der Server, WAS fehlt.
+ */
+async function quellDokumenteFuer(bauteile) {
+  const gesucht = [...new Set((bauteile ?? []).map(b => b.wirt).filter(g => g && !String(g).startsWith('cde-')))];
+  if (!gesucht.length || !engine.value) return [];
+  const { karte, fehlend } = await karteMitEngine(engine.value, gesucht);
+  const je = new Map();
+  const dazu = (sha, gid) => {
+    if (!je.has(sha)) {
+      const d = sha ? cde.dokumente?.find?.(x => x.sha256 === sha) ?? null : null;
+      je.set(sha, { sha256: sha, datei: d?.name ?? null, revision: d?.revision ?? null, globalIds: [] });
+    }
+    je.get(sha).globalIds.push(gid);
+  };
+  for (const [gid, { modelId }] of karte) dazu(ablage.identitaet(modelId)?.sha256 ?? null, gid);
+  for (const gid of fehlend) dazu(null, gid);
+  return [...je.values()];
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */

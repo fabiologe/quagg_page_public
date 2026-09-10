@@ -137,22 +137,41 @@ describe('ein Bauteil fürs Paket', () => {
         expect(b.geschlossen).toBe(true);
     });
 
-    it('das geformte DGM nennt das Gelände, das es vertritt — und hat keinen Wirt', () => {
+    it('v2: kein `ersetzt` mehr — ein Gelände-Teil vertritt nichts, und es hat keinen Wirt', () => {
+        // Die Anzeigeform kommt gar nicht erst ins Paket (Stufe 2); ein Gelände,
+        // das doch drin ist (Altbestand), ist ein eigenes Bauteil, kein Stellvertreter.
         const b = bauteilFuersPaket(teil('IFCGEOGRAPHICELEMENT', { rolle: 'dgm', pt: 'TERRAIN' }), opts);
-        expect(b.ersetzt).toEqual([quelle]);
+        expect('ersetzt' in b).toBe(false);
         expect(b.wirt).toBeNull();
     });
 
-    it('ein DGM auf einem VERBORGENEN eigenen DGM vertritt das gelieferte dahinter', () => {
-        // Bauwerksgrube auf dem geformten Gelände: dessen DGM wird verborgen und
-        // steht nicht im Export — der Verweis muss bis zum gelieferten zurück.
+    it('ein Aushub auf einem Alt-DGM (verborgen) nennt das gelieferte Ur — als Wirt UND als Quelle', () => {
         const stand = new Map([['cde-dgm-alt', { parameter: { quellen: { gelaende: quelle } } }]]);
-        const t = teil('IFCGEOGRAPHICELEMENT', { rolle: 'dgm', pt: 'TERRAIN' });
+        const t = teil('IFCEARTHWORKSCUT', { rolle: 'aushub', pt: 'TRENCH' });
         t.wert = { ...t.wert, parameter: { quellen: { gelaende: 'cde-dgm-alt' } } };
-        expect(bauteilFuersPaket(t, { ...opts, stand }).ersetzt).toEqual([quelle]);
-        // Wird das eigene DGM mit exportiert, bleibt der Verweis bei ihm.
-        expect(bauteilFuersPaket(t, { ...opts, stand, exportiert: new Set(['cde-dgm-alt']) }).ersetzt)
-            .toEqual(['cde-dgm-alt']);
+        const b = bauteilFuersPaket(t, { ...opts, stand });
+        expect(b.wirt).toBe(quelle);
+        expect(b.quellen.gelaende).toBe(quelle);
+    });
+
+    it('v2 trägt Vorgang, Mengen, Fachmodell und die geschnittenen Füllungen durch — aus dem Autor, nicht erfunden', () => {
+        const t = {
+            ...teil('IFCEARTHWORKSCUT', { rolle: 'aushub', pt: 'TRENCH' }),
+            fachmodell: 'erdbau', vorgang: { ableitung: 'a1', art: 'erdbau', reihe: 1, titel: 'Ur · Gelände formen' },
+            mengen: { undisturbedVolume: 12.5 }, schneidetAuffuellung: ['cde-fill-a'],
+            kennzahlen: { aushubAusAuffuellung: 3.25 },
+        };
+        t.wert = { ...t.wert, parameter: { quellen: { gelaende: quelle, rohr: 'H1', schaechte: ['S1'] } } };
+        const b = bauteilFuersPaket(t, opts);
+        expect(b).toMatchObject({ fachmodell: 'erdbau', vorgang: t.vorgang, mengen: { undisturbedVolume: 12.5 },
+                                  schneidetAuffuellung: ['cde-fill-a'], aushubAusAuffuellung: 3.25 });
+        // Alt-Journale nennen `rohr` einzeln — im Paket ist es immer eine Liste.
+        expect(b.quellen).toEqual({ gelaende: quelle, rohre: ['H1'], schaechte: ['S1'], bauteil: null });
+        // Ein Fill schneidet nichts — auch wenn man es ihm anhängt.
+        const f = bauteilFuersPaket({ ...t, kategorie: 'IFCEARTHWORKSFILL' }, opts);
+        expect(f.schneidetAuffuellung).toEqual([]);
+        expect(f.aushubAusAuffuellung).toBeNull();
+        expect(f.wirt).toBeNull();
     });
 
     it('ein Rohr ohne Katalogfarbe bekommt keine erfundene', () => {
@@ -174,6 +193,17 @@ describe('das Paket', () => {
         expect(p.crs).toBe('EPSG:31466');
         expect(p.bauteile).toHaveLength(1);
         expect(p.erzeugt).toBe('2026-09-10T00:00:00.000Z');
+    });
+
+    it('v2: Anzeigeformen stehen unter `uebersprungen`, mit Grund — Journalstand und Quelldokumente stehen darin', () => {
+        const p = baueEigenbauPaket({
+            teile: [], nachProjekt: bezug.nachProjekt, anzeigeformen: ['cde-anzeige'],
+            quellDokumente: [{ sha256: 'a'.repeat(64), datei: 'Ur.ifc', revision: 1, globalIds: ['2Ur'] }],
+            journal: { commit: 'c-1', sitzungOffen: false },
+        });
+        expect(p.uebersprungen).toEqual([{ cdeId: 'cde-anzeige', grund: expect.stringMatching(/Anzeigeform/) }]);
+        expect(p.journal).toEqual({ commit: 'c-1', sitzungOffen: false });
+        expect(p.quellDokumente[0].datei).toBe('Ur.ifc');
     });
 
     it('ohne nachProjekt gibt es keine Landeskoordinaten — lieber ein Fehler als Welt-Werte im IFC', () => {
