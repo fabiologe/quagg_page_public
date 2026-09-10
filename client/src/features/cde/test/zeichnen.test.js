@@ -281,10 +281,10 @@ describe('Zeichnen AUF dem Gelände (Teil XIV, G3)', () => {
         t.zeichnen.setzePunkt({ x: 10, z: 0 });
         expect(t.zeichnen.punkte.value[0].y).toBeUndefined();
         const eintrag = await t.zeichnen.abschliessen();
-        expect(Array.isArray(eintrag)).toBe(true);           // geloescht + drei Teile
+        expect(Array.isArray(eintrag)).toBe(true);           // geloescht + Anzeige + zwei Teile
         expect(t.bearbeitung.werte).toEqual({});             // ausfuehren räumt auf
-        const dgm = eintrag.find(e => e.nachher?.rolle === 'dgm');
-        expect(dgm.nachher.parameter.operationen[0].parameter.sohleAnfang).toBe(599);
+        const aushub = eintrag.find(e => e.nachher?.rolle === 'aushub');
+        expect(aushub.nachher.parameter.operationen[0].parameter.sohleAnfang).toBe(599);
     });
 
     it('ein Werkzeug OHNE hoehenAus bleibt bei {x, z} — nichts wird still befragt', () => {

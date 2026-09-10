@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istEigen, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { verdeckteAus } from './CdeAchsen.js';
 
@@ -107,6 +107,22 @@ export function istNennenswert(versatz, toleranz = 1e-4) {
 // ── Der Kanal ───────────────────────────────────────────────────────────────
 
 export const CDE_MODELL_ID = 'cde-eigenbau';
+
+/**
+ * Ableitung → Vorgangstitel, aus den `vorgaenge`-Listen der Anzeige-Baupläne
+ * (Stufe 1). Der Titel ist eine Entscheidung des Planers und steht deshalb
+ * im Journal, nicht in einer Kennzahl.
+ */
+export function vorgangstitelAus(schritte) {
+    const out = new Map();
+    for (const s of schritte ?? []) {
+        if (s?.wert?.rezept !== 'anzeige') continue;
+        for (const v of s.wert.parameter?.vorgaenge ?? []) {
+            if (v?.ableitung && v?.titel && !out.has(v.ableitung)) out.set(v.ableitung, v.titel);
+        }
+    }
+    return out;
+}
 
 /**
  * Wo lebt dieses Bauteil — im gelieferten Modell oder im CDE-eigenen?
@@ -651,27 +667,42 @@ export class IfcAutor {
      * aus dem fragments-Modell zu holen, wäre der schlechtere Weg — dort liegt
      * sie seit `_weltNachModell` im MODELLRAHMEN, nicht in der Welt.
      *
+     * ANZEIGEFORMEN (Stufe 1) kommen NICHT mit: die geformte Fläche ist kein
+     * Bauteil — in IFC ist der Aushub ein `IfcEarthworksCut` am Ur-Gelände,
+     * ein zweites TERRAIN wäre eine Dopplung. Sie stehen in `anzeigeformen`.
+     * Jedes Bauteil einer Ableitung trägt die KENNZAHLEN seines Aufbaus
+     * (Massen — für `Qto_EarthworksCutBaseQuantities`) und seinen VORGANG
+     * (Klammer, Art, Reihe im Stapel, Titel aus der Anzeige).
+     *
      * @returns {Promise<{bauteile: Array<{globalId, wert, positionen, index, kategorie,
-     *           name, predefinedType, geschlossen}>, misserfolge, leer, verborgen}>}
+     *           name, predefinedType, geschlossen, kennzahlen, vorgang}>,
+     *           misserfolge, leer, verborgen, anzeigeformen}>}
      */
     async eigenbauGeometrien(schritte, { verdeckt = new Set() } = {}) {
         const lauf = this._neuerLauf(schritte);
-        const bauteile = [], misserfolge = [], leer = [], verborgen = [];
+        const bauteile = [], misserfolge = [], leer = [], verborgen = [], anzeigeformen = [];
+        const titel = vorgangstitelAus(schritte);
         for (const schritt of schritte ?? []) {
             if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
+            if (istAnzeigeform(schritt.wert)) { anzeigeformen.push(schritt.globalId); continue; }
             const g = await this._baueSchritt(lauf, schritt);
             if (g.leer) { leer.push(schritt.globalId); continue; }
             if (!g.ok) { misserfolge.push({ globalId: schritt.globalId, grund: (g.fehler ?? []).join(' · ') }); continue; }
             const pos = g.geometrie.getAttribute('position');
+            const ableitung = schritt.wert?.ableitung ?? null;
+            const a = ableitung ? (lauf.ableitungen.get(ableitung) ?? null) : null;
             bauteile.push({
                 globalId: schritt.globalId, wert: schritt.wert,
                 positionen: pos.array, index: g.geometrie.index?.array ?? null,
                 kategorie: g.kategorie, name: g.name, predefinedType: g.predefinedType ?? null,
                 geschlossen: g.geschlossen ?? null,
+                kennzahlen: a?.kennzahlen ?? null,
+                vorgang: ableitung ? { ableitung, art: schritt.wert?.rezept ?? null,
+                                       reihe: a?.kennzahlen?.reihe ?? null, titel: titel.get(ableitung) ?? null } : null,
             });
             g.geometrie.dispose?.();
         }
-        return { bauteile, misserfolge, leer, verborgen };
+        return { bauteile, misserfolge, leer, verborgen, anzeigeformen };
     }
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set() } = {}) {

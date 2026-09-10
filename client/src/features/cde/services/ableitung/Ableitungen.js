@@ -203,6 +203,9 @@ const ABLEITUNGEN_ERWEITERT = {
         id: 'erdbau',
         titel: 'Gelände formen',
         icon: 'terrain',
+        // Ein ERDBAU-VORGANG (Stufe 1): fusst auf dem Ur-Gelände, meldet seine
+        // Operationen als `ops`, wird im Stapel über die Vorgänger gefaltet.
+        erdbau: true,
         bauform: 'hoehenfeld',
         kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
         mindestPunkte: 0,
@@ -224,11 +227,10 @@ const ABLEITUNGEN_ERWEITERT = {
                 predefinedType: 'EMBANKMENT',
                 name: (q) => `${q} · Auftrag`,
             },
-            {
-                rolle: 'dgm', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', form: 'raster',
-                predefinedType: 'TERRAIN',
-                name: (q) => `${q} (geformt)`,
-            },
+            // KEIN `dgm`-Teil mehr (Stufe 1): die geformte Fläche ist die EINE
+            // Anzeigeform des Ur-Geländes (Rezept `anzeige`), nicht ein Teil
+            // jedes Vorgangs. `leite` liefert `teile.dgm` weiter — Alt-Journale
+            // von vor Stufe 1 tragen solche Teile, und sie sollen bauen.
         ],
         hoehenFelder: ERDBAU_HOEHENFELDER,
 
@@ -266,7 +268,9 @@ const ABLEITUNGEN_ERWEITERT = {
             return { gelaendeFein: { gid, form: 'raster', opts: { cell, bereich: b } } };
         },
 
-        async leite(parameter, quellen, { kernel, hoehenversatz = 0 } = {}) {
+        async leite(parameter, quellen, { kernel, hoehenversatz = 0, stapel = null } = {}) {
+            // `ur` ist das Gelände VOR diesem Vorgang — nach allen Vorgängern
+            // gefaltet (Stapel), sonst das gelieferte.
             const ur = quellen?.gelaende;
             if (!ur) throw new Error('erdbau: Quellgelände fehlt');
             if (!kernel) throw new Error('erdbau: kein Kernel');
@@ -280,7 +284,10 @@ const ABLEITUNGEN_ERWEITERT = {
             // KÖRPER UND MASSEN auf dem feinen Korridor, wenn es einen gibt —
             // das DGM bleibt das volle Raster. Beides muss aus DERSELBEN
             // Formung stammen, sonst widersprechen sich Bild und Zahl.
-            const fein = quellen?.gelaendeFein ?? null;
+            // Der feine Korridor kommt ROH von der Quelle — die Vorgänger
+            // müssen auch auf ihm liegen, sonst schnitte der zweite Vorgang
+            // fein durch das ungeformte Gelände.
+            const fein = quellen?.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
             let rechenAlt = ur, rechenNeu = neu;
             if (fein) {
                 const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops);
@@ -311,10 +318,12 @@ const ABLEITUNGEN_ERWEITERT = {
                     zellweite: rechenAlt.cell,
                     zellweiteDgm: ur.cell,
                     korridor: !!fein,
+                    reihe: stapel?.reihe ?? 0,
                 },
                 befunde,
                 warnungen,
                 bild,
+                ops,       // in Welt — der Stapel faltet damit die Nachfolger
             };
         },
 
@@ -501,6 +510,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
     id: 'kanalgraben',
     titel: 'Kanalgraben',
     icon: 'gerinne',
+    erdbau: true,
     bauform: 'koerper',
     kategorieVorgabe: 'IFCEARTHWORKSCUT',
     mindestPunkte: 0,
@@ -518,8 +528,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
           predefinedType: 'TRENCH', name: (q) => `${q} · Graben` },
         { rolle: 'verfuellung', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
           predefinedType: 'BACKFILL', name: (q) => `${q} · Verfüllung` },
-        { rolle: 'dgm', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', form: 'raster',
-          predefinedType: 'TERRAIN', name: (q) => `${q} (mit Graben)` },
+        // kein `dgm`-Teil mehr (Stufe 1) — siehe erdbau; `leite` liefert es weiter.
     ],
 
     /**
@@ -556,9 +565,9 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         } } };
     },
 
-    async leite(parameter, quellen, { kernel } = {}) {
-        const ur = quellen?.gelaende;
-        const fein = quellen?.gelaendeFein ?? null;
+    async leite(parameter, quellen, { kernel, stapel = null } = {}) {
+        const ur = quellen?.gelaende;                    // nach allen Vorgängern (Stapel)
+        const fein = quellen?.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
         const rechen = fein ?? ur;                       // worauf Graben, Massen, Tiefe gerechnet werden
         const rohre = _liste(quellen?.rohre ?? quellen?.rohr);
         const schaechte = _liste(quellen?.schaechte);
@@ -689,8 +698,10 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                 wandform: wand.wandform, winkelGrad: wand.winkelGrad, neigung: wand.n,
                 regel: GRABENREGELN.quelle, gruende: [...gruende],
                 operationen: ops.length,
+                reihe: stapel?.reihe ?? 0,
             },
             befunde, warnungen, bild,
+            ops,
         };
     },
 
@@ -815,6 +826,7 @@ const BAUWERKSGRUBE = {
     id: 'bauwerksgrube',
     titel: 'Bauwerksgrube',
     icon: 'ausheben',
+    erdbau: true,
     bauform: 'koerper',
     kategorieVorgabe: 'IFCEARTHWORKSCUT',
     mindestPunkte: 0,
@@ -825,13 +837,12 @@ const BAUWERKSGRUBE = {
     teile: [
         { rolle: 'grube', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
           predefinedType: 'EXCAVATION', name: (q) => `${q} · Baugrube` },
-        { rolle: 'dgm', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', form: 'raster',
-          predefinedType: 'TERRAIN', name: (q) => `${q} (mit Baugrube)` },
+        // kein `dgm`-Teil mehr (Stufe 1) — siehe erdbau; `leite` liefert es weiter.
     ],
     hoehenFelder: ERDBAU_HOEHENFELDER,
 
-    async leite(parameter, quellen, { kernel, hoehenversatz = 0 } = {}) {
-        const ur = quellen?.gelaende;
+    async leite(parameter, quellen, { kernel, hoehenversatz = 0, stapel = null } = {}) {
+        const ur = quellen?.gelaende;                    // nach allen Vorgängern (Stapel)
         const grundriss = quellen?.bauteil;
         if (!ur) throw new Error('bauwerksgrube: Quellgelände fehlt');
         if (!grundriss?.ring?.length) throw new Error('bauwerksgrube: kein Grundriss des Bauteils');
@@ -887,10 +898,12 @@ const BAUWERKSGRUBE = {
                 tiefeMax: tiefe,
                 wandform: w.wandform,
                 boeschung: w.n,
+                reihe: stapel?.reihe ?? 0,
             },
             befunde,
             warnungen,
             bild,
+            ops,
         };
     },
 
@@ -989,6 +1002,67 @@ function _grubenTiefe(raster, umriss, sohle) {
 }
 
 ABLEITUNGEN_ERWEITERT.bauwerksgrube = BAUWERKSGRUBE;
+
+/**
+ * DIE ANZEIGEFORM (Stufe 1 des Aushub-Fachmodells, 2026-09-10).
+ *
+ * Je Ur-Gelände GENAU EINE: die geformte Fläche nach ALLEN Erdbau-Vorgängen,
+ * in der Reihenfolge, die der Planer in `vorgaenge` festgelegt hat. Sie ist
+ * KEIN Bauteil — der Raum braucht sie, weil fragments nicht schneiden kann;
+ * in IFC ist der Aushub ein `IfcEarthworksCut` am Ur-Gelände, und eine zweite
+ * TERRAIN-Fläche am selben Ort wäre eine Dopplung (bSI: „no CSG operation is
+ * expected to be performed on import"). Deshalb `export: false`.
+ *
+ * Vorher trug JEDER Vorgang seine eigene Geländekopie und kettete sich an die
+ * des vorigen — drei Vorgänge, drei TERRAIN, zwei davon verborgen, 6,5 MB
+ * Paket fast nur Gelände. Jetzt: ein Ur-Gelände, ein Stapel, eine Anzeige.
+ *
+ * `vorgaenge` ist eine ENTSCHEIDUNG (Reihenfolge, Titel), nichts Gerechnetes
+ * — deshalb steht sie im Bauplan. Die Faltung selbst rechnet der Stapel im
+ * Ableitungslauf; dieses Rezept nimmt nur entgegen, was er liefert.
+ */
+ABLEITUNGEN_ERWEITERT.anzeige = {
+    id: 'anzeige',
+    titel: 'Gelände (Anzeige)',
+    icon: 'terrain',
+    bauform: 'hoehenfeld',
+    kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [],
+    braucht: { gelaende: ['hoehenfeld'] },
+    formen:  { gelaende: 'raster' },
+    teile: [
+        { rolle: 'anzeige', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', form: 'raster',
+          predefinedType: 'TERRAIN', export: false, name: (q) => `${q} (Anzeige)` },
+    ],
+
+    /** @param quellen.gelaende  vom Stapel: das Ur-Gelände nach ALLEN Vorgängen */
+    async leite(parameter, quellen, { stapel = null } = {}) {
+        const stand = quellen?.gelaende;
+        if (!stand) throw new Error('anzeige: Quellgelände fehlt');
+        const ur = stapel?.urRaster ?? stand;
+        const massen = massenAus(ur, stand) ?? { aushub: 0, auftrag: 0 };
+        return {
+            teile: { anzeige: { form: 'raster', daten: stand } },
+            kennzahlen: {
+                aushubGesamt: massen.aushub, auftragGesamt: massen.auftrag,
+                vorgaenge: (stapel?.opsVor ?? []).length ? (parameter?.vorgaenge ?? []).length : 0,
+                operationen: (stapel?.opsVor ?? []).length,
+                zellweite: stand.cell,
+            },
+            befunde: [], warnungen: [], bild: [], ops: [],
+        };
+    },
+
+    /** Die Anzeige hat keine eigenen Punkte — Quelle und Vorgänge wandern selbst. */
+    verschiebe: (parameter) => parameter,
+    fachmodell: (globalId) => ({ gelaende: [globalId] }),
+    beschreibe: (nachher) => {
+        const n = (nachher?.parameter?.vorgaenge ?? []).length;
+        return `Gelände-Anzeige · ${n} ${n === 1 ? 'Vorgang' : 'Vorgänge'}`;
+    },
+};
 
 ABLEITUNGEN_ERWEITERT.aussparung = {
     id: 'aussparung',

@@ -38,7 +38,7 @@ function fakeFragments() {
 }
 
 describe('IfcAutor.baueErzeugte mit Ableitung', () => {
-    it('baut Aushub und DGM, lässt den leeren Auftrag aus und trägt PredefinedType', async () => {
+    it('baut Aushub und Anzeige, lässt den leeren Auftrag aus und trägt PredefinedType', async () => {
         const f = fakeFragments();
         const autor = new IfcAutor({
             getFragments: () => f.manager,
@@ -53,6 +53,10 @@ describe('IfcAutor.baueErzeugte mit Ableitung', () => {
         const schritte = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 },
             operationen: [{ art: 'gerinne', parameter: { achse: [{ x: 5, z: 15 }, { x: 25, z: 15 }],
                 sohlbreite: 2, boeschung: 1.5, sohleAnfang: 598, sohleEnde: 597.8 } }], name: 'Ur' });
+        // Stufe 1: das geformte Gelände ist die ANZEIGE des Ur (eigene Ableitung), kein Teil des Vorgangs.
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, name: 'Ur',
+                                             vorgaenge: [{ ableitung: schritte[0].nachher.ableitung, art: 'erdbau', titel: 'Ur · Gelände formen' }] });
+        schritte.push(anzeige[0]);
         const plan = schritte.map(s => ({ globalId: s.globalId, art: 'erzeugt', modell: 'cde', wert: s.nachher }));
         const r = await autor.baueErzeugte(plan);
 

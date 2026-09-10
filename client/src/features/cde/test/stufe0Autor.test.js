@@ -64,21 +64,27 @@ describe('Stufe 0 am Autor — ein Gelände im Raum, kein keine_localId', () => 
     it('ein verborgenes eigenes DGM ohne `modell`-Aussage wird NICHT gebaut und NICHT im gelieferten Modell gesucht', async () => {
         const f = fakeFragments();
         const autor = autorMit(f);
+        // Die erste: ein Alt-Journal VOR Stufe 1 — mit dgm-Teil in der Klammer.
         const erste = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, operationen: [OP], name: 'Ur' });
+        const altesDgm = 'cde-alt-dgm';
+        erste.push({ art: 'erzeugt', globalId: altesDgm, modell: 'cde',
+                     nachher: { ...erste[0].nachher, rolle: 'dgm', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', predefinedType: 'TERRAIN', name: 'Ur (geformt)' } });
+        // Die zweite (Stufe 1): ein Vorgang plus die EINE Anzeige des Ur.
         const zweite = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, operationen: [OP], name: 'Ur' });
-        const altesDgm = erste.find(s => s.nachher.rolle === 'dgm').globalId;
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, name: 'Ur',
+                                             vorgaenge: [{ ableitung: erste[0].nachher.ableitung }, { ableitung: zweite[0].nachher.ableitung }] });
 
         const anzuwenden = [
             { art: 'geloescht', globalId: 'DGM1', wert: true, modell: 'geliefert' },
             // GENAU der Eintrag aus dem Anlass: eigen, aber ohne Aussage.
             { art: 'geloescht', globalId: altesDgm, wert: true },
-            ...[...erste, ...zweite].map(s => ({ art: 'erzeugt', globalId: s.globalId, modell: 'cde', wert: s.nachher })),
+            ...[...erste, ...zweite, ...anzeige].map(s => ({ art: 'erzeugt', globalId: s.globalId, modell: 'cde', wert: s.nachher })),
         ];
         const r = await autor.wendeAn({ anzuwenden, vollstaendig: true, modelId: 'm1' },
                                       { globalIdZuLocalId: new Map([['DGM1', 7]]) });
 
         const kategorien = f.editor.createElements.mock.calls.map(c => c[1][0].attributes._category.value);
-        expect(kategorien.filter(k => k === 'IFCGEOGRAPHICELEMENT')).toHaveLength(1);      // vorher 2
+        expect(kategorien.filter(k => k === 'IFCGEOGRAPHICELEMENT')).toHaveLength(1);      // vorher 2 — jetzt: nur die Anzeige
         expect(r.misserfolge.filter(m => m.grund === 'keine_localId')).toHaveLength(0);     // vorher 1
         expect(r.auszublenden).toEqual([{ modelId: 'm1', localId: 7 }]);                    // das gelieferte, wie immer
         expect(r.misserfolge).toEqual([]);

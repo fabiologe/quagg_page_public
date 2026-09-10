@@ -57,19 +57,20 @@ const standAus = (eintraege) => new Map(eintraege.map(e => [e.globalId, e.nachhe
 describe('(a) anwenden — Umfang Strang', () => {
     it('Rohre und Schächte der Kette werden Listen; Achsmasse als Prüfmass; der ferne Schacht bleibt draussen', () => {
         const s = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'DGM1', umfang: 'strang', wandform: 'verbau', bettung: 0.1, schachtMass: 1.0 });
-        expect(s).toHaveLength(4);
-        const p = s[1].nachher.parameter;
+        expect(s).toHaveLength(4);                       // geloescht + Anzeige + Graben + Verfüllung (Stufe 1)
+        expect(s[1].nachher.rezept).toBe('anzeige');
+        const p = s[2].nachher.parameter;
         expect(p.quellen).toEqual({ rohre: ['H1', 'H2'], schaechte: ['S1', 'S2', 'S3'], gelaende: 'DGM1' });
         expect(p.quellBasis.rohre.map(m => [m.laenge, m.dn, m.dy])).toEqual([[30, 300, -0.5], [30, 400, -0.5]]);
         expect(p.quellBasis.schaechte).toEqual([null, null, null]);
         expect(p.operationen[0].parameter).toMatchObject({ umfang: 'strang', wandform: 'verbau', schachtMass: 1, dn: null });
-        expect(s[1].nachher.name).toBe('H-001 · Strang · Graben');
+        expect(s[2].nachher.name).toBe('H-001 · Strang · Graben');
         // Die Beschreibung nennt den Umfang und die Norm.
-        expect(ABLEITUNGEN.kanalgraben.beschreibe(s[1].nachher)).toBe('Kanalgraben · Graben · DN aus Rohr · Strang (2 Haltungen, 3 Schächte) · Senkrecht mit Verbau · Sohlbreite nach DIN EN 1610');
+        expect(ABLEITUNGEN.kanalgraben.beschreibe(s[2].nachher)).toBe('Kanalgraben · Graben · DN aus Rohr · Strang (2 Haltungen, 3 Schächte) · Senkrecht mit Verbau · Sohlbreite nach DIN EN 1610');
     });
     it('„nur diese Haltung": eine Quelle, ihre zwei Schächte', () => {
         const s = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'DGM1', umfang: 'haltung', wandform: 'boeschung', boden: 'bindigSteif', winkel: '', breite: '' });
-        const p = s[1].nachher.parameter;
+        const p = s[2].nachher.parameter;
         expect(p.quellen).toEqual({ rohre: ['H1'], schaechte: ['S1', 'S2'], gelaende: 'DGM1' });
         expect(p.operationen[0].parameter).toMatchObject({ wandform: 'boeschung', boden: 'bindigSteif', winkelGrad: null, breite: null });
     });
@@ -79,10 +80,12 @@ describe('(b) der Lauf am Strang', () => {
     const werte = (extra = {}) => [{ art: 'kanalgraben', parameter: { umfang: 'strang', wandform: 'verbau', boden: 'nichtbindig', winkelGrad: null, wanddickeMm: 0, breite: null, bettung: 0.1, schachtMass: 1.0, dn: null, ...extra } }];
     async function lauf(op, quellen = { rohre: ['H1', 'H2'], schaechte: ['S1', 'S2', 'S3'], gelaende: 'DGM1' }) {
         const schritte = ableitungsSchritte({ rezept: 'kanalgraben', quellen, raster: { cell: 0.5 }, operationen: op, name: 'Strang' });
-        const l = neuerAbleitungslauf({ stand: standAus(schritte), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
-        const [graben, , dgm] = schritte;
+        // Stufe 1: das Gelände nach dem Graben ist die ANZEIGE des Ur, kein Teil des Grabens.
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, vorgaenge: [{ ableitung: schritte[0].nachher.ableitung }] });
+        const l = neuerAbleitungslauf({ stand: standAus([...schritte, ...anzeige]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
+        const [graben] = schritte;
         const rg = await l.baue(graben.globalId);
-        const rd = await l.baue(dgm.globalId);
+        const rd = await l.baue(anzeige[0].globalId);
         return { l, rg, rd, a: l.ableitungen.get(graben.nachher.ableitung) };
     }
 

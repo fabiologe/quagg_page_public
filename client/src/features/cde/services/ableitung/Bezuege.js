@@ -89,3 +89,118 @@ export function abhaengige(stand = new Map()) {
     }
     return karte;
 }
+
+/**
+ * Das UR-GELÄNDE hinter einer Quelle (Stufe 1, Aushub-Fachmodell).
+ *
+ * Eine Quelle ist entweder ein GELIEFERTES Gelände — dann ist sie selbst das
+ * Ur-Gelände — oder eine ANZEIGEFORM der CDE (Rolle `anzeige`, oder aus der
+ * Zeit vor Stufe 1 der `dgm`-Teil einer Ableitung). Dann geht es an deren
+ * Quelle weiter, bis ein geliefertes Gelände erreicht ist. Deckel 16: Zyklen
+ * schliesst das Journal aus (`pruefeBezuege`), aber ein Deckel kostet nichts.
+ *
+ * Der Grund, warum es diese Funktion gibt: jeder Erdbau-Vorgang fusst auf dem
+ * gelieferten Gelände, nie auf einer Anzeigeform. Alt-Journale ketten sich
+ * dagegen von DGM zu DGM — sie werden über diese Rückverfolgung in denselben
+ * Stapel eingeordnet, ohne dass jemand sie umschreiben muss.
+ *
+ * @param {Map} stand        erzeugt-Stand (globalId → Bauplan)
+ * @param {string} gid
+ * @param {{rezeptNach: Function}} opts  — ob ein `dgm`-Teil zu einer Ableitung gehört, sagt das Rezept
+ * @returns {string} die Kennung des Ur-Geländes (im Zweifel die übergebene)
+ */
+export function urGelaendeVon(stand, gid, { rezeptNach = null } = {}) {
+    return _kette(stand, gid, rezeptNach).ur;
+}
+
+/**
+ * Wie viele Anzeigeformen zwischen einer Quelle und ihrem Ur-Gelände liegen —
+ * die KETTENTIEFE. Für Alt-Journale ist sie die Reihenfolge: ein Vorgang auf
+ * dem DGM eines anderen kam NACH ihm, egal, wo er im Stand steht.
+ */
+export function kettentiefe(stand, gid, { rezeptNach = null } = {}) {
+    return _kette(stand, gid, rezeptNach).tiefe;
+}
+
+function _kette(stand, gid, rezeptNach) {
+    let g = gid;
+    let tiefe = 0;
+    for (; g && tiefe < 16; tiefe++) {
+        const plan = stand?.get?.(g);
+        if (!plan) break;
+        const istAnzeige = plan.rolle === 'anzeige'
+            || (plan.rolle === 'dgm' && typeof rezeptNach?.(plan.rezept)?.leite === 'function')
+            || plan.rezept === 'gelaende';                 // Altbestand vor Teil XIV: `{quelle, operationen}`
+        if (!istAnzeige) break;
+        const weiter = plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? null;
+        if (!weiter) break;
+        g = weiter;
+    }
+    return { ur: g, tiefe };
+}
+
+/**
+ * Der Titel eines Erdbau-Vorgangs — aus dem Namen seines ersten Teils, ohne
+ * den Rollen-Anhang, plus Rezepttitel: „Urgelände · Gelände formen",
+ * „H-001 · Strang · Kanalgraben". Er wird EINMAL beim Anlegen in die
+ * `vorgaenge`-Liste der Anzeige geschrieben (eine Entscheidung); für
+ * Alt-Journale ohne Anzeige rechnet ihn diese Funktion nach.
+ */
+export function vorgangstitel(plan, rezept = null) {
+    const basis = String(plan?.name ?? '')
+        .replace(/ · (Aushub|Auftrag|Graben|Verfüllung|Baugrube)$/, '')
+        .replace(/ \((geformt|mit Graben|mit Baugrube|Anzeige)\)$/, '');
+    const art = rezept?.titel ?? String(plan?.rezept ?? 'Vorgang');
+    return basis ? `${basis} · ${art}` : art;
+}
+
+/**
+ * DER ERDBAU-STAPEL eines Ur-Geländes — die EINE Ordnungsregel (Stufe 1).
+ *
+ * Der Ableitungslauf faltet danach, die Bearbeitung hängt danach an, der
+ * Mengenreiter zählt danach. Zwei Stellen mit je eigener Reihenfolge hätten
+ * irgendwann zwei verschiedene Gesamtmassen geliefert.
+ *
+ * Regel: zuerst, was die Anzeige-Ableitung in `vorgaenge` geordnet hat (die
+ * Entscheidung des Planers), dann der Rest nach KETTENTIEFE (ein Vorgang auf
+ * dem DGM eines anderen kam nach ihm) und bei gleicher Tiefe in Stand-
+ * Reihenfolge (= Reihenfolge des Anlegens). Alt-Journale, deren Vorgänge sich
+ * von DGM zu DGM ketten, landen über `urGelaendeVon` im selben Stapel; ihre
+ * `dgm`-Teile stehen in `altDgm`, damit die Bearbeitung sie beim ersten
+ * Anfassen verbergen kann — die Anzeige übernimmt dann.
+ *
+ * @returns {{anzeige: {globalId, bauplan}|null,
+ *            vorgaenge: Array<{ableitung, art, titel, bauplan}>,
+ *            altDgm: string[]}}
+ */
+export function erdbauStapelVon(stand, urGid, { rezeptNach = null } = {}) {
+    const out = { anzeige: null, vorgaenge: [], altDgm: [] };
+    if (!urGid || !stand?.[Symbol.iterator]) return out;
+    const gefunden = new Map();                                   // ableitung → Vorgang
+    for (const [gid, plan] of stand) {
+        if (!plan?.ableitung) continue;
+        const rz = rezeptNach?.(plan.rezept) ?? null;
+        const q = plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? null;
+        if (rz?.id === 'anzeige') {
+            if (q === urGid && !out.anzeige) out.anzeige = { globalId: gid, bauplan: plan };
+            continue;
+        }
+        if (!rz?.erdbau || !q) continue;
+        const { ur, tiefe } = _kette(stand, q, rezeptNach);
+        if (ur !== urGid) continue;
+        if (plan.rolle === 'dgm') out.altDgm.push(gid);
+        if (!gefunden.has(plan.ableitung)) {
+            gefunden.set(plan.ableitung, { ableitung: plan.ableitung, art: plan.rezept, titel: vorgangstitel(plan, rz), bauplan: plan, tiefe, reihe: gefunden.size });
+        }
+    }
+    const drin = (id) => out.vorgaenge.some(v => v.ableitung === id);
+    for (const v of out.anzeige?.bauplan?.parameter?.vorgaenge ?? []) {
+        const id = typeof v === 'string' ? v : v?.ableitung;
+        const g = id ? gefunden.get(id) : null;
+        if (g && !drin(id)) out.vorgaenge.push(v?.titel ? { ...g, titel: v.titel } : g);
+    }
+    const rest = [...gefunden.values()].filter(g => !drin(g.ableitung))
+        .sort((a, b) => (a.tiefe - b.tiefe) || (a.reihe - b.reihe));
+    for (const { tiefe, reihe, ...g } of rest) out.vorgaenge.push(g);
+    return out;
+}

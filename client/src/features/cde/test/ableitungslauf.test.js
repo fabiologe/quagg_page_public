@@ -34,15 +34,18 @@ const OPS = [{ art: 'gerinne', parameter: {
 } }];
 
 describe('Ableitungslauf am echten erdbau', () => {
-    it('leite läuft EINMAL für drei Teile; Aushub und DGM entstehen, Auftrag ist leer', async () => {
+    it('leite läuft EINMAL für zwei Teile; Aushub und Anzeige entstehen, Auftrag ist leer', async () => {
         const schritte = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, operationen: OPS, name: 'Ur' });
+        // Stufe 1: das geformte Gelände ist die ANZEIGE des Ur — eigene Ableitung, eigenes Rezept.
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, name: 'Ur', vorgaenge: [{ ableitung: schritte[0].nachher.ableitung }] });
         const leite = vi.spyOn(ABLEITUNGEN.erdbau, 'leite');
-        const lauf = neuerAbleitungslauf({ stand: standAus(schritte), rezeptNach, holeQuellForm, kernel: erzeugeKernel(), hoehenversatz: 300 });
-        const [aushub, auftrag, dgm] = schritte;
+        const lauf = neuerAbleitungslauf({ stand: standAus([...schritte, ...anzeige]), rezeptNach, holeQuellForm, kernel: erzeugeKernel(), hoehenversatz: 300 });
+        const [aushub, auftrag] = schritte;
+        const [dgm] = anzeige;
         const ra = await lauf.baue(aushub.globalId);
         const rf = await lauf.baue(auftrag.globalId);
         const rd = await lauf.baue(dgm.globalId);
-        expect(leite).toHaveBeenCalledTimes(1);
+        expect(leite).toHaveBeenCalledTimes(1);           // die Anzeige faltet die memoisierten ops — kein zweites leite
         leite.mockRestore();
         expect(ra.ok && ra.teil.form === 'koerper' && ra.teil.daten.closed).toBe(true);
         expect(rf).toMatchObject({ ok: true, leer: true });
@@ -53,8 +56,9 @@ describe('Ableitungslauf am echten erdbau', () => {
         expect(mitte).toBeGreaterThan(297.4);
         expect(mitte).toBeLessThan(298.1);
         const a = lauf.ableitungen.get(aushub.nachher.ableitung);
-        expect(a.teile).toEqual({ aushub: aushub.globalId, dgm: dgm.globalId });
+        expect(a.teile).toEqual({ aushub: aushub.globalId });
         expect(a.leer).toEqual(['auftrag']);
+        expect(lauf.ableitungen.get(dgm.nachher.ableitung).kennzahlen).toMatchObject({ aushubGesamt: a.kennzahlen.aushubRaster, vorgaenge: 1, operationen: 1 });
         expect(a.kennzahlen.aushubRaster).toBeGreaterThan(10);
         expect(Math.abs(a.kennzahlen.aushubKoerper - a.kennzahlen.aushubRaster) / a.kennzahlen.aushubRaster).toBeLessThan(0.02);
         expect(a.befunde).toEqual([]);
@@ -67,34 +71,43 @@ describe('Ableitungslauf am echten erdbau', () => {
         const r = await Promise.all(schritte.map(s => lauf.baue(s.globalId)));
         expect(r.every(x => x.ok === false)).toBe(true);
         expect(r[0].fehler[0]).toMatch(/GIBTSNICHT/);
-        expect(r[2].fehler).toEqual(r[0].fehler);
-        expect(lauf.misserfolge).toHaveLength(3);
+        expect(r[1].fehler).toEqual(r[0].fehler);
+        expect(lauf.misserfolge).toHaveLength(2);
     });
 
-    it('ein CDE-Teil als Quelle wird lazy gebaut — egal, in welcher Reihenfolge der Stand steht', async () => {
-        // Zweite Ableitung nimmt das DGM der ersten als Quelle (Ableitung auf Ableitung).
+    /** Ein dgm-Teil, wie ihn Journale VOR Stufe 1 tragen — als Alt-Fixture nachgestellt. */
+    const altDgm = (schritte, globalId) => ({ art: 'erzeugt', globalId, modell: 'cde',
+        nachher: { ...schritte[0].nachher, rolle: 'dgm', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', predefinedType: 'TERRAIN', name: 'Ur (geformt)' } });
+
+    it('ein CDE-Teil als Quelle (Alt-Kette) wird lazy gebaut — egal, in welcher Reihenfolge der Stand steht', async () => {
+        // Zweite Ableitung nimmt das Alt-DGM der ersten als Quelle (Ableitung auf Ableitung, vor Stufe 1).
         const erste = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, operationen: OPS });
-        const dgm1 = erste[2].globalId;
-        const zweite = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: dgm1 }, raster: { cell: 0.5 },
+        const dgm1 = altDgm(erste, 'cde-dgm-1');
+        const zweite = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: dgm1.globalId }, raster: { cell: 0.5 },
             operationen: [{ art: 'planum', parameter: { umriss: [{ x: 10, z: 5 }, { x: 15, z: 5 }, { x: 15, z: 10 }, { x: 10, z: 10 }], hoehe: 596 } }] });
+        const dgm2 = altDgm(zweite, 'cde-dgm-2');
         // Stand RÜCKWÄRTS: die zweite steht vor der ersten.
-        const lauf = neuerAbleitungslauf({ stand: standAus([...zweite, ...erste]), rezeptNach, holeQuellForm, kernel: erzeugeKernel(), hoehenversatz: 300 });
-        const r = await lauf.baue(zweite[2].globalId);
+        const lauf = neuerAbleitungslauf({ stand: standAus([...zweite, dgm2, ...erste, dgm1]), rezeptNach, holeQuellForm, kernel: erzeugeKernel(), hoehenversatz: 300 });
+        const r = await lauf.baue(dgm2.globalId);
         expect(r.ok).toBe(true);
         expect(r.teil.form).toBe('raster');
-        // Das Zwischenergebnis (DGM der ersten) wurde dabei mitgebaut — und nur einmal.
+        // Die erste wurde dabei mitgeleitet (der Stapel faltet ihre ops) — und nur einmal.
         expect(lauf.ableitungen.size).toBe(2);
+        // Beide fussen auf dem Ur — und die KETTE ordnet: die zweite steht im Stand vorn, kam aber auf dem DGM der
+        // ersten, also NACH ihr. Die Stand-Reihenfolge zählt nur bei gleicher Kettentiefe.
+        expect(lauf.urGidVon(dgm2.globalId)).toBe('DGM1');
+        expect(lauf.stapelVon('DGM1')).toEqual([erste[0].nachher.ableitung, zweite[0].nachher.ableitung]);
     });
 
     it('ein Zyklus ist ein Misserfolg mit Namen, keine Endlosschleife', async () => {
         const a = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'B-dgm' }, raster: { cell: 1 }, operationen: OPS });
-        const b = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: a[2].globalId }, raster: { cell: 1 }, operationen: OPS });
-        // b's DGM soll die feste Kennung tragen, auf die a zeigt
-        b[2].globalId = 'B-dgm';
-        const lauf = neuerAbleitungslauf({ stand: standAus([...a, ...b]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
-        const r = await lauf.baue(a[2].globalId);
+        const aDgm = altDgm(a, 'A-dgm');
+        const b = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'A-dgm' }, raster: { cell: 1 }, operationen: OPS });
+        const bDgm = altDgm(b, 'B-dgm');
+        const lauf = neuerAbleitungslauf({ stand: standAus([...a, aDgm, ...b, bDgm]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
+        const r = await lauf.baue('A-dgm');
         expect(r.ok).toBe(false);
-        expect(r.fehler.join(' ')).toMatch(/zyklus/);
+        expect(r.fehler.join(' ')).toMatch(/zyklus|Zyklus/);
     });
 
     /**
@@ -169,10 +182,10 @@ describe('Ableitungslauf am echten erdbau', () => {
 
     it('uneinheitliche Parameter innerhalb einer Klammer werden GEMELDET, nicht still gemittelt', async () => {
         const schritte = ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 1 }, operationen: OPS });
-        schritte[2].nachher = { ...schritte[2].nachher, parameter: { ...schritte[2].nachher.parameter, operationen: [] } };
+        schritte[1].nachher = { ...schritte[1].nachher, parameter: { ...schritte[1].nachher.parameter, operationen: [] } };
         const lauf = neuerAbleitungslauf({ stand: standAus(schritte), rezeptNach, holeQuellForm, kernel: erzeugeKernel(), hoehenversatz: 300 });
         await lauf.baue(schritte[0].globalId);
-        await lauf.baue(schritte[2].globalId);
+        await lauf.baue(schritte[1].globalId);
         const a = lauf.ableitungen.get(schritte[0].nachher.ableitung);
         expect(a.befunde.some(b => b.regel === 'ableitung_uneinheitlich')).toBe(true);
     });

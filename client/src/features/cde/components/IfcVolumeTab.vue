@@ -157,8 +157,8 @@
           <tr><th>Gelände</th><th>Aushub</th><th title="Auftragskörper — beim Kanalgraben die Verfüllung (Graben minus Rohr)">Auftrag / Verf.</th><th title="Volumen des Aushubkörpers">Körper</th><th title="Gegenprobe Körper gegen Raster">Abw.</th></tr>
         </thead>
         <tbody>
-          <tr v-for="(z, i) in erdmassen" :key="i">
-            <td>{{ z.name }}</td>
+          <tr v-for="(z, i) in erdmassen" :key="i" :class="{ gesamt: z.gesamt }">
+            <td>{{ z.name }}<span v-if="z.gesamt && z.vorgaenge != null" class="zusatz"> · {{ z.vorgaenge }} {{ z.vorgaenge === 1 ? 'Vorgang' : 'Vorgänge' }}</span></td>
             <td class="mono">{{ z.aushub == null ? (z.grund ?? '—') : `${z.aushub.toFixed(1)} m³` }}</td>
             <td class="mono" :title="z.rohrVolumen != null ? `Rohr ${z.rohrVolumen.toFixed(2)} m³ abgezogen` : ''">{{ z.auftrag != null ? `${z.auftrag.toFixed(1)} m³` : (z.verfuellung != null ? `${z.verfuellung.toFixed(1)} m³ Verf.` : '—') }}</td>
             <td class="mono">{{ z.aushubKoerper == null ? '—' : `${z.aushubKoerper.toFixed(1)} m³` }}</td>
@@ -181,6 +181,7 @@ import CdeIconButton from './ui/CdeIconButton.vue';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { mengenNachMassnahme, massnahmeNach } from '../services/Sanierung.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 
 const aenderungen = useAenderungen();
 const api = useViewerApi();
@@ -218,7 +219,11 @@ const erdmassen = ref([]);
 let _erdmassenLauf = 0;
 watchEffect(async () => {
     const stand = aenderungen.wirksamerStand('erzeugt');
-    const bauplaene = [...stand.values()].filter(b => ['gelaende', 'erdbau', 'kanalgraben'].includes(b?.rezept));
+    // Jeder Erdbau-Vorgang (das Rezept sagt es selbst: `erdbau`), der
+    // Altbestand `gelaende` und die ANZEIGE (Stufe 1: die Zeile „Gesamt",
+    // die die Summe der Vorgänge sein muss). Die alte Namensliste vergass
+    // die Bauwerksgrube.
+    const bauplaene = [...stand.values()].filter(b => b?.rezept === 'gelaende' || b?.rezept === 'anzeige' || !!rezeptNach(b?.rezept)?.erdbau);
     const lauf = ++_erdmassenLauf;
     const zeilen = bauplaene.length ? await api.erdmassen?.(bauplaene) ?? [] : [];
     if (lauf === _erdmassenLauf) erdmassen.value = zeilen;
@@ -316,4 +321,7 @@ tr.is-billed td.col-cat { color: var(--card-accent); font-weight: 600; }
 
 .cat-badge { display: inline-block; margin-left: 0.25rem; color: var(--card-accent); vertical-align: -1px; }
 .mono.warn { color: var(--cde-warn); font-weight: 600; }
+/* Stufe 1: die Zeile „Gesamt" aus der Anzeige — die Summe der Vorgänge darüber. */
+tr.gesamt td { font-weight: 600; border-top: 1px solid var(--cde-line-strong); }
+tr.gesamt .zusatz { color: var(--cde-text-dim); font-weight: 400; }
 </style>

@@ -61,15 +61,17 @@ describe('Der Katalog', () => {
         expect(b.vorbelegung({ ...ROHR, stand: { profilGroesse: 500 } }).dn).toBe(500);
     });
 
-    it('vier Einträge: Gelände ausblenden + Graben (TRENCH), Verfüllung (BACKFILL), DGM (TERRAIN) — Quellen und Prüfmasse als Parameter', () => {
+    it('vier Einträge: Gelände ausblenden + Anzeige (TERRAIN) + Graben (TRENCH), Verfüllung (BACKFILL) — Quellen und Prüfmasse als Parameter', () => {
         const s = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'DGM1', dn: 300, umfang: 'haltung', wandform: 'boeschung', boden: 'nichtbindig', bettung: 0.15 });
         expect(s).toHaveLength(4);
         expect(s[0]).toEqual({ art: 'geloescht', globalId: 'DGM1', nachher: true });
-        const teile = s.slice(1);
-        expect(teile.map(t => t.nachher.rolle)).toEqual(['graben', 'verfuellung', 'dgm']);
+        // Stufe 1: die Anzeige des Ur-Geländes (eigene Klammer) statt eines DGM-Teils je Graben.
+        expect(s[1].nachher).toMatchObject({ rezept: 'anzeige', rolle: 'anzeige', kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'TERRAIN', bauform: 'hoehenfeld', name: 'Urgelände (Anzeige)' });
+        expect(s[1].nachher.parameter.vorgaenge).toEqual([{ ableitung: s[2].nachher.ableitung, art: 'kanalgraben', titel: 'H-001 · Kanalgraben' }]);
+        const teile = s.slice(2);
+        expect(teile.map(t => t.nachher.rolle)).toEqual(['graben', 'verfuellung']);
         expect(teile[0].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSCUT', predefinedType: 'TRENCH', bauform: 'koerper' });
         expect(teile[1].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSFILL', predefinedType: 'BACKFILL' });
-        expect(teile[2].nachher).toMatchObject({ kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'TERRAIN', bauform: 'hoehenfeld' });
         expect(new Set(teile.map(t => t.nachher.ableitung)).size).toBe(1);
         const p = teile[0].nachher.parameter;
         // B3: Rohre und Schächte sind LISTEN; die Rohre tragen ein Achsmass.
@@ -83,10 +85,23 @@ describe('Der Katalog', () => {
         expect(JSON.stringify(p)).not.toMatch(/heights|positions/);
     });
 
-    it('ein EIGENES DGM als Quelle wird nur verborgen: das Ausblenden trägt modell cde', () => {
-        const s = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'cde-dgm', dn: 300, wandform: 'verbau', bettung: 0.15 });
-        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'cde-dgm', nachher: true, modell: 'cde' });
-        expect(s[1].nachher.parameter.quellen.gelaende).toBe('cde-dgm');
+    it('ein EIGENES DGM als Quelle (Alt-Journal): der Graben fusst auf dem UR-Gelände, das Alt-DGM wird verborgen — mit modell cde', () => {
+        // Die Anreicherung (Stufe 1) kennt das Ur hinter dem Alt-DGM.
+        const erdbau = { ur: 'DGM1', anzeige: null, vorgaenge: [{ ableitung: 'ab-alt', art: 'erdbau', titel: 'Urgelände · Gelände formen' }],
+                         letzter: null, altDgm: ['cde-dgm'], quellBasis: { triCount: 3200 }, cell: 0.5 };
+        const rohr = { ...ROHR, gelaendeQuellen: ROHR.gelaendeQuellen.map(q => (q.globalId === 'cde-dgm' ? { ...q, erdbau } : q)) };
+        const s = nachId('kanalgraben-ableiten').anwenden(rohr, { gelaende: 'cde-dgm', dn: 300, wandform: 'verbau', bettung: 0.15 });
+        expect(s.slice(0, 2)).toEqual([
+            { art: 'geloescht', globalId: 'DGM1', nachher: true },
+            { art: 'geloescht', globalId: 'cde-dgm', nachher: true, modell: 'cde' },
+        ]);
+        expect(s[2].nachher.rezept).toBe('anzeige');
+        expect(s[2].nachher.parameter.vorgaenge.map(v => v.art)).toEqual(['erdbau', 'kanalgraben']);   // hinten angehängt
+        expect(s[3].nachher.parameter.quellen.gelaende).toBe('DGM1');                                   // nie das Alt-DGM
+        expect(s[3].nachher.parameter.quellBasis.gelaende).toEqual({ triCount: 3200 });
+        // Ohne Anreicherung (headless) bleibt die Quelle, wie sie genannt wurde — der Lauf löst die Wurzel selbst auf.
+        const roh = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'cde-dgm', dn: 300, wandform: 'verbau', bettung: 0.15 });
+        expect(roh[0]).toEqual({ art: 'geloescht', globalId: 'cde-dgm', nachher: true, modell: 'cde' });
     });
 
     it('ohne bekanntes Gelände entsteht nichts — kein halber Vorgang', () => {
@@ -107,11 +122,13 @@ describe('Der Lauf am echten Rezept', () => {
                                       parameter: { punkte: [[5, 297.5, 20], [35, 297.2, 20]], dn: 300 } });
         const schritte = ableitungsSchritte({ rezept: 'kanalgraben', quellen: { rohr: rohr.globalId, gelaende: 'DGM1' },
                                               raster: { cell: 0.5 }, operationen: OP, name: 'H-001' });
-        const lauf = neuerAbleitungslauf({ stand: standAus([rohr, ...schritte]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
-        const [graben, verfuellung, dgm] = schritte;
+        // Die ANZEIGE (Stufe 1) zeigt das Gelände nach dem Graben — das frühere DGM-Teil.
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, vorgaenge: [{ ableitung: schritte[0].nachher.ableitung }] });
+        const lauf = neuerAbleitungslauf({ stand: standAus([rohr, ...schritte, ...anzeige]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
+        const [graben, verfuellung] = schritte;
         const rg = await lauf.baue(graben.globalId);
         const rv = await lauf.baue(verfuellung.globalId);
-        const rd = await lauf.baue(dgm.globalId);
+        const rd = await lauf.baue(anzeige[0].globalId);
         expect(lauf.misserfolge).toEqual([]);
         expect(rg.ok && rg.teil.form === 'koerper' && rg.teil.daten.closed).toBe(true);
         expect(rv).toMatchObject({ ok: true, leer: true });
@@ -154,10 +171,11 @@ describe('Der Lauf am echten Rezept', () => {
     it('ein GELIEFERTES Rohr kommt über holeQuellForm als Linie mit DN — der DN gilt, wenn das Formular keinen nennt', async () => {
         const schritte = ableitungsSchritte({ rezept: 'kanalgraben', quellen: { rohr: 'ROHR-A', gelaende: 'DGM1' }, raster: { cell: 0.5 },
                                               operationen: [{ art: 'kanalgraben', parameter: { dn: null, arbeitsraum: 0.5, bettung: 0.1, boeschung: 0 } }] });
-        const lauf = neuerAbleitungslauf({ stand: standAus(schritte), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
-        const r = await lauf.baue(schritte[2].globalId);
+        const anzeige = ableitungsSchritte({ rezept: 'anzeige', quellen: { gelaende: 'DGM1' }, raster: { cell: 0.5 }, vorgaenge: [{ ableitung: schritte[0].nachher.ableitung }] });
+        const lauf = neuerAbleitungslauf({ stand: standAus([...schritte, ...anzeige]), rezeptNach, holeQuellForm, kernel: erzeugeKernel() });
+        const r = await lauf.baue(anzeige[0].globalId);
         expect(r.ok).toBe(true);
-        const k = lauf.ableitungen.get(schritte[2].nachher.ableitung).kennzahlen;
+        const k = lauf.ableitungen.get(schritte[0].nachher.ableitung).kennzahlen;
         expect(k.dn).toBe(400);
         expect(k.sohlbreite).toBeCloseTo(1.4, 9);
         // Sohle: 297,35 − 0,2 (r) − 0,1 = 297,05

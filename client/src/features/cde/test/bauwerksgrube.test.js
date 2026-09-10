@@ -71,13 +71,13 @@ describe('Der Grundriss eines Bauteils', () => {
 describe('Das Rezept — nach Norm, und nichts geht verloren', () => {
     const rezept = ABLEITUNGEN.bauwerksgrube;
 
-    it('nennt zwei Quellen und liefert Grube plus neues Gelände', () => {
+    it('nennt zwei Quellen und liefert die Grube — das Gelände danach ist die Anzeige des Ur (Stufe 1)', () => {
         expect(rezept.braucht.bauteil).toContain('koerper');
         expect(rezept.braucht.gelaende).toEqual(['hoehenfeld']);
         expect(rezept.formen).toEqual({ bauteil: 'umriss', gelaende: 'raster' });
+        expect(rezept.erdbau).toBe(true);
         expect(rezept.teile.map(t => [t.rolle, t.kategorie, t.predefinedType])).toEqual([
             ['grube', 'IFCEARTHWORKSCUT', 'EXCAVATION'],
-            ['dgm', 'IFCGEOGRAPHICELEMENT', 'TERRAIN'],
         ]);
     });
 
@@ -136,7 +136,7 @@ describe('Der Katalogeintrag', () => {
         expect(passende({ bauform: 'achse+profil', guete: 'gemessen' }).map(x => x.id)).not.toContain('bauwerksgrube-ableiten');
     });
 
-    it('schreibt: Ur-Gelände verbergen + zwei neue Teile, EIN Vorgang', () => {
+    it('schreibt: Ur-Gelände verbergen + Anzeige + Grube, EIN Vorgang', () => {
         const s = b('bauwerksgrube-ableiten').anwenden(BAUWERK(), { gelaende: 'DGM-1', wandform: 'boeschung', boden: 'nichtbindig' });
         expect(s.map(x => x.art)).toEqual(['geloescht', 'erzeugt', 'erzeugt']);
         // Das GELÄNDE wird verborgen — nicht das Bauwerk.
@@ -144,7 +144,10 @@ describe('Der Katalogeintrag', () => {
         expect(s[0].modell).toBeUndefined();                        // geliefert ⇒ ausblenden
         // Das Bauwerk taucht nur als QUELLE auf, nie als Ziel eines Schritts.
         expect(s.every(x => x.globalId !== 'FUND-1')).toBe(true);
-        expect(s[1].nachher.parameter.quellen).toEqual({ bauteil: 'FUND-1', gelaende: 'DGM-1' });
+        // Die Anzeige des Ur trägt den Vorgang; die Grube nennt beide Quellen.
+        expect(s[1].nachher).toMatchObject({ rezept: 'anzeige', parameter: { quellen: { gelaende: 'DGM-1' } } });
+        expect(s[1].nachher.parameter.vorgaenge).toEqual([{ ableitung: s[2].nachher.ableitung, art: 'bauwerksgrube', titel: 'Fundament A · Bauwerksgrube' }]);
+        expect(s[2].nachher.parameter.quellen).toEqual({ bauteil: 'FUND-1', gelaende: 'DGM-1' });
     });
 
     it('die Norm ist die Vorgabe, die Eingabe überschreibt sie', () => {
@@ -152,12 +155,12 @@ describe('Der Katalogeintrag', () => {
         expect(felder).toEqual(['gelaende', 'arbeitsraum', 'wandform', 'boden', 'winkel', 'sohle']);
         expect(b('bauwerksgrube-ableiten').vorbelegung(BAUWERK())).toMatchObject({ gelaende: 'DGM-1', arbeitsraum: '', wandform: 'boeschung' });
         const s = b('bauwerksgrube-ableiten').anwenden(BAUWERK(), { gelaende: 'DGM-1', arbeitsraum: 1.2, sohle: 295 });
-        const op = s[1].nachher.parameter.operationen[0].parameter;
+        const op = s[2].nachher.parameter.operationen[0].parameter;
         expect(op.arbeitsraum).toBe(1.2);
         expect(op.sohle).toBe(295);
         // Leer heisst „nach Norm", nicht „null".
         const s2 = b('bauwerksgrube-ableiten').anwenden(BAUWERK(), { gelaende: 'DGM-1', arbeitsraum: '', sohle: '' });
-        expect(s2[1].nachher.parameter.operationen[0].parameter.arbeitsraum).toBeNull();
+        expect(s2[2].nachher.parameter.operationen[0].parameter.arbeitsraum).toBeNull();
     });
 
     it('die Gegenprobe schweigt unter fünf Kubikmetern — dort sagt die Prozentzahl nichts', async () => {

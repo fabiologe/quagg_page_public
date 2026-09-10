@@ -502,7 +502,7 @@ import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
 import { modellHerkunft, modellTagText } from '../services/IfcAutor.js';
-import { ableitungAuf } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon } from '../services/Bauteilrezepte.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
@@ -1172,18 +1172,19 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
           ...angereichert,
           gelaendeQuellen: kandidaten
             .filter(k => k.globalId !== result.globalId)          // nie sich selbst ausheben
-            .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '' })),
+            // … und je Kandidat sein ERDBAU-STAND (Stufe 1): Ur-Gelände, Anzeige,
+            // Stapel — `anwenden` hängt daran an, statt eine Kette zu bauen.
+            .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '', erdbau: erdbauStandVon(erzeugt, k.globalId) })),
         };
       }
     }
 
-    // TRÄGT DIESES GELÄNDE SCHON EINE ABLEITUNG? (Stufe 0, D3.) Wer das wieder
-    // eingeblendete Ur-Gelände anfasst, soll an die vorhandene Formung
-    // anhängen statt sie zu klonen. Gefunden wird sie über ihre QUELLE im
-    // Journal — nicht über den Namen.
-    if (result.globalId && !angereichert.ableitungAufMir) {
-      const vorhanden = ableitungAuf(aenderungen.wirksamerStand('erzeugt'), result.globalId);
-      if (vorhanden) angereichert = { ...angereichert, ableitungAufMir: vorhanden };
+    // DER ERDBAU-STAND DES SUBJEKTS (Stufe 1; Stufe 0 nannte es D3): wer das
+    // Ur-Gelände, seine Anzeige oder ein Alt-DGM anfasst, soll an den
+    // vorhandenen Stapel anhängen statt ihn zu klonen. Gefunden über die
+    // QUELLEN im Journal — nicht über den Namen.
+    if (result.globalId && !angereichert.erdbau) {
+      angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId) };
     }
 
     const kategorie = String(result.category ?? result.type ?? '').toUpperCase();

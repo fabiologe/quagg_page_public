@@ -25,6 +25,7 @@ import { erzeugeWorkerBackend } from './geometrie/KernelWorker.js';
 import { erzeugeServerBackend } from './geometrie/KernelServer.js';
 import backendApi from '@/services/api';
 import { gelaendeElemente, GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
+import { rezeptNach as _rezeptNach } from './Bauteilrezepte.js';
 import { bauformAusNetz } from './bauform/Formsignatur.js';
 import { achsGuete } from './bauform/Bauformen.js';
 import { pruefmassVon, zellweiteVorschlag, achsmassAus } from './geometrie/ops/Raster.js';
@@ -3452,10 +3453,25 @@ export class IfcEngine {
         const zeilen = [];
         const gesehen = new Set();
         for (const b of bauplaene) {
+            const rz = _rezeptNach(b?.rezept);
+            // DIE ANZEIGE (Stufe 1): je Ur-Gelände eine Zeile GESAMT — das
+            // Ur gegen das Gelände nach allen Vorgängen. Sie muss die Summe
+            // der Vorgangszeilen sein; ist sie es nicht, ist etwas falsch.
+            if (rz?.id === 'anzeige') {
+                if (!b.ableitung || gesehen.has(b.ableitung)) continue;
+                gesehen.add(b.ableitung);
+                const k = this.autor?.ableitungen?.get(b.ableitung)?.kennzahlen ?? null;
+                const name = String(b.name ?? '').replace(/ \(Anzeige\)$/, '') + ' · Gesamt';
+                if (!k) { zeilen.push({ name, art: 'anzeige', gesamt: true, aushub: null, auftrag: null, grund: 'noch nicht aufgebaut' }); continue; }
+                zeilen.push({ name, ableitung: b.ableitung, art: 'anzeige', gesamt: true,
+                              aushub: k.aushubGesamt ?? null, auftrag: k.auftragGesamt ?? null,
+                              vorgaenge: (b.parameter?.vorgaenge ?? []).length, befunde: [] });
+                continue;
+            }
             // Teil XIV: eine Ableitung trägt ihre Massen als KENNZAHLEN des
             // letzten Aufbaus — Körper UND Raster, die Gegenprobe steht daneben.
-            // Drei Teile teilen sich eine Ableitung: je Ableitung eine Zeile.
-            if (b?.rezept === 'erdbau' || b?.rezept === 'kanalgraben' || b?.rezept === 'bauwerksgrube') {
+            // Die Teile teilen sich eine Ableitung: je Ableitung eine Zeile.
+            if (rz?.erdbau) {
                 if (!b.ableitung || gesehen.has(b.ableitung)) continue;
                 gesehen.add(b.ableitung);
                 const a = this.autor?.ableitungen?.get(b.ableitung) ?? null;
@@ -3470,7 +3486,7 @@ export class IfcEngine {
                     continue;
                 }
                 zeilen.push({
-                    name, ableitung: b.ableitung, art: b.rezept,
+                    name, ableitung: b.ableitung, art: b.rezept, reihe: k.reihe ?? null,
                     aushub: k.aushubRaster ?? null,
                     // Beim Kanalgraben ist der „Auftrag" die VERFÜLLUNG (Graben − Rohr).
                     auftrag: (b.rezept === 'kanalgraben' || b.rezept === 'bauwerksgrube') ? null : (k.auftragRaster ?? null),

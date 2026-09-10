@@ -21,7 +21,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { nachId } from '../services/Bearbeitungen.js';
-import { ableitungAuf, istAnzeigeform, istEigen, modellVon } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform, istEigen, modellVon } from '../services/Bauteilrezepte.js';
 import { istVerdeckt, verdeckteAus } from '../services/CdeAchsen.js';
 import { planeNachspielen } from '../services/Nachspielen.js';
 import { modellTagText } from '../services/IfcAutor.js';
@@ -73,7 +73,11 @@ describe('D1 — modell kommt aus der Kennung, an einer Stelle', () => {
 
     it('das Ausblenden eines eigenen DGM-Teils (Grube/Graben) sagt `modell: cde` — wie Grube und Aussparung', () => {
         const s = nachId('planum-herstellen').anwenden(grubenDgm(), { hoehe: 8 }, { zug: UMRISS });
-        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'cde-grube-dgm', nachher: true, modell: 'cde' });
+        // Stufe 1: das Ur dahinter (ein Hop über die Quelle des Alt-DGM) wird
+        // ausgeblendet, das Alt-DGM verborgen — und DAS sagt `modell: cde`.
+        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'DGM1', nachher: true });
+        expect(s[1]).toEqual({ art: 'geloescht', globalId: 'cde-grube-dgm', nachher: true, modell: 'cde' });
+        expect(s[2].nachher).toMatchObject({ rezept: 'anzeige', parameter: { quellen: { gelaende: 'DGM1' } } });
         // und das gelieferte Ur-Gelände bleibt OHNE `modell` (e1Erdbau-Vertrag)
         expect(erstformung()[0]).toEqual({ art: 'geloescht', globalId: 'DGM1', nachher: true });
     });
@@ -120,38 +124,49 @@ describe('D2 — eine Faltung „verdeckt"', () => {
 });
 
 describe('D3 — zweiter Aushub am wieder eingeblendeten Ur-Gelände: Folgeformung, kein Klon', () => {
-    it('ableitungAuf findet die Ableitung über ihre QUELLE', async () => {
+    it('erdbauStandVon findet den Stapel über die QUELLE — vom Ur wie von der Anzeige aus', async () => {
         const ae = useAenderungen();
         for (const e of erstformung()) await ae.eintragen({ ...e, wer: 'Fabio' });
-        const v = ableitungAuf(ae.wirksamerStand('erzeugt'), 'DGM1');
-        expect(v?.ableitung).toMatch(/^ab-/);
-        expect([...v.teile.keys()].sort()).toEqual(['auftrag', 'aushub', 'dgm']);
-        expect(ableitungAuf(ae.wirksamerStand('erzeugt'), 'ANDERES')).toBe(null);
+        const stand = ae.wirksamerStand('erzeugt');
+        const v = erdbauStandVon(stand, 'DGM1');
+        expect(v.ur).toBe('DGM1');
+        expect(v.anzeige?.bauplan.rezept).toBe('anzeige');
+        expect(v.vorgaenge.map(x => x.art)).toEqual(['erdbau']);
+        expect(v.letzter?.ableitung).toMatch(/^ab-/);
+        expect([...v.letzter.teile.keys()].sort()).toEqual(['auftrag', 'aushub']);
+        expect(v.letzter.operationen.map(o => o.art)).toEqual(['gerinne']);
+        expect(v.cell).toBe(0.5);
+        // Von der Anzeige aus: dasselbe Ur, derselbe Stapel.
+        expect(erdbauStandVon(stand, v.anzeige.globalId)).toEqual(v);
+        // Ein fremdes Gelände: kein Stapel.
+        expect(erdbauStandVon(stand, 'ANDERES')).toMatchObject({ ur: 'ANDERES', anzeige: null, vorgaenge: [], letzter: null });
     });
 
-    it('dieselben drei GlobalIds, eine Klammer, ein geloescht, volle Liste', async () => {
+    it('dieselben GlobalIds, eine erdbau-Klammer, ein geloescht, volle Liste', async () => {
         const ae = useAenderungen();
         const erst = erstformung();
         for (const e of erst) await ae.eintragen({ ...e, wer: 'Fabio' });
 
-        // Das Ur-Gelände wird wieder angefasst — die Anreicherung hängt die
-        // vorhandene Ableitung an, wie IfcViewer es tut.
-        const ur = { ...UR, ableitungAufMir: ableitungAuf(ae.wirksamerStand('erzeugt'), 'DGM1') };
+        // Das Ur-Gelände wird wieder angefasst — die Anreicherung hängt den
+        // Erdbau-Stand an, wie IfcViewer es tut.
+        const ur = { ...UR, erdbau: erdbauStandVon(ae.wirksamerStand('erzeugt'), 'DGM1') };
         const zweite = nachId('planum-herstellen').anwenden(ur, { hoehe: 8 }, { zug: UMRISS });
         for (const e of zweite) await ae.eintragen({ ...e, wer: 'Fabio' });
 
         const erzeugt = ae.wirksamerStand('erzeugt');
-        expect(erzeugt.size).toBe(3);                                                // kein Klon
-        expect(new Set([...erzeugt.values()].map(p => p.ableitung)).size).toBe(1);   // eine Klammer
+        expect(erzeugt.size).toBe(3);                                                // Anzeige + Cut + Fill, kein Klon
+        const erdbau = [...erzeugt.values()].filter(p => p.rezept === 'erdbau');
+        expect(new Set(erdbau.map(p => p.ableitung)).size).toBe(1);                  // eine erdbau-Klammer
         expect(ae.wirksamerStand('geloescht').size).toBe(1);                         // ein geloescht
-        expect(zweite.filter(s => s.art === 'erzeugt').map(s => s.globalId).sort())
-            .toEqual(erst.filter(s => s.art === 'erzeugt').map(s => s.globalId).sort());
-        const ops = erzeugt.get(erst[3].globalId).parameter.operationen.map(o => o.art);
-        expect(ops).toEqual(['gerinne', 'planum']);                                  // Liste +1, absolut
-        expect(erzeugt.get(erst[3].globalId).parameter.quellen.gelaende).toBe('DGM1');
-        // erdbau-Ableitungen auf dem Ur-Gelände: genau eine
-        expect([...erzeugt.values()].filter(p => p.rezept === 'erdbau' && p.parameter.quellen.gelaende === 'DGM1'
-            && p.rolle === 'dgm')).toHaveLength(1);
+        const erdbauIds = (l) => l.filter(s => s.art === 'erzeugt' && s.nachher.rezept === 'erdbau').map(s => s.globalId).sort();
+        expect(erdbauIds(zweite)).toEqual(erdbauIds(erst));
+        const aushub = erst.find(s => s.nachher?.rolle === 'aushub').globalId;
+        expect(erzeugt.get(aushub).parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);   // Liste +1, absolut
+        expect(erzeugt.get(aushub).parameter.quellen.gelaende).toBe('DGM1');
+        // Anzeigen des Ur-Geländes: genau eine, mit genau einem Vorgang
+        const anzeigen = [...erzeugt.values()].filter(p => p.rezept === 'anzeige' && p.parameter.quellen.gelaende === 'DGM1');
+        expect(anzeigen).toHaveLength(1);
+        expect(anzeigen[0].parameter.vorgaenge).toHaveLength(1);
     });
 
     it('ohne Anreicherung bleibt die Erstformung die Erstformung (kein stiller Wächter im Katalog)', () => {
@@ -168,14 +183,14 @@ describe('D6 / Anzeigeform', () => {
         expect(modellTagText({ modelId: 'm1', name: 'Kanal_R01.ifc' }, 3)).toBe('Kanal_R01.ifc');
     });
 
-    it('istAnzeigeform: der dgm-Teil einer Ableitung ja, Cut/Fill/Altbestand nein', () => {
+    it('istAnzeigeform: die Anzeige und der alte dgm-Teil einer Ableitung ja, Cut/Fill/Altbestand nein', () => {
         const erst = erstformung();
         const teil = (rolle) => erst.find(s => s.nachher?.rolle === rolle).nachher;
-        expect(istAnzeigeform(teil('dgm'))).toBe(true);
+        expect(istAnzeigeform(teil('anzeige'))).toBe(true);
         expect(istAnzeigeform(teil('aushub'))).toBe(false);
         expect(istAnzeigeform(teil('auftrag'))).toBe(false);
         expect(istAnzeigeform({ rezept: 'gelaende', parameter: { quelle: 'DGM1' } })).toBe(false);
-        expect(istAnzeigeform({ rezept: 'erdbau', rolle: 'anzeige' })).toBe(true);   // Stufe 1
+        expect(istAnzeigeform({ rezept: 'erdbau', rolle: 'dgm', ableitung: 'ab-alt' })).toBe(true);   // vor Stufe 1
         expect(istAnzeigeform(null)).toBe(false);
     });
 });

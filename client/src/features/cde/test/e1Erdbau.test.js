@@ -42,47 +42,57 @@ describe('Keine Daten verlieren — die Vorgabe als Vertrag', () => {
         expect(lies('services/IfcAutor.js')).toMatch(/deleteElements` ist NICHT zurücknehmbar/);
     });
 
-    it('die Subtraktion wird ein EIGENES IFC-Element — Cut, Fill und ein neues TERRAIN', () => {
+    it('die Subtraktion wird ein EIGENES IFC-Element — Cut und Fill; das TERRAIN ist die eine Anzeige, kein Export', () => {
         const teile = ABLEITUNGEN.erdbau.teile;
-        expect(teile.map(t => t.rolle)).toEqual(['aushub', 'auftrag', 'dgm']);
-        expect(teile.map(t => t.kategorie))
-            .toEqual(['IFCEARTHWORKSCUT', 'IFCEARTHWORKSFILL', 'IFCGEOGRAPHICELEMENT']);
+        // Stufe 1: KEIN dgm-Teil mehr je Vorgang — die geformte Fläche ist die
+        // Anzeige des Ur-Geländes (Rezept `anzeige`, export: false).
+        expect(teile.map(t => t.rolle)).toEqual(['aushub', 'auftrag']);
+        expect(teile.map(t => t.kategorie)).toEqual(['IFCEARTHWORKSCUT', 'IFCEARTHWORKSFILL']);
         // Ein Aushub mit Planum ist eine EXCAVATION, ein reines Gerinne ein TRENCH.
         const art = teile[0].predefinedType;
         expect(art({ operationen: [{ art: 'planum' }] })).toBe('EXCAVATION');
         expect(art({ operationen: [{ art: 'gerinne' }] })).toBe('TRENCH');
-        expect(teile[2].predefinedType).toBe('TERRAIN');
+        expect(ABLEITUNGEN.anzeige.teile).toEqual([expect.objectContaining({ rolle: 'anzeige', kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'TERRAIN', export: false })]);
     });
 
-    it('drei neue Bauteile mit eigenen GlobalIds, EIN Vorgang', () => {
+    it('zwei neue Bauteile mit eigenen GlobalIds in EINER Klammer, dazu die Anzeige — EIN Vorgang', () => {
         const schritte = b('graben-ausheben').anwenden(GELAENDE(), { mass: 2 }, { zug: UMRISS() });
         const neu = schritte.filter(s => s.art === 'erzeugt');
         expect(neu).toHaveLength(3);
         expect(new Set(neu.map(s => s.globalId)).size).toBe(3);
         expect(neu.every(s => s.globalId !== 'DGM-1')).toBe(true);
         expect(neu.every(s => s.modell === 'cde')).toBe(true);
-        // Alle drei nennen dieselbe Quelle — das Ur-Gelände bleibt der Bezug.
+        // Alle nennen dieselbe Quelle — das Ur-Gelände bleibt der Bezug.
         expect(neu.every(s => s.nachher.parameter.quellen.gelaende === 'DGM-1')).toBe(true);
+        const bauteile = neu.filter(s => s.nachher.rezept === 'erdbau');
+        expect(bauteile.map(s => s.nachher.rolle)).toEqual(['aushub', 'auftrag']);
+        expect(new Set(bauteile.map(s => s.nachher.ableitung)).size).toBe(1);
+        const anzeige = neu.find(s => s.nachher.rezept === 'anzeige');
+        expect(anzeige.nachher.parameter.vorgaenge).toEqual([{ ableitung: bauteile[0].nachher.ableitung, art: 'erdbau', titel: 'Urgelände · Gelände formen' }]);
     });
 
     it('gespeichert wird die QUELLE samt Operationsliste, nie ein gerechnetes Raster', () => {
         const schritte = b('graben-ausheben').anwenden(GELAENDE(), { mass: 2, neigung: 1.5 }, { zug: UMRISS() });
-        const neu = schritte.filter(s => s.art === 'erzeugt');
+        const neu = schritte.filter(s => s.art === 'erzeugt' && s.nachher.rezept === 'erdbau');
         const p = neu[0].nachher.parameter;
         expect(Object.keys(p).sort()).toEqual(['operationen', 'quellBasis', 'quellen', 'raster']);
         expect(p.operationen.map(o => o.art)).toEqual(['planum', 'boeschung']);
         // Kein Netz, kein Höhenfeld, kein Volumen — nur die Anweisung (Gesetz 5).
         expect(JSON.stringify(p)).not.toMatch(/heights|positions|volumen/);
-        // EINE Klammer hält die drei Teile zusammen, und jedes trägt die volle Liste.
+        // EINE Klammer hält die Teile zusammen, und jedes trägt die volle Liste.
         expect(new Set(neu.map(s => s.nachher.ableitung)).size).toBe(1);
         expect(neu.every(s => s.nachher.parameter.operationen.length === 2)).toBe(true);
+        // Die Anzeige trägt keine Operationen — nur die Reihenfolge der Vorgänge.
+        const anzeige = schritte.find(s => s.nachher?.rezept === 'anzeige').nachher.parameter;
+        expect(anzeige.operationen).toEqual([]);
+        expect(JSON.stringify(anzeige)).not.toMatch(/heights|positions|volumen/);
     });
 });
 
 describe('Ausheben und Auffüllen — dieselbe Handlung, ein Vorzeichen', () => {
     const opsVon = (id, werte) => {
         const s = b(id).anwenden(GELAENDE(), werte, { zug: UMRISS(4) });
-        return s.find(x => x.art === 'erzeugt').nachher.parameter.operationen;
+        return s.find(x => x.nachher?.rezept === 'erdbau').nachher.parameter.operationen;
     };
 
     it('die Tiefe zählt gegen das GEWACHSENE Gelände, gespeichert wird absolut (m NN)', () => {
@@ -118,7 +128,7 @@ describe('Ausheben und Auffüllen — dieselbe Handlung, ein Vorzeichen', () => 
 describe('Böschung anschliessen — die Böschung allein', () => {
     it('schreibt genau eine boeschung-Operation mit der getippten Höhe', () => {
         const s = b('boeschung-anschliessen').anwenden(GELAENDE(), { hoehe: 301, neigung: 2 }, { zug: UMRISS() });
-        const ops = s.find(x => x.art === 'erzeugt').nachher.parameter.operationen;
+        const ops = s.find(x => x.nachher?.rezept === 'erdbau').nachher.parameter.operationen;
         expect(ops).toHaveLength(1);
         expect(ops[0]).toMatchObject({ art: 'boeschung', parameter: { hoehe: 301, neigung: 2 } });
     });

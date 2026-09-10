@@ -45,7 +45,7 @@ import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
 // Default-Import: der benannte lief im Dev-Server und brach im vite build
 // (CJS-Interop) — derselbe Weg wie in IfcShapeOutlines.
 import polygonClipping from 'polygon-clipping';
-import { quellenVon } from './ableitung/Bezuege.js';
+import { erdbauStapelVon, quellenVon, urGelaendeVon } from './ableitung/Bezuege.js';
 
 export { quellenVon };
 
@@ -618,26 +618,39 @@ export function teileVon(erzeugtStand, ableitungId) {
 }
 
 /**
- * Traegt dieses (gelieferte) Gelaende schon eine Ableitung? — der Waechter
- * gegen den KLON (Stufe 0, D3).
+ * DER ERDBAU-STAND eines Geländes (Stufe 1) — was die Bearbeitung wissen
+ * muss, bevor sie einen Vorgang anhängt. Rein, aus dem erzeugt-Stand; der
+ * Viewer hängt es ans Subjekt (`el.erdbau`) und an jeden Gelände-Kandidaten
+ * (`gelaendeQuellen[i].erdbau`), weil `anwenden` synchron ist.
  *
- * Wer nach der ersten Formung nicht das geformte DGM, sondern das wieder
- * eingeblendete Ur-Gelaende anfasst, lief in die Erstformung: eine zweite
- * Klammer, drei neue GlobalIds, ein zweites `geloescht`, zwei „(geformt)" im
- * Raum und doppelte Massen im Mengenreiter. Nichts hinderte das. Jetzt
- * findet die Anreicherung die vorhandene Ableitung ueber ihre Quelle, und
- * `_gelaendeSchritte` haengt an — dieselben GlobalIds, volle Liste.
+ *   ur         das gelieferte Gelände hinter `gid` (gid selbst, wenn es geliefert ist)
+ *   anzeige    die Anzeige-Ableitung des Ur (globalId + bauplan) oder null
+ *   vorgaenge  der Stapel in Vorgangsreihenfolge [{ableitung, art, titel}]
+ *   letzter    der letzte Vorgang mit seinen Teilen und Operationen — an ihn
+ *              hängt eine Erdbau-Folgeformung, wenn er selbst `erdbau` ist
+ *   altDgm     dgm-Teile aus der Zeit vor Stufe 1 (werden beim Anfassen verborgen)
+ *   quellBasis / cell   Prüfmass und Zellweite des Ur aus dem Journal
  *
- * @returns {{ableitung: string, teile: Map}|null}
+ * Bis Stufe 0 hiess das `ableitungAuf` und kannte nur die eine erdbau-
+ * Ableitung — Graben und Grube ketteten sich daneben mit eigener Kopie.
  */
-export function ableitungAuf(erzeugtStand, urGid, { rezept = 'erdbau' } = {}) {
-    if (!urGid) return null;
-    for (const [, plan] of erzeugtStand ?? []) {
-        if (plan?.rezept === rezept && plan?.ableitung && plan?.parameter?.quellen?.gelaende === urGid) {
-            return { ableitung: plan.ableitung, teile: teileVon(erzeugtStand, plan.ableitung) };
-        }
-    }
-    return null;
+export function erdbauStandVon(erzeugtStand, gid) {
+    if (!gid) return null;
+    const stand = erzeugtStand instanceof Map ? erzeugtStand : new Map(Object.entries(erzeugtStand ?? {}));
+    const ur = urGelaendeVon(stand, gid, { rezeptNach });
+    const { anzeige, vorgaenge, altDgm } = erdbauStapelVon(stand, ur, { rezeptNach });
+    const l = vorgaenge.at(-1) ?? null;
+    const basis = anzeige?.bauplan
+        ?? vorgaenge.find(v => v.bauplan?.parameter?.quellen?.gelaende === ur)?.bauplan
+        ?? vorgaenge[0]?.bauplan ?? null;
+    return {
+        ur, anzeige, altDgm,
+        vorgaenge: vorgaenge.map(({ ableitung, art, titel }) => ({ ableitung, art, titel })),
+        letzter: l ? { ableitung: l.ableitung, art: l.art, teile: teileVon(stand, l.ableitung),
+                       operationen: l.bauplan?.parameter?.operationen ?? [] } : null,
+        quellBasis: basis?.parameter?.quellBasis?.gelaende ?? null,
+        cell: basis?.parameter?.raster?.cell ?? null,
+    };
 }
 
 /**
@@ -666,12 +679,22 @@ export function istAnzeigeform(bauplan) {
  * Listen von selbst) — ein Teil allein wäre ein halbes Ding.
  */
 export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, raster = {},
-                                     operationen = [], name = '', bestehend = null } = {}) {
+                                     operationen = [], name = '', bestehend = null, vorgaenge = null } = {}) {
     const r = ABLEITUNGEN[rezept];
     if (!r) throw new Error(`Ableitung „${rezept}" gibt es nicht`);
     const ableitung = bestehend?.ableitung ?? neueAbleitungsId();
-    const parameter = { quellen, quellBasis, raster, operationen };
+    // `vorgaenge` trägt nur die Anzeige (Stufe 1): die Reihenfolge der
+    // Erdbau-Vorgänge — eine Entscheidung, nichts Gerechnetes.
+    const parameter = { quellen, quellBasis, raster, operationen, ...(vorgaenge ? { vorgaenge } : {}) };
     const vorhandene = bestehend?.teile instanceof Map ? bestehend.teile : new Map(Object.entries(bestehend?.teile ?? {}));
+    // NACHGEZOGENE Teile: Rollen, die das Rezept nicht mehr kennt (der
+    // `dgm`-Teil aus der Zeit vor Stufe 1), aber die Klammer noch trägt. Sie
+    // bekommen dieselben Parameter — eine Klammer, EIN Parametersatz; sonst
+    // meldete der Lauf „uneinheitlich" und baute nichts.
+    const nachgezogen = [...vorhandene]
+        .filter(([rolle, alt]) => alt?.globalId && alt?.bauplan && !r.teile.some(t => t.rolle === rolle))
+        .map(([, alt]) => ({ art: 'erzeugt', globalId: alt.globalId, modell: 'cde',
+                             nachher: { ...alt.bauplan, ableitung, parameter } }));
     return r.teile.map(teil => {
         const alt = vorhandene.get(teil.rolle);
         const pt = typeof teil.predefinedType === 'function' ? teil.predefinedType(parameter) : (teil.predefinedType ?? null);
@@ -691,7 +714,7 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
                 parameter,
             },
         };
-    });
+    }).concat(nachgezogen);
 }
 
 /**

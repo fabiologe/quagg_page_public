@@ -17,7 +17,20 @@
  *     kein Fehler, das Bauteil entsteht einfach nicht, die Kennzahl sagt 0.
  *   - Der Cache stirbt mit dem Lauf. Ein überlebender Cache wäre stilles
  *     Veralten.
+ *
+ * DER ERDBAU-STAPEL (Stufe 1 des Aushub-Fachmodells, 2026-09-10): alle
+ * Erdbau-Vorgänge (Gelände formen, Kanalgraben, Bauwerksgrube) fussen auf dem
+ * GELIEFERTEN Gelände und werden in Vorgangsreihenfolge übereinander gefaltet.
+ * Jeder Vorgang rechnet seinen Aushub zwischen „vorher" (das Gelände nach
+ * allen Vorgängern) und „nachher" — so nimmt der zweite Cut nur, was noch da
+ * ist, und die Summe der Vorgänge ist die Gesamtmasse. Vorher kettete sich
+ * jede Ableitung an das geformte DGM der vorigen und brachte ihre eigene
+ * Geländekopie mit: drei Vorgänge, drei TERRAIN, zwei davon verborgen.
+ * Die Reihenfolge entscheidet der Planer (`vorgaenge` an der Anzeige-
+ * Ableitung); was er nicht geordnet hat, folgt in Stand-Reihenfolge.
  */
+import { formeNach } from '../gelaende/Operationen.js';
+import { erdbauStapelVon, urGelaendeVon } from './Bezuege.js';
 
 /**
  * @param {object} opts
@@ -40,6 +53,38 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
     const misserfolge = [];
     /** Formpaare, die nicht geprüft werden konnten — sichtbar, nicht verschluckt. */
     const _ungeprueft = [];
+    const stapelMemo = new Map();  // urGid → erdbauStapelVon(...)
+
+    // ── Der Erdbau-Stapel ────────────────────────────────────────────────────
+
+    /** Formt dieses Rezept das Gelände? (erdbau, kanalgraben, bauwerksgrube — nie die Anzeige) */
+    function _istErdbau(rz) { return !!rz?.erdbau; }
+
+    /** Das Ur-Gelände hinter einer Quelle — geliefert, oder die Wurzel einer Alt-Kette. */
+    function urGidVon(gid) { return urGelaendeVon(stand, gid, { rezeptNach }); }
+
+    /**
+     * Die Erdbau-Vorgänge auf EINEM Ur-Gelände, geordnet — die Regel steht
+     * in `erdbauStapelVon` (Bezuege.js), hier nur memoisiert je Lauf.
+     * @returns {string[]} Ableitungs-Kennungen in Vorgangsreihenfolge
+     */
+    function stapelVon(urGid) {
+        return _stapel(urGid).vorgaenge.map(v => v.ableitung);
+    }
+    function _stapel(urGid) {
+        if (!stapelMemo.has(urGid)) stapelMemo.set(urGid, erdbauStapelVon(stand, urGid, { rezeptNach }));
+        return stapelMemo.get(urGid);
+    }
+    async function opsVor(ableitungId, urGid, { alle = false } = {}) {
+        const { vorgaenge } = _stapel(urGid);
+        const bis = alle ? vorgaenge.length : vorgaenge.findIndex(v => v.ableitung === ableitungId);
+        const ops = [];
+        for (const v of vorgaenge.slice(0, Math.max(0, bis))) {
+            const erg = await _leiten(v.bauplan);
+            ops.push(...(erg?.ops ?? []));
+        }
+        return ops;
+    }
 
     function _eintrag(ableitungId, rezeptId) {
         if (!ableitungen.has(ableitungId)) {
@@ -65,7 +110,14 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             const rezept = rezeptNach(bauplan.rezept);
             if (typeof rezept?.leite !== 'function') throw new Error(`Rezept „${bauplan.rezept}" ist keine Ableitung`);
             const quellen = {};
-            const genannt = bauplan.parameter?.quellen ?? {};
+            const genanntRoh = bauplan.parameter?.quellen ?? {};
+            // ERDBAU FUSST AUF DEM UR-GELÄNDE (Stufe 1): nennt der Bauplan eine
+            // Anzeigeform oder ein Alt-DGM als Gelände, wird die Wurzel aufgelöst.
+            // Das Rezept sieht dann das gelieferte Gelände — nach allen
+            // Vorgängern gefaltet (unten), nie die Kopie eines anderen Vorgangs.
+            const erdbauArtig = _istErdbau(rezept) || rezept.id === 'anzeige';
+            const urGid = erdbauArtig && genanntRoh.gelaende ? urGidVon(genanntRoh.gelaende) : null;
+            const genannt = urGid ? { ...genanntRoh, gelaende: urGid } : genanntRoh;
             for (const [schlitz, roh] of Object.entries(genannt)) {
               // Ein Schlitz darf eine LISTE tragen (B3: `rohre`, `schaechte`) —
               // jede Quelle läuft durch dasselbe Gate und dieselbe Auflösung;
@@ -95,6 +147,22 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
               }
               quellen[schlitz] = liste ? daten : daten[0];
             }
+            // DER STAPEL: das Gelände, das dieses Rezept sieht, ist das Ur-Gelände
+            // nach allen VORGÄNGERN. Die Anzeige sieht es nach ALLEN Vorgängen.
+            let stapel = null;
+            if (urGid && quellen.gelaende) {
+                const vor = await opsVor(id, urGid, { alle: rezept.id === 'anzeige' });
+                const urRaster = quellen.gelaende;
+                const vorher = vor.length ? formeNach(urRaster, vor).raster : urRaster;
+                quellen.gelaende = vorher;
+                stapel = {
+                    ur: urGid, urRaster, ableitung: id, opsVor: vor,
+                    reihe: Math.max(0, stapelVon(urGid).indexOf(id)),
+                    // Dieselbe Faltung für ein anderes Raster derselben Quelle —
+                    // der feine Korridor braucht die Vorgänger genauso.
+                    vorherVon: (r) => (vor.length && r ? formeNach(r, vor).raster : r),
+                };
+            }
             // ZUSATZQUELLEN (Teil XVII, B3): ein Rezept darf NACH den Hauptquellen
             // weitere Formen derselben Kennungen verlangen — mit Wissen um die
             // anderen Quellen (der Kanalgraben schneidet sich ein feines Raster
@@ -108,7 +176,23 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                     quellen[name] = daten;
                 }
             }
-            return rezept.leite(bauplan.parameter, quellen, { kernel, hoehenversatz });
+            const erg = await rezept.leite(bauplan.parameter, quellen, { kernel, hoehenversatz, stapel });
+            // DER EINTRAG entsteht HIER, nicht erst in `baue`: eine Ableitung,
+            // die nur als Vorgänger im Stapel gefaltet wurde (Stufe 1), hat
+            // trotzdem Kennzahlen und Befunde — der Mengenreiter und der Export
+            // fragen danach, ohne je ihr Teil gebaut zu haben.
+            const eintrag = _eintrag(id, bauplan.rezept);
+            eintrag.kennzahlen = erg.kennzahlen ?? {};
+            eintrag.befunde = [...(eintrag.befunde ?? []), ...(erg.befunde ?? [])]
+                .filter((b, i, a) => a.findIndex(x => x.regel === b.regel && x.text === b.text) === i);
+            // Ungeprüfte Formpaare wandern als WARNUNG mit: „Gate lief nicht"
+            // ist etwas anderes als „Gate war zufrieden", und der Unterschied
+            // muss sichtbar sein, sonst hat man ein Gate, das man nicht sieht.
+            eintrag.warnungen = [...new Set([
+                ...(eintrag.warnungen ?? []), ...(erg.warnungen ?? []), ..._ungeprueft,
+            ])];
+            if (erg.bild) eintrag.bild = erg.bild;         // das Planbild (G5), nie im Journal
+            return erg;
         })();
         memo.set(id, versprechen);
         return versprechen;
@@ -213,16 +297,6 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         try {
             const erg = await _leiten(bauplan);
             const eintrag = _eintrag(bauplan.ableitung ?? `einzel:${bauplan.rolle ?? ''}`, bauplan.rezept);
-            eintrag.kennzahlen = erg.kennzahlen ?? {};
-            eintrag.befunde = [...(eintrag.befunde ?? []), ...(erg.befunde ?? [])]
-                .filter((b, i, a) => a.findIndex(x => x.regel === b.regel && x.text === b.text) === i);
-            // Ungeprüfte Formpaare wandern als WARNUNG mit: „Gate lief nicht"
-            // ist etwas anderes als „Gate war zufrieden", und der Unterschied
-            // muss sichtbar sein, sonst hat man ein Gate, das man nicht sieht.
-            eintrag.warnungen = [...new Set([
-                ...(eintrag.warnungen ?? []), ...(erg.warnungen ?? []), ..._ungeprueft,
-            ])];
-            if (erg.bild) eintrag.bild = erg.bild;         // das Planbild (G5), nie im Journal
             const teil = erg.teile?.[bauplan.rolle] ?? null;
             if (!teil) {
                 if (!eintrag.leer.includes(bauplan.rolle)) eintrag.leer.push(bauplan.rolle);
@@ -240,5 +314,5 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         }
     }
 
-    return { baue, formVon, ableitungen, misserfolge };
+    return { baue, formVon, ableitungen, misserfolge, stapelVon, urGidVon, opsVor };
 }
