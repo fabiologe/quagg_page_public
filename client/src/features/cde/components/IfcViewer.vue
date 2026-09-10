@@ -1187,6 +1187,12 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId) };
     }
 
+    // DAS MODELL, AN DEM DIE BEARBEITUNG HÄNGT (Stufe 4, Lücke L6): der Commit
+    // nannte bisher das ZUERST geladene Modell — ein Gerinne auf dem
+    // Testgelände trug die sha des Kanalnetzes. Jetzt: die eigene Datei eines
+    // gelieferten Bauteils, bei eigenen die Datei seines UR-Geländes.
+    if (!angereichert.modellSha) angereichert = await _mitModellSha(angereichert);
+
     const kategorie = String(result.category ?? result.type ?? '').toUpperCase();
     // DIE EIGENEN KÖRPER als Werkzeug einer Aussparung (G7) — aus dem Journal
     // benannt, nie aus der Engine geraten.
@@ -2178,6 +2184,27 @@ async function quellDokumenteFuer(bauteile) {
   for (const [gid, { modelId }] of karte) dazu(ablage.identitaet(modelId)?.sha256 ?? null, gid);
   for (const gid of fehlend) dazu(null, gid);
   return [...je.values()];
+}
+
+/**
+ * Die sha256 der Datei, an der eine Bearbeitung hängt — für das Subjekt und
+ * jeden Gelände-Kandidaten (Stufe 4, Lücke L6). Geliefert: die eigene Datei.
+ * Eigen (Anzeige, Aushub): die Datei seines UR-Geländes, gefunden über den
+ * GUID-Index der geladenen Modelle, nicht über den Namen. Unbekannt bleibt
+ * `null` — dann nimmt `ausfuehren` wie bisher den Wert des Aufrufers.
+ */
+async function _mitModellSha(el) {
+  const shaDerDatei = (modelId) => (modelId ? ablage.identitaet(modelId)?.sha256 ?? null : null);
+  const urs = [el, ...(el.gelaendeQuellen ?? [])]
+    .filter(x => !shaDerDatei(x.modelId) && x.erdbau?.ur && !String(x.erdbau.ur).startsWith('cde-'))
+    .map(x => x.erdbau.ur);
+  const { karte } = urs.length && engine.value
+    ? await karteMitEngine(engine.value, [...new Set(urs)]) : { karte: new Map() };
+  const shaVon = (x) => shaDerDatei(x.modelId) ?? (x.erdbau?.ur ? shaDerDatei(karte.get(x.erdbau.ur)?.modelId) : null);
+  return {
+    ...el, modellSha: shaVon(el),
+    ...(el.gelaendeQuellen ? { gelaendeQuellen: el.gelaendeQuellen.map(k => ({ ...k, modellSha: shaVon(k) })) } : {}),
+  };
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */

@@ -70,3 +70,38 @@ export function imErdbauEnthalten(dokumente) {
     }
     return aus;
 }
+
+/**
+ * Die LINIE eines Registerdokuments — Spiegel von `cde._linie` auf dem Server:
+ * die IFCPROJECT-GlobalId, sonst Stamm und Art (der Server rechnet den Stamm
+ * seit Stufe 4 aus dem Dateinamen und liefert ihn so aus).
+ */
+export function linieVon(d) {
+    return d?.projectGlobalId || d?.projekt_global_id || `${d?.basisname ?? ''}|${d?.art ?? ''}`;
+}
+
+/**
+ * Welche Quellen eines ERZEUGTEN Dokuments haben inzwischen eine neuere
+ * Revision im Register? (Stufe 4.) Ein Erdbau aus Gelände R01, während R02 da
+ * ist, zeigt den Aushub am alten Gelände — „neu erzeugen" ist dann der Rat.
+ * Erzeugte Dokumente zählen als „neuer" nicht mit: nur Lieferungen.
+ *
+ * @returns {Array<{quelle: string, neu: string, revision: number}>}
+ */
+export function quellenVeraltet(dok, alle) {
+    const quellen = dok?.herkunft?.quellen ?? [];
+    if (!quellen.length) return [];
+    const liste = alle ?? [];
+    const aus = [];
+    for (const q of quellen) {
+        const quell = liste.find(x => x.sha256 === q.sha256);
+        if (!quell) continue;                                   // nicht mehr im Register — nichts zu vergleichen
+        const linie = linieVon(quell);
+        const rev = Number(quell.revision ?? q.revision ?? 0);
+        const neuer = liste
+            .filter(x => x.sha256 !== quell.sha256 && !x.herkunft?.art && linieVon(x) === linie && Number(x.revision ?? 0) > rev)
+            .sort((a, b) => Number(b.revision ?? 0) - Number(a.revision ?? 0))[0];
+        if (neuer) aus.push({ quelle: quell.name ?? quell.datei, neu: neuer.name ?? neuer.datei, revision: Number(neuer.revision) });
+    }
+    return aus;
+}

@@ -293,7 +293,7 @@
             <td class="doc-name" :title="d.sha256">{{ d.name }}</td>
             <!-- Stufe 3 (Aushub-Fachmodell): ein erzeugtes Dokument sagt, woraus. -->
             <td class="doc-herkunft">
-              <span v-if="herkunftJe.get(d.sha256)" class="cde-badge mute"
+              <span v-if="herkunftJe.get(d.sha256)" class="cde-badge" :class="herkunftJe.get(d.sha256).veraltet ? 'warn' : 'mute'"
                     :title="herkunftJe.get(d.sha256).titel">{{ herkunftJe.get(d.sha256).text }}</span>
             </td>
             <td class="doc-rev">{{ d.revision }}</td>
@@ -620,6 +620,9 @@
           </span>
         </div>
         <p v-if="!verbundModelle.length" class="tm-satz">Der Satz enthält kein Modell.</p>
+        <p v-for="v in verbundErdbauVeraltet" :key="`alt-${v.erdbau}`" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> {{ v.erdbau }} wurde aus {{ v.quelle }} gebaut — {{ v.neu }} ist neuer: Erdbau neu registrieren
+        </p>
         <!-- Stufe 3: der Erdbau kommt ENTWEDER aus einem Dokument des Satzes ODER
              live aus der CDE — beides zugleich stellte den Aushub doppelt in den
              Verbund, und der Server lehnt es ab. -->
@@ -730,7 +733,7 @@ import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
 import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
-import { herkunftChip, imErdbauEnthalten } from '../services/Herkunft.js';
+import { herkunftChip, imErdbauEnthalten, quellenVeraltet } from '../services/Herkunft.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1230,6 +1233,11 @@ const verbundOhneWirt = computed(() =>
 const verbundWeggelassen = computed(() => imErdbauEnthalten(verbundModelle.value));
 const verbundErdbauImSatz = computed(() =>
   verbundModelle.value.filter(d => d.herkunft?.art === 'erdbau').map(d => d.datei ?? d.name));
+// Stufe 4: ein Erdbau-Dokument im Satz, dessen Gelände im Register neuer ist.
+// Führt der Satz die neuere Revision, lehnt der Server ab; sonst warnt der Dialog.
+const verbundErdbauVeraltet = computed(() => verbundModelle.value
+  .filter(d => d.herkunft?.art === 'erdbau')
+  .flatMap(d => quellenVeraltet(d, cde.dokumente).map(v => ({ ...v, erdbau: d.datei ?? d.name }))));
 
 function verbundOeffnen() {
   // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder
@@ -1467,7 +1475,17 @@ onBeforeUnmount(() => {
 const sortedDokumente = computed(() =>
   [...cde.dokumente].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)));
 // Stufe 3: der Herkunfts-Chip je Registerzeile — einmal je Stand gerechnet, nicht je Zelle.
-const herkunftJe = computed(() => new Map(sortedDokumente.value.map(d => [d.sha256, herkunftChip(d)])));
+const herkunftJe = computed(() => new Map(sortedDokumente.value.map(d => {
+  const chip = herkunftChip(d);
+  if (!chip) return [d.sha256, null];
+  // Stufe 4: ist eine Quelle inzwischen neuer? Dann sagt der Chip es — der
+  // Erdbau zeigt den Aushub sonst am alten Gelände.
+  const alt = quellenVeraltet(d, cde.dokumente);
+  return [d.sha256, alt.length
+    ? { ...chip, veraltet: true, text: `${chip.text} · Quelle neuer`,
+        titel: [...alt.map(v => `${v.quelle} → ${v.neu} vorhanden — neu erzeugen`), chip.titel].join(' · ') }
+    : chip];
+})));
 
 /** Beim ersten geladenen Modell die Struktur-Leiste anbieten. */
 function onModelLoaded() {

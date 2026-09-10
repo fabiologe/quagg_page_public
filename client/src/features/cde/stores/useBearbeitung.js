@@ -634,7 +634,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
             // nicht überschreiben.
             const eintrag = await aenderungen.eintragen({
-                basis, modell, ...beschreibung, wer, modellSha,
+                basis, modell, ...beschreibung, wer,
+                // DAS BEARBEITETE MODELL (Stufe 4, Lücke L6): was die Bearbeitung
+                // selbst sagt (Erdbau: die Datei des Ur-Geländes), sonst das
+                // Subjekt, sonst der Aufrufer — der nennt nur das ZUERST
+                // geladene Modell, und genau das stand bis hierher in jedem Commit.
+                modellSha: beschreibung.modellSha ?? gegenstand?.modellSha ?? modellSha,
                 ...(vorgang ? { vorgang, vorgangTitel: b.titel } : {}),
                 // WAS BEIM SETZEN BEKANNT WAR (Stufe 14.4). Eine Momentaufnahme
                 // der Befunde, nicht ihr laufender Stand — der wird abgeleitet

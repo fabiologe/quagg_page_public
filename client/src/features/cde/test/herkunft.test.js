@@ -8,7 +8,7 @@
  * steht dasselbe Manifest aus Sicht des Viewers.
  */
 import { describe, expect, it } from 'vitest';
-import { herkunftChip, imErdbauEnthalten } from '../services/Herkunft.js';
+import { herkunftChip, imErdbauEnthalten, linieVon, quellenVeraltet } from '../services/Herkunft.js';
 
 const GELAENDE = { sha256: 'a'.repeat(64), datei: 'Gelaende.ifc', revision: 1 };
 const erdbau = (datei, quellen = [GELAENDE], mehr = {}) => ({
@@ -56,5 +56,30 @@ describe('Was im Verbund wegfällt — dieselbe Regel wie der Server', () => {
         expect(imErdbauEnthalten([ausManifest]).get(GELAENDE.sha256)).toBe('Erdbau_Boden_R01.ifc');
         expect(imErdbauEnthalten([]).size).toBe(0);
         expect(imErdbauEnthalten(null).size).toBe(0);
+    });
+});
+
+describe('Veraltete Quellen (Stufe 4) — das Gelände ist im Register neuer als im Erdbau', () => {
+    const r01 = { sha256: 'g1', name: 'Gelaende_R01.ifc', basisname: 'Gelaende', art: 'modell', revision: 1 };
+    const r02 = { sha256: 'g2', name: 'Gelaende_R02.ifc', basisname: 'Gelaende', art: 'modell', revision: 2 };
+    const erdbauAus = (q) => ({ sha256: 'e1', name: 'Erdbau_Boden_R01.ifc', basisname: 'Erdbau_Boden', art: 'modell', revision: 1,
+                                herkunft: { art: 'erdbau', quellen: [{ sha256: q.sha256, datei: q.name, revision: q.revision }] } });
+
+    it('linieVon spiegelt den Server: Projektkennung vor Stamm|Art', () => {
+        expect(linieVon(r01)).toBe('Gelaende|modell');
+        expect(linieVon({ ...r01, projectGlobalId: '0Osfh3c9f9_PSSk12wpzoa' })).toBe('0Osfh3c9f9_PSSk12wpzoa');
+    });
+
+    it('aus R01 gebaut, R02 liegt da: „neu erzeugen" — aus R02 gebaut: nichts', () => {
+        expect(quellenVeraltet(erdbauAus(r01), [r01, r02, erdbauAus(r01)]))
+            .toEqual([{ quelle: 'Gelaende_R01.ifc', neu: 'Gelaende_R02.ifc', revision: 2 }]);
+        expect(quellenVeraltet(erdbauAus(r02), [r01, r02])).toEqual([]);
+    });
+
+    it('ein erzeugtes Dokument ist nie „die neuere Quelle"; eine Quelle, die nicht mehr im Register steht, ist unbekannt — nicht veraltet', () => {
+        const verbundR05 = { sha256: 'v5', name: 'Verbund_Gelaende_R05.ifc', basisname: 'Gelaende', art: 'modell', revision: 5, herkunft: { art: 'verbund' } };
+        expect(quellenVeraltet(erdbauAus(r01), [r01, verbundR05])).toEqual([]);
+        expect(quellenVeraltet(erdbauAus(r01), [r02])).toEqual([]);
+        expect(quellenVeraltet({ sha256: 'x', name: 'Hochgeladen.ifc' }, [r01, r02])).toEqual([]);
     });
 });

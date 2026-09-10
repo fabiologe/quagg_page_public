@@ -1200,12 +1200,17 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const ziel = ebene ?? vorgabeEbene.value;
         const s = sitzungJe[ziel].value;
         if (!s || !s.schrittIds.length) { sitzungJe[ziel].value = null; return null; }
+        // Das Modell SEINER Schritte (Stufe 4, Lücke L6) — der Aufrufer (der
+        // Commit-Dialog) kennt nur das zuerst geladene. `_commitAus` hielt es
+        // schon so; die Sitzung als einziger Weg nicht.
+        const je = new Map(_liste(ziel).value.map(e => [e.id, e]));
+        const ausSchritten = s.schrittIds.map(id => je.get(id)?.modellSha).find(Boolean) ?? null;
         const commit = {
             id: 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
             nachricht: (nachricht ?? '').trim() || nachrichtVorschlag() || 'Bearbeitung',
             wer: wer || s.wer || '',
             wann: Date.now(),
-            modellSha,
+            modellSha: ausSchritten ?? modellSha,
             schrittIds: [...s.schrittIds],
         };
         commitsJe[ziel].value.push(commit);

@@ -452,6 +452,15 @@ function _anzeigeSchritte(eb, neuerVorgang, { ur, quellBasis, raster, name }) {
 }
 
 /**
+ * Jeder Schritt eines Erdbau-Vorgangs hängt an der DATEI seines Ur-Geländes
+ * (Stufe 4, Lücke L6) — auch wenn das Subjekt ein Rohr oder ein Bauwerk aus
+ * einer anderen Lieferung ist. Ohne bekannte sha bleibt es beim Aufrufer.
+ */
+function _anModell(schritte, sha) {
+    return sha ? schritte.map(s => ({ ...s, modellSha: sha })) : schritte;
+}
+
+/**
  * EIN ERDBAU-VORGANG auf einem Gelände-Kandidaten (Kanalgraben, Bauwerksgrube):
  * Quelle ist immer das UR-Gelände, die Anzeige bekommt den Vorgang angehängt,
  * verborgen wird, was sie ersetzt. Dass Graben und Grube sich vorher von
@@ -467,12 +476,12 @@ function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name
         rezept, quellen: { ...quellen, gelaende: ur }, quellBasis: { ...quellBasis, ...basisMass }, raster, operationen, name,
     });
     const urName = _urName({ name: quelle.name }, eb);
-    return [
+    return _anModell([
         ..._verbergen(ur, eb, quelle.globalId),
         ..._anzeigeSchritte(eb, { ableitung: neu[0].nachher.ableitung, art: rezept, titel: vorgangstitel(neu[0].nachher, rezeptNach(rezept)) },
                             { ur, quellBasis: basisMass, raster, name: urName }),
         ...neu,
-    ];
+    ], quelle.modellSha);
 }
 
 function _gelaendeSchritte(el, neueOps) {
@@ -481,7 +490,7 @@ function _gelaendeSchritte(el, neueOps) {
     // OHNE Anreicherung (headless) am dgm-Teil einer erdbau-Ableitung:
     // Folgeformung an dieser Klammer — wie vor Stufe 1, der Teil zieht nach.
     if (!eb && bauplan?.rezept === 'erdbau' && bauplan.ableitung) {
-        return ableitungsSchritte({
+        return _anModell(ableitungsSchritte({
             rezept: 'erdbau',
             bestehend: { ableitung: bauplan.ableitung, teile: el.stand?.teile ?? null },
             quellen: bauplan.parameter?.quellen ?? {},
@@ -489,7 +498,7 @@ function _gelaendeSchritte(el, neueOps) {
             raster: bauplan.parameter?.raster ?? {},
             operationen: [...(bauplan.parameter?.operationen ?? []), ...neueOps],
             name: _urName(el),
-        });
+        }), el?.modellSha);
     }
     const alt = bauplan?.rezept === 'gelaende' ? bauplan : null;   // Altbestand vor Teil XIV
     // Das UR: aus der Anreicherung; ohne sie (headless) wenigstens EIN Hop
@@ -509,7 +518,7 @@ function _gelaendeSchritte(el, neueOps) {
     // Formung, die nach dem Graben kommt, darf ihn nicht rückwirkend ändern.
     const letzter = eb?.letzter ?? null;
     if (letzter?.art === 'erdbau') {
-        return [
+        return _anModell([
             ...verbergen,
             ..._anzeigeSchritte(eb, null, { ur, quellBasis, raster, name }),
             ...ableitungsSchritte({
@@ -519,7 +528,7 @@ function _gelaendeSchritte(el, neueOps) {
                 operationen: [...letzter.operationen, ...neueOps],
                 name,
             }),
-        ];
+        ], el?.modellSha);
     }
     const neu = ableitungsSchritte({
         rezept: 'erdbau',
@@ -527,12 +536,12 @@ function _gelaendeSchritte(el, neueOps) {
         operationen: [...(alt?.parameter?.operationen ?? []), ...neueOps],
         name,
     });
-    return [
+    return _anModell([
         ...verbergen,
         ..._anzeigeSchritte(eb, { ableitung: neu[0].nachher.ableitung, art: 'erdbau', titel: vorgangstitel(neu[0].nachher, rezeptNach('erdbau')) },
                             { ur, quellBasis, raster, name }),
         ...neu,
-    ];
+    ], el?.modellSha);
 }
 
 /**
