@@ -637,6 +637,9 @@
         <p v-for="l in verbundEigenbauLuecken" :key="l.art" class="tm-meldung">
           <CdeIcon name="warn" :size="12" /> Eigenbau, nicht im Verbund ({{ l.art }}): {{ l.anzahl }}
         </p>
+        <p v-for="w in verbundFehlendeWirte" :key="w" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> Aushub ohne sein Gelände ({{ w }}) — das gelieferte Gelände in den Satz aufnehmen
+        </p>
         <div v-for="b in verbundLauf.befunde || []" :key="b.id" class="tm-zeile" :title="b.sagt">
           <CdeIcon :name="b.ok === true ? 'status-ok' : b.ok === false ? 'status-error' : 'status-warn'" :size="12" />
           <span class="tm-name">{{ b.id }} · {{ b.titel }}</span>
@@ -1183,6 +1186,11 @@ const verbundEigenbauLuecken = computed(() =>
   Object.entries(verbundLauf.value?.bericht?.eigenbau?.nicht_im_paket ?? {})
     .map(([art, liste]) => ({ art, anzahl: Array.isArray(liste) ? liste.length : Number(liste) || 0 }))
     .filter(l => l.anzahl > 0));
+// Aushübe des Eigenbaus, deren Wirt (das GELIEFERTE Gelände) nicht im Satz liegt.
+// Der Verbund bleibt dann zu Recht rot (IfcRelVoidsElement fehlt, SPF lehnt ab) —
+// aber er soll sagen, WAS fehlt, statt nur, dass etwas fehlt.
+const verbundFehlendeWirte = computed(() =>
+  verbundLauf.value?.bericht?.nachbearbeitung?.wirte?.fehlende_wirte ?? []);
 
 function verbundOeffnen() {
   // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder

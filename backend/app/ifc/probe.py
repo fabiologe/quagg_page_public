@@ -87,6 +87,23 @@ def finde_node() -> str | None:
     return None
 
 
+def umgebung_fuer_node() -> dict:
+    """Die Umgebung fuer node — OHNE die IPC-Variablen, die pm2 durchsickern laesst.
+
+    GEFUNDEN IM ERSTEN DURCHSTICH DURCH DIE PRODUKTION (2026-09-10): pm2 startet
+    quagg-api mit `NODE_CHANNEL_FD=3` — sein IPC-Kanal zum Kind. Die Variable erbt
+    jeder Enkel, auch dieser node. Der glaubt dann, auf Deskriptor 3 haenge ein
+    Elternprozess, rechnet sauber, druckt „EINIG" und stirbt beim Beenden an
+    SIGABRT (Rueckgabewert -6). V09 lehnte einen einwandfreien Verbund ab.
+
+    Nachgestellt mit der Umgebung aus /proc/<pid>/environ: mit der Variable -6,
+    ohne sie 0. Im Test-Client und im Probelauf gab es sie nicht — deshalb war
+    beides gruen, und erst die Produktion zeigte es.
+    """
+    import os
+    return {k: v for k, v in os.environ.items() if not k.startswith("NODE_CHANNEL")}
+
+
 def zweiter_motor(verbund: Path, bericht: Path) -> dict:
     """V09 — dieselbe Datei, von web-ifc gelesen."""
     skript = CLIENT / "scripts/verbund_webifc.mjs"
@@ -99,10 +116,19 @@ def zweiter_motor(verbund: Path, bericht: Path) -> dict:
                 "ok": None, "sagt": "node nicht gefunden (QUAGG_NODE, PATH, nvm, /usr/bin) — "
                                     "UNGEPRUEFT, nicht bestanden"}
     lauf = subprocess.run([node, str(skript), str(verbund), str(bericht)],
-                          cwd=CLIENT, capture_output=True, text=True, timeout=600)
+                          cwd=CLIENT, capture_output=True, text=True, timeout=600,
+                          env=umgebung_fuer_node())
     ausgabe = (lauf.stdout + lauf.stderr).strip()
+    if lauf.returncode != 0:
+        # Der Rueckgabewert gehoert in den Befund. Beim ersten Durchstich durch die
+        # Produktion stand hier „EINIG — beide Motoren sehen dieselbe Datei" — und
+        # V09 war trotzdem rot, ohne zu sagen warum. Ein Urteil, das seinem eigenen
+        # Befund widerspricht, muss den Grund nennen. Negativ heisst Signal
+        # (-9 = OOM-Killer, -11 = Absturz).
+        signal = f", Signal {-lauf.returncode}" if lauf.returncode < 0 else ""
+        ausgabe += f"\n[node {node} endete mit Rueckgabewert {lauf.returncode}{signal}]"
     return {"id": "V09", "titel": "zweiter Motor (web-ifc) sieht dasselbe",
-            "ok": lauf.returncode == 0, "sagt": ausgabe[-1500:]}
+            "ok": lauf.returncode == 0, "sagt": ausgabe[-1500:], "zahl": lauf.returncode}
 
 
 def _main(argv=None):
