@@ -1,0 +1,315 @@
+"""Stufe 6 (light): CDE-Register im Projektordner."""
+
+import io
+import json
+from types import SimpleNamespace
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.deps import get_current_active_user
+from app.api.projekt.core import cde, ordner, projekte
+from app.api.projekt.router import router
+
+
+def _client():
+    app = FastAPI()
+    app.include_router(router, prefix="/FastAPI/projekte")
+    app.dependency_overrides[get_current_active_user] = lambda: SimpleNamespace(role="INTERNAL", username="fabio")
+    return TestClient(app)
+
+
+def test_basisname():
+    assert cde._basisname("Kanal_R03.ifc") == "Kanal"
+    assert cde._basisname("Lageplan-v2.pdf") == "Lageplan"
+    assert cde._basisname("Bruecke rev 12.ifc") == "Bruecke"
+    assert cde._basisname("Modell.ifc") == "Modell"
+    assert cde._basisname("KanalR03.ifc") == "Kanal"
+
+
+def test_basisname_laesst_angehaengte_ziffern_stehen():
+    """Eine Ziffer OHNE Trenner ist Teil des Namens, keine Revision.
+
+    Aufgefallen am ersten echten Upload in 1337_Genau: aus
+    "BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc" wurde "..._Erdarbeiten", und eine
+    spaeter gelieferte "..._Erdarbeiten.ifc" haette als Revision 2 DESSELBEN
+    Modells gegolten — zwei verschiedene Fachmodelle in einer Linie. Damit
+    haette ein Modellsatz sie auch nicht mehr beide fuehren duerfen.
+    """
+    assert cde._basisname("BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc") == "BIM26_Gruppe5_BODEN_Erdarbeiten3"
+    assert cde._basisname("Halle7.ifc") == "Halle7"
+
+
+def test_kein_wasserzeichen_zwilling():
+    """Der Text gehoert zum Zeichnen, nicht zum Server.
+
+    Es gab hier eine zweite Umsetzung von resolveWatermarkText — von keiner
+    Produktivstelle gerufen, und schon auseinandergelaufen: Server sagte
+    "ARCHIV", der Viewer "ARCHIVIERT". Genau das faellt auf, wenn dieselbe
+    Regel an zwei Orten steht.
+    """
+    assert not hasattr(cde, "wasserzeichen")
+
+
+def test_register_upload_revision_status(frische_db, app_conn, projekte_wurzel):
+    p = projekte.anlegen(app_conn, name="CDE", honorarmodell="pauschal", akteur="pytest")
+    projekte.beteiligter_anlegen(app_conn, p["id"], rolle="bauherr", name="Stadt", akteur="pytest")
+    o = ordner.finde(p["id"])
+    assert cde.register(o) == []
+    c = _client()
+    r1 = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload", params={"projekt_global_id": "0aB$cd12345678901234"},
+                files={"datei": ("Kanal_R01.ifc", b"ISO-10303-21;\nHEADER;", "application/octet-stream")})
+    assert r1.status_code == 201, r1.json()
+    d1 = r1.json()
+    assert d1["art"] == "modell" and d1["revision"] == 1 and d1["status"] == "WIP" and d1["pfad"] == "CDE/Kanal_R01.ifc"
+    # Die IFCPROJECT-GlobalId wird MITGEFUEHRT, aber nicht fuer die Revision
+    # benutzt — gezaehlt wird weiter je (basisname, art).
+    assert d1["projekt_global_id"] == "0aB$cd12345678901234"
+    assert (o.pfad / "CDE" / "Kanal_R01.ifc").read_bytes().startswith(b"ISO-10303")
+    r2 = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload", files={"datei": ("Kanal_R02.ifc", b"ISO-10303-21;\nHEADER;v2", "application/octet-stream")})
+    assert r2.json()["revision"] == 2 and r2.json()["basisname"] == "Kanal"
+    assert c.post(f"/FastAPI/projekte/{p['id']}/cde/upload", files={"datei": ("Kanal_R02.ifc", b"x", "application/octet-stream")}).status_code == 422
+    assert c.post(f"/FastAPI/projekte/{p['id']}/cde/upload", files={"datei": ("leer.ifc", b"", "application/octet-stream")}).status_code == 422
+    plan = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload", params={"status": "Shared"},
+                  files={"datei": ("Lageplan.pdf", b"%PDF-1.4", "application/pdf")}).json()
+    assert plan["art"] == "plan" and plan["status"] == "Shared" and plan["projekt_global_id"] is None
+    reg = c.get(f"/FastAPI/projekte/{p['id']}/cde").json()
+    assert [d["datei"] for d in reg["dokumente"]] == ["Kanal_R02.ifc", "Kanal_R01.ifc", "Lageplan.pdf"]
+    assert reg["stammdaten"]["bauherr"] == "Stadt" and reg["viewer_url"] == f"/cde?projekt={p['id']}"
+    # ISO-19650-Arbeitsfluss (Luecke 4): WIP -> Archived ist KEIN Weg mehr —
+    # der Status geht vorwaerts ueber die Stufen. Der volle Weg unten.
+    kaputt = c.put(f"/FastAPI/projekte/{p['id']}/cde/{d1['sha256']}/status", json={"status": "Archived"})
+    assert kaputt.status_code == 422 and "ISO-19650-Weg" in kaputt.json()["detail"]
+    for stufe in ("Shared", "Published", "Archived"):
+        s = c.put(f"/FastAPI/projekte/{p['id']}/cde/{d1['sha256']}/status", json={"status": stufe})
+        assert s.status_code == 200 and s.json()["status"] == stufe
+    assert len(s.json()["status_historie"]) == 4
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{d1['sha256']}/status", json={"status": "Fertig"}).status_code == 422
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/deadbeef/status", json={"status": "WIP"}).status_code == 404
+    (o.pfad / "CDE" / "Lageplan.pdf").unlink()
+    assert [d["vorhanden"] for d in cde.register(o) if d["datei"] == "Lageplan.pdf"] == [False]
+    manifest = cde.manifest_lesen(o)
+    assert manifest["projekt_id"] == p["id"] and len(manifest["dokumente"]) == 3
+    from app.api.projekt.core import dossier
+    text = dossier.erzeugen(app_conn, p["id"])
+    assert "## CDE" in text and "Kanal_R02.ifc · modell · Rev. 2 · WIP" in text and "DATEI FEHLT" in text
+
+
+def test_entfernen(frische_db, app_conn, projekte_wurzel):
+    """Aus dem Register nehmen — den Weg gab es serverseitig gar nicht.
+
+    Der Viewer strich den Eintrag bisher nur aus seiner eigenen Liste; Manifest
+    und Datei blieben stehen. Genau daran liefen die beiden Register
+    auseinander.
+    """
+    p = projekte.anlegen(app_conn, name="Weg", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    d = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+               files={"datei": ("Alt.ifc", b"ISO-10303-21;", "application/octet-stream")}).json()
+
+    weg = c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}")
+    assert weg.status_code == 200, weg.json()
+    assert weg.json()["ok"] is True and weg.json()["datei"] == "Alt.ifc"
+
+    # Eintrag ist raus …
+    assert cde.register(o) == []
+    # … die Datei aber nicht geloescht, sondern beiseite gelegt. Ein CDE ist
+    # eine Ablage: was einmal geteilt wurde, bleibt nachvollziehbar.
+    assert not (o.pfad / "CDE" / "Alt.ifc").exists()
+    beiseite = list((o.pfad / "CDE" / cde.GELOESCHT).iterdir())
+    assert len(beiseite) == 1 and beiseite[0].name.endswith("-Alt.ifc")
+    assert beiseite[0].read_bytes() == b"ISO-10303-21;"
+
+    # Unbekannt -> 404, Unsinn -> 422
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/{'0' * 64}").status_code == 404
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/deadbeef").status_code == 422
+
+    # Die Routen-Falle: DELETE /cde/repo darf NICHT als sha256="repo" gelten.
+    # Beide Routen liegen im selben Pfadraum; die sha-Pruefung faengt es ab.
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/repo").status_code == 422
+
+    # Und ein zweiter Upload gleichen Namens geht danach wieder, weil die
+    # alte Datei nicht mehr in CDE/ liegt.
+    neu = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+                 files={"datei": ("Alt.ifc", b"ISO-10303-21;v2", "application/octet-stream")})
+    assert neu.status_code == 201 and neu.json()["revision"] == 1
+
+
+def test_viewer_repo(frische_db, app_conn, projekte_wurzel):
+    p = projekte.anlegen(app_conn, name="Repo", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    assert c.get(f"/FastAPI/projekte/{p['id']}/cde/repo").json() == {}
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:saved-views", json=[{"name": "Nord", "cam": [1, 2, 3]}]).status_code == 200
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:annotations:gid:abc", json={"issues": [{"id": 1, "titel": "Riss"}]}).status_code == 200
+    # Pfad-Traversal. Geprueft wird, was zaehlt: der Versuch wird abgewiesen
+    # UND es entsteht nichts ausserhalb von CDE/_repo/. Der reine Statuscode
+    # taugt dafuer nicht — seit es DELETE /cde/{sha256} gibt, normalisiert der
+    # Client "/cde/repo/../boese" zu "/cde/boese", das trifft jetzt eine
+    # bestehende Route mit anderer Methode und ergibt 405 statt 404.
+    for weg in ("../boese", "mit%2Fslash"):
+        antwort = c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/{weg}", json=1)
+        assert antwort.status_code >= 400, (weg, antwort.status_code)
+    assert not (o.pfad / "boese").exists() and not (o.pfad / "CDE" / "boese").exists()
+    # Und DELETE auf demselben Weg loescht auch nichts: cde.loeschen besteht
+    # auf 64 Hexzeichen, "boese" faellt als 422 durch.
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/repo/../boese").status_code >= 400
+    alles = c.get(f"/FastAPI/projekte/{p['id']}/cde/repo").json()
+    assert alles["global:saved-views"][0]["name"] == "Nord" and "global:annotations:gid:abc" in alles
+    assert (o.pfad / "CDE" / "_repo" / "global:saved-views.json").is_file()
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/repo/global:saved-views").json() == {"ok": True}
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/repo/global:saved-views").json() == {"ok": False}
+    assert "global:saved-views" not in c.get(f"/FastAPI/projekte/{p['id']}/cde/repo").json()
+    assert c.get(f"/FastAPI/projekte/{p['id']}/cde").json()["basis"] == f"00_Angebote/{o.ordnername}"
+    with pytest.raises(cde.CdeAbgelehnt):
+        cde.repo_setzen(o, "x", "y" * (cde.MAX_REPO_BYTES + 1))
+
+
+def test_status_workflow_rechte(frische_db, app_conn, projekte_wurzel):
+    """Luecke 4: Uebergangs-Graph + Rangschranke am Endpunkt.
+
+    Rueckwaerts braucht Rang: Published -> Shared ist ADMIN-Sache; ein
+    MITARBEITER wird abgewiesen, der Sprung ueber Stufen ebenso. ADMIN darf
+    jeden Sprung (Korrektur-Eskape) — auditiert wird ohnehin.
+    """
+    p = projekte.anlegen(app_conn, name="Wf", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    d = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+               files={"datei": ("W.ifc", b"ISO-10303-21;", "application/octet-stream")}).json()
+    sha = d["sha256"]
+    url = f"/FastAPI/projekte/{p['id']}/cde/{sha}/status"
+
+    # Mitarbeiter: vorwaerts geht, rueckwaerts von Published nicht.
+    assert c.put(url, json={"status": "Shared"}).status_code == 200
+    assert c.put(url, json={"status": "Published"}).status_code == 200
+    zurueck = c.put(url, json={"status": "Shared"})
+    assert zurueck.status_code == 422 and "ADMIN" in zurueck.json()["detail"]
+
+    # Admin: derselbe Wechsel geht — und sogar der Sprung.
+    c.app.dependency_overrides[get_current_active_user] = lambda: SimpleNamespace(role="ADMIN", username="chef")
+    assert c.put(url, json={"status": "Shared"}).status_code == 200
+    assert c.put(url, json={"status": "Archived"}).status_code == 200   # Sprung: nur ADMIN
+
+    # Der Core ohne Rolle haelt den GRAPH trotzdem ein.
+    import pytest as _pytest
+    o = ordner.finde(p["id"])
+    with _pytest.raises(cde.CdeAbgelehnt):
+        cde.status_setzen(app_conn, o, sha, "WIP", akteur="test")
+
+
+# ── Stufe 4 des Aushub-Fachmodells: Revisionsgrundlagen ─────────────────────
+
+def _up(c, pid, name, inhalt, **params):
+    return c.post(f"/FastAPI/projekte/{pid}/cde/upload", params=params,
+                  files={"datei": (name, inhalt, "application/octet-stream")})
+
+
+def test_basisname_laesst_ein_datum_am_ende_stehen():
+    """Aus '6275_ENQUIER_0X_2026-08-31.ifc' wurde '..._2026-08' — der Tag galt als Revision."""
+    assert cde._basisname("6275_ENQUIER_0X_2026-08-31.ifc") == "6275_ENQUIER_0X_2026-08-31"
+    assert cde._basisname("Kanal_2026-08-31_R02.ifc") == "Kanal_2026-08-31"
+    assert cde._basisname("Plan_20260831.pdf") == "Plan_20260831"
+    assert cde._basisname("Bericht_2026-08-31_v2.pdf") == "Bericht_2026-08-31"
+    # Der Bestand bleibt, wie er war.
+    assert cde._basisname("Kanal_R03.ifc") == "Kanal"
+    assert cde._basisname("Bruecke rev 12.ifc") == "Bruecke"
+    assert cde._basisname("BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc") == "BIM26_Gruppe5_BODEN_Erdarbeiten3"
+
+
+def test_ein_alter_eintrag_mit_falschem_stamm_bleibt_in_seiner_linie(frische_db, app_conn, projekte_wurzel):
+    """Der Stamm wird aus dem DATEINAMEN gerechnet, nicht gelesen — und kein Eintrag wird umgeschrieben."""
+    p = projekte.anlegen(app_conn, name="Datum", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    (o.pfad / "CDE").mkdir(exist_ok=True)
+    (o.pfad / "CDE" / "6275_ENQUIER_0X_2026-08-31.ifc").write_bytes(b"ISO-10303-21;")
+    cde._manifest_schreiben(o, {"version": 1, "projekt_id": o.id, "saetze": [], "dokumente": [
+        {"sha256": "a" * 64, "datei": "6275_ENQUIER_0X_2026-08-31.ifc", "basisname": "6275_ENQUIER_0X_2026-08",
+         "art": "modell", "revision": 1, "status": "WIP"}]})
+    r = _up(_client(), p["id"], "6275_ENQUIER_0X_2026-08-31_R02.ifc", b"ISO-10303-21;v2")
+    assert r.status_code == 201, r.json()
+    assert (r.json()["revision"], r.json()["basisname"]) == (2, "6275_ENQUIER_0X_2026-08-31")
+    assert {d["basisname"] for d in cde.register(o)} == {"6275_ENQUIER_0X_2026-08-31"}
+    assert cde.manifest_lesen(o)["dokumente"][0]["basisname"] == "6275_ENQUIER_0X_2026-08"
+
+
+KOPF = b"ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n#1= IFCPROJECT('0Osfh3c9f9_PSSk12wpzoa',#2,'Boden',$,$,$,$,$,$);\n"
+
+
+def test_der_server_liest_die_projekt_globalid_selbst(frische_db, app_conn, projekte_wurzel):
+    """Ueber Akte und API kam jedes Modell ohne sie herein (9 von 9) — die Saetze pruefen ihre Linien zuerst darueber."""
+    p = projekte.anlegen(app_conn, name="Kopf", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    assert _up(c, p["id"], "Boden.ifc", KOPF).json()["projekt_global_id"] == "0Osfh3c9f9_PSSk12wpzoa"
+    # Was der Viewer schickt, gilt — er hat das Modell offen.
+    r = _up(c, p["id"], "Boden_R02.ifc", KOPF + b"x", projekt_global_id="1ViewerSagtEs000000000")
+    assert r.json()["projekt_global_id"] == "1ViewerSagtEs000000000"
+    # Nur .ifc: ein Plan traegt keine, auch wenn die Zeichenkette darin vorkommt.
+    assert _up(c, p["id"], "Plan.pdf", b"%PDF-1.4 " + KOPF).json()["projekt_global_id"] is None
+
+
+def test_zwei_modelle_mit_derselben_projektkennung_sagen_warum(frische_db, app_conn, projekte_wurzel):
+    """Zwei Namen, eine IFCPROJECT-GlobalId: fuer den Satz dieselbe Linie — und die Meldung nennt den Grund."""
+    p = projekte.anlegen(app_conn, name="Linie", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    a = _up(c, p["id"], "Boden.ifc", KOPF).json()
+    b = _up(c, p["id"], "Erdarbeiten.ifc", KOPF + b"anders").json()
+    r = c.post(f"/FastAPI/projekte/{p['id']}/cde/saetze",
+               json={"name": "Beide", "zweck": "variante", "enthaelt": [a["sha256"], b["sha256"]]})
+    assert r.status_code == 422 and "gleiche IFCPROJECT-GlobalId 0Osfh3c9f9_PSSk12wpzoa" in r.json()["detail"]
+
+
+GELAENDE_IFC = b"ISO-10303-21;\nDATA;\n#5= IFCGEOGRAPHICELEMENT('2TestDGM0000000000TEST',#2,'Gelaende',$,$,$,$,$,.TERRAIN.);\n"
+
+
+def test_entfernen_fragt_das_journal(frische_db, app_conn, projekte_wurzel):
+    """1337 (2026-09-10): ein `geloescht` zeigte auf das Gelaende einer Datei, die laengst beiseite lag.
+
+    Abgewiesen wird, was danach ins LEERE zeigte — nicht, was eine andere
+    Lieferung noch traegt (R01 entfernen, waehrend R02 dieselben Kennungen hat).
+    """
+    p = projekte.anlegen(app_conn, name="Journal", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    d = _up(c, p["id"], "Gelaende.ifc", GELAENDE_IFC).json()
+    satz = c.post(f"/FastAPI/projekte/{p['id']}/cde/saetze", json={"name": "Boden", "zweck": "variante"}).json()
+    ablage = o.pfad / "CDE" / "_repo"
+    ablage.mkdir(exist_ok=True)
+    (ablage / f"stand:{satz['id']}:aenderungen.json").write_text(json.dumps({"version": 2, "sitzung": None, "commits": [
+        {"id": "c-1", "schritte": [
+            {"id": "e1", "art": "geloescht", "globalId": "2TestDGM0000000000TEST", "nachher": True},
+            {"id": "e2", "art": "erzeugt", "globalId": "cde-a", "modell": "cde",
+             "nachher": {"rezept": "erdbau", "parameter": {"quellen": {"gelaende": "2TestDGM0000000000TEST"}}}},
+            {"id": "e3", "art": "erzeugt", "globalId": "cde-b", "modell": "cde", "nachher": {"rezept": "rohr"}}]}]}),
+        encoding="utf-8")
+    assert cde.journale_mit(o, d["sha256"]) == [{"ebene": "Satz Boden", "eintraege": 2}]
+    weg = c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}")
+    assert weg.status_code == 422 and "Satz Boden (2 Eintraege)" in weg.json()["detail"]
+    assert (o.pfad / "CDE" / "Gelaende.ifc").is_file()                 # nichts verschoben
+    # R02 derselben Linie traegt dieselbe Kennung: R01 darf gehen.
+    _up(c, p["id"], "Gelaende_R02.ifc", GELAENDE_IFC + b"\n")
+    assert cde.journale_mit(o, d["sha256"]) == []
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}").status_code == 200
+
+
+def test_eine_linie_auch_wenn_nur_die_neue_revision_eine_projektkennung_traegt(frische_db, app_conn, projekte_wurzel):
+    """R01 vor Stufe 4 (ohne GlobalId), R02 danach (mit): DASSELBE Modell — nicht zusammen in einen Satz.
+
+    Mit dem alten Schluessel „GlobalId, sonst Stamm|Art" waren das zwei Linien.
+    Zwei VERSCHIEDENE GlobalIds bei gleichem Stamm bleiben zwei Modelle.
+    """
+    p = projekte.anlegen(app_conn, name="Linie2", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    (o.pfad / "CDE").mkdir(exist_ok=True)
+    for name in ("Gelaende.ifc", "Gelaende_R02.ifc", "Gelaende_R03.ifc"):
+        (o.pfad / "CDE" / name).write_bytes(b"ISO-10303-21;")
+    doks = [{"sha256": "a" * 64, "datei": "Gelaende.ifc", "art": "modell", "revision": 1, "status": "WIP"},
+            {"sha256": "b" * 64, "datei": "Gelaende_R02.ifc", "art": "modell", "revision": 2, "status": "WIP",
+             "projekt_global_id": "0Uktvit05mFcrH4auhENsK"},
+            {"sha256": "c" * 64, "datei": "Gelaende_R03.ifc", "art": "modell", "revision": 3, "status": "WIP",
+             "projekt_global_id": "1AnderesProjekt0000000"}]
+    cde._manifest_schreiben(o, {"version": 1, "projekt_id": o.id, "dokumente": doks, "saetze": []})
+    with pytest.raises(cde.CdeAbgelehnt, match="zwei Revisionen desselben Modells: Gelaende.ifc und Gelaende_R02.ifc"):
+        cde._satz_pruefen(cde.manifest_lesen(o), ["a" * 64, "b" * 64])
+    assert cde._satz_pruefen(cde.manifest_lesen(o), ["b" * 64, "c" * 64]) == ["b" * 64, "c" * 64]

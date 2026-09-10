@@ -147,6 +147,13 @@ backend/app/api/flood3D/*
 # Package, nur in backend/.env — die bleibt ignoriert.
 !backend/app/api/pedant/
 
+# Projekt-Modul (Cockpit, CDE-Server: Register, Saetze, Verbund-/Erdbau-Lauf,
+# Journalpruefung) versionieren. Bis 2026-09-10 lag es nur auf der Platte, die
+# Vorversionen der CDE-Stufen 3-5 nur in einem Sitzungs-Scratchpad. Geheimnisse
+# liegen NIE im Modul (durchgesehen: keine Schluessel, Umgebungsvorgaben sind
+# URLs/Pfade), nur in backend/.env. __pycache__/ faengt Zeile 2.
+!backend/app/api/projekt/
+
 # IFC-Verbundexport (CDE): Quelltext versionieren, das venv NICHT.
 # ifcopenshell bekommt ein eigenes venv, weil das Produktions-venv den laufenden
 # pm2-Dienst traegt — dort stehen numpy und shapely bereits und haengen an
