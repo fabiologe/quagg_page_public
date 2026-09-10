@@ -26,6 +26,7 @@ import { ref } from 'vue';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
 import { fasseZusammen, konfliktKarte, planeNachspielen } from '../services/Nachspielen.js';
 import { AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
+import { istEigen } from '../services/Bauteilrezepte.js';
 
 /** Alle GlobalIds, die modellberührende Festlegungen nennen. */
 export function betroffeneGlobalIds(eintraege) {
@@ -33,7 +34,7 @@ export function betroffeneGlobalIds(eintraege) {
     for (const e of eintraege ?? []) {
         if (!e?.globalId) continue;
         if (!AENDERUNGS_ARTEN[e.art]?.beruehrtModell) continue;
-        if (e.modell === 'cde') continue;          // lebt nicht im gelieferten Modell
+        if (istEigen(e)) continue;                  // lebt nicht im gelieferten Modell
         ids.add(e.globalId);
     }
     return ids;
@@ -50,7 +51,7 @@ export function betroffeneGlobalIds(eintraege) {
  */
 export function hatErzeugte(eintraege) {
     return (eintraege ?? []).some(
-        e => e?.modell === 'cde' && AENDERUNGS_ARTEN[e.art]?.beruehrtModell && e.nachher != null,
+        e => istEigen(e) && AENDERUNGS_ARTEN[e.art]?.beruehrtModell && e.nachher != null,
     );
 }
 

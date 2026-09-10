@@ -121,13 +121,19 @@
 
         <!-- B2: Model tags in separate row below top-bar -->
         <div v-if="ifc.modelList.length" class="model-tag-row">
-          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag" :title="m.name">
+          <!-- Das Eigenbau-Modell ist KEIN Dokument (Stufe 0, D6): es wird aus
+               dem Journal gebaut. Es heisst deshalb „Eigenbau", steht
+               gestrichelt da und hat keinen Entladen-Knopf — leer wird es
+               über Zurück im Journal, nicht über ein X. -->
+          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag"
+                :class="{ 'model-tag--eigenbau': modellHerkunft(m.modelId) === 'cde' }"
+                :title="modellHerkunft(m.modelId) === 'cde' ? 'Aus dem Journal gebaut — leeren über Zurück' : m.name">
             <!-- Der Name in EIGENEM Element: als anonymes Flex-Kind schrumpfte
                  er nicht (`min-width: auto`), schob das X aus dem 200-px-Chip
                  und wurde von `overflow: hidden` mitsamt Knopf abgeschnitten.
                  Das Entladen sah dadurch aus, als gäbe es keins. -->
-            <span class="model-tag-name">{{ m.name }}</span>
-            <button class="tag-close" @click="removeModel(m.modelId)"
+            <span class="model-tag-name">{{ modellTagText(m, eigenbauAnzahl) }}</span>
+            <button v-if="modellHerkunft(m.modelId) !== 'cde'" class="tag-close" @click="removeModel(m.modelId)"
                     :title="`${m.name} entladen`" aria-label="Modell entladen">
               <CdeIcon name="close" :size="11" />
             </button>
@@ -495,7 +501,8 @@ import { useZeiger } from '../composables/useZeiger.js';
 import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
-import { modellHerkunft } from '../services/IfcAutor.js';
+import { modellHerkunft, modellTagText } from '../services/IfcAutor.js';
+import { ableitungAuf } from '../services/Bauteilrezepte.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
@@ -683,6 +690,8 @@ const modusMeldung = ref('');
 // Das Journal aus Stufe 7 — EIN Bezug, nicht drei Aufrufe. Der Store ist zwar
 // ein Singleton, aber drei Aufrufstellen lesen sich wie drei Dinge.
 const aenderungen = useAenderungen();
+// Wieviel steht im Eigenbau-Modell — fuer den Chip in der Leiste (D6).
+const eigenbauAnzahl = computed(() => aenderungen.wirksamerStand('erzeugt').size);
 
 /**
  * HERKUNFT IM RAUM (9.6, U4): Wer erzeugt, muss trennen können, was
@@ -1166,6 +1175,15 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
             .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '' })),
         };
       }
+    }
+
+    // TRÄGT DIESES GELÄNDE SCHON EINE ABLEITUNG? (Stufe 0, D3.) Wer das wieder
+    // eingeblendete Ur-Gelände anfasst, soll an die vorhandene Formung
+    // anhängen statt sie zu klonen. Gefunden wird sie über ihre QUELLE im
+    // Journal — nicht über den Namen.
+    if (result.globalId && !angereichert.ableitungAufMir) {
+      const vorhanden = ableitungAuf(aenderungen.wirksamerStand('erzeugt'), result.globalId);
+      if (vorhanden) angereichert = { ...angereichert, ableitungAufMir: vorhanden };
     }
 
     const kategorie = String(result.category ?? result.type ?? '').toUpperCase();
@@ -2707,6 +2725,8 @@ function onToggleNotes() { panels.toggle('issues'); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0;                 /* ohne das schrumpft ein Flex-Kind nie */
 }
+/* Eigenbau: gestrichelt, damit es sich von einer Lieferung unterscheidet. */
+.model-tag--eigenbau { border-style: dashed; color: var(--cde-text-dim); }
 .tag-close {
   background: none; border: none; cursor: pointer;
   color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;

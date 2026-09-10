@@ -35,6 +35,7 @@
 
 import { AENDERUNGS_ARTEN, standMitEintragEbenen, vergleicheMitModell } from '../stores/useAenderungen.js';
 import { pruefmassGleich } from './geometrie/ops/Raster.js';
+import { istEigen } from './Bauteilrezepte.js';
 
 /**
  * Welche Festlegungen lassen sich auf dieses Modell anwenden, und wo hakt es?
@@ -131,8 +132,10 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
         for (const [globalId, { wert, eintrag }] of standMitEintragEbenen(eintraege ?? [], standEintraege, art)) {
             // Erzeugte Bauteile stehen nicht im gelieferten Modell — sie im
             // Lieferstand zu suchen und dann „fehlt" zu melden, wäre ein
-            // Fehlalarm mit Ansage.
-            if (eintrag.modell === 'cde') {
+            // Fehlalarm mit Ansage. `istEigen` liest Aussage UND Kennung:
+            // ein Journal von vor Stufe 0 trägt an verborgenen eigenen DGMs
+            // kein `modell` — und meldete genau diesen Fehlalarm.
+            if (istEigen(eintrag)) {
                 const geaendert = _quellenArm(eintrag, leseQuellmass);
                 if (geaendert) {
                     quelleGeaendert++;
@@ -280,7 +283,7 @@ export function planFuerEintrag(eintrag, modelId = null) {
             art: eintrag.art,
             wert: zielWert(eintrag),
             eintrag,
-            modell: eintrag.modell === 'cde' ? 'cde' : 'geliefert',
+            modell: istEigen(eintrag) ? 'cde' : 'geliefert',
         }],
         konflikte: [],
     };

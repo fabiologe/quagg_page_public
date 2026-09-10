@@ -23,7 +23,10 @@ const VIEWER = readFileSync(new URL('../components/IfcViewer.vue', import.meta.u
 
 describe('Der Modell-Chip', () => {
     it('trägt den Namen in EIGENEM Element — sonst verdrängt er den Knopf', () => {
-        expect(VIEWER).toMatch(/<span class="model-tag-name">\{\{ m\.name \}\}<\/span>/);
+        // Seit Stufe 0 (Aushub-Fachmodell) steht im Chip nicht mehr der rohe
+        // Modellname, sondern `modellTagText` — das Eigenbau-Modell heisst
+        // „Eigenbau · n Bauteile". Das EIGENE Element bleibt die Zusage.
+        expect(VIEWER).toMatch(/<span class="model-tag-name">\{\{ modellTagText\(m, eigenbauAnzahl\) \}\}<\/span>/);
         const block = VIEWER.slice(VIEWER.indexOf('.model-tag-name {'), VIEWER.indexOf('.model-tag-name {') + 200);
         expect(block).toMatch(/min-width:\s*0/);
         expect(block).toMatch(/text-overflow:\s*ellipsis/);

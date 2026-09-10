@@ -32,7 +32,8 @@
 
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, schwerpunktXZ,
-         versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge } from './Bauteilrezepte.js';
+         versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
+         modellVon } from './Bauteilrezepte.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { feldAusProfil } from './bauform/Typprofile.js';
@@ -420,10 +421,39 @@ function _gelaendeSchritte(el, neueOps) {
             name: el.stand?.teile?.get?.('dgm')?.bauplan?.name?.replace(/ \(geformt\)$/, '') ?? el.name ?? '',
         });
     }
+    // Das Subjekt ist eigen (ein DGM-Teil einer Grube oder eines Grabens, ein
+    // Altbestand `gelaende`): das Ausblenden muss es SAGEN, sonst baut der
+    // Autor es weiter und zwei Gelände liegen übereinander (Stufe 0, D1 —
+    // dasselbe Muster wie bei Bauwerksgrube und Aussparung).
+    const eigen = modellVon(el.globalId) === 'cde' ? { modell: 'cde' } : {};
+
+    // D3: das GELIEFERTE Gelände trägt schon eine erdbau-Ableitung (die
+    // Anreicherung hat sie über die Quelle gefunden). Dann ist das hier eine
+    // Folgeformung — dieselben GlobalIds, volle Liste — und kein Klon mit
+    // zweiter Klammer und doppelten Massen. Das `geloescht` bleibt in der
+    // Liste: gilt es schon, schreibt das Journal es nicht noch einmal.
+    const vorhanden = !bauplan && el?.ableitungAufMir?.ableitung ? el.ableitungAufMir : null;
+    if (vorhanden) {
+        const teile = vorhanden.teile instanceof Map ? vorhanden.teile : new Map(Object.entries(vorhanden.teile ?? {}));
+        const dgm = teile.get('dgm')?.bauplan ?? [...teile.values()][0]?.bauplan ?? null;
+        return [
+            { art: 'geloescht', globalId: el.globalId, nachher: true, ...eigen },
+            ...ableitungsSchritte({
+                rezept: 'erdbau',
+                bestehend: { ableitung: vorhanden.ableitung, teile },
+                quellen: dgm?.parameter?.quellen ?? { gelaende: el.globalId },
+                quellBasis: dgm?.parameter?.quellBasis ?? { gelaende: el.quellmass?.pruefmass ?? null },
+                raster: dgm?.parameter?.raster ?? { cell: el.quellmass?.cell ?? null },
+                operationen: [...(dgm?.parameter?.operationen ?? []), ...neueOps],
+                name: dgm?.name?.replace(/ \(geformt\)$/, '') || el.name || 'Gelände',
+            }),
+        ];
+    }
+
     const alt = bauplan?.rezept === 'gelaende' ? bauplan : null;
     const quelle = alt?.parameter?.quelle ?? el.globalId;
     return [
-        { art: 'geloescht', globalId: el.globalId, nachher: true },
+        { art: 'geloescht', globalId: el.globalId, nachher: true, ...eigen },
         ...ableitungsSchritte({
             rezept: 'erdbau',
             quellen: { gelaende: quelle },

@@ -17,6 +17,7 @@
  * PDF-Schreiber daneben nur ihre Darstellung.
  */
 import { AENDERUNGS_ARTEN, beschreibeWert, standMitEintrag } from '../stores/useAenderungen.js';
+import { istEigen } from './Bauteilrezepte.js';
 
 const _wann = (ms) => (Number.isFinite(ms)
     ? new Date(ms).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
@@ -35,7 +36,7 @@ function _zeile(eintrag, wert) {
         globalId: eintrag.globalId,
         art: art.titel ?? eintrag.art,
         text: beschreibeWert(eintrag.art, wert ?? eintrag.nachher, eintrag.basis ?? null),
-        eigen: eintrag.modell === 'cde',
+        eigen: istEigen(eintrag),      // Aussage ODER Kennung — wie ueberall seit Stufe 0
         // Die MOMENTAUFNAHME aus dem Eintrag (14.4): was beim Setzen bekannt
         // war. Nie neu gerechnet — der Bericht sagt, was der Bearbeiter
         // wusste, nicht was heute gälte.

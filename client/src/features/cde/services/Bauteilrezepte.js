@@ -618,6 +618,45 @@ export function teileVon(erzeugtStand, ableitungId) {
 }
 
 /**
+ * Traegt dieses (gelieferte) Gelaende schon eine Ableitung? — der Waechter
+ * gegen den KLON (Stufe 0, D3).
+ *
+ * Wer nach der ersten Formung nicht das geformte DGM, sondern das wieder
+ * eingeblendete Ur-Gelaende anfasst, lief in die Erstformung: eine zweite
+ * Klammer, drei neue GlobalIds, ein zweites `geloescht`, zwei „(geformt)" im
+ * Raum und doppelte Massen im Mengenreiter. Nichts hinderte das. Jetzt
+ * findet die Anreicherung die vorhandene Ableitung ueber ihre Quelle, und
+ * `_gelaendeSchritte` haengt an — dieselben GlobalIds, volle Liste.
+ *
+ * @returns {{ableitung: string, teile: Map}|null}
+ */
+export function ableitungAuf(erzeugtStand, urGid, { rezept = 'erdbau' } = {}) {
+    if (!urGid) return null;
+    for (const [, plan] of erzeugtStand ?? []) {
+        if (plan?.rezept === rezept && plan?.ableitung && plan?.parameter?.quellen?.gelaende === urGid) {
+            return { ableitung: plan.ableitung, teile: teileVon(erzeugtStand, plan.ableitung) };
+        }
+    }
+    return null;
+}
+
+/**
+ * Ist dieser Bauplan eine ANZEIGEFORM — die geformte Flaeche, die der Raum
+ * zeigt, weil fragments nicht schneiden kann?
+ *
+ * Sie ist kein Bauteil: in IFC 4.3 ist der Aushub ein `IfcEarthworksCut`, der
+ * das Ur-Gelaende aushoehlt; ein zweites TERRAIN am selben Ort waere eine
+ * Dopplung (bSI: „no CSG operation is expected to be performed on import").
+ * Bis Stufe 1 heisst sie im Journal `dgm` und gehoert einer Ableitung; ab
+ * Stufe 1 traegt sie die Rolle `anzeige` und `export: false`.
+ */
+export function istAnzeigeform(bauplan) {
+    if (!bauplan) return false;
+    if (bauplan.rolle === 'anzeige') return true;
+    return bauplan.rolle === 'dgm' && istAbleitung(rezeptNach(bauplan.rezept));
+}
+
+/**
  * Die Journaleinträge einer Ableitung — je Teil EIN `erzeugt`-Eintrag mit
  * eigener GlobalId, derselben Klammer `ableitung` und den VOLLEN Parametern
  * (absoluter Zielzustand je Bauteil, Gesetz 4). Bei `bestehend` bleiben die
@@ -762,6 +801,39 @@ export async function baueMitAbleitung(bauplan, holeQuellraster) {
 export function neueGlobalId() {
     const zufall = Math.random().toString(36).slice(2, 10);
     return `cde-${Date.now().toString(36)}-${zufall}`;
+}
+
+/**
+ * Wo ein Bauteil LEBT, aus seiner Kennung gelesen.
+ *
+ * `modell: 'cde'` am Eintrag ist die AUSSAGE, das Präfix `cde-` ihr BEWEIS —
+ * beide entstehen an derselben Stelle (`neueGlobalId`, `erzeugtEintrag`).
+ * Fehlt die Aussage, gilt der Beweis. Der Anlass (Stufe 0 Aushub-Fachmodell,
+ * 2026-09-10): 13 Stellen im Katalog schreiben `geloescht`-Schritte OHNE
+ * `modell`; `ausfuehren` reicht dann das `modell` des Aufrufers durch — und
+ * der Zeichenweg (`useEingabe`, also Gerinne und Ausheben mit gezeichnetem
+ * Zug) reicht keins. Ein verborgenes eigenes DGM stand damit als `geliefert`
+ * im Journal, das Nachspielen suchte es im Lieferstand („fehlt"), der Autor
+ * baute es weiter — ZWEI Gelände lagen übereinander. Die Aussage an dreizehn
+ * Stellen nachzutragen wäre die vierzehnte Gelegenheit, sie zu vergessen.
+ */
+export function modellVon(globalId) {
+    return String(globalId ?? '').startsWith('cde-') ? 'cde' : 'geliefert';
+}
+
+/**
+ * Ist dieser Eintrag (oder diese Kennung) ein EIGENES Bauteil?
+ *
+ * Die eine Leseseite fuer alle, die verzweigen muessen (Nachspielen,
+ * Autor, Verdeckung). Ein Eintrag zaehlt als eigen, wenn er es SAGT oder
+ * seine Kennung es BEWEIST — so heilen auch Journale von vor Stufe 0, die
+ * die Aussage nicht tragen.
+ */
+export function istEigen(eintragOderGlobalId) {
+    if (eintragOderGlobalId && typeof eintragOderGlobalId === 'object') {
+        return eintragOderGlobalId.modell === 'cde' || modellVon(eintragOderGlobalId.globalId) === 'cde';
+    }
+    return modellVon(eintragOderGlobalId) === 'cde';
 }
 
 /**

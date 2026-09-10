@@ -30,6 +30,19 @@
             </button>
           </div>
 
+          <!-- Anzeigeform (Stufe 0): die geformte Fläche ist kein Bauteil. In
+               IFC ist der Aushub ein IfcEarthworksCut am Ur-Gelände; diese
+               Fläche zeigt nur, wie es danach aussieht — und geht nicht in
+               den Export. Ohne diesen Satz stand hier „TERRAIN" wie bei
+               einer Lieferung. -->
+          <div v-if="anzeigeform" class="anzeigeform-hinweis">
+            <CdeIcon name="terrain" :size="12" />
+            <span>
+              <b>Anzeigeform</b> — kein Bauteil, nicht im Export. Zeigt das Gelände
+              <code>{{ anzeigeform.quelle }}</code> nach allen Formungen.
+            </span>
+          </div>
+
           <IfcSidebar
             :element="ifc.selectedElement"
             :psetError="ifc.psetError"
@@ -51,6 +64,7 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { istAnzeigeform } from '../services/Bauteilrezepte.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
@@ -66,6 +80,14 @@ const BRIDGE_TYPES = ['IFCBEAM', 'IFCSLAB', 'IFCCOLUMN', 'IFCBRIDGE', 'IFCBUILDI
 const isBridgeLike = computed(() =>
   BRIDGE_TYPES.includes((ifc.selectedElement?.type ?? '').toUpperCase())
 );
+
+/** Der Bauplan des gewählten Bauteils, falls die CDE es erzeugt hat — und ob es nur Anzeige ist. */
+const anzeigeform = computed(() => {
+  const gid = ifc.selectedElement?.globalId;
+  const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
+  if (!istAnzeigeform(plan)) return null;
+  return { quelle: plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? '—' };
+});
 
 async function clearSelection() {
   ifc.clearElement();
@@ -179,6 +201,17 @@ async function copyAsBridge() {
   display: flex;
   flex-direction: column;
 }
+
+.anzeigeform-hinweis {
+  display: flex; gap: 0.4rem; align-items: flex-start;
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 4px;
+  background: var(--cde-hinweis);
+  color: var(--cde-hinweis-text);
+  font-size: 0.78rem; line-height: 1.35;
+}
+.anzeigeform-hinweis code { font-size: 0.72rem; }
 
 .bridge-export-bar {
   display: flex;

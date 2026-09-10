@@ -43,8 +43,9 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istEigen, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
+import { verdeckteAus } from './CdeAchsen.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
 
@@ -119,6 +120,20 @@ export const CDE_MODELL_ID = 'cde-eigenbau';
  */
 export function modellHerkunft(modelId) {
     return modelId === CDE_MODELL_ID ? 'cde' : 'geliefert';
+}
+
+/**
+ * Der Text des Modell-Chips in der Leiste (Stufe 0, D6).
+ *
+ * Das Eigenbau-Modell stand dort als „cde-eigenbau" wie eine gelieferte
+ * Datei — mit Entladen-Knopf, der nichts Sinnvolles tun kann: es ist kein
+ * Dokument, sondern das, was aus dem Journal gebaut wird. Der Chip sagt
+ * jetzt, was es ist und wieviel darin steht.
+ */
+export function modellTagText(modell, anzahlErzeugt = 0) {
+    if (modellHerkunft(modell?.modelId) !== 'cde') return modell?.name ?? '';
+    const n = Number(anzahlErzeugt) || 0;
+    return `Eigenbau · ${n} ${n === 1 ? 'Bauteil' : 'Bauteile'}`;
 }
 
 /**
@@ -790,10 +805,11 @@ export class IfcAutor {
         // auch dann abräumen muss, wenn nichts mehr übrig ist.
         const erzeugtSchritte = schritte.filter(s => s.art === 'erzeugt');
         // Eigene Bauteile, die der Stand als `geloescht` führt, werden gebaut
-        // aber nicht gezeigt (G6, siehe baueErzeugte).
-        const verdeckt = new Set(schritte
-            .filter(s => s.art === 'geloescht' && s.modell === 'cde' && s.wert)
-            .map(s => s.globalId));
+        // aber nicht gezeigt (G6, siehe baueErzeugte). Die Faltung „verdeckt"
+        // lebt in CdeAchsen — hier stand bis Stufe 0 eine zweite, die auf
+        // `modell === 'cde'` bestand und ein eigenes DGM ohne die Angabe
+        // sichtbar liess.
+        const verdeckt = verdeckteAus(schritte, { nur: 'cde' });
         let erzeugte = new Map();
         if (plan?.vollstaendig || erzeugtSchritte.length) {
             const gebaut = await this.baueErzeugte(erzeugtSchritte, CDE_MODELL_ID, { verdeckt });
@@ -825,7 +841,10 @@ export class IfcAutor {
         const auszublenden = [];
         const einzublenden = [];
         for (const schritt of schritte) {
-            if (schritt.art !== 'geloescht' || schritt.modell === 'cde') continue;
+            // `istEigen` statt `modell === 'cde'`: ein Plan aus einem Journal von
+            // vor Stufe 0 traegt an eigenen Teilen keine Aussage — und lief hier
+            // in `keine_localId`, weil er im gelieferten Modell gesucht wurde.
+            if (schritt.art !== 'geloescht' || istEigen(schritt)) continue;
             const localId = globalIdZuLocalId?.get(schritt.globalId);
             if (localId === undefined) {
                 misserfolge.push({ ...schritt, grund: 'keine_localId' });
@@ -838,7 +857,7 @@ export class IfcAutor {
 
         for (const schritt of schritte) {
             if (schritt.art !== 'lage') continue;
-            const ausCde = schritt.modell === 'cde';
+            const ausCde = istEigen(schritt);
             // Erst im Ergebnis DIESES Laufs nachsehen, dann in der Karte.
             //
             // Die Karte kennt erzeugte Bauteile inzwischen ebenfalls: sie
@@ -870,7 +889,7 @@ export class IfcAutor {
                 nichtAngewandt.push(schritt);
                 continue;
             }
-            const ausCde = schritt.modell === 'cde';
+            const ausCde = istEigen(schritt);
             const localId = (ausCde ? erzeugte.get(schritt.globalId) : undefined)
                 ?? globalIdZuLocalId?.get(schritt.globalId);
             if (localId === undefined) {

@@ -19,7 +19,7 @@
  * kommen Gelände und Körper dazu — als GlobalId-Listen fürs Fachmodell.
  */
 
-import { rezeptNach } from './Bauteilrezepte.js';
+import { istEigen, modellVon, rezeptNach } from './Bauteilrezepte.js';
 
 /**
  * Kanten, Knoten, Gelände und Körper aus dem erzeugt-Stand.
@@ -42,11 +42,42 @@ export function cdeAchsenAus(erzeugtStand = new Map()) {
     return out;
 }
 
-/** Welche GlobalIds der geloescht-Stand verdeckt. */
-export function verdeckteAus(geloeschtStand = new Map()) {
+/** Verdeckt dieser Schritt (Plan- oder Journalschritt) sein Bauteil? */
+export function istVerdeckt(schritt) {
+    return schritt?.art === 'geloescht' && !!(schritt.wert ?? schritt.nachher);
+}
+
+/**
+ * Welche GlobalIds verdeckt sind — DIE EINE Faltung dieser Frage (Stufe 0, D2).
+ *
+ * Bis 2026-09-10 gab es zwei: diese hier über den `geloescht`-Stand (alles,
+ * was `true` trägt) und eine zweite in `IfcAutor.wendeAn` über die
+ * Plan-Schritte, die zusätzlich auf `modell === 'cde'` filterte. Zwei
+ * Antworten auf dieselbe Frage — und sie widersprachen sich genau dann, wenn
+ * ein eigenes DGM ohne `modell` im Journal stand: der Sampler sah es als
+ * verdeckt, der Autor baute es sichtbar.
+ *
+ * @param {Map|Array} quelle  der `geloescht`-Stand (GlobalId → Wert) ODER
+ *                            eine Liste von Schritten `{art, globalId, wert|nachher, modell}`
+ * @param {object} [opts]
+ * @param {'cde'|'geliefert'|null} [opts.nur]  nur eigene bzw. nur gelieferte
+ */
+export function verdeckteAus(quelle = new Map(), { nur = null } = {}) {
     const out = new Set();
-    for (const [globalId, wert] of geloeschtStand) {
-        if (wert) out.add(globalId);
+    const passt = (eintragOderGid) => !nur
+        || (nur === 'cde' ? istEigen(eintragOderGid) : !istEigen(eintragOderGid));
+    if (quelle instanceof Map) {
+        for (const [globalId, wert] of quelle) {
+            if (wert && passt(globalId)) out.add(globalId);
+        }
+        return out;
+    }
+    for (const s of quelle ?? []) {
+        if (istVerdeckt(s) && passt(s)) out.add(s.globalId);
     }
     return out;
 }
+
+// `modellVon` wird hier nicht direkt gebraucht — der Import steht, damit die
+// Leseseite (`istEigen`) und die Kennungsregel sichtbar dieselbe Quelle haben.
+void modellVon;

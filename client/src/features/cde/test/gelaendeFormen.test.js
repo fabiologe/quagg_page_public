@@ -121,7 +121,8 @@ describe('Weitere Formung: die Liste wächst absolut, die Teile behalten ihre Ke
         };
         const s = nachId('planum-herstellen').anwenden(alt, { hoehe: 8 }, { zug: UMRISS });
         expect(s).toHaveLength(4);
-        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'cde-g1', nachher: true });
+        // Stufe 0 (D1): das Alt-Gelände ist EIGEN — das Ausblenden sagt es.
+        expect(s[0]).toEqual({ art: 'geloescht', globalId: 'cde-g1', nachher: true, modell: 'cde' });
         expect(s[3].nachher.parameter.quellen.gelaende).toBe('DGM1');
         expect(s[3].nachher.parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);
         expect(s[3].nachher.name).toBe('Urgelände (geformt)');

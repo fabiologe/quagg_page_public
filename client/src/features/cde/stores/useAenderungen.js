@@ -30,7 +30,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { repo } from '../services/RepoFacade.js';
 import { deltaZwischen, nennenswert, verschiebeEintrag } from '../services/JournalVersatz.js';
-import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
 const REPO_KEY = 'aenderungen';
@@ -736,7 +736,11 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             eintrag.basis = basis;
             // Erzeugte Bauteile leben im CDE-eigenen Modell. Ohne diese Angabe
             // suchte das Nachspielen sie im gelieferten und fände sie nie.
-            eintrag.modell = modell ?? 'geliefert';
+            // Fehlt die Angabe, entscheidet die KENNUNG (`cde-…` ist eigen) —
+            // die Vorgabe `'geliefert'` machte aus jedem verborgenen eigenen
+            // DGM ein geliefertes, sobald ein Weg das `modell` nicht mitgab
+            // (Stufe 0 Aushub-Fachmodell; Begründung bei `modellVon`).
+            eintrag.modell = modell ?? modellVon(globalId);
         }
         _liste(ziel).value.push(eintrag);
         sitzungJe[ziel].value.schrittIds.push(eintrag.id);
