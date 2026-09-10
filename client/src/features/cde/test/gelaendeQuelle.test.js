@@ -256,3 +256,12 @@ describe('Der Gelände-Cache stirbt beim LADEN (2026-09-09, im Browser gefunden)
         expect((quelle.match(/this\._gelaendeVerwerfen\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
     });
 });
+
+describe('Ein entladenes Modell ist kein Gelände (2026-09-10, im Browser gefunden)', () => {
+    it('nennt die Kategoriengruppe noch ein entladenes Modell, fällt es heraus', async () => {
+        // Gemessen in 42069: R01 entladen, R02 geladen — `groupData.get()` nannte weiter R01.
+        const veraltet = [{ name: 'IFCGEOGRAPHICELEMENT', groupData: { get: async () => new Map([['R01', [107]], ['R02', [107]]]) } }];
+        const nurR02 = new Map([['R02', modell('R02', {})]]);
+        expect(await gelaendeElemente({ categoryGroups: veraltet, fragmentsList: nurR02 })).toEqual([{ modelId: 'R02', localId: 107 }]);
+    });
+});

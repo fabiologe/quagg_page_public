@@ -22,7 +22,7 @@
  * Genau das unterscheidet einen Rebase von einem Zufall.
  */
 
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
 import { fasseZusammen, konfliktKarte, planeNachspielen } from '../services/Nachspielen.js';
 import { AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
@@ -82,6 +82,16 @@ export function useNachspielen({ engine, aenderungen } = {}) {
      * der Variante Süd stehen.
      */
     const erzeugteStanden = ref(false);
+    /**
+     * Die Einträge, gegen die die Konflikte GERECHNET sind (Stufe 5, im
+     * Browser gefunden 2026-09-10). Ein Konflikt gilt für den Eintrag, an dem
+     * er beim Laden entstand; kommt ein NEUERER auf dieselbe Kennung
+     * (Übernehmen, Verwerfen, Umhängen), entscheidet dessen Anwendung neu.
+     * Ohne das stand nach dem Rebase „A fehlt" weiter im Reiter — bis zum
+     * nächsten Laden.
+     */
+    let _beimLaden = new Set();
+    const _kennung = (e) => e?.id ?? `${e?.art}|${e?.globalId}|${e?.wann ?? ''}`;
 
     function zuruecksetzen() {
         meldung.value = '';
@@ -202,6 +212,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             ];
             konflikte.value = alleKonflikte;
             karte.value = konfliktKarte(alleKonflikte);
+            _beimLaden = new Set(eintraege.map(_kennung));
             // Weder Erfolg noch Panne: eine Festlegung, die das Modell
             // absichtlich nicht anfasst (Querschnittsgröße als Forderung an
             // den Planer). Sie mitzuzählen hiesse, Erfolg für etwas zu melden,
@@ -254,6 +265,65 @@ export function useNachspielen({ engine, aenderungen } = {}) {
         if (!lieferstand.value.has(globalId)) lieferstand.value.set(globalId, anker);
     }
 
+    /**
+     * Den Lieferstand von Kennungen einfrieren, die das Journal beim Laden noch
+     * nicht nannte — VOR dem Eintrag, der sie bewegt. Anlass: das Umhängen
+     * (Stufe 5) gibt B die Einträge von A; ihre `basis` muss Bs GELIEFERTE Lage
+     * sein, sonst vergliche der Drei-Wege-Vergleich gegen nichts. Gemessen wie
+     * beim Laden (Schritte 1 und 2: GlobalId-Karte, `ankerVon`); der erste Wert
+     * gewinnt (`merkeLieferstand`).
+     *
+     * @param {Iterable<string>} globalIds
+     * @returns {Promise<Map<string, {x,y,z}>>}  globalId → Anker, auch die schon eingefrorenen
+     */
+    async function friereLieferstandEin(globalIds = []) {
+        const aus = new Map();
+        const fehlen = new Set();
+        for (const gid of globalIds ?? []) {
+            if (!gid) continue;
+            if (lieferstand.value.has(gid)) aus.set(gid, lieferstand.value.get(gid));
+            else fehlen.add(gid);
+        }
+        if (!fehlen.size || !engine?.value) return aus;
+        const { karte: idKarte } = await karteMitEngine(engine.value, fehlen);
+        const proModell = new Map();
+        for (const [gid, { modelId: mid, localId }] of idKarte) {
+            (proModell.get(mid) ?? proModell.set(mid, []).get(mid)).push([gid, localId]);
+        }
+        for (const [mid, paare] of proModell) {
+            const gelesen = await engine.value.ankerVon(mid, paare.map(([, localId]) => localId));
+            for (const [gid, localId] of paare) {
+                const a = gelesen.get(localId);
+                if (!a) continue;
+                merkeLieferstand(gid, a);
+                aus.set(gid, lieferstand.value.get(gid));
+            }
+        }
+        return aus;
+    }
+
+    /**
+     * Konflikte, die ein NEUERER Eintrag auf derselben Kennung erledigt hat,
+     * fallen weg. Neue Konflikte entstehen hier nicht — die rechnet das Laden
+     * (ein Journal, das eine Kennung wieder nennt, etwa ein zurückgenommener
+     * Rebase, zeigt sie beim nächsten Laden).
+     * @returns {number} wie viele wegfielen
+     */
+    function konflikteNachJournal() {
+        if (!konflikte.value.length) return 0;
+        const beruehrt = new Set((aenderungen?.eintraege ?? [])
+            .filter(e => !_beimLaden.has(_kennung(e))).map(e => e?.globalId).filter(Boolean));
+        if (!beruehrt.size) return 0;
+        const bleiben = konflikte.value.filter(k => !beruehrt.has(k?.globalId));
+        const weg = konflikte.value.length - bleiben.length;
+        if (!weg) return 0;
+        konflikte.value = bleiben;
+        karte.value = konfliktKarte(bleiben);
+        if (!bleiben.length) meldung.value = '';
+        return weg;
+    }
+    watch(() => aenderungen?.eintraege?.length ?? 0, () => { konflikteNachJournal(); });
+
     /** Der Konfliktzustand eines Eintrags — für den Änderungen-Reiter. */
     function zustandVon(eintrag) {
         return karte.value.get(`${eintrag?.art}|${eintrag?.globalId}`) ?? null;
@@ -262,5 +332,6 @@ export function useNachspielen({ engine, aenderungen } = {}) {
     return {
         meldung, konflikte, karte, laeuft, lieferstand,
         nachModellladung, zustandVon, zuruecksetzen, lieferstandVon, merkeLieferstand, hinweise,
+        friereLieferstandEin, konflikteNachJournal,
     };
 }

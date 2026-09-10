@@ -757,6 +757,15 @@ export class IfcEngine {
 
     async buildCategoryIndex() {
         try {
+            // DIE ABFRAGEN VERGESSEN, WAS SIE WUSSTEN (2026-09-10, im Browser
+            // gefunden). `byCategory()` legt je Kategorie EINMAL eine
+            // FinderQuery an, und die cacht ihr Ergebnis — beim ersten Laden
+            // `{R01: [107]}`. Entladen und Neuladen berühren den Cache nie: mit
+            // R02 im Raum lieferte `groupData.get()` weiter nur das entladene
+            // R01, R02 fehlte, die Gelände-Kandidaten waren leer — genau beim
+            // Revisionswechsel. Die Bibliothek hat ihr `clearCache` auskommentiert.
+            const finder = this.components.get(OBC.ItemsFinder);
+            for (const [, abfrage] of finder?.list ?? []) abfrage?.clearCache?.();
             const classifier = this.components.get(OBC.Classifier);
             await classifier.byCategory();
 
@@ -2503,8 +2512,15 @@ export class IfcEngine {
      * danach ZURÜCK in den Cache — mit der alten Elementliste. Solange nur
      * Erzeugtes das Gelände bewegte, war das ein seltenes Rennen; seit eine
      * Bauform-Auslegung dasselbe tut, wäre es der Normalfall.
+     *
+     * Den LAUF zu nullen half dabei nicht (2026-09-10, im Browser gefunden):
+     * der alte Lauf schrieb in seinem `.then` trotzdem zurück. R02 entladen,
+     * R01 geladen — und die Kandidatenliste hielt die Elemente des entladenen
+     * Modells, also kein Gelände. Deshalb zählt `_gelaendeGeneration`: wer
+     * nach dem Verwerfen fertig wird, schreibt nicht zurück und fragt neu.
      */
     _gelaendeVerwerfen() {
+        this._gelaendeGeneration = (this._gelaendeGeneration ?? 0) + 1;
         this._gelaendeSampler = null;
         this._gelaendeSamplerLauf = null;
         this._gelaendeOrte = null;
@@ -2585,7 +2601,8 @@ export class IfcEngine {
         if (this._gelaendeOrte) return this._gelaendeOrte;
         if (!this._gelaendeOrteLauf) {
             const fragments = this.components.get(OBC.FragmentsManager);
-            this._gelaendeOrteLauf = gelaendeElemente({
+            const generation = this._gelaendeGeneration ?? 0;
+            const lauf = gelaendeElemente({
                 categoryGroups: this._categoryGroups ?? [],
                 fragmentsList: fragments?.list ?? new Map(),
                 verdeckt: this._verdeckt ?? new Set(),
@@ -2595,9 +2612,13 @@ export class IfcEngine {
                 istGelaende: this._istGelaende,
                 bauformAusGeometrie: (m, l) => this.formsignaturVon({ modelId: m, localId: l }).then(r => r?.bauform ?? null),
             }).then((orte) => {
+                // Seit dem Start verworfen (Modell entladen/geladen, Journal)?
+                // Dann gilt diese Liste nicht mehr: nicht zurückschreiben, neu fragen.
+                if ((this._gelaendeGeneration ?? 0) !== generation) return this._gelaendeOrteHolen();
                 this._gelaendeOrte = orte;
                 return orte;
-            }).finally(() => { this._gelaendeOrteLauf = null; });
+            }).finally(() => { if (this._gelaendeOrteLauf === lauf) this._gelaendeOrteLauf = null; });
+            this._gelaendeOrteLauf = lauf;
         }
         return this._gelaendeOrteLauf;
     }
@@ -2777,7 +2798,8 @@ export class IfcEngine {
     async gelaendeSampler() {
         if (this._gelaendeSampler) return this._gelaendeSampler;
         if (!this._gelaendeSamplerLauf) {
-            this._gelaendeSamplerLauf = (async () => {
+            const generation = this._gelaendeGeneration ?? 0;
+            const lauf = (async () => {
                 const elemente = await this._gelaendeOrteHolen();
                 // ÜBER DEN RESOLVER, nicht mit `filter: 'upward'` (2026-09-03).
                 //
@@ -2794,11 +2816,15 @@ export class IfcEngine {
                     : null;
                 const positions = res?.data?.positions ?? new Float64Array(0);
                 const gesamt = res?.data?.triCount ?? 0;
-                this._gelaendeSampler = gesamt
+                const sampler = gesamt
                     ? makeHeightSampler(positions, gesamt)
                     : { sample: () => null, bounds: null };
-                return this._gelaendeSampler;
-            })().finally(() => { this._gelaendeSamplerLauf = null; });
+                // Wie bei den Orten: verworfen, während er baute → nicht zurückschreiben.
+                if ((this._gelaendeGeneration ?? 0) !== generation) return this.gelaendeSampler();
+                this._gelaendeSampler = sampler;
+                return sampler;
+            })().finally(() => { if (this._gelaendeSamplerLauf === lauf) this._gelaendeSamplerLauf = null; });
+            this._gelaendeSamplerLauf = lauf;
         }
         return this._gelaendeSamplerLauf;
     }

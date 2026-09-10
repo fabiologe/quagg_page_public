@@ -276,3 +276,46 @@ describe('Nicht angewandt ist nicht dasselbe wie fehlgeschlagen', () => {
         expect(n.meldung.value).not.toMatch(/fehlgeschlagen/i);
     });
 });
+
+describe('Nach dem Laden — was ein neuerer Eintrag erledigt (Stufe 5, im Browser gefunden)', () => {
+    // Der Browserlauf in 42069: nach „Umhängen" stand „A fehlt" weiter im
+    // Reiter, weil die Konflikte nur beim Laden gerechnet werden. Gemessen wird
+    // hier an der ECHTEN Liste des Nachspielens, nicht an einer Kopie im Reiter.
+    const warte = () => new Promise(r => setTimeout(r, 0));
+
+    it('ein neuerer Eintrag auf der fehlenden Kennung erledigt ihren Konflikt — ein fremder nicht', async () => {
+        const j = useAenderungen();
+        await j.eintragen({ art: 'geloescht', globalId: 'WEG', nachher: true });
+        const n = useNachspielen({ engine: fakeEngine().engine, aenderungen: j });
+        await n.nachModellladung('m1');
+        expect(n.konflikte.value.map(k => [k.globalId, k.zustand])).toEqual([['WEG', 'fehlt']]);
+
+        await j.eintragen({ art: 'lage', globalId: 'H1', nachher: ZIEL, basis: GELIEFERT });   // fremd
+        await warte();
+        expect(n.konflikte.value).toHaveLength(1);
+
+        await j.eintragen({ art: 'geloescht', globalId: 'WEG', nachher: null });                // wie das Umhängen
+        await warte();
+        expect(n.konflikte.value).toEqual([]);
+        expect(n.meldung.value).toBe('');
+        expect(n.zustandVon({ art: 'geloescht', globalId: 'WEG' })).toBeNull();
+    });
+
+    it('friereLieferstandEin liest die GELIEFERTE Lage einer neuen Kennung einmal — der erste Wert gewinnt', async () => {
+        const j = useAenderungen();
+        await j.eintragen({ art: 'lage', globalId: 'H1', nachher: ZIEL, basis: GELIEFERT });
+        const B = { x: 20, y: 2, z: 5 };
+        const anker = new Map([[1, GELIEFERT], [2, B]]);
+        const f = fakeEngine({ anker });
+        const n = useNachspielen({ engine: f.engine, aenderungen: j });
+        await n.nachModellladung('m1');
+        expect(n.lieferstandVon('N2')).toBeUndefined();                    // das Journal nannte B beim Laden nicht
+
+        const erst = await n.friereLieferstandEin(['N2', 'H1']);
+        expect(erst.get('N2')).toEqual(B);
+        expect(erst.get('H1')).toEqual(GELIEFERT);                         // schon eingefroren: nicht neu gelesen
+        anker.set(2, { x: 99, y: 2, z: 5 });                               // B „bewegt"
+        expect((await n.friereLieferstandEin(['N2'])).get('N2')).toEqual(B);
+        expect(f.protokoll.filter(p => p === 'ankerVon')).toHaveLength(2);  // Laden + genau EIN Nachtrag
+    });
+});

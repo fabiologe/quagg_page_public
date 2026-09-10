@@ -114,6 +114,10 @@ export async function gelaendeElemente({
     leseKontext = null, istGelaende = null, bauformAusGeometrie = null,
 } = {}) {
     const modelle = fragmentsList instanceof Map ? [...fragmentsList.values()] : [...(fragmentsList ?? [])];
+    // Nur GELADENE Modelle: eine Kategoriengruppe kann ein entladenes noch
+    // nennen (2026-09-10: R01 entladen, R02 geladen — die Gruppe nannte R01).
+    // Ein entladenes Modell ist kein Gelände.
+    const geladen = new Set(fragmentsList instanceof Map ? fragmentsList.keys() : modelle.map(m => m?.modelId));
     const gewollt = new Set(kategorien);
 
     // Verdecktes als (modelId, localId)-Paare — über denselben GUID-Index wie
@@ -131,6 +135,7 @@ export async function gelaendeElemente({
         const entries = map instanceof Map ? [...map.entries()] : Object.entries(map);
         for (const [modelId, rawIds] of entries) {
             if (modelId === cdeModelId) continue;          // CDE-Teile kommen über den Stand, nicht über die Kategorie
+            if (!geladen.has(modelId)) continue;
             const localIds = Array.isArray(rawIds) ? rawIds : (rawIds instanceof Set ? [...rawIds] : []);
             for (const localId of localIds) {
                 const k = `${modelId}|${localId}`;

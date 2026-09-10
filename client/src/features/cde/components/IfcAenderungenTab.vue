@@ -412,10 +412,14 @@ async function umhaengen() {
   if (!abbildung.size) return;
   rebase.laeuft = true;
   try {
+    // Die GELIEFERTE Lage der neuen Kennungen einfrieren, BEVOR das Umhängen
+    // sie bewegt — das Journal nannte sie beim Laden noch nicht, ohne das
+    // trügen ihre Einträge keine `basis` (im Browser gefunden, 2026-09-10).
+    const eingefroren = await api.friereLieferstandEin?.([...abbildung.values()]) ?? new Map();
     const basisIst = new Map();
     const quellmasse = new Map();
     for (const neu of abbildung.values()) {
-      const b = api.lieferstandVon?.(neu);
+      const b = api.lieferstandVon?.(neu) ?? eingefroren.get(neu);
       if (b) basisIst.set(neu, b);
       const m = await api.pruefmassVon?.(neu);
       if (m) quellmasse.set(neu, m);
@@ -423,8 +427,11 @@ async function umhaengen() {
     const w = rebase.hinweis?.wechsel ?? null;
     const { schritte } = await ae.rebaseAuf({ abbildung, basisIst, quellmasse, wer: cde.bearbeiter || '',
                                               von: w?.von ?? null, nach: w?.nach ?? null });
-    konflikte.value = konflikte.value.filter(k => !abbildung.has(k.globalId));
     await anwenden(schritte);
+    // Was das Umhängen erledigt hat, räumt das Nachspielen selbst
+    // (`konflikteNachJournal`) — hier nur neu lesen. Vorher filterte der Reiter
+    // nur seine KOPIE, und der nächste Geometriestand holte die alte Liste zurück.
+    konflikte.value = api.getKonflikte?.() ?? [];
   } finally {
     rebase.laeuft = false;
   }

@@ -1492,6 +1492,7 @@ provideViewerApi({
    * still als „sauber" durch, statt einen Konflikt zu melden.
    */
   lieferstandVon:       (globalId) => nachspielen.lieferstandVon(globalId),
+  friereLieferstandEin: (globalIds) => nachspielen.friereLieferstandEin(globalIds),
   /** Stufe 5 (Rebase): die Kandidaten einer neuen Revision, ihr Prüfmass, und welche Dateien geladen sind. */
   bauteileDerKategorie: (kategorien) => engine.value?.bauteileDerKategorie?.(kategorien) ?? [],
   pruefmassVon:         (globalId) => engine.value?.pruefmassVon?.(globalId) ?? Promise.resolve(null),

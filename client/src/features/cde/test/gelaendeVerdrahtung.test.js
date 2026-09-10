@@ -207,3 +207,68 @@ describe('Der Elementzusammenhang kommt aus der DATEI, nicht aus den Fragmenten'
         expect(e._gelaendeKontext('m1', 7).attributes.Name).toBe('echt');
     });
 });
+
+describe('Ein Lauf, der VOR dem Verwerfen begann, schreibt danach nicht zurück (2026-09-10, im Browser gefunden)', () => {
+    // R02 geladen → der Gelände-Aufbau startet; R02 entladen, R01 geladen →
+    // verworfen; DANACH wird der alte Aufbau fertig. Vorher schrieb er seine
+    // Liste (R02-Elemente) in den Cache, und sein `.finally` nullte obendrein
+    // den NEUEN Lauf. Die Kandidatenliste nannte dann kein Gelände — bis zum
+    // nächsten Verwerfen. Nullen des Laufs (Test oben) genügte dafür nicht.
+    function aufgeschoben() {
+        let loese;
+        const p = new Promise(r => { loese = r; });
+        return { p, loese };
+    }
+
+    it('die Ortsliste: der alte Lauf fragt NEU, der Cache hält den Stand von jetzt', async () => {
+        const e = engine();
+        e.setzeJournalStand({});
+        const alt = aufgeschoben();
+        gelaendeElementeSpy.mockImplementationOnce(() => alt.p);
+        const erster = e._gelaendeOrteHolen();                     // R02 im Raum: Aufbau läuft
+        e._gelaendeVerwerfen();                                    // R02 entladen, R01 geladen
+        gelaendeElementeSpy.mockImplementationOnce(async () => [{ modelId: 'R01', localId: 7 }]);
+        alt.loese([{ modelId: 'R02', localId: 7 }]);               // der alte Aufbau wird fertig
+        expect(await erster).toEqual([{ modelId: 'R01', localId: 7 }]);
+        expect(e._gelaendeOrte).toEqual([{ modelId: 'R01', localId: 7 }]);
+        expect(gelaendeElementeSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('der Sampler: nie aus den Orten des entladenen Modells gebaut, und das alte finally nullt keinen neuen Lauf', async () => {
+        const e = engine();
+        e.setzeJournalStand({});
+        const gebaut = [];
+        e.makeGeometryResolver = () => ({ forElements: (el) => { gebaut.push(el.map(x => x.modelId).join()); return { getForm: async () => null }; } });
+        const alt = aufgeschoben();
+        gelaendeElementeSpy.mockImplementationOnce(() => alt.p);
+        const erster = e.gelaendeSampler();
+        e._gelaendeVerwerfen();
+        gelaendeElementeSpy.mockImplementation(async () => [{ modelId: 'R01', localId: 7 }]);
+        const zweiter = e.gelaendeSampler();                        // jemand fragt nach dem Verwerfen
+        alt.loese([{ modelId: 'R02', localId: 7 }]);
+        await Promise.all([erster, zweiter]);
+        expect(gebaut).not.toContain('R02');
+        expect(gebaut.at(-1)).toBe('R01');
+        expect(e._gelaendeSampler).not.toBeNull();
+        expect(e._gelaendeSamplerLauf).toBeNull();
+        gelaendeElementeSpy.mockImplementation(async () => [{ modelId: 'm1', localId: 7 }]);   // Grundzustand
+    });
+});
+
+describe('Die Kategoriengruppen sehen die Modelle von JETZT (2026-09-10, im Browser gefunden)', () => {
+    it('buildCategoryIndex leert die gecachten Abfragen, BEVOR es neu gruppiert', async () => {
+        // Die FinderQuery je Kategorie cacht ihr erstes Ergebnis ({R01: [107]}) —
+        // ohne Leeren sah die Gruppe nach dem Revisionswechsel nur das entladene Modell.
+        const OBC = await import('@thatopen/components');
+        const protokoll = [];
+        const finder = { list: new Map([['IFCGEOGRAPHICELEMENT', { clearCache: () => protokoll.push('leeren') }]]) };
+        const classifier = {
+            byCategory: async () => { protokoll.push('gruppieren'); },
+            list: new Map([['Categories', new Map([['IFCGEOGRAPHICELEMENT', { get: async () => ({ R02: [107] }) }]])]]),
+        };
+        const e = engine();
+        e.components = { get: (K) => (K === OBC.ItemsFinder ? finder : K === OBC.Classifier ? classifier : { list: new Map() }) };
+        expect(await e.buildCategoryIndex()).toEqual(['IFCGEOGRAPHICELEMENT']);
+        expect(protokoll).toEqual(['leeren', 'gruppieren']);
+    });
+});
