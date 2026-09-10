@@ -272,3 +272,75 @@ describe('Die Kategoriengruppen sehen die Modelle von JETZT (2026-09-10, im Brow
         expect(protokoll).toEqual(['leeren', 'gruppieren']);
     });
 });
+
+describe('Auswahl auf Gelände: die Kanten, nicht das Grün (2026-09-10, Fabio)', () => {
+    async function mitAttrappen() {
+        const OBC = await import('@thatopen/components');
+        const { SELECTION_STYLE } = await import('../services/IfcEngine.js');
+        const e = engine();
+        e._gelaendeOrte = [{ modelId: 'm1', localId: 7 }];
+        const gefuellt = [], hider = [], p = { markiert: [], demarkiert: [], sicht: [] };
+        const fragments = { list: new Map(), highlight: async (stil, items) => { gefuellt.push([stil, items]); }, resetHighlight: async () => {} };
+        e.components = { get: (K) => (K === OBC.FragmentsManager ? fragments
+            : K === OBC.Hider ? { set: async (s, i) => { hider.push([s, i]); } } : { list: new Map() }) };
+        e.gelaendeKanten = { markiere: (k) => p.markiert.push(...k), demarkiere: (k) => p.demarkiert.push(...k),
+                             sichtbarkeit: (s, k) => p.sicht.push([s, ...k]) };
+        return { e, SELECTION_STYLE, gefuellt, hider, p };
+    }
+
+    it('die Auswahl füllt kein Gelände — dessen Kanten tragen sie; der Rest bekommt den leichten Stil', async () => {
+        const { e, SELECTION_STYLE, gefuellt, p } = await mitAttrappen();
+        await e._highlight(SELECTION_STYLE, { m1: [7, 9] });
+        expect(p.markiert).toEqual(['m1|7']);
+        expect(gefuellt.map(([, i]) => i)).toEqual([{ m1: [9] }]);
+        // leicht: durchscheinend und kein Reingrün mehr
+        expect(SELECTION_STYLE.transparent).toBe(true);
+        expect(SELECTION_STYLE.opacity).toBeLessThan(1);
+        expect(SELECTION_STYLE.color.r).toBeGreaterThan(0.5);
+    });
+
+    it('nur Gelände gewählt: gar nichts gefüllt; Zurücksetzen nimmt die Markierung', async () => {
+        const { e, SELECTION_STYLE, gefuellt, p } = await mitAttrappen();
+        await e._highlight(SELECTION_STYLE, { m1: [7] });
+        expect(gefuellt).toEqual([]);
+        await e._resetHighlight({ m1: [7] });
+        expect(p.demarkiert).toEqual(['m1|7']);
+    });
+
+    it('andere Färbungen (Kandidat, Dimmen) füllen das Gelände weiter — nur die AUSWAHL wechselt auf Kanten', async () => {
+        const { e, gefuellt, p } = await mitAttrappen();
+        await e._highlight({ opacity: 0.9, transparent: true }, { m1: [7] });
+        expect(gefuellt).toHaveLength(1);
+        expect(p.markiert).toEqual([]);
+    });
+
+    it('die Kanten folgen dem Hider', async () => {
+        const { e, hider, p } = await mitAttrappen();
+        await e._hiderSet(false, { m1: [7, 9] });
+        expect(p.sicht).toEqual([[false, 'm1|7', 'm1|9']]);
+        expect(hider).toHaveLength(1);
+    });
+
+    it('die Kanten kommen aus derselben Geländeliste, in Basis-Kennungen', async () => {
+        const e = engine();
+        e.setzeJournalStand({});
+        const gesetzt = [];
+        e.gelaendeKanten = { setze: (n) => gesetzt.push([...n.keys()]) };
+        gelaendeElementeSpy.mockImplementationOnce(async () => [{ modelId: 'cde-eigenbau-DELTA-MODEL-1', localId: 4 }]);
+        e.makeGeometryResolver = () => ({ forElements: () => ({ getForm: async () => ({ data: { positions: new Float64Array(9), triCount: 1 } }) }) });
+        expect(await e._gelaendeKantenNachziehen()).toBe(true);
+        expect(gesetzt).toEqual([['cde-eigenbau|4']]);
+    });
+
+    it('buildCategoryIndex verwirft das Gelände — wer vorher fragte, hielt die alte Liste', async () => {
+        const OBC = await import('@thatopen/components');
+        const e = engine();
+        e.components = { get: (K) => (K === OBC.ItemsFinder ? { list: new Map() }
+            : K === OBC.Classifier ? { byCategory: async () => {}, list: new Map([['Categories', new Map()]]) } : { list: new Map() }) };
+        e._gelaendeOrte = [{ modelId: 'alt', localId: 1 }];
+        const vorher = e._gelaendeGeneration ?? 0;
+        await e.buildCategoryIndex();
+        expect(e._gelaendeOrte).toBeNull();
+        expect(e._gelaendeGeneration).toBe(vorher + 1);
+    });
+});

@@ -31,6 +31,7 @@ import { achsGuete } from './bauform/Bauformen.js';
 import { pruefmassVon, zellweiteVorschlag, achsmassAus } from './geometrie/ops/Raster.js';
 import { meshVolume } from './geometry/MeshOps.js';
 import { makeHeightSampler } from './TerrainMesh.js';
+import { GelaendeKanten } from './GelaendeKanten.js';
 import { collectElementTriangles } from './geometry/MeshAcquire.js';
 import { IfcQuelle } from './IfcQuelle.js';
 import { inMeterUmrechnen } from './Einheiten.js';
@@ -51,11 +52,19 @@ const STICHPROBE = 24;
 import { leseGeoreferenz } from './Georeferenz.js';
 
 
-const SELECTION_STYLE = {
-    color: new THREE.Color(0.0, 1.0, 0.08),
+/**
+ * Die AUSWAHL — leicht (Fabio, 2026-09-10: „das grüne Auswählen sollte weg
+ * und durch ein leichteres Feedback ersetzt werden"). Vorher deckendes
+ * Reingrün (0, 1, 0.08): das gewählte Bauteil verlor Form und Schattierung,
+ * ein gewähltes Gelände war eine grüne Fläche. Jetzt ein heller,
+ * durchscheinender Schimmer; ein Gelände füllt `_highlight` gar nicht mehr —
+ * seine Dreieckskanten tragen die Auswahl (`GelaendeKanten`).
+ */
+export const SELECTION_STYLE = {
+    color: new THREE.Color(0.72, 0.88, 1.0),
     renderedFaces: FRAGS.RenderedFaces.TWO,
-    opacity: 1.0,
-    transparent: false,
+    opacity: 0.55,
+    transparent: true,
 };
 
 const CATEGORY_COLORS = {
@@ -141,13 +150,8 @@ const FAERBE_STILE = Object.freeze({
     ])),
 });
 
-/** Rahmenauswahl — dieselbe Farbe wie die Einzelauswahl, damit zwei Wege eine Sprache sprechen. */
-const MARQUEE_STYLE = {
-    color: new THREE.Color(0.0, 1.0, 0.08),
-    renderedFaces: FRAGS.RenderedFaces.TWO,
-    opacity: 1.0,
-    transparent: false,
-};
+/** Rahmenauswahl — derselbe Stil wie die Einzelauswahl, damit zwei Wege eine Sprache sprechen. */
+const MARQUEE_STYLE = { ...SELECTION_STYLE, color: SELECTION_STYLE.color.clone() };
 
 // Multi-sample offsets (px) around the click point — improves hit rate on thin
 // edges and small elements without requiring an exact pixel hit.
@@ -325,6 +329,8 @@ export class IfcEngine {
         this.measure     = new IfcMeasure({     getWorld: () => this._getWorld(), probePoint });
         // Teil XVI: der EINE Besitzer temporärer Grafik (Zeiger, Vorschau, Griffe, Fang).
         this.overlay     = new IfcOverlay({ getWorld: () => this._getWorld() });
+        // Die Dreieckskanten der Gelände (2026-09-10) — mit Tiefentest, deshalb nicht im Overlay.
+        this.gelaendeKanten = new GelaendeKanten({ getWorld: () => this._getWorld() });
         // Stufe 9.2: der einzige Kanal zur Editor-API von @thatopen/fragments.
         this.autor       = new IfcAutor({
             getFragments: () => this.components.get(OBC.FragmentsManager),
@@ -706,18 +712,31 @@ export class IfcEngine {
     }
 
     async _highlight(stil, items) {
+        // AUSWAHL auf Gelände: nicht füllen — die Dreieckskanten tragen sie
+        // (Fabio, 2026-09-10). Alle Auswahlwege (Klick, Rahmen, Verbund,
+        // Wiederherstellen nach dem Entfärben) kommen hier vorbei; andere
+        // Färbungen (Kandidat, Dimmen, Erdbau) füllen weiter.
+        if (stil === SELECTION_STYLE || stil === MARQUEE_STYLE) {
+            const { gelaende, rest } = await this._ohneGelaende(items);
+            this.gelaendeKanten?.markiere(gelaende);
+            if (!Object.keys(rest).length) return;
+            items = rest;
+        }
         const fragments = this.components.get(OBC.FragmentsManager);
         try { await fragments.highlight(stil, this._mitDelta(items)); }
         catch { await fragments.highlight(stil, items); }
     }
 
     async _resetHighlight(items) {
+        this.gelaendeKanten?.demarkiere(this._schluesselVon(items));
         const fragments = this.components.get(OBC.FragmentsManager);
         try { await fragments.resetHighlight(this._mitDelta(items)); }
         catch { await fragments.resetHighlight(items); }
     }
 
     async _hiderSet(sichtbar, items) {
+        // Die Geländekanten folgen dem Hider — sonst schwebten sie über einem ausgeblendeten Gelände.
+        this.gelaendeKanten?.sichtbarkeit(sichtbar, this._schluesselVon(items));
         const hider = this.components.get(OBC.Hider);
         try { await hider.set(sichtbar, this._mitDelta(items)); }
         catch { await hider.set(sichtbar, items); }
@@ -770,7 +789,7 @@ export class IfcEngine {
             await classifier.byCategory();
 
             const groups = classifier.list.get('Categories');
-            if (!groups) { this._categoryGroups = []; return []; }
+            if (!groups) { this._categoryGroups = []; this._gelaendeVerwerfen(); return []; }
 
             this._categoryGroups = [];
             for (const [name, groupData] of groups) {
@@ -778,10 +797,14 @@ export class IfcEngine {
                 const count = Object.values(map).reduce((s, ids) => s + (ids?.length ?? 0), 0);
                 this._categoryGroups.push({ name, groupData, visible: true, count });
             }
+            // Neue Kategorien, neues Gelände: wer die Liste VOR diesem Punkt
+            // fragte (das Laden verwirft VOR dem Index), hielt die alte.
+            this._gelaendeVerwerfen();
             return this._categoryGroups.map(g => g.name);
         } catch (err) {
             console.error('[IfcEngine] buildCategoryIndex failed:', err);
             this._categoryGroups = [];
+            this._gelaendeVerwerfen();
             return [];
         }
     }
@@ -1552,6 +1575,7 @@ export class IfcEngine {
         if (!orte?.length) return;
         const karte = {};
         for (const o of orte) (karte[o.modelId] ??= []).push(o.localId);
+        this.gelaendeKanten?.sichtbarkeit(sichtbar, this._schluesselVon(karte));
         try {
             await this.components.get(OBC.Hider).set(sichtbar, karte);
             await this.components.get(OBC.FragmentsManager).core.update(true);
@@ -2526,6 +2550,66 @@ export class IfcEngine {
         this._gelaendeOrte = null;
         this._gelaendeOrteLauf = null;
         this._gelaendeMerkmale = null;
+        // Anderes Gelände, andere Kanten — entprellt, das Verwerfen kommt beim Laden gehäuft.
+        this._gelaendeKantenPlanen();
+    }
+
+    /** Die Dreieckskanten nachziehen — 250 ms nach dem LETZTEN Verwerfen. */
+    _gelaendeKantenPlanen() {
+        if (!this.gelaendeKanten) return;
+        clearTimeout(this._gelaendeKantenUhr);
+        this._gelaendeKantenUhr = setTimeout(() => {
+            this._gelaendeKantenNachziehen().catch(e => console.warn('[CDE] Geländekanten:', e?.message ?? e));
+        }, 250);
+    }
+
+    /**
+     * Die Kanten GENAU der Gelände, die auch Sampler und Kandidaten sehen
+     * (`_gelaendeOrteHolen` — eine Liste, eine Antwort), aus ihren ORIGINAL-
+     * Dreiecken. Wird währenddessen verworfen, bricht der Lauf ab: der
+     * nächste ist dann schon geplant.
+     * @returns {Promise<boolean>} gezeichnet?
+     */
+    async _gelaendeKantenNachziehen() {
+        const generation = this._gelaendeGeneration ?? 0;
+        const orte = await this._gelaendeOrteHolen();
+        const netze = new Map();
+        for (const o of orte ?? []) {
+            let d = null;
+            try { d = (await this.makeGeometryResolver()?.forElements([o])?.getForm('mesh'))?.data ?? null; } catch { d = null; }
+            if ((this._gelaendeGeneration ?? 0) !== generation) return false;
+            if (d?.positions?.length && d.triCount > 0) {
+                netze.set(`${basisModelId(o.modelId)}|${o.localId}`, { positions: d.positions, triCount: d.triCount });
+            }
+        }
+        if ((this._gelaendeGeneration ?? 0) !== generation) return false;
+        this.gelaendeKanten?.setze(netze);
+        return true;
+    }
+
+    /** `${modelId}|${localId}` je Eintrag einer ModelIdMap — Basis-Kennung, wie die Kanten sie führen. */
+    _schluesselVon(items) {
+        const aus = [];
+        for (const [mid, ids] of Object.entries(items ?? {})) for (const id of ids ?? []) aus.push(`${basisModelId(mid)}|${id}`);
+        return aus;
+    }
+
+    /** Die Gelände aus einer ModelIdMap herausnehmen — dieselbe Liste wie Sampler, Kandidaten und Kanten. */
+    async _ohneGelaende(items) {
+        let orte = this._gelaendeOrte;
+        if (!orte) { try { orte = await this._gelaendeOrteHolen(); } catch { orte = []; } }
+        const istGelaende = new Set((orte ?? []).map(o => `${basisModelId(o.modelId)}|${o.localId}`));
+        const gelaende = [];
+        const rest = {};
+        for (const [mid, ids] of Object.entries(items ?? {})) {
+            const bleiben = [];
+            for (const id of ids ?? []) {
+                const k = `${basisModelId(mid)}|${id}`;
+                if (istGelaende.has(k)) gelaende.push(k); else bleiben.push(id);
+            }
+            if (bleiben.length) rest[mid] = bleiben;
+        }
+        return { gelaende, rest };
     }
 
     /**
@@ -3731,6 +3815,8 @@ export class IfcEngine {
         this.section?.deleteSectionCuts?.();
         // Vor `components.dispose()` — danach gibt es die Szene nicht mehr.
         this.overlay?.dispose?.();
+        clearTimeout(this._gelaendeKantenUhr);
+        this.gelaendeKanten?.dispose?.();
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

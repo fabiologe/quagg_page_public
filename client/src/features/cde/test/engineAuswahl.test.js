@@ -7,7 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
-import { IfcEngine } from '../services/IfcEngine.js';
+import { IfcEngine, SELECTION_STYLE } from '../services/IfcEngine.js';
 
 function attrappe({ treffer = null, snaps = [], rechteck = [] } = {}) {
     const modell = {
@@ -203,7 +203,9 @@ describe('Färbe-Stapel und waehleOrt (S2)', () => {
         t.fragments.highlight.mockClear();
         expect(await t.engine.entfaerbe('dimmen')).toBe(true);
         expect(t.fragments.resetHighlight).toHaveBeenLastCalledWith({ m: [7] });
-        expect(t.fragments.highlight).toHaveBeenCalledWith(expect.objectContaining({ opacity: 1 }), { m: [7] });
+        // Wiederhergestellt mit DEM Auswahlstil — erkannt an der Identität, nicht an einer
+        // Farbe: die war bis 2026-09-10 deckend grün und ist jetzt ein leichter Schimmer.
+        expect(t.fragments.highlight).toHaveBeenCalledWith(SELECTION_STYLE, { m: [7] });
         expect(await t.engine.entfaerbe('dimmen')).toBe(false);
     });
 
