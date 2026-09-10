@@ -206,6 +206,11 @@ export function dokumentAusManifest(d) {
         von:             d.von ?? null,
         vorhanden:       d.vorhanden !== false,
         projectGlobalId: d.projekt_global_id ?? null,
+        // Woraus die CDE ein Dokument ERZEUGT hat (Verbund, Erdbau) — bis
+        // Stufe 3 des Aushub-Fachmodells kam das nie beim Viewer an, obwohl der
+        // Server es seit dem ersten Verbund ins Manifest schreibt. Ein
+        // hochgeladenes Dokument hat keine: woher es kam, weiss der Planer.
+        herkunft:        d.herkunft ?? null,
         // Der Viewer rechnet in ms-Epoche (Date.now()), das Manifest schreibt
         // ISO-Strings. Eine Form gewinnt, sonst sortiert das Register falsch.
         addedAt:         Date.parse(d.hochgeladen_am) || 0,

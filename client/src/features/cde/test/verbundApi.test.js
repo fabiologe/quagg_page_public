@@ -52,6 +52,17 @@ describe('AuftragApi — Verbund', () => {
     expect(JSON.parse(await datei.text())).toEqual(paket);
   });
 
+  it('der Erdbau ist derselbe Draht mit `modus` — das Paket als Datei, der Modus als Feld (Stufe 3)', async () => {
+    await AuftragApi.verbundStarten(7, 's-abc', { eigenbau: { version: 2, bauteile: [] }, modus: 'erdbau' });
+    const form = aufrufe[0].body;
+    expect(form.get('modus')).toBe('erdbau');
+    expect(form.get('eigenbau').name).toBe('eigenbau.json');
+    // Ohne Angabe fehlt das Feld — der Server nimmt dann `verbund`.
+    aufrufe.length = 0;
+    await AuftragApi.verbundStarten(7, 's-abc');
+    expect(aufrufe[0].body.has('modus')).toBe(false);
+  });
+
   it('holt den Lauf unter seiner Kennung ab', async () => {
     const st = await AuftragApi.verbundStatus(7, 'v-1-abcdef');
     expect(aufrufe[0].url).toBe('/projekte/7/cde/verbund/v-1-abcdef');

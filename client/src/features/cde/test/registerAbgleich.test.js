@@ -275,3 +275,12 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
     expect(cde.dokumente[0].status).toBe('Shared');
   });
 });
+
+describe('Herkunft im Register (Stufe 3 des Aushub-Fachmodells)', () => {
+  it('trägt die Herkunft erzeugter Dokumente zum Viewer — hochgeladene haben keine', () => {
+    // Der Server schrieb sie seit dem ersten Verbund; bis Stufe 3 fiel sie hier weg.
+    const h = { art: 'erdbau', satz_name: 'Boden', quellen: [{ sha256: 'g', datei: 'Gelaende.ifc', revision: 1 }] };
+    expect(dokumentAusManifest(eintrag({ herkunft: h })).herkunft).toEqual(h);
+    expect(dokumentAusManifest({ sha256: 'x', datei: 'Alt.ifc' }).herkunft).toBeNull();
+  });
+});

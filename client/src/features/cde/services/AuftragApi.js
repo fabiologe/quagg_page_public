@@ -50,10 +50,16 @@ export const AuftragApi = {
      * DATEI `eigenbau` mit, nicht als Formularfeld: es trägt Dreiecke, leicht
      * mehrere Megabyte, und als Datei behandeln Server und Proxy es wie jeden
      * anderen Upload.
+     *
+     * `modus: 'erdbau'` (Stufe 3 des Aushub-Fachmodells): derselbe Lauf, aber
+     * die Quellen sind die Registerdateien der Wirte (`paket.quellDokumente`),
+     * und ins Register kommt `Erdbau_<Satz>_R<nn>.ifc`. Ohne Paket lehnt der
+     * Server ab — ein Erdbau ohne Aushub ist keiner.
      */
-    async verbundStarten(id, satzId, { eigenbau = null, crs = null, projektname = null } = {}) {
+    async verbundStarten(id, satzId, { eigenbau = null, crs = null, projektname = null, modus = null } = {}) {
         const form = new FormData();
         form.append('satz_id', satzId);
+        if (modus) form.append('modus', modus);
         if (crs) form.append('crs', crs);
         if (projektname) form.append('projektname', projektname);
         if (eigenbau) {

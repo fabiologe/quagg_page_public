@@ -184,6 +184,9 @@ def lauf(ordner: Path) -> int:
             nachbearbeiten=nachbearbeiten)
         if eigenbau_bericht is not None:
             bericht["eigenbau"] = eigenbau_bericht
+        # verbund | erdbau — derselbe Lauf, dasselbe Tor; nur Quellenliste und
+        # Dateiname unterscheiden sich, und die entscheidet der Server.
+        bericht["modus"] = auftrag.get("modus") or "verbund"
         bericht["werkzeug"] = f"ifcopenshell {ifcopenshell.version}"
         # Der zweite Motor vergleicht gegen diesen Bericht — er muss vorher stehen.
         schreibe_json(bericht_pfad, bericht)

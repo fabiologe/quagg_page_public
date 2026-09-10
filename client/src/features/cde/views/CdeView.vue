@@ -273,7 +273,7 @@
             <th class="doc-satz" :title="cde.aktiverSatz ? `Im Modellsatz „${cde.aktiverSatz.name}“` : ''">
               {{ cde.aktiverSatz ? 'Satz' : '' }}
             </th>
-            <th>Dokument</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th>Aufgenommen</th><th></th>
+            <th>Dokument</th><th title="Woraus die CDE das Dokument erzeugt hat — hochgeladene haben keine Herkunft">Herkunft</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th>Aufgenommen</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -291,6 +291,11 @@
               />
             </td>
             <td class="doc-name" :title="d.sha256">{{ d.name }}</td>
+            <!-- Stufe 3 (Aushub-Fachmodell): ein erzeugtes Dokument sagt, woraus. -->
+            <td class="doc-herkunft">
+              <span v-if="herkunftJe.get(d.sha256)" class="cde-badge mute"
+                    :title="herkunftJe.get(d.sha256).titel">{{ herkunftJe.get(d.sha256).text }}</span>
+            </td>
             <td class="doc-rev">{{ d.revision }}</td>
             <td class="doc-size">{{ fmtBytes(d.size) }}</td>
             <td>
@@ -599,7 +604,7 @@
     <!-- Verbund (2026-09-10): Modellsatz → EIN geprüftes IFC4X3, im Register und
          zum Herunterladen. Gerechnet wird auf dem Server (Unterprozess); hier
          wird angestoßen, abgeholt und der Prüfbericht gezeigt. -->
-    <CdeDialog :offen="verbundOffen" titel="Verbundmodell" icon="layers" @close="verbundOffen = false">
+    <CdeDialog :offen="verbundOffen" :titel="verbundModus === 'erdbau' ? 'Erdbau-Dokument' : 'Verbundmodell'" icon="layers" @close="verbundOffen = false">
       <template v-if="!verbundLauf">
         <p class="tm-satz">
           Die Modelle des Satzes <b>{{ cde.aktiverSatz?.name }}</b> werden zu einer
@@ -609,14 +614,25 @@
         </p>
         <div v-for="d in verbundModelle" :key="d.sha256" class="tm-zeile">
           <span class="tm-name">{{ d.datei ?? d.name }}</span>
-          <span class="tm-meta">Rev. {{ d.revision }} · {{ d.status }}</span>
+          <span class="tm-meta">
+            <template v-if="verbundWeggelassen.get(d.sha256)">fällt weg — steckt in {{ verbundWeggelassen.get(d.sha256) }}</template>
+            <template v-else>Rev. {{ d.revision }} · {{ d.status }}{{ d.herkunft?.art === 'erdbau' ? ' · Erdbau' : '' }}</template>
+          </span>
         </div>
         <p v-if="!verbundModelle.length" class="tm-satz">Der Satz enthält kein Modell.</p>
-        <label class="tm-zeile">
-          <input type="checkbox" v-model="verbundEigenbau" />
-          <span class="tm-name">CDE-Eigenbau mitnehmen</span>
-          <span class="tm-meta">was die CDE selbst erzeugt hat</span>
+        <!-- Stufe 3: der Erdbau kommt ENTWEDER aus einem Dokument des Satzes ODER
+             live aus der CDE — beides zugleich stellte den Aushub doppelt in den
+             Verbund, und der Server lehnt es ab. -->
+        <label class="tm-zeile" :title="verbundErdbauImSatz.length ? `Der Satz führt ${verbundErdbauImSatz.join(', ')} — der Erdbau kommt aus dem Dokument` : ''">
+          <input type="checkbox" v-model="verbundEigenbau" :disabled="verbundErdbauImSatz.length > 0" />
+          <span class="tm-name">CDE-Eigenbau live mitnehmen</span>
+          <span class="tm-meta">{{ verbundErdbauImSatz.length ? `nicht nötig — ${verbundErdbauImSatz.join(', ')} im Satz` : 'was die CDE selbst erzeugt hat' }}</span>
         </label>
+        <p class="tm-satz">
+          <b>Erdbau registrieren</b> legt den Erdbau der CDE als eigenes Dokument ab: das
+          gelieferte Gelände unverändert, je Vorgang Aushub und Auftrag mit Mengen —
+          geprüft wie jeder Verbund, als „Erdbau_{{ cde.aktiverSatz?.name }}_R…“.
+        </p>
       </template>
       <template v-else>
         <p class="tm-satz">
@@ -640,6 +656,12 @@
         <p v-for="w in verbundFehlendeWirte" :key="w" class="tm-meldung">
           <CdeIcon name="warn" :size="12" /> Aushub ohne sein Gelände ({{ w }}) — das gelieferte Gelände in den Satz aufnehmen
         </p>
+        <p v-for="w in verbundOhneWirt" :key="`ohne-${w}`" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> Aushub {{ w }} nennt kein Gelände — im Journal fehlt seine Quelle
+        </p>
+        <p v-for="w in verbundLauf.weggelassen || []" :key="`weg-${w.datei}`" class="tm-satz">
+          <CdeIcon name="info" :size="12" /> {{ w.datei }} — {{ w.grund }}
+        </p>
         <div v-for="b in verbundLauf.befunde || []" :key="b.id" class="tm-zeile" :title="b.sagt">
           <CdeIcon :name="b.ok === true ? 'status-ok' : b.ok === false ? 'status-error' : 'status-warn'" :size="12" />
           <span class="tm-name">{{ b.id }} · {{ b.titel }}</span>
@@ -659,9 +681,14 @@
       </p>
       <template #fuss>
         <button class="cde-btn ghost" @click="verbundOffen = false">{{ verbundLauf ? 'Schließen' : 'Abbrechen' }}</button>
+        <button v-if="!verbundLauf" class="cde-btn" :disabled="verbundStartet"
+                title="Den Erdbau der CDE als eigenes, geprüftes Dokument ins Register — Erdbau_<Satz>_R<nn>.ifc"
+                @click="verbundStarten('erdbau')">
+          <CdeIcon name="terrain" :size="13" /> Erdbau registrieren
+        </button>
         <button v-if="!verbundLauf" class="cde-btn primary"
                 :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)"
-                @click="verbundStarten">
+                @click="verbundStarten('verbund')">
           {{ verbundStartet ? 'Startet …' : 'Verbund erzeugen' }}
         </button>
         <button v-else-if="verbundLauf.dokument" class="cde-btn primary" @click="verbundHerunterladen">
@@ -703,6 +730,7 @@ import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
 import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
+import { herkunftChip, imErdbauEnthalten } from '../services/Herkunft.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1160,6 +1188,8 @@ const verbundEigenbau = ref(true);
 const verbundStartet = ref(false);
 const verbundLauf = ref(null);
 const verbundMeldung = ref('');
+// verbund | erdbau (Stufe 3) — derselbe Lauf, eine andere Quellenliste und ein anderer Dateiname.
+const verbundModus = ref('verbund');
 let verbundUhr = null;
 
 const verbundModelle = computed(() => {
@@ -1191,6 +1221,15 @@ const verbundEigenbauLuecken = computed(() =>
 // aber er soll sagen, WAS fehlt, statt nur, dass etwas fehlt.
 const verbundFehlendeWirte = computed(() =>
   verbundLauf.value?.bericht?.nachbearbeitung?.wirte?.fehlende_wirte ?? []);
+// Ein eigener Aushub, der GAR KEIN Gelände nennt: dort fehlt nicht ein Dokument
+// im Satz, sondern die Quelle im Journal — ein anderer Satz an den Planer.
+const verbundOhneWirt = computed(() =>
+  verbundLauf.value?.bericht?.nachbearbeitung?.wirte?.ohne_wirtangabe ?? []);
+// Erdbau-Dokumente im Satz, und was in ihnen steckt (Stufe 3) — dieselbe Regel
+// wie der Server: das Gelände darin fällt im Verbund weg.
+const verbundWeggelassen = computed(() => imErdbauEnthalten(verbundModelle.value));
+const verbundErdbauImSatz = computed(() =>
+  verbundModelle.value.filter(d => d.herkunft?.art === 'erdbau').map(d => d.datei ?? d.name));
 
 function verbundOeffnen() {
   // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder
@@ -1198,26 +1237,36 @@ function verbundOeffnen() {
   if (!verbundLaeuft.value) {
     verbundLauf.value = null;
     verbundMeldung.value = '';
+    verbundModus.value = 'verbund';
   }
   verbundOffen.value = true;
 }
 
-async function verbundStarten() {
+async function verbundStarten(modus = 'verbund') {
   const satz = cde.aktiverSatz;
   if (!satz || !cde.auftrag?.id) return;
   verbundStartet.value = true;
   verbundMeldung.value = '';
+  verbundModus.value = modus;
+  const erdbau = modus === 'erdbau';
   let eigenbau = null;
-  if (verbundEigenbau.value) {
+  // Der Live-Stand: beim Erdbau Pflicht; beim Verbund nur, wenn kein
+  // Erdbau-Dokument im Satz steht (sonst stünde der Aushub doppelt).
+  if (erdbau || (verbundEigenbau.value && !verbundErdbauImSatz.value.length)) {
     try {
       eigenbau = (await useViewerApi().eigenbauPaket?.()) ?? null;
     } catch (fehler) {
-      // Kein Abbruch: ohne Eigenbau bleibt der Verbund der Lieferungen. Gesagt wird es trotzdem.
+      // Beim Verbund kein Abbruch: ohne Eigenbau bleibt der Verbund der Lieferungen. Gesagt wird es trotzdem.
       verbundMeldung.value = `CDE-Eigenbau nicht dabei: ${fehler?.message ?? fehler}`;
+    }
+    if (erdbau && !eigenbau) {
+      verbundMeldung.value ||= 'Der Erdbau braucht den Stand der CDE — erst ein Modell laden.';
+      verbundStartet.value = false;
+      return;
     }
   }
   try {
-    const angenommen = await AuftragApi.verbundStarten(cde.auftrag.id, satz.id, { eigenbau });
+    const angenommen = await AuftragApi.verbundStarten(cde.auftrag.id, satz.id, { eigenbau, modus });
     verbundLauf.value = { ...angenommen, schritt: '' };
     verbundAbholen(angenommen.lauf_id);
   } catch (fehler) {
@@ -1417,6 +1466,8 @@ onBeforeUnmount(() => {
 
 const sortedDokumente = computed(() =>
   [...cde.dokumente].sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0)));
+// Stufe 3: der Herkunfts-Chip je Registerzeile — einmal je Stand gerechnet, nicht je Zelle.
+const herkunftJe = computed(() => new Map(sortedDokumente.value.map(d => [d.sha256, herkunftChip(d)])));
 
 /** Beim ersten geladenen Modell die Struktur-Leiste anbieten. */
 function onModelLoaded() {
@@ -1811,6 +1862,7 @@ function fmtDate(ts) {
 .cde-doc-table td { padding: 0.25rem 0.4rem; border-bottom: 1px solid var(--cde-tint-weak); }
 .doc-name { color: var(--cde-text-bright); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-rev, .doc-size, .doc-date { font-variant-numeric: tabular-nums; color: var(--cde-text-dim); }
+.doc-herkunft { white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .doc-actions { display: flex; gap: 0.25rem; }
 
 .doc-status-hinweis {
