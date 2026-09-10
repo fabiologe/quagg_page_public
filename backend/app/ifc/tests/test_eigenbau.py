@@ -629,7 +629,7 @@ def test_im_verbund_holt_der_vorgang_seine_haltung(tmp_path):
          V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
         ziel, projektname="Vorgang",
         nachbearbeiten=[("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)])
-    assert bericht["nachbearbeitung"]["vorgaenge"] == {"vorgaenge": 1, "ergaenzt": 1, "fehlend": []}
+    assert bericht["nachbearbeitung"]["vorgaenge"] == {"vorgaenge": 1, "mit_quellen": 1, "ergaenzt": 1, "fehlend": []}
     f = ifcopenshell.open(ziel)
     [gruppe] = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Vorgang"]
     glieder = {o.GlobalId for rel in gruppe.IsGroupedBy for o in rel.RelatedObjects}
@@ -682,6 +682,7 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
     assert (w["geschlossen"], w["fehlende_wirte"], w["ohne_wirtangabe"]) == (3, [], [])
     v = b["nachbearbeitung"]["vorgaenge"]
     assert v["ergaenzt"] == 1 and v["fehlend"] == [VERTRAG["bauteil"]]     # das Fundament liegt nicht im Satz
+    assert (v["vorgaenge"], v["mit_quellen"]) == (3, 2)           # das Gerinne nennt keine Lieferung
 
     f = ifcopenshell.open(ziel)
     assert len(f.by_type("IfcGeographicElement")) == 1          # TERRAIN = 1 (mit Paket v1: zwei)

@@ -646,17 +646,23 @@ def vorgaenge_schliessen_in(datei) -> dict:
     Was nicht im Verbund liegt, steht unter `fehlend` — kein Fehler, der Satz
     enthaelt die Lieferung eben nicht.
 
-    @returns {"vorgaenge": n, "ergaenzt": n, "fehlend": [GlobalIds]}
+    ZWEI ZAHLEN, getrennt: `vorgaenge` sind ALLE Vorgangsgruppen der Datei,
+    `mit_quellen` die, die gelieferte Bauteile nennen (ein Gerinne nennt keine).
+    Der erste Produktionslauf meldete „2" bei drei Gruppen in der Datei — die
+    Zahl stimmte, sagte aber etwas anderes, als ihr Name versprach.
+
+    @returns {"vorgaenge": n, "mit_quellen": n, "ergaenzt": n, "fehlend": [GlobalIds]}
     """
-    vorgaenge, ergaenzt, fehlend = 0, 0, set()
+    vorgaenge, mit_quellen, ergaenzt, fehlend = 0, 0, 0, set()
     for gruppe in datei.by_type("IfcGroup"):
         if gruppe.ObjectType != "Vorgang":
             continue
+        vorgaenge += 1
         roh = _merkmal(gruppe, PSET_VORGANG, "Quellen")
         rel = next(iter(gruppe.IsGroupedBy or ()), None)
         if not roh or rel is None:
             continue
-        vorgaenge += 1
+        mit_quellen += 1
         try:
             q = json.loads(roh)
         except ValueError:
@@ -675,7 +681,7 @@ def vorgaenge_schliessen_in(datei) -> dict:
         if neu:
             rel.RelatedObjects = list(rel.RelatedObjects) + neu
             ergaenzt += len(neu)
-    return {"vorgaenge": vorgaenge, "ergaenzt": ergaenzt, "fehlend": sorted(fehlend)}
+    return {"vorgaenge": vorgaenge, "mit_quellen": mit_quellen, "ergaenzt": ergaenzt, "fehlend": sorted(fehlend)}
 
 
 def _main(argv=None):
