@@ -406,6 +406,16 @@ export class RemoteBackend {
      */
     async setBlob(fullKey, blob, meta = {}) {
         const sha = this._shaAus(fullKey);
+        // NUR MODELLE gehen ins Register (2026-09-11). Der Viewer legt auch
+        // ABGELEITETES ab — die Fragmentdatei (`frag:`), die Meter-Bytes
+        // (`meter:`) — und bisher ging jede Art an `/cde/upload`, unter dem
+        // Namen der IFC. Gemessen in 42069: ein Registerdokument
+        // „TEST-ERDKOERPER_ENQUIER.ifc" mit 70 818 Bytes zlib — die
+        // Fragmentdatei, keine IFC; entstanden bei einem Prüflauf OHNE Ablage
+        // (`persist:false`). Lag die IFC schon im Register, kam stattdessen
+        // 422 „liegt bereits". Abgeleitetes ist ein Zwischenspeicher, kein
+        // Dokument — der Server bekommt es nicht.
+        if (!sha) return false;
         let reg;
         try { reg = await this._registerLaden(true); }
         catch (e) {

@@ -37,7 +37,7 @@
 
 import * as THREE from 'three';
 import { formeNach, verschiebeOperationen } from './gelaende/Operationen.js';
-import { dreieckeAusRaster } from './geometry/SurfaceOps.js';
+import { dreieckeAusRaster, dreieckeMitFlicken } from './geometry/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { sweep, kreisProfil } from './geometrie/ops/Sweep.js';
@@ -745,7 +745,10 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
 export function geometrieAusTeil(teil) {
     if (!teil) return null;
     if (teil.form === 'raster') {
-        const { positions, triCount } = dreieckeAusRaster(teil.daten);
+        // Feine Flicken (Teil XX): die Anzeige wird dort fein, wo Operationen wirken.
+        const { positions, triCount } = teil.flicken?.length
+            ? dreieckeMitFlicken(teil.daten, teil.flicken)
+            : dreieckeAusRaster(teil.daten);
         return triCount ? dreiecksGeometrie(positions) : null;
     }
     if (teil.form === 'koerper' || teil.form === 'mesh') {

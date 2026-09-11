@@ -58,6 +58,18 @@ describe('RemoteBackend (CDE Stufe C)', () => {
     expect(await repo.deleteBlob('model:aaa')).toBe(false);                     // nie aus dem Viewer löschen
   });
 
+  it('Abgeleitetes (Fragmentdatei, Meter-Bytes) geht NIE ins Register — nur Modelle', async () => {
+    // Gemessen 2026-09-11 in 42069: die Fragmentdatei lag als „….ifc" im Register.
+    const api = fakeApi();
+    const repo = new RepoFacade('global', new RemoteBackend(1338, api));
+    expect(await repo.setBlob('frag:ddd', new Blob(['x']), { name: 'Gelaende.ifc' })).toBe(false);
+    expect(await repo.setBlob('frag:ddd:m', new Blob(['x']), { name: 'Gelaende.ifc' })).toBe(false);
+    expect(await repo.setBlob('meter:ddd', new Blob(['x']), { name: 'Gelaende.ifc' })).toBe(false);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(await repo.setBlob('model:ddd', new Blob(['ISO-10303']), { name: 'Gelaende.ifc' })).toBe(true);
+    expect(api.post).toHaveBeenCalledTimes(1);                                 // das Modell selbst schon
+  });
+
   it('lässt sich an der Fassade tauschen und meldet den Remote-Zustand', () => {
     const repo = new RepoFacade('global', new RemoteBackend(1, fakeApi()));
     expect(repo.remote).toBe(true);

@@ -25,6 +25,7 @@
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
 import { formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { anzeigeFlicken } from '../gelaende/Flicken.js';
 import { GRABENREGELN, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
 import { rasterAbtasten } from '../geometrie/ops/Raster.js';
@@ -1150,15 +1151,22 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
         if (!stand) throw new Error('anzeige: Quellgelände fehlt');
         const ur = stapel?.urRaster ?? stand;
         const massen = massenAus(ur, stand) ?? { aushub: 0, auftrag: 0 };
+        // FEINE FLICKEN (Teil XX, 2026-09-11): im 2-m-Raster verschmierte eine
+        // Böschungskante über eine Zelle (im Browser 1,3 m zu tief an der
+        // Linie). Wo Operationen wirken, wird die Anzeige so fein wie der
+        // Korridor der Massen — mit denselben zwei Zahlen.
+        const { flicken, zelle, warnungen } = anzeigeFlicken(ur, stand, stapel?.opsVor ?? [],
+            { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET });
         return {
-            teile: { anzeige: { form: 'raster', daten: stand } },
+            teile: { anzeige: { form: 'raster', daten: stand, flicken } },
             kennzahlen: {
                 aushubGesamt: massen.aushub, auftragGesamt: massen.auftrag,
                 vorgaenge: (stapel?.opsVor ?? []).length ? (parameter?.vorgaenge ?? []).length : 0,
                 operationen: (stapel?.opsVor ?? []).length,
                 zellweite: stand.cell,
+                flicken: flicken.length, flickenZelle: zelle,
             },
-            befunde: [], warnungen: [], bild: [], ops: [],
+            befunde: [], warnungen, bild: [], ops: [],
         };
     },
 
