@@ -118,6 +118,24 @@ describe('hoverElement / probeTreffer', () => {
             .toEqual([FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE]);
     });
 
+    it('das CDE-eigene Modell fängt NICHT — seine Ecken sind Rasterknoten (Befund 2026-09-11)', async () => {
+        const t = attrappe({
+            treffer: treffer(4, [0, 0, 0]),
+            snaps: [{ point: new THREE.Vector3(0.02, 0.02, 0), snappingClass: FRAGS.SnappingClass.POINT }],
+        });
+        // Die Anzeige liegt im Delta-Modell des Eigenbaus — und hätte die NÄHERE Ecke.
+        const eigen = { modelId: 'cde-eigenbau-DELTA-MODEL-1', raycastWithSnapping: vi.fn(async () => [
+            { point: new THREE.Vector3(0.001, 0, 0), snappingClass: FRAGS.SnappingClass.POINT }]) };
+        const eigenRoh = { modelId: 'cde-eigenbau', raycastWithSnapping: vi.fn(async () => [
+            { point: new THREE.Vector3(0.001, 0, 0), snappingClass: FRAGS.SnappingClass.POINT }]) };
+        t.fragments.list.set(eigen.modelId, eigen);
+        t.fragments.list.set(eigenRoh.modelId, eigenRoh);
+        const h = await t.engine.probeTreffer(10, 10, { fang: true });
+        expect(eigen.raycastWithSnapping).not.toHaveBeenCalled();
+        expect(eigenRoh.raycastWithSnapping).not.toHaveBeenCalled();
+        expect(h.fang.punkt).toEqual({ x: 0.02, y: 0.02, z: 0 });              // geliefertes Material fängt weiter
+    });
+
     it('eine Kante bringt ihre Endpunkte mit', async () => {
         const t = attrappe({
             treffer: treffer(4, [0, 0, 0]),

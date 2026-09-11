@@ -1085,6 +1085,16 @@ export class IfcEngine {
         const klassen = [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE];
         let bester = null;
         for (const m of modelle) {
+            // KEIN BIBLIOTHEKSFANG AUF DEM CDE-EIGENEN MODELL (2026-09-11). Seine
+            // Ecken sind Knoten eines Rechenrasters (die Anzeige 2 m, Aushub und
+            // Auftrag aus Rastern), keine Punkte eines Planers. Gemessen im
+            // Browser: eine Böschungskante auf der Anzeige wurde je Punkt um
+            // (−0,61 / −0,12 m) auf den nächsten Rasterknoten gezogen — rechts
+            // der Kante zeigte das Gelände deshalb 8 cm unter dem Soll, obwohl
+            // Rechnung und Anzeige exakt waren. Die sinnvollen eigenen Punkte
+            // (Schacht, Achsende, Stützpunkt) fängt der fachliche Fang
+            // (`Fangpunkte.js`); geliefertes Material fängt weiter hier.
+            if (basisModelId(m?.modelId ?? null) === CDE_MODELL_ID) continue;
             let liste = null;
             try { liste = await m.raycastWithSnapping({ ...daten, snappingClasses: klassen }); } catch { liste = null; }
             for (const s of liste ?? []) {
