@@ -342,10 +342,14 @@
 
         <!-- Sprint U/AP-U4: Werte und Aktionen am Objekt statt in Bildschirmecken.
              Auswahl-Knöpfe und Messliste sind ins HUD gewandert. -->
+        <!-- Solange ein Zeichenwerkzeug Punkte sammelt, steht kein Kontextmenü
+             über der Zeichenfläche (Teil XX, im Browser gemessen: bei einem
+             Gelände hängt der Anker in der Mitte — genau dort, wo man zeichnet,
+             und die ersten Klicks trafen das Menü statt des Geländes). -->
         <CdeHudLayer
           :measurements="ifc.messungen"
           :element="ifc.selectedElement"
-          :elementAnker="selectionAnchor"
+          :elementAnker="eingabe.aktiv.value ? null : selectionAnchor"
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           :getCanvas="() => canvasRef"
@@ -502,6 +506,9 @@ import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
 import { modellHerkunft, modellTagText } from '../services/IfcAutor.js';
+import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
+import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
+import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
 import { erdbauStandVon } from '../services/Bauteilrezepte.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -804,6 +811,16 @@ const vorschau = useVorschau({
   getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
   getHoehenversatz: () => bearbeitung.bauteil?.hoehenversatz ?? _hoehenversatzAusBezug(),
 });
+/**
+ * Die m³ der gerade geschriebenen Erdbau-Vorgänge an die Rückmeldung hängen
+ * (Teil XX: „Übernommen · Aushub 1.240 m³ · Auftrag 80 m³"). Gelesen aus DEM
+ * Lauf, der sie eben gebaut hat — `wendeEintragAn` wartet den Neubau ab.
+ */
+function _mitMengen(text, eintraege) {
+  const ids = erdbauAbleitungenAus(eintraege, (r) => !!_rezeptNachFuerMengen(r)?.erdbau);
+  const zeile = ids.length ? mengenZeile(ids.map(id => engine.value?.autor?.ableitungen?.get(id)?.kennzahlen ?? null)) : '';
+  return zeile ? `${text.replace(/\.$/, '')} · ${zeile}` : text;
+}
 function _hoehenversatzAusBezug() {
   const b = Object.values(bezuege.value)[0] ?? null;
   return b ? b.nachProjekt({ x: 0, y: 0, z: 0 }).hoehe : 0;
@@ -820,7 +837,7 @@ const eingabe = useEingabe({
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
   nachBauen: async (eintraege) => {
     const r = await wendeEintragAn(eintraege);
-    _melderueck(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Festlegung geführt.' : 'Eingetragen.', _letztesWerkzeugId);
+    _melderueck(_mitMengen(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Festlegung geführt.' : 'Eingetragen.', eintraege), _letztesWerkzeugId);
     return r;
   },
   getHoehenversatz: () => _hoehenversatzAusBezug(),
@@ -836,12 +853,23 @@ const eingabe = useEingabe({
  */
 async function tippFuerMotor(tipp) {
   if (!eingabe.aktiv.value && !eingabe.geste.value) return false;
+  // SCHLIESSFANG (Teil XX): liegt der Tipp am Bildschirm beim ERSTEN Punkt
+  // eines Umrisses, schliesst er ihn — geprüft VOR dem Strahl, damit auch ein
+  // Tipp knapp neben das Gelände schliesst. Geschrieben wird nichts.
+  const nahe = (p0) => {
+    if (!p0 || !tipp.px) return false;
+    const y = Number.isFinite(p0.y) ? p0.y : engine.value?.hoeheAn?.(p0.x, p0.z);
+    const s = Number.isFinite(y) ? engine.value?.projectToScreen?.([p0.x, y, p0.z]) : null;
+    if (!s) return false;
+    return Math.hypot(s.x - tipp.px.x, s.y - tipp.px.y) <= (SCHLIESS_RADIUS_PX[tipp.typ] ?? SCHLIESS_RADIUS_PX.mouse);
+  };
+  if (!eingabe.geste.value && eingabe.schliesseWennNahe(nahe)) return true;
   const t = await engine.value?.probeTreffer?.(tipp.x, tipp.y, { fang: true });
   let globalId = null;
   if (t && eingabe.geste.value?.art === 'auswahl') {
     globalId = (await engine.value?.elementDatenVon?.(t.modelId, t.localId))?.globalId ?? null;
   }
-  const verbraucht = eingabe.aufTreffer(t ? { ...t, point: t.fang?.punkt ?? t.point, globalId } : null);
+  const verbraucht = eingabe.aufTreffer(t ? { ...t, point: t.fang?.punkt ?? t.point, globalId, nahe } : null);
   if (eingabe.grund.value) melde(eingabe.grund.value);
   return verbraucht;
 }
@@ -940,7 +968,7 @@ async function uebernehmeScharf() {
     const r = await wendeEintragAn(eintrag);
     _melderueck(!r ? 'Eingetragen.'
       : r.auslegung ? 'Ausgelegt — so liest die CDE dieses Bauteil ab jetzt.'
-      : r.angewandt ? 'Übernommen.'
+      : r.angewandt ? _mitMengen('Übernommen.', eintrag)
       : r.nurFestlegung ? 'Als Festlegung geführt — die Geometrie bleibt beim Planer.'
       : `Eingetragen, aber nicht angewandt: ${r.grund ?? 'unbekannt'}`, b.id);
   } catch (fehler) {
@@ -1540,6 +1568,8 @@ provideViewerApi({
   /** Länge, Nennweite und Merkmale je Bauteil — für den Mengenauszug. */
   mengenGrundlage:      () => engine.value?.mengenGrundlage() ?? [],
   erdmassen:            (bauplaene) => engine.value?.erdmassen(bauplaene) ?? Promise.resolve([]),
+  /** Die Kennzahlen einer Ableitung aus dem letzten Aufbau — für die Mengen am Cut/Fill (Teil XX). */
+  kennzahlenVon:        (ableitung) => engine.value?.autor?.ableitungen?.get(ableitung)?.kennzahlen ?? null,
   /**
    * Ein Bauteil ohne Mausklick auswählen — für den Sprung aus der Prüfliste.
    *

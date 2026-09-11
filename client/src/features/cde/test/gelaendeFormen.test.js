@@ -65,7 +65,7 @@ describe('Erste Formung: Ausblenden + Anzeige + zwei Teile EINER Ableitung (Teil
         expect(teile[1].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSCUT', predefinedType: 'TRENCH', bauform: 'koerper' });
         expect(teile[2].nachher).toMatchObject({ kategorie: 'IFCEARTHWORKSFILL', predefinedType: 'EMBANKMENT' });
         expect(teile[0].nachher).toMatchObject({ kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'TERRAIN', bauform: 'hoehenfeld', name: 'Urgelände (Anzeige)' });
-        expect(teile[0].nachher.parameter.vorgaenge).toEqual([{ ableitung: teile[1].nachher.ableitung, art: 'erdbau', titel: 'Urgelände · Gelände formen' }]);
+        expect(teile[0].nachher.parameter.vorgaenge).toEqual([{ ableitung: teile[1].nachher.ableitung, art: 'erdbau', titel: 'Urgelände · Gerinne' }]);
         const p = teile[1].nachher.parameter;
         expect(p.quellen).toEqual({ gelaende: 'DGM1' });
         expect(p.quellBasis.gelaende.triCount).toBe(800);
@@ -92,7 +92,10 @@ describe('Erste Formung: Ausblenden + Anzeige + zwei Teile EINER Ableitung (Teil
     });
 });
 
-describe('Weitere Formung: die Liste wächst absolut, die Teile behalten ihre Kennung', () => {
+describe('Weitere Formung: ein NEUER Vorgang (Teil XX, Fabio 2026-09-10)', () => {
+    // Bis Teil XX hängte sich eine Formung an den letzten Vorgang (dieselben
+    // GlobalIds, die Liste wuchs) — und Gerinne plus Planum waren EIN Cut mit
+    // EINER Masse. Jetzt ist jede Anwendung ein eigener Vorgang.
     function erstformung() {
         return nachId('gerinne-einschneiden').anwenden(
             { ...GELAENDE, quellmass: { pruefmass: { triCount: 1 }, cell: 1 } },
@@ -106,20 +109,23 @@ describe('Weitere Formung: die Liste wächst absolut, die Teile behalten ihre Ke
                  stand: { bauplan: anzeige.nachher }, erdbau: erdbauStandVon(stand, anzeige.globalId) };
     }
 
-    it('dieselben GlobalIds, volle Liste — kein zweites Gelände, keine Kette', () => {
+    it('neue Klammer, neue Kennungen, die Anzeige um den Vorgang verlängert — der erste bleibt, wie er war', () => {
         const erst = erstformung();
         const s = nachId('planum-herstellen').anwenden(anzeigeTeil(erst), { hoehe: 8 }, { zug: UMRISS });
-        // Das Ausblenden des Ur gilt schon (das Journal schreibt es nicht noch
-        // einmal); die Anzeige ändert sich nicht (kein neuer Vorgang) — es
-        // bleiben Cut und Fill mit ihren Kennungen und der vollen Liste.
-        expect(s.map(t => t.art)).toEqual(['geloescht', 'erzeugt', 'erzeugt']);
+        expect(s.map(t => t.art)).toEqual(['geloescht', 'erzeugt', 'erzeugt', 'erzeugt']);
         expect(s[0].globalId).toBe('DGM1');
-        expect(s.slice(1).map(t => t.globalId)).toEqual(erst.slice(2).map(t => t.globalId));
-        expect(s[1].nachher.ableitung).toBe(erst[2].nachher.ableitung);
-        for (const t of s.slice(1)) {
-            expect(t.nachher.parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);
-            expect(t.nachher.parameter.quellen.gelaende).toBe('DGM1');  // die Quelle bleibt das ORIGINAL
+        const anzeige = s[1].nachher;
+        expect(s[1].globalId).toBe(erst[1].globalId);                                 // DIESELBE Anzeige, volle Liste
+        expect(anzeige.parameter.vorgaenge.map(v => v.titel)).toEqual(['Urgelände · Gerinne', 'Urgelände · Planum']);
+        const neu = s.slice(2);
+        expect(new Set(neu.map(t => t.nachher.ableitung)).size).toBe(1);
+        expect(neu[0].nachher.ableitung).not.toBe(erst[2].nachher.ableitung);
+        expect(neu.map(t => t.globalId)).not.toContain(erst[2].globalId);
+        for (const t of neu) {
+            expect(t.nachher.parameter.operationen.map(o => o.art)).toEqual(['planum']);
+            expect(t.nachher.parameter.quellen.gelaende).toBe('DGM1');              // die Quelle bleibt das ORIGINAL
         }
+        expect(neu.map(t => t.nachher.name)).toEqual(['Urgelände · Planum · Aushub', 'Urgelände · Planum · Auftrag']);
     });
 
     it('ein Gelände aus der Zeit VOR der Ableitung wird bei der nächsten Formung überführt', () => {
@@ -136,23 +142,23 @@ describe('Weitere Formung: die Liste wächst absolut, die Teile behalten ihre Ke
         expect(s[2].nachher).toMatchObject({ rezept: 'anzeige', name: 'Urgelände (Anzeige)' });
         expect(s[3].nachher.parameter.quellen.gelaende).toBe('DGM1');
         expect(s[3].nachher.parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);
-        expect(s[3].nachher.name).toBe('Urgelände · Aushub');
+        expect(s[3].nachher.name).toBe('Urgelände · Planum · Aushub');
     });
 
-    it('„zurück" stellt die vorige Liste in ALLEN Teilen her — Faltung unverändert', async () => {
+    it('„zurück" nimmt den zweiten Vorgang ganz — der erste und die Anzeige stehen wie vorher', async () => {
         const ae = useAenderungen();
         const erst = erstformung();
         for (const e of erst) await ae.eintragen({ ...e, wer: 'Fabio' });
         const zweite = nachId('planum-herstellen').anwenden(anzeigeTeil(erst), { hoehe: 8 }, { zug: UMRISS });
         const vg = ae.neueVorgangsId();
         for (const e of zweite) await ae.eintragen({ ...e, wer: 'Fabio', vorgang: vg, vorgangTitel: 'Planum' });
+        expect(standAus(ae.eintraege, 'erzeugt').size).toBe(5);                      // Anzeige + 2 + 2
 
-        const aushubId = erst[2].globalId;
-        expect(standAus(ae.eintraege, 'erzeugt').get(aushubId).parameter.operationen).toHaveLength(2);
         await ae.zurueck('Fabio');
         const stand = standAus(ae.eintraege, 'erzeugt');
-        expect(stand.get(aushubId).parameter.operationen).toHaveLength(1);
-        expect(stand.get(erst[3].globalId).parameter.operationen).toHaveLength(1);   // der Auftrag ebenso
+        expect(stand.size).toBe(3);
+        expect(stand.get(erst[2].globalId).parameter.operationen.map(o => o.art)).toEqual(['gerinne']);
+        expect(stand.get(erst[1].globalId).parameter.vorgaenge).toHaveLength(1);
     });
 });
 

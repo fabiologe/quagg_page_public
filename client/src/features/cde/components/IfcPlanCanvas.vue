@@ -865,7 +865,8 @@ function tippAktion(ev) {
   }
   if (zeichnen.aktiv.value) {
     const punkt = zeigerZuWelt(ev);
-    if (punkt) { zeichnen.setzePunkt(punkt); baldZeichnen(); }
+    // Schliessfang (Teil XX): nahe am ersten Punkt schliesst der Umriss — derselbe Radius wie für Treffer.
+    if (punkt) { zeichnen.setzePunkt(punkt, { nahe: (p0) => Math.hypot(p0.x - punkt.x, p0.z - punkt.z) <= trefferRadius() }); baldZeichnen(); }
     return true;
   }
   if (messen.value) {

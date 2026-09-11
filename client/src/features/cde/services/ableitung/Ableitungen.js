@@ -40,6 +40,21 @@ export const ERDBAU_HOEHENFELDER = Object.freeze({
     baugrube:  ['sohle'],
     // Die Bauwerksgrube trägt ihre Sohle in m NN (leer = Unterkante des Bauteils).
     bauwerksgrube: ['sohle'],
+    // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
+    grube:          ['sohle'],
+    schuettung:     ['hoehe'],
+    boeschungLinie: [],
+});
+
+/**
+ * Welche Op-Parameter PUNKTLISTEN mit Höhe je Punkt sind (Teil XX) — Rand
+ * und Kante tragen ihre Höhe in m NN wie jede Sohle, und wandern an
+ * derselben Grenze nach Welt-Y.
+ */
+export const ERDBAU_PUNKTHOEHEN = Object.freeze({
+    grube:          ['umriss'],
+    schuettung:     ['umriss'],
+    boeschungLinie: ['linie'],
 });
 
 /** Gegenprobe Körper ↔ Raster: darüber ist etwas faul. */
@@ -82,12 +97,51 @@ async function _planbild(kernel, ur, neu) {
 function _opsInWelt(operationen, versatz) {
     return (operationen ?? []).map(op => {
         const felder = ERDBAU_HOEHENFELDER[op.art] ?? [];
-        if (!felder.length) return op;
+        const punktfelder = ERDBAU_PUNKTHOEHEN[op.art] ?? [];
+        if (!felder.length && !punktfelder.length) return op;
         const p = { ...op.parameter };
         for (const f of felder) {
             if (Number.isFinite(Number(p[f]))) p[f] = weltAusNn(Number(p[f]), versatz);
         }
+        for (const f of punktfelder) {
+            if (!Array.isArray(p[f])) continue;
+            p[f] = p[f].map(q => (Number.isFinite(Number(q?.y)) ? { ...q, y: weltAusNn(Number(q.y), versatz) } : q));
+        }
         return { ...op, parameter: p };
+    });
+}
+
+/**
+ * Der innere Ring einer Grube bzw. Schüttung für die VORSCHAU: der Umriss um
+ * `d` eingerückt (Gehrung aus `versetztePunkte`). Welche Richtung „innen"
+ * ist, entscheidet die Fläche — nicht die Umlaufrichtung, die der Planer
+ * beliebig zeichnet. Kippt der Ring (zu tief für den Umriss), entfällt er;
+ * die exakte Form rechnet der Lauf.
+ */
+function _innenring(ring, d) {
+    if (!(d > 0.01) || ring.length < 3) return null;
+    const flaeche = ringFlaeche(ring);
+    let bester = null;
+    for (const s of [d, -d]) {
+        const r = versetztePunkte(ring, s, { geschlossen: true });
+        const f = ringFlaeche(r);
+        if (r.length >= 3 && f < flaeche * 0.99 && f > flaeche * 0.01 && (!bester || f < bester.f)) bester = { r, f };
+    }
+    return bester?.r ?? null;
+}
+
+/** Eine Parallele zur offenen Linie, `d` nach LINKS der Zeichenrichtung (negativ = rechts) — dieselbe Seite wie `boeschungLinie`. */
+function _parallele(punkte, d) {
+    const n = punkte.length;
+    const links = (i) => {
+        const a = punkte[i], b = punkte[i + 1];
+        const dx = b.x - a.x, dz = b.z - a.z, l = Math.hypot(dx, dz) || 1;
+        return { x: dz / l, z: -dx / l };
+    };
+    return punkte.map((p, i) => {
+        const m = i === 0 ? links(0) : i === n - 1 ? links(n - 2)
+            : (() => { const u = links(i - 1), v = links(i); const l = Math.hypot(u.x + v.x, u.z + v.z) || 1; return { x: (u.x + v.x) / l, z: (u.z + v.z) / l }; })();
+        return { x: p.x + m.x * d, y: p.y, z: p.z + m.z * d };
     });
 }
 
@@ -229,7 +283,14 @@ const ABLEITUNGEN_ERWEITERT = {
             },
             {
                 rolle: 'auftrag', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
-                predefinedType: 'EMBANKMENT',
+                // Teil XX: eine Rückverfüllung bis GOK ist BACKFILL, eine Böschung
+                // an einer Kante SLOPEFILL („side slope fill"), sonst ein Damm.
+                predefinedType: (parameter) => {
+                    const ops = parameter?.operationen ?? [];
+                    if (ops.some(op => op.art === 'schuettung' && op.parameter?.ziel === 'ur')) return 'BACKFILL';
+                    if (ops.some(op => op.art === 'boeschungLinie')) return 'SLOPEFILL';
+                    return 'EMBANKMENT';
+                },
                 name: (q) => `${q} · Auftrag`,
                 // Eingebaut ist ein Auftrag verdichtet — sein Raum IST das CompactedVolume.
                 menge: { compactedVolume: 'auftragRaster' },
@@ -285,7 +346,9 @@ const ABLEITUNGEN_ERWEITERT = {
             const befunde = [];
             const ops = _opsInWelt(parameter?.operationen ?? [], hoehenversatz);
             if (!ops.length) throw new Error('erdbau: keine Operationen');
-            const { raster: neu, warnungen: w1 } = formeNach(ur, ops);
+            // Das UR für „bis GOK" (Teil XX): `ur` hier ist das Gelände VOR diesem
+            // Vorgang; das ursprüngliche liegt im Stapel.
+            const { raster: neu, warnungen: w1 } = formeNach(ur, ops, { ur: stapel?.urRaster ?? ur });
             warnungen.push(...w1);
 
             // KÖRPER UND MASSEN auf dem feinen Korridor, wenn es einen gibt —
@@ -297,7 +360,7 @@ const ABLEITUNGEN_ERWEITERT = {
             const fein = quellen?.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
             let rechenAlt = ur, rechenNeu = neu;
             if (fein) {
-                const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops);
+                const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops, { ur: quellen.gelaendeFein });
                 warnungen.push(...w2.filter(w => !w1.includes(w)));
                 rechenAlt = fein; rechenNeu = feinNeu;
             }
@@ -366,6 +429,39 @@ const ABLEITUNGEN_ERWEITERT = {
                     chips.push({ art: 'vorschau', text: `Planum ${(hoehe + hoehenversatz).toFixed(2)} m NN` });
                 } else if (op.art === 'boeschung') {
                     chips.push({ art: 'vorschau', text: `Böschung 1 : ${Number(q.neigung) || 1.5} — Anschluss nach Übernehmen` });
+                } else if (op.art === 'grube' || op.art === 'schuettung') {
+                    // Teil XX: der gezeichnete Rand liegt AUF dem Gelände (Punkthöhen),
+                    // der innere Ring auf Sohle bzw. Zielhöhe.
+                    const ring = (q.umriss ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
+                        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
+                    if (ring.length < 3) continue;
+                    const randMittel = ring.reduce((a, p) => a + p.y, 0) / ring.length;
+                    const n = Number(q.neigung) > 0 ? Number(q.neigung) : 0;
+                    primitive.push({ art: 'umriss', ring, farbe });
+                    if (op.art === 'grube') {
+                        const sohle = Number(q.sohle);
+                        if (!Number.isFinite(sohle)) continue;
+                        const innen = n ? _innenring(ring, Math.max(0, randMittel - sohle) * n) : ring;
+                        if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: sohle, z: p.z })), farbe });
+                        chips.push({ art: 'vorschau', text: `Ausheben · Sohle ${(sohle + hoehenversatz).toFixed(2)} m NN · ${(randMittel - sohle).toFixed(2)} m unter dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
+                    } else if (q.ziel === 'ur') {
+                        chips.push({ art: 'vorschau', text: 'Auffüllen bis GOK — auf das Ur-Gelände, nur auffüllen' });
+                    } else {
+                        const hoehe = Number(q.hoehe);
+                        if (!Number.isFinite(hoehe)) continue;
+                        const innen = n ? _innenring(ring, Math.max(0, hoehe - randMittel) * n) : ring;
+                        if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe });
+                        chips.push({ art: 'vorschau', text: `Auffüllen · ${(hoehe + hoehenversatz).toFixed(2)} m NN · ${(hoehe - randMittel).toFixed(2)} m über dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
+                    }
+                } else if (op.art === 'boeschungLinie') {
+                    const pts = (q.linie ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
+                        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
+                    if (pts.length < 2) continue;
+                    const n = Number(q.neigung) || 1.5;
+                    primitive.push({ art: 'linie', punkte: pts, farbe });
+                    // Die SEITE sichtbar: eine gestrichelte Parallele zwei Meter daneben.
+                    primitive.push({ art: 'linie', punkte: _parallele(pts, q.seite === 'links' ? 2 : -2), farbe, gestrichelt: true });
+                    chips.push({ art: 'vorschau', text: `Böschung 1 : ${n} · ${q.seite === 'links' ? 'links' : 'rechts'} der Zeichenrichtung` });
                 }
             }
             return { primitive, chips, hinweise: [] };

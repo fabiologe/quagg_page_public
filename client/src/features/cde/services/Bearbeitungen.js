@@ -367,46 +367,73 @@ function zeichenBearbeitung(rezept) {
  * Auftrag, neues DGM — aus einer Rechnung, in einem Vorgang.
  *
  *   Erstformung   (geliefertes Gelände): Quelle ausblenden + drei Teile.
- *   Folgeformung  (Subjekt ist das DGM-Teil): dieselbe Ableitung, dieselben
- *                 GlobalIds, die Operationsliste wächst ABSOLUT — kein
- *                 Kettenwachstum, kein zweites Gelände.
+ *   Jede Anwendung ein EIGENER Vorgang (Teil XX, Fabio 2026-09-10): eigener
+ *                 Cut/Fill, eigene Mengen, eigene Gruppe im IFC — gerechnet
+ *                 nacheinander im Erdbau-Stapel. Bis hierher hängte sich eine
+ *                 Formung an den letzten Vorgang, und Gerinne plus Ausheben
+ *                 standen als EIN Cut mit EINER Masse da.
  *   Altbestand    (Subjekt ist ein `gelaende`-Bauteil von vor Teil XIV):
  *                 wird bei der nächsten Formung in die Ableitung überführt —
  *                 die Quelle bleibt das ORIGINAL, die alte Liste läuft mit.
  */
 /**
- * Die mittlere Geländehöhe eines gezeichneten Zugs (Welt-Y) — oder null.
- *
- * Die Punkte tragen ihre Höhe aus dem Sampler (`hoehenAus: 'gelaende'`);
- * Punkte ausserhalb des Geländes haben keine und zählen nicht mit. Ohne einen
- * einzigen Treffer gibt es keine Bezugshöhe — dann lieber nichts als geraten.
+ * Die Punkte eines Umrisses bzw. einer Kante MIT Höhe in m NN (Teil XX), um
+ * `zusatz` gehoben. Die Höhen kommen aus dem Sampler (`hoehenAus:
+ * 'gelaende'`); fehlt sie an EINEM Punkt (ausserhalb des Geländes), gibt es
+ * keine Rand- oder Kantenhöhe — dann lieber nichts als geraten.
  */
-function _gelaendemittel(zug) {
-    const ys = (zug ?? []).map(p => Number(p?.y)).filter(Number.isFinite);
-    if (!ys.length) return null;
-    return ys.reduce((a, b) => a + b, 0) / ys.length;
+function _mitNn(zug, versatz, zusatz = 0) {
+    const aus = [];
+    for (const p of zug ?? []) {
+        const y = Number(p?.y);
+        if (!Number.isFinite(y)) return null;
+        aus.push({ x: Number(p.x) || 0, y: Math.round((nnAusWelt(y, versatz) + zusatz) * 1000) / 1000, z: Number(p.z) || 0 });
+    }
+    return aus;
+}
+
+const _mittelY = (punkte) => punkte.reduce((a, p) => a + p.y, 0) / punkte.length;
+
+/**
+ * AUSHEBEN (Teil XX): der Umriss ist die Böschungsoberkante AUF dem Gelände;
+ * die Tiefe zählt gegen die MITTLERE Randhöhe, gespeichert wird die Sohle
+ * absolut (Gesetz 4) — die Tiefe ist die Eingabe des Planers, nicht der
+ * Zielzustand: eine Grube liegt, wo sie liegt, auch wenn das Gelände daneben
+ * später anders aussieht.
+ */
+function _grubeSchritte(el, werte, zug) {
+    if (!el?.globalId || zug.length < 3) return null;
+    const tiefe = Number(werte?.mass);
+    if (!Number.isFinite(tiefe) || tiefe <= 0) return null;
+    const umriss = _mitNn(zug, el.hoehenversatz ?? 0);
+    if (!umriss) return null;
+    const n = Number(werte?.neigung);
+    return _gelaendeSchritte(el, [{ art: 'grube', parameter: {
+        umriss,
+        sohle: Math.round((_mittelY(umriss) - tiefe) * 1000) / 1000,
+        neigung: Number.isFinite(n) && n > 0 ? n : null,
+    } }], { titel: 'Ausheben' });
 }
 
 /**
- * Ausheben und Auffüllen teilen sich alles bis auf das Vorzeichen: Umriss
- * zeichnen, Tiefe bzw. Höhe gegen das GEWACHSENE Gelände angeben, optional
- * abböschen. Gespeichert wird die ABSOLUTE Sollhöhe (Gesetz 4) — die Tiefe
- * ist die Eingabe des Planers, nicht der Zielzustand: eine Grube liegt, wo
- * sie liegt, auch wenn das Gelände daneben später anders aussieht.
+ * AUFFÜLLEN (Teil XX): der Umriss ist der Böschungsfuss AUF dem Gelände; Ziel
+ * ist eine Höhe über der mittleren Randhöhe — oder „bis GOK", das Ur-Gelände.
  */
-function _abtragSchritte(el, werte, zug, { richtung }) {
+function _schuettungSchritte(el, werte, zug) {
     if (!el?.globalId || zug.length < 3) return null;
+    const umriss = _mitNn(zug, el.hoehenversatz ?? 0);
+    if (!umriss) return null;
+    if (werte?.ziel === 'ur') {
+        return _gelaendeSchritte(el, [{ art: 'schuettung', parameter: { umriss, ziel: 'ur' } }], { titel: 'Auffüllen bis GOK' });
+    }
     const mass = Number(werte?.mass);
     if (!Number.isFinite(mass) || mass <= 0) return null;
-    const gelaende = _gelaendemittel(zug);
-    if (!Number.isFinite(gelaende)) return null;          // kein Treffer: keine Bezugshöhe
-    const hoehe = gelaende + richtung * mass;             // Welt-Y, absolut
-    const umriss = zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
-    const nn = nnAusWelt(hoehe, el.hoehenversatz ?? 0);
-    const ops = [{ art: 'planum', parameter: { umriss, hoehe: nn } }];
     const n = Number(werte?.neigung);
-    if (Number.isFinite(n) && n > 0) ops.push({ art: 'boeschung', parameter: { umriss, hoehe: nn, neigung: n } });
-    return _gelaendeSchritte(el, ops);
+    return _gelaendeSchritte(el, [{ art: 'schuettung', parameter: {
+        umriss, ziel: 'hoehe',
+        hoehe: Math.round((_mittelY(umriss) + mass) * 1000) / 1000,
+        neigung: Number.isFinite(n) && n > 0 ? n : null,
+    } }], { titel: 'Auffüllen' });
 }
 
 /**
@@ -484,61 +511,36 @@ function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name
     ], quelle.modellSha);
 }
 
-function _gelaendeSchritte(el, neueOps) {
+function _gelaendeSchritte(el, neueOps, { titel = null } = {}) {
     const bauplan = el?.stand?.bauplan;
     const eb = el?.erdbau ?? null;
-    // OHNE Anreicherung (headless) am dgm-Teil einer erdbau-Ableitung:
-    // Folgeformung an dieser Klammer — wie vor Stufe 1, der Teil zieht nach.
-    if (!eb && bauplan?.rezept === 'erdbau' && bauplan.ableitung) {
-        return _anModell(ableitungsSchritte({
-            rezept: 'erdbau',
-            bestehend: { ableitung: bauplan.ableitung, teile: el.stand?.teile ?? null },
-            quellen: bauplan.parameter?.quellen ?? {},
-            quellBasis: bauplan.parameter?.quellBasis ?? {},
-            raster: bauplan.parameter?.raster ?? {},
-            operationen: [...(bauplan.parameter?.operationen ?? []), ...neueOps],
-            name: _urName(el),
-        }), el?.modellSha);
-    }
     const alt = bauplan?.rezept === 'gelaende' ? bauplan : null;   // Altbestand vor Teil XIV
     // Das UR: aus der Anreicherung; ohne sie (headless) wenigstens EIN Hop
-    // hinauf, wenn das Subjekt selbst eine Anzeigeform ist — sonst würde die
-    // Anzeige auf eine Anzeige gesetzt.
+    // hinauf, wenn das Subjekt selbst eine Anzeigeform oder ein Teil eines
+    // Erdbau-Vorgangs ist — sonst würde auf eine Kopie gesetzt.
     const ur = eb?.ur ?? alt?.parameter?.quelle
-        ?? (istAnzeigeform(bauplan) ? bauplan.parameter?.quellen?.gelaende : null)
+        ?? ((istAnzeigeform(bauplan) || bauplan?.rezept === 'erdbau') ? bauplan.parameter?.quellen?.gelaende : null)
         ?? el.globalId;
     const name = _urName(el, eb, alt);
     const quellBasis = { gelaende: eb?.quellBasis ?? el.quellmass?.pruefmass ?? null };
     const raster = { cell: eb?.cell ?? el.quellmass?.cell ?? null };
     const verbergen = _verbergen(ur, eb, el.globalId);
 
-    // FOLGEFORMUNG: der letzte Vorgang im Stapel ist selbst „Gelände formen"
-    // — dann wächst seine Liste (dieselben GlobalIds, volle Liste). Ist der
-    // letzte ein Graben oder eine Grube, entsteht ein NEUER Vorgang: eine
-    // Formung, die nach dem Graben kommt, darf ihn nicht rückwirkend ändern.
-    const letzter = eb?.letzter ?? null;
-    if (letzter?.art === 'erdbau') {
-        return _anModell([
-            ...verbergen,
-            ..._anzeigeSchritte(eb, null, { ur, quellBasis, raster, name }),
-            ...ableitungsSchritte({
-                rezept: 'erdbau',
-                bestehend: { ableitung: letzter.ableitung, teile: letzter.teile },
-                quellen: { gelaende: ur }, quellBasis, raster,
-                operationen: [...letzter.operationen, ...neueOps],
-                name,
-            }),
-        ], el?.modellSha);
-    }
+    // JEDE ANWENDUNG EIN EIGENER VORGANG (Teil XX, Fabio 2026-09-10): eigener
+    // Cut/Fill mit eigenen Mengen, gerechnet nach allen Vorgängern im Stapel.
+    // Die Teile tragen den Werkzeugtitel im Namen („Urgelände · Ausheben ·
+    // Aushub") — so heissen auch die Zeile im Mengen-Reiter und die Gruppe
+    // im IFC nach dem, was der Planer getan hat.
     const neu = ableitungsSchritte({
         rezept: 'erdbau',
         quellen: { gelaende: ur }, quellBasis, raster,
         operationen: [...(alt?.parameter?.operationen ?? []), ...neueOps],
-        name,
+        name: titel ? `${name} · ${titel}` : name,
     });
+    const vorgangTitel = titel ? `${name} · ${titel}` : vorgangstitel(neu[0].nachher, rezeptNach('erdbau'));
     return _anModell([
         ...verbergen,
-        ..._anzeigeSchritte(eb, { ableitung: neu[0].nachher.ableitung, art: 'erdbau', titel: vorgangstitel(neu[0].nachher, rezeptNach('erdbau')) },
+        ..._anzeigeSchritte(eb, { ableitung: neu[0].nachher.ableitung, art: 'erdbau', titel: vorgangTitel },
                             { ur, quellBasis, raster, name }),
         ...neu,
     ], el?.modellSha);
@@ -2539,25 +2541,25 @@ export const BEARBEITUNGEN = Object.freeze([
                     sohleEnde: Number.isFinite(Number(werte.sohleEnde))
                         ? Number(werte.sohleEnde) : Number(werte.sohleAnfang),
                 },
-            }]);
+            }], { titel: 'Gerinne' });
         },
     },
     {
         /**
-         * AUSHEBEN (E1) — Umriss zeichnen, Tiefe angeben, fertig.
+         * AUSHEBEN (E1, Teil XX) — Umriss AUF dem Gelände zeichnen, Tiefe angeben.
+         *
+         * DER UMRISS IST DIE OBERKANTE (Teil XX, Fabio 2026-09-10): man tippt,
+         * was man sieht — die Kante der Grube auf dem Gelände. Die Böschung
+         * fällt nach INNEN bis zur Sohle (mittlere Randhöhe − Tiefe, absolut
+         * gespeichert). Bis hierher war der Umriss die Sohle, und die
+         * gezeichneten Ecken lagen nach dem Übernehmen zwei Meter tiefer.
          *
          * DIE DATEN BLEIBEN. Nichts am gelieferten Gelände wird verändert oder
          * gelöscht: es wird ausgeblendet (und ist jederzeit wieder
          * einzublenden), und die Subtraktion entsteht als EIGENES IFC-Element
          * — `IfcEarthworksCut`, der Körper zwischen altem und neuem Gelände.
-         * Dazu ein neues `IfcGeographicElement/TERRAIN` als Oberfläche. Das
-         * gelieferte Modell des Planers bleibt Bit für Bit, wie es kam
+         * Das gelieferte Modell des Planers bleibt Bit für Bit, wie es kam
          * (Gesetz 8, ISO 19650).
-         *
-         * Der Unterschied zu „Planum herstellen" ist die BEZUGSGRÖSSE: dort
-         * eine absolute Sollhöhe, hier die Tiefe unter dem gewachsenen
-         * Gelände — das ist, was ein Planer sagt („zwei Meter ausheben").
-         * Gespeichert wird trotzdem die absolute Höhe.
          */
         id: 'graben-ausheben',
         titel: 'Ausheben',
@@ -2568,20 +2570,23 @@ export const BEARBEITUNGEN = Object.freeze([
         eingabe: 'umriss',
         mindestPunkte: 3,
         felder: [
-            { name: 'mass', titel: 'Tiefe unter Gelände', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
+            { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
             { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
         ],
         vorbelegung: () => ({ mass: 2, neigung: 1.5 }),
         hoehenAus: 'gelaende',
-        anwenden: (el, werte, { zug = [] } = {}) => _abtragSchritte(el, werte, zug, { richtung: -1 }),
+        anwenden: (el, werte, { zug = [] } = {}) => _grubeSchritte(el, werte, zug),
     },
     {
         /**
-         * AUFFÜLLEN (E1) — dieselbe Handlung mit umgekehrtem Vorzeichen.
+         * AUFFÜLLEN (E1, Teil XX) — die umgedrehte Grube.
          *
-         * Ergebnis ist der `IfcEarthworksFill`-Körper (EMBANKMENT); auch hier
-         * bleibt das gelieferte Gelände unangetastet. Die Böschung läuft nach
-         * unten aus, bis sie das gewachsene Gelände erreicht.
+         * Der Umriss ist der BÖSCHUNGSFUSS auf dem Gelände; die Böschung steigt
+         * nach innen bis zur Zielhöhe (mittlere Randhöhe + Höhe) — oder es wird
+         * „bis GOK" verfüllt: auf das Ur-Gelände, nur auffüllen (Rückverfüllung
+         * einer Grube oder eines Grabens). Wer die KRONE zeichnen und die
+         * Böschung nach aussen laufen lassen will, nimmt „Planum herstellen".
+         * Ergebnis ist der `IfcEarthworksFill` (EMBANKMENT, bis GOK BACKFILL).
          */
         id: 'auffuellen',
         titel: 'Auffüllen',
@@ -2592,48 +2597,56 @@ export const BEARBEITUNGEN = Object.freeze([
         eingabe: 'umriss',
         mindestPunkte: 3,
         felder: [
-            { name: 'mass', titel: 'Höhe über Gelände', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
+            { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
+                { wert: 'hoehe', titel: 'Höhe über dem Rand' },
+                { wert: 'ur', titel: 'bis GOK — auf das Ur-Gelände' },
+            ] },
+            { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
             { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
         ],
-        vorbelegung: () => ({ mass: 1, neigung: 1.5 }),
+        vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
         hoehenAus: 'gelaende',
-        anwenden: (el, werte, { zug = [] } = {}) => _abtragSchritte(el, werte, zug, { richtung: +1 }),
+        anwenden: (el, werte, { zug = [] } = {}) => _schuettungSchritte(el, werte, zug),
     },
     {
         /**
-         * BÖSCHUNG ANSCHLIESSEN (E1) — die Böschung allein, auf eine
-         * gezeichnete Kante. Bisher gab es sie nur als Anhängsel des Planums;
-         * wer eine bestehende Kante nachträglich abböschen will, hatte kein
-         * Werkzeug. Innerhalb des Umrisses ändert sie nichts — das ist die
-         * Arbeit des Planums.
+         * BÖSCHUNG AN EINER KANTE (E1, Teil XX) — eine OFFENE Linie.
+         *
+         * Fabio (2026-09-10): „eigentlich dasselbe wie Auffüllen?" — als Umriss
+         * war sie das. Jetzt zeichnet man die Böschungskante als Linie (eine
+         * Strassen-, eine Plateaukante); jeder Knick trägt seine Höhe
+         * (Gelände + Kantenhöhe, später per Griff ziehbar), und auf der
+         * gewählten Seite läuft die Böschung 1:n bis zum Gelände — Einschnitt
+         * oder Damm ergibt sich. Die andere Seite bleibt, wie sie ist.
          */
         id: 'boeschung-anschliessen',
-        titel: 'Böschung anschliessen',
-        icon: 'planum',
+        titel: 'Böschung an Kante',
+        icon: 'boeschung',
         gruppe: 'gelaende',
         bauform: 'hoehenfeld',
         art: 'erzeugt',
-        eingabe: 'umriss',
-        mindestPunkte: 3,
+        eingabe: 'zug',
+        mindestPunkte: 2,
         felder: [
-            { name: 'hoehe', titel: 'Höhe der Kante', einheit: 'm NN', typ: 'zahl' },
+            { name: 'kante', titel: 'Kantenhöhe über Gelände', einheit: 'm', typ: 'zahl', min: -30, max: 30, vorgabe: 1 },
+            { name: 'seite', titel: 'Böschung auf der Seite', typ: 'auswahl', optionen: [
+                { wert: 'rechts', titel: 'rechts der Zeichenrichtung' },
+                { wert: 'links', titel: 'links der Zeichenrichtung' },
+            ] },
             { name: 'neigung', titel: 'Böschung 1 : n', typ: 'zahl', min: 0.1, max: 10, vorgabe: 1.5 },
         ],
-        vorbelegung: () => ({ neigung: 1.5 }),
+        vorbelegung: () => ({ kante: 1, seite: 'rechts', neigung: 1.5 }),
         hoehenAus: 'gelaende',
-        // Vorbelegt aus der MITTLEREN Höhe der gezeichneten Kante — sie liegt
-        // ja auf dem Gelände, und von dort läuft die Böschung weg.
-        nachZug: (el, zug) => {
-            const m = _gelaendemittel(zug);
-            return Number.isFinite(m) ? { hoehe: Math.round(nnAusWelt(m, el?.hoehenversatz ?? 0) * 100) / 100 } : {};
-        },
         anwenden: (el, werte, { zug = [] } = {}) => {
-            if (!el?.globalId || zug.length < 3) return null;
-            const hoehe = Number(werte?.hoehe);
+            if (!el?.globalId || zug.length < 2) return null;
             const neigung = Number(werte?.neigung);
-            if (!Number.isFinite(hoehe) || !(neigung > 0)) return null;
-            const umriss = zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
-            return _gelaendeSchritte(el, [{ art: 'boeschung', parameter: { umriss, hoehe, neigung } }]);
+            if (!(neigung > 0)) return null;
+            const kante = Number(werte?.kante);
+            const linie = _mitNn(zug, el.hoehenversatz ?? 0, Number.isFinite(kante) ? kante : 0);
+            if (!linie) return null;
+            return _gelaendeSchritte(el, [{ art: 'boeschungLinie', parameter: {
+                linie, seite: werte?.seite === 'links' ? 'links' : 'rechts', neigung,
+            } }], { titel: 'Böschung' });
         },
     },
     {
@@ -2675,7 +2688,7 @@ export const BEARBEITUNGEN = Object.freeze([
             if (Number.isFinite(n) && n > 0) {
                 ops.push({ art: 'boeschung', parameter: { umriss, hoehe, neigung: n } });
             }
-            return _gelaendeSchritte(el, ops);
+            return _gelaendeSchritte(el, ops, { titel: 'Planum' });
         },
     },
     {

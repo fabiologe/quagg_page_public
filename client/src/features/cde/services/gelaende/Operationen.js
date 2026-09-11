@@ -21,6 +21,11 @@
  * [x,y,z]-Punkten; gerechnet wird im Grundriss (XY der Punkte wird NICHT
  * gedeutet — Höhen kommen aus den Sohlparametern).
  *
+ * AUSNAHME seit Teil XX (2026-09-10): `grube`, `schuettung` und
+ * `boeschungLinie` tragen ihre Rand- bzw. Kantenhöhe JE PUNKT (y). Aus dem
+ * Raster gelesen, sänke sie unter der eigenen Operation, und ein zweiter Lauf
+ * grübe tiefer — die Höhe gehört deshalb in die Parameter, wie jede Sohle.
+ *
  * Reines Modul: kein Vue, kein three, kein WebGL.
  */
 import { punktInPolygon } from '@/services/tinte/InkGeometry';
@@ -75,6 +80,78 @@ function _anAchse(px, pz, achse) {
         laenge += seg;
     }
     return bester ? { ...bester, station, laenge } : null;
+}
+
+/**
+ * Punkte MIT Höhe (Teil XX): {x, y, z} in Welt — oder null, sobald einer
+ * keine trägt. Geraten wird nicht: ohne Randhöhe keine Grube.
+ */
+function _mitHoehe(punkte) {
+    const aus = [];
+    for (const p of punkte ?? []) {
+        const q = Array.isArray(p) ? { x: p[0], y: p[1], z: p[2] } : { x: p?.x, y: p?.y, z: p?.z };
+        if (![q.x, q.y, q.z].every(Number.isFinite)) return null;
+        aus.push(q);
+    }
+    return aus;
+}
+
+/**
+ * Der nächste Punkt auf einem GESCHLOSSENEN Ring: Abstand, Kante, Parameter
+ * und die dort interpolierte Randhöhe — aus den Punkthöhen, nie aus dem Raster.
+ */
+function _amRing(px, pz, ring) {
+    let bester = null;
+    const n = ring.length;
+    for (let i = 0; i < n; i++) {
+        const a = ring[i], b = ring[(i + 1) % n];
+        const r = _anStrecke(px, pz, a, b);
+        if (!bester || r.abstand < bester.abstand) bester = { abstand: r.abstand, i, t: r.t, hoehe: a.y + (b.y - a.y) * r.t };
+    }
+    return bester;
+}
+
+/**
+ * Der nächste Punkt auf einer OFFENEN Linie, mit Höhe und SEITE (Teil XX).
+ *
+ * Seite wie im Lageplan (Nord oben): links der Zeichenrichtung ist positiv.
+ * In Welt-XZ liegt Nord auf −z, die Linksnormale einer Strecke d steht
+ * deshalb bei (d.z, −d.x). An einem INNEREN Knick entscheidet die
+ * Winkelhalbierende der beiden Normalen — sonst fiele ein Punkt im
+ * Knickwinkel je nach Segment auf beide Seiten. Jenseits der Enden zählt die
+ * Verlängerung der End-Strecke: dort läuft die Böschung als auf die Seite
+ * begrenzter Kegel aus, statt um das Ende herum auf die andere Seite.
+ */
+function _anLinie(px, pz, linie) {
+    const n = linie.length - 1;
+    let bester = null;
+    for (let i = 0; i < n; i++) {
+        const r = _anStrecke(px, pz, linie[i], linie[i + 1]);
+        if (!bester || r.abstand < bester.abstand) bester = { ...r, i };
+    }
+    if (!bester) return null;
+    const links = (s) => {
+        const dx = linie[s + 1].x - linie[s].x, dz = linie[s + 1].z - linie[s].z;
+        const l = Math.hypot(dx, dz) || 1;
+        return { x: dz / l, z: -dx / l };
+    };
+    const { i, t } = bester;
+    const a = linie[i], b = linie[i + 1];
+    let normale = links(i);
+    let ursprung = a;
+    if (t <= 1e-9 && i > 0) {
+        const m = links(i - 1);
+        normale = { x: normale.x + m.x, z: normale.z + m.z };
+    } else if (t >= 1 - 1e-9 && i < n - 1) {
+        const m = links(i + 1);
+        normale = { x: normale.x + m.x, z: normale.z + m.z };
+        ursprung = b;
+    }
+    return {
+        abstand: bester.abstand,
+        hoehe: a.y + (b.y - a.y) * t,
+        seite: (px - ursprung.x) * normale.x + (pz - ursprung.z) * normale.z,
+    };
 }
 
 /** Gleicher Rasterbezug? Ein Delta/Vergleich über fremde Raster ist Unsinn. */
@@ -222,6 +299,120 @@ export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}, { berei
 }
 
 /**
+ * GRUBE (Teil XX, Fabio 2026-09-10): der gezeichnete Umriss ist die
+ * BÖSCHUNGSOBERKANTE auf dem Gelände, die Böschung fällt nach INNEN bis zur
+ * Sohle. Bis hierher war es umgekehrt (Planum als Sohle, Böschung nach
+ * aussen): die gezeichneten Ecken lagen danach am Grubenboden — „2 m tiefer".
+ *
+ * NUR SCHNEIDEND (`min`), wie Gerinne und Baugrube: eine Grube füllt nie auf.
+ * Die Randhöhe kommt aus den Umrisspunkten, deshalb ist die Operation
+ * idempotent. `neigung` leer oder 0 heisst senkrecht (verbaut).
+ */
+export function grube(raster, { umriss, sohle, neigung = null } = {}, { bereich = null } = {}) {
+    const warnungen = [];
+    const ring = _mitHoehe(umriss);
+    if (!ring || ring.length < 3) return { raster, warnungen: ['grube_ohne_umriss: jeder Umrisspunkt braucht seine Höhe'] };
+    if (!Number.isFinite(sohle)) return { raster, warnungen: ['grube_ohne_sohle'] };
+    const n = Number(neigung) > 0 ? Number(neigung) : 0;
+    const poly = ring.map(p => [p.x, p.z]);
+    const neu = _kopie(raster);
+    const { nz, heights } = neu;
+    let getroffen = 0;
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
+            const i = ix * nz + iz;
+            const h = heights[i];
+            if (!Number.isFinite(h)) continue;                    // NaN bleibt NaN
+            const k = rasterKnoten(raster, ix, iz);
+            if (!punktInPolygon(k.x, k.z, poly)) continue;        // aussen: nichts
+            const r = _amRing(k.x, k.z, ring);
+            const ziel = n > 0 ? Math.max(sohle, r.hoehe - r.abstand / n) : sohle;
+            if (ziel < h) { heights[i] = ziel; getroffen++; }
+        }
+    }
+    if (!getroffen) warnungen.push('grube_ohne_treffer: kein Rasterpunkt im Umriss liegt über der Grube');
+    return { raster: neu, warnungen };
+}
+
+/**
+ * SCHÜTTUNG — die umgedrehte Grube (Teil XX): der Umriss ist der
+ * BÖSCHUNGSFUSS auf dem Gelände, die Böschung steigt nach INNEN bis zur
+ * Zielhöhe. Ziel `'hoehe'`: eine absolute Höhe (m NN an der Grenze, hier
+ * Welt). Ziel `'ur'` („bis GOK"): das URSPRÜNGLICHE Gelände — eine
+ * Rückverfüllung; sie braucht das Ur-Raster (`ur`, derselbe Rasterbezug).
+ *
+ * NUR FÜLLEND (`max`): eine Schüttung trägt nie ab. Idempotent aus
+ * denselben Gründen wie die Grube.
+ */
+export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = null } = {}, { bereich = null, ur = null } = {}) {
+    const warnungen = [];
+    const ring = _mitHoehe(umriss);
+    if (!ring || ring.length < 3) return { raster, warnungen: ['schuettung_ohne_umriss: jeder Umrisspunkt braucht seine Höhe'] };
+    const bisUr = ziel === 'ur';
+    if (bisUr && !gleicherBezug(ur, raster)) return { raster, warnungen: ['schuettung_ohne_ur: das Ur-Gelände liegt nicht auf diesem Raster'] };
+    if (!bisUr && !Number.isFinite(hoehe)) return { raster, warnungen: ['schuettung_ohne_hoehe'] };
+    const n = Number(neigung) > 0 ? Number(neigung) : 0;
+    const poly = ring.map(p => [p.x, p.z]);
+    const neu = _kopie(raster);
+    const { nz, heights } = neu;
+    let getroffen = 0;
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
+            const i = ix * nz + iz;
+            const h = heights[i];
+            if (!Number.isFinite(h)) continue;
+            const k = rasterKnoten(raster, ix, iz);
+            if (!punktInPolygon(k.x, k.z, poly)) continue;
+            let soll;
+            if (bisUr) {
+                soll = ur.heights[i];
+                if (!Number.isFinite(soll)) continue;
+            } else {
+                const r = _amRing(k.x, k.z, ring);
+                soll = n > 0 ? Math.min(hoehe, r.hoehe + r.abstand / n) : hoehe;
+            }
+            if (soll > h) { heights[i] = soll; getroffen++; }
+        }
+    }
+    if (!getroffen) warnungen.push('schuettung_ohne_treffer: kein Rasterpunkt im Umriss liegt unter der Zielhöhe');
+    return { raster: neu, warnungen };
+}
+
+/**
+ * BÖSCHUNG AN EINER KANTE (Teil XX): eine OFFENE Linie mit Höhe je Knick
+ * ist die Böschungskante; auf der gewählten Seite läuft die Böschung 1:n
+ * bis zum Gelände — liegt das Gelände höher, als Einschnitt, liegt es
+ * tiefer, als Damm. Wo sie das Gelände erreicht, endet sie von selbst. Die
+ * andere Seite bleibt, wie sie ist (liegt die Kante nicht auf dem Gelände,
+ * entsteht dort eine Stufe — das sagt der Hinweis im Werkzeug).
+ */
+export function boeschungLinie(raster, { linie, seite = 'rechts', neigung = 1.5 } = {}, { bereich = null } = {}) {
+    const warnungen = [];
+    const pts = _mitHoehe(linie);
+    if (!pts || pts.length < 2) return { raster, warnungen: ['boeschung_linie_ohne_punkte: jeder Knick braucht seine Höhe'] };
+    const n = Math.max(0.1, Number(neigung) || 0);
+    const richtung = seite === 'links' ? 1 : -1;
+    const neu = _kopie(raster);
+    const { nz, heights } = neu;
+    const _b = _zellbereich(raster, bereich);
+    for (let ix = _b.ix0; ix <= _b.ix1; ix++) {
+        for (let iz = _b.iz0; iz <= _b.iz1; iz++) {
+            const i = ix * nz + iz;
+            const h = heights[i];
+            if (!Number.isFinite(h)) continue;
+            const k = rasterKnoten(raster, ix, iz);
+            const r = _anLinie(k.x, k.z, pts);
+            if (!r || r.seite * richtung < 0) continue;           // die andere Seite bleibt
+            if (h > r.hoehe) heights[i] = Math.min(h, r.hoehe + r.abstand / n);        // Einschnitt
+            else if (h < r.hoehe) heights[i] = Math.max(h, r.hoehe - r.abstand / n);   // Damm
+        }
+    }
+    return { raster: neu, warnungen };
+}
+
+/**
  * Erdmassen zwischen zwei Ständen DESSELBEN Rasters — Aushub und Auftrag
  * getrennt (m³). Je Zelle das Mittel der vier Eckdifferenzen mal Zellfläche;
  * eine Zelle zählt nur, wenn alle vier Ecken in BEIDEN Ständen Höhen tragen
@@ -360,6 +551,19 @@ function _hoechsteIn(raster, h) {
     return Number.isFinite(max) ? max : null;
 }
 
+/** Die kleinste Höhe des Rasters in einer XZ-Hülle — Gegenstück zu `_hoechsteIn` (ein Damm reicht nach unten). */
+function _tiefsteIn(raster, h) {
+    let min = Infinity;
+    const a = _zellbereich(raster, h);
+    for (let ix = a.ix0; ix <= a.ix1; ix++) {
+        for (let iz = a.iz0; iz <= a.iz1; iz++) {
+            const v = raster.heights[ix * raster.nz + iz];
+            if (Number.isFinite(v) && v < min) min = v;
+        }
+    }
+    return Number.isFinite(min) ? min : null;
+}
+
 /**
  * Der Wirkbereich EINER Operation, in Weltkoordinaten.
  * @returns {{minX,maxX,minZ,maxZ}|null}  null = nicht eingrenzbar (alles)
@@ -383,10 +587,32 @@ export function wirkbereichVon(raster, art, parameter = {}) {
         if (!huelle) return null;
         const neigung = Math.max(0, Number(p.neigung) || 0);
         const oben = _hoechsteIn(raster, huelle);
+        const unten = _tiefsteIn(raster, huelle);
         const ziel = Number(p.hoehe);
-        const spanne = (Number.isFinite(oben) && Number.isFinite(ziel)) ? Math.abs(oben - ziel) : 0;
+        // Nach OBEN (Einschnitt) wie nach UNTEN (Damm) — bis Teil XX zählte
+        // nur der höchste Punkt, und ein Damm lief über den Bereich hinaus.
+        const spanne = Number.isFinite(ziel)
+            ? Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0, Number.isFinite(unten) ? Math.abs(ziel - unten) : 0)
+            : 0;
         // Ein Planum ohne Böschung endet am Umriss; mit Böschung läuft es aus.
         rand += (art === 'boeschung' || neigung > 0) ? spanne * neigung : 0;
+    } else if (art === 'grube' || art === 'schuettung') {
+        // Nach INNEN: nichts ragt über den Umriss hinaus.
+        huelle = _huelleXZ(p.umriss);
+        if (!huelle) return null;
+    } else if (art === 'boeschungLinie') {
+        huelle = _huelleXZ(p.linie);
+        if (!huelle) return null;
+        const neigung = Math.max(0.1, Number(p.neigung) || 0);
+        const umher = { minX: huelle.minX - RAND_MINDEST_M, maxX: huelle.maxX + RAND_MINDEST_M,
+                        minZ: huelle.minZ - RAND_MINDEST_M, maxZ: huelle.maxZ + RAND_MINDEST_M };
+        const oben = _hoechsteIn(raster, umher), unten = _tiefsteIn(raster, umher);
+        const ys = (p.linie ?? []).map(q => (Array.isArray(q) ? q[1] : q?.y)).filter(Number.isFinite);
+        const kMin = ys.length ? Math.min(...ys) : null, kMax = ys.length ? Math.max(...ys) : null;
+        const spanne = Number.isFinite(kMin)
+            ? Math.max(0, Number.isFinite(oben) ? oben - kMin : 0, Number.isFinite(unten) ? kMax - unten : 0)
+            : 0;
+        rand += spanne * neigung;
     } else if (art === 'baugrube') {
         const m = p.mitte ? _xz(p.mitte) : null;
         if (!m || !Number.isFinite(m.x)) return null;
@@ -430,14 +656,18 @@ function _zellbereich(raster, bereich) {
  * abgeschnitten — und das muss gesagt werden, nicht gehofft.
  */
 function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
-    const nz = nachher.nz;
+    const { nx, nz } = nachher;
     const pruefe = (ix, iz) => {
         const i = ix * nz + iz;
         const v = vorher.heights[i], n = nachher.heights[i];
         return Number.isFinite(v) && Number.isFinite(n) && Math.abs(n - v) > eps;
     };
-    for (let ix = a.ix0; ix <= a.ix1; ix++) if (pruefe(ix, a.iz0) || pruefe(ix, a.iz1)) return true;
-    for (let iz = a.iz0; iz <= a.iz1; iz++) if (pruefe(a.ix0, iz) || pruefe(a.ix1, iz)) return true;
+    // Eine Seite, die auf dem RASTERRAND liegt, kann nichts abschneiden —
+    // dahinter gibt es keine Zellen (Teil XX: eine Böschung am Rand des DGM
+    // meldete sonst „zu klein", obwohl alles gerechnet war).
+    const unten = a.iz0 > 0, oben = a.iz1 < nz - 1, links = a.ix0 > 0, rechts = a.ix1 < nx - 1;
+    for (let ix = a.ix0; ix <= a.ix1; ix++) if ((unten && pruefe(ix, a.iz0)) || (oben && pruefe(ix, a.iz1))) return true;
+    for (let iz = a.iz0; iz <= a.iz1; iz++) if ((links && pruefe(a.ix0, iz)) || (rechts && pruefe(a.ix1, iz))) return true;
     return false;
 }
 
@@ -446,6 +676,10 @@ export const GELAENDE_OPS = Object.freeze({
     planum:    { titel: 'Planum herstellen',    wende: planum },
     boeschung: { titel: 'Böschung anschliessen', wende: boeschung },
     baugrube:  { titel: 'Baugrube ausheben',    wende: baugrube },
+    // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
+    grube:          { titel: 'Ausheben',            wende: grube },
+    schuettung:     { titel: 'Auffüllen',           wende: schuettung },
+    boeschungLinie: { titel: 'Böschung an Kante',   wende: boeschungLinie },
 });
 
 /**
@@ -470,12 +704,20 @@ export function verschiebeOperationen(operationen, delta) {
             ...op.parameter,
             ...(Array.isArray(op.parameter?.achse) ? { achse: op.parameter.achse.map(punktXZ) } : {}),
             ...(Array.isArray(op.parameter?.umriss) ? { umriss: op.parameter.umriss.map(punktXZ) } : {}),
+            ...(Array.isArray(op.parameter?.linie) ? { linie: op.parameter.linie.map(punktXZ) } : {}),
             ...(op.parameter?.mitte ? { mitte: punktXZ(op.parameter.mitte) } : {}),
         },
     }));
 }
 
-export function formeNach(raster, operationen = [], { bereich = null, ganzesRaster = false } = {}) {
+/**
+ * @param {object} [o]
+ * @param {object} [o.ur]  das Ur-Gelände auf DEMSELBEN Raster — für „bis GOK"
+ *                         (`schuettung`). Vorgabe: das Raster, mit dem die
+ *                         Kette beginnt; wer auf einem schon gefalteten Stand
+ *                         anfängt (Stapel), nennt es ausdrücklich.
+ */
+export function formeNach(raster, operationen = [], { bereich = null, ganzesRaster = false, ur = raster } = {}) {
     const warnungen = [];
     let stand = raster;
     for (const op of operationen) {
@@ -486,7 +728,7 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
         // vorgibt (`ganzesRaster` schaltet ihn ab — für den Zweifelsfall).
         const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p));
         const vor = stand;
-        const r = eintrag.wende(stand, p, { bereich: b });
+        const r = eintrag.wende(stand, p, { bereich: b, ur });
         stand = r.raster;
         warnungen.push(...r.warnungen);
         // ABGESCHNITTEN? Wenn am Rand des Bereichs noch etwas passiert ist,

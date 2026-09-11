@@ -75,15 +75,41 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         if (!stapelMemo.has(urGid)) stapelMemo.set(urGid, erdbauStapelVon(stand, urGid, { rezeptNach }));
         return stapelMemo.get(urGid);
     }
+    /** Je Vorgänger seine Operationen (in Welt), in Stapelreihenfolge — die ersten `bis`. */
+    async function _opsListen(urGid, bis) {
+        const { vorgaenge } = _stapel(urGid);
+        const listen = [];
+        for (const v of vorgaenge.slice(0, Math.max(0, bis))) listen.push((await _leiten(v.bauplan))?.ops ?? []);
+        return listen;
+    }
+
+    /** Die Operationen aller Vorgänger, flach — die bisherige Schnittstelle, jetzt über `_opsListen`. */
     async function opsVor(ableitungId, urGid, { alle = false } = {}) {
         const { vorgaenge } = _stapel(urGid);
         const bis = alle ? vorgaenge.length : vorgaenge.findIndex(v => v.ableitung === ableitungId);
-        const ops = [];
-        for (const v of vorgaenge.slice(0, Math.max(0, bis))) {
-            const erg = await _leiten(v.bauplan);
-            ops.push(...(erg?.ops ?? []));
+        return (await _opsListen(urGid, Math.max(0, bis))).flat();
+    }
+
+    /**
+     * DER PRÄFIX-CACHE (Teil XX): seit jede Anwendung ein eigener Vorgang
+     * ist, wächst der Stapel schnell — und jeder Vorgang faltete ALLE seine
+     * Vorgänger neu (O(n²) Faltungen, der Auffüllungs-Nachweis sogar O(n³)).
+     * Hier wird je Ausgangsraster (grob, feiner Korridor) und Ur der Stand
+     * nach k Vorgängen genau EINMAL je Lauf gerechnet. Vorgang für Vorgang
+     * gefaltet ist dasselbe wie alles in einem `formeNach`: jede Operation
+     * rechnet ihren Bereich ohnehin am Stand davor.
+     */
+    const praefixe = new WeakMap();   // Ausgangsraster → Map(urGid → [Stand nach 0, 1, … Vorgängen])
+    function _gefaltet(raster, urGid, listen, bis) {
+        let je = praefixe.get(raster);
+        if (!je) { je = new Map(); praefixe.set(raster, je); }
+        let stufen = je.get(urGid);
+        if (!stufen) { stufen = [raster]; je.set(urGid, stufen); }
+        for (let k = stufen.length; k <= bis; k++) {
+            const ops = listen[k - 1] ?? [];
+            stufen.push(ops.length ? formeNach(stufen[k - 1], ops, { ur: raster }).raster : stufen[k - 1]);
         }
-        return ops;
+        return stufen[bis];
     }
 
     /**
@@ -97,7 +123,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
      * dort aufgefüllt hat — nicht, weil sein Umriss in der Nähe liegt.
      */
     async function _durchAuffuellung({ ur: urGid, ableitung }, vorher, ops, urRaster) {
-        const nachher = formeNach(vorher, ops).raster;
+        const nachher = formeNach(vorher, ops, { ur: urRaster }).raster;
         const { nx, nz, cell } = vorher;
         const ueber = new Float64Array(nx * nz);
         const knoten = [];
@@ -123,14 +149,12 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         }
         const { vorgaenge } = _stapel(urGid);
         const bis = vorgaenge.findIndex(v => v.ableitung === ableitung);
+        const listen = await _opsListen(urGid, Math.max(0, bis));
         const treffer = [];
-        const bisher = [];
         let davor = urRaster;
-        for (const v of vorgaenge.slice(0, Math.max(0, bis))) {
-            const erg = await _leiten(v.bauplan);
-            bisher.push(...(erg?.ops ?? []));
-            const danach = formeNach(urRaster, bisher).raster;
-            if (knoten.some(i => danach.heights[i] - davor.heights[i] > 1e-9)) treffer.push(v.ableitung);
+        for (let k = 0; k < listen.length; k++) {
+            const danach = _gefaltet(urRaster, urGid, listen, k + 1);
+            if (knoten.some(i => danach.heights[i] - davor.heights[i] > 1e-9)) treffer.push(vorgaenge[k].ableitung);
             davor = danach;
         }
         return { volumen, vorgaenge: treffer };
@@ -201,16 +225,18 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             // nach allen VORGÄNGERN. Die Anzeige sieht es nach ALLEN Vorgängen.
             let stapel = null;
             if (urGid && quellen.gelaende) {
-                const vor = await opsVor(id, urGid, { alle: rezept.id === 'anzeige' });
+                const { vorgaenge } = _stapel(urGid);
+                const bis = rezept.id === 'anzeige' ? vorgaenge.length : vorgaenge.findIndex(v => v.ableitung === id);
+                const listen = await _opsListen(urGid, Math.max(0, bis));
+                const vor = listen.flat();
                 const urRaster = quellen.gelaende;
-                const vorher = vor.length ? formeNach(urRaster, vor).raster : urRaster;
-                quellen.gelaende = vorher;
+                quellen.gelaende = _gefaltet(urRaster, urGid, listen, listen.length);
                 stapel = {
                     ur: urGid, urRaster, ableitung: id, opsVor: vor,
                     reihe: Math.max(0, stapelVon(urGid).indexOf(id)),
                     // Dieselbe Faltung für ein anderes Raster derselben Quelle —
-                    // der feine Korridor braucht die Vorgänger genauso.
-                    vorherVon: (r) => (vor.length && r ? formeNach(r, vor).raster : r),
+                    // der feine Korridor braucht die Vorgänger genauso (eigener Präfix-Cache).
+                    vorherVon: (r) => (r ? _gefaltet(r, urGid, listen, listen.length) : r),
                 };
             }
             // ZUSATZQUELLEN (Teil XVII, B3): ein Rezept darf NACH den Hauptquellen

@@ -123,7 +123,7 @@ describe('D2 — eine Faltung „verdeckt"', () => {
     });
 });
 
-describe('D3 — zweiter Aushub am wieder eingeblendeten Ur-Gelände: Folgeformung, kein Klon', () => {
+describe('D3 — zweiter Aushub am wieder eingeblendeten Ur-Gelände: ein neuer Vorgang, kein Klon der Anzeige', () => {
     it('erdbauStandVon findet den Stapel über die QUELLE — vom Ur wie von der Anzeige aus', async () => {
         const ae = useAenderungen();
         for (const e of erstformung()) await ae.eintragen({ ...e, wer: 'Fabio' });
@@ -142,7 +142,7 @@ describe('D3 — zweiter Aushub am wieder eingeblendeten Ur-Gelände: Folgeformu
         expect(erdbauStandVon(stand, 'ANDERES')).toMatchObject({ ur: 'ANDERES', anzeige: null, vorgaenge: [], letzter: null });
     });
 
-    it('dieselben GlobalIds, eine erdbau-Klammer, ein geloescht, volle Liste', async () => {
+    it('ein neuer Vorgang (Teil XX) — aber EINE Anzeige, EIN geloescht, der erste Vorgang unverändert', async () => {
         const ae = useAenderungen();
         const erst = erstformung();
         for (const e of erst) await ae.eintragen({ ...e, wer: 'Fabio' });
@@ -154,19 +154,16 @@ describe('D3 — zweiter Aushub am wieder eingeblendeten Ur-Gelände: Folgeformu
         for (const e of zweite) await ae.eintragen({ ...e, wer: 'Fabio' });
 
         const erzeugt = ae.wirksamerStand('erzeugt');
-        expect(erzeugt.size).toBe(3);                                                // Anzeige + Cut + Fill, kein Klon
+        expect(erzeugt.size).toBe(5);                                                // Anzeige + 2 × (Cut + Fill)
         const erdbau = [...erzeugt.values()].filter(p => p.rezept === 'erdbau');
-        expect(new Set(erdbau.map(p => p.ableitung)).size).toBe(1);                  // eine erdbau-Klammer
+        expect(new Set(erdbau.map(p => p.ableitung)).size).toBe(2);                  // zwei Vorgänge
         expect(ae.wirksamerStand('geloescht').size).toBe(1);                         // ein geloescht
-        const erdbauIds = (l) => l.filter(s => s.art === 'erzeugt' && s.nachher.rezept === 'erdbau').map(s => s.globalId).sort();
-        expect(erdbauIds(zweite)).toEqual(erdbauIds(erst));
         const aushub = erst.find(s => s.nachher?.rolle === 'aushub').globalId;
-        expect(erzeugt.get(aushub).parameter.operationen.map(o => o.art)).toEqual(['gerinne', 'planum']);   // Liste +1, absolut
-        expect(erzeugt.get(aushub).parameter.quellen.gelaende).toBe('DGM1');
-        // Anzeigen des Ur-Geländes: genau eine, mit genau einem Vorgang
+        expect(erzeugt.get(aushub).parameter.operationen.map(o => o.art)).toEqual(['gerinne']);   // der erste bleibt
+        // Anzeigen des Ur-Geländes: genau eine, mit beiden Vorgängen
         const anzeigen = [...erzeugt.values()].filter(p => p.rezept === 'anzeige' && p.parameter.quellen.gelaende === 'DGM1');
         expect(anzeigen).toHaveLength(1);
-        expect(anzeigen[0].parameter.vorgaenge).toHaveLength(1);
+        expect(anzeigen[0].parameter.vorgaenge).toHaveLength(2);
     });
 
     it('ohne Anreicherung bleibt die Erstformung die Erstformung (kein stiller Wächter im Katalog)', () => {

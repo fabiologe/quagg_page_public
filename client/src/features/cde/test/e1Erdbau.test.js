@@ -68,7 +68,7 @@ describe('Keine Daten verlieren — die Vorgabe als Vertrag', () => {
         expect(bauteile.map(s => s.nachher.rolle)).toEqual(['aushub', 'auftrag']);
         expect(new Set(bauteile.map(s => s.nachher.ableitung)).size).toBe(1);
         const anzeige = neu.find(s => s.nachher.rezept === 'anzeige');
-        expect(anzeige.nachher.parameter.vorgaenge).toEqual([{ ableitung: bauteile[0].nachher.ableitung, art: 'erdbau', titel: 'Urgelände · Gelände formen' }]);
+        expect(anzeige.nachher.parameter.vorgaenge).toEqual([{ ableitung: bauteile[0].nachher.ableitung, art: 'erdbau', titel: 'Urgelände · Ausheben' }]);
     });
 
     it('gespeichert wird die QUELLE samt Operationsliste, nie ein gerechnetes Raster', () => {
@@ -76,12 +76,12 @@ describe('Keine Daten verlieren — die Vorgabe als Vertrag', () => {
         const neu = schritte.filter(s => s.art === 'erzeugt' && s.nachher.rezept === 'erdbau');
         const p = neu[0].nachher.parameter;
         expect(Object.keys(p).sort()).toEqual(['operationen', 'quellBasis', 'quellen', 'raster']);
-        expect(p.operationen.map(o => o.art)).toEqual(['planum', 'boeschung']);
+        expect(p.operationen.map(o => o.art)).toEqual(['grube']);   // Teil XX: EINE Op, Böschung nach innen
         // Kein Netz, kein Höhenfeld, kein Volumen — nur die Anweisung (Gesetz 5).
         expect(JSON.stringify(p)).not.toMatch(/heights|positions|volumen/);
         // EINE Klammer hält die Teile zusammen, und jedes trägt die volle Liste.
         expect(new Set(neu.map(s => s.nachher.ableitung)).size).toBe(1);
-        expect(neu.every(s => s.nachher.parameter.operationen.length === 2)).toBe(true);
+        expect(neu.every(s => s.nachher.parameter.operationen.length === 1)).toBe(true);
         // Die Anzeige trägt keine Operationen — nur die Reihenfolge der Vorgänge.
         const anzeige = schritte.find(s => s.nachher?.rezept === 'anzeige').nachher.parameter;
         expect(anzeige.operationen).toEqual([]);
@@ -89,33 +89,49 @@ describe('Keine Daten verlieren — die Vorgabe als Vertrag', () => {
     });
 });
 
-describe('Ausheben und Auffüllen — dieselbe Handlung, ein Vorzeichen', () => {
-    const opsVon = (id, werte) => {
-        const s = b(id).anwenden(GELAENDE(), werte, { zug: UMRISS(4) });
+describe('Ausheben und Auffüllen — der Umriss liegt AUF dem Gelände (Teil XX)', () => {
+    const opsVon = (id, werte, zug = UMRISS(4)) => {
+        const s = b(id).anwenden(GELAENDE(), werte, { zug });
         return s.find(x => x.nachher?.rezept === 'erdbau').nachher.parameter.operationen;
     };
 
-    it('die Tiefe zählt gegen das GEWACHSENE Gelände, gespeichert wird absolut (m NN)', () => {
-        // Gelände liegt bei Welt-y 4, Höhenversatz 300 ⇒ 304 m NN. Zwei Meter tiefer: 302.
-        const ops = opsVon('graben-ausheben', { mass: 2, neigung: 1.5 });
-        expect(ops[0].parameter.hoehe).toBeCloseTo(302, 6);
-        expect(ops[1].parameter.hoehe).toBeCloseTo(302, 6);
-        expect(weltAusNn(ops[0].parameter.hoehe, 300)).toBeCloseTo(2, 6);
+    it('Ausheben: der Umriss ist die Oberkante mit Höhe je Punkt, die Sohle zählt gegen die mittlere Randhöhe (m NN, absolut)', () => {
+        // Gelände bei Welt-y 4, Höhenversatz 300 ⇒ Rand 304 m NN. Zwei Meter tiefer: Sohle 302.
+        const [op] = opsVon('graben-ausheben', { mass: 2, neigung: 1.5 });
+        expect(op.art).toBe('grube');
+        expect(op.parameter.umriss.map(q => q.y)).toEqual([304, 304, 304, 304]);   // der gezeichnete Rand, AUF dem Gelände
+        expect(op.parameter.sohle).toBeCloseTo(302, 6);
+        expect(op.parameter.neigung).toBe(1.5);
+        expect(weltAusNn(op.parameter.sohle, 300)).toBeCloseTo(2, 6);
     });
 
-    it('Auffüllen ist dasselbe nach oben', () => {
-        expect(opsVon('auffuellen', { mass: 1.5 })[0].parameter.hoehe).toBeCloseTo(305.5, 6);
+    it('am Hang: die Sohle liegt die Tiefe unter der MITTLEREN Randhöhe, jede Ecke behält ihre eigene', () => {
+        const hang = [{ x: 0, y: 2, z: 0 }, { x: 20, y: 6, z: 0 }, { x: 20, y: 6, z: 20 }, { x: 0, y: 2, z: 20 }];
+        const [op] = opsVon('graben-ausheben', { mass: 1 }, hang);
+        expect(op.parameter.umriss.map(q => q.y)).toEqual([302, 306, 306, 302]);
+        expect(op.parameter.sohle).toBeCloseTo(303, 6);
+        expect(op.parameter.neigung).toBeNull();                                      // leer = senkrecht
     });
 
-    it('ohne Böschung bleibt es bei EINER Operation', () => {
-        expect(opsVon('graben-ausheben', { mass: 2 }).map(o => o.art)).toEqual(['planum']);
-        expect(opsVon('graben-ausheben', { mass: 2, neigung: 1.5 }).map(o => o.art)).toEqual(['planum', 'boeschung']);
+    it('Auffüllen: der Umriss ist der Fuss, Ziel die Höhe über dem Rand — oder bis GOK', () => {
+        const [op] = opsVon('auffuellen', { mass: 1.5 });
+        expect(op).toMatchObject({ art: 'schuettung', parameter: { ziel: 'hoehe' } });
+        expect(op.parameter.hoehe).toBeCloseTo(305.5, 6);
+        const [gok] = opsVon('auffuellen', { ziel: 'ur' });
+        expect(gok.parameter).toMatchObject({ ziel: 'ur' });
+        expect(gok.parameter.hoehe).toBeUndefined();
+        const s = b('auffuellen').anwenden(GELAENDE(), { ziel: 'ur' }, { zug: UMRISS(4) });
+        expect(s.find(x => x.nachher?.rolle === 'auftrag').nachher.predefinedType).toBe('BACKFILL');
+        expect(b('auffuellen').anwenden(GELAENDE(), { mass: 1 }, { zug: UMRISS(4) })
+            .find(x => x.nachher?.rolle === 'auftrag').nachher.predefinedType).toBe('EMBANKMENT');
     });
 
-    it('ohne Geländetreffer wird NICHT geraten — der Zug ohne Höhen ergibt nichts', () => {
+    it('ohne Geländetreffer wird NICHT geraten — schon EIN Punkt ohne Höhe ergibt nichts', () => {
         const ohneY = [{ x: 0, z: 0 }, { x: 9, z: 0 }, { x: 9, z: 9 }];
         expect(b('graben-ausheben').anwenden(GELAENDE(), { mass: 2 }, { zug: ohneY })).toBeNull();
         expect(b('auffuellen').anwenden(GELAENDE(), { mass: 2 }, { zug: ohneY })).toBeNull();
+        const einer = [...UMRISS(4).slice(0, 3), { x: 0, z: 20 }];
+        expect(b('graben-ausheben').anwenden(GELAENDE(), { mass: 2 }, { zug: einer })).toBeNull();
     });
 
     it('unsinnige Masse und zu wenige Punkte ergeben nichts', () => {
@@ -125,21 +141,26 @@ describe('Ausheben und Auffüllen — dieselbe Handlung, ein Vorzeichen', () => 
     });
 });
 
-describe('Böschung anschliessen — die Böschung allein', () => {
-    it('schreibt genau eine boeschung-Operation mit der getippten Höhe', () => {
-        const s = b('boeschung-anschliessen').anwenden(GELAENDE(), { hoehe: 301, neigung: 2 }, { zug: UMRISS() });
+describe('Böschung an Kante — eine offene Linie mit Seite (Teil XX)', () => {
+    const LINIE = [{ x: 0, y: 4, z: 0 }, { x: 20, y: 5, z: 0 }];
+
+    it('schreibt EINE boeschungLinie: je Knick Gelände + Kantenhöhe, die gewählte Seite, die Neigung', () => {
+        const s = b('boeschung-anschliessen').anwenden(GELAENDE(), { kante: 1, seite: 'links', neigung: 2 }, { zug: LINIE });
         const ops = s.find(x => x.nachher?.rezept === 'erdbau').nachher.parameter.operationen;
         expect(ops).toHaveLength(1);
-        expect(ops[0]).toMatchObject({ art: 'boeschung', parameter: { hoehe: 301, neigung: 2 } });
+        expect(ops[0]).toMatchObject({ art: 'boeschungLinie', parameter: { seite: 'links', neigung: 2 } });
+        expect(ops[0].parameter.linie.map(q => q.y)).toEqual([305, 306]);
+        expect(s.find(x => x.nachher?.rolle === 'auftrag').nachher.predefinedType).toBe('SLOPEFILL');
     });
 
-    it('belegt die Höhe aus der gezeichneten Kante vor (sie liegt auf dem Gelände)', () => {
-        expect(b('boeschung-anschliessen').nachZug(GELAENDE(), UMRISS(4))).toEqual({ hoehe: 304 });
-        expect(b('boeschung-anschliessen').nachZug(GELAENDE(), [{ x: 0, z: 0 }])).toEqual({});
+    it('rechts ist die Vorgabe; zwei Punkte genügen, einer nicht', () => {
+        const s = b('boeschung-anschliessen').anwenden(GELAENDE(), { kante: 0, neigung: 1.5 }, { zug: LINIE });
+        expect(s.find(x => x.nachher?.rezept === 'erdbau').nachher.parameter.operationen[0].parameter.seite).toBe('rechts');
+        expect(b('boeschung-anschliessen').anwenden(GELAENDE(), { kante: 1, neigung: 1.5 }, { zug: LINIE.slice(0, 1) })).toBeNull();
     });
 
     it('ohne Neigung ergibt sie nichts — eine Böschung 1:0 ist keine', () => {
-        expect(b('boeschung-anschliessen').anwenden(GELAENDE(), { hoehe: 301, neigung: 0 }, { zug: UMRISS() })).toBeNull();
+        expect(b('boeschung-anschliessen').anwenden(GELAENDE(), { kante: 1, neigung: 0 }, { zug: LINIE })).toBeNull();
     });
 });
 
@@ -151,9 +172,11 @@ describe('Der Katalog nennt jetzt die Handlungen', () => {
         ]));
         for (const id of ['graben-ausheben', 'auffuellen', 'boeschung-anschliessen']) {
             expect(b(id).gruppe, id).toBe('gelaende');
-            expect(b(id).eingabe, id).toBe('umriss');
             expect(b(id).hoehenAus, id).toBe('gelaende');
         }
+        // Umriss für die Flächen, OFFENE Linie für die Böschung (Teil XX).
+        expect(['graben-ausheben', 'auffuellen'].map(id => b(id).eingabe)).toEqual(['umriss', 'umriss']);
+        expect(b('boeschung-anschliessen').eingabe).toBe('zug');
     });
 
     it('Ausheben und Auffüllen tragen VERSCHIEDENE Zeichen — sie sind entgegengesetzt', () => {

@@ -74,7 +74,10 @@ export function useVorschau({ engine, bearbeitung, getHoeheAn = null, getHoehenv
         const hoeheVorgabe = Number.isFinite(Number(bearbeitung.werte?.hoehe)) && bearbeitung.werte.hoehe !== ''
             ? weltAusNn(Number(bearbeitung.werte.hoehe), versatz)
             : (bearbeitung.bauteil?.bezugshoehe ?? null);
-        const zugPrimitive = _zugPrimitive(zug, bearbeitung.eingabe?.zeiger ?? null, { hoeheAn: getHoeheAn, hoeheVorgabe, farbe: f.accent });
+        const zugPrimitive = _zugPrimitive(zug, bearbeitung.eingabe?.zeiger ?? null, {
+            hoeheAn: getHoeheAn, hoeheVorgabe, farbe: f.accent,
+            umriss: b.eingabe === 'umriss', geschlossen: !!bearbeitung.eingabe?.zugGeschlossen, fangFarbe: f.warn,
+        });
 
         // Die GESTE (S3): Kandidaten einer Auswahl werden gefärbt, der Zeiger
         // auf der Achse zeigt den Stationspunkt, bevor getippt wird.
@@ -138,7 +141,8 @@ export function useVorschau({ engine, bearbeitung, getHoeheAn = null, getHoehenv
 }
 
 /** Der Zug als Marken + Linie + Gummiband — Höhen aus dem Punkt, dem Sampler oder der Vorgabe. */
-export function _zugPrimitive(zug, zeiger, { hoeheAn = null, hoeheVorgabe = null, farbe = '#4fc3f7' } = {}) {
+export function _zugPrimitive(zug, zeiger, { hoeheAn = null, hoeheVorgabe = null, farbe = '#4fc3f7',
+                                             umriss = false, geschlossen = false, fangFarbe = '#ffb74d' } = {}) {
     const hoehe = (p) => {
         if (Number.isFinite(p?.y)) return p.y;
         const h = hoeheAn?.(p.x, p.z);
@@ -151,6 +155,13 @@ export function _zugPrimitive(zug, zeiger, { hoeheAn = null, hoeheVorgabe = null
         .filter(p => Number.isFinite(p.y));
     const aus = pts.map(p => ({ art: 'marke', punkt: p, normal: { x: 0, y: 1, z: 0 }, farbe, radius: 0.2 }));
     if (pts.length >= 2) aus.push({ art: 'linie', punkte: pts, farbe });
+    // UMRISS (Teil XX): der erste Punkt ist das Ziel des Schliessfangs — gross
+    // und in der Fang-Farbe; die Schlusskante steht gestrichelt, bis der
+    // Umriss geschlossen ist, dann durchgezogen.
+    if (umriss && pts.length) {
+        aus.push({ art: 'marke', punkt: pts[0], normal: { x: 0, y: 1, z: 0 }, farbe: fangFarbe, radius: 0.35 });
+        if (pts.length >= 3) aus.push({ art: 'linie', punkte: [pts[pts.length - 1], pts[0]], farbe, gestrichelt: !geschlossen });
+    }
     if (zeiger && pts.length && Number.isFinite(zeiger.x) && Number.isFinite(zeiger.z)) {
         const y = hoehe(zeiger);
         if (Number.isFinite(y)) {

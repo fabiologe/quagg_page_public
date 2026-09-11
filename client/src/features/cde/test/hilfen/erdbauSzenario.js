@@ -77,9 +77,9 @@ export function erdbauSzenario({ ur = 'DGM1', rohr = 'H1', bauteil = 'FUND-1', c
      * `mitAuftrag` (Stufe 2, nachgereicht): nach dem Gerinne wird QUER über
      * der späteren Grabenlinie aufgefüllt (1,5 m). Der Kanalgraben schneidet
      * dann durch diesen Auftrag — das Paket trägt eine Füllung UND an ihrem
-     * Graben `schneidetAuffuellung` (Fabios Entscheidung 3). Weil der letzte
-     * Vorgang das Gerinne ist, hängt sich die Füllung an SEINE Liste
-     * (Folgeformung) — ein Vorgang, zwei Teile.
+     * Graben `schneidetAuffuellung` (Fabios Entscheidung 3).
+     * Seit Teil XX ist die Füllung ein EIGENER Vorgang (zwischen Gerinne und
+     * Graben): eigener Fill, eigene Menge, eigene Gruppe.
      */
     async function spiele() {
         const ae = useAenderungen();

@@ -665,7 +665,10 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
 
     eigen = tmp_path / "eigenbau.ifc"
     bericht = baue_datei(paket, eigen, schluessel="vertrag")
-    assert bericht["uebersprungen"] == [] and bericht["vorgaenge"] == 3
+    # Vier Vorgaenge (Teil XX: jede Werkzeug-Anwendung ein eigener Vorgang) —
+    # Gerinne, Auffuellen, Kanalgraben, Bauwerksgrube; die Fuellung hing bis
+    # dahin am Gerinne.
+    assert bericht["uebersprungen"] == [] and bericht["vorgaenge"] == 4
     assert bericht["mengen"] == sum(1 for b in paket["bauteile"] if b.get("mengen"))
 
     gelaende = tmp_path / "gelaende.ifc"
@@ -682,7 +685,7 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
     assert (w["geschlossen"], w["fehlende_wirte"], w["ohne_wirtangabe"]) == (3, [], [])
     v = b["nachbearbeitung"]["vorgaenge"]
     assert v["ergaenzt"] == 1 and v["fehlend"] == [VERTRAG["bauteil"]]     # das Fundament liegt nicht im Satz
-    assert (v["vorgaenge"], v["mit_quellen"]) == (3, 2)           # das Gerinne nennt keine Lieferung
+    assert (v["vorgaenge"], v["mit_quellen"]) == (4, 2)           # Gerinne und Auffuellen nennen keine Lieferung
 
     f = ifcopenshell.open(ziel)
     assert len(f.by_type("IfcGeographicElement")) == 1          # TERRAIN = 1 (mit Paket v1: zwei)

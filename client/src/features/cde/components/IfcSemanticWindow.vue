@@ -43,6 +43,19 @@
             </span>
           </div>
 
+          <!-- Mengen eines EIGENEN Cut/Fill (Teil XX, Fabio: „es fehlen die
+               Volumen in m³"): dieselben Zahlen, die ins IFC gehen
+               (Qto_Earthworks…) und im Mengen-Reiter stehen — aus dem
+               letzten Aufbau, keine zweite Rechnung. -->
+          <div v-if="mengen.length" class="mengen-block">
+            <div class="mengen-kopf">
+              <CdeIcon name="volume" :size="12" /> Mengen <span class="mengen-quelle">wie im IFC</span>
+            </div>
+            <div v-for="m in mengen" :key="m.feld" class="mengen-zeile">
+              <span>{{ m.titel }}</span><b>{{ m.wert }}</b>
+            </div>
+          </div>
+
           <IfcSidebar
             :element="ifc.selectedElement"
             :psetError="ifc.psetError"
@@ -64,7 +77,8 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
-import { istAnzeigeform } from '../services/Bauteilrezepte.js';
+import { istAnzeigeform, mengenVon, rezeptNach } from '../services/Bauteilrezepte.js';
+import { m3 } from '../services/Mengenzeile.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
@@ -87,6 +101,26 @@ const anzeigeform = computed(() => {
   const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
   if (!istAnzeigeform(plan)) return null;
   return { quelle: plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? '—' };
+});
+
+/** Die Qto-Felder mit deutschem Namen — was ein Planer liest, nicht was im Schema steht. */
+const MENGEN_TITEL = { undisturbedVolume: 'Aushub (gewachsen)', compactedVolume: 'Auftrag (verdichtet)', length: 'Länge' };
+
+/**
+ * Die Mengen eines eigenen Cut/Fill (Teil XX) — `mengenVon` wie der IFC-Export,
+ * aus den Kennzahlen des letzten Aufbaus. Nach jedem Neuaufbau neu.
+ */
+const mengen = computed(() => {
+  void ifc.geometrieStand;
+  const gid = ifc.selectedElement?.globalId;
+  const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
+  if (!plan?.ableitung || !rezeptNach(plan.rezept)?.erdbau) return [];
+  const k = api.kennzahlenVon?.(plan.ableitung);
+  return Object.entries(mengenVon(plan, k)).map(([feld, v]) => ({
+    feld,
+    titel: MENGEN_TITEL[feld] ?? feld,
+    wert: feld === 'length' ? `${v.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m` : m3(v),
+  }));
 });
 
 async function clearSelection() {
@@ -212,6 +246,20 @@ async function copyAsBridge() {
   font-size: 0.78rem; line-height: 1.35;
 }
 .anzeigeform-hinweis code { font-size: 0.72rem; }
+
+/* Mengen eines eigenen Cut/Fill (Teil XX) — dieselben Zahlen wie im IFC. */
+.mengen-block {
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--cde-radius-sm);
+  background: var(--cde-tint-weak);
+  border-left: 2px solid var(--cde-accent-line);
+  font-size: 0.78rem;
+}
+.mengen-kopf { display: flex; align-items: center; gap: 0.35rem; color: var(--cde-text); font-weight: 600; margin-bottom: 0.2rem; }
+.mengen-quelle { margin-left: auto; font-weight: 400; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.mengen-zeile { display: flex; justify-content: space-between; gap: 0.75rem; color: var(--cde-text-soft); padding: 0.05rem 0; }
+.mengen-zeile b { color: var(--cde-text); font-variant-numeric: tabular-nums; }
 
 .bridge-export-bar {
   display: flex;

@@ -59,8 +59,44 @@ export function deriveSurface(positions, triCount, opts = {}) {
 
 // ── 'upfaces' ───────────────────────────────────────────────────────────────
 
+function _normale(positions, o) {
+    const nx = (positions[o + 4] - positions[o + 1]) * (positions[o + 8] - positions[o + 2])
+             - (positions[o + 5] - positions[o + 2]) * (positions[o + 7] - positions[o + 1]);
+    const ny = (positions[o + 5] - positions[o + 2]) * (positions[o + 6] - positions[o])
+             - (positions[o + 3] - positions[o]) * (positions[o + 8] - positions[o + 2]);
+    const nz = (positions[o + 3] - positions[o]) * (positions[o + 7] - positions[o + 1])
+             - (positions[o + 4] - positions[o + 1]) * (positions[o + 6] - positions[o]);
+    return { ny, len: Math.hypot(nx, ny, nz) };
+}
+
+/**
+ * Wie herum ist ein OFFENES Höhenfeld gewickelt? Die Mehrheit der Fläche sagt es.
+ *
+ * Ein offenes Netz darf so oder so herum kommen. Gemessen (Teil XX,
+ * 2026-09-10): die Anzeige des geformten Geländes — ein Rasternetz der CDE,
+ * über die Bibliothek zurückgelesen — trug ALLE 99 414 Dreiecke nach unten
+ * gewendet. `upfaces` behielt davon keins, der Sampler war leer, `hoeheAn`
+ * null — und nach der ersten Formung fand kein Werkzeug mehr eine Höhe.
+ * Die Ursache sitzt hier in der Datei: `dreieckeAusRaster` wickelt jede Zelle
+ * nach unten, und daraus baut der Autor die Anzeige. Dort wird nichts gedreht
+ * — Anzeige und Körper hängen daran; gekurt wird, wer die Wicklung LIEST.
+ * Zeigt die Mehrheit nach unten, ist die ganze Fläche umgedreht: dann gilt
+ * die Regel gespiegelt. Ein richtig gewickeltes Netz bleibt, wie es war.
+ * @returns {1|-1}
+ */
+export function wicklungVon(positions, triCount) {
+    let auf = 0, ab = 0;
+    for (let t = 0; t < triCount; t++) {
+        const { ny, len } = _normale(positions, t * 9);
+        if (len < 1e-12) continue;
+        if (ny > 0) auf += len; else if (ny < 0) ab += len;
+    }
+    return ab > auf ? -1 : 1;
+}
+
 function _upfaces(positions, triCount) {
     const out = new Float64Array(triCount * 9);
+    const richtung = wicklungVon(positions, triCount);
     let n = 0;
     for (let t = 0; t < triCount; t++) {
         const o = t * 9;
@@ -72,8 +108,15 @@ function _upfaces(positions, triCount) {
                  - (positions[o + 4] - positions[o + 1]) * (positions[o + 6] - positions[o]);
         const len = Math.hypot(nx, ny, nz);
         if (len < 1e-12) continue;
-        if (ny / len < NY_MIN_UP) continue;
+        if (richtung * ny / len < NY_MIN_UP) continue;
         out.set(positions.subarray(o, o + 9), n * 9);
+        if (richtung < 0) {
+            // Nach oben gewendet ausgeben: wer die Normale liest (Flächenkennzahlen
+            // zählen nur ny > 0 als Grundfläche), sieht dann dasselbe wie beim
+            // gelieferten Gelände.
+            out.set(positions.subarray(o + 6, o + 9), n * 9 + 3);
+            out.set(positions.subarray(o + 3, o + 6), n * 9 + 6);
+        }
         n++;
     }
     return { positions: out.subarray(0, n * 9).slice(), triCount: n };

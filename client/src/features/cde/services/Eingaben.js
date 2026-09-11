@@ -86,7 +86,9 @@ export function naechsterSchritt(eingaben, { punkte = 0, zugGeschlossen = false,
         if (punkte >= zugSchlitz.anzahl.max) {
             return { art: 'bereit', name: zugSchlitz.schlitz, hinweis: 'Zug vollständig — Enter übernimmt' };
         }
-        return { art: 'zug', name: zugSchlitz.schlitz, hinweis: `${punkte} Punkte — Enter oder Doppelklick schliesst ab` };
+        return { art: 'zug', name: zugSchlitz.schlitz, hinweis: zugSchlitz.schlitz === 'umriss'
+            ? `${punkte} Punkte — ersten Punkt antippen schliesst den Umriss`
+            : `${punkte} Punkte — Enter oder Doppelklick schliesst ab` };
     }
     if (!bereit) return { art: 'feld', name: null, hinweis: 'Werte im Formular vervollständigen' };
     return { art: 'bereit', name: null, hinweis: 'Enter übernimmt' };
@@ -107,3 +109,19 @@ export function enterRegel({ phase = 'aus', genug = false, bereit = false } = {}
     if (phase === 'pruefen') return bereit ? 'anwenden' : 'nichts';
     return 'nichts';
 }
+
+/**
+ * DER SCHLIESSFANG (Teil XX, Fabio 2026-09-10): ein Tipp nahe dem ERSTEN
+ * Punkt schliesst einen Umriss, statt einen weiteren Punkt zu setzen — auf
+ * dem Tablet der einzige Weg ohne Tastatur, im Raum gibt es keinen
+ * Doppelklick. Er SCHREIBT NICHTS (Tablet-Regel 4: ein Tipp schreibt nicht):
+ * der Zug geht auf „prüfen", übernommen wird mit dem Knopf. Die NÄHE misst
+ * der Aufrufer — der Lageplan im Weltabstand, der Raum in Bildschirmpixeln;
+ * die Regel ist für beide dieselbe.
+ */
+export function schliesstUmriss({ schlitz = null, punkte = 0, mindest = 3, nahe = false } = {}) {
+    return schlitz === 'umriss' && punkte >= mindest && !!nahe;
+}
+
+/** Wie nah ist nah, am Bildschirm? Der Finger ist ungenauer als die Maus (T4-Regel). */
+export const SCHLIESS_RADIUS_PX = Object.freeze({ touch: 22, pen: 16, mouse: 14 });

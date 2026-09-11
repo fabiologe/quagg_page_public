@@ -55,7 +55,7 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         expect(anzeige.rolle).toBe('anzeige');
         expect(anzeige.parameter.quellen).toEqual({ gelaende: 'DGM1' });
         expect(anzeige.parameter.vorgaenge.map(v => v.art)).toEqual(['erdbau', 'kanalgraben', 'bauwerksgrube']);
-        expect(anzeige.parameter.vorgaenge.map(v => v.titel)).toEqual(['Urgelände · Gelände formen', 'H-001 · Kanalgraben', 'Fundament A · Bauwerksgrube']);
+        expect(anzeige.parameter.vorgaenge.map(v => v.titel)).toEqual(['Urgelände · Gerinne', 'H-001 · Kanalgraben', 'Fundament A · Bauwerksgrube']);
         // JEDER Vorgang fusst auf dem Ur — keine Kette über Kopien.
         for (const p of plaene(s, p => p.rezept !== 'anzeige')) expect(p.parameter.quellen.gelaende).toBe('DGM1');
         // Der Erdbau-Stand, von jedem Punkt aus gleich.
@@ -95,7 +95,7 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         expect(ueber).toBe(0);
     });
 
-    it('Folgeformung NACH der Grube ist ein neuer Vorgang — der Graben wird nicht rückwirkend geändert', async () => {
+    it('jede weitere Formung ist ein neuer Vorgang (Teil XX) — der Graben wird nicht rückwirkend geändert', async () => {
         const { stand, trage } = await szenario();
         const vorher = stand();
         const anzeige = anzeigeKandidat(vorher);
@@ -110,16 +110,16 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         // Der erste Erdbau-Vorgang blieb, wie er war.
         const erster = erdbau.find(p => p.ableitung === anzeige.erdbau.vorgaenge[0].ableitung);
         expect(erster.parameter.operationen.map(o => o.art)).toEqual(['gerinne']);
-        // Und noch einmal formen: jetzt ist der LETZTE ein Erdbau — die Liste wächst, keine dritte Klammer.
+        // Und noch einmal formen: wieder ein NEUER Vorgang — bis Teil XX wuchs hier die Liste.
         const nochmal = anzeigeKandidat(s);
         await trage(nachId('planum-herstellen').anwenden({ ...subjekt, erdbau: nochmal.erdbau }, { hoehe: 598.5 },
             { zug: [{ x: 12, z: 34 }, { x: 18, z: 34 }, { x: 18, z: 38 }, { x: 12, z: 38 }] }), 'Planum 2');
         const s2 = stand();
-        expect(new Set(plaene(s2, p => p.rezept === 'erdbau').map(p => p.ableitung)).size).toBe(2);
-        expect(s2.get(anzeige.globalId).parameter.vorgaenge).toHaveLength(4);
+        expect(new Set(plaene(s2, p => p.rezept === 'erdbau').map(p => p.ableitung)).size).toBe(3);
+        expect(s2.get(anzeige.globalId).parameter.vorgaenge).toHaveLength(5);
         const letzter = erdbauStandVon(s2, 'DGM1').letzter;
         expect(letzter.art).toBe('erdbau');
-        expect(letzter.operationen.map(o => o.art)).toEqual(['planum', 'planum']);
+        expect(letzter.operationen.map(o => o.art)).toEqual(['planum']);
     });
 
     it('am Autor und im Paket v2: die Anzeige bleibt draussen, jedes Bauteil trägt Mengen, Vorgang und Fachmodell', async () => {
@@ -135,7 +135,7 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         expect(cuts).toHaveLength(3);
         expect(cuts.map(b => b.vorgang.reihe)).toEqual([0, 1, 2]);
         expect(cuts.map(b => b.vorgang.art)).toEqual(['erdbau', 'kanalgraben', 'bauwerksgrube']);
-        expect(cuts.map(b => b.vorgang.titel)).toEqual(['Urgelände · Gelände formen', 'H-001 · Kanalgraben', 'Fundament A · Bauwerksgrube']);
+        expect(cuts.map(b => b.vorgang.titel)).toEqual(['Urgelände · Gerinne', 'H-001 · Kanalgraben', 'Fundament A · Bauwerksgrube']);
         expect(cuts.every(b => b.kennzahlen.aushubRaster > 5)).toBe(true);
         // Stufe 2: die MENGE ist die Kennzahl, die das Rezept deklariert — DIESELBE Zahl wie im Mengenreiter.
         expect(cuts.map(b => b.mengen.undisturbedVolume)).toEqual(cuts.map(b => b.kennzahlen.aushubRaster));

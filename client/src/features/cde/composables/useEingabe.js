@@ -24,7 +24,7 @@
 import { computed, ref, watch } from 'vue';
 import { nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { pruefeBauplan } from '../services/Bauteilrezepte.js';
-import { eingabenFuer, enterRegel, naechsterSchritt } from '../services/Eingaben.js';
+import { eingabenFuer, enterRegel, naechsterSchritt, schliesstUmriss } from '../services/Eingaben.js';
 import { stationAuf } from '../services/Fangpunkte.js';
 
 /** Fang auf Schachtmitten beim Zug (Anschliessen): derselbe Radius wie in `anwenden`. */
@@ -74,7 +74,9 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
 
     /** Der laufende Zug für den Plotter — gesetzte Punkte plus Gummiband. */
     const zug = computed(() => (aktiv.value && zugSchlitz.value
-        ? { punkte: punkte.value, zeiger: zeiger.value, geschlossen: !!werkzeug.value.geschlossen }
+        // Ein UMRISS ist geschlossen gemeint — der Plotter zeigt die Schlusskante
+        // schon beim Sammeln (Teil XX); bis dahin nur bei Rezept-Werkzeugen.
+        ? { punkte: punkte.value, zeiger: zeiger.value, geschlossen: !!werkzeug.value.geschlossen || zugSchlitz.value.schlitz === 'umriss' }
         : null));
 
     const schritt = computed(() => naechsterSchritt(eingaben.value, {
@@ -174,9 +176,30 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         return bester ? { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, fang: bester.k.name || 'Schacht' } : p;
     }
 
-    /** Einen Punkt setzen — `{x, z}` aus dem Lageplan, `{x, y, z}` aus dem Raum. */
-    function setzePunkt(p) {
+    /**
+     * Der SCHLIESSFANG (Teil XX): schliesst den Umriss, wenn `nahe(ersterPunkt)`
+     * — die Regel steht in `Eingaben.schliesstUmriss`, die Nähe misst der
+     * Aufrufer. Schreibt nichts: der Zug geht auf „prüfen".
+     * @returns {boolean} geschlossen?
+     */
+    function schliesseWennNahe(nahe) {
+        if (!aktiv.value || !zugSchlitz.value || zustand().zugGeschlossen || typeof nahe !== 'function') return false;
+        const p0 = punkte.value[0];
+        if (!schliesstUmriss({ schlitz: zugSchlitz.value.schlitz, punkte: punkte.value.length,
+                               mindest: mindestPunkte.value, nahe: !!p0 && !!nahe(p0) })) return false;
+        return schliesseZug();
+    }
+
+    /**
+     * Einen Punkt setzen — `{x, z}` aus dem Lageplan, `{x, y, z}` aus dem Raum.
+     * `nahe(p0)` (optional) sagt, ob der Tipp beim ersten Punkt liegt: dann
+     * schliesst er den Umriss statt einen Punkt anzuhängen.
+     */
+    function setzePunkt(p, { nahe = null } = {}) {
         if (!aktiv.value || !p || !zugSchlitz.value) return false;
+        if (schliesseWennNahe(nahe)) return true;
+        // Schon geschlossen und wieder auf den ersten Punkt getippt: bleibt zu.
+        if (zustand().zugGeschlossen && typeof nahe === 'function' && punkte.value[0] && nahe(punkte.value[0])) return true;
         if (zustand().zugGeschlossen) oeffneZug();
         if (punkte.value.length >= hoechstPunkte.value) return false;
         punkte.value = [...punkte.value, _gefangen(_mitHoehe(p))];
@@ -282,8 +305,12 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
             return true;
         }
         if (aktiv.value && zugSchlitz.value && t?.point) {
-            setzePunkt({ x: t.point.x, y: t.point.y, z: t.point.z });
-            if (zustand().zugGeschlossen && bearbeitung?.bereit) enter();
+            setzePunkt({ x: t.point.x, y: t.point.y, z: t.point.z }, { nahe: t.nahe ?? null });
+            // Ein Zug mit HÖCHSTZAHL (Anschliessen: 1 Punkt) ist mit dem Tipp
+            // fertig und wird übernommen, wie bisher. Nach dem SCHLIESSFANG nie:
+            // ein Tipp schreibt nicht (Teil XX — sonst hätte das Schliessen
+            // eines Aushubs schon eingetragen, weil Tiefe und Neigung vorbelegt sind).
+            if (zustand().zugGeschlossen && punkte.value.length >= hoechstPunkte.value && bearbeitung?.bereit) enter();
             return true;
         }
         return false;
@@ -346,6 +373,6 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         werkzeug, punkte, zeiger, grund, aktiv, genug, zug, hinweis, mindestPunkte, hoechstPunkte,
         phase, eingaben, gestenFelder, schritt, geste,
         starte, setzePunkt, bewegeZeiger, entferneLetzten, abschliessen, abbrechen,
-        enter, schliesseZug, oeffneZug, starteGeste, brichGesteAb, aufTreffer,
+        enter, schliesseZug, oeffneZug, schliesseWennNahe, starteGeste, brichGesteAb, aufTreffer,
     };
 }

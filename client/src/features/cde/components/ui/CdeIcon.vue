@@ -32,7 +32,7 @@ import {
   ChartColumn, LayoutGrid, Tag, Package, Hash, Euro, Wallet, CircleCheck,
   Palette, SlidersHorizontal, Table,
   // Tiefbau
-  Mountain, Waypoints, TrendingDown, Spline, Compass, Route,
+  Mountain, Waypoints, TrendingDown, Spline, Compass, Route, Slash,
   // Dateien / Export
   FileText, FileCode2, FileSpreadsheet, Download, Upload, Camera, Save,
   // Projekt / CDE
@@ -147,6 +147,8 @@ const ICONS = {
   // „auffüllen" sind entgegengesetzt und dürfen nicht dasselbe Bild haben.
   'ausheben':     Shovel,
   'auffuellen':   Layers2,
+  // Teil XX: die Böschung an einer Kante — ein schräger Strich, keine Fläche.
+  'boeschung':    Slash,
   'schacht':      Cylinder,
   // Bauform-Auslegung: „als welche FORM lese ich dieses Bauteil?"
   'bauform':      Shapes,
@@ -222,7 +224,7 @@ export const ICON_NAMES = [
   'chevron-right', 'chevron-down', 'chevron-up', 'panel-left', 'panel-right', 'tree', 'filter',
   'undo', 'redo', 'verlauf', 'edit', 'send', 'busy', 'open', 'pointer', 'image', 'billed',
   'radierer', 'text', 'karte', 'bemassen', 'route', 'gerinne', 'planum', 'schacht', 'bauform',
-  'ausheben', 'auffuellen',
+  'ausheben', 'auffuellen', 'boeschung',
   'overview', 'vector', 'bim',
   'status-error', 'status-warn', 'status-ok',
   'site', 'building', 'storey', 'space', 'element',
