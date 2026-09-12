@@ -56,7 +56,7 @@ export const ARTEN = Object.freeze({
     enthalten: { titel: 'Enthalten', gerichtet: true,  paarung: '3D ⊂ 3D',   text: 'die Hülle von A liegt in der Hülle von B' },
     schnitt:   { titel: 'Schnitt',   gerichtet: false, paarung: '3D ∩ 3D',   text: 'die Körper überschneiden sich' },
     stapel:    { titel: 'Stapel',    gerichtet: true,  paarung: '2D+ ↔ 2D+', text: 'Schicht A liegt auf Schicht B' },
-    ableitung: { titel: 'Ableitung', gerichtet: true,  paarung: 'Journal',   text: 'Teil A ist aus Quelle B abgeleitet' },
+    ableitung: { titel: 'Ableitung', gerichtet: true,  paarung: 'Verlauf',   text: 'Teil A ist aus Quelle B abgeleitet' },
     gruppe:    { titel: 'Gruppe',    gerichtet: true,  paarung: 'IFC',       text: 'A gehört zur Gruppe B' },
 });
 

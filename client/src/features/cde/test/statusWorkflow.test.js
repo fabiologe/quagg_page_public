@@ -20,14 +20,14 @@ describe('pruefeStatuswechsel (rein)', () => {
         expect(pruefeStatuswechsel({ von: 'Shared', nach: 'Published', rolle: 'MITARBEITER' }).ok).toBe(true);
         const sprung = pruefeStatuswechsel({ von: 'WIP', nach: 'Archived', rolle: 'MITARBEITER' });
         expect(sprung.ok).toBe(false);
-        expect(sprung.grund).toContain('ISO-19650-Weg');
+        expect(sprung.grund).toBe('Zuerst Shared, dann Published, dann Archived.');
         expect(pruefeStatuswechsel({ von: 'WIP', nach: 'Archived', rolle: 'ADMIN' }).ok).toBe(true);
     });
 
     it('rückwärts braucht Rang — und der Grund nennt ihn', () => {
         const zurueck = pruefeStatuswechsel({ von: 'Published', nach: 'Shared', rolle: 'MITARBEITER' });
         expect(zurueck.ok).toBe(false);
-        expect(zurueck.grund).toContain('ADMIN');
+        expect(zurueck.grund).toBe('Von Published nach Shared erst ab Rolle Admin.');
         expect(pruefeStatuswechsel({ von: 'Shared', nach: 'WIP', rolle: 'WERKSTUDENT' }).ok).toBe(false);
         expect(pruefeStatuswechsel({ von: 'Shared', nach: 'WIP', rolle: 'MITARBEITER' }).ok).toBe(true);
     });
@@ -35,7 +35,9 @@ describe('pruefeStatuswechsel (rein)', () => {
     it('ohne Rolle (lokal, nicht angemeldet) gilt der GRAPH, aber keine Rangschranke', () => {
         expect(pruefeStatuswechsel({ von: 'WIP', nach: 'Shared', rolle: null }).ok).toBe(true);
         expect(pruefeStatuswechsel({ von: 'Published', nach: 'Shared', rolle: null }).ok).toBe(true);
-        expect(pruefeStatuswechsel({ von: 'WIP', nach: 'Published', rolle: null }).ok).toBe(false);
+        const ohneShared = pruefeStatuswechsel({ von: 'WIP', nach: 'Published', rolle: null });
+        expect(ohneShared.ok).toBe(false);
+        expect(ohneShared.grund).toBe('Zuerst Shared, dann Published.');
     });
 
     it('statusZiele liefert je Ziel die Sperre samt Grund — fürs Auswahlfeld', () => {
@@ -66,7 +68,7 @@ describe('setDokumentStatus hält den Arbeitsfluss ein', () => {
         await cde.registerModel({ name: 'K.ifc', sha256: 'aaa', size: 3, projectGlobalId: 'g' });
 
         expect(await cde.setDokumentStatus('aaa', 'Archived')).toBe(false);
-        expect(cde.statusGrund).toContain('ISO-19650-Weg');
+        expect(cde.statusGrund).toBe('Zuerst Shared, dann Published, dann Archived.');
         expect(cde.dokumente.find(d => d.sha256 === 'aaa').status).toBe('WIP');
 
         expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(true);

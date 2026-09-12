@@ -11,15 +11,33 @@
  * ankündigen, als der Server tut.
  */
 
+function _verstoesse(n) {
+    return `${n} ${n === 1 ? 'Verstoß' : 'Verstöße'}`;
+}
+
+/** Für den Titel (Details): mit Zahl. */
 function _pruefung(h) {
     if (!h?.pruefung) return 'ungeprüft';
-    const n = h.pruefung.verstoesse;
-    return n === 0 ? 'geprüft, 0 Verstöße' : `${n} Verstöße`;
+    const n = Number(h.pruefung.verstoesse ?? 0);
+    return n === 0 ? 'geprüft, 0 Verstöße' : _verstoesse(n);
 }
+
+/** Für die Zeile (R1): ein Wort, wenn nichts zu melden ist. */
+function _pruefungKurz(h) {
+    if (!h?.pruefung) return 'ungeprüft';
+    const n = Number(h.pruefung.verstoesse ?? 0);
+    return n === 0 ? 'geprüft' : _verstoesse(n);
+}
+
+const _ohneEndung = (datei) => String(datei).replace(/\.ifc$/i, '');
 
 /**
  * Der Chip je Registerzeile — `null` für ein hochgeladenes Dokument (woher es
  * kam, weiss der Planer, nicht die CDE).
+ *
+ * Erdbau (S2, R1): „Erdbau · aus Gelände_R02 · Satz Boden · geprüft". Die
+ * Verlaufsversion (`journal.commit`) ist eine Kennung für den Server, kein
+ * Satz für Menschen — sie steht in keinem der beiden Texte (R4).
  *
  * @returns {{art: string, text: string, titel: string}|null}
  */
@@ -30,14 +48,14 @@ export function herkunftChip(dok) {
     const satz = h.satz_name ? `Satz „${h.satz_name}“` : '';
     if (h.art === 'erdbau') {
         const erste = quellen[0];
-        const aus = erste ? (erste.datei ?? String(erste.sha256 ?? '').slice(0, 12)) : '—';
-        const journal = h.journal?.commit
-            ? `Journalstand ${h.journal.commit}${h.journal.sitzungOffen ? ' + offene Sitzung' : ''}` : '';
+        const aus = erste
+            ? `aus ${erste.datei ? _ohneEndung(erste.datei) : 'unbenannter Quelle'}${quellen.length > 1 ? ` +${quellen.length - 1}` : ''}`
+            : '';
         return {
             art: 'erdbau',
-            text: `Erdbau · aus ${aus}${quellen.length > 1 ? ` +${quellen.length - 1}` : ''}`,
-            titel: ['Erdbau-Dokument: Ur-Gelände unverändert, Aushub und Auftrag je Vorgang, Mengen',
-                    satz, _pruefung(h), journal,
+            text: ['Erdbau', aus, h.satz_name ? `Satz ${h.satz_name}` : '', _pruefungKurz(h)].filter(Boolean).join(' · '),
+            titel: ['Erdbau-Dokument: Gelände unverändert, Aushub und Auftrag je Vorgang, mit Mengen',
+                    _pruefung(h), h.journal?.sitzungOffen ? 'mit ungesicherten Schritten' : '',
                     ...quellen.map(q => `Quelle ${q.datei ?? q.sha256} Rev. ${q.revision ?? '?'}`)].filter(Boolean).join(' · '),
         };
     }
@@ -148,10 +166,10 @@ export function fruehereRevisionFehlt(dok, alle) {
  */
 export function regenerierbar({ dok, alle = [], aktiverSatzId = null, geladen = [], fehlend = [] } = {}) {
     const h = dok?.herkunft;
-    if (h?.art !== 'erdbau') return { ok: false, grund: 'kein Erdbau-Dokument', handlung: null };
+    if (h?.art !== 'erdbau') return { ok: false, grund: 'Kein Erdbau-Dokument.', handlung: null };
     if (h.satz_id && h.satz_id !== aktiverSatzId) {
         return { ok: false, handlung: 'satz', ziel: h.satz_id,
-                 grund: `erst den Satz „${h.satz_name ?? h.satz_id}“ aktivieren — aus ihm entstand das Dokument` };
+                 grund: `Erst den Satz „${h.satz_name ?? h.satz_id}“ wählen — aus ihm entstand das Dokument.` };
     }
     const veraltet = quellenVeraltet(dok, alle);
     const geladenSet = new Set(geladen ?? []);
@@ -159,18 +177,19 @@ export function regenerierbar({ dok, alle = [], aktiverSatzId = null, geladen = 
         const neuer = (alle ?? []).find(x => (x.name ?? x.datei) === v.neu);
         if (neuer && !geladenSet.has(neuer.sha256)) {
             return { ok: false, handlung: 'laden', ziel: neuer.sha256,
-                     grund: `${v.neu} zuerst laden — daraus entsteht die neue Revision` };
+                     grund: `Erst ${v.neu} laden — daraus entsteht die neue Revision.` };
         }
     }
-    const wirte = new Set((h.quellen ?? []).flatMap(q => q?.globalIds ?? []));
-    const haengt = (fehlend ?? []).filter(g => wirte.has(g));
+    const gelaendeIds = new Set((h.quellen ?? []).flatMap(q => q?.globalIds ?? []));
+    const haengt = (fehlend ?? []).filter(g => gelaendeIds.has(g));
     if (haengt.length) {
+        const n = haengt.length;
         return { ok: false, handlung: 'rebase',
-                 grund: `das Journal hängt an ${haengt.length} Kennung${haengt.length === 1 ? '' : 'en'} der alten Revision — erst im Reiter Änderungen umhängen` };
+                 grund: `${n} ${n === 1 ? 'Bauteil gehört' : 'Bauteile gehören'} noch zur alten Revision — erst im Verlauf zuordnen.` };
     }
     return { ok: true, handlung: null,
-             grund: veraltet.length ? `neu erzeugen aus ${veraltet.map(v => v.neu).join(', ')}`
-                                    : 'neu erzeugen — derselbe Satz, der heutige Journalstand' };
+             grund: veraltet.length ? `Neu ausgeben aus ${veraltet.map(v => v.neu).join(', ')}.`
+                                    : 'Neu ausgeben — derselbe Satz, der heutige Verlauf.' };
 }
 
 export function quellenVeraltet(dok, alle) {

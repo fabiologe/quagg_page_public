@@ -32,7 +32,8 @@ function gelaende() {
 function fakeFragments() {
     let naechsteId = 100;
     const editor = {
-        createElements: vi.fn(async () => [{ localId: naechsteId++ }]),
+        // Wie die Bibliothek: ein Element je Auftrag, in dessen Reihenfolge.
+        createElements: vi.fn(async (_mid, auftraege) => auftraege.map(() => ({ localId: naechsteId++ }))),
         applyChanges: vi.fn(async () => []),
         deleteElements: vi.fn(),
         getElements: vi.fn(async () => []),
@@ -83,7 +84,7 @@ describe('Stufe 0 am Autor — ein Gelände im Raum, kein keine_localId', () => 
         const r = await autor.wendeAn({ anzuwenden, vollstaendig: true, modelId: 'm1' },
                                       { globalIdZuLocalId: new Map([['DGM1', 7]]) });
 
-        const kategorien = f.editor.createElements.mock.calls.map(c => c[1][0].attributes._category.value);
+        const kategorien = f.editor.createElements.mock.calls.flatMap(c => c[1]).map(a => a.attributes._category.value);
         expect(kategorien.filter(k => k === 'IFCGEOGRAPHICELEMENT')).toHaveLength(1);      // vorher 2 — jetzt: nur die Anzeige
         expect(r.misserfolge.filter(m => m.grund === 'keine_localId')).toHaveLength(0);     // vorher 1
         expect(r.auszublenden).toEqual([{ modelId: 'm1', localId: 7 }]);                    // das gelieferte, wie immer

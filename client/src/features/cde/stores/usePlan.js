@@ -33,6 +33,10 @@ export const PLAN_VORGABEN = Object.freeze({
     measurements:   true,    // Messstrecken
     dimensions:     true,    // Bemaßung (AP-10)
     ifcGrids:       false,   // IFC-Achsenraster
+    // Was aufs Blatt kommt (Abnahme 2026-09-12, T3): die AUSGELASSENEN Modelle —
+    // ein neu geladenes ist so von selbst drauf — und der Eigenbau.
+    modelleAus:     Object.freeze([]),
+    eigenbau:       true,
 
     // Tiefbau (Sprint T1)
     slopeHatch:     false,   // Böschungsschraffur aus Gelände-Kategorien
@@ -73,6 +77,8 @@ export const usePlan = defineStore('cde-plan', () => {
             scaleBar:     o.scaleBar,
             showLabels:   o.showLabels,
             footprints:   o.footprints,
+            modelleAus:   o.modelleAus ?? [],
+            eigenbau:     o.eigenbau !== false,
             northAngle:   Number(o.northAngle) || 0,
             // Feldnamen wie in IfcPdfExporter (`minSlopeDeg`, `tickSpacingMm`,
             // `interval`). Ein falscher Name zeichnet still gar nichts —

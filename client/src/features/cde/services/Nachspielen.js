@@ -184,18 +184,27 @@ export function planeNachspielen(eintraege, leseLieferstand, { arten = null, sta
 }
 
 /**
- * Die Meldung nach dem Laden — kurz, und sie verschweigt nichts.
+ * Die Meldung nach dem Laden — eine Zeile, und sie verschweigt nichts.
  *
- * „18 Festlegungen angewandt" allein wäre eine halbe Wahrheit; die zwei, die
+ * „18 Schritte angewandt" allein wäre eine halbe Wahrheit; die zwei, die
  * nicht durchgingen, sind die interessanten.
+ *
+ * `fehlgeschlagen` zählt, was beim ANWENDEN scheiterte (`IfcAutor.wendeAn` →
+ * `misserfolge`), `nichtGebaut` den Teil davon, der ein Eigenbau-Teil war. Bis
+ * S2 (2026-09-12) kam `fehlgeschlagen` hier nicht an: es verkleinerte
+ * „angewandt" still, und die Zeile nannte den Grund nicht.
  */
 export function fasseZusammen({ angewandt = 0, konflikte = 0, fehlend = 0, ueberschnitten = 0,
-                                nurFestlegung = 0, nachgefuehrt = 0, bezugFehlt = 0, quelleGeaendert = 0 } = {}) {
-    if (!angewandt && !konflikte && !nurFestlegung) return '';
-    const teile = [`${angewandt} ${angewandt === 1 ? 'Festlegung' : 'Festlegungen'} angewandt`];
+                                nurFestlegung = 0, nachgefuehrt = 0, bezugFehlt = 0, quelleGeaendert = 0,
+                                fehlgeschlagen = 0, nichtGebaut = 0 } = {}) {
+    if (!angewandt && !konflikte && !nurFestlegung && !fehlgeschlagen) return '';
+    const teile = [`${angewandt} ${angewandt === 1 ? 'Schritt' : 'Schritte'} angewandt`];
+    const gebautFehlt = Math.min(nichtGebaut, fehlgeschlagen);
+    if (gebautFehlt) teile.push(`${gebautFehlt} nicht gebaut`);
+    if (fehlgeschlagen > gebautFehlt) teile.push(`${fehlgeschlagen - gebautFehlt} nicht angewandt`);
     // Getrennt genannt, weil es weder Erfolg noch Panne ist: die CDE ändert das
     // Autorenmodell absichtlich nicht, sie stellt eine Forderung (ISO 19650).
-    if (nurFestlegung) teile.push(`${nurFestlegung} × nur festgehalten (Forderung an den Planer)`);
+    if (nurFestlegung) teile.push(`${nurFestlegung} × Forderung an den Planer`);
     if (ueberschnitten) teile.push(`${ueberschnitten} × auch vom Planer geändert`);
     if (fehlend) teile.push(`${fehlend} × Bauteil nicht mehr im Modell`);
     if (nachgefuehrt) teile.push(`${nachgefuehrt} × dem Bezug nachgeführt`);

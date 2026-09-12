@@ -176,8 +176,12 @@ export class IfcAutor {
      *        dadurch fehlerfrei und blieben unsichtbar.
      */
     constructor({ getFragments, getWelt, holeQuellraster, holeQuellForm, holeQuellBauform,
-                  kernel, getHoehenversatz } = {}) {
+                  kernel, getHoehenversatz, istVerborgen } = {}) {
         this._getFragments = getFragments ?? (() => null);
+        // Ist ein Modell ausgeblendet? Die Engine weiss es (`modellSichtbar`);
+        // ein Neuaufbau legt das Eigenbau-Modell neu an und muss es wieder
+        // verbergen, solange der Nutzer es so will (Abnahme 2026-09-12, A6).
+        this._istVerborgen = istVerborgen ?? (() => false);
         this._getWelt = getWelt ?? (() => null);
         /** Stufe 15: Ableitung für Rezepte mit Bedarf (Gelände-Quellraster). */
         this._holeQuellraster = holeQuellraster ?? (async () => null);
@@ -396,6 +400,9 @@ export class IfcAutor {
                 welt.scene.three.add(modell.object);
                 if (welt.camera?.three && modell.useCamera) modell.useCamera(welt.camera.three);
             }
+            // Verborgen bleibt verborgen (Abnahme 2026-09-12, A6): jeder
+            // Neuaufbau legt das Modell neu an — mit dem Auge des Nutzers.
+            if (modell?.object) modell.object.visible = !this._istVerborgen(modelId);
             // Wie geliefertes Material: volle Geometrie unabhängig vom Abstand.
             // Ohne das entscheidet die Detailstufe, ob eine gezeichnete Linie
             // zu sehen ist — bei einer Handvoll Bauteilen kostet es nichts.
@@ -468,6 +475,24 @@ export class IfcAutor {
     setzeFarbsatz(satz) { this._farbsatz = satz ?? null; }
 
     /**
+     * Das Material so, wie der fragments-Editor es liest (Abnahme 2026-09-12, K4).
+     *
+     * `createMaterial` der Bibliothek speichert `255 * color.r` — den LINEAREN
+     * Wert, mit dem three rechnet —, und `parseMaterial` liest ihn als sRGB
+     * zurück. Jede Farbe des Eigenbaus kam so eine Gammastufe zu dunkel an:
+     * gemessen in 42069 stand die Geländekopie als 5e5a50 statt a4a198 im
+     * Bild, der Aushub als 402a0f statt 8a7145 — neben dem gelieferten
+     * Gelände im Katalogton. Hier bekommt der Editor die sRGB-Werte in
+     * `color`; heraus kommt, was der Katalog sagt.
+     */
+    _fuerEditor(material) {
+        if (!material?.color) return material;
+        const m = material.clone();
+        m.color.copy(material.color.clone().convertLinearToSRGB());
+        return m;
+    }
+
+    /**
      * Ein Bauteil erzeugen.
      *
      * @param {object} bauteil { kategorie, name?, geometrie: THREE.BufferGeometry,
@@ -478,46 +503,7 @@ export class IfcAutor {
         if (!editor) return { ok: false, grund: 'kein_editor' };
         if (!bauteil?.geometrie) return { ok: false, grund: 'ohne_geometrie' };
         try {
-            const elemente = await editor.createElements(modelId, [{
-                // DIE FORM STAMMT AUS DER BIBLIOTHEK, nicht aus der Anschauung.
-                // `itemDataToRawItemData` liest `_category` und wirft sonst
-                // „Category is required"; alles ohne führenden Unterstrich wird
-                // zum Attribut. Hier stand `{ category, data: {...} }` — die
-                // Form eines `edit`-Auftrags, nicht die eines neuen Bauteils.
-                // Der Aufruf warf damit JEDES Mal, der try/catch fing es ab,
-                // und Zeichnen ergab nie etwas. Festgehalten in
-                // `test/fragmentsVertrag.test.js`.
-                //
-                // `_guid` ist der Grund, warum ein erzeugtes Bauteil hinterher
-                // auffindbar ist: die CDE vergibt eine eigene GlobalId, und die
-                // landet damit im GUID-Index der Bibliothek — derselbe Weg wie
-                // bei geliefertem Material, kein Sonderfall.
-                attributes: {
-                    _category: { value: bauteil.kategorie ?? 'IFCBUILDINGELEMENTPROXY' },
-                    ...(bauteil.globalId ? { _guid: { value: bauteil.globalId } } : {}),
-                    Name: { value: bauteil.name ?? '' },
-                    // Der PredefinedType (TRENCH, TERRAIN …) steht als gewöhnliches
-                    // Attribut — alles ohne Unterstrich übernimmt fragments.
-                    ...(bauteil.predefinedType ? { PredefinedType: { value: bauteil.predefinedType } } : {}),
-                },
-                // Die Platzierung des Aufrufers WELTBEZOGEN, danach in den
-                // Modellrahmen gehoben (`_weltNachModell`). Reihenfolge zählt:
-                // erst platzieren, dann umrechnen.
-                globalTransform: this._weltNachModell()
-                    .multiply(bauteil.platzierung ?? new THREE.Matrix4()),
-                samples: [{
-                    localTransform: new THREE.Matrix4(),
-                    representation: bauteil.geometrie,
-                    // DIE FARBE GEHÖRT DEM BAUTEIL, nicht der Ansicht.
-                    //
-                    // Sie kommt hier ins Material und damit in die
-                    // Fragmentdatei — ein Aushub ist also auch nach dem
-                    // Export braun und durchscheinend, und niemand muss eine
-                    // Einfärbung nachziehen. Ein Aufrufer, der ein eigenes
-                    // Material mitbringt, behält es (`bauteil.material`).
-                    material: bauteil.material ?? this._materialFuer(bauteil.kategorie),
-                }],
-            }]);
+            const elemente = await editor.createElements(modelId, [this._elementAuftrag(bauteil)]);
             const element = elemente?.[0] ?? null;
             if (!element) return { ok: false, grund: 'nichts_erzeugt' };
             await editor.applyChanges(modelId, [element]);
@@ -525,6 +511,94 @@ export class IfcAutor {
         } catch (fehler) {
             return { ok: false, grund: `editor_fehler: ${fehler?.message ?? fehler}` };
         }
+    }
+
+    /**
+     * Viele Bauteile in EINEM Editor-Auftrag (Fahrplan Klare Abläufe, S1).
+     *
+     * `createElements` schreibt selbst: die Bibliothek ruft darin `edit`, und
+     * jedes `edit` legt ein NEUES Delta-Modell an, das alles bisher Erzeugte
+     * noch einmal trägt (`DeltaBoxen.js`). Teil für Teil hiess das N
+     * Worker-Aufträge und N Deltas, jedes grösser als das vorige — mit einem
+     * Geländeraster als Anzeige genau die Last, unter der beim Übernehmen alle
+     * Modelle aus dem Bild fielen (Abnahme 2026-09-12, P2). Gemeinsam: ein
+     * Auftrag, ein Delta.
+     *
+     * Wirft der gemeinsame Auftrag, wird Teil für Teil wiederholt — dann steht
+     * genau das kaputte Teil als Misserfolg da und nicht alle. Die Bibliothek
+     * wirft vor dem Schreiben (Kategorie, Form) oder im Schreiben selbst; ein
+     * Doppel entsteht dabei nicht.
+     *
+     * @returns {Promise<Array<{ok:boolean, localId?:number, grund?:string}>>}
+     *   in der Reihenfolge der Eingabe
+     */
+    async erzeugeAlle(modelId, bauteile) {
+        const liste = bauteile ?? [];
+        if (!liste.length) return [];
+        const editor = this._editor(modelId);
+        if (!editor) return liste.map(() => ({ ok: false, grund: 'kein_editor' }));
+        if (liste.every(b => b?.geometrie)) {
+            let elemente = null;
+            try {
+                elemente = await editor.createElements(modelId, liste.map(b => this._elementAuftrag(b)));
+            } catch (fehler) {
+                console.warn('cde: gemeinsam erzeugen gescheitert, jetzt einzeln', fehler?.message ?? fehler);
+            }
+            if (elemente) {
+                try { await editor.applyChanges(modelId, elemente); }
+                catch (fehler) { console.warn('cde: änderungen anwenden', fehler?.message ?? fehler); }
+                return liste.map((_, i) => (elemente[i]?.localId != null
+                    ? { ok: true, localId: elemente[i].localId }
+                    : { ok: false, grund: 'nichts_erzeugt' }));
+            }
+        }
+        const ergebnisse = [];
+        for (const b of liste) ergebnisse.push(await this.erzeuge(modelId, b));
+        return ergebnisse;
+    }
+
+    /** Der Auftrag für EIN neues Bauteil — in der Form, die die Bibliothek liest. */
+    _elementAuftrag(bauteil) {
+        return {
+            // DIE FORM STAMMT AUS DER BIBLIOTHEK, nicht aus der Anschauung.
+            // `itemDataToRawItemData` liest `_category` und wirft sonst
+            // „Category is required"; alles ohne führenden Unterstrich wird
+            // zum Attribut. Hier stand `{ category, data: {...} }` — die
+            // Form eines `edit`-Auftrags, nicht die eines neuen Bauteils.
+            // Der Aufruf warf damit JEDES Mal, der try/catch fing es ab,
+            // und Zeichnen ergab nie etwas. Festgehalten in
+            // `test/fragmentsVertrag.test.js`.
+            //
+            // `_guid` ist der Grund, warum ein erzeugtes Bauteil hinterher
+            // auffindbar ist: die CDE vergibt eine eigene GlobalId, und die
+            // landet damit im GUID-Index der Bibliothek — derselbe Weg wie
+            // bei geliefertem Material, kein Sonderfall.
+            attributes: {
+                _category: { value: bauteil.kategorie ?? 'IFCBUILDINGELEMENTPROXY' },
+                ...(bauteil.globalId ? { _guid: { value: bauteil.globalId } } : {}),
+                Name: { value: bauteil.name ?? '' },
+                // Der PredefinedType (TRENCH, TERRAIN …) steht als gewöhnliches
+                // Attribut — alles ohne Unterstrich übernimmt fragments.
+                ...(bauteil.predefinedType ? { PredefinedType: { value: bauteil.predefinedType } } : {}),
+            },
+            // Die Platzierung des Aufrufers WELTBEZOGEN, danach in den
+            // Modellrahmen gehoben (`_weltNachModell`). Reihenfolge zählt:
+            // erst platzieren, dann umrechnen.
+            globalTransform: this._weltNachModell()
+                .multiply(bauteil.platzierung ?? new THREE.Matrix4()),
+            samples: [{
+                localTransform: new THREE.Matrix4(),
+                representation: bauteil.geometrie,
+                // DIE FARBE GEHÖRT DEM BAUTEIL, nicht der Ansicht.
+                //
+                // Sie kommt hier ins Material und damit in die
+                // Fragmentdatei — ein Aushub ist also auch nach dem
+                // Export braun und durchscheinend, und niemand muss eine
+                // Einfärbung nachziehen. Ein Aufrufer, der ein eigenes
+                // Material mitbringt, behält es (`bauteil.material`).
+                material: this._fuerEditor(bauteil.material ?? this._materialFuer(bauteil.kategorie)),
+            }],
+        };
     }
 
     /** Ein Bauteil löschen. */
@@ -574,6 +648,14 @@ export class IfcAutor {
             // Fehlerklasse wie der Szenen-Rest beim Ziehen-Griff (a499dbb).
             const welt = this._getWelt();
             if (modell.object && welt?.scene?.three) welt.scene.three.remove(modell.object);
+            // DAS DELTA GEHT MIT (Abnahme 2026-09-12). Die Geometrie erzeugter
+            // Teile liegt nicht in der Basis, sondern im Delta-Modell des
+            // Editors (`DeltaBoxen.js`). `disposeModel` entsorgt nur die Basis;
+            // das Delta blieb in der Modellliste und im Editor stehen, bis die
+            // nächste Bearbeitung es mitnahm — ein Neuaufbau ohne Teile liess
+            // es für immer stehen, und jedes `update` rechnete es weiter mit.
+            // Zuerst das Delta: es zeichnet sich gegen seine Basis.
+            await kern.editor?.disposeDeltaModels?.(modelId);
             await kern.disposeModel(modelId);
             return true;
         } catch (fehler) {
@@ -731,9 +813,13 @@ export class IfcAutor {
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
         const karte = new Map();
+        // WAS IM RAUM STEHT (Abnahme 2026-09-12): Pillenzähler und Abschnitt
+        // „Eigenbau" zählen das, nicht den Verlauf — dort standen 14 Bauteile,
+        // gebaut waren weniger.
+        this.gebaut = karte;
         const misserfolge = [];
         await this.verwirfEigenesModell(modelId);
-        if (!schritte?.length) { this.ableitungen = new Map(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] }; }
+        if (!schritte?.length) { this.ableitungen = new Map(); this.leer = new Set(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] }; }
 
         const angelegt = await this.eigenesModell(modelId);
         if (!angelegt.ok) {
@@ -751,6 +837,7 @@ export class IfcAutor {
         // neben der wirksamen im Raum. Sie wird nicht gebaut — und genannt.
         const verdraengtVon = verdraengteAnzeigen(new Map(schritte.map(s => [s.globalId, s.wert])), { rezeptNach, historie });
         const verdraengt = [];
+        const zuErzeugen = [];
 
         for (const schritt of schritte) {
             if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
@@ -771,18 +858,26 @@ export class IfcAutor {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
-            const r = await this.erzeuge(modelId, {
+            zuErzeugen.push({ schritt, bauteil: {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
                 predefinedType: gebaut.predefinedType ?? null,
                 // Die im Journal vergebene Kennung mitgeben — dann findet auch
                 // `getLocalIdsByGuids` das erzeugte Bauteil, nicht nur die
                 // Karte aus diesem einen Lauf.
                 globalId: schritt.globalId,
-            });
+            } });
+        }
+        // Alle Teile in EINEM Auftrag — ein Delta statt eines je Teil (`erzeugeAlle`).
+        const ergebnisse = await this.erzeugeAlle(modelId, zuErzeugen.map(z => z.bauteil));
+        ergebnisse.forEach((r, i) => {
+            const { schritt } = zuErzeugen[i];
             if (r.ok) karte.set(schritt.globalId, r.localId);
             else misserfolge.push({ ...schritt, grund: r.grund });
-        }
+        });
         this.ableitungen = lauf.ableitungen;
+        // Leer ist kein Fehlschlag (der Auftrag eines reinen Aushubs) — die Struktur
+        // sagt „leer“, nicht „nicht gebaut“ (Abnahme 2026-09-12, M2).
+        this.leer = new Set(leer);
         await this._neuZeichnen();
         return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt };
     }
@@ -848,9 +943,16 @@ export class IfcAutor {
      * Bauen. Andersherum liefe die Verschiebung ins Leere und meldete
      * „keine_localId" für etwas, das eine Zeile später existiert.
      */
-    async wendeAn(plan, { globalIdZuLocalId, historie = null } = {}) {
+    async wendeAn(plan, { globalIdZuLocalId, globalIdZuOrt = null, historie = null } = {}) {
         const misserfolge = [];
         const schritte = plan?.anzuwenden ?? [];
+        // IN WELCHEM MODELL steht ein geliefertes Bauteil? In dem, in dem die
+        // Karte es fand — nicht im ersten geladenen (Abnahme 2026-09-12, P2).
+        // Das Nachspielen gab `plan.modelId` des ERSTEN Modells mit; lud das
+        // Gelände als zweites, traf das Ausblenden des Ur-Geländes ein fremdes
+        // Bauteil, und das ungeformte Gelände deckte den Aushub. `plan.modelId`
+        // bleibt der Rückfall für Aufrufer ohne Ortskarte.
+        const modellVon = (globalId) => globalIdZuOrt?.get(globalId)?.modelId ?? plan?.modelId;
 
         // NUR neu aufbauen, wenn es dabei um Erzeugtes geht.
         //
@@ -913,7 +1015,7 @@ export class IfcAutor {
             }
             // `wert` null heisst „Rücknahme" — dann wieder zeigen.
             (schritt.wert ? auszublenden : einzublenden)
-                .push({ modelId: plan.modelId, localId });
+                .push({ modelId: modellVon(schritt.globalId), localId });
         }
 
         for (const schritt of schritte) {
@@ -934,7 +1036,7 @@ export class IfcAutor {
                 misserfolge.push({ ...schritt, grund: 'keine_localId' });
                 continue;
             }
-            const r = await this.setzeAnker(ausCde ? CDE_MODELL_ID : plan.modelId, localId, schritt.wert);
+            const r = await this.setzeAnker(ausCde ? CDE_MODELL_ID : modellVon(schritt.globalId), localId, schritt.wert);
             if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
         }
 
@@ -959,7 +1061,7 @@ export class IfcAutor {
             }
             for (const [name, props] of Object.entries(schritt.wert)) {
                 const r = await this.schreibeMerkmalssatz(
-                    ausCde ? CDE_MODELL_ID : plan.modelId, localId, name, props);
+                    ausCde ? CDE_MODELL_ID : modellVon(schritt.globalId), localId, name, props);
                 if (!r.ok) misserfolge.push({ ...schritt, grund: r.grund });
             }
         }

@@ -2,7 +2,7 @@
   <Transition name="slide">
     <div v-if="storeys.length" class="sn-panel">
       <div class="sn-header">
-        <span class="sn-title"><CdeIcon name="layers" :size="14" /> Ebenen</span>
+        <span class="sn-title"><CdeIcon name="layers" :size="14" /> Geschosse</span>
         <label class="sn-check" title="Beim Springen zusätzlich einen Schnitt setzen">
           <input type="checkbox" v-model="autoSection" />
           Schnitt
@@ -30,7 +30,7 @@
         >
           <button
             class="sn-eye"
-            :title="istSichtbar(s) ? 'Ebene ausblenden' : 'Ebene einblenden'"
+            :title="istSichtbar(s) ? 'Geschoss ausblenden' : 'Geschoss einblenden'"
             @click.stop="toggleSichtbar(s)"
           >
             <CdeIcon :name="istSichtbar(s) ? 'visible' : 'hidden'" :size="13" />
@@ -58,7 +58,8 @@
  * es „Bis hierhin" — kumulativ von unten, was für Bauzustände und den Blick
  * unter das Gelände ohnehin mehr trägt.
  *
- * „Ebenen" statt „Geschosse", weil Infrastrukturmodelle keine Storeys haben.
+ * „Geschosse" (Kassensturz 2026-09-12): „Ebenen" hiess Geschosse UND
+ * Kategorien. Ein Infrastrukturmodell ohne Storeys zeigt diese Tafel nicht.
  */
 import { ref, computed, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
@@ -70,9 +71,9 @@ const props = defineProps({
 const emit = defineEmits(['goto', 'set-visible']);
 
 const MODI = [
-  { id: 'alle', label: 'Alle',  hilfe: 'Alle Ebenen sichtbar' },
-  { id: 'solo', label: 'Solo',  hilfe: 'Nur die gewählte Ebene' },
-  { id: 'bis',  label: 'Bis',   hilfe: 'Alle Ebenen bis einschließlich der gewählten (von unten)' },
+  { id: 'alle', label: 'Alle',  hilfe: 'Alle Geschosse sichtbar' },
+  { id: 'solo', label: 'Solo',  hilfe: 'Nur das gewählte Geschoss' },
+  { id: 'bis',  label: 'Bis',   hilfe: 'Alle Geschosse bis einschließlich des gewählten (von unten)' },
 ];
 
 const autoSection = ref(false);

@@ -119,14 +119,15 @@ describe('Die Anzeige', () => {
     });
 });
 
-describe('Wächter: der Schliessfang ist im Raum UND im Lageplan verdrahtet', () => {
-    it('Raum: vor dem Strahl, in Bildschirmpixeln nach Zeigerart; Plan: im Weltabstand des Trefferradius', () => {
+describe('Wächter: der Schliessfang ist im Raum verdrahtet — gezeichnet wird nur dort (E8)', () => {
+    it('Raum: vor dem Strahl, in Bildschirmpixeln nach Zeigerart; der Lageplan nimmt keine Punkte mehr an', () => {
         const viewer = lies('components/IfcViewer.vue');
         const tipp = viewer.slice(viewer.indexOf('async function tippFuerMotor'), viewer.indexOf('async function schachtSubjekt'));
         expect(tipp.indexOf('schliesseWennNahe')).toBeGreaterThan(-1);
         expect(tipp.indexOf('schliesseWennNahe')).toBeLessThan(tipp.indexOf('probeTreffer'));
         expect(tipp).toMatch(/SCHLIESS_RADIUS_PX\[tipp\.typ\]/);
-        expect(lies('components/IfcPlanCanvas.vue')).toMatch(/zeichnen\.setzePunkt\(punkt, \{ nahe: .*trefferRadius\(\)/);
+        // Abnahme 2026-09-12 (B6 → E8): der Lageplan ist das Blatt — dort setzt kein Tipp mehr einen Zug-Punkt.
+        expect(lies('components/IfcPlanCanvas.vue')).not.toMatch(/zeichnen\.setzePunkt/);
     });
 });
 

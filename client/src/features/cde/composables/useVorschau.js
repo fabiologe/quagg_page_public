@@ -124,7 +124,10 @@ export function useVorschau({ engine, bearbeitung, getHoeheAn = null, getHoehenv
         lauf++;
         const e = engine?.value;
         e?.overlayLeere?.('vorschau');
-        await e?.entfaerbeAlle?.();
+        // NUR die eigenen Rollen (Abnahme 2026-09-12, K4): `entfaerbeAlle` nahm
+        // den Farbkatalog mit — nach jeder Vorschau stand das gelieferte
+        // Gelände in seiner IFC-Farbe da, bis zum nächsten Laden.
+        for (const rolle of ROLLEN) await e?.entfaerbe?.(rolle);
         stand.value = null;
     }
 

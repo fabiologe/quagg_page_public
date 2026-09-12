@@ -4,7 +4,7 @@
        den seit Sprint U kein Aufrufer mehr nahm (alle setzten `chrome=false`),
        dessen Vorgabewert aber auf `true` stand. Das Chrome liefert jetzt
        ausschließlich CdePanel in der Leiste. -->
-  <div class="rail-fill">
+  <div :class="eingebettet ? 'eingebettet' : 'rail-fill'">
     <div class="props-window">
       <div class="props-body">
         <!-- Kein Element gewählt -->
@@ -37,9 +37,8 @@
                einer Lieferung. -->
           <div v-if="anzeigeform" class="anzeigeform-hinweis">
             <CdeIcon name="terrain" :size="12" />
-            <span>
-              <b>Anzeigeform</b> — kein Bauteil, nicht im Export. Zeigt das Gelände
-              <code>{{ anzeigeform.quelle }}</code> nach allen Formungen.
+            <span :title="`Quelle: ${anzeigeform.quelle}`">
+              <b>Gelände nach allen Formungen</b> — nur zur Ansicht: kein Bauteil, nicht im Export.
             </span>
           </div>
 
@@ -78,7 +77,11 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { istAnzeigeform, mengenVon, rezeptNach } from '../services/Bauteilrezepte.js';
+import { CDE_MODELL_ID } from '../services/IfcAutor.js';
 import { m3 } from '../services/Mengenzeile.js';
+
+/** In der Tafel „Bauteil“ (Kassensturz H2) steht die Komponente im Fluss, nicht als eigene Tafel. */
+defineProps({ eingebettet: { type: Boolean, default: false } });
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
@@ -139,8 +142,11 @@ async function clearSelection() {
 async function onAddPset({ psetName, props }) {
   const el = ifc.selectedElement;
   if (!el?.globalId) { ifc.setPsetError('Dem Bauteil fehlt die GlobalId.'); return; }
-  if (!bearbeitung.modusAn) {
-    ifc.setPsetError('Der Bearbeiten-Modus ist aus — erst einschalten (Taste E).');
+  // Ein Merkmal setzen heißt bearbeiten (Kassensturz E4): der Viewer schaltet
+  // ein, mit seinen echten Sperren. Die Prüfung steht weiter VOR dem
+  // Eintragen (Wächter in bearbeitungVerklebung.test.js).
+  if (!bearbeitung.modusAn && !api.bearbeitenEin?.()) {
+    ifc.setPsetError(api.bearbeitenSperrgrund?.() || 'Bearbeiten lässt sich gerade nicht einschalten.');
     return;
   }
   try {
@@ -151,7 +157,7 @@ async function onAddPset({ psetName, props }) {
       nachher: { ...bisher, [psetName]: props },
       wer: cde.bearbeiter,
       modellSha: api.modellShaVon?.(el.globalId) ?? api.getLoadedModelSha?.() ?? null,
-      modell: el.modelId === 'cde-eigenbau' ? 'cde' : 'geliefert',
+      modell: el.modelId === CDE_MODELL_ID ? 'cde' : 'geliefert',
     });
     if (!eintrag) { ifc.setPsetError('Der Satz galt schon — nichts einzutragen.'); return; }
     ifc.setPsetError('');
@@ -219,6 +225,11 @@ async function copyAsBridge() {
 <style scoped>
 /* Sprint U: In der Panel-Leiste füllt die Komponente das Panel-Body */
 .rail-fill { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* Eingebettet (Tafel „Bauteil“): im Fluss, ohne eigene Höhe und ohne eigenes Scrollen. */
+.eingebettet .props-window,
+.eingebettet .props-body { height: auto; overflow: visible; }
+/* Der Abschnitt heisst schon „Merkmale“ — der Kopf der Liste nennt sich nicht noch einmal. */
+.eingebettet :deep(.sb-title) { display: none; }
 
 .props-window {
   display: flex;

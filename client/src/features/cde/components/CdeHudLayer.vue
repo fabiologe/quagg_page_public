@@ -104,7 +104,7 @@
         <!-- Bearbeiten am Bauteil (Stufe 9.0). Was hier steht, kommt aus dem
              Katalog und ist über die Bauform gefiltert — dieselbe Liste, die auch
              die Befehls-Palette liest. -->
-        <div v-if="bearbeitung.modusAn && bearbeitung.moeglich.length" class="hud-bearb">
+        <div v-if="bearbeitung.moeglich.length" class="hud-bearb">
           <div v-if="!bearbeitung.scharf" class="hud-bearb-liste">
             <button
               v-for="b in bearbeitung.moeglich"
@@ -142,6 +142,7 @@ import { computed, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useScreenProjection } from '../composables/useScreenProjection.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 import { fasseZusammen } from '../services/Beziehungen.js';
 
 const props = defineProps({
@@ -172,6 +173,10 @@ const emit = defineEmits([
  * gewählte Element bleiben Props: die kommen aus der Engine, nicht aus einem Store.
  */
 const bearbeitung = useBearbeitung();
+// Der Viewer startet Werkzeuge (E4). Ohne ihn — die Pille allein im Test —
+// startet der Store: `useViewerApi` wirft, wenn keiner bereitsteht.
+let api = null;
+try { api = useViewerApi(); } catch { api = null; }
 /** Die Beziehungen des Subjekts als Chips — der Index hängt am eingeordneten Bauteil. */
 const beziehungsChips = computed(() => {
   const b = bearbeitung.bauteil;
@@ -206,8 +211,10 @@ const verbundWege = computed(() => {
 const aufgeklappt = ref(false);
 watch(() => bearbeitung.scharfId, (id) => { if (id) aufgeklappt.value = false; });
 watch(() => props.element?.globalId ?? props.element?.localId ?? null, () => { aufgeklappt.value = false; });
+/** Ein Werkzeug wählen heißt bearbeiten (Kassensturz E4) — der Viewer schaltet ein. */
 function starte(id) {
-  bearbeitung.starte(id);
+  const ok = api?.werkzeugStarten?.(id);
+  if (ok === undefined) bearbeitung.starte(id);
   aufgeklappt.value = false;
 }
 
@@ -254,8 +261,8 @@ const aktionen = [
   { id: 'zoom',  icon: 'zoom-to',  titel: 'Auf Auswahl zoomen',  run: () => emit('zoom') },
   { id: 'hide',  icon: 'hidden',   titel: 'Auswahl ausblenden',  key: 'H', run: () => emit('hide') },
   { id: 'iso',   icon: 'isolate',  titel: 'Auswahl isolieren',   key: 'I', run: () => emit('isolate') },
-  { id: 'props', icon: 'info',     titel: 'Eigenschaften zeigen', run: () => emit('properties') },
-  { id: 'issue', icon: 'issues',   titel: 'Issue hier anlegen',  run: () => emit('new-issue') },
+  { id: 'props', icon: 'info',     titel: 'In der Tafel „Bauteil“ zeigen', run: () => emit('properties') },
+  { id: 'issue', icon: 'issues',   titel: 'Notiz hier anlegen',  run: () => emit('new-issue') },
 ];
 
 function formatDist(m) {

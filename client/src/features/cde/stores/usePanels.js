@@ -20,18 +20,32 @@ import { repo } from '../services/RepoFacade.js';
 
 const REPO_KEY = 'panel-state';
 
-/** Panel-Katalog. `seite` bestimmt die Leiste, `breite` den Startwert in px. */
+/**
+ * Panel-Katalog. `seite` bestimmt die Leiste, `breite` den Startwert in px,
+ * `kurz` die Beschriftung in der Reiterleiste (Kassensturz H1: die Tafeln
+ * heissen nach dem, was man darin tut), `nurIn` den Ansichtsmodus, in dem die
+ * Tafel überhaupt angeboten wird (H2).
+ */
 export const PANEL_DEFS = Object.freeze([
-  { id: 'eigenschaften', titel: 'Eigenschaften',      icon: 'info',    seite: 'right', breite: 330 },
-  { id: 'struktur',      titel: 'Bauwerksstruktur',   icon: 'tree',    seite: 'left',  breite: 300 },
-  { id: 'cockpit',       titel: 'Planungs-Cockpit',   icon: 'cockpit', seite: 'right', breite: 540 },
-  { id: 'issues',        titel: 'Issues',             icon: 'issues',  seite: 'right', breite: 330 },
-  { id: 'plan',          titel: 'Planinhalt',         icon: 'karte', seite: 'right', breite: 340 },
-  { id: 'toolbox',       titel: 'Toolbox',            icon: 'edit',    seite: 'right', breite: 340 },
+  { id: 'struktur', titel: 'Bauwerksstruktur',  kurz: 'Struktur', icon: 'tree',    seite: 'left',  breite: 300 },
+  // Kassensturz H2: Werkzeuge und Merkmale sind EINE Tafel. Beide handeln vom
+  // gewählten Bauteil — als zwei Tafeln verdrängten sie sich gegenseitig.
+  { id: 'bauteil',  titel: 'Bauteil',                             icon: 'element', seite: 'right', breite: 360 },
   // Teil XII, X1: Der Versionsverlauf ist ERSTKLASSIG — vorher steckte er
   // als Reiter im Cockpit, wo ihn niemand suchte.
-  { id: 'verlauf',       titel: 'Verlauf',            icon: 'verlauf', seite: 'right', breite: 360 },
+  { id: 'verlauf',  titel: 'Verlauf',                             icon: 'verlauf', seite: 'right', breite: 360 },
+  { id: 'cockpit',  titel: 'Mengen und Kosten', kurz: 'Mengen',   icon: 'cockpit', seite: 'right', breite: 540 },
+  { id: 'issues',   titel: 'Notizen',                             icon: 'issues',  seite: 'right', breite: 330 },
+  { id: 'plan',     titel: 'Planinhalt',        kurz: 'Plan',     icon: 'karte',   seite: 'right', breite: 340, nurIn: 'lageplan' },
 ]);
+
+/**
+ * Alte IDs → die Tafel, in der sie aufgegangen sind. Gesicherte Zustände
+ * tragen sie noch, und wer „toolbox" öffnet, soll die Tafel bekommen, die es
+ * heute ist — nicht nichts.
+ */
+export const PANEL_ALIAS = Object.freeze({ toolbox: 'bauteil', eigenschaften: 'bauteil' });
+const kanon = (id) => PANEL_ALIAS[id] ?? id;
 
 const MIN_BREITE = 240;
 const MAX_BREITE = 720;
@@ -43,9 +57,9 @@ export const usePanels = defineStore('cde-panels', () => {
   const breiten = ref(Object.fromEntries(PANEL_DEFS.map(p => [p.id, p.breite])));
 
   const defs = computed(() => PANEL_DEFS);
-  const byId = (id) => PANEL_DEFS.find(p => p.id === id) ?? null;
+  const byId = (id) => PANEL_DEFS.find(p => p.id === kanon(id)) ?? null;
 
-  const isOpen = (id) => offen.value.has(id);
+  const isOpen = (id) => offen.value.has(kanon(id));
 
   /** Sichtbares Panel einer Seite — pro Leiste zeigen wir genau eines. */
   const aktivLinks  = computed(() => PANEL_DEFS.find(p => p.seite === 'left'  && offen.value.has(p.id)) ?? null);
@@ -63,21 +77,22 @@ export const usePanels = defineStore('cde-panels', () => {
     for (const p of PANEL_DEFS) {
       if (p.seite === def.seite) next.delete(p.id);
     }
-    next.add(id);
+    next.add(def.id);
     offen.value = next;
     _persist();
   }
 
   function close(id) {
-    if (!offen.value.has(id)) return;
+    const k = kanon(id);
+    if (!offen.value.has(k)) return;
     const next = new Set(offen.value);
-    next.delete(id);
+    next.delete(k);
     offen.value = next;
     _persist();
   }
 
   function toggle(id) {
-    if (offen.value.has(id)) close(id);
+    if (isOpen(id)) close(id);
     else open(id);
   }
 
@@ -91,27 +106,29 @@ export const usePanels = defineStore('cde-panels', () => {
   }
 
   function setBreite(id, px) {
+    const def = byId(id);
+    if (!def) return;
     const v = Math.max(MIN_BREITE, Math.min(MAX_BREITE, Math.round(px)));
-    breiten.value = { ...breiten.value, [id]: v };
+    breiten.value = { ...breiten.value, [def.id]: v };
     _persist();
   }
 
-  /** Gesicherten Zustand laden (unbekannte IDs werden verworfen). */
+  /** Gesicherten Zustand laden (alte IDs umgeleitet, unbekannte verworfen). */
   async function laden() {
     const gespeichert = await repo.get(REPO_KEY);
     if (!gespeichert) return;
     if (Array.isArray(gespeichert.offen)) {
-      const gueltig = gespeichert.offen.filter(id => byId(id));
       // pro Seite höchstens eines
       const proSeite = new Map();
-      for (const id of gueltig) proSeite.set(byId(id).seite, id);
+      for (const def of gespeichert.offen.map(byId).filter(Boolean)) proSeite.set(def.seite, def.id);
       offen.value = new Set(proSeite.values());
     }
     if (gespeichert.breiten && typeof gespeichert.breiten === 'object') {
       const zusammen = { ...breiten.value };
       for (const [id, px] of Object.entries(gespeichert.breiten)) {
-        if (byId(id) && Number.isFinite(px)) {
-          zusammen[id] = Math.max(MIN_BREITE, Math.min(MAX_BREITE, px));
+        const def = byId(id);
+        if (def && Number.isFinite(px)) {
+          zusammen[def.id] = Math.max(MIN_BREITE, Math.min(MAX_BREITE, px));
         }
       }
       breiten.value = zusammen;

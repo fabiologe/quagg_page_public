@@ -74,6 +74,5 @@ export function beschreibeHoehe(y, versatz = 0) {
  * denselben Schritt wie die Anzeige — hier steht der Text, damit der Befund
  * nicht verlorengeht.
  */
-export const JOURNAL_WARNUNG = 'Anker im Journal sind Three-Weltkoordinaten und '
-    + 'hängen am Ladeversatz des Modells; über Revisionen hinweg ist das nicht '
-    + 'garantiert stabil (siehe Hoehenbezug.js).';
+export const JOURNAL_WARNUNG = 'Die Lage gespeicherter Schritte hängt am Ladeversatz '
+    + 'des Modells — über Revisionen hinweg ist sie nicht sicher stabil.';

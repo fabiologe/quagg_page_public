@@ -18,6 +18,7 @@
  * (`getSpatialTrees`) und die Beziehungen (`strukturBeziehungen` über die
  * IfcQuelle je Modell), der Suchindex die Namen.
  */
+import { getEntityInfo } from '../data/entity-schema.js';
 
 const KATEGORIE_AUSHUB = 'IFCEARTHWORKSCUT';
 
@@ -74,6 +75,28 @@ export function trifft(knoten, filter) {
     if (!knoten) return false;
     const text = `${knoten.name ?? ''} ${knoten.category ?? ''}`.toLowerCase();
     return text.includes(f) || (knoten.children ?? []).some(k => trifft(k, f));
+}
+
+/**
+ * DIE ECHTE FORM VON FRAGMENTS FALTEN (Abnahme 2026-09-12, A7).
+ *
+ * `getSpatialStructure` wechselt zwischen Kategorie-Knoten `{category,
+ * localId: null}` und Element-Knoten `{category: null, localId}` — so baut sie
+ * `getTreeItem` im Worker. Das Fenster zeigte deshalb „PROJECT › Element ›
+ * SITE › Site", und die Tests sahen es nie: ihre Attrappen hatten eine
+ * Mischform. Eine Kategorie mit EINEM Element wird zu diesem Element (es erbt
+ * die Kategorie), eine mit mehreren zu einem Ordner „IfcPipeSegment (24)".
+ * Die Mischform (Knoten mit Kategorie UND localId) bleibt, wie sie ist.
+ */
+function _falte(kinder) {
+    return (kinder ?? []).flatMap((k) => {
+        if (!k) return [];
+        if (k.localId != null || !k.category || !(k.children ?? []).length) return [k];
+        const elemente = k.children.map(e => (e?.category ? e : { ...e, category: k.category }));
+        if (elemente.length === 1) return elemente;
+        const titel = getEntityInfo(String(k.category).toUpperCase())?.name ?? k.category;
+        return [{ ...k, ordner: true, name: `${titel} (${elemente.length})`, children: elemente }];
+    });
 }
 
 /**
@@ -157,7 +180,7 @@ export function baueBaeume({ baeume = [], index = [], beziehungen = new Map(), s
             if (!k) return null;
             knoten++;
             const e = k.localId != null ? eintrag(k.localId) : null;
-            const kinder = (k.children ?? []).map(reich).filter(Boolean);
+            const kinder = _falte(k.children).map(reich).filter(Boolean);
             for (const a of (k.localId != null ? aushuebe.get(k.localId) ?? [] : [])) {
                 if (imBaum.has(a)) continue;                 // führt fragments ihn schon: nicht doppelt
                 imBaum.add(a);
@@ -167,8 +190,59 @@ export function baueBaeume({ baeume = [], index = [], beziehungen = new Map(), s
             return { ...k, modelId, category: k.category ?? e?.category ?? null, name: e?.name || k.name || null,
                      globalId: e?.globalId ?? null, children: kinder };
         };
-        const baum = reich(wurzel);
+        const [oben = null, ...weitere] = _falte(wurzel ? [wurzel] : []);
+        const baum = reich(weitere.length ? { ...wurzel, children: [oben, ...weitere] } : oben);
         return { modelId, name, sha256: shaVon?.(modelId) ?? null, wurzel: baum,
                  gruppen: _gruppenZweig(bez?.gruppen ?? [], modelId, blatt), knoten };
     });
+}
+
+/**
+ * Der Abschnitt „Eigenbau" — aus dem Verlauf, nicht aus fragments (Abnahme 2026-09-12, A7).
+ *
+ * Das CDE-Modell hat keine Raumgliederung: seine Teile entstehen im Delta des
+ * Editors, ohne Einordnung. Bis hierher stand es als leerer Knoten
+ * „cde-eigenbau · lokal" im Fenster, der nicht aufklappte. Jetzt: je
+ * Erdbau-Vorgang ein Knoten mit seinen Teilen (Aushub, Auftrag), das geformte
+ * Gelände und übrige eigene Teile daneben — mit den localIds des letzten
+ * Aufbaus, damit Klick und Auge wirken. Ein Vorgang trägt seine Ableitung
+ * (`vorgang`) — daran hängt „Vorgang entfernen".
+ *
+ * @param {object} o
+ * @param {Map<string, object>} o.stand     wirksamer Stand `erzeugt`
+ * @param {Map<string, number>} [o.karte]   globalId → localId des letzten Aufbaus
+ * @param {Map<string, string>} [o.titel]   Ableitung → Vorgangstitel (`vorgangstitelAus`)
+ * @param {Set<string>} [o.verborgen]       eigene Teile, die verborgen sind (G6)
+ * @param {Set<string>} [o.leer]            eigene Teile ohne Volumen — kein Fehlschlag (Auftrag eines reinen Aushubs)
+ * @param {string} o.modelId                das Eigenbau-Modell
+ * @returns {{modelId, name, sha256: null, eigenbau: true, wurzel, gruppen: null, knoten}|null}
+ */
+export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new Map(), verborgen = new Set(), leer = new Set(), modelId } = {}) {
+    if (!stand?.size) return null;
+    const teil = (gid, wert) => {
+        const localId = karte?.get?.(gid) ?? null;
+        const zusatz = localId != null ? ''
+            : verborgen?.has?.(gid) ? ' (verborgen)'
+            : leer?.has?.(gid) ? ' (leer)'
+            : ' (nicht gebaut)';
+        return { localId, modelId, category: wert?.kategorie ?? null, name: `${wert?.name || 'Teil ohne Namen'}${zusatz}`,
+                 globalId: gid, children: [], ...(localId == null ? { nichtImRaum: true } : {}) };
+    };
+    const vorgaenge = new Map();
+    const uebrige = [];
+    for (const [gid, wert] of stand) {
+        const a = wert?.ableitung ?? null;
+        if (a && titel?.has?.(a)) {
+            if (!vorgaenge.has(a)) {
+                vorgaenge.set(a, { localId: null, modelId, category: 'VORGANG', gruppe: true, vorgang: a,
+                                   name: titel.get(a) || 'Vorgang', children: [] });
+            }
+            vorgaenge.get(a).children.push(teil(gid, wert));
+        } else {
+            uebrige.push(teil(gid, wert));
+        }
+    }
+    const wurzel = { localId: null, modelId, category: 'EIGENBAU', gruppe: true, name: 'Eigenbau',
+                     children: [...vorgaenge.values(), ...uebrige] };
+    return { modelId, name: 'Eigenbau', sha256: null, eigenbau: true, wurzel, gruppen: null, knoten: stand.size };
 }

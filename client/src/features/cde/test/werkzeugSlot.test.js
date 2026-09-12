@@ -150,7 +150,7 @@ describe('Die Kreuz-Löscherei ist dem Slot gewichen (Textwächter)', () => {
 
     it('jeder CdeView-Setter geht über belegeWerkzeug/gebeWerkzeugFrei', () => {
         const view = readFileSync(join(WURZEL, 'views/CdeView.vue'), 'utf8');
-        for (const kennung of ['plan:stift', 'plan:setzen', 'plan:zeichnen', 'plan:bemassung']) {
+        for (const kennung of ['plan:stift', 'plan:setzen', 'plan:bemassung']) {
             expect(view).toContain(`belegeWerkzeug('${kennung}'`);
             expect(view).toContain(`gebeWerkzeugFrei('${kennung}'`);
         }

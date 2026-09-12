@@ -39,7 +39,7 @@ import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { feldAusProfil } from './bauform/Typprofile.js';
 import { DIN277_CLASSES } from './Din277Classifier.js';
-import { KG_DEFAULT_RULES } from './Din276Defaults.js';
+import { KG_DEFAULT_RULES, kgOptionen } from './Din276Defaults.js';
 
 /**
  * WOMIT eine Bearbeitung gefüttert wird (Stufe 12.2, im Kleinen).
@@ -231,13 +231,20 @@ function _rundeM(v) {
     return Number.isFinite(z) ? Math.round(z * 1000) / 1000 : 0;
 }
 
-/** Die Kostengruppen, die die Regelvorgabe kennt — als Auswahl statt Freitext. */
+/**
+ * Die Kostengruppen als Auswahl — Code UND Wortlaut aus dem ganzen Baum
+ * (Abnahme 2026-09-12: „bei Kostengruppen reicht es nicht, die Zahl zu
+ * schreiben"; 511 fehlte vorher ganz). Ein Code, den nur eine Regel kennt,
+ * bleibt wählbar.
+ */
 function _kgOptionen() {
-    const codes = new Set();
+    const optionen = kgOptionen();
+    const bekannt = new Set(optionen.map(o => o.wert));
     for (const regel of KG_DEFAULT_RULES) {
-        if (regel?.kgCode) codes.add(String(regel.kgCode));
+        const code = regel?.kgCode ? String(regel.kgCode) : null;
+        if (code && !bekannt.has(code)) { optionen.push({ wert: code, titel: code }); bekannt.add(code); }
     }
-    return [...codes].sort().map(code => ({ wert: code, titel: code }));
+    return optionen;
 }
 
 /**
@@ -2610,7 +2617,7 @@ export const BEARBEITUNGEN = Object.freeze([
         felder: [
             { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
                 { wert: 'hoehe', titel: 'Höhe über dem Rand' },
-                { wert: 'ur', titel: 'bis GOK — auf das Ur-Gelände' },
+                { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
             ] },
             { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
             { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },

@@ -3,7 +3,7 @@ import { heightfieldRaster } from './geometry/SurfaceOps.js';
 import { grundrissAusMesh, umrissFlaeche } from './geometrie/ops/Umriss.js';
 import { setzeBeleuchtung } from './IfcBeleuchtung.js';
 import { formeNach, massenAus } from './gelaende/Operationen.js';
-import { BAUTEILFARBEN, eigeneFarbe, farbeFuer } from './Bauteilfarben.js';
+import { BAUTEILFARBEN, eigeneFarbe, faerbePlan, farbeFuer } from './Bauteilfarben.js';
 import { karteMitEngine } from './GlobalIdKarte.js';
 import { DELTA_MARKE, basisModelId, istDeltaModell } from './DeltaBoxen.js';
 import { strukturBeziehungen } from './Bauwerksstruktur.js';
@@ -151,6 +151,29 @@ const FAERBE_STILE = Object.freeze({
         },
     ])),
 });
+
+/**
+ * Rang im Färbe-Stapel (Abnahme 2026-09-12, K4): der Katalog unten, die
+ * Vorschau darüber; die Auswahl legt `_auswahlErneuern` zuletzt obenauf.
+ * Ein Highlight gibt es je Bauteil nur EINMAL — wer zurücksetzt, nimmt die
+ * Farbe darunter mit. Der Stapel trägt sie wieder auf.
+ */
+const VORSCHAU_RANG = ['dimmen', 'kandidat', 'ziel'];
+export const faerbeRang = (rolle) => (String(rolle).startsWith('erdbau:') ? 0 : 1 + VORSCHAU_RANG.indexOf(rolle));
+
+/** Die Orte einer Rolle, die auch in `items` stehen — Basis und Delta zählen als ein Modell. */
+function _schnitt(karte, items) {
+    const aus = {};
+    let n = 0;
+    for (const [m, ids] of Object.entries(karte ?? {})) {
+        const dort = new Set(Object.entries(items ?? {})
+            .filter(([mm]) => basisModelId(mm) === basisModelId(m))
+            .flatMap(([, liste]) => (liste ?? []).map(Number)));
+        const s = ids.filter(i => dort.has(Number(i)));
+        if (s.length) { aus[m] = s; n += s.length; }
+    }
+    return n ? aus : null;
+}
 
 /** Rahmenauswahl — derselbe Stil wie die Einzelauswahl, damit zwei Wege eine Sprache sprechen. */
 const MARQUEE_STYLE = { ...SELECTION_STYLE, color: SELECTION_STYLE.color.clone() };
@@ -337,6 +360,8 @@ export class IfcEngine {
         // Stufe 9.2: der einzige Kanal zur Editor-API von @thatopen/fragments.
         this.autor       = new IfcAutor({
             getFragments: () => this.components.get(OBC.FragmentsManager),
+            // Verborgene Modelle bleiben es über jeden Neuaufbau (Abnahme 2026-09-12, A6).
+            istVerborgen: (modelId) => !this.modellSichtbar(modelId),
             getWelt:      () => this._getWorld(),
             // Stufe 15: das Höhenraster eines GELIEFERTEN Bauteils — für das
             // Gelände-Rezept. Über den Resolver (dieselbe Ableitung wie die
@@ -740,6 +765,21 @@ export class IfcEngine {
         const fragments = this.components.get(OBC.FragmentsManager);
         try { await fragments.resetHighlight(this._mitDelta(items)); }
         catch { await fragments.resetHighlight(items); }
+        // Was darunter lag (Katalog, Vorschau), kommt wieder — sonst verlor ein
+        // geliefertes Gelände nach jeder Vorschau und jeder Auswahl seinen Ton (K4).
+        await this._stapelErneuern(items);
+    }
+
+    /** Den Färbe-Stapel auf diesen Bauteilen wieder auftragen — nach Rang. */
+    async _stapelErneuern(items) {
+        if (!this._faerbungen?.size || !items) return;
+        const rollen = [...this._faerbungen.keys()].sort((a, b) => faerbeRang(a) - faerbeRang(b));
+        for (const rolle of rollen) {
+            const teil = _schnitt(this._faerbungen.get(rolle), items);
+            if (!teil) continue;
+            try { await this._highlight(FAERBE_STILE[rolle], teil); }
+            catch (e) { console.warn('[Engine] stapel', rolle, e?.message ?? e); }
+        }
     }
 
     async _hiderSet(sichtbar, items) {
@@ -754,8 +794,13 @@ export class IfcEngine {
         const fragments = this.components.get(OBC.FragmentsManager);
         const model = fragments.list.get(modelId);
         if (!model) return;
+        // Erst aus der Szene, dann das Delta, dann die Basis — und abwarten
+        // (Abnahme 2026-09-12): `dispose` nimmt das Objekt erst nach der
+        // Worker-Antwort heraus, und ein Delta aus Lageänderungen blieb stehen.
+        try { model.object?.removeFromParent?.(); } catch { /* Anzeige */ }
+        try { await fragments.core?.editor?.disposeDeltaModels?.(modelId); } catch { /* keins */ }
         try {
-            if (typeof model.dispose === 'function') model.dispose();
+            if (typeof model.dispose === 'function') await model.dispose();
             else fragments.list.delete(modelId);
         } catch (_) { fragments.list.delete(modelId); }
         // Drop the offset entry for this model so it doesn't leak / collide later
@@ -774,11 +819,39 @@ export class IfcEngine {
         else                          this._coordinationOffset.set(0, 0, 0);
         // Rebuild categories for remaining models
         this._gelaendeVerwerfen();         // anderes Modell, anderes Gelände
+        this._verborgeneModelle?.delete(modelId);
         if (fragments.list.size > 0) {
             await this.buildCategoryIndex();
         } else {
             this._categoryGroups = null;
         }
+    }
+
+    /**
+     * Ein GANZES Modell aus- oder einblenden (Abnahme 2026-09-12, A6/A7).
+     *
+     * Über das Szenenobjekt, nicht über die Sichtbarkeit je Bauteil: die trägt
+     * schon, was der Verlauf ausblendet (das Ur-Gelände unter einer Anzeige),
+     * und ein „alles einblenden" hätte es wieder gezeigt. Das Delta-Modell
+     * hängt unter dem Objekt der Basis (fragments `editor.load`) und geht mit.
+     * Treffer auf einem verborgenen Modell zählen nicht (`pickElement`), und
+     * das Eigenbau-Modell fragt beim Neuanlegen nach (`IfcAutor.eigenesModell`).
+     */
+    async setzeModellSichtbar(modelId, sichtbar) {
+        this._verborgeneModelle ??= new Set();
+        if (sichtbar) this._verborgeneModelle.delete(modelId);
+        else this._verborgeneModelle.add(modelId);
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const model = fragments.list.get(modelId);
+        if (model?.object) model.object.visible = !!sichtbar;
+        // Die Kanten liegen in einer eigenen Gruppe der Szene — das Auge muss sie erreichen (M2).
+        this.gelaendeKanten?.modellSichtbarkeit?.(modelId, sichtbar);
+        try { await fragments.core?.update?.(true); } catch { /* Anzeige */ }
+    }
+
+    /** Ist das Modell sichtbar? Ein Delta fragt für seine Basis. */
+    modellSichtbar(modelId) {
+        return !this._verborgeneModelle?.has(basisModelId(modelId));
     }
 
     // ── Category / Layer visibility ──────────────────────────────────────────
@@ -947,8 +1020,10 @@ export class IfcEngine {
             }))
         );
 
+        // Ein verborgenes Modell wird nicht getroffen (Abnahme 2026-09-12): es
+        // ist nur aus der Szene genommen, der Worker kennt es weiter.
         const best = results
-            .filter(Boolean)
+            .filter(r => r && this.modellSichtbar(r.fragments?.modelId))
             .reduce((min, r) => (!min || r.distance < min.distance) ? r : min, null);
 
         if (!best) return null;
@@ -1207,9 +1282,7 @@ export class IfcEngine {
      * @returns {Promise<number>} wie viele Bauteile gefärbt sind
      */
     async faerbe(rolle, orte = []) {
-        const stil = FAERBE_STILE[rolle];
-        if (!stil) throw new Error(`IfcEngine.faerbe: unbekannte Rolle „${rolle}"`);
-        const fragments = this.components.get(OBC.FragmentsManager);
+        if (!FAERBE_STILE[rolle]) throw new Error(`IfcEngine.faerbe: unbekannte Rolle „${rolle}"`);
         const karte = {};
         let n = 0;
         for (const o of orte) {
@@ -1218,16 +1291,18 @@ export class IfcEngine {
             n++;
         }
         const alt = this._faerbungen.get(rolle);
+        // Erst den Stapel umstellen, DANN zurücksetzen: `_resetHighlight` trägt
+        // auf, was darunter liegt — die ersetzte Rolle darf nicht mehr dabei sein.
+        if (n) this._faerbungen.set(rolle, karte); else this._faerbungen.delete(rolle);
         if (alt) { try { await this._resetHighlight(alt); } catch { /* */ } }
         if (!n) {
-            this._faerbungen.delete(rolle);
             await this._auswahlErneuern();
             await this._neuZeichnen();
             return 0;
         }
-        try { await this._highlight(stil, karte); }
-        catch (e) { console.warn('[Engine] faerbe', rolle, e?.message ?? e); }
-        this._faerbungen.set(rolle, karte);
+        // Nach Rang: färbt der Katalog ein Bauteil, das die Vorschau gerade
+        // dimmt, bleibt das Dimmen obenauf.
+        await this._stapelErneuern(karte);
         await this._neuZeichnen();
         return n;
     }
@@ -1236,9 +1311,8 @@ export class IfcEngine {
     async entfaerbe(rolle) {
         const alt = this._faerbungen.get(rolle);
         if (!alt) return false;
-        const fragments = this.components.get(OBC.FragmentsManager);
-        try { await this._resetHighlight(alt); } catch { /* */ }
         this._faerbungen.delete(rolle);
+        try { await this._resetHighlight(alt); } catch { /* */ }   // trägt den Rest des Stapels wieder auf
         await this._auswahlErneuern();
         await this._neuZeichnen();
         return true;
@@ -1315,29 +1389,35 @@ export class IfcEngine {
     }
 
     /**
-     * Den Farbkatalog auf geliefertes Material anwenden.
+     * Den Farbkatalog auf geliefertes Material anwenden — das Gelände nach
+     * ROLLE (Abnahme K4): was die Geländeliste führt, trägt den Geländeton,
+     * gleich welcher IFC-Typ und ob mit eigener Farbe (`faerbePlan`).
      *
      * @param {object} opts
      * @param {boolean} opts.ueberschreiben  auch Bauteile mit eigener Farbe
      * @returns {Promise<{gefaerbt: number, eigene: Array, kategorien: string[]}>}
      */
     async erdbauFaerben({ ueberschreiben = false } = {}) {
+        const schluessel = (o) => `${o.modelId}|${o.localId}`;
         const kandidaten = await this.erdbauKandidaten();
-        if (!kandidaten.length) return { gefaerbt: 0, eigene: [], kategorien: [] };
-        const eigene = ueberschreiben ? [] : await this.eigeneFarben(kandidaten);
-        const gesperrt = new Set(eigene.map(o => `${o.modelId}|${o.localId}`));
-        const proTyp = new Map();
-        for (const o of kandidaten) {
-            if (gesperrt.has(`${o.modelId}|${o.localId}`)) continue;
-            if (!proTyp.has(o.kategorie)) proTyp.set(o.kategorie, []);
-            proTyp.get(o.kategorie).push(o);
-        }
+        const gelaende = await this._gelaendeFuerFarbe();
+        const imGelaende = new Set(gelaende.map(schluessel));
+        const bekannt = new Set(kandidaten.map(schluessel));
+        const orte = [...kandidaten, ...gelaende.filter(o => !bekannt.has(schluessel(o)))];
+        if (!orte.length) return { gefaerbt: 0, eigene: [], kategorien: [] };
+        // Die Frage nach der eigenen Farbe nur für Nicht-Gelände (sie kostet je Modell einen Editor-Lauf).
+        const rest = kandidaten.filter(o => !imGelaende.has(schluessel(o)));
+        const eigene = ueberschreiben || !rest.length ? [] : await this.eigeneFarben(rest);
+        const plan = faerbePlan(orte, { gelaende: imGelaende, eigen: new Set(eigene.map(schluessel)),
+                                        satz: this._farbsatz ?? BAUTEILFARBEN });
         let gefaerbt = 0;
-        for (const [kategorie, orte] of proTyp) {
-            gefaerbt += await this.faerbe(erdbauRolle(kategorie), orte);
+        for (const [kategorie, liste] of plan) gefaerbt += await this.faerbe(erdbauRolle(kategorie), liste);
+        // Was der Plan nicht mehr nennt, geht — sonst bliebe das alte Grün eines Geländes stehen.
+        for (const rolle of [...this._faerbungen.keys()]) {
+            if (rolle.startsWith('erdbau:') && !plan.has(rolle.slice('erdbau:'.length))) await this.entfaerbe(rolle);
         }
         this._erdbauGefaerbt = gefaerbt > 0;
-        return { gefaerbt, eigene, kategorien: [...proTyp.keys()] };
+        return { gefaerbt, eigene, kategorien: [...plan.keys()] };
     }
 
     /** Die Erdbau-Farben zurücknehmen. */
@@ -1391,12 +1471,33 @@ export class IfcEngine {
 
     // ── Render state / Layer styles ──────────────────────────────────────────
 
-    /** Set Three.js scene background color. Pass null to restore default dark bg. */
+    /**
+     * Den Grund der Szene setzen — ein Stil (Planungslayer: weiß) oder null
+     * für den Grundton des Farbmodus (H6). Vorher fiel null auf #1a1a2e,
+     * einen Ton, den die Szene beim Start nie hatte (#202932).
+     */
     setBackgroundColor(hexColor) {
+        this._stilGrund = hexColor ?? null;
         const world = this._getWorld();
-        world.scene.three.background = hexColor
-            ? new THREE.Color(hexColor)
-            : new THREE.Color('#1a1a2e');
+        world.scene.three.background = new THREE.Color(hexColor ?? this._grundton ?? '#202932');
+    }
+
+    /**
+     * Grund und Raster der Szene aus dem Farbmodus (H6). Ein Stil mit
+     * eigenem Grund bleibt stehen; `raster` null oder „none" gibt der
+     * Bibliothek ihr Standardraster zurück.
+     */
+    setzeSzenenfarben({ grund = null, raster = null } = {}) {
+        this._grundton = grund || null;
+        const szene = this._getWorld?.()?.scene?.three;
+        if (szene && !this._stilGrund && this._grundton) szene.background = new THREE.Color(this._grundton);
+        const gitter = this._sceneGrid;
+        if (!gitter?.config) return;
+        this._rasterVorgabe ??= gitter.config.color?.clone?.() ?? null;
+        const farbe = raster && raster !== 'none' ? new THREE.Color(raster) : this._rasterVorgabe;
+        if (farbe) {
+            try { gitter.config.color = farbe.clone(); } catch { /* Raster ohne Farbe */ }
+        }
     }
 
     /**
@@ -1437,8 +1538,30 @@ export class IfcEngine {
         if (!this._categoryGroups) return;
         const fragments = this.components.get(OBC.FragmentsManager);
         for (const model of fragments.list.values()) {
+            // ERST ALLE Einzelfarben zurück (Abnahme 2026-09-12): der
+            // Herkunft-Schalter färbt per `setColor`, und die Kategoriefarben
+            // decken nur ihre Kategorien — das Gelände blieb nach dem
+            // Ausschalten orange.
+            try { await model.resetColor?.(undefined); } catch { /* Anzeige */ }
             await this._applyDefaultCategoryColors(model);
         }
+        // `setColor` IST eine Hervorhebung (fragments: `preserveOriginalMaterial`),
+        // und `resetColor` nimmt die Farbe aus der Definition des Bauteils — auch
+        // die des Katalogs, wo „Herkunft" darübergemalt hatte. Gemessen in 42069
+        // (Abnahme K4): das Urgelände kam nach dem Verwerfen in seiner
+        // Lieferfarbe zurück. Der Stapel trägt deshalb alles wieder auf.
+        await this._stapelNeuAuftragen();
+    }
+
+    /** Den ganzen Färbe-Stapel neu auftragen — nach Rang, die Auswahl obenauf. */
+    async _stapelNeuAuftragen() {
+        if (!this._faerbungen?.size) return;
+        for (const rolle of [...this._faerbungen.keys()].sort((a, b) => faerbeRang(a) - faerbeRang(b))) {
+            try { await this._highlight(FAERBE_STILE[rolle], this._faerbungen.get(rolle)); }
+            catch (e) { console.warn('[Engine] stapel', rolle, e?.message ?? e); }
+        }
+        await this._auswahlErneuern();
+        await this._neuZeichnen();
     }
 
     /**
@@ -2262,7 +2385,9 @@ export class IfcEngine {
         const out = [];
         for (const [modelId, quelle] of this._quellen ?? new Map()) {
             if (!quelle?.lebt()) continue;
-            for (const localId of quelle.ids('IFCPRODUCT', { untertypen: true })) {
+            // Auch das PROJEKT (Abnahme 2026-09-12, A7): es ist kein IfcProduct,
+            // und die Wurzel jeder Bauwerksstruktur hiess deshalb „Element".
+            for (const localId of [...quelle.ids('IFCPRODUCT', { untertypen: true }), ...quelle.ids('IFCPROJECT')]) {
                 const z = quelle.zeile(localId);
                 if (!z) continue;
                 out.push({
@@ -2741,18 +2866,8 @@ export class IfcEngine {
     async _gelaendeOrteHolen() {
         if (this._gelaendeOrte) return this._gelaendeOrte;
         if (!this._gelaendeOrteLauf) {
-            const fragments = this.components.get(OBC.FragmentsManager);
             const generation = this._gelaendeGeneration ?? 0;
-            const lauf = gelaendeElemente({
-                categoryGroups: this._categoryGroups ?? [],
-                fragmentsList: fragments?.list ?? new Map(),
-                verdeckt: this._verdeckt ?? new Set(),
-                cdeGelaende: this._cdeGelaende ?? new Set(),
-                kategorien: this._gelaendeKategorien ?? GELAENDE_VORBELEGUNG,
-                leseKontext: (m, l) => this._gelaendeKontext(m, l),
-                istGelaende: this._istGelaende,
-                bauformAusGeometrie: (m, l) => this.formsignaturVon({ modelId: m, localId: l }).then(r => r?.bauform ?? null),
-            }).then((orte) => {
+            const lauf = gelaendeElemente(this._gelaendeFrage()).then((orte) => {
                 // Seit dem Start verworfen (Modell entladen/geladen, Journal)?
                 // Dann gilt diese Liste nicht mehr: nicht zurückschreiben, neu fragen.
                 if ((this._gelaendeGeneration ?? 0) !== generation) return this._gelaendeOrteHolen();
@@ -2762,6 +2877,34 @@ export class IfcEngine {
             this._gelaendeOrteLauf = lauf;
         }
         return this._gelaendeOrteLauf;
+    }
+
+    /** Die Frage „was ist Gelände?" — EINE Stelle für den Sampler und die Farbe. */
+    _gelaendeFrage() {
+        const fragments = this.components.get(OBC.FragmentsManager);
+        return {
+            categoryGroups: this._categoryGroups ?? [],
+            fragmentsList: fragments?.list ?? new Map(),
+            verdeckt: this._verdeckt ?? new Set(),
+            cdeGelaende: this._cdeGelaende ?? new Set(),
+            kategorien: this._gelaendeKategorien ?? GELAENDE_VORBELEGUNG,
+            leseKontext: (m, l) => this._gelaendeKontext(m, l),
+            istGelaende: this._istGelaende,
+            bauformAusGeometrie: (m, l) => this.formsignaturVon({ modelId: m, localId: l }).then(r => r?.bauform ?? null),
+        };
+    }
+
+    /**
+     * Die Geländeliste für die FARBE (Abnahme K4) — dieselbe Frage wie der
+     * Sampler, nur ohne das Verdeckte auszunehmen: ein ersetztes Ur-Gelände
+     * bleibt Gelände und kommt nach dem Verwerfen im selben Ton zurück. Die
+     * eigenen Teile nicht — ihre Farbe sitzt im Material.
+     */
+    async _gelaendeFuerFarbe() {
+        try {
+            const orte = await gelaendeElemente({ ...this._gelaendeFrage(), verdeckt: new Set(), cdeGelaende: new Set() });
+            return orte.filter(o => basisModelId(o.modelId) !== CDE_MODELL_ID);
+        } catch { return []; }
     }
 
     /**

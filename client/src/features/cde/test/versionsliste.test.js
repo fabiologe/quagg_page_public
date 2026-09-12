@@ -92,7 +92,7 @@ describe('Die drei Konflikt-Verben', () => {
         const protokoll = await ae.hebeBasisAn(lage.id, { x: 9, y: 9, z: 9 }, 'Fabio');
         expect(lage.basis).toEqual({ x: 9, y: 9, z: 9 });
         expect(protokoll.basisGehoben).toBe(lage.id);
-        expect(protokoll.vorgangTitel).toMatch(/Basis auf Planerstand/);
+        expect(protokoll.vorgangTitel).toMatch(/Meiner gilt — gegen den neuen Wert des Planers/);
         // Die Faltung bleibt unberührt: der Stand ist derselbe Wert.
         expect(standAus(ae.eintraege, 'lage').get('H1')).toEqual({ x: 1, y: 2, z: 3 });
     });

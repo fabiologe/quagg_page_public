@@ -41,10 +41,10 @@ export function baueSchein({ auftrag, empfaenger = '', anmerkung = '', wer = '',
                              wann = Date.now(), dokumente = [] } = {}) {
     const datum = new Date(wann).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
     const zeilen = [
-        'ÜBERGABESCHEIN (Transmittal, ISO 19650)',
+        'ÜBERGABESCHEIN (Übergabepaket nach ISO 19650)',
         '='.repeat(46),
         '',
-        `Auftrag:     ${auftrag?.nummer ?? ''} ${auftrag?.name ?? ''}`.trim(),
+        `Projekt:     ${auftrag?.nummer ?? ''} ${auftrag?.name ?? ''}`.trim(),
         `Empfänger:   ${empfaenger || '—'}`,
         `Übergeben:   ${datum} von ${wer || '—'}`,
     ];

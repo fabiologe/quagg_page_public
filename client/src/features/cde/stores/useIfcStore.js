@@ -82,6 +82,10 @@ export const useIfcStore = defineStore('cde-modell', () => {
      */
     const geometrieStand = ref(0);
     function bumpGeometrieStand() { geometrieStand.value++; }
+    // Das Auge je Modell (Abnahme 2026-09-12): die Engine führt, was verborgen
+    // ist; dieser Zähler sagt Pille und Bauwerksstruktur, dass sie nachsehen.
+    const sichtbarkeitStand = ref(0);
+    function bumpSichtbarkeit() { sichtbarkeitStand.value++; }
 
   // Engine actions registered by IfcViewer
   let _searchIndex    = ref([]); // populated on model load — [{name, globalId, category, localId, modelId}]
@@ -578,7 +582,7 @@ export const useIfcStore = defineStore('cde-modell', () => {
 
   return {
     selectedElement, psetError, modelLoaded, spatialTree, spatialBaeume, modelList,
-    geometrieStand, bumpGeometrieStand,
+    geometrieStand, bumpGeometrieStand, sichtbarkeitStand, bumpSichtbarkeit,
     ready,
     setElement, clearElement, setPsetError,
     setSpatialTree, setSpatialBaeume, setModelList,

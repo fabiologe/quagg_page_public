@@ -51,6 +51,9 @@ const TreeNode = defineComponent({
     const visible = ref(true);
 
     const filter = inject('treeFilter', computed(() => ''));
+    // „Vorgang entfernen" (Abnahme 2026-09-12, A6): der Knoten eines Erdbau-
+    // Vorgangs im Abschnitt „Eigenbau" bietet es an; ausführen tut das Fenster.
+    const entferne = inject('vorgangEntfernen', null);
 
     function toggleExpand(e) {
       e.stopPropagation();
@@ -131,7 +134,7 @@ const TreeNode = defineComponent({
           h('span', {
             class: 'node-label',
             title: bedienbar()
-              ? `${label(node)}${node.aussparung ? ' — Aussparung in ihrem Wirt' : ''} — Klick zum Zoomen`
+              ? `${label(node)}${node.aussparung ? ' — Aussparung im Gelände' : ''} — Klick zum Zoomen`
               : label(node),
             onClick: bedienbar() ? zoomToNode : undefined,
           }, label(node)),
@@ -142,6 +145,14 @@ const TreeNode = defineComponent({
                 title: visible.value ? 'Ausblenden' : 'Einblenden',
                 onClick: toggleVisibility,
               }, [h(CdeIcon, { name: visible.value ? 'visible' : 'hidden', size: 12 })])
+            : null,
+          node.vorgang && entferne
+            ? h('button', {
+                class: 'vis-btn entfernen-btn',
+                title: `„${label(node)}" entfernen — Aushub, Auftrag und die Grube im Gelände`,
+                'aria-label': 'Vorgang entfernen',
+                onClick: (e) => { e.stopPropagation(); entferne(node); },
+              }, [h(CdeIcon, { name: 'delete', size: 12 })])
             : null,
         ]),
 

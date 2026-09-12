@@ -1,8 +1,268 @@
 <template>
+  <!-- Die Tafel „Bauteil“ (Kassensturz H2). Vorher zwei Tafeln — „Toolbox“ und
+       „Eigenschaften“ —, die sich gegenseitig aus der Leiste verdrängten.
+       Reihenfolge nach der Regel „erst die Handlung, dann die Erklärung“:
+       Werkzeuge, Achse, Befunde, Merkmale; „Warum?“ und das Modell zugeklappt. -->
   <div class="tb">
-    <!-- GEOREFERENZ (Stufe 13.1). Ganz oben und IMMER sichtbar, weil sie am
-         MODELL hängt und nicht an der Auswahl — und weil sie erklärt, worauf
-         sich jede Höhe und jede Koordinate darunter bezieht. -->
+    <!-- OHNE AUSWAHL: was man ohne Subjekt tun kann. Eine leere Tafel sähe kaputt aus. -->
+    <template v-if="!bearbeitung.bauteil">
+      <!-- Ein Zeichenwerkzeug läuft ohne Auswahl: was es tut, und der Ausgang. -->
+      <div v-if="bearbeitung.scharf" class="tb-scharf">
+        <p class="tb-scharf-titel">
+          <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
+        </p>
+        <p class="tb-warum">Punkte ins Gelände setzen — Enter schliesst ab, Esc bricht ab. Die Felder stehen unten in der Leiste.</p>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
+        <button v-if="bearbeitung.scharf.rezept" class="tb-btn" type="button" @click="vorlageSichern">
+          <CdeIcon name="save" :size="13" /> <span>Als Vorlage sichern …</span>
+        </button>
+        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
+      </div>
+      <template v-else>
+        <p class="tb-leer">
+          Kein Bauteil gewählt. Ein Klick ins Modell zeigt, was daran möglich ist.
+        </p>
+        <!-- ERZEUGEN (Abnahme 2026-09-12, E8): gezeichnet wird im 3D, auf dem
+             Gelände in der Draufsicht — der Lageplan ist das Blatt. -->
+        <h4 class="tb-kopf">Erzeugen</h4>
+        <p class="tb-warum">Im Bild auf das Gelände: Punkte anklicken, Enter schliesst ab. Das Bild geht dafür in die Draufsicht.</p>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
+        <p v-if="sperrgrund" class="tb-sperre">
+          <CdeIcon name="warn" :size="12" /> {{ sperrgrund }}
+        </p>
+        <div class="tb-liste">
+          <button
+            v-for="b in zeichenWerkzeuge"
+            :key="b.id"
+            class="tb-btn"
+            :disabled="!!sperrgrund"
+            :title="sperrgrund || b.titel"
+            @click="zeichnen(b.id)"
+          >
+            <CdeIcon :name="b.icon" :size="13" />
+            <span>{{ b.titel }}</span>
+          </button>
+        </div>
+        <!-- Bauteilbibliothek (Lücke ⑨): Vorlagen = Rezept + vorbelegte Werte.
+             Projekt schlägt Büro schlägt eingebauten Satz. -->
+        <template v-if="vorlagen.length">
+          <h4 class="tb-kopf">Vorlagen</h4>
+          <div class="tb-liste">
+            <div v-for="v in vorlagen" :key="v.id" class="tb-vorlage">
+              <button
+                class="tb-btn"
+                :disabled="!!sperrgrund"
+                :title="sperrgrund || `${v.name} — ${VORLAGE_HERKUNFT[v.herkunft] ?? 'Vorlage'}`"
+                @click="vorlageZeichnen(v)"
+              >
+                <CdeIcon :name="v.rezept === 'schacht' ? 'schacht' : v.rezept === 'rohr' ? 'laengsschnitt' : 'route'" :size="13" />
+                <span>{{ v.name }}</span>
+              </button>
+              <button
+                v-if="v.herkunft !== 'eingebaut'"
+                class="tb-vorlage-weg"
+                type="button"
+                :title="`Vorlage löschen (${v.herkunft === 'buero' ? 'Büro' : 'Projekt'})`"
+                aria-label="Vorlage löschen"
+                @click="vorlageEntfernen(v)"
+              ><CdeIcon name="delete" :size="11" /></button>
+            </div>
+          </div>
+        </template>
+      </template>
+    </template>
+
+    <template v-else>
+      <!-- Kopf: was ist das hier? -->
+      <div class="tb-titel">
+        <strong>{{ bearbeitung.bauteil.name || '(ohne Namen)' }}</strong>
+        <code>{{ herleitung.kategorie }}</code>
+      </div>
+
+      <!-- WORAUF SICH DER KLICK BEZIEHT. Bei einer Rahmenauswahl ändert eine
+           Bearbeitung womöglich fünfzehn Bauteile — das muss dastehen, bevor
+           man klickt, nicht danach im Verlauf. -->
+      <p v-if="mehrfach" class="tb-mehrfach">
+        <CdeIcon name="layers" :size="12" />
+        <span>
+          <strong>{{ mehrfach.anzahl }} Bauteile gewählt.</strong>
+          {{ mehrfach.text }}
+        </span>
+      </p>
+
+      <!-- Die scharfe Bearbeitung verdrängt die Liste — ihr FORMULAR steht nur
+           in der Kontextleiste unter dem Bild (Teil XVI, S6). Hier bleibt, was
+           die Tafel weiss: was die Bearbeitung bewirkt, und der Ausgang. -->
+      <div v-if="bearbeitung.scharf" class="tb-scharf">
+        <p class="tb-scharf-titel">
+          <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
+          <span v-if="bearbeitung.bauteil?.name" class="tb-scharf-subjekt">{{ bearbeitung.bauteil.name }}</span>
+        </p>
+        <p v-if="festlegungsHinweis" class="tb-hinweis">{{ festlegungsHinweis }}</p>
+        <p class="tb-warum">Eingabe unten in der Leiste — Griffe im Bild ziehen dieselben Felder.</p>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
+        <button v-if="bearbeitung.scharf.rezept" class="tb-btn" type="button" @click="vorlageSichern">
+          <CdeIcon name="save" :size="13" /> <span>Als Vorlage sichern …</span>
+        </button>
+        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
+      </div>
+
+      <!-- DIE WERKZEUGE ZUERST. Ein Werkzeug wählen heißt bearbeiten (E4):
+           grau ist ein Knopf nur mit einem echten Grund — und der steht da. -->
+      <template v-else>
+        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
+        <p v-if="sperrgrund" class="tb-sperre">
+          <CdeIcon name="warn" :size="12" /> {{ sperrgrund }}
+        </p>
+        <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
+          <h4 class="tb-kopf" :title="g.warum">{{ g.titel }}</h4>
+          <div class="tb-liste">
+            <button
+              v-for="b in g.eintraege"
+              :key="b.id"
+              class="tb-btn"
+              :disabled="!!sperrgrund"
+              :title="sperrgrund || (b.nurFestlegung ? 'Geht als Forderung an den Planer — die Geometrie bleibt bei ihm' : b.titel)"
+              @click="werkzeug(b.id)"
+            >
+              <CdeIcon :name="b.icon" :size="13" />
+              <span>{{ b.titel }}</span>
+              <!-- Die Beschriftung, die DIESER Typ dem Feld gibt: „DN“ am Rohr,
+                   „Profilreihe“ am Träger — das Vokabular kommt aus Daten. -->
+              <em v-if="b.felder.length" class="tb-feld">{{ b.felder.map(f => f.label).join(', ') }}</em>
+              <CdeIcon v-if="b.nurFestlegung" name="documents" :size="11" class="tb-nurfest" />
+            </button>
+          </div>
+        </section>
+      </template>
+
+      <!-- WAS DIE ACHSE SAGT (Stufe 14.2): Sohlhöhen, Gefälle, Länge und DN —
+           beim reinen Ansehen die interessantesten Zahlen an einer Haltung. -->
+      <dl v-if="achse" class="tb-kette tb-achse">
+        <dt>Sohle</dt>
+        <dd>
+          <b>{{ achse.anfangNn }}</b> → <b>{{ achse.endeNn }}</b> m NN
+          <span class="tb-dim">({{ achse.gefaelle }})</span>
+        </dd>
+        <dt>Länge</dt>
+        <dd class="tb-dim">
+          {{ achse.laenge }} m<template v-if="achse.dn"> · DN {{ achse.dn }}</template>
+          <span class="tb-dim"> — {{ achse.herkunft }}</span>
+          <template v-if="achse.umgekehrt"><br>Fliessrichtung umgekehrt festgelegt</template>
+        </dd>
+      </dl>
+
+      <!-- BEFUNDE (Stufe 14.4). Sie beraten; wo einer seine Kur kennt, genügt
+           ein Klick — aus der Liste wird eine Arbeitsliste. -->
+      <ul v-if="bearbeitung.befunde.length" class="tb-befunde">
+        <li v-for="(b, i) in bearbeitung.befunde" :key="i" :class="'tb-b--' + b.schwere">
+          <CdeIcon :name="b.schwere === 'warnung' ? 'warn' : 'info'" :size="12" />
+          <span>
+            {{ b.text }}
+            <em class="tb-dim">
+              {{ b.wert }}<template v-if="b.grenze"> · {{ b.grenze }}</template>
+              <template v-if="b.quelle"> · {{ b.quelle }}</template>
+            </em>
+            <button
+              v-if="b.kur && kurTitel(b)"
+              class="tb-kur"
+              :disabled="!!sperrgrund"
+              :title="sperrgrund || 'Diese Bearbeitung starten'"
+              @click="kur(b)"
+            >
+              <CdeIcon name="edit" :size="11" /> {{ kurTitel(b) }}
+            </button>
+          </span>
+        </li>
+      </ul>
+
+      <!-- MERKMALE — vorher eine eigene Tafel („Eigenschaften“). -->
+      <details class="tb-merkmale" open>
+        <summary>Merkmale</summary>
+        <IfcSemanticWindow eingebettet />
+      </details>
+
+      <!-- WARUM? Die Herleitung beantwortet „woher weiß die CDE, was hier geht?“ —
+           zugeklappt, weil sie erklärt und nicht handelt. -->
+      <details class="tb-herleitung">
+        <summary>Warum diese Werkzeuge?</summary>
+
+        <dl class="tb-kette">
+          <dt>Form</dt>
+          <dd>
+            <strong>{{ herleitung.bauformTitel }}</strong>
+            <span class="tb-dim">aus {{ QUELLE_TEXT[herleitung.quelle] ?? herleitung.quelle }}</span>
+            <span v-if="herleitung.regel" class="tb-dim">· Regel „{{ herleitung.regel }}“</span>
+          </dd>
+
+          <dt>Güte</dt>
+          <dd>
+            <span :class="['tb-guete', 'tb-guete--' + herleitung.guete]">{{ herleitung.guete }}</span>
+            <span class="tb-dim">{{ GUETE_TEXT[herleitung.guete] }}</span>
+          </dd>
+
+          <!-- WAS GEMESSEN WURDE: ohne Deklaration schlägt die Formsignatur vor;
+               ein Klick macht den Vorschlag zur Auslegung. -->
+          <template v-if="herleitung.grund && (herleitung.quelle === 'geometrie' || herleitung.quelle === 'rueckfall')">
+            <dt>Gemessen</dt>
+            <dd>
+              <span class="tb-dim">{{ herleitung.grund }}</span>
+              <button
+                v-if="herleitung.quelle === 'geometrie'"
+                class="tb-kur tb-bestaetigen"
+                :disabled="!!sperrgrund"
+                :title="sperrgrund || `Als Auslegung übernehmen — ab dann gilt ${herleitung.bauformTitel} für dieses Bauteil`"
+                @click="auslegen"
+              >
+                <CdeIcon name="bauform" :size="11" /> Als Auslegung übernehmen
+              </button>
+            </dd>
+          </template>
+
+          <dt>Typprofil</dt>
+          <dd v-if="herleitung.profilAus">
+            <code>{{ herleitung.profilAus }}</code>
+            <span v-if="herleitung.profilUeberVererbung" class="tb-erbt">geerbt</span>
+            <span class="tb-dim">kennt {{ herleitung.rollen.join(', ') }}</span>
+          </dd>
+          <dd v-else class="tb-dim">keins — es gelten nur die allgemeinen Bearbeitungen</dd>
+
+          <dt>Vererbung</dt>
+          <dd v-if="!herleitung.imWoerterbuch" class="tb-dim">
+            in keinem IFC-Schema (2x3, 4, 4.3) — die Vererbung greift hier nicht
+          </dd>
+          <dd v-else class="tb-hierarchie">
+            <span
+              v-for="stufe in herleitung.kette"
+              :key="stufe"
+              :class="{ treffer: stufe === herleitung.profilAus }"
+            >{{ stufe }}</span>
+          </dd>
+        </dl>
+
+        <p v-if="herleitung.luecke" class="tb-luecke">
+          <CdeIcon name="info" :size="12" /> {{ herleitung.luecke.text }}
+        </p>
+        <p v-for="w in herleitung.warnungen" :key="w" class="tb-warnung">
+          <CdeIcon name="warn" :size="12" /> {{ WARNUNG_TEXT[w] ?? w }}
+        </p>
+      </details>
+
+      <details v-if="herleitung.gesperrt.length" class="tb-gesperrt">
+        <summary>Hier nicht möglich ({{ herleitung.gesperrt.length }})</summary>
+        <!-- „Steht nicht in der Liste“ ist die schlechteste Rückmeldung: der
+             Nutzer weiß nicht, ob das Werkzeug fehlt, sein Modell zu schlecht
+             ist oder er etwas falsch macht. -->
+        <div v-for="b in herleitung.gesperrt" :key="b.id" class="tb-nein">
+          <span>{{ b.titel }}</span>
+          <em>{{ b.warum }}</em>
+        </div>
+      </details>
+    </template>
+
+    <!-- DAS MODELL: Lage und Import. Beides hängt am Modell, nicht an der
+         Auswahl — bis H3 steht es hier unten, danach im Modell-Eintrag links.
+         Der Import klappt von selbst auf, wenn er warnt. -->
     <details v-if="georeferenz" class="tb-geo">
       <summary>
         Georeferenz
@@ -53,9 +313,6 @@
       </p>
     </details>
 
-    <!-- IMPORT (IFC-Konsistenz, Stufe 4c). Je Modell, was die Datei über sich
-         sagt. Hier wird nichts abgelehnt — das Urteil spricht das Prüftor im
-         Backend; der Client sagt, was er beim Laden ohnehin weiß. -->
     <details v-for="b in importBefunde" :key="b.modelId" class="tb-geo"
              :open="b.texte.some(t => t.schwere === 'warnung')">
       <summary>
@@ -67,230 +324,6 @@
       </p>
       <p v-if="!b.texte.length" class="tb-dim">Nichts Auffälliges.</p>
     </details>
-
-    <!-- DER MODUS. Er steht ganz oben und immer, weil er die Antwort auf
-         „warum tut hier nichts etwas?" ist. Ausserhalb des Modus zeigt die
-         Toolbox trotzdem die HERLEITUNG weiter — was an einem Bauteil möglich
-         WÄRE, ist auch beim reinen Ansehen die interessanteste Auskunft. -->
-    <button
-      type="button"
-      :class="['tb-modus', bearbeitung.modusAn && 'tb-modus--an']"
-      @click="api.bearbeitenUmschalten?.()"
-    >
-      <CdeIcon :name="bearbeitung.modusAn ? 'edit' : 'visible'" :size="14" />
-      <span class="tb-modus-text">
-        <strong>{{ bearbeitung.modusAn ? 'Bearbeiten läuft' : 'Nur ansehen' }}</strong>
-        <small>{{ bearbeitung.modusAn
-          ? 'Änderungen gehen ins Journal. E beendet.'
-          : 'Nichts ändert das Modell. E schaltet ein.' }}</small>
-      </span>
-    </button>
-
-    <!-- OHNE AUSWAHL: was man ohne Subjekt tun kann. Eine leere Toolbox wäre
-         die schlechteste Antwort — sie sähe kaputt aus. -->
-    <template v-if="!bearbeitung.bauteil">
-      <p class="tb-leer">
-        Kein Bauteil gewählt. Anklicken zeigt, was daran möglich ist — und woher
-        die CDE das weiß.
-      </p>
-      <!-- X3: Die toten Erzeugen-Kacheln sind gefallen — ein Satz genügt,
-           die Knöpfe wohnen im Lageplan unter „Zeichnen". -->
-      <h4 class="tb-kopf">Erzeugen</h4>
-      <p class="tb-warum">
-        Braucht kein Bauteil: im <strong>Lageplan</strong> unter
-        „Zeichnen"{{ bearbeitung.modusAn ? '.' : ' — sobald Bearbeiten läuft.' }}
-      </p>
-    </template>
-
-    <template v-else>
-      <!-- Kopf: was ist das hier? -->
-      <div class="tb-titel">
-        <strong>{{ bearbeitung.bauteil.name || '(ohne Namen)' }}</strong>
-        <code>{{ herleitung.kategorie }}</code>
-      </div>
-
-      <!-- WORAUF SICH DER KLICK BEZIEHT. Bei einer Rahmenauswahl ändert eine
-           Bearbeitung womöglich fünfzehn Bauteile — das muss dastehen, bevor
-           man klickt, nicht danach im Journal. -->
-      <p v-if="mehrfach" class="tb-mehrfach">
-        <CdeIcon name="layers" :size="12" />
-        <span>
-          <strong>{{ mehrfach.anzahl }} Bauteile gewählt.</strong>
-          {{ mehrfach.text }}
-        </span>
-      </p>
-
-      <!-- WAS DIE ACHSE SAGT (Stufe 14.2). Steht auch ohne Bearbeiten-Modus
-           da: Sohlhöhen, Gefälle, Länge und DN sind beim reinen Ansehen die
-           interessantesten Zahlen an einer Haltung — und bis eben gab es sie
-           nirgends, weil die Achse gar nicht ankam. -->
-      <dl v-if="achse" class="tb-kette tb-achse">
-        <dt>Sohle</dt>
-        <dd>
-          <b>{{ achse.anfangNn }}</b> → <b>{{ achse.endeNn }}</b> m NN
-          <span class="tb-dim">({{ achse.gefaelle }})</span>
-        </dd>
-        <dt>Länge</dt>
-        <dd class="tb-dim">
-          {{ achse.laenge }} m<template v-if="achse.dn"> · DN {{ achse.dn }}</template>
-          <span class="tb-dim"> — {{ achse.herkunft }}</span>
-          <template v-if="achse.umgekehrt"><br>Fliessrichtung umgekehrt festgelegt</template>
-        </dd>
-      </dl>
-
-      <!-- BEFUNDE (Stufe 14.4). Sie halten nichts auf — sie beraten. Deshalb
-           stehen sie neben den Bearbeitungen, nicht davor, und auch ausserhalb
-           des Bearbeiten-Modus: „das Gefälle läuft bergauf" ist beim reinen
-           Ansehen genauso wichtig. -->
-      <ul v-if="bearbeitung.befunde.length" class="tb-befunde">
-        <li v-for="(b, i) in bearbeitung.befunde" :key="i" :class="'tb-b--' + b.schwere">
-          <CdeIcon :name="b.schwere === 'warnung' ? 'warn' : 'info'" :size="12" />
-          <span>
-            {{ b.text }}
-            <em class="tb-dim">
-              {{ b.wert }}<template v-if="b.grenze"> · {{ b.grenze }}</template>
-              <template v-if="b.quelle"> · {{ b.quelle }}</template>
-            </em>
-            <!-- DIE KUR. Wo ein Befund seine Antwort kennt, soll ein Klick
-                 genügen — aus der Liste wird eine Arbeitsliste. Gesperrt
-                 ausserhalb des Bearbeiten-Modus, wie jeder andere Knopf. -->
-            <button
-              v-if="b.kur && kurTitel(b)"
-              class="tb-kur"
-              :disabled="!bearbeitung.modusAn"
-              :title="bearbeitung.modusAn ? 'Diese Bearbeitung scharf schalten'
-                : 'Bearbeiten ist aus — oben einschalten (oder E)'"
-              @click="bearbeitung.starteMitVorschlag(b.kur.bearbeitung, b.kur.werte ?? {})"
-            >
-              <CdeIcon name="edit" :size="11" /> {{ kurTitel(b) }}
-            </button>
-          </span>
-        </li>
-      </ul>
-
-      <!-- DIE HERLEITUNG. Der Grund, warum es diese Toolbox gibt. -->
-      <details class="tb-herleitung" open>
-        <summary>Woher die CDE weiß, was hier geht</summary>
-
-        <dl class="tb-kette">
-          <dt>Form</dt>
-          <dd>
-            <strong>{{ herleitung.bauformTitel }}</strong>
-            <span class="tb-dim">aus {{ QUELLE_TEXT[herleitung.quelle] ?? herleitung.quelle }}</span>
-            <span v-if="herleitung.regel" class="tb-dim">· Regel „{{ herleitung.regel }}"</span>
-          </dd>
-
-          <dt>Güte</dt>
-          <dd>
-            <span :class="['tb-guete', 'tb-guete--' + herleitung.guete]">{{ herleitung.guete }}</span>
-            <span class="tb-dim">{{ GUETE_TEXT[herleitung.guete] }}</span>
-          </dd>
-
-          <!-- WAS GEMESSEN WURDE (2026-09-07). Ohne Deklaration schlägt die
-               Formsignatur vor — hier steht der Grund, und ein Klick macht
-               den Vorschlag zur Auslegung. Die Geometrie schlägt vor, der
-               Mensch erklärt. -->
-          <template v-if="herleitung.grund && (herleitung.quelle === 'geometrie' || herleitung.quelle === 'rueckfall')">
-            <dt>Gemessen</dt>
-            <dd>
-              <span class="tb-dim">{{ herleitung.grund }}</span>
-              <button
-                v-if="herleitung.quelle === 'geometrie'"
-                class="tb-kur tb-bestaetigen"
-                :disabled="!bearbeitung.modusAn"
-                :title="bearbeitung.modusAn
-                  ? `Als Auslegung übernehmen — ab dann gilt ${herleitung.bauformTitel} für dieses Bauteil`
-                  : 'Erst den Bearbeiten-Modus einschalten (E)'"
-                @click="bearbeitung.starteMitVorschlag('bauform-auslegen', { bauform: herleitung.bauform })"
-              >
-                <CdeIcon name="bauform" :size="11" /> Als Auslegung übernehmen
-              </button>
-            </dd>
-          </template>
-
-          <dt>Typprofil</dt>
-          <dd v-if="herleitung.profilAus">
-            <code>{{ herleitung.profilAus }}</code>
-            <span v-if="herleitung.profilUeberVererbung" class="tb-erbt">geerbt</span>
-            <span class="tb-dim">kennt {{ herleitung.rollen.join(', ') }}</span>
-          </dd>
-          <dd v-else class="tb-dim">keins — es gelten nur die allgemeinen Bearbeitungen</dd>
-
-          <dt>Vererbung</dt>
-          <dd v-if="!herleitung.imWoerterbuch" class="tb-dim">
-            in keinem IFC-Schema (2x3, 4, 4.3) — die Vererbung greift hier nicht
-          </dd>
-          <dd v-else class="tb-hierarchie">
-            <span
-              v-for="stufe in herleitung.kette"
-              :key="stufe"
-              :class="{ treffer: stufe === herleitung.profilAus }"
-            >{{ stufe }}</span>
-          </dd>
-        </dl>
-
-        <p v-if="herleitung.luecke" class="tb-luecke">
-          <CdeIcon name="info" :size="12" /> {{ herleitung.luecke.text }}
-        </p>
-        <p v-for="w in herleitung.warnungen" :key="w" class="tb-warnung">
-          <CdeIcon name="warn" :size="12" /> {{ WARNUNG_TEXT[w] ?? w }}
-        </p>
-      </details>
-
-      <!-- Die scharfe Bearbeitung verdrängt die Liste — aber ihr FORMULAR
-           steht nur noch in der Kontextleiste unter dem Bild (Teil XVI, S6:
-           es stand dreimal im Bild). Hier bleibt, was die Toolbox weiss:
-           was die Bearbeitung bewirkt, und der Ausgang. -->
-      <div v-if="bearbeitung.scharf" class="tb-scharf">
-        <p class="tb-scharf-titel">
-          <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
-          <span v-if="bearbeitung.bauteil?.name" class="tb-scharf-subjekt">{{ bearbeitung.bauteil.name }}</span>
-        </p>
-        <p v-if="festlegungsHinweis" class="tb-hinweis">{{ festlegungsHinweis }}</p>
-        <p class="tb-warum">Eingabe unten in der Leiste — Griffe im Bild ziehen dieselben Felder.</p>
-        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
-        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
-      </div>
-
-      <template v-else>
-        <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
-        <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
-          <h4 class="tb-kopf">{{ g.titel }}</h4>
-          <p class="tb-warum">{{ g.warum }}</p>
-          <div class="tb-liste">
-            <button
-              v-for="b in g.eintraege"
-              :key="b.id"
-              class="tb-btn"
-              :disabled="!bearbeitung.modusAn"
-              :title="!bearbeitung.modusAn ? 'Bearbeiten ist aus — oben einschalten (oder E)'
-                : b.nurFestlegung ? 'Wird als Festlegung geführt — die Geometrie bleibt beim Planer'
-                : b.titel"
-              @click="bearbeitung.starte(b.id)"
-            >
-              <CdeIcon :name="b.icon" :size="13" />
-              <span>{{ b.titel }}</span>
-              <!-- Die Beschriftung, die DIESER Typ dem Feld gibt: „DN" am Rohr,
-                   „Profilreihe" am Träger. Sie ist der sichtbare Beweis, dass
-                   das Vokabular aus Daten kommt und nicht aus dem Programm. -->
-              <em v-if="b.felder.length" class="tb-feld">{{ b.felder.map(f => f.label).join(', ') }}</em>
-              <CdeIcon v-if="b.nurFestlegung" name="documents" :size="11" class="tb-nurfest" />
-            </button>
-          </div>
-        </section>
-
-        <details v-if="herleitung.gesperrt.length" class="tb-gesperrt">
-          <summary>Hier nicht möglich ({{ herleitung.gesperrt.length }})</summary>
-          <!-- „Steht nicht in der Liste" ist die schlechteste Rückmeldung: der
-               Nutzer weiß nicht, ob das Werkzeug fehlt, sein Modell zu schlecht
-               ist oder er etwas falsch macht. -->
-          <div v-for="b in herleitung.gesperrt" :key="b.id" class="tb-nein">
-            <span>{{ b.titel }}</span>
-            <em>{{ b.warum }}</em>
-          </div>
-        </details>
-      </template>
-    </template>
   </div>
 </template>
 
@@ -315,15 +348,19 @@
  * Programm das" darf nicht in einer Vorlage stehen, sonst lässt sie sich nicht
  * prüfen.
  */
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
+import { repo } from '../services/RepoFacade.js';
+import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { hatHoehenbezug, nnAusWelt } from '../services/Hoehenbezug.js';
 import { formatGefaelle } from '../services/AxisAnnotations.js';
+import IfcSemanticWindow from './IfcSemanticWindow.vue';
 
 const bearbeitung = useBearbeitung();
 const ifc = useIfcStore();
@@ -499,7 +536,7 @@ const festlegungsHinweis = computed(() => {
   if (art === 'zug') return 'Im Lageplan zeichnen/antippen — dort wird diese Bearbeitung abgeschlossen.';
   if (art === 'umriss') return 'Im Lageplan den Umriss zeichnen — dort wird diese Bearbeitung abgeschlossen.';
   if (bearbeitung.scharf?.nurFestlegung) {
-    return 'Wird als Festlegung geführt und geht in den Änderungsbericht — die Geometrie bleibt beim Planer.';
+    return 'Wird als Forderung an den Planer geführt und geht in den Änderungsbericht — die Geometrie bleibt bei ihm.';
   }
   const brauchtHoehe = bearbeitung.scharf?.brauchtRolle === 'sohlhoehe';
   if (brauchtHoehe && !hatHoehenbezug(bearbeitung.bauteil?.hoehenversatz)) {
@@ -511,28 +548,98 @@ const festlegungsHinweis = computed(() => {
 /** Was die letzte Bearbeitung bewirkt hat — der Nutzer muss es SEHEN. */
 const rueckmeldung = ref('');
 
+/**
+ * Warum ein Werkzeug gerade nicht startet — nur ein ECHTER Grund: kein
+ * Modell, Millimeter, ein Published-Stand. „Bearbeiten ist aus“ ist keiner
+ * mehr (Kassensturz E4): ein Werkzeug wählen schaltet die Bearbeitung ein.
+ */
+const sperrgrund = computed(() => (bearbeitung.modusAn ? null : (api.bearbeitenSperrgrund?.() ?? null)));
+
+/** Ein Werkzeug starten — über den Viewer, der die Bearbeitung einschaltet. */
+function werkzeug(id, vorschlag = null) {
+  rueckmeldung.value = '';
+  const ok = api.werkzeugStarten?.(id, vorschlag ? { vorschlag } : {});
+  if (ok !== undefined) return ok;
+  // Ohne Viewer (früher Aufbau, Tests): der Store allein — ohne Modus weist er ab.
+  return vorschlag ? bearbeitung.starteMitVorschlag(id, vorschlag) : bearbeitung.starte(id);
+}
+function kur(befund) { return werkzeug(befund.kur.bearbeitung, befund.kur.werte ?? {}); }
+function auslegen() { return werkzeug('bauform-auslegen', { bauform: herleitung.value.bauform }); }
+
+// ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────
+/** Ein Zeichenwerkzeug starten — über den Motor im Raum; Vorlagen belegen vor. */
+function zeichnen(id, vorgaben = null) {
+  rueckmeldung.value = '';
+  const b = nachId(id);
+  if (!b || !['zug', 'umriss'].includes(eingabeArt(b))) return werkzeug(id);
+  const ok = api.zeichnenStarten?.(id, vorgaben ? { vorgaben } : {});
+  if (ok === false) rueckmeldung.value = bearbeitung.letzterGrund || 'Zeichnen liess sich gerade nicht starten.';
+  return ok;
+}
+
+// Bauteilbibliothek (Lücke ⑨ / Stufe 9.8) — zog mit dem Zeichnen aus dem Lageplan hierher.
+const cde = useCdeStore();
+const VORLAGE_HERKUNFT = Object.freeze({ eingebaut: 'eingebaute Vorlage', buero: 'Büro-Vorlage', projekt: 'Projekt-Vorlage' });
+const vorlagen = ref([]);
+async function vorlagenLaden() {
+  try { vorlagen.value = await ladeVorlagen(repo); }
+  catch (fehler) { console.warn('cde: vorlagen laden', fehler?.message ?? fehler); }
+}
+// Die Bibliothek hängt am Repo — das Backend steht erst nach der Auftragswahl fest.
+onMounted(vorlagenLaden);
+watch(() => cde.auftrag?.id, vorlagenLaden);
+function vorlageZeichnen(v) { return zeichnen(`${v.rezept}-zeichnen`, v.vorgaben ?? {}); }
+
+/**
+ * Die WERTE des scharfen Zeichenwerkzeugs als Vorlage sichern. Bezeichnung
+ * und Höhe bleiben draußen — sie gehören zum einzelnen Bauteil, nicht zur
+ * Vorlage (ein „Schacht DN 1000" hat keine feste Sohlhöhe).
+ */
+async function vorlageSichern() {
+  const scharf = bearbeitung.scharf;
+  if (!scharf?.rezept) return;
+  const name = prompt('Name der Vorlage:', scharf.titel?.replace(' zeichnen', '') ?? '');
+  if (!name?.trim()) return;
+  const vorgaben = {};
+  for (const [feld, wert] of Object.entries(bearbeitung.werte ?? {})) {
+    if (feld === 'name' || feld === 'hoehe') continue;
+    if (['string', 'number', 'boolean'].includes(typeof wert) && wert !== '') vorgaben[feld] = wert;
+  }
+  const ebene = repo.buero && confirm('Für ALLE Projekte sichern (Büro-Ebene)?\n„Abbrechen" sichert nur in diesem Projekt.')
+    ? 'buero' : 'projekt';
+  const r = await speichereVorlage(repo, { name: name.trim(), rezept: scharf.rezept, vorgaben }, { ebene });
+  if (!r.ok) console.warn('cde: vorlage sichern', r.grund);
+  await vorlagenLaden();
+}
+
+async function vorlageEntfernen(v) {
+  if (v.herkunft === 'eingebaut') return;
+  if (!confirm(`Vorlage „${v.name}" löschen?`)) return;
+  await loescheVorlage(repo, v.id, { ebene: v.herkunft });
+  await vorlagenLaden();
+}
+
 </script>
 
 <style scoped>
 .tb { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.2rem 0 0.6rem; }
 
-/* Der Modus-Schalter: im Ruhezustand zurückhaltend, im Bearbeiten-Modus
-   deutlich — man soll ohne Hinsehen wissen, ob Klicks etwas verändern. */
-.tb-modus {
-  display: flex; align-items: center; gap: 0.5rem; width: 100%;
-  padding: 0.4rem 0.55rem; text-align: left; cursor: pointer;
-  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
-  background: var(--cde-fill); color: var(--cde-text);
+/* Kassensturz H2: ein echter Sperrgrund steht als Zeile da, nicht nur im Tooltip. */
+.tb-sperre {
+  display: flex; align-items: flex-start; gap: 0.35rem;
+  margin: 0; padding: 0.35rem 0.5rem;
+  border-radius: var(--cde-radius-sm);
+  background: color-mix(in srgb, var(--cde-warn) 12%, transparent);
+  color: var(--cde-warn-soft);
+  font-size: var(--cde-font-sm);
 }
-.tb-modus:hover { border-color: var(--cde-line-strong); }
-.tb-modus-text { display: flex; flex-direction: column; line-height: 1.25; }
-.tb-modus-text strong { font-size: var(--cde-font-sm); }
-.tb-modus-text small { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
-.tb-modus--an {
-  border-color: var(--cde-accent);
-  background: var(--cde-accent-fill);
+/* Die Merkmale — vorher eine eigene Tafel. */
+.tb-merkmale { border-top: 1px solid var(--cde-line); padding-top: 0.35rem; }
+.tb-merkmale > summary {
+  cursor: pointer; padding: 0.2rem 0;
+  font-size: var(--cde-font-sm); font-weight: 600; color: var(--cde-text-bright);
 }
-.tb-modus--an .tb-modus-text small { color: var(--cde-text); }
+
 
 /* Ausserhalb des Modus bleiben die Bearbeitungen sichtbar — die Herleitung ist
    auch beim reinen Ansehen die interessanteste Auskunft. Sie sehen aber
@@ -657,6 +764,14 @@ const rueckmeldung = ref('');
   letter-spacing: 0.06em; color: var(--cde-text-dim);
 }
 .tb-warum { margin: 0; font-size: 0.68rem; color: var(--cde-text-dim); }
+.tb-vorlage { display: flex; align-items: center; gap: 0.2rem; }
+.tb-vorlage > .tb-btn { flex: 1; min-width: 0; }
+.tb-vorlage-weg {
+  background: none; border: none; border-radius: var(--cde-radius-sm);
+  padding: 0.3rem; color: var(--cde-text-dim); cursor: pointer;
+  touch-action: manipulation;
+}
+.tb-vorlage-weg:hover { color: var(--cde-danger); background: var(--cde-fill); }
 /* Die scharfe Bearbeitung — ohne Formular (das steht in der Leiste). */
 .tb-scharf { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.4rem 0; }
 .tb-scharf-titel { margin: 0; display: flex; align-items: center; gap: 0.35rem; font-weight: 600; color: var(--cde-text); }

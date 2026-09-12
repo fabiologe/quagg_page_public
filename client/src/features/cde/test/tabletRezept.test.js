@@ -136,7 +136,8 @@ describe('R2 — keine Modifikatortaste ist Pflicht', () => {
 });
 
 describe('R3 — hochkant liegt nichts ausserhalb', () => {
-    const css = lies('views/CdeView.vue');
+    // Die Kopfzeile ist seit dem Kassensturz (H1) eine eigene Komponente.
+    const css = lies('components/CdeKopfleiste.vue');
     const hochkant = css.slice(css.indexOf('@media (max-width: 900px)'));
 
     it('die Kopfzeile bricht um, statt zu überlaufen', () => {

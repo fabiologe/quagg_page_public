@@ -75,12 +75,14 @@ describe('Faltung nach Art', () => {
 });
 
 describe('Ableitungen — Anschauung, nie leite()', () => {
-    it('Gerinne: Trapez-Geist entlang des gedrapeten Zugs, Ur-Gelände gedimmt, „Massen nach Übernehmen"', () => {
+    // Abnahme 2026-09-12 (K4): das ersetzte Ur-Gelände wird NICHT mehr gedimmt — es bleibt im Geländeton.
+    it('Gerinne: Trapez-Geist entlang des gedrapeten Zugs, Ur-Gelände bleibt, „Massen nach Übernehmen"', () => {
         const b = nachId('gerinne-einschneiden');
         const zug = [{ x: 0, y: 302, z: 0 }, { x: 10, y: 302, z: 0 }, { x: 10, y: 302, z: 10 }];
         const eintraege = b.anwenden(GELAENDE, { sohleAnfang: 300, sohleEnde: 299.5, sohlbreite: 1, boeschung: 1.5 }, { zug });
         const v = vorschauFuer(eintraege, { subjekt: GELAENDE, werkzeug: b, hoeheAn, hoehenversatz: 0 });
-        expect(v.faerbungen).toEqual([{ globalId: 'DGM', rolle: 'dimmen' }]);
+        expect(eintraege.some(e => e.art === 'geloescht' && e.globalId === 'DGM')).toBe(true);   // verborgen wird es weiter
+        expect(v.faerbungen).toEqual([]);                                                          // vorher: gedimmt
         const geist = v.primitive.find(p => p.art === 'geist');
         expect(geist).toBeTruthy();
         expect(geist.triCount).toBeGreaterThan(10);
@@ -101,7 +103,7 @@ describe('Ableitungen — Anschauung, nie leite()', () => {
         const b = nachId('kanalgraben-ableiten');
         const v = vorschauFuer(b.anwenden(ROHR, { gelaende: 'DGM', dn: 300, arbeitsraum: 0.4, bettung: 0.15, boeschung: 0.5 }),
                                { subjekt: ROHR, werkzeug: b, hoeheAn });
-        expect(v.faerbungen).toEqual([{ globalId: 'DGM', rolle: 'dimmen' }]);
+        expect(v.faerbungen).toEqual([]);                                                          // K4: vorher DGM gedimmt
         expect(v.primitive.some(p => p.art === 'geist')).toBe(true);
         // Gelände 302, Scheitel 300,15 → Überdeckung 1,85 m ≥ 0,8
         expect(v.chips.some(c => /Überdeckung ≥ 1\.85 m/.test(c.text))).toBe(true);

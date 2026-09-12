@@ -38,6 +38,23 @@ export const LICHT_MAX = 1.5;
 export const CLIP_RESERVE = 0.97;
 
 /**
+ * DAS GELÄNDE — EIN Ton für jedes Gelände im Bild (Abnahme 2026-09-12, K4).
+ *
+ * Fabio: „Viel Wechsel der Renderstyles des Urgeländes — warum? Reicht nicht,
+ * das leichte Beige mit den Kantenfärbungen beizubehalten?" Das Gelände trug
+ * je nach Zustand einen anderen Ton: die eigene IFC-Farbe der Lieferung, das
+ * Katalog-Grün (ein Gelände vom Typ IfcEarthworksFill ist für den Katalog
+ * ein „Auftrag"), das Grau der Kopie im Eigenbau, das Dimmen der Vorschau.
+ * Jetzt folgt die Farbe der ROLLE (`faerbePlan`): was die Geländeliste
+ * führt, trägt diesen Ton — geliefert wie kopiert.
+ *
+ * Leichtes Beige mit halb so viel Stich wie das Hellbeige vor P4 (0xa29a8c,
+ * Spanne 0,086 — es las sich unter dem Hauptlicht als braunes Gelände, und
+ * der Aushub war darin nicht zu finden). Braun trägt weiter nur der Aushub.
+ */
+export const GELAENDE_FARBE = Object.freeze({ farbe: 0xa4a198, deckkraft: 1, titel: 'Gelände' });
+
+/**
  * Der Katalog — DATEN, nach IFC-Typ. Nach Typ und nicht nach Rolle, damit er
  * auch für GELIEFERTES Material desselben Typs gilt und später als
  * Bürodatensatz überschrieben werden kann (Gesetz 2).
@@ -47,10 +64,12 @@ export const BAUTEILFARBEN = Object.freeze({
     IFCEARTHWORKSCUT:     Object.freeze({ farbe: 0x8a7145, deckkraft: 0.55, titel: 'Aushub' }),
     // Auftrag/Damm — gedämpftes Pastellgrün, solide. Zugeführtes Material.
     IFCEARTHWORKSFILL:    Object.freeze({ farbe: 0x79a06a, deckkraft: 1, titel: 'Auftrag' }),
-    // Gewachsenes und geformtes Gelände — warmes Hellbeige als ruhiger Bezug.
-    IFCGEOGRAPHICELEMENT: Object.freeze({ farbe: 0xa29a8c, deckkraft: 1, titel: 'Gelände' }),
-    // Der Sammeltyp des Erdbaus, wo ein Exporteur ihn benutzt.
-    IFCEARTHWORKSELEMENT: Object.freeze({ farbe: 0xa29a8c, deckkraft: 1, titel: 'Erdbau' }),
+    // Gewachsenes und geformtes Gelände — der Geländeton (siehe oben). Die
+    // Kopie im Eigenbau baut ihr Material aus genau diesem Eintrag.
+    IFCGEOGRAPHICELEMENT: GELAENDE_FARBE,
+    // Der Sammeltyp des Erdbaus, wo ein Exporteur ihn benutzt — ein
+    // gelieferter Erdkörper ist Bestand, kein Eingriff: im Ton des Geländes.
+    IFCEARTHWORKSELEMENT: Object.freeze({ ...GELAENDE_FARBE, titel: 'Erdbau' }),
 });
 
 /** Kategorie normieren — Grossschreibung, ohne Leerraum. */
@@ -65,6 +84,42 @@ function norm(kategorie) {
  */
 export function farbeFuer(kategorie, satz = BAUTEILFARBEN) {
     return satz?.[norm(kategorie)] ?? null;
+}
+
+/** Der Katalogeintrag, dessen Ton ein Gelände trägt — gleich, welchen Typ die Lieferung nennt. */
+export const GELAENDE_TYP = 'IFCGEOGRAPHICELEMENT';
+
+/**
+ * Welche Farbe trägt welches gelieferte Bauteil? (Abnahme 2026-09-12, K4)
+ *
+ * Das Gelände nach ROLLE, alles andere nach Typ: was die Geländeliste führt,
+ * bekommt den Geländeton — auch als IfcEarthworksFill, auch mit eigener
+ * IFC-Farbe (die ließ die CDE bisher stehen und fragte; dann wechselte das
+ * Gelände beim ersten Vorgang in das Grau der Kopie). Für alles andere gilt
+ * Fabios Regel weiter: eine eigene Farbe wird nicht still übermalt.
+ *
+ * @param {Array<{modelId, localId, kategorie?}>} orte
+ * @param {object} [o]
+ * @param {Set<string>} [o.gelaende]  Schlüssel `modelId|localId` der Geländeliste
+ * @param {Set<string>} [o.eigen]     Schlüssel der Bauteile mit eigener Farbe
+ * @param {object} [o.satz]           Farbsatz (Büro)
+ * @returns {Map<string, Array<{modelId, localId}>>} Katalogtyp → Orte
+ */
+export function faerbePlan(orte, { gelaende = new Set(), eigen = new Set(), satz = BAUTEILFARBEN } = {}) {
+    const plan = new Map();
+    const gesehen = new Set();
+    for (const o of orte ?? []) {
+        const k = `${o.modelId}|${o.localId}`;
+        if (gesehen.has(k)) continue;
+        gesehen.add(k);
+        const istGelaende = gelaende.has(k);
+        if (!istGelaende && eigen.has(k)) continue;
+        const typ = istGelaende ? GELAENDE_TYP : norm(o.kategorie);
+        if (!farbeFuer(typ, satz)) continue;
+        if (!plan.has(typ)) plan.set(typ, []);
+        plan.get(typ).push({ modelId: o.modelId, localId: Number(o.localId) });
+    }
+    return plan;
 }
 
 /** Die drei Kanäle einer Farbe als 0..1. */

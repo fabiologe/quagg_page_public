@@ -13,120 +13,23 @@
       <span class="cde-zoom-tipp">oder mit zwei Fingern auszoomen · Strg+0</span>
     </div>
 
-    <!-- ── Auftrags- und Satz-Leiste (Managen) ──
-         Der AUFTRAG steht fest (er kommt aus dem Ordner) und ist deshalb Text,
-         kein Wähler. Gewählt wird der MODELLSATZ — die Variante. -->
-    <div class="cde-bar">
-      <span class="cde-brand"><CdeIcon name="cde" :size="17" /> CDE</span>
-
-      <span v-if="cde.auftrag" class="cde-auftrag" :title="`Auftrag ${cde.auftrag.nummer} — kommt aus dem Projektordner`">
-        {{ cde.auftrag.nummer }} · {{ cde.auftrag.name }}
-      </span>
-
-      <template v-if="cde.auftrag">
-        <select class="cde-project-select" :value="cde.aktiverSatzId ?? ''" @change="onSatzChange"
-                title="Modellsatz — eine benannte Auswahl aus den Modellen des Auftrags">
-          <option value="">— ganzer Auftrag —</option>
-          <option v-for="s in cde.saetze" :key="s.id" :value="s.id">
-            {{ s.name }}<template v-if="s.zweck && s.zweck !== 'variante'"> ({{ s.zweck }})</template>
-          </option>
-        </select>
-
-        <button class="cde-btn" @click="onNeuerSatz" title="Modellsatz anlegen — übernimmt die aktuelle Auswahl">
-          <CdeIcon name="add" :size="14" /> Satz
-        </button>
-        <button class="cde-btn" :disabled="!cde.aktiverSatz" @click="onSatzUmbenennen" title="Modellsatz umbenennen">
-          <CdeIcon name="edit" :size="14" />
-        </button>
-        <button class="cde-btn" :disabled="!cde.aktiverSatz" @click="onSatzLoeschen"
-                title="Modellsatz löschen — die Modelle bleiben">
-          <CdeIcon name="delete" :size="14" />
-        </button>
-        <!-- Verbund: die Modelle des Satzes (und der CDE-Eigenbau) als EIN
-             geprüftes IFC4X3. Gerechnet wird auf dem Server — darum nur mit
-             Projektordner, nicht in der Browser-Ablage. -->
-        <button class="cde-btn" :disabled="!cde.aktiverSatz || !repo.remote" @click="verbundOeffnen"
-                :title="repo.remote
-                  ? 'Verbund — die Modelle des Satzes zu EINEM geprüften IFC4X3 zusammenführen'
-                  : 'Der Verbund braucht den Projektordner — CDE aus dem Projekt-Cockpit öffnen'">
-          <CdeIcon name="layers" :size="14" /> Verbund
-        </button>
-      </template>
-
-      <button
-        class="cde-btn"
-        :disabled="!cde.auftrag"
-        :class="{ active: showStammdaten }"
-        @click="showStammdaten = !showStammdaten; showRegister = false"
-        title="Auftrags-Stammdaten"
-      ><CdeIcon name="stammdaten" :size="14" /> Stammdaten</button>
-      <button
-        class="cde-btn"
-        :disabled="!cde.auftrag"
-        :class="{ active: showRegister }"
-        @click="showRegister = !showRegister; showStammdaten = false"
-        title="Dokument-Register (ISO-19650-Status)"
-      ><CdeIcon name="documents" :size="14" /> Dokumente <small v-if="cde.dokumente.length">({{ cde.dokumente.length }})</small></button>
-      <button
-        class="cde-btn"
-        :class="{ active: showBauformen }"
-        @click="oeffneBauformen"
-        title="Bauformen zuordnen — was bedeuten die Namen dieses Exporteurs?"
-      ><CdeIcon name="element" :size="14" /> Bauformen</button>
-
-      <span class="cde-sep" />
-
-      <!-- Ansichts-Umschalter (Sprint P): 3D-Modell ↔ gezeichneter Lageplan.
-           Datenquelle ist der Modus-Katalog, damit Umschalter, Befehlspalette
-           und Hilfe-Overlay nicht auseinanderlaufen. -->
-      <div class="cde-ansicht-schalter">
-        <button
-          v-for="m in ansichtsModi"
-          :key="m.id"
-          class="cde-ansicht-btn"
-          :class="{ active: ansicht.modus === m.id }"
-          :disabled="!modusMoeglich(m.id)"
-          :title="modusTitel(m)"
-          @click="ansicht.setzeModus(m.id)"
-        ><CdeIcon :name="m.icon" :size="13" /> {{ m.kurz }}</button>
-      </div>
-
-      <span class="cde-sep" />
-
-      <!-- Panel-Umschalter (Sprint U): eine Quelle — die Panel-Registry -->
-      <button
-        v-for="p in panels.defs"
-        :key="p.id"
-        class="cde-btn ghost"
-        :class="{ active: panels.isOpen(p.id) }"
-        :title="`${p.titel} ein-/ausblenden`"
-        @click="panels.toggle(p.id)"
-      ><CdeIcon :name="p.icon" :size="14" /></button>
-
-      <span class="cde-spacer" />
-
-      <!-- X2: Hilfe und der Ausgang wohnen in der Kopfzeile — die
-           That-Open-Zeile des Viewers ist entfallen. -->
-      <button class="cde-btn ghost" title="Tastenkürzel anzeigen [?]" @click="hilfeUmschalten">
-        <CdeIcon name="help" :size="14" />
-      </button>
-      <button class="cde-btn ghost" title="CDE verlassen — zurück zu den Tools" @click="router.push('/tools')">
-        <CdeIcon name="open" :size="14" />
-      </button>
-      <label class="cde-bearbeiter" title="Bearbeiter-Name — Autor für Issues, Kommentare und Statuswechsel">
-        <CdeIcon name="user" :size="14" />
-        <input
-          type="text"
-          :value="cde.bearbeiter"
-          placeholder="Bearbeiter…"
-          @change="cde.setBearbeiter($event.target.value)"
-        />
-      </label>
-    </div>
+    <!-- ── Die Kopfleiste (Kassensturz H1) ──
+         Projekt, Satz, Ansicht, Ausgeben und ein Menü für das Seltene. Die
+         Tafel-Knöpfe liegen in den Reiterleisten, das Register ist die Ansicht
+         „Dokumente". Rückfragen und Sperren bleiben hier in der Schale. -->
+    <CdeKopfleiste
+      @satz-waehlen="onSatzWaehlen"
+      @satz-neu="onNeuerSatz"
+      @satz-umbenennen="onSatzUmbenennen"
+      @satz-loeschen="onSatzLoeschen"
+      @ausgeben="verbundOeffnen"
+      @bauformen="oeffneBauformen"
+      @hilfe="hilfeUmschalten"
+    />
 
     <!-- Bericht der einmaligen Übernahme (Stufe 11.5). Er nennt Alteinträge
          ohne Datei beim Namen — die dürfen nicht in der Konsole enden. -->
-    <div v-if="migrationsBericht" class="cde-panel cde-migration">
+    <div v-if="migrationsBericht" class="cde-klapptafel cde-migration">
       <CdeIcon name="info" :size="14" />
       <span>{{ migrationsBericht }}</span>
       <button class="cde-btn sm" @click="migrationsBericht = ''" title="Ausblenden" aria-label="Ausblenden">
@@ -138,11 +41,11 @@
          Ohne `?projekt=` gibt es keinen Auftrag. Vorher stand hier eine
          Client-Projektliste, in der man sich Projekte ausdenken konnte, die es
          gar nicht gibt. Jetzt kommen sie aus dem Projektbestand. -->
-    <div v-if="!cde.auftrag" class="cde-panel cde-auftragswahl">
-      <h2>Auftrag wählen</h2>
+    <div v-if="!cde.auftrag" class="cde-klapptafel cde-auftragswahl">
+      <h2>Projekt wählen</h2>
       <p class="cde-hint">
-        Die CDE arbeitet im Ordner eines Auftrags: dort liegen die Modelle, das
-        Register und die Festlegungen. Ohne Auftrag lässt sich eine IFC nur
+        Die CDE arbeitet im Ordner eines Projekts: dort liegen die Modelle, das
+        Register und der Verlauf. Ohne Projekt lässt sich eine IFC nur
         ansehen — nichts wird abgelegt.
       </p>
       <p v-if="auftragsFehler" class="cde-fehler">{{ auftragsFehler }}</p>
@@ -155,27 +58,7 @@
           </button>
         </li>
       </ul>
-      <p v-else class="cde-hint">Keine Aufträge gefunden.</p>
-    </div>
-
-    <!-- ── Stammdaten-Panel ──
-         NUR ANZEIGE. Nummer, Bezeichnung und Bauherr gehören dem Projekt und
-         werden in der Akte gepflegt; sie hier bearbeitbar zu machen hiesse,
-         dieselbe Angabe an zwei Orten zu führen. Genau daran sind vorher schon
-         Register und Status auseinandergelaufen. -->
-    <div v-if="showStammdaten && cde.auftrag" class="cde-panel">
-      <div class="cde-panel-grid">
-        <label>Auftrags-Nr.<input type="text" :value="cde.auftrag.nummer" readonly /></label>
-        <label>Bezeichnung<input type="text" :value="cde.auftrag.name" readonly /></label>
-        <label>Bauherr / AG<input type="text" :value="cde.auftrag.bauherr || '—'" readonly /></label>
-        <label>Leistungsphase<input type="text" :value="cde.auftrag.lph || '—'" readonly /></label>
-      </div>
-      <div class="cde-panel-footer">
-        <span class="cde-hint">Aus dem Projektordner — geändert wird in der Projekt-Akte.</span>
-        <a class="cde-btn" :href="`/intern/projects?projekt=${cde.auftrag.id}`" target="_blank" rel="noopener">
-          <CdeIcon name="open" :size="14" /> Zur Akte
-        </a>
-      </div>
+      <p v-else class="cde-hint">Keine Projekte gefunden.</p>
     </div>
 
     <!-- ── Bauformen zuordnen (Stufe 9.3a) ──
@@ -183,7 +66,7 @@
          der Typ nichts, der NAME aber sehr wohl. Hier wird einmal erklärt, was
          er bedeutet; das gilt danach für jede Datei aus derselben Software.
          Die Maschine RÄT nicht, sie zeigt nur, was sie gefunden hat. -->
-    <div v-if="showBauformen" class="cde-panel">
+    <CdeDialog :offen="showBauformen" titel="Bauformen zuordnen" icon="bauform" breit @close="showBauformen = false">
       <p class="cde-hint">
         Was in diesem Modell wie heisst — und was es bedeutet. Die Zuordnung
         wird als Regel gespeichert und gilt für jede weitere Lieferung aus
@@ -254,142 +137,7 @@
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <!-- ── Dokument-Register ── -->
-    <div v-if="showRegister && cde.auftrag" class="cde-panel">
-      <div v-if="!cde.dokumente.length" class="cde-empty">
-        Noch keine Modelle registriert — beim Laden einer IFC-Datei mit aktivem
-        Auftrag wird sie automatisch als <b>WIP</b> aufgenommen.
-      </div>
-      <table v-else class="cde-doc-table">
-        <thead>
-          <tr>
-            <!-- Die Spalte steht IMMER, nur ihr Inhalt hängt am Satz — eine
-                 Zelle per `v-if` aus einer keyed `v-for`-Zeile zu nehmen ändert
-                 die Kinderzahl der Zeile zwischen zwei Durchläufen. Das war
-                 NICHT die Ursache der Renderabstürze (die lag in
-                 IfcStoreyNav), aber es bleibt die stabilere Form. -->
-            <th class="doc-satz" :title="cde.aktiverSatz ? `Im Modellsatz „${cde.aktiverSatz.name}“` : ''">
-              {{ cde.aktiverSatz ? 'Satz' : '' }}
-            </th>
-            <th>Dokument</th><th title="Woraus die CDE das Dokument erzeugt hat — hochgeladene haben keine Herkunft">Herkunft</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th title="Letzter Bericht des Prüftors: Syntax, Schema, Regeln, zweiter Motor">Prüfung</th><th>Aufgenommen</th><th></th>
-          </tr>
-        </thead>
-        <!-- Fahrplan Erdbau-Container (T3): Geliefertes und Erzeugtes getrennt — ein
-             Verbund stand bis hierher zwischen den Lieferungen wie eine von ihnen. -->
-        <tbody v-for="teil in registerAbschnitte" :key="teil.key">
-          <tr class="doc-abschnitt"><td colspan="9">{{ teil.titel }} · {{ teil.dokumente.length }}</td></tr>
-          <tr v-for="d in teil.dokumente" :key="d.sha256">
-            <!-- Stufe 11.4: Was liegt im aktiven Modellsatz? Der Haken ist die
-                 EINZIGE Stelle, an der sich Varianten unterscheiden — alles
-                 andere (Dateien, Register, Status) gehört dem Auftrag. -->
-            <td class="doc-satz">
-              <input
-                v-if="cde.aktiverSatz"
-                type="checkbox"
-                :checked="(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
-                :disabled="istAbgabeContainer(d) && !(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
-                :title="istAbgabeContainer(d)
-                  ? 'Ein Verbund ist ein Abgabe-Container, kein Fachmodell — er gehört in keinen Satz'
-                  : `In „${cde.aktiverSatz.name}“ führen`"
-                @change="satzUmschalten(d.sha256)"
-              />
-            </td>
-            <td class="doc-name" :title="d.sha256">{{ d.name }}</td>
-            <!-- Stufe 3 (Aushub-Fachmodell): ein erzeugtes Dokument sagt, woraus. -->
-            <td class="doc-herkunft">
-              <span v-if="herkunftJe.get(d.sha256)" class="cde-badge" :class="herkunftJe.get(d.sha256).veraltet ? 'warn' : 'mute'"
-                    :title="herkunftJe.get(d.sha256).titel">{{ herkunftJe.get(d.sha256).text }}</span>
-              <!-- Stufe 6 (Fahrplan Erdbau-Container): neu erzeugen — oder der Schritt davor. -->
-              <button v-if="d.herkunft?.art === 'erdbau' && repo.remote" class="cde-btn sm doc-regen"
-                      title="Erdbau neu erzeugen — prüft vorher Satz, geladene Revision und Journal"
-                      aria-label="Erdbau neu erzeugen" :disabled="verbundLaeuft || verbundStartet" @click="erdbauNeu(d)">
-                <CdeIcon name="refresh" :size="11" />
-              </button>
-              <div v-if="regenHinweis?.sha256 === d.sha256" class="doc-regen-hinweis" :class="{ ok: regenHinweis.ok }">
-                {{ regenHinweis.text }}
-              </div>
-            </td>
-            <!-- T4: eine Revision ohne Vorgänger im Register sagt es (R01 gelöscht oder nie da). -->
-            <td class="doc-rev" :class="{ 'rev-luecke': revisionOhneVorgaenger.has(d.sha256) }"
-                :title="revisionOhneVorgaenger.has(d.sha256)
-                  ? `Revision ${d.revision} — keine frühere Revision dieses Modells im Register (gelöscht oder nie hochgeladen)` : ''">
-              {{ d.revision }}<span v-if="revisionOhneVorgaenger.has(d.sha256)" aria-hidden="true">*</span>
-            </td>
-            <td class="doc-size">{{ fmtBytes(d.size) }}</td>
-            <td>
-              <!-- Lücke ④: das Feld bietet nur ISO-19650-Wege an — Gesperrtes
-                   bleibt sichtbar (grau, Grund im title), und eine Ablehnung
-                   springt zurück statt still stehen zu bleiben. -->
-              <select
-                class="doc-status"
-                :class="`iso-${d.status.toLowerCase()}`"
-                :value="d.status"
-                :title="statusTitle(d)"
-                @change="statusWechseln(d, $event)"
-              >
-                <option
-                  v-for="z in statusZiele(d.status, auth.rolle, undefined, { art: d.art, hatPruefung: !repo.remote || !!d.pruefung })"
-                  :key="z.status" :value="z.status"
-                  :disabled="!z.ok" :title="z.grund ?? ''"
-                >{{ z.status }}</option>
-              </select>
-              <span v-if="d.eignung" class="cde-badge mute doc-eignung"
-                    :title="`Eignung ${d.eignung}: ${EIGNUNG[d.eignung] ?? 'unbekannt'} (ISO 19650)`">{{ d.eignung }}</span>
-            </td>
-            <td class="doc-pruefung">
-              <!-- IFC-Konsistenz 4b: der letzte Bericht des Prüftors. Grün heißt
-                   „nichts Sperrendes", sonst steht die Zahl da; ohne Bericht bietet
-                   die Zeile das Prüfen an — WIP → Shared verlangt, dass er DA ist. -->
-              <template v-if="d.art === 'modell'">
-                <span v-if="pruefLaeufe[d.sha256]" class="cde-badge mute" :title="pruefLaeufe[d.sha256].schritt">
-                  <CdeIcon name="busy" :size="11" /> prüft
-                </span>
-                <button v-else-if="d.pruefung" class="cde-badge doc-bericht" :class="d.pruefung.verstoesse ? 'warn' : 'ok'"
-                        :title="pruefTitel(d.pruefung)" @click="berichtOeffnen(d)">
-                  <CdeIcon :name="d.pruefung.verstoesse ? 'status-error' : 'status-ok'" :size="11" />
-                  {{ d.pruefung.verstoesse ? `${d.pruefung.verstoesse} Verstoß` : 'konform' }}
-                </button>
-                <button v-if="repo.remote && !pruefLaeufe[d.sha256]" class="cde-btn sm"
-                        :title="d.pruefung ? 'Erneut durch das Prüftor' : 'Durch das Prüftor schicken'"
-                        :aria-label="d.pruefung ? 'Erneut prüfen' : 'Prüfen'"
-                        @click="pruefeDokument(d)">
-                  <CdeIcon :name="d.pruefung ? 'refresh' : 'check'" :size="11" />
-                </button>
-              </template>
-            </td>
-            <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
-            <td class="doc-actions">
-              <button class="cde-btn sm" @click="openDokument(d)" title="Modell öffnen" aria-label="Modell öffnen">
-                <CdeIcon name="open" :size="12" />
-              </button>
-              <button class="cde-btn sm danger" @click="cde.removeDokument(d.sha256)" title="Aus Register entfernen" aria-label="Aus Register entfernen">
-                <CdeIcon name="delete" :size="12" />
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p v-if="statusHinweis" class="doc-status-hinweis">
-        <CdeIcon name="warn" :size="12" /> {{ statusHinweis }}
-      </p>
-      <!-- Übergabepaket (Lücke ⑩): Transmittal aus Shared/Published-Dokumenten
-           mit Begleitschein — der formale ISO-19650-Ausgang. -->
-      <div class="doc-fuss">
-        <button
-          class="cde-btn ghost"
-          :disabled="!uebergabefaehige.length"
-          :title="uebergabefaehige.length
-            ? 'Übergabepaket (ZIP mit Begleitschein) aus Shared/Published-Dokumenten schnüren'
-            : 'Erst ein Dokument auf Shared oder Published setzen — WIP wird nicht übergeben'"
-          @click="transmittalOeffnen"
-        ><CdeIcon name="send" :size="13" /> Übergabepaket…</button>
-        <span v-if="transmittalProtokoll.length" class="doc-fuss-info">
-          {{ transmittalProtokoll.length }} Übergabe{{ transmittalProtokoll.length === 1 ? '' : 'n' }} protokolliert
-        </span>
-      </div>
-    </div>
+    </CdeDialog>
 
     <!-- ── Arbeitsfläche: Leiste | Viewer | Leiste ──
          Panels docken an und verkleinern den Viewer, statt ihn zu verdecken —
@@ -431,7 +179,7 @@
             ref="viewerRef"
             :propertiesOpen="panels.isOpen('eigenschaften')"
             @close="onClose"
-            @open-properties="panels.open('eigenschaften')"
+            @open-properties="panels.open('bauteil')"
             @model-loaded="onModelLoaded"
           />
         </div>
@@ -449,23 +197,13 @@
             :optionen="planOptionen"
             :titleBlock="planSchriftfeld"
             :logo="plan.logo"
-            @zeichnen-beendet="zeichenstandAbgleichen"
             @werkzeug-beendet="planWerkzeugBeendet"
           />
-          <!-- Werkzeuge des Lageplans (X3): VIER GRUPPEN statt einundzwanzig
-               Knöpfen — Zeichnen, Setzen, Stift als Anker mit Popover
-               (das PdfToolbar-Muster), Bemaßen direkt. Die Listen kommen
-               weiter aus dem Katalog; ein Werkzeug, das dort fehlt, kann
-               hier nicht stehen. -->
+          <!-- Werkzeuge des Lageplans — des BLATTS (Abnahme 2026-09-12, E8):
+               Setzen und Stift als Anker mit Popover (das PdfToolbar-Muster),
+               Bemaßen direkt. Gezeichnet wird im 3D (Tafel „Bauteil“ →
+               Erzeugen), nicht hier. -->
           <div class="plan-werkzeuge">
-            <button
-              class="plan-wz"
-              :class="{ aktiv: zeichenWerkzeug || planPopover === 'zeichnen' }"
-              :disabled="!bearbeitung.modusAn"
-              :title="bearbeitung.modusAn ? 'Zeichnen — Bauteile anlegen und umlegen' : 'Zeichnen — Bearbeiten ist aus (E schaltet ein)'"
-              @click="planPopoverUm('zeichnen')"
-            ><CdeIcon name="add" :size="14" /></button>
-
             <button
               class="plan-wz"
               :class="{ aktiv: planModus || planPopover === 'setzen' }"
@@ -498,42 +236,7 @@
               <span class="plan-wz-zahl">{{ ifc.planDimensions.length }}</span>
             </button>
 
-            <!-- ── Die Popover der drei Gruppen ── -->
-            <div v-if="planPopover === 'zeichnen'" class="plan-popover">
-              <button
-                v-for="z in ZEICHEN_WERKZEUGE"
-                :key="z.id"
-                class="pp-zeile"
-                :class="{ aktiv: zeichenWerkzeug === z.id }"
-                :title="`${z.titel} — Punkte klicken, Doppelklick schliesst ab [Esc bricht ab]`"
-                @click="zeichenWerkzeugSetzen(z.id); planPopover = null"
-              ><CdeIcon :name="z.icon" :size="13" /> {{ z.titel }}</button>
-
-              <!-- Bauteilbibliothek (Lücke ⑨): Vorlagen = Rezept + vorbelegte
-                   Werte. Projekt schlägt Büro schlägt eingebauten Satz. -->
-              <div v-if="vorlagen.length" class="pp-trenner">Vorlagen</div>
-              <div v-for="v in vorlagen" :key="v.id" class="pp-vorlage">
-                <button
-                  class="pp-zeile"
-                  :title="`${v.name} — ${v.herkunft === 'eingebaut' ? 'eingebaute Vorlage' : v.herkunft === 'buero' ? 'Büro-Vorlage' : 'Projekt-Vorlage'}`"
-                  @click="vorlageZeichnen(v)"
-                ><CdeIcon :name="v.rezept === 'schacht' ? 'schacht' : v.rezept === 'rohr' ? 'laengsschnitt' : 'route'" :size="13" /> {{ v.name }}</button>
-                <button
-                  v-if="v.herkunft !== 'eingebaut'"
-                  class="pp-vorlage-weg"
-                  :title="`Vorlage löschen (${v.herkunft === 'buero' ? 'Büro' : 'Projekt'})`"
-                  aria-label="Vorlage löschen"
-                  @click="vorlageEntfernen(v)"
-                ><CdeIcon name="delete" :size="11" /></button>
-              </div>
-              <button
-                v-if="bearbeitung.scharf?.rezept"
-                class="pp-zeile pp-sichern"
-                title="Die Werte des scharfen Zeichenwerkzeugs als Vorlage sichern (ohne Bezeichnung und Höhe)"
-                @click="vorlageSichern"
-              ><CdeIcon name="save" :size="13" /> Als Vorlage sichern…</button>
-            </div>
-
+            <!-- ── Die Popover der zwei Gruppen ── -->
             <div v-if="planPopover === 'setzen'" class="plan-popover">
               <button class="pp-zeile" :class="{ aktiv: planModus === 'text' }"
                       @click="planModusSetzen('text'); planPopover = null">
@@ -579,6 +282,146 @@
             </div>
           </div>
         </div>
+        <!-- Die Ansicht „Dokumente" (Kassensturz E2): das Register füllt die
+             Mitte, statt als Klapptafel das Bild nach unten zu schieben. -->
+        <div v-if="ansicht.modus === 'dokumente'" class="host-lage cde-dokumente">
+          <div class="dok-kopf">
+            <strong>Dokumente</strong>
+            <span>{{ cde.dokumente.length }} im Projekt<template v-if="cde.aktiverSatz"> · {{ satzAnzahl }} im Satz „{{ cde.aktiverSatz.name }}“</template></span>
+          </div>
+          <div v-if="!cde.dokumente.length" class="cde-empty">
+            Noch keine Dokumente im Projekt — eine geladene IFC-Datei kommt von
+            selbst als <b>WIP</b> hinzu.
+          </div>
+          <table v-else class="cde-doc-table">
+            <thead>
+              <tr>
+                <!-- Die Spalte steht IMMER, nur ihr Inhalt hängt am Satz — eine
+                     Zelle per `v-if` aus einer keyed `v-for`-Zeile zu nehmen ändert
+                     die Kinderzahl der Zeile zwischen zwei Durchläufen. Das war
+                     NICHT die Ursache der Renderabstürze (die lag in
+                     IfcStoreyNav), aber es bleibt die stabilere Form. -->
+                <th class="doc-satz" :title="cde.aktiverSatz ? `Im Satz „${cde.aktiverSatz.name}“` : ''">
+                  {{ cde.aktiverSatz ? 'Satz' : '' }}
+                </th>
+                <th>Dokument</th><th title="Woraus die CDE das Dokument erzeugt hat — hochgeladene haben keine Herkunft">Herkunft</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th title="Letzter Prüfbericht: Syntax, Schema, Regeln, zweiter Motor">Prüfung</th><th>Aufgenommen</th><th></th>
+              </tr>
+            </thead>
+            <!-- Fahrplan Erdbau-Container (T3): Geliefertes und Erzeugtes getrennt — ein
+                 Verbund stand bis hierher zwischen den Lieferungen wie eine von ihnen. -->
+            <tbody v-for="teil in registerAbschnitte" :key="teil.key">
+              <tr class="doc-abschnitt"><td colspan="9">{{ teil.titel }} · {{ teil.dokumente.length }}</td></tr>
+              <tr v-for="d in teil.dokumente" :key="d.sha256">
+                <!-- Stufe 11.4: Was liegt im aktiven Modellsatz? Der Haken ist die
+                     EINZIGE Stelle, an der sich Varianten unterscheiden — alles
+                     andere (Dateien, Register, Status) gehört dem Auftrag. -->
+                <td class="doc-satz">
+                  <input
+                    v-if="cde.aktiverSatz"
+                    type="checkbox"
+                    :checked="(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
+                    :disabled="istAbgabeContainer(d) && !(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
+                    :title="istAbgabeContainer(d)
+                      ? 'Ein Verbund ist ein Abgabe-Container, kein Fachmodell — er gehört in keinen Satz'
+                      : `In „${cde.aktiverSatz.name}“ führen`"
+                    @change="satzUmschalten(d.sha256)"
+                  />
+                </td>
+                <td class="doc-name" :title="d.sha256">{{ d.name }}</td>
+                <!-- Stufe 3 (Aushub-Fachmodell): ein erzeugtes Dokument sagt, woraus. -->
+                <td class="doc-herkunft">
+                  <span v-if="herkunftJe.get(d.sha256)" class="cde-badge" :class="herkunftJe.get(d.sha256).veraltet ? 'warn' : 'mute'"
+                        :title="herkunftJe.get(d.sha256).titel">{{ herkunftJe.get(d.sha256).text }}</span>
+                  <!-- Stufe 6 (Fahrplan Erdbau-Container): neu erzeugen — oder der Schritt davor. -->
+                  <button v-if="d.herkunft?.art === 'erdbau' && repo.remote" class="cde-btn sm doc-regen"
+                          title="Neu ausgeben — prüft vorher Satz, geladene Revision und Verlauf"
+                          aria-label="Neu ausgeben" :disabled="verbundLaeuft || verbundStartet" @click="erdbauNeu(d)">
+                    <CdeIcon name="refresh" :size="11" />
+                  </button>
+                  <div v-if="regenHinweis?.sha256 === d.sha256" class="doc-regen-hinweis" :class="{ ok: regenHinweis.ok }">
+                    {{ regenHinweis.text }}
+                  </div>
+                </td>
+                <!-- T4: eine Revision ohne Vorgänger im Register sagt es (R01 gelöscht oder nie da). -->
+                <td class="doc-rev" :class="{ 'rev-luecke': revisionOhneVorgaenger.has(d.sha256) }"
+                    :title="revisionOhneVorgaenger.has(d.sha256)
+                      ? `Revision ${d.revision} — keine frühere Revision dieses Modells im Register (gelöscht oder nie hochgeladen)` : ''">
+                  {{ d.revision }}<span v-if="revisionOhneVorgaenger.has(d.sha256)" aria-hidden="true">*</span>
+                </td>
+                <td class="doc-size">{{ fmtBytes(d.size) }}</td>
+                <td>
+                  <!-- Lücke ④: das Feld bietet nur ISO-19650-Wege an — Gesperrtes
+                       bleibt sichtbar (grau, Grund im title), und eine Ablehnung
+                       springt zurück statt still stehen zu bleiben. -->
+                  <select
+                    class="doc-status"
+                    :class="`iso-${d.status.toLowerCase()}`"
+                    :value="d.status"
+                    :title="statusTitle(d)"
+                    @focus="zeigeSperrgrund(d)"
+                    @change="statusWechseln(d, $event)"
+                  >
+                    <option
+                      v-for="z in statusZiele(d.status, auth.rolle, undefined, { art: d.art, hatPruefung: !repo.remote || !!d.pruefung })"
+                      :key="z.status" :value="z.status"
+                      :disabled="!z.ok" :title="z.grund ?? ''"
+                    >{{ z.status }}</option>
+                  </select>
+                  <span v-if="d.eignung" class="cde-badge mute doc-eignung"
+                        :title="`Eignung ${d.eignung}: ${EIGNUNG[d.eignung] ?? 'unbekannt'} (ISO 19650)`">{{ d.eignung }}</span>
+                </td>
+                <td class="doc-pruefung">
+                  <!-- IFC-Konsistenz 4b: der letzte Bericht des Prüftors. Grün heißt
+                       „nichts Sperrendes", sonst steht die Zahl da; ohne Bericht bietet
+                       die Zeile das Prüfen an — WIP → Shared verlangt, dass er DA ist. -->
+                  <template v-if="d.art === 'modell'">
+                    <span v-if="pruefLaeufe[d.sha256]" class="cde-badge mute" :title="pruefLaeufe[d.sha256].schritt">
+                      <CdeIcon name="busy" :size="11" /> prüft
+                    </span>
+                    <button v-else-if="d.pruefung" class="cde-badge doc-bericht" :class="d.pruefung.verstoesse ? 'warn' : 'ok'"
+                            :title="pruefTitel(d.pruefung)" @click="berichtOeffnen(d)">
+                      <CdeIcon :name="d.pruefung.verstoesse ? 'status-error' : 'status-ok'" :size="11" />
+                      {{ d.pruefung.verstoesse ? `${d.pruefung.verstoesse} Verstoß` : 'konform' }}
+                    </button>
+                    <button v-if="repo.remote && !pruefLaeufe[d.sha256]" class="cde-btn sm"
+                            :title="d.pruefung ? 'Erneut prüfen' : 'Prüfen'"
+                            :aria-label="d.pruefung ? 'Erneut prüfen' : 'Prüfen'"
+                            @click="pruefeDokument(d)">
+                      <CdeIcon v-if="d.pruefung" name="refresh" :size="11" /><template v-else>Prüfen</template>
+                    </button>
+                  </template>
+                </td>
+                <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
+                <td class="doc-actions">
+                  <button class="cde-btn sm" @click="openDokument(d)" title="Modell öffnen" aria-label="Modell öffnen">
+                    <CdeIcon name="open" :size="12" />
+                  </button>
+                  <button class="cde-btn sm danger" @click="entferneDokument(d)" title="Aus dem Projekt nehmen" aria-label="Aus dem Projekt nehmen">
+                    <CdeIcon name="delete" :size="12" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="statusHinweis" class="doc-status-hinweis">
+            <CdeIcon name="warn" :size="12" /> {{ statusHinweis }}
+          </p>
+          <!-- Übergabepaket (Lücke ⑩): Transmittal aus Shared/Published-Dokumenten
+               mit Begleitschein — der formale ISO-19650-Ausgang. -->
+          <div class="doc-fuss">
+            <button
+              class="cde-btn ghost"
+              :disabled="!uebergabefaehige.length"
+              :title="uebergabefaehige.length
+                ? 'Übergabepaket (ZIP mit Begleitschein) aus Shared/Published-Dokumenten schnüren'
+                : 'Erst ein Dokument auf Shared oder Published setzen — WIP wird nicht übergeben'"
+              @click="transmittalOeffnen"
+            ><CdeIcon name="send" :size="13" /> Übergabepaket…</button>
+            <span v-if="transmittalProtokoll.length" class="doc-fuss-info">
+              {{ transmittalProtokoll.length }} Übergabe{{ transmittalProtokoll.length === 1 ? '' : 'n' }} protokolliert
+            </span>
+          </div>
+        </div>
       </div>
 
       <CdePanel
@@ -590,10 +433,12 @@
         @close="panels.close(panels.aktivRechts.id)"
         @resize="(w) => panels.setBreite(panels.aktivRechts.id, w)"
       >
-        <IfcSemanticWindow  v-if="panels.isOpen('eigenschaften')" />
+        <!-- Kassensturz H2: EINE Tafel für das gewählte Bauteil — Werkzeuge
+             oben, Merkmale darunter (vorher „Toolbox“ und „Eigenschaften“,
+             die sich gegenseitig aus der Leiste verdrängten). -->
+        <CdeToolbox v-if="panels.isOpen('bauteil')" />
         <IfcPlanningCockpit v-else-if="panels.isOpen('cockpit')" />
         <IfcPlanPanel v-else-if="panels.isOpen('plan')" @stile-oeffnen="stilEditorOffen = true" />
-        <CdeToolbox v-else-if="panels.isOpen('toolbox')" />
         <IfcAenderungenTab v-else-if="panels.isOpen('verlauf')" />
         <IfcAnnotations
           v-else-if="panels.isOpen('issues')"
@@ -604,6 +449,8 @@
           @toggle-mode="onToggleIssueMode"
         />
       </CdePanel>
+      <!-- EINE Reiterleiste rechts (Abnahme E7) — die Struktur öffnet links. -->
+      <CdeReiterleiste />
     </div>
 
     <IfcVectorStyleEditor v-if="stilEditorOffen" @close="stilEditorOffen = false" />
@@ -647,13 +494,12 @@
     <!-- Verbund (2026-09-10): Modellsatz → EIN geprüftes IFC4X3, im Register und
          zum Herunterladen. Gerechnet wird auf dem Server (Unterprozess); hier
          wird angestoßen, abgeholt und der Prüfbericht gezeigt. -->
-    <CdeDialog :offen="verbundOffen" :titel="verbundModus === 'erdbau' ? 'Erdbau-Dokument' : 'Verbundmodell'" icon="layers" @close="verbundOffen = false">
+    <CdeDialog :offen="verbundOffen" titel="Ausgeben" icon="ausgeben" @close="verbundOffen = false">
       <template v-if="!verbundLauf">
         <p class="tm-satz">
-          Die Modelle des Satzes <b>{{ cde.aktiverSatz?.name }}</b> werden zu einer
-          IFC4X3-Datei zusammengeführt — Schema, Einheiten und Bezugssystem
-          vereinheitlicht, dann geprüft. Nur ein bestandener Verbund kommt als
-          neues Dokument (WIP) ins Register.
+          Aus dem Satz <b>{{ cde.aktiverSatz?.name }}</b> entsteht eine geprüfte
+          IFC4X3-Datei. Nur was die Prüfung besteht, kommt als neues Dokument
+          (WIP) ins Register.
         </p>
         <div v-for="d in verbundModelle" :key="d.sha256" class="tm-zeile">
           <span class="tm-name">{{ d.datei ?? d.name }}</span>
@@ -664,7 +510,7 @@
         </div>
         <p v-if="!verbundModelle.length" class="tm-satz">Der Satz enthält kein Modell.</p>
         <p v-for="v in verbundErdbauVeraltet" :key="`alt-${v.erdbau}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> {{ v.erdbau }} wurde aus {{ v.quelle }} gebaut — {{ v.neu }} ist neuer: Erdbau neu registrieren
+          <CdeIcon name="warn" :size="12" /> {{ v.erdbau }} wurde aus {{ v.quelle }} gebaut — {{ v.neu }} ist neuer: das Erdbau-Dokument neu ausgeben
         </p>
         <!-- Stufe 3: der Erdbau kommt ENTWEDER aus einem Dokument des Satzes ODER
              live aus der CDE — beides zugleich stellte den Aushub doppelt in den
@@ -676,18 +522,18 @@
         </label>
         <!-- Fahrplan Erdbau-Container, Stufe 1: tote Quellen und doppelte Anzeigen — BEVOR es läuft. -->
         <p v-for="t in verbundDiagnose.unloesbar" :key="`tot-${t.globalId}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> {{ t.name || t.globalId }} hängt an {{ t.quelle }} — weder im Journal noch in seiner Geschichte: ausblenden oder neu ableiten
+          <CdeIcon name="warn" :size="12" /> {{ t.name || t.globalId }} hängt an {{ t.quelle }}, das im Verlauf nicht mehr steht: ausblenden oder neu ableiten
         </p>
         <p v-if="verbundToteGeheilt.length" class="tm-satz">
-          <CdeIcon name="info" :size="12" /> {{ verbundToteGeheilt.length }} Einträge nennen eine zurückgenommene Anzeige als Gelände — gebaut wird am Ur-Gelände {{ verbundToteGeheilt[0].ur }}
+          <CdeIcon name="info" :size="12" /> {{ verbundToteGeheilt.length }} Schritte nennen ein zurückgenommenes Gelände — gebaut wird am gelieferten Gelände {{ verbundToteGeheilt[0].ur }}
         </p>
         <p v-if="verbundDiagnose.verdraengteAnzeigen.length" class="tm-satz">
-          <CdeIcon name="info" :size="12" /> {{ verbundDiagnose.verdraengteAnzeigen.length }} doppelte Anzeige(n) desselben Geländes werden nicht gebaut
+          <CdeIcon name="info" :size="12" /> {{ verbundDiagnose.verdraengteAnzeigen.length }} × dasselbe Gelände doppelt — es wird nur einmal gebaut
         </p>
         <p class="tm-satz">
-          <b>Erdbau registrieren</b> legt den Erdbau der CDE als eigenes Dokument ab: das
-          gelieferte Gelände unverändert, je Vorgang Aushub und Auftrag mit Mengen —
-          geprüft wie jeder Verbund, als „Erdbau_{{ cde.aktiverSatz?.name }}_R…“.
+          <b>Erdbau-Dokument</b>: das gelieferte Gelände unverändert, je Vorgang
+          Aushub und Auftrag mit Mengen, als „Erdbau_{{ cde.aktiverSatz?.name }}_R…“.
+          <b>Verbund</b>: alle Modelle des Satzes in einer Datei.
         </p>
       </template>
       <template v-else>
@@ -713,7 +559,7 @@
           <CdeIcon name="warn" :size="12" /> Aushub ohne sein Gelände ({{ w }}) — das gelieferte Gelände in den Satz aufnehmen
         </p>
         <p v-for="w in verbundOhneWirt" :key="`ohne-${w}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> Aushub {{ w }} nennt kein Gelände — im Journal fehlt seine Quelle
+          <CdeIcon name="warn" :size="12" /> Aushub {{ w }} nennt kein Gelände — im Verlauf fehlt seine Quelle
         </p>
         <p v-for="w in verbundLauf.weggelassen || []" :key="`weg-${w.datei}`" class="tm-satz">
           <CdeIcon name="info" :size="12" /> {{ w.datei }} — {{ w.grund }}
@@ -738,15 +584,15 @@
       <template #fuss>
         <button class="cde-btn ghost" @click="verbundOffen = false">{{ verbundLauf ? 'Schließen' : 'Abbrechen' }}</button>
         <button v-if="!verbundLauf" class="cde-btn" :disabled="verbundStartet || verbundDiagnose.unloesbar.length > 0"
-                title="Den Erdbau der CDE als eigenes, geprüftes Dokument ins Register — Erdbau_<Satz>_R<nn>.ifc"
+                title="Den Eigenbau als geprüftes Erdbau-Dokument ins Register — Erdbau_<Satz>_R<nn>.ifc"
                 @click="verbundStarten('erdbau')">
-          <CdeIcon name="terrain" :size="13" /> Erdbau registrieren
+          <CdeIcon name="terrain" :size="13" /> Erdbau-Dokument ausgeben
         </button>
         <button v-if="!verbundLauf" class="cde-btn primary"
                 :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)
                            || (verbundEigenbau && !verbundErdbauImSatz.length && verbundDiagnose.unloesbar.length > 0)"
                 @click="verbundStarten('verbund')">
-          {{ verbundStartet ? 'Startet …' : 'Verbund erzeugen' }}
+          {{ verbundStartet ? 'Startet …' : 'Verbund ausgeben' }}
         </button>
         <button v-else-if="verbundLauf.dokument" class="cde-btn primary" @click="verbundHerunterladen">
           <CdeIcon name="download" :size="13" /> Herunterladen
@@ -773,10 +619,11 @@ import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import LaengsschnittCanvas from '../components/LaengsschnittCanvas.vue';
 import CommitDialog from '../components/CommitDialog.vue';
 import CdeDialog from '../components/ui/CdeDialog.vue';
+import CdeKopfleiste from '../components/CdeKopfleiste.vue';
+import CdeReiterleiste from '../components/CdeReiterleiste.vue';
 import PruefberichtPanel from '../components/PruefberichtPanel.vue';
 import { ampel, istOffen } from '../services/Pruefbericht.js';
 import { REPO_KEY_TRANSMITTALS, UEBERGABEFAEHIG, baueSchein, paketName, protokollEintrag, pruefeAuswahl } from '../services/Transmittal.js';
-import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
 import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
 import IfcPlanPanel from '../components/IfcPlanPanel.vue';
@@ -788,8 +635,8 @@ import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { useZoomSperre } from '../composables/useZoomSperre.js';
+import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { EIGNUNG, statusZiele } from '../services/StatusWorkflow.js';
-import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { useAuthStore } from '@/stores/useAuthStore.js';
 import { usePlan } from '../stores/usePlan.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
@@ -802,14 +649,13 @@ import {
   teileRegister,
 } from '../services/Herkunft.js';
 import { fehlendeAusJournal } from '../services/GlobalIdAbbildung.js';
-import { eigenbauDiagnose } from '../services/EigenbauDiagnose.js';
+import { aushubFehlt, eigenbauDiagnose } from '../services/EigenbauDiagnose.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { verdeckteAus } from '../services/CdeAchsen.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
-import { BEARBEITUNGEN, eingabeArt } from '../services/Bearbeitungen.js';
 import { MERKMALSFELDER, abdeckung } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
@@ -842,6 +688,12 @@ if (Number.isInteger(cockpitProjektId) && cockpitProjektId > 0) {
 // den eingebauten Standard.
 repo.setBueroBackend(new BueroBackend());
 const cde = useCdeStore();
+// Heller Modus (H6): der Modus liegt auf <html data-cde-modus>, damit auch
+// teleportierte Dialoge ihn erben — gesetzt, bevor die Kinder montieren
+// (der Viewer liest die Szenenfarben gleich nach dem Start).
+const farbmodus = useFarbmodus();
+farbmodus.spiegeln();
+onBeforeUnmount(() => farbmodus.abraeumen());
 
 /**
  * Zoom-Sperre und Ausweg (2026-09-03). Die Sperre wirkt, solange die CDE
@@ -870,10 +722,8 @@ const cmds = usePaletteCommands();
 const viewerRef = ref(null);
 const planRef = ref(null);
 const strukturRef = ref(null);
-const showStammdaten = ref(false);
 /** Linienstil-Editor. Sein einziger Einhängepunkt war bisher das PDF-Modal. */
 const stilEditorOffen = ref(false);
-const showRegister = ref(false);
 const showBauformen = ref(false);
 /** Die Namen des geladenen Modells samt bereits zugeordneter Bauform. */
 const bauformVorschlaege = ref([]);
@@ -935,12 +785,10 @@ function setzeBauformFeld(feld) {
 }
 
 function oeffneBauformen() {
-  showBauformen.value = !showBauformen.value;
-  showStammdaten.value = false;
-  showRegister.value = false;
+  showBauformen.value = true;
   // Frisch berechnen: der Suchindex kommt erst nach dem Laden, und eine
   // Zuordnung ändert die Spalte „Bauform" sofort.
-  if (showBauformen.value) frischeVorschlaege();
+  frischeVorschlaege();
 }
 
 async function setzeBauform(v, bauform) {
@@ -958,12 +806,6 @@ async function setzeBauform(v, bauform) {
 
 const ansichtsModi = modusListe();
 
-function modusMoeglich(id) { return istVerfuegbar(id, ansicht.stand); }
-function modusTitel(m) {
-  return modusMoeglich(m.id)
-    ? `${m.titel} (Taste ${m.taste})`
-    : `${m.titel} — erst mit geladenem Modell verfügbar`;
-}
 
 // Der Modellstand entscheidet, welche Modi bedienbar sind. Ohne Modell wäre
 // der Lageplan ein weißes Blatt — also sperren statt hineinlaufen lassen.
@@ -972,8 +814,23 @@ watch(() => ifc.modelList?.length ?? 0, (n) => {
   // die Zählung noch nicht gelaufen. Ohne Modell gibt es auch keine Achsen.
   ansicht.setzeStand({ hatModell: n > 0 });
   if (!n) ansicht.setzeStand({ hatAchsen: false });
-  if (!n) ansicht.setzeModus('3d');
+  // Nur zurück auf 3D, wenn der Modus ohne Modell nicht geht — die Ansicht
+  // „Dokumente" braucht keins.
+  if (!istVerfuegbar(ansicht.modus, ansicht.stand)) ansicht.setzeModus('3d');
 }, { immediate: true });
+
+// Die Ansicht „Dokumente" gibt es nur mit Projekt — ohne gibt es kein Register.
+watch(() => !!cde.auftrag, (ja) => {
+  ansicht.setzeStand({ hatProjekt: ja });
+  if (!istVerfuegbar(ansicht.modus, ansicht.stand)) ansicht.setzeModus('3d');
+}, { immediate: true });
+
+// Kassensturz H2: der Planinhalt gehört zum Lageplan — er geht mit ihm auf
+// und mit ihm zu. Eine andere offene Tafel verdrängt er nicht.
+watch(() => ansicht.modus, (neu, alt) => {
+  if (neu === 'lageplan' && !panels.aktivRechts) panels.open('plan');
+  if (alt === 'lageplan' && neu !== 'lageplan' && panels.isOpen('plan')) panels.close('plan');
+});
 
 /**
  * Zeichenoptionen des Plans. Vorläufig die Standardausstattung — sobald das
@@ -1088,89 +945,14 @@ function planModusSetzen(m) {
   else bearbeitung.gebeWerkzeugFrei('plan:setzen');
 }
 
-// ── Zeichnen im Plan (Stufe 9.4) ───────────────────────────────────────────
 /**
- * Die Zeichenwerkzeuge — abgeleitet aus dem Katalog, nicht hier aufgezählt.
- *
- * Erzeugen hat kein Subjekt, deshalb steht es in der WERKZEUGLEISTE und nicht
- * im Kontextmenü am Bauteil. Genau diese Trennung führt `GRUPPEN[...].einstieg`
- * im Katalog, und `passende()` hält sich daran.
+ * X3: welches Gruppen-Popover der Plan-Leiste offen ist (Setzen, Stift).
+ * Das Zeichnen ist ins 3D gezogen (Abnahme 2026-09-12, E8) — mit ihm die
+ * Bauteilbibliothek, sie wohnt jetzt in der Tafel „Bauteil“.
  */
-/**
- * Was im Lageplan gezeichnet werden kann.
- *
- * Nicht mehr „die Gruppe Erzeugen", sondern „alles, dessen EINGABE ein
- * gezeichneter Zug ist". „Trasse ändern" gehört zur Gruppe Lage und wird
- * trotzdem hier bedient — die Gruppe sagt, wo etwas angeboten wird, die
- * Eingabeart, womit es gefüttert wird.
- *
- * Werkzeuge, die ein Bauteil brauchen, erscheinen erst, wenn eines gewählt
- * ist. Ein Knopf, der nur eine Absage erzeugt, ist ein toter Knopf.
- */
-const ZEICHEN_WERKZEUGE = computed(() => BEARBEITUNGEN.filter((b) => {
-  if (!['zug', 'umriss'].includes(eingabeArt(b))) return false;
-  return b.gruppe === 'erzeugen' || !!bearbeitung.bauteil;
-}));
-const zeichenWerkzeug = ref(null);
-
-/** X3: welches Gruppen-Popover der Plan-Leiste offen ist. */
 const planPopover = ref(null);
 function planPopoverUm(gruppe) {
   planPopover.value = planPopover.value === gruppe ? null : gruppe;
-  // Die Bibliothek lädt beim Aufklappen — nicht beim Start: sie hängt am
-  // Repo, und das Backend steht erst nach der Auftragswahl fest.
-  if (planPopover.value === 'zeichnen') vorlagenLaden();
-}
-
-// ── Bauteilbibliothek (Lücke ⑨ / Stufe 9.8) ────────────────────────────────
-const vorlagen = ref([]);
-async function vorlagenLaden() {
-  try { vorlagen.value = await ladeVorlagen(repo); }
-  catch (fehler) { console.warn('cde: vorlagen laden', fehler?.message ?? fehler); }
-}
-
-/**
- * Eine Vorlage zeichnen: dasselbe Werkzeug wie der rohe Rezept-Knopf, nur
- * mit VORBELEGTEN Werten — der eigentliche Zweck der Bibliothek: nicht
- * jedes Mal DN 1000 tippen.
- */
-function vorlageZeichnen(v) {
-  if (!bearbeitung.modusAn) return;
-  const werkzeugId = `${v.rezept}-zeichnen`;
-  // Erst den eigenen Slot freigeben (Teil XVI): `bearbeitung.starte` ruft
-  // sonst den Ausschalter des Vorgängers — und der ist dieses Werkzeug
-  // selbst, das das gerade Gestartete wieder abräumte.
-  bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
-  const ok = planRef.value?.zeichneMit?.(werkzeugId);
-  zeichenWerkzeug.value = ok ? werkzeugId : null;
-  if (!ok) return;
-  for (const [feld, wert] of Object.entries(v.vorgaben ?? {})) {
-    bearbeitung.setzeWert(feld, wert);
-  }
-  bearbeitung.belegeWerkzeug('plan:zeichnen', _zeichnenAus);
-  planPopover.value = null;
-}
-
-/**
- * Die WERTE des scharfen Zeichenwerkzeugs als Vorlage sichern. Bezeichnung
- * und Höhe bleiben draußen — sie gehören zum einzelnen Bauteil, nicht zur
- * Vorlage (ein „Schacht DN 1000" hat keine feste Sohlhöhe).
- */
-async function vorlageSichern() {
-  const scharf = bearbeitung.scharf;
-  if (!scharf?.rezept) return;
-  const name = prompt('Name der Vorlage:', scharf.titel?.replace(' zeichnen', '') ?? '');
-  if (!name?.trim()) return;
-  const vorgaben = {};
-  for (const [feld, wert] of Object.entries(bearbeitung.werte ?? {})) {
-    if (feld === 'name' || feld === 'hoehe') continue;
-    if (['string', 'number', 'boolean'].includes(typeof wert) && wert !== '') vorgaben[feld] = wert;
-  }
-  const ebene = repo.buero && confirm('Für ALLE Projekte sichern (Büro-Ebene)?\n„Abbrechen" sichert nur in diesem Auftrag.')
-    ? 'buero' : 'projekt';
-  const r = await speichereVorlage(repo, { name: name.trim(), rezept: scharf.rezept, vorgaben }, { ebene });
-  if (!r.ok) console.warn('cde: vorlage sichern', r.grund);
-  await vorlagenLaden();
 }
 
 // ── Übergabepakete (Lücke ⑩) ────────────────────────────────────────────────
@@ -1353,10 +1135,18 @@ async function verbundStarten(modus = 'verbund') {
       verbundMeldung.value = `CDE-Eigenbau nicht dabei: ${fehler?.message ?? fehler}`;
     }
     if (erdbau && !eigenbau) {
-      verbundMeldung.value ||= 'Der Erdbau braucht den Stand der CDE — erst ein Modell laden.';
+      verbundMeldung.value ||= 'Das Erdbau-Dokument braucht den Eigenbau — erst ein Modell laden.';
       verbundStartet.value = false;
       return;
     }
+  }
+  // Abnahme D4: ohne Aushub gibt es kein Erdbau-Dokument. Der Server lehnte das
+  // bisher erst nach dem Hochladen ab — jetzt sagt EIN Satz vorher, woran es liegt.
+  const fehlt = erdbau ? aushubFehlt(eigenbau, { satz: satz.name }) : null;
+  if (fehlt) {
+    verbundMeldung.value = fehlt;
+    verbundStartet.value = false;
+    return;
   }
   try {
     const angenommen = await AuftragApi.verbundStarten(cde.auftrag.id, satz.id, { eigenbau, modus });
@@ -1436,38 +1226,6 @@ async function verbundHerunterladen() {
   } catch (fehler) {
     verbundMeldung.value = `Herunterladen misslang: ${fehler?.message ?? fehler}`;
   }
-}
-
-async function vorlageEntfernen(v) {
-  if (v.herkunft === 'eingebaut') return;
-  if (!confirm(`Vorlage „${v.name}" löschen?`)) return;
-  await loescheVorlage(repo, v.id, { ebene: v.herkunft });
-  await vorlagenLaden();
-}
-
-function _zeichnenAus() {
-  zeichenWerkzeug.value = null;
-  planRef.value?.zeichneMit?.(null);
-}
-function zeichenWerkzeugSetzen(id) {
-  // Zeichnen ist Bearbeiten: ohne Modus passiert nichts. `zeichneMit` läuft
-  // ohnehin über `bearbeitung.starte` und würde abgewiesen — der Knopf soll
-  // aber gar nicht erst so tun, als ginge es.
-  if (id && !bearbeitung.modusAn) return;
-  // Nochmal derselbe Knopf schaltet ab — wie bei Setzmodus und Stift.
-  const ziel = zeichenWerkzeug.value === id ? null : id;
-  // Erst den eigenen Slot freigeben — siehe `vorlageZeichnen`.
-  bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
-  const ok = planRef.value?.zeichneMit?.(ziel);
-  zeichenWerkzeug.value = ziel && ok ? ziel : null;
-  if (zeichenWerkzeug.value) bearbeitung.belegeWerkzeug('plan:zeichnen', _zeichnenAus);
-  else bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
-}
-
-/** Wenn der Plan von sich aus aufhört (abgeschlossen, Esc), nachziehen. */
-function zeichenstandAbgleichen() {
-  zeichenWerkzeug.value = planRef.value?.zeichnetGerade?.() ?? null;
-  if (!zeichenWerkzeug.value) bearbeitung.gebeWerkzeugFrei('plan:zeichnen');
 }
 
 /** Esc im Canvas hat ein Werkzeug beendet — Spiegel UND Slot nachziehen. */
@@ -1607,11 +1365,17 @@ const registerAbschnitte = computed(() => {
   const { lieferungen, erzeugte } = teileRegister(sortedDokumente.value);
   return [
     { key: 'lieferungen', titel: 'Lieferungen', dokumente: lieferungen },
-    { key: 'erzeugt', titel: 'Erzeugt von der CDE — Verbund und Erdbau', dokumente: erzeugte },
+    { key: 'erzeugt', titel: 'Ausgegeben — Verbund und Erdbau-Dokumente', dokumente: erzeugte },
   ].filter(teil => teil.dokumente.length);
 });
 const revisionOhneVorgaenger = computed(() => new Set(
   sortedDokumente.value.filter(d => fruehereRevisionFehlt(d, cde.dokumente)).map(d => d.sha256)));
+
+/** Wie viele Dokumente des Registers im aktiven Satz stehen — für die Kopfzeile. */
+const satzAnzahl = computed(() => {
+  const drin = new Set(cde.aktiverSatz?.enthaelt ?? []);
+  return cde.dokumente.filter(d => drin.has(d.sha256)).length;
+});
 
 /** Beim ersten geladenen Modell die Struktur-Leiste anbieten. */
 function onModelLoaded() {
@@ -1647,29 +1411,27 @@ function onClose() {
  * wirksamer Stand. Anschliessend läuft das Nachspielen erneut; genau das ist
  * der Variantenwechsel, und es braucht dafür keinen eigenen Mechanismus.
  */
-async function onSatzChange(e) {
-  // U2: Bei OFFENER Sitzung ist der Wechsel gesperrt — sonst stapeln sich
-  // Schritte gegen den falschen Satz. Erst abschließen oder verwerfen.
+async function onSatzWaehlen(id) {
+  // U2: Bei OFFENER Bearbeitung ist der Wechsel gesperrt — sonst stapeln sich
+  // Schritte gegen den falschen Satz. Erst sichern oder verwerfen.
   if (aenderungen.sitzungSchritte.length) {
-    e.target.value = cde.aktiverSatzId ?? '';
     bearbeitung.commitDialogOffen = true;
     return;
   }
-  await cde.setzeSatz(e.target.value || null);
+  await cde.setzeSatz(id || null);
   await aenderungen.setzeSatz(cde.aktiverSatzId);
-  showRegister.value = false;
 }
 
 /** Einen Modellsatz anlegen — er übernimmt die Auswahl des aktuellen. */
 async function onNeuerSatz() {
-  const name = prompt('Name des Modellsatzes (z. B. „Variante Nord"):', '');
+  const name = prompt('Name des neuen Satzes (z. B. „Variante Nord"):', '');
   if (name === null || !name.trim()) return;
   try {
     // Wie `git branch`: der neue Satz startet mit dem, was gerade gilt.
     await cde.satzAnlegen({ name: name.trim(), enthaelt: cde.aktiverSatz?.enthaelt ?? [] });
     await aenderungen.setzeSatz(cde.aktiverSatzId);
   } catch (fehler) {
-    alert(fehler?.response?.data?.detail || fehler?.message || 'Modellsatz konnte nicht angelegt werden.');
+    alert(fehler?.response?.data?.detail || fehler?.message || 'Der Satz konnte nicht angelegt werden.');
   }
 }
 
@@ -1691,10 +1453,9 @@ async function onSatzUmbenennen() {
 async function onSatzLoeschen() {
   const s = cde.aktiverSatz;
   if (!s) return;
-  if (!confirm(`Modellsatz „${s.name}" löschen?\nDie Modelle selbst bleiben im Projekt — ein Satz ist nur eine Auswahl.`)) return;
+  if (!confirm(`Satz „${s.name}" löschen?\nDie Modelle bleiben im Projekt — ein Satz ist nur eine Auswahl.`)) return;
   await cde.satzLoeschen(s.id);
   await aenderungen.setzeSatz(cde.aktiverSatzId);
-  showRegister.value = false;
 }
 
 /** Ein Modell in den aktiven Satz aufnehmen oder herausnehmen. */
@@ -1756,6 +1517,32 @@ function _statusMeldung(text, ms = 8000) {
   _statusHinweisTimer = setTimeout(() => { statusHinweis.value = ''; }, ms);
 }
 
+/**
+ * Aus dem Projekt nehmen — mit Rückfrage und mit Antwort (Abnahme 2026-09-12).
+ * Vorher entfernte ein Klick ohne Nachfrage, und eine Ablehnung des Servers
+ * verschwand: die Zeile blieb stehen, und niemand sagte warum.
+ */
+async function entferneDokument(d) {
+  const wohin = repo.remote ? 'Die Datei wird beiseitegelegt (CDE/_geloescht), nicht gelöscht.'
+                            : 'Es verschwindet nur aus dieser Liste im Browser.';
+  if (!confirm(`„${d.name}" aus dem Projekt nehmen?\n${wohin}`)) return;
+  if (!await cde.removeDokument(d.sha256)) _statusMeldung(cde.statusGrund || `„${d.name}" wurde nicht entfernt.`);
+}
+
+/**
+ * Warum lässt sich der Status nicht ändern? (Abnahme 2026-09-12, P1)
+ * Aus WIP führt nur ein Weg, und der verlangt einen Prüfbericht — gesperrt
+ * waren alle drei Einträge, der Grund stand nur im Tooltip. Beim Öffnen der
+ * Liste steht er jetzt als Zeile unter dem Register.
+ */
+function zeigeSperrgrund(d) {
+  const ziele = statusZiele(d.status, auth.rolle, undefined, { art: d.art, hatPruefung: !repo.remote || !!d.pruefung })
+    .filter(z => z.status !== d.status);
+  if (ziele.some(z => z.ok)) return;
+  const grund = ziele.find(z => z.grund)?.grund;
+  if (grund) _statusMeldung(grund, 6000);
+}
+
 // ── Prüfbericht je Dokument (IFC-Konsistenz, Stufe 4b) ─────────────────────
 // Derselbe Laufordner-Vertrag wie der Verbund: starten (202), abholen, danach
 // das Register neu übernehmen — der Bericht hängt dann am Eintrag.
@@ -1809,7 +1596,7 @@ function pruefTitel(p) {
   const sperrend = bef.filter(istOffen).map(b => b.id);
   const warn = bef.filter(b => ampel(b) === 'warnung').map(b => b.id);
   return [
-    `Prüftor: ${p?.verstoesse ?? '?'} sperrende Verstöße${sperrend.length ? ` (${sperrend.join(', ')})` : ''}`,
+    `Prüfbericht: ${p?.verstoesse ?? '?'} sperrende Verstöße${sperrend.length ? ` (${sperrend.join(', ')})` : ''}`,
     warn.length ? `Warnungen: ${warn.join(', ')}` : '',
     p?.schema ? `Schema ${p.schema}` : '',
     p?.stand ? `Stand ${p.stand}` : '',
@@ -1951,21 +1738,6 @@ function fmtDate(ts) {
 }
 
 /* Bauteilbibliothek (Lücke ⑨) */
-.pp-trenner {
-  margin: 0.3rem 0 0.1rem; padding: 0.15rem 0.5rem;
-  font-size: var(--cde-font-xs); color: var(--cde-text-dimmer);
-  text-transform: uppercase; letter-spacing: 0.04em;
-  border-top: 1px solid var(--cde-tint-weak);
-}
-.pp-vorlage { display: flex; align-items: center; }
-.pp-vorlage .pp-zeile { flex: 1; }
-.pp-vorlage-weg {
-  display: inline-flex; align-items: center; justify-content: center;
-  background: none; border: none; color: var(--cde-text-mute);
-  padding: 0.2rem 0.35rem; cursor: pointer; border-radius: var(--cde-radius-sm);
-}
-.pp-vorlage-weg:hover { color: var(--cde-danger); background: var(--cde-fill); }
-.pp-sichern { color: var(--cde-text-dim); }
 
 .pp-zeile {
   display: flex; align-items: center; gap: 0.5rem;
@@ -2014,9 +1786,9 @@ function fmtDate(ts) {
 }
 .cde-zoom-btn {
   background: var(--cde-warn);
-  /* Modus-Fläche ⇒ Modus-Text: auf der warmen Warnfläche liest sich der
-     tiefe Hintergrund, nicht die helle Schrift. */
-  color: var(--cde-bg-deep);
+  /* Schrift auf kräftiger Farbfläche: im Dunkeln der tiefe Grund, im
+     Hellen Weiß (H6). */
+  color: var(--cde-text-auf-farbe);
   border: none; border-radius: 5px;
   padding: 0.25rem 0.6rem;
   font-size: 0.78rem; font-weight: 700;
@@ -2024,27 +1796,6 @@ function fmtDate(ts) {
   touch-action: manipulation;
 }
 .cde-zoom-tipp { opacity: 0.75; }
-
-/* ── Projekt-Leiste ── */
-.cde-bar {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.4rem 0.8rem;
-  background: var(--cde-bg-alt);
-  border-bottom: 1px solid var(--cde-tint);
-  flex-shrink: 0;
-}
-.cde-brand { color: var(--cde-text-bright); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.02em; }
-.cde-spacer { flex: 1; }
-
-.cde-project-select {
-  background: var(--cde-tint-weak);
-  border: 1px solid var(--cde-tint-max);
-  color: var(--cde-text-bright);
-  border-radius: 5px;
-  padding: 0.25rem 0.4rem;
-  font-size: 0.78rem;
-  min-width: 200px; max-width: 320px;
-}
 
 .cde-btn {
   background: var(--cde-tint-weak);
@@ -2063,50 +1814,17 @@ function fmtDate(ts) {
 .cde-btn.sm { padding: 0.1rem 0.35rem; font-size: 0.7rem; }
 .cde-btn small { color: var(--cde-text-dim); }
 
-.cde-bearbeiter {
-  display: flex; align-items: center; gap: 0.3rem;
-  color: var(--cde-text-dim); font-size: 0.8rem;
-}
-.cde-bearbeiter input {
-  background: var(--cde-tint-weak);
-  border: 1px solid var(--cde-tint-max);
-  color: var(--cde-text-bright);
-  border-radius: 5px;
-  padding: 0.22rem 0.4rem;
-  font-size: 0.75rem;
-  width: 130px;
-}
-
-/* ── Panels (Stammdaten / Register) ── */
-.cde-panel {
+/* ── Klapptafeln (Projektwahl, Übernahme-Bericht) ──
+   Eigene Klasse: `.cde-panel` trägt auch das Wurzelelement von CdePanel, und
+   diese scoped Regel griff darüber auf die Seitentafeln durch — sie waren auf
+   40vh gedeckelt, mit Innenabstand und Unterkante (Kassensturz H2). */
+.cde-klapptafel {
   background: var(--cde-bg);
   border-bottom: 1px solid var(--cde-tint);
   padding: 0.6rem 0.8rem;
   flex-shrink: 0;
   max-height: 40vh;
   overflow-y: auto;
-}
-.cde-panel-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(140px, 1fr));
-  gap: 0.5rem;
-}
-.cde-panel-grid label {
-  display: flex; flex-direction: column; gap: 0.15rem;
-  color: var(--cde-text-dim); font-size: 0.68rem;
-}
-.cde-panel-grid label.wide { grid-column: span 2; }
-.cde-panel-grid input, .cde-panel-grid select {
-  background: var(--cde-tint-weak);
-  border: 1px solid var(--cde-tint-max);
-  color: var(--cde-text-bright);
-  border-radius: 4px;
-  padding: 0.25rem 0.4rem;
-  font-size: 0.76rem;
-}
-.cde-panel-footer {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 0.5rem;
 }
 .cde-hint { color: var(--cde-text-faint); font-size: 0.66rem; font-style: italic; }
 .cde-empty { color: var(--cde-text-dim); font-size: 0.75rem; padding: 0.4rem; }
@@ -2144,7 +1862,9 @@ function fmtDate(ts) {
   padding: 0.12rem 0.3rem;
   font-size: 0.7rem;
   border: 1px solid;
-  background: var(--cde-sunken);
+  /* Deckender Grund für die geschlossene Box; Schema und Optionsfarben kommen
+     für JEDE Liste aus theme.css (Abnahme 2026-09-12, F1). */
+  background-color: var(--cde-surface);
 }
 .doc-status.iso-wip       { color: var(--cde-warn-soft); border-color: color-mix(in srgb, var(--cde-warn) 50%, transparent); }
 .doc-status.iso-shared    { color: var(--cde-accent-soft); border-color: color-mix(in srgb, var(--cde-accent) 50%, transparent); }
@@ -2171,7 +1891,7 @@ function fmtDate(ts) {
   .cde-workspace {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto auto;
   }
   .cde-viewer-host { grid-row: 1; grid-column: 1 / -1; }
   .cde-workspace > .cde-panel { grid-row: 2; height: 42dvh; min-height: 0; }
@@ -2179,26 +1899,10 @@ function fmtDate(ts) {
   .cde-workspace > .side-right { grid-column: 2; }
   .cde-workspace:not(:has(> .side-right)) > .side-left  { grid-column: 1 / -1; }
   .cde-workspace:not(:has(> .side-left))  > .side-right { grid-column: 1 / -1; }
+  /* Die Reiterleiste liegt hochkant als dritte Zeile unter den Blättern. */
+  .cde-workspace > .cde-reiter { grid-row: 3; grid-column: 1 / -1; }
 
-  /* DIE KOPFZEILE BRICHT UM (Tablet-Rezept 2026-09-09). Am iPad hochkant
-     (834 px) lagen ZEHN Bedienelemente ausserhalb des Bildes — darunter
-     JEDER Panel-Knopf, die Hilfe und der Ausgang: Toolbox, Verlauf und
-     Prüfliste waren schlicht nicht erreichbar. Gemessen, nicht vermutet.
-     Der Umbruch kostet zwei Zeilen Höhe; unerreichbare Knöpfe kosten das
-     Werkzeug. Marke und Abstandhalter fallen weg — die eine sagt nichts,
-     der andere verhindert den Umbruch (flex: 1 füllt die Zeile). */
-  .cde-bar { flex-wrap: wrap; row-gap: 0.35rem; }
-  .cde-brand,
-  .cde-spacer { display: none; }
-  .cde-bearbeiter { order: 99; }
-  .cde-project-select { min-width: 120px; max-width: 46vw; }
-  /* Fingerziele 40 × 40 (gemessen: die Panel-Knöpfe waren 29 px breit).
-     Das kostet eine Zeile mehr — ein Knopf, den man nicht trifft, kostet
-     das Werkzeug. */
-  .cde-bar button,
-  .cde-bar .cde-ansicht-btn,
-  .cde-bar select { min-height: 40px; }
-  .cde-bar button { min-width: 40px; }
+  /* Die Kopfzeile bricht in CdeKopfleiste.vue um (Tablet-Rezept R3). */
 }
 
 .cde-viewer-host {
@@ -2222,48 +1926,21 @@ function fmtDate(ts) {
 .host-lage { position: absolute; inset: 0; }
 .host-lage.verborgen { visibility: hidden; pointer-events: none; }
 
-.cde-ansicht-schalter {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--cde-fill);
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius);
+/* Die Ansicht „Dokumente" (Kassensturz E2) — das Register füllt die Mitte. */
+.cde-dokumente {
+  overflow: auto;
+  padding: 0.8rem 1rem 1.2rem;
+  background: var(--cde-bg);
 }
-.cde-ansicht-btn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 2px 8px;
-  background: none; border: none;
-  border-radius: var(--cde-radius-sm);
-  color: var(--cde-text-dim);
-  font-size: var(--cde-font-xs);
-  cursor: pointer;
-  white-space: nowrap;
+.dok-kopf {
+  display: flex; align-items: baseline; gap: 0.7rem;
+  margin-bottom: 0.5rem;
+  font-size: var(--cde-font-sm); color: var(--cde-text-dim);
 }
-.cde-ansicht-btn:hover:not(:disabled) { background: var(--cde-fill-hover); color: var(--cde-text); }
-.cde-ansicht-btn.active {
-  background: var(--cde-accent-fill-hi);
-  color: var(--cde-accent);
-}
-.cde-ansicht-btn:disabled { opacity: 0.4; cursor: default; }
-
-.cde-sep {
-  width: 1px; height: 1.3rem;
-  background: var(--cde-line-strong);
-  margin: 0 0.15rem;
-}
+.dok-kopf strong { font-size: var(--cde-font-md); color: var(--cde-text-bright); }
 .cde-btn.ghost { padding: 0.25rem 0.4rem; }
 
 /* ── Auftragswahl und Auftragsanzeige (Stufe 11.3) ──────────────────────── */
-.cde-auftrag {
-  font-size: var(--cde-font-sm);
-  color: var(--cde-text-bright);
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius-sm);
-  background: var(--cde-fill);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26ch;
-}
 .cde-auftragswahl { max-width: 46rem; }
 .cde-auftragswahl h2 {
   margin: 0 0 0.3rem; font-size: var(--cde-font-md); color: var(--cde-text-bright);

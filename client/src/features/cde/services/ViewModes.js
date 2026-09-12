@@ -14,13 +14,18 @@
  * der Zeit vor diesem Sprint: Wo kein Modus steht, ist '3d' gemeint.
  */
 
-export const ANSICHTS_MODI = Object.freeze(['3d', 'lageplan', 'laengsschnitt']);
+// 'dokumente' (Kassensturz E2): das Register füllt die Mitte, statt als
+// Klapptafel das Bild nach unten zu schieben.
+export const ANSICHTS_MODI = Object.freeze(['3d', 'lageplan', 'laengsschnitt', 'dokumente']);
 
 // Icon-Namen sind die semantischen Namen aus `components/ui/CdeIcon.vue`.
+// `kurz` steht im Umschalter — ausgeschrieben, denn „Schnitt" hiess dort der
+// Längsschnitt und in der Werkzeugleiste die Schnittebene.
 const BESCHRIFTUNG = Object.freeze({
-    '3d':            { titel: 'Modell',       kurz: '3D',      taste: '1', icon: 'cde' },
-    'lageplan':      { titel: 'Lageplan',     kurz: 'Plan',    taste: '2', icon: 'karte' },
-    'laengsschnitt': { titel: 'Längsschnitt', kurz: 'Schnitt', taste: '3', icon: 'laengsschnitt' },
+    '3d':            { titel: 'Modell',       kurz: '3D',           taste: '1', icon: 'cde' },
+    'lageplan':      { titel: 'Lageplan',     kurz: 'Lageplan',     taste: '2', icon: 'karte' },
+    'laengsschnitt': { titel: 'Längsschnitt', kurz: 'Längsschnitt', taste: '3', icon: 'laengsschnitt' },
+    'dokumente':     { titel: 'Dokumente',    kurz: 'Dokumente',    taste: '4', icon: 'documents' },
 });
 
 /** Unbekanntes, Leeres und Altbestände werden zu '3d'. */
@@ -35,10 +40,12 @@ export function normalisiereModus(wert) {
  * achsen eine leere Station — beides ist kein Zustand, in den man den Nutzer
  * laufen lassen sollte. Der Umschalter sperrt sie deshalb sichtbar.
  */
-export function istVerfuegbar(modus, { hatModell = false, hatAchsen = false } = {}) {
+export function istVerfuegbar(modus, { hatModell = false, hatAchsen = false, hatProjekt = false } = {}) {
     switch (normalisiereModus(modus)) {
         case 'lageplan':      return !!hatModell;
         case 'laengsschnitt': return !!hatModell && !!hatAchsen;
+        // Das Register liegt im Projektordner — ohne Projekt gibt es keins.
+        case 'dokumente':     return !!hatProjekt;
         default:              return true;              // '3d' trägt auch den Leerzustand
     }
 }

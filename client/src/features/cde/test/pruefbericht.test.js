@@ -20,7 +20,7 @@ describe('WIP → Shared verlangt einen Prüfbericht — für Modelle', () => {
     it('ohne Bericht gesperrt und begründet, mit Bericht frei — auch mit Verstößen', () => {
         const ohne = pruefeStatuswechsel({ von: 'WIP', nach: 'Shared', rolle: 'MITARBEITER', art: 'modell', hatPruefung: false });
         expect(ohne.ok).toBe(false);
-        expect(ohne.grund).toMatch(/Prüfbericht/);
+        expect(ohne.grund).toBe('Erst prüfen, dann Shared.');
         expect(pruefeStatuswechsel({ von: 'WIP', nach: 'Shared', rolle: 'MITARBEITER', art: 'modell', hatPruefung: true }).ok).toBe(true);
     });
 

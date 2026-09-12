@@ -65,7 +65,7 @@ export function useAnnotationen({ engine, ifc, cde, viewpoint, aktiv, slot = nul
      */
     async function klick(e) {
         if (!aktiv.value) return false;
-        const text = prompt('Issue anlegen — Beschreibung:', '');
+        const text = prompt('Neue Notiz:', '');
         if (text === null) return true;
         // Farbe des letzten Pins wiederverwenden — so lässt sich eine Serie
         // gleichfarbiger Marken setzen, ohne jedes Mal nachzustellen.

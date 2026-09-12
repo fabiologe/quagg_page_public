@@ -2,8 +2,8 @@
   <div class="ae-tab cde-card">
     <CdeCardHeader
       icon="verlauf"
-      titel="Verlauf"
-      :zusatz="ae.anzahl ? `${ae.beruehrteBauteile} Bauteile` : ''"
+      titel="Versionen"
+      :zusatz="ae.anzahl ? bauteileText(ae.beruehrteBauteile) : ''"
     >
       <CdeIconButton
         icon="export"
@@ -13,7 +13,7 @@
       />
       <CdeIconButton
         icon="undo"
-        titel="Letzten Schritt der Sitzung entfernen — ohne Sitzung: neuesten Commit revertieren"
+        titel="Rückgängig — der letzte Schritt der Bearbeitung, sonst die neueste Version"
         :disabled="!ae.kannZurueck"
         @click="zurueck"
       />
@@ -27,26 +27,37 @@
       <CdeIcon name="warn" :size="14" />
       <div>
         <strong>Nicht gesichert:</strong>
-        {{ ae.schreibKonflikt.wer || 'Jemand anderes' }} hat das Journal inzwischen
+        {{ ae.schreibKonflikt.wer || 'Jemand anderes' }} hat den Verlauf inzwischen
         geändert<template v-if="ae.schreibKonflikt.wann"> ({{ relativ(ae.schreibKonflikt.wann) }})</template>.
         Deine weiteren Schritte bleiben nur lokal — Seite neu laden, dann auf dem
         aktuellen Stand weiterarbeiten.
       </div>
     </div>
 
+    <!-- Gescheitertes Speichern (Abnahme 2026-09-12): der Server war nicht
+         erreichbar — der Verlauf lebt nur in diesem Fenster. -->
+    <div v-if="ae.sicherFehler" class="ae-schreibkonflikt">
+      <CdeIcon name="warn" :size="14" />
+      <div>
+        <strong>Nicht gespeichert:</strong>
+        der Verlauf liegt nur in diesem Browserfenster<template v-if="ae.sicherFehler.grund"> ({{ ae.sicherFehler.grund }})</template>.
+        Fenster offen lassen — der nächste Schritt versucht es erneut.
+      </div>
+    </div>
+
     <div v-if="!ae.anzahl && !konflikte.length" class="cde-state-msg">
       <CdeIcon name="undo" :size="22" />
-      Noch nichts geändert. Jede Bearbeitung landet hier als Vorgang —
-      wann, wer, was; zurücknehmbar bis zu jedem Punkt.
+      Noch nichts geändert. Jede gesicherte Bearbeitung steht hier als Version —
+      wer, wann, was; rückgängig bis zu jedem Punkt.
     </div>
 
     <template v-else>
       <!-- Herkunft auf einen Blick (Stufe 9.6): wer erzeugt, muss trennen
            können, was geliefert war und was von hier stammt. -->
       <div class="ae-chips">
-        <span class="ae-chip">{{ ae.vorgaenge.length }} Vorgänge</span>
-        <span class="ae-chip">{{ ae.beruehrteBauteile }} Bauteile</span>
-        <span v-if="eigene" class="ae-chip eigen">{{ eigene }} eigene Bauteile</span>
+        <span class="ae-chip">{{ ae.vorgaenge.length }} {{ ae.vorgaenge.length === 1 ? 'Vorgang' : 'Vorgänge' }}</span>
+        <span class="ae-chip">{{ bauteileText(ae.beruehrteBauteile) }}</span>
+        <span v-if="eigene" class="ae-chip eigen">Eigenbau · {{ bauteileText(eigene) }}</span>
         <span v-if="konflikte.length" class="ae-chip konflikt">
           {{ konflikte.length }} Konflikt{{ konflikte.length === 1 ? '' : 'e' }}
         </span>
@@ -59,15 +70,15 @@
         </span>
       </div>
 
-      <!-- ── Rebase (Stufe 5 des Aushub-Fachmodells): eine neue Revision ist
-           geladen, das Journal hängt an der alten. Vorschläge, bestätigen,
-           umhängen — ein eigener Commit, jederzeit revertierbar. ── -->
+      <!-- ── Zuordnen (Stufe 5 des Aushub-Fachmodells): eine neue Revision ist
+           geladen, der Verlauf hängt an der alten. Vorschläge, bestätigen,
+           zuordnen — eine eigene Version, jederzeit rückgängig. ── -->
       <section v-if="rebase.zeilen.length" class="ae-rebase">
         <h4 class="ae-abschnitt">
-          <template v-if="rebase.hinweis?.wechsel">{{ rebase.hinweis.wechsel.nach.name }} geladen — das Journal hängt an {{ rebase.hinweis.wechsel.von.name }}</template>
-          <template v-else>{{ rebase.zeilen.length }} Kennung{{ rebase.zeilen.length === 1 ? '' : 'en' }} des Journals nicht im Modell</template>
+          <template v-if="rebase.hinweis?.wechsel">{{ ohneEndung(rebase.hinweis.wechsel.nach.name) }} ist geladen, {{ bauteileText(rebase.zeilen.length) }} {{ rebase.zeilen.length === 1 ? 'gehört' : 'gehören' }} noch zu {{ revisionKurz(rebase.hinweis.wechsel.von) }}</template>
+          <template v-else>{{ bauteileText(rebase.zeilen.length) }} des Verlaufs {{ rebase.zeilen.length === 1 ? 'fehlt' : 'fehlen' }} im Modell</template>
         </h4>
-        <p class="ae-rtext">Zuordnen, was dasselbe Bauteil ist. Erst „Umhängen" ändert etwas — als eigener Commit.</p>
+        <p class="ae-rtext">Wähle je Zeile dasselbe Bauteil im Modell. „Zuordnen" sichert das als eigene Version.</p>
         <div v-for="z in rebase.zeilen" :key="z.alt" class="ae-rzeile">
           <span class="ae-ralt" :title="z.alt">{{ z.name || kurz(z.alt) }}</span>
           <select v-model="z.neu" class="ae-rwahl">
@@ -78,7 +89,7 @@
         </div>
         <div class="ae-kaktionen">
           <button class="ae-btn" :disabled="rebase.laeuft || !rebase.zeilen.some(z => z.neu)" @click="umhaengen">
-            Umhängen ({{ rebase.zeilen.filter(z => z.neu).length }})
+            Zuordnen ({{ rebase.zeilen.filter(z => z.neu).length }})
           </button>
         </div>
       </section>
@@ -86,18 +97,18 @@
       <!-- ── Konfliktklärung (Stufe 9.9): der Modellvergleich mit
            Entscheidungen. Drei Verben, mehr gibt es nicht. ── -->
       <section v-if="konflikte.length" class="ae-konflikte">
-        <h4 class="ae-abschnitt">Beim Nachspielen nicht angewandt</h4>
+        <h4 class="ae-abschnitt">Nicht angewandt</h4>
         <article v-for="k in konflikte" :key="k.eintrag?.id ?? k.globalId" class="ae-kkarte">
           <header>
             <CdeIcon name="warn" :size="13" />
             <strong>{{ kurz(k.globalId) }}</strong>
             <span>{{ ARTEN[k.art]?.titel ?? k.art }}</span>
-            <em>{{ k.zustand === 'fehlt' ? 'Bauteil nicht mehr im Modell' : (k.grund || k.zustand) }}</em>
+            <em :title="k.zustand === 'fehlgeschlagen' ? (k.grund || '') : ''">{{ zustandText(k) }}</em>
           </header>
           <p class="ae-kwerte">
-            <span>Deine Festlegung: <strong>{{ beschreibeWert(k.art, k.eintrag?.nachher, k.eintrag?.basis) }}</strong></span>
+            <span>Dein Wert: <strong>{{ beschreibeWert(k.art, k.eintrag?.nachher, k.eintrag?.basis) }}</strong></span>
             <span v-if="k.istWert !== undefined && k.istWert !== null">
-              Planer jetzt: <strong>{{ beschreibeWert(k.art, k.istWert, k.eintrag?.basis) }}</strong>
+              Wert des Planers: <strong>{{ beschreibeWert(k.art, k.istWert, k.eintrag?.basis) }}</strong>
             </span>
           </p>
           <div class="ae-kaktionen">
@@ -105,23 +116,23 @@
               class="ae-btn"
               :disabled="k.zustand === 'fehlt'"
               :title="k.zustand === 'fehlt'
-                ? 'Ohne Bauteil gibt es keinen Planerstand, gegen den die Basis gehoben werden könnte'
-                : 'Die Festlegung gilt weiter — die Basis wird auf den Planerstand gehoben (protokolliert)'"
+                ? 'Das Bauteil fehlt im Modell — es gibt keinen Wert des Planers'
+                : 'Dein Wert gilt weiter — auch gegen den neuen Wert des Planers'"
               @click="uebernehmen(k)"
-            >Übernehmen</button>
+            >Meiner gilt</button>
             <button
               class="ae-btn"
-              title="Der Planerwert gilt — Gegeneintrag, die Spur bleibt"
+              title="Der Wert des Planers gilt — dein Schritt wird zurückgenommen, er bleibt im Verlauf"
               @click="verwerfen(k)"
-            >Verwerfen</button>
+            >Planer gilt</button>
             <button
               class="ae-btn"
               :disabled="!auswahlGlobalId || auswahlGlobalId === k.globalId"
               :title="auswahlGlobalId
-                ? `Festlegung wandert auf die Auswahl (${kurz(auswahlGlobalId)})`
+                ? `Dein Wert gilt für das gewählte Bauteil (${kurz(auswahlGlobalId)})`
                 : 'Erst im Modell das Ziel-Bauteil wählen'"
               @click="uebertragen(k)"
-            >Auf Auswahl übertragen</button>
+            >Auf Auswahl</button>
           </div>
         </article>
       </section>
@@ -131,7 +142,7 @@
       <section v-if="andereSaetze.length" class="ae-vergleich">
         <h4 class="ae-abschnitt">Satz-Vergleich</h4>
         <div class="ae-vgl-kopf">
-          <span class="ae-vgl-hier" :title="'Der gerade aktive Modellsatz'">
+          <span class="ae-vgl-hier" title="Der gerade aktive Satz">
             {{ cde.aktiverSatz?.name ?? 'Aktueller Stand' }}
           </span>
           <span class="ae-vgl-gegen">gegen</span>
@@ -205,33 +216,27 @@
             </ul>
 
             <div v-if="v.typ === 'sitzung'" class="ae-aktionen">
-              <button class="ae-btn klein" title="Commit-Dialog öffnen — Nachricht + Schrittliste"
+              <button class="ae-btn klein" title="Bearbeitung sichern — mit Beschreibung und Schrittliste"
                 @click="bearbeitung.commitDialogOffen = true"
-              ><CdeIcon name="check" :size="11" /> Abschließen …</button>
+              ><CdeIcon name="check" :size="11" /> Sichern …</button>
             </div>
             <div v-else-if="v.typ === 'commit' && !v.zurueckgenommen" class="ae-aktionen">
               <button
                 v-if="istNeuesterOffener(v)"
                 class="ae-btn klein"
-                title="Diesen Commit rückgängig machen — als Revert-Commit, die Spur bleibt"
-                @click="revertiere(v)"
+                title="Diese Version rückgängig machen — als neue Version, die Spur bleibt"
+                @click="versionRueckgaengig(v)"
               ><CdeIcon name="undo" :size="11" /> Rückgängig</button>
               <button
                 v-else
                 class="ae-btn klein"
-                title="Vom neuesten Commit abwärts bis einschliesslich hier zurücksetzen — je Commit ein Revert"
+                title="Von der neuesten bis einschließlich dieser Version alles rückgängig machen — die Spur bleibt"
                 @click="bisHierZurueck(v)"
               ><CdeIcon name="undo" :size="11" /> Bis hierher zurück</button>
             </div>
           </div>
         </li>
       </ol>
-
-      <p class="cde-hint">
-        <CdeIcon name="info" :size="12" />
-        <span>Append-only wie git: Zurücknehmen fügt Gegen-Vorgänge an, statt zu
-          löschen — die Spur bleibt vollständig.</span>
-      </p>
     </template>
   </div>
 </template>
@@ -329,6 +334,28 @@ function kurz(globalId) {
   return globalId ? `…${String(globalId).slice(-6)}` : '—';
 }
 
+/** Einzahl und Mehrzahl richtig (R7). */
+function bauteileText(n) {
+  return `${n} ${n === 1 ? 'Bauteil' : 'Bauteile'}`;
+}
+
+function ohneEndung(name) {
+  return String(name ?? '').replace(/\.ifc$/i, '');
+}
+
+/** „R01" aus der Revisionsnummer — ohne Nummer der Dateiname. */
+function revisionKurz(r) {
+  return r?.revision ? `R${String(r.revision).padStart(2, '0')}` : ohneEndung(r?.name);
+}
+
+/** Der Zustand eines Konflikts in Worten — kein Schlüssel wie `keine_localId` (R4). */
+function zustandText(k) {
+  if (k.zustand === 'fehlt') return 'Bauteil nicht mehr im Modell';
+  if (k.zustand === 'konflikt') return 'auch vom Planer geändert';
+  if (k.zustand === 'fehlgeschlagen' && k.art === 'erzeugt') return 'nicht gebaut';
+  return 'nicht angewandt';
+}
+
 function initialen(wer) {
   const teile = String(wer ?? '').trim().split(/\s+/).filter(Boolean);
   if (!teile.length) return '?';
@@ -372,7 +399,7 @@ function istNeuesterOffener(v) {
   return erster?.id === v.id;
 }
 
-async function revertiere(v) {
+async function versionRueckgaengig(v) {
   await anwenden(await ae.revertiereCommit(v.id, cde.bearbeiter || ''));
 }
 
@@ -385,7 +412,7 @@ async function bisHierZurueck(v) {
 // Modell"), die Kandidaten aus den geladenen Dateien, der Vorschlag aus
 // `schlageVor`. Entschieden wird in der Tabelle — nie auf Verdacht.
 const GRUND_TEXT = {
-  gleich: 'gleiche Kennung', 'name+kategorie': 'gleicher Name', pruefmass: 'gleiches Prüfmass',
+  gleich: 'gleiche GlobalId', 'name+kategorie': 'gleicher Name', pruefmass: 'gleiche Form',
   mehrdeutig: 'mehrdeutig — bitte wählen', keiner: 'kein Vorschlag',
 };
 const rebase = reactive({ zeilen: [], hinweis: null, laeuft: false });

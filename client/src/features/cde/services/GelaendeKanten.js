@@ -37,6 +37,7 @@
  * Linie ums Gelände statt einer vollen Fläche.
  */
 import * as THREE from 'three';
+import { basisModelId } from './DeltaBoxen.js';
 
 export const KANTEN_FARBE = '#4b5563';      // Grau, dunkler als jede Geländefläche
 export const AUSWAHL_FARBE = '#4fc3f7';     // der Akzent von Geist und Zeiger
@@ -212,6 +213,7 @@ export class GelaendeKanten {
         this._umrisse = new Map();     // schluessel → THREE.LineSegments (nur gewählte)
         this._markiert = new Set();    // gewählt: Kanten im Akzent, dazu der Umriss
         this._versteckt = new Set();   // ausgeblendet (Hider): keine Kanten
+        this._verborgeneModelle = new Set();   // Auge am Modell aus (Abnahme M2): keine Kanten dieses Modells
         this._materialien = null;
         this._groesse = new THREE.Vector2();
     }
@@ -261,6 +263,13 @@ export class GelaendeKanten {
         return markiert ? m.auswahl : m.normal;
     }
 
+    /** Sichtbar ist eine Kante, wenn weder ihr Bauteil (Hider) noch ihr Modell (Auge) verborgen ist. */
+    _sichtbar(schluessel) {
+        if (this._versteckt.has(schluessel)) return false;
+        const s = String(schluessel);
+        return !this._verborgeneModelle.has(basisModelId(s.slice(0, s.lastIndexOf('|'))));
+    }
+
     /** Die Bildhöhe erfährt der Shader je Bild — sie ändert sich mit jedem Umbau der Oberfläche. */
     _vorDemZeichnen = (renderer, _szene, _kamera, _geo, material) => {
         if (!material?.uniforms?.halbeHoehe || typeof renderer?.getSize !== 'function') return;
@@ -296,7 +305,7 @@ export class GelaendeKanten {
             const obj = new THREE.LineSegments(geo, this._material(this._markiert.has(schluessel)));
             obj.name = `gelaende-kanten:${schluessel}`;
             obj.userData.schluessel = schluessel;
-            obj.visible = !this._versteckt.has(schluessel);
+            obj.visible = this._sichtbar(schluessel);
             obj.renderOrder = 1;
             obj.onBeforeRender = this._vorDemZeichnen;
             wurzel.add(obj);
@@ -320,7 +329,7 @@ export class GelaendeKanten {
         const obj = new THREE.LineSegments(geo, this._materialienHolen().umriss);
         obj.name = `gelaende-umriss:${schluessel}`;
         obj.userData.umrissVon = schluessel;
-        obj.visible = !this._versteckt.has(schluessel);
+        obj.visible = this._sichtbar(schluessel);
         obj.renderOrder = 2;
         wurzel.add(obj);
         this._umrisse.set(schluessel, obj);
@@ -362,15 +371,28 @@ export class GelaendeKanten {
     sichtbarkeit(sichtbar, schluessel = []) {
         for (const k of schluessel) {
             if (sichtbar) this._versteckt.delete(k); else this._versteckt.add(k);
-            for (const obj of [this._linien.get(k), this._umrisse.get(k)]) if (obj) obj.visible = !!sichtbar;
+            for (const obj of [this._linien.get(k), this._umrisse.get(k)]) if (obj) obj.visible = this._sichtbar(k);
         }
     }
 
     /** Alles wieder sichtbar (Hider „alle zeigen"). */
     alleSichtbar() {
         this._versteckt.clear();
-        for (const obj of this._linien.values()) obj.visible = true;
-        for (const obj of this._umrisse.values()) obj.visible = true;
+        for (const [k, obj] of this._linien) obj.visible = this._sichtbar(k);
+        for (const [k, obj] of this._umrisse) obj.visible = this._sichtbar(k);
+    }
+
+    /**
+     * Folgt dem Auge am Modell (Abnahme 2026-09-12, M2): ein verborgenes
+     * Modell zeigt keine Kanten — auch nach jedem Neuaufbau, weil `setze`
+     * dieselbe Frage stellt. Vorher blieb vom ausgeblendeten Eigenbau ein
+     * „Phantom-Gitter“ stehen: die Kanten des geformten Geländes.
+     */
+    modellSichtbarkeit(modelId, sichtbar) {
+        const basis = basisModelId(modelId);
+        if (sichtbar) this._verborgeneModelle.delete(basis); else this._verborgeneModelle.add(basis);
+        for (const [k, obj] of this._linien) obj.visible = this._sichtbar(k);
+        for (const [k, obj] of this._umrisse) obj.visible = this._sichtbar(k);
     }
 
     dispose() {

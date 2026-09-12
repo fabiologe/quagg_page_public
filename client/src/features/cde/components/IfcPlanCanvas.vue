@@ -39,13 +39,6 @@
       <CdeIcon name="bemassen" :size="13" />
       <span>{{ massPunkt ? 'Zweiten Punkt setzen' : 'Ersten Punkt setzen' }} — Esc beendet</span>
     </div>
-    <!-- Zeichnen (Stufe 9.4). Der Hinweis oben sagt, wie viele Punkte noch
-         fehlen; das Formular unten hält Bezeichnung, IFC-Typ und Höhe. Beides
-         am Blattrand, nicht auf dem Blatt — es gehört zur Bedienung. -->
-    <div v-else-if="zeichnen.aktiv.value" class="plan-messhinweis">
-      <CdeIcon :name="zeichnen.werkzeug.value?.icon ?? 'add'" :size="13" />
-      <span>{{ zeichnen.hinweis.value }} — Esc bricht ab</span>
-    </div>
     <div v-else-if="setzModus" class="plan-messhinweis">
       <CdeIcon :name="setzModus === 'loeschen' ? 'delete' : setzModus === 'text' ? 'edit' : 'coords'" :size="13" />
       <span>{{ setzHinweis }} — Esc beendet</span>
@@ -55,19 +48,6 @@
     <div v-else-if="griffMeldung" class="plan-messhinweis">
       <CdeIcon name="warn" :size="13" />
       <span>{{ griffMeldung }}</span>
-    </div>
-
-    <div v-if="zeichnen.aktiv.value" class="plan-zeichenform">
-      <CdeBearbeitungForm
-        :felder="bearbeitung.felder"
-        :werte="bearbeitung.werte"
-        :fehler="zeichenFehler"
-        :bereit="bearbeitung.bereit && zeichnen.genug.value"
-        :ok-text="zeichnen.genug.value ? 'Anlegen' : `Noch ${zeichnen.mindestPunkte.value - zeichnen.punkte.value.length} Punkte`"
-        @setze-wert="bearbeitung.setzeWert"
-        @uebernehmen="zeichnenAbschliessen"
-        @abbrechen="zeichnen.abbrechen()"
-      />
     </div>
 
     <div v-if="ersterAufbau" class="plan-schleier">
@@ -98,16 +78,16 @@
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
-import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift, STIFT_FARBEN, STIFT_BREITE_MM, RADIER_RADIUS_MM, mmZuWelt } from '../stores/useRotstift.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
-import { useZeichnen } from '../composables/useZeichnen.js';
+import { CDE_MODELL_ID } from '../services/IfcAutor.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
@@ -131,44 +111,15 @@ const props = defineProps({
   logo: { type: String, default: null },
 });
 
-const emit = defineEmits(['zeichnen-beendet']);
-
 const api = useViewerApi();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
+const farbmodus = useFarbmodus();
 const planInhalt = usePlanInhalt();
 const rotstift = useRotstift();
 const bearbeitung = useBearbeitung();
 const aenderungen = useAenderungen();
 const cde = useCdeStore();
-
-/**
- * Zeichnen (Stufe 9.4).
- *
- * Der Zug wird HIER gehalten, weil hier die Weltkoordinaten entstehen
- * (`zeigerZuWelt`). Was daraus wird — Prüfung, Journaleintrag, Rücknahme —
- * weiss das Composable, und der Katalog liefert das Formular. Damit gibt es
- * keinen zweiten Weg, ein Bauteil anzulegen.
- */
-const zeichnen = useZeichnen({
-  bearbeitung,
-  cde,
-  getModellSha: () => api.getLoadedModelSha?.() ?? null,
-  // Der EINE Anwendungsweg (Teil XIV, Stufe 0): `wendeEintragAn` nimmt Eintrag
-  // oder Liste, baut Erzeugtes neu, blendet Gelöschtes aus und entwertet, was
-  // veraltet. Vorher stand hier nur `baueErzeugteNeu` — ein mehrteiliger
-  // Vorgang (Gelände formen = ausblenden + erzeugen) lief damit halb.
-  nachBauen: (eintraege) => api.wendeEintragAn?.(eintraege),
-  getHoehenversatz: () => api.getHoehenversatz?.() ?? 0,
-  // Teil XIV: Zeichnen AUF dem Gelände — Höhen aus dem Sampler des Viewers.
-  getHoeheAn: (x, z) => api.hoeheAn?.(x, z),
-  bereiteHoehenVor: () => api.bereiteGelaendeVor?.(),
-});
-
-/** Prüfmeldungen des Formulars UND des Zuges — der Nutzer sieht eine Liste. */
-const zeichenFehler = computed(() => (zeichnen.grund.value
-  ? [zeichnen.grund.value, ...bearbeitung.fehler]
-  : bearbeitung.fehler));
 
 /**
  * Die erzeugten Bauteile als Zeichenanweisung.
@@ -194,23 +145,6 @@ const erzeugtePunkte = computed(() => {
  * in DERSELBEN Beobachtung, die den Plan entwertet (unten).
  */
 const ableitungsBilder = ref([]);
-
-async function zeichnenAbschliessen() {
-  // Die Enter-Regel des Motors (Teil XVI): genug Punkte und gültiges
-  // Formular → anwenden; genug Punkte, Formular offen → Zug schliessen und
-  // das Formular zeigen (PRÜFEN); sonst nichts — mit Grund.
-  const eintrag = await zeichnen.enter();
-  baldZeichnen();
-  return eintrag;
-}
-
-/**
- * Der Plan beendet das Zeichnen auch von sich aus — nach dem Abschliessen,
- * über Esc, über Doppelklick. Ohne diese Meldung bliebe der Knopf in der
- * Werkzeugleiste hervorgehoben, obwohl nichts mehr scharf ist. Genau die Sorte
- * toter Bindung, die sich für den Nutzer als „das Werkzeug hängt" anfühlt.
- */
-watch(() => zeichnen.aktiv.value, (an) => { if (!an) emit('zeichnen-beendet'); });
 
 const hostRef = ref(null);
 const cvRef = ref(null);
@@ -323,6 +257,8 @@ function sammelOptionen() {
   return {
     scaleRatio: ansicht.massstab,
     viewDir: 'top',
+    // T3 (Abnahme 2026-09-12): was nicht aufs Blatt soll — der Eigenbau als Modell mit.
+    modelleAus: [...(o.modelleAus ?? []), ...(o.eigenbau === false ? [CDE_MODELL_ID] : [])],
     slopeHatch: o.slopeHatch ?? null,
     contours: o.contours ?? null,
     // Die Haltungsbeschriftung liest die Achsen direkt aus web-ifc — dafür
@@ -410,8 +346,8 @@ function zeichne() {
       measurements: o.measurements ?? [],
       dimensions: o.dimensions ?? [],
       planInhalte: planInhalt.inhalte,
-      erzeugte: [...erzeugtePunkte.value, ...ableitungsBilder.value],
-      zeichenZug: zeichnen.zug.value,
+      // T3: der Eigenbau hat ein eigenes Häkchen im Planinhalt.
+      erzeugte: o.eigenbau === false ? [] : [...erzeugtePunkte.value, ...ableitungsBilder.value],
       // Fertige Striche plus der gerade laufende — sonst sähe man beim Malen
       // nichts, bis man loslässt.
       rotstift: nasserStrich.value
@@ -562,12 +498,12 @@ function baldZeichnen() {
 /**
  * Griffe nur, wenn nichts anderes die Fläche beansprucht: der Bearbeiten-
  * Modus ist an, kein Werkzeug ist scharf (der zweite Schlitz von
- * „an Schacht anschließen" tippt auch auf Schächte!), kein Setz-, Zeichen-,
+ * „an Schacht anschließen" tippt auch auf Schächte!), kein Setz-,
  * Mess- oder Stiftmodus läuft.
  */
 function griffBereit() {
   return bearbeitung.modusAn && !bearbeitung.scharfId
-      && !setzModus.value && !zeichnen.aktiv.value && !messen.value && !stiftModus.value;
+      && !setzModus.value && !messen.value && !stiftModus.value;
 }
 
 function griffeLaden() {
@@ -814,9 +750,9 @@ function onZeigerAb(ev) {
       }
     }
     // Vorhandenen Planinhalt anfassen — direkte Manipulation für alle
-    // Zeigerarten. Bewusst VOR dem Messen (wie bisher) und NACH Setzen/
-    // Zeichnen (deren Punkte dürfen neben einem Symbol landen).
-    if (!setzModus.value && !zeichnen.aktiv.value) {
+    // Zeigerarten. Bewusst VOR dem Messen (wie bisher) und NACH dem Setzen
+    // (dessen Punkte dürfen neben einem Symbol landen).
+    if (!setzModus.value) {
       const unterZeiger = zeigerZuWelt(ev);
       const t = unterZeiger && planInhalt.treffer(unterZeiger, trefferRadius());
       if (t) {
@@ -842,7 +778,7 @@ function onZeigerAb(ev) {
 /**
  * Die Tipp-Aktion der aktiven Betriebsart — geteilt zwischen Maus/Stift
  * (beim Aufsetzen) und Finger (beim Loslassen, wenn es kein Wisch war).
- * Reihenfolge wie im alten onZeigerAb: Setzen → Zeichnen → Messen.
+ * Reihenfolge wie im alten onZeigerAb: Setzen → Messen.
  * @returns {boolean} true, wenn eine Betriebsart den Tipp verbraucht hat.
  */
 function tippAktion(ev) {
@@ -861,12 +797,6 @@ function tippAktion(ev) {
     }
     planInhalt.addSymbol(punkt, setzModus.value);
     baldZeichnen();
-    return true;
-  }
-  if (zeichnen.aktiv.value) {
-    const punkt = zeigerZuWelt(ev);
-    // Schliessfang (Teil XX): nahe am ersten Punkt schliesst der Umriss — derselbe Radius wie für Treffer.
-    if (punkt) { zeichnen.setzePunkt(punkt, { nahe: (p0) => Math.hypot(p0.x - punkt.x, p0.z - punkt.z) <= trefferRadius() }); baldZeichnen(); }
     return true;
   }
   if (messen.value) {
@@ -930,11 +860,6 @@ function onZeigerBewegt(ev) {
     zeigerLagen.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     gesten.zeigerBewegt(ev.pointerId, ev.clientX, ev.clientY);
     return;
-  }
-
-  if (zeichnen.aktiv.value) {
-    zeichnen.bewegeZeiger(zeigerZuWelt(ev));
-    baldZeichnen();
   }
 }
 
@@ -1010,14 +935,6 @@ function messenUmschalten(an = null) {
 }
 
 function onTaste(e) {
-  // Zeichnen hört auf mehr als Esc: Enter schliesst ab, Rücktaste nimmt den
-  // letzten Punkt zurück. Ohne die Rücktaste müsste man bei einem verklickten
-  // Punkt den ganzen Zug wegwerfen.
-  if (zeichnen.aktiv.value) {
-    if (e.key === 'Escape') { zeichnen.abbrechen(); baldZeichnen(); e.stopPropagation(); return; }
-    if (e.key === 'Enter') { zeichnenAbschliessen(); e.preventDefault(); e.stopPropagation(); return; }
-    if (e.key === 'Backspace') { zeichnen.entferneLetzten(); baldZeichnen(); e.preventDefault(); e.stopPropagation(); return; }
-  }
   if (e.key !== 'Escape') return;
   if (zieheGriff) { zieheGriff = null; greift.value = false; baldZeichnen(); e.stopPropagation(); return; }
   if (stiftModus.value) { stiftModus.value = null; nasserStrich.value = null; e.stopPropagation(); return; }
@@ -1025,15 +942,8 @@ function onTaste(e) {
   if (messen.value) { messenUmschalten(false); e.stopPropagation(); }
 }
 
-/**
- * Doppelklick: im Zeichenmodus schliesst er den Zug ab, sonst passt er ein.
- *
- * Der Doppelklick ist die eingeübte Geste zum Beenden eines Polygonzugs — in
- * jedem CAD. Sie hier NICHT zu belegen hiesse, dass der Nutzer den Zug mit
- * einem Doppelklick versehentlich wegzoomt.
- */
+/** Doppelklick passt das Blatt ein — gezeichnet wird im 3D (Abnahme 2026-09-12, E8). */
 function onDoppelklick() {
-  if (zeichnen.aktiv.value) { zeichnenAbschliessen(); return; }
   passendEinstellen();
 }
 
@@ -1117,6 +1027,7 @@ watch(() => [bearbeitung.modusAn, ifc.geometrieStand, ifc.modelList?.length, aen
 // Modellwechsel entwertet alles — und seit Stufe 16 auch jede ANGEWANDTE
 // Geometrieänderung (der `geometrieStand`-Zähler aus dem FormSchreiber-Hub):
 // sonst zeigte der Plan die Haltung am alten Ort, korrekt beschriftet.
+watch(() => farbmodus.modus, baldZeichnen);   // H6: Griffe und Rotstift lesen die Tokens
 watch(() => [ifc.modelList?.length, ifc.geometrieStand], () => {
   inhalt?.entwerte('modell');
   letzterInhalt = null;
@@ -1138,32 +1049,12 @@ defineExpose({
     if (!m) nasserStrich.value = null;
   },
   aktiverStift: () => stiftModus.value,
-  /** Ein Zeichenwerkzeug scharf schalten (Stufe 9.4) — Id aus dem Katalog. */
-  zeichneMit: (id) => {
-    if (!id) { zeichnen.abbrechen(); baldZeichnen(); return false; }
-    const ok = zeichnen.starte(id);
-    baldZeichnen();
-    return ok;
-  },
-  zeichnetGerade: () => zeichnen.werkzeug.value?.id ?? null,
   neuAufbauen: (grund = 'alles') => { inhalt?.entwerte(grund); return inhalteHolen(); },
   passendEinstellen,
 });
 </script>
 
 <style scoped>
-/* Das Zeichenformular sitzt unten links, dem Hinweis oben gegenüber — es soll
-   den Blick auf den laufenden Zug nicht verstellen. */
-.plan-zeichenform {
-  position: absolute;
-  left: 0.6rem; bottom: 0.6rem;
-  min-width: 190px;
-  padding: 0.45rem 0.55rem;
-  background: var(--cde-float);
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius);
-  box-shadow: var(--cde-shadow);
-}
 
 .plan-messhinweis {
   position: absolute;

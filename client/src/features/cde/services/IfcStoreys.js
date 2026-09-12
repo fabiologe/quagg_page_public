@@ -17,6 +17,7 @@
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
 import { istDeltaModell } from './DeltaBoxen.js';
+import { CDE_MODELL_ID } from './IfcAutor.js';
 
 export class IfcStoreys {
     /**
@@ -54,7 +55,10 @@ export class IfcStoreys {
         const fragments = this._components.get(OBC.FragmentsManager);
         const aus = [];
         for (const model of fragments.list.values()) {
-            if (istDeltaModell(model.modelId)) continue;
+            // Das Eigenbau-Modell hat keine Raumgliederung — seine Teile stehen
+            // im Delta, ohne Einordnung. Seinen Abschnitt baut der Viewer aus
+            // dem Verlauf (`Bauwerksstruktur.eigenbauBaum`, Abnahme 2026-09-12, A7).
+            if (istDeltaModell(model.modelId) || model.modelId === CDE_MODELL_ID) continue;
             let wurzel = null;
             try { wurzel = await model.getSpatialStructure(); } catch { /* ohne Raumgliederung */ }
             aus.push({ modelId: model.modelId, name: model.name ?? model.modelId, wurzel });
@@ -114,7 +118,11 @@ export class IfcStoreys {
         if (!model) return;
         const ids = await this.getStoreyElements(model.modelId, localId);
         const hider = this._components.get(OBC.Hider);
-        await hider.set(visible, { [model.modelId]: ids.length ? ids : [localId] });
+        const karte = { [model.modelId]: ids.length ? ids : [localId] };
+        // Bearbeitetes und Erzeugtes zeichnet das DELTA (`DeltaBoxen.js`) — es
+        // schaltet mit, sonst blieb ein Eigenbau-Teil trotz Auge stehen.
+        if (model.deltaModelId && fragments.list.has(model.deltaModelId)) karte[model.deltaModelId] = karte[model.modelId];
+        await hider.set(visible, karte);
     }
 
     /**

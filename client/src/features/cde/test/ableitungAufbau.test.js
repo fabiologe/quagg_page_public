@@ -25,7 +25,8 @@ function gelaende() {
 function fakeFragments() {
     let naechsteId = 100;
     const editor = {
-        createElements: vi.fn(async () => [{ localId: naechsteId++ }]),
+        // Wie die Bibliothek: ein Element je Auftrag, in dessen Reihenfolge.
+        createElements: vi.fn(async (_mid, auftraege) => auftraege.map(() => ({ localId: naechsteId++ }))),
         applyChanges: vi.fn(async () => []),
         deleteElements: vi.fn(),
         getElements: vi.fn(async () => []),
@@ -63,8 +64,10 @@ describe('IfcAutor.baueErzeugte mit Ableitung', () => {
         expect(r.misserfolge).toEqual([]);
         expect(r.leer).toEqual([schritte[1].globalId]);                // Auftrag: nichts
         expect([...r.karte.keys()]).toEqual([schritte[0].globalId, schritte[2].globalId]);
-        expect(f.editor.createElements).toHaveBeenCalledTimes(2);
-        const [aushubAufruf, dgmAufruf] = f.editor.createElements.mock.calls.map(c => c[1][0].attributes);
+        // EIN Auftrag für alle Teile (Fahrplan Klare Abläufe, S1): jedes
+        // `createElements` ist ein eigenes Delta-Modell mit allem bisher Erzeugten.
+        expect(f.editor.createElements).toHaveBeenCalledTimes(1);
+        const [aushubAufruf, dgmAufruf] = f.editor.createElements.mock.calls[0][1].map(a => a.attributes);
         expect(aushubAufruf._category.value).toBe('IFCEARTHWORKSCUT');
         expect(aushubAufruf.PredefinedType.value).toBe('TRENCH');
         expect(aushubAufruf._guid.value).toBe(schritte[0].globalId);

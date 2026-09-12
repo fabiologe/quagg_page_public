@@ -7,7 +7,8 @@
  * zeichnet. Ein neues Werkzeug bekommt seine Vorschau geschenkt — dieselbe
  * Bewegung, die `bauform` gegenüber `typ` gemacht hat.
  *
- *   geloescht            → Färbung `dimmen` (das Original tritt zurück)
+ *   geloescht            → Färbung `dimmen` (das Original tritt zurück) —
+ *                          außer es wird ERSETZT (Gelände unter einer Anzeige)
  *   erzeugt (Rezept)     → `bauplan` (das Overlay baut die Geometrie, three)
  *   erzeugt (Ableitung)  → `rezept.vorschau(parameter, ctx)` — leicht:
  *                          Trapez-Sweep, extrudierte Platte; NIE `leite`
@@ -59,11 +60,21 @@ export function vorschauFuer(beschreibungen, ctx = {}) {
     const klammern = new Map();      // ableitungId → { rezept, parameter, teile }
     let neue = 0;
     let festlegungen = 0;
+    // ERSETZT ist nicht ENTFERNT (Abnahme 2026-09-12, K4): was ein Erdbau-
+    // Vorgang als Gelände-Quelle nimmt oder unter seiner Anzeige verbirgt,
+    // bleibt, wie es ist — das Dimmen machte das Gelände für die Dauer der
+    // Bearbeitung grau und durchscheinend. Die Vorschau zeichnet ohnehin
+    // durch (Overlay mit `depthTest: false`).
+    const erzeugte = liste.filter(e => e.art === 'erzeugt');
+    const ersetzt = new Set(erzeugte.map(e => e.nachher?.parameter?.quellen?.gelaende).filter(Boolean));
+    const unterAnzeige = erzeugte.some(e => e.nachher?.rezept === 'anzeige');
 
     for (const e of liste) {
         switch (e.art) {
             case 'geloescht':
-                if (e.nachher && e.globalId) aus.faerbungen.push({ globalId: e.globalId, rolle: 'dimmen' });
+                if (e.nachher && e.globalId && !unterAnzeige && !ersetzt.has(e.globalId)) {
+                    aus.faerbungen.push({ globalId: e.globalId, rolle: 'dimmen' });
+                }
                 break;
             case 'erzeugt': {
                 const n = e.nachher;
@@ -87,7 +98,7 @@ export function vorschauFuer(beschreibungen, ctx = {}) {
                 break;
             default:
                 festlegungen++;
-                aus.chips.push({ art: 'festlegung', text: `${_artTitel(e.art)} — Festlegung` });
+                aus.chips.push({ art: 'festlegung', text: `${_artTitel(e.art)} — Wert im Verlauf` });
         }
     }
 

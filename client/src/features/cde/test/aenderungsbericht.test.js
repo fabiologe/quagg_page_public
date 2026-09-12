@@ -91,7 +91,7 @@ describe('schreibeBericht', () => {
 describe('Der Verlauf aus der Commit-Zeitleiste (U3)', () => {
     it('je Commit ein Abschnitt mit NACHRICHT — die Sitzung als unversioniert', () => {
         const zeitleiste = [
-            { typ: 'sitzung', id: 'sitzung', titel: 'Offene Sitzung — unversioniert',
+            { typ: 'sitzung', id: 'sitzung', titel: 'Offene Bearbeitung — nicht gesichert',
               wer: 'Fabio', wann: WANN + 5000,
               vorgaenge: [{ schluessel: 'x', zeilen: [EINTRAEGE[0]] }] },
             { typ: 'commit', id: 'c1', titel: 'Kanal Süd nachgezogen',
@@ -100,7 +100,7 @@ describe('Der Verlauf aus der Commit-Zeitleiste (U3)', () => {
         ];
         const b = baueBericht({ eintraege: EINTRAEGE, zeitleiste });
         expect(b.verlauf).toHaveLength(2);
-        expect(b.verlauf[0].titel).toMatch(/unversioniert/);
+        expect(b.verlauf[0].titel).toMatch(/nicht gesichert/);
         expect(b.verlauf[1].titel).toBe('Kanal Süd nachgezogen');
         expect(b.verlauf[1].zeilen).toHaveLength(2);
         // Der wirksame Stand rechnet weiter über die flache Liste.

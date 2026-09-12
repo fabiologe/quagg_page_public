@@ -27,6 +27,18 @@
     <!-- Was gezeichnet wird -->
     <CdeCardHeader icon="layers" titel="Inhalt" />
     <div class="pp-schalter">
+      <!-- Je Modell ein Häkchen, der Eigenbau als eigenes (Abnahme 2026-09-12, T3). -->
+      <p class="pp-unterkopf">Modelle</p>
+      <label v-for="m in modelle" :key="m.modelId" class="pp-check" :title="m.name">
+        <input type="checkbox" :checked="!ausgelassen.has(m.modelId)" @change="modellUmschalten(m.modelId, $event.target.checked)" />
+        <span class="pp-name">{{ m.name }}</span>
+      </label>
+      <label v-if="eigenbauDa" class="pp-check" title="Was die CDE selbst gebaut hat — gezeichnete Linien, Schächte, Erdbau">
+        <input type="checkbox" :checked="plan.optionen.eigenbau !== false" @change="plan.setzeOption('eigenbau', $event.target.checked)" />
+        <span>Eigenbau</span>
+      </label>
+      <p v-if="!modelle.length && !eigenbauDa" class="pp-meldung">Kein Modell geladen.</p>
+      <p class="pp-unterkopf">Darstellung</p>
       <label v-for="s in INHALT" :key="s.id" class="pp-check" :title="s.hilfe">
         <input type="checkbox" :checked="plan.optionen[s.id]" @change="plan.setzeOption(s.id, $event.target.checked)" />
         <span>{{ s.titel }}</span>
@@ -215,6 +227,9 @@ import { useCdeStore, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { BLATT_FORMATE, MASSSTAB_LEITER } from '../services/PlanViewport.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { usePlanExport } from '../composables/usePlanExport.js';
+import { useIfcStore } from '../stores/useIfcStore.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { CDE_MODELL_ID } from '../services/IfcAutor.js';
 
 const emit = defineEmits(['stile-oeffnen']);
 
@@ -226,12 +241,26 @@ const { ausfuehren, busy, fehler } = usePlanExport();
 
 const FORMATE = Object.keys(BLATT_FORMATE);
 
+// ── T3: welche Modelle aufs Blatt kommen ───────────────────────────────────
+const ifc = useIfcStore();
+const aenderungen = useAenderungen();
+/** Die gelieferten Modelle — der Eigenbau hat sein eigenes Häkchen. */
+const modelle = computed(() => (ifc.modelList ?? []).filter(m => m.modelId !== CDE_MODELL_ID));
+const ausgelassen = computed(() => new Set(plan.optionen.modelleAus ?? []));
+const eigenbauDa = computed(() => (ifc.modelList ?? []).some(m => m.modelId === CDE_MODELL_ID)
+  || aenderungen.wirksamerStand('erzeugt').size > 0);
+function modellUmschalten(modelId, an) {
+  const neu = new Set(plan.optionen.modelleAus ?? []);
+  if (an) neu.delete(modelId); else neu.add(modelId);
+  plan.setzeOption('modelleAus', [...neu]);
+}
+
 const INHALT = [
   { id: 'footprints',   titel: 'Grundriss-Kurven',  hilfe: 'Umrisse der Bauteile in der Draufsicht' },
   { id: 'hatch',        titel: 'Schnittschraffur',  hilfe: 'Flächen, die die Schnittebene trifft' },
   { id: 'showLabels',   titel: 'Beschriftung',      hilfe: 'Bauteiltexte nach Kategorie-Vorlage' },
   { id: 'scaleBar',     titel: 'Maßstab & Nord',    hilfe: 'Maßstabsleiste und Nordpfeil' },
-  { id: 'annotations',  titel: 'Issue-Pins',        hilfe: 'Offene und geschlossene Issues als Marke' },
+  { id: 'annotations',  titel: 'Notizen',           hilfe: 'Offene und geschlossene Notizen als Marke' },
   { id: 'measurements', titel: 'Messstrecken',      hilfe: 'Im 3D gemessene Strecken' },
   { id: 'dimensions',   titel: 'Bemaßung',          hilfe: 'Im Plan gesetzte Maßketten' },
   { id: 'ifcGrids',     titel: 'IFC-Achsenraster',  hilfe: 'Achsenraster aus dem Modell' },
@@ -350,6 +379,13 @@ function ausgeben(art) {
   font-size: var(--cde-font-sm); color: var(--cde-text-soft); cursor: pointer;
 }
 .pp-check input { accent-color: var(--card-accent); }
+.pp-unterkopf {
+  margin: 0.25rem 0 0;
+  font-size: var(--cde-font-xs); color: var(--cde-text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.pp-unterkopf:first-child { margin-top: 0; }
+.pp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Untereinstellungen rücken ein — sie gehören zum Schalter darüber. */
 .pp-unter {
   display: flex; gap: var(--cde-gap-sm); flex-wrap: wrap;

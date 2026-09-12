@@ -15,8 +15,8 @@
  *
  * Aufbau:
  *   1. Rollen-unabhängige Marken-/Semantikfarben
- *   2. Oberflächen- und Textrollen (hier dunkel; ein späterer
- *      `:root[data-theme="light"]`-Block überschreibt NUR diese Rollen)
+ *   2. Oberflächen- und Textrollen (hier dunkel; der Block
+ *      `:root[data-cde-modus="hell"]` weiter unten überschreibt nur Rollen)
  *   3. Form, Abstände, Typografie, Layout-Maße
  */
 
@@ -63,7 +63,14 @@
     --cde-bg:              #202433;   /* Panel-/Sektionsfläche       */
     --cde-bg-alt:          #232738;   /* Leisten, Panel-Kopf         */
     --cde-surface:         #12141e;   /* dunkle Panels über 3D       */
+    --cde-farbschema:      dark;      /* color-scheme der Auswahllisten — im hellen Modus „light“ */
     --cde-surface-alt:     #1a1e2e;   /* Overlays (Suche, Palette)   */
+
+    /* Die 3D-Szene: Grund und Raster (H6). three kennt keine CSS-Variablen —
+       der Viewer liest beide beim Start und bei jedem Moduswechsel. Dunkel
+       bleibt der Grund der Bibliothek; „none" = ihr Standardraster. */
+    --cde-szene:           #202932;
+    --cde-szene-raster:    none;
 
     /* ── Schwebeflächen über dem 3D-Bild ──────────────────────────────
        Alles, was über dem Canvas liegt (Werkzeugleisten, Ebenen-Panel,
@@ -132,6 +139,9 @@
     --cde-text-faint:      #607d8b;   /* Hinweise, Fußnoten          */
     --cde-text-dimmer:     #546e7a;   /* Meta, Zeitstempel           */
     --cde-text-invert:     #ffffff;
+    /* Schrift auf einer kräftigen Farbfläche (Akzent-, Warnknopf): im
+       Dunkeln der tiefe Grund, im Hellen Weiß — 5,5:1 auf Petrol. */
+    --cde-text-auf-farbe:  var(--cde-bg-deep);
 
     /* Weiß-Tonleiter: der Viewer benutzte 9 verschiedene Alphawerte
        (0.04–0.15) ohne System — hier auf vier Stufen gebracht. */
@@ -177,6 +187,95 @@
     --cde-z-panel:         30;
     --cde-z-dialog:        2000;
     --cde-z-palette:       2200;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HELLER MODUS (Kassensturz H6, Abnahme 2026-09-12 K1) — im Stil von Quagg-PDF
+   ═══════════════════════════════════════════════════════════════════════════
+   Fabio: „Es fehlt noch ein Hell-Modus (im selben Style wie Quagg-PDF)."
+   Die Werte stammen aus `features/pdfeditor/styles/theme.css` — Papiergrau,
+   Petrol-Akzent, dunkle Schrift —, abgeschrieben, nicht importiert: kein
+   Feature importiert aus einem anderen. Überschrieben werden nur ROLLEN:
+   Flächen, Linien, Schatten, Text und jede Farbe, die als Schrift dient.
+   Eine konstante Schriftfarbe ist nie auf Navy und Papier zugleich lesbar;
+   wo Quagg-PDF knapp unter 4,5:1 läge, ist der Ton einen Hauch tiefer
+   (gerechnet in `test/hellerModus.test.js`).
+
+   WARUM `data-cde-modus` und nicht `data-theme`: isybau hängt eine Regel an
+   `html[data-theme] button` (mit !important). Sobald dessen CSS in der
+   Sitzung geladen ist, bekäme jeder Knopf der CDE seinen Pixelrahmen.
+   Das Papier (`--cde-papier-*`) und die Hinweisplakette bleiben konstant.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root[data-cde-modus="hell"] {
+    /* Akzent und Semantik — als Schrift auf hellem Grund */
+    --cde-accent:          #0b625b;   /* Petrol (Quagg-PDF #0f766e; tiefer, damit er auch auf seiner eigenen Fläche 4,5:1 hält) */
+    --cde-accent-soft:     #0a5752;
+    /* Akzentflächen leiser als im Dunkeln (Quagg-PDF: 12 %) — Petrol-Schrift
+       auf 30 % Petrol hatte 3,3:1 (Sweep 2026-09-12: aktive Ansicht, Reiter). */
+    --cde-accent-fill:     color-mix(in srgb, var(--cde-accent) 8%, transparent);
+    --cde-accent-fill-hi:  color-mix(in srgb, var(--cde-accent) 12%, transparent);
+    --cde-danger:          #b91c1c;
+    --cde-danger-soft:     #9f1d1d;
+    --cde-success:         #137333;
+    --cde-success-strong:  #166534;
+    --cde-warn:            #a34a07;
+    --cde-warn-soft:       #92400e;
+    --cde-issue:           #b0164f;
+    --cde-issue-soft:      #9d174d;
+    --cde-terrain:         #795548;
+    --cde-terrain-soft:    #6d4c41;
+    --cde-violet:          #6d28d9;
+    --cde-amber:           #8f5606;
+    --cde-amber-soft:      #854d0e;
+    --cde-merkmal:         #0b6680;
+    --cde-merkmal-soft:    #0b625b;
+
+    /* Flächen — Papiergrau statt Navy (--pdf-bg, --pdf-flaeche, -2, -3) */
+    --cde-bg-deep:         #e9e7e2;
+    --cde-bg:              #f8f7f4;
+    --cde-bg-alt:          #f1efea;
+    --cde-surface:         #fdfcfa;
+    --cde-surface-alt:     #f8f7f4;
+    --cde-farbschema:      light;
+    --cde-szene:           #e9e7e2;
+    --cde-szene-raster:    #8c877d;
+    --cde-float-tint:      248 247 244;
+    --cde-float-deep:      rgb(238 236 231 / 0.96);
+    --cde-float-deeper:    rgb(226 223 217 / 0.97);
+    --cde-scrim:           rgb(34 38 43 / 0.32);
+    --cde-scrim-strong:    rgb(34 38 43 / 0.42);
+    --cde-shadow-float:    0 1px 3px rgb(25 28 32 / 0.10), 0 4px 16px rgb(25 28 32 / 0.08);
+    --cde-shadow-lg:       0 8px 28px rgb(25 28 32 / 0.12);
+    --cde-shadow-xl:       0 16px 44px rgb(25 28 32 / 0.18);
+    --cde-shadow-sm:       0 1px 3px rgb(25 28 32 / 0.10);
+    --cde-shadow:          0 6px 20px rgb(25 28 32 / 0.10);
+    --cde-sunken:          rgb(34 38 43 / 0.05);
+
+    /* Text */
+    --cde-text:            #22262b;
+    --cde-text-bright:     #111418;
+    --cde-text-soft:       #3a4047;
+    --cde-text-dim:        #4f575f;
+    --cde-text-mute:       #545c65;
+    --cde-text-faint:      #555d66;
+    --cde-text-dimmer:     #575f68;   /* auch auf getönten Köpfen (Merkmal-Fläche) ≥ 4,5:1 */
+    --cde-text-auf-farbe:  #ffffff;
+
+    /* Linien und Tinten — dunkle Tinte statt Licht */
+    --cde-tint-weak:       rgb(34 38 43 / 0.04);
+    --cde-tint:            rgb(34 38 43 / 0.09);
+    --cde-tint-strong:     rgb(34 38 43 / 0.13);
+    --cde-tint-max:        rgb(34 38 43 / 0.18);
+}
+
+/* Die Rollbalken zieht der globale SaintV-Stil über vier Tokens — im hellen
+   Modus die grünen von Quagg-PDF (Muster `pdfeditor/styles/theme.css`). */
+:root[data-cde-modus="hell"]:has(.cde-view) {
+    --scroll-thumb:       #2f9e6f;
+    --scroll-thumb-hover: #1d7d55;
+    --scroll-track:       transparent;
+    --scroll-thumb-glow:  none;
 }
 
 
@@ -431,3 +530,17 @@
     .cde-card-btn { position: relative; }
     .cde-card-btn::after { content: ''; position: absolute; inset: -7px; }
 }
+
+/* ── Auswahllisten (Abnahme 2026-09-12, F1): EIN Stil für jedes <select> ──
+   Firefox malt das aufgeklappte Popup nach `color-scheme` und den Farben der
+   Optionen. Ohne beides war es hell — und der Text der Liste auch: unlesbar
+   in 25 von 28 Listen. Präfix Pflicht: diese Datei wird global geladen;
+   `.cde-dialog` erreicht die Dialoge, die an den body teleportiert werden. */
+.cde-view select, .cde-dialog select,
+.cde-view input:is([type="date"], [type="time"], [type="datetime-local"]),
+.cde-dialog input:is([type="date"], [type="time"], [type="datetime-local"]) { color-scheme: var(--cde-farbschema); }
+.cde-view :is(option, optgroup), .cde-dialog :is(option, optgroup) {
+    color: var(--cde-text);
+    background-color: var(--cde-surface);
+}
+.cde-view option:disabled, .cde-dialog option:disabled { color: var(--cde-text-dim); }

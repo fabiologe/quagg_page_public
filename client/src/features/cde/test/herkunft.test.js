@@ -26,16 +26,20 @@ describe('Der Chip im Register', () => {
         expect(herkunftChip({ herkunft: null })).toBeNull();
     });
 
-    it('ein Erdbau-Dokument nennt sein Gelände, die Prüfung und den Journalstand', () => {
+    it('ein Erdbau-Dokument nennt in einer Zeile sein Gelände, den Satz und die Prüfung (S2)', () => {
         const c = herkunftChip(erdbau('Erdbau_Boden_R01.ifc'));
-        expect(c).toMatchObject({ art: 'erdbau', text: 'Erdbau · aus Gelaende.ifc' });
-        expect(c.titel).toMatch(/Ur-Gelände unverändert/);
+        expect(c).toMatchObject({ art: 'erdbau', text: 'Erdbau · aus Gelaende · Satz Boden · geprüft' });
+        expect(c.titel).toMatch(/^Erdbau-Dokument: Gelände unverändert/);
         expect(c.titel).toMatch(/geprüft, 0 Verstöße/);
-        expect(c.titel).toMatch(/Journalstand c-1/);
+        // Die Verlaufsversion ist eine Kennung für den Server, kein Satz (R4).
+        expect(c.titel).not.toMatch(/Journal|Sitzung|Ur-Gelände|c-1/);
         expect(c.titel).toMatch(/Quelle Gelaende.ifc Rev. 1/);
         // Mehrere Gelände: das erste beim Namen, der Rest gezählt.
         expect(herkunftChip(erdbau('E.ifc', [GELAENDE, { sha256: 'b', datei: 'Gelaende_Nord.ifc' }])).text)
-            .toBe('Erdbau · aus Gelaende.ifc +1');
+            .toBe('Erdbau · aus Gelaende +1 · Satz Boden · geprüft');
+        // Verstöße in der Zeile als Zahl, Einzahl richtig.
+        expect(herkunftChip(erdbau('E.ifc', [GELAENDE], { pruefung: { verstoesse: 1 } })).text)
+            .toBe('Erdbau · aus Gelaende · Satz Boden · 1 Verstoß');
     });
 
     it('ein Verbund zählt seine Quellen (der Live-Eigenbau zählt mit) und nennt, was wegfiel', () => {

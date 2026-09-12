@@ -9,8 +9,11 @@
  * Der Status geht VORWÄRTS (WIP → Shared → Published → Archived); zurück ist
  * eine bewusste Rücknahme mit Rang. ADMIN darf jeden Sprung (Korrektur) —
  * auditiert wird ohnehin jeder Wechsel.
+ *
+ * Die Gründe sind Sätze für Menschen (S2, R2): was fehlt, beim Namen —
+ * „Zuerst Shared, dann Published.", „Erst prüfen, dann Shared.".
  */
-import { hatMindestens, normalisiert } from '@/services/rollen';
+import { hatMindestens, normalisiert, ROLLEN_LABEL } from '@/services/rollen';
 
 export const STATUS_UEBERGAENGE = Object.freeze({
     'WIP':       { 'Shared': 'WERKSTUDENT' },
@@ -21,7 +24,7 @@ export const STATUS_UEBERGAENGE = Object.freeze({
 
 /**
  * Stufe 4b (IFC-Konsistenz, 2026-09-11): wer ein MODELL teilt, soll wissen, was
- * das Prüftor zu ihm sagt. Verlangt wird ein VORHANDENER Prüfbericht, kein
+ * die Prüfung zu ihm sagt. Verlangt wird ein VORHANDENER Prüfbericht, kein
  * grüner. Spiegel von cde.py::UEBERGANG_VERLANGT_PRUEFUNG — test_cde.py hält
  * beide gleich.
  */
@@ -38,6 +41,26 @@ export const EIGNUNG = Object.freeze({
 });
 
 /**
+ * Der kürzeste Weg durch den Graphen, ohne Rangschranke — nur, um die
+ * Zwischenstufen beim Namen zu nennen. `null`, wenn es keinen gibt.
+ */
+function _weg(von, nach) {
+    const vorher = new Map([[von, null]]);
+    const offen = [von];
+    while (offen.length) {
+        const s = offen.shift();
+        if (s === nach) break;
+        for (const n of Object.keys(STATUS_UEBERGAENGE[s] ?? {})) {
+            if (!vorher.has(n)) { vorher.set(n, s); offen.push(n); }
+        }
+    }
+    if (!vorher.has(nach)) return null;
+    const weg = [];
+    for (let s = nach; s != null; s = vorher.get(s)) weg.unshift(s);
+    return weg;
+}
+
+/**
  * @param {object} opts {von, nach, rolle, art, hatPruefung}  rolle null = unbekannt (lokal,
  *   nicht angemeldet): dann gilt der GRAPH, aber keine Rangschranke — der
  *   Server prüft sie ohnehin, und ein lokales Repo hat keinen Nutzer.
@@ -48,15 +71,18 @@ export function pruefeStatuswechsel({ von, nach, rolle = null, art = null, hatPr
     if (normalisiert(rolle) === 'ADMIN') return { ok: true, grund: null };
     const mindest = STATUS_UEBERGAENGE[von]?.[nach];
     if (!mindest) {
-        return { ok: false, grund: `${von} → ${nach} ist kein ISO-19650-Weg — erst über die Zwischenstufe.` };
+        const zwischen = _weg(von, nach)?.slice(1, -1) ?? [];
+        return { ok: false, grund: zwischen.length
+            ? `Zuerst ${zwischen.join(', dann ')}, dann ${nach}.`
+            : `Von ${von} führt kein Weg nach ${nach}.` };
     }
     if (rolle != null && !hatMindestens(rolle, mindest)) {
-        return { ok: false, grund: `${von} → ${nach} braucht mindestens ${mindest}.` };
+        return { ok: false, grund: `Von ${von} nach ${nach} erst ab Rolle ${ROLLEN_LABEL[mindest] ?? mindest}.` };
     }
     if (art === 'modell' && !hatPruefung
         && UEBERGANG_VERLANGT_PRUEFUNG.some(([a, b]) => a === von && b === nach)) {
-        return { ok: false, grund: `${von} → ${nach} braucht einen Prüfbericht — erst „Prüfen" `
-            + 'in der Registerzeile (Verstöße dürfen drinstehen, der Bericht muss nur da sein).' };
+        // Verstöße dürfen im Bericht stehen — er muss nur da sein.
+        return { ok: false, grund: `Erst prüfen, dann ${nach}.` };
     }
     return { ok: true, grund: null };
 }

@@ -54,8 +54,8 @@ export function schreibeBericht(bericht) {
         { groesse: 8.5, abstand: 4 });
 
     // ── 1. Wirksamer Stand ──────────────────────────────────────────────────
-    abschnitt(`Wirksamer Stand — ${bericht.stand.length} Festlegungen`);
-    if (!bericht.stand.length) text('Keine wirksamen Festlegungen.', { groesse: 9.5 });
+    abschnitt(`Wirksamer Stand — ${bericht.stand.length} ${bericht.stand.length === 1 ? 'Schritt' : 'Schritte'}`);
+    if (!bericht.stand.length) text('Keine wirksamen Schritte.', { groesse: 9.5 });
     for (const z of bericht.stand) {
         umbruch(10);
         text(`${z.bauteil} — ${z.art}${z.eigen ? ' (eigenes Bauteil)' : ''}`,

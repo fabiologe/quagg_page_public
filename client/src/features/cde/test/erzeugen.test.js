@@ -20,6 +20,7 @@ import {
     neueGlobalId, pruefeBauplan, punkteAus, rezeptNach, zuruecknahmeEintrag,
 } from '../services/Bauteilrezepte.js';
 import { IfcAutor, CDE_MODELL_ID } from '../services/IfcAutor.js';
+import { istDeltaModell } from '../services/DeltaBoxen.js';
 import { standAus, beschreibeWert } from '../stores/useAenderungen.js';
 import { planeNachspielen } from '../services/Nachspielen.js';
 
@@ -170,9 +171,26 @@ describe('Ein untauglicher Bauplan kommt gar nicht erst ins Journal', () => {
 function fakeFragments() {
     const modelle = new Map();
     let naechsteId = 1;
+    // DAS DELTA WIE IN DER BIBLIOTHEK (Abnahme 2026-09-12): jedes `edit` —
+    // `createElements` ruft es selbst — legt ein NEUES `…-DELTA-MODEL-…` in
+    // dieselbe Liste und entsorgt das vorige desselben Modells;
+    // `disposeModel` entsorgt nur die Basis, `disposeDeltaModels` die Deltas.
+    const deltas = new Map();
+    let deltaNr = 0;
+    const deltaWeg = (modelId) => {
+        if (deltas.has(modelId)) modelle.delete(deltas.get(modelId));
+        deltas.delete(modelId);
+    };
     const editor = {
-        createElements: vi.fn(async () => [{ localId: naechsteId++ }]),
+        createElements: vi.fn(async (modelId, auftraege) => {
+            deltaWeg(modelId);
+            const id = `${modelId}-DELTA-MODEL-${++deltaNr}`;
+            modelle.set(id, { modelId: id });
+            deltas.set(modelId, id);
+            return auftraege.map(() => ({ localId: naechsteId++ }));
+        }),
         applyChanges: vi.fn(async () => {}),
+        disposeDeltaModels: vi.fn(async (modelId) => deltaWeg(modelId)),
     };
     return {
         _modelle: modelle,
@@ -238,7 +256,8 @@ describe('Das CDE-Modell wird AUFGEBAUT, nicht fortgeschrieben', () => {
         // Der erste Lauf fand nichts vor — verworfen wird erst ab dem zweiten.
         expect(f.core.disposeModel).toHaveBeenCalledTimes(1);
         expect(f.core.load).toHaveBeenCalledTimes(2);     // je Lauf ein frisches Modell
-        expect(f._modelle.size).toBe(nachErstem);         // und nicht zwei nebeneinander
+        // und nicht zwei Basen nebeneinander (das Delta zählt die nächste Probe)
+        expect([...f._modelle.keys()].filter(k => !istDeltaModell(k))).toHaveLength(nachErstem);
     });
 
     it('LEERT das Modell, wenn der neue Satz nichts erzeugt hat', async () => {
@@ -252,6 +271,48 @@ describe('Das CDE-Modell wird AUFGEBAUT, nicht fortgeschrieben', () => {
 
         await autor.baueErzeugte([]);
         expect(f._modelle.has(CDE_MODELL_ID)).toBe(false);
+        // Auch das Delta mit der Geometrie (Abnahme 2026-09-12): vorher blieb
+        // es als Waise in der Liste — 1 Eintrag statt 0.
+        expect([...f._modelle.keys()]).toEqual([]);
+    });
+
+    it('drei Neuaufbauten hinterlassen EINE Basis und EIN Delta', async () => {
+        // Die Grösse, die im Browser „alle Modelle weg" auslöste: verwaiste
+        // Deltas in der Modellliste, die jedes `update` weiter mitrechnet.
+        const f = fakeFragments();
+        const autor = autorMit(f);
+        for (let i = 0; i < 3; i++) await autor.baueErzeugte([schritt('cde-a'), schritt('cde-b')]);
+        const schluessel = [...f._modelle.keys()];
+        expect(schluessel.filter(k => !istDeltaModell(k))).toEqual([CDE_MODELL_ID]);
+        expect(schluessel.filter(istDeltaModell)).toHaveLength(1);
+        // Das Delta vor der Basis entsorgt — es zeichnet sich gegen sie.
+        const [delta] = f._editor.disposeDeltaModels.mock.invocationCallOrder;
+        const [basis] = f.core.disposeModel.mock.invocationCallOrder;
+        expect(delta).toBeLessThan(basis);
+    });
+
+    it('N Teile sind EIN Auftrag an den Editor — ein Delta statt N', async () => {
+        const f = fakeFragments();
+        const { karte, misserfolge } = await autorMit(f)
+            .baueErzeugte([schritt('cde-a'), schritt('cde-b'), schritt('cde-c')]);
+        expect(misserfolge).toEqual([]);
+        expect(f._editor.createElements).toHaveBeenCalledTimes(1);              // vorher 3
+        expect(f._editor.createElements.mock.calls[0][1]).toHaveLength(3);
+        expect(new Set(karte.values()).size).toBe(3);
+    });
+
+    it('scheitert der gemeinsame Auftrag, steht nur das kaputte Teil als Misserfolg da', async () => {
+        const f = fakeFragments();
+        const echt = f._editor.createElements.getMockImplementation();
+        f._editor.createElements.mockImplementation(async (modelId, auftraege) => {
+            if (auftraege.some(a => a.attributes._guid?.value === 'cde-kaputt')) throw new Error('Shell kaputt');
+            return echt(modelId, auftraege);
+        });
+        const { karte, misserfolge } = await autorMit(f)
+            .baueErzeugte([schritt('cde-a'), schritt('cde-kaputt'), schritt('cde-b')]);
+        expect([...karte.keys()]).toEqual(['cde-a', 'cde-b']);
+        expect(misserfolge.map(m => m.globalId)).toEqual(['cde-kaputt']);
+        expect(misserfolge[0].grund).toMatch(/editor_fehler: Shell kaputt/);
     });
 
     it('meldet einen untauglichen Bauplan, statt ihn still zu überspringen', async () => {
@@ -315,6 +376,26 @@ describe('wendeAn: erst erzeugen, dann verschieben', () => {
             { globalIdZuLocalId: new Map([['H12', 42]]) },
         );
         expect(autor.setzeAnker).toHaveBeenCalledWith('geliefert', 42, { x: 1, y: 0, z: 0 });
+    });
+
+    it('trifft jedes gelieferte Bauteil in SEINEM Modell, nicht im ersten (Abnahme 2026-09-12)', async () => {
+        // Das Nachspielen gab die Kennung des ERSTEN geladenen Modells mit.
+        // Lud das Gelände als zweites, blendete `geloescht` ein fremdes Bauteil
+        // des ersten aus — und das ungeformte Gelände deckte den Aushub.
+        const f = fakeFragments();
+        const autor = autorMit(f);
+        autor.setzeAnker = vi.fn(async () => ({ ok: true }));
+        const r = await autor.wendeAn(
+            { modelId: 'kanal', anzuwenden: [
+                { globalId: 'UR', art: 'geloescht', wert: true, modell: 'geliefert' },
+                { globalId: 'H12', art: 'lage', wert: { x: 1, y: 0, z: 0 } },
+            ] },
+            { globalIdZuLocalId: new Map([['UR', 7], ['H12', 42]]),
+              globalIdZuOrt: new Map([['UR', { modelId: 'gelaende', localId: 7 }],
+                                      ['H12', { modelId: 'kanal', localId: 42 }]]) },
+        );
+        expect(r.auszublenden).toEqual([{ modelId: 'gelaende', localId: 7 }]);   // vorher 'kanal'
+        expect(autor.setzeAnker).toHaveBeenCalledWith('kanal', 42, { x: 1, y: 0, z: 0 });
     });
 });
 

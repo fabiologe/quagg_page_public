@@ -170,7 +170,7 @@ const tabs = [
   { id: 'count',    icon: 'count',    label: 'Stück',         disabled: false },
   { id: 'kosten',   icon: 'kosten',   label: 'Kosten',        disabled: false },
   { id: 'pauschal', icon: 'pauschal', label: 'Pauschal',      disabled: false },
-  { id: 'quality',  icon: 'quality',  label: 'BIM-Qualität',  disabled: false },
+  { id: 'quality',  icon: 'quality',  label: 'Schnellcheck',  disabled: false },
 ];
 const activeTab = ref('areas');
 

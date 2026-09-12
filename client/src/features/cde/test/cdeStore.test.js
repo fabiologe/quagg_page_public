@@ -14,7 +14,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useCdeStore, ISO_STATUS } from '../stores/useCdeStore'
-import { dokumentAusManifest } from '../services/RepoFacade'
+import { dokumentAusManifest, repo } from '../services/RepoFacade'
+import { useAuthStore } from '@/stores/useAuthStore.js'
 
 beforeEach(() => {
   localStorage.clear()
@@ -149,6 +150,28 @@ describe('Das Dokumentregister gehört dem AUFTRAG', () => {
     expect(doc.status).toBe('Shared')
     expect(doc.statusHistorie.map(h => h.status)).toEqual(['WIP', 'Shared'])
     expect(ISO_STATUS).toContain('Published')
+  })
+})
+
+// Kassensturz H1: das Feld „Bearbeiter" ist aus der Kopfleiste verschwunden.
+// Sein alter Wert lag im PROJEKTordner und galt für jeden, der das Projekt
+// öffnete — ohne Feld liesse er sich nicht einmal mehr korrigieren.
+describe('Wer bearbeitet — der Name aus der Anmeldung', () => {
+  it('gewinnt gegen einen alten Wert im Projektordner', async () => {
+    await repo.set('cde-bearbeiter', 'Jemand anderes')
+    localStorage.setItem('user', JSON.stringify({ anzeigename: 'Fabio Login' }))
+    const cde = useCdeStore()
+    await cde.ready
+    expect(useAuthStore().anzeigename).toBe('Fabio Login')
+    expect(cde.bearbeiter).toBe('Fabio Login')
+  })
+
+  it('setBearbeiter ist nur der Rückfall ohne Anmeldung und schreibt nichts ab', async () => {
+    const cde = useCdeStore()
+    await cde.ready
+    await cde.setBearbeiter('Ohne Login')
+    expect(cde.bearbeiter).toBe('Ohne Login')
+    expect(await repo.get('cde-bearbeiter')).not.toBe('Ohne Login')
   })
 })
 

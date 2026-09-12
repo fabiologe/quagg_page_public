@@ -116,7 +116,9 @@ describe('useVorschau am echten Store', () => {
         t.b.abbrechen();
         await vi.advanceTimersByTimeAsync(30);
         expect(t.e.overlayLeere).toHaveBeenCalledWith('vorschau');
-        expect(t.e.entfaerbeAlle).toHaveBeenCalled();
+        // Nur die Rollen der Vorschau — der Farbkatalog bleibt (Abnahme K4).
+        expect(t.e.entfaerbeAlle).not.toHaveBeenCalled();
+        expect(t.e.entfaerbe).toHaveBeenCalledWith('dimmen');
         expect(t.v.stand.value).toBeNull();
     });
 

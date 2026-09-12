@@ -260,7 +260,7 @@ function closePsetBrowser() {
   justify-content: space-between;
   align-items: center;
   padding: 0.6rem 0.75rem;
-  background: color-mix(in srgb, var(--cde-accent) 25%, transparent);
+  background: var(--cde-accent-fill-hi);   /* Token statt 25 % von Hand — im hellen Modus leiser (H6) */
   border-bottom: 1px solid var(--cde-tint);
   flex-shrink: 0;
 }
@@ -276,8 +276,8 @@ function closePsetBrowser() {
 .sb-header-actions { display: flex; align-items: center; gap: 0.35rem; }
 
 .sb-btn-pset {
-  background: color-mix(in srgb, var(--cde-accent) 25%, transparent);
-  border: 1px solid color-mix(in srgb, var(--cde-accent) 40%, transparent);
+  background: var(--cde-accent-fill);
+  border: 1px solid var(--cde-accent-line);
   border-radius: 4px;
   color: var(--cde-accent-soft);
   font-size: 0.65rem;
@@ -286,7 +286,7 @@ function closePsetBrowser() {
   cursor: pointer;
   transition: background 0.15s;
 }
-.sb-btn-pset:hover { background: color-mix(in srgb, var(--cde-accent) 45%, transparent); }
+.sb-btn-pset:hover { background: var(--cde-accent-fill-hi); }
 
 .sb-btn-close {
   background: none;

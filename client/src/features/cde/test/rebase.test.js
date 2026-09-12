@@ -98,7 +98,7 @@ describe('Das Umhängen — ein Commit, revertierbar, wiederholbar', () => {
 
         const commit = ae.commits.at(-1);
         expect(commit.rebase).toEqual({ von: R01, nach: R02, abbildung: { A: 'B' } });
-        expect(commit.nachricht).toBe('Rebase R01 → R02');
+        expect(commit.nachricht).toBe('Zugeordnet: R01 → R02');
         expect(commit.modellSha).toBe('sha-r02');                                // Lücke L6: das Modell, an dem es jetzt hängt
     });
 

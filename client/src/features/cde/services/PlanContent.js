@@ -32,6 +32,7 @@ import {
     sammleUmrisseRoh, vereinfacheUmrisse, sammleGelaendeflaeche, gelaendeZellweite,
     werteGelaendeAus, sammleAchsen, sammleSchnitt, sammleFootprints,
 } from './IfcPdfExporter.js';
+import { basisModelId } from './DeltaBoxen.js';
 
 /** Stabiler Schlüssel aus beliebigen Werten (Funktionen zählen als vorhanden). */
 function schluessel(...teile) {
@@ -95,10 +96,19 @@ export function erstellePlanInhalt(api) {
         const {
             scaleRatio = 100, slopeHatch = null, contours = null, axisLabels = null,
             hatch = false, footprints = true, rules = [], labelTemplateFor = null,
-            styleMap = null, viewDir = 'top',
+            styleMap = null, viewDir = 'top', modelleAus = [],
         } = optionen;
 
-        const modelle = api?.getFragmentsList?.() ?? null;
+        // T3 (Abnahme 2026-09-12): abgewählte Modelle kommen nicht aufs Blatt.
+        // Gefiltert wird die LISTE — alle Sammler gehen über sie, und der
+        // Schlüssel (modellIds) wechselt mit; Deltas zählen zu ihrer Basis.
+        const aus = new Set(modelleAus ?? []);
+        const alle = api?.getFragmentsList?.() ?? null;
+        const modelle = alle && aus.size ? new Map([...alle].filter(([id]) => !aus.has(basisModelId(id)))) : alle;
+        // Grundriss-Kurven und Haltungstexte liest web-ifc aus dem ERSTEN Modell —
+        // ist es abgewählt, fallen sie mit.
+        const erstesIfc = api?.getWebIfcAPI?.() ?? null;
+        const ifcDaten = erstesIfc && !aus.has(basisModelId(erstesIfc.fragmentModelId ?? '')) ? erstesIfc : null;
         const modellIds = modelle ? [...modelle.keys()].sort() : [];
         const cutPlane = api?.getSectionCutPlane?.() ?? null;
         const ebene = ebeneSchluessel(cutPlane);
@@ -132,16 +142,15 @@ export function erstellePlanInhalt(api) {
             const achsen = axisLabels?.enabled
                 ? await teil('achsen',
                     schluessel(modellIds, axisLabels.categories ?? null, labelTemplateFor),
-                    () => sammleAchsen({ ...basis, axisLabels, ifcData: api?.getWebIfcAPI?.() ?? null }))
+                    () => sammleAchsen({ ...basis, axisLabels, ifcData: ifcDaten }))
                 : null;
 
             const schnitt = await teil('schnitt',
                 schluessel(gemeinsam, hatch),
                 () => sammleSchnitt(api?.getScene?.() ?? null, cutPlane, hatch));
 
-            const ifcData = api?.getWebIfcAPI?.() ?? null;
-            const fuesse = (footprints && ifcData?.webIfc != null)
-                ? await teil('footprint', schluessel(modellIds), () => sammleFootprints(ifcData))
+            const fuesse = (footprints && ifcDaten?.webIfc != null)
+                ? await teil('footprint', schluessel(modellIds), () => sammleFootprints(ifcDaten))
                 : null;
 
             // Billige Nachschritte — laufen bei jedem Maßstabswechsel neu,

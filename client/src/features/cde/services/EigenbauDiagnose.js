@@ -18,6 +18,7 @@
  *                        nicht gebaut (eine Fläche je Gelände).
  */
 import { urGelaendeVon, verdraengteAnzeigen } from './ableitung/Bezuege.js';
+import { istAushub } from './Kategorien.js';
 
 /**
  * @param {object} o
@@ -40,4 +41,28 @@ export function eigenbauDiagnose({ stand = new Map(), historie = null, rezeptNac
         .filter(([gid]) => !verdeckt.has(gid))
         .map(([gid, statt]) => ({ globalId: gid, name: stand.get(gid)?.name ?? '', statt }));
     return { toteQuellen, unloesbar: toteQuellen.filter(t => !t.loesbar), verdraengteAnzeigen: verdraengt };
+}
+
+/**
+ * Hat das Ausgabe-Paket einen Aushub? (Abnahme 2026-09-12, D4)
+ *
+ * Ein Erdbau-Dokument ohne Aushub lehnt der Server ab — bisher erst nach dem
+ * Hochladen und in seinen Worten („das Paket enthaelt keinen Aushub“). Hier
+ * sagt EIN Satz vorher, woran es liegt. Die sichtbare Grube lebt in der
+ * Anzeige (dem geformten Gelände) und steht nie im Paket; gezählt wird nur
+ * der Aushubkörper.
+ *
+ * @param {{bauteile?, misserfolge?, leer?, verborgen?}} paket  `IfcViewer.eigenbauPaket()`
+ * @param {{satz?: string}} [o]
+ * @returns {string|null} null, wenn ein Aushub dabei ist
+ */
+export function aushubFehlt(paket, { satz = '' } = {}) {
+    if ((paket?.bauteile ?? []).some(b => istAushub(String(b?.klasse ?? '')))) return null;
+    const im = satz ? ` im Satz „${satz}“` : '';
+    const zahl = (liste) => (Array.isArray(liste) ? liste.length : 0);
+    const nicht = zahl(paket?.misserfolge), weg = zahl(paket?.verborgen), leer = zahl(paket?.leer);
+    if (nicht) return `Kein Aushub${im} — ${nicht} ${nicht === 1 ? 'Teil ließ' : 'Teile ließen'} sich nicht bauen. Im Verlauf nachsehen.`;
+    if (weg) return `Kein Aushub${im} — ${weg} eigene ${weg === 1 ? 'Teil ist' : 'Teile sind'} gelöscht. Im Verlauf rückgängig machen.`;
+    if (leer) return `Kein Aushub${im} — ${leer} ${leer === 1 ? 'Teil ist' : 'Teile sind'} leer.`;
+    return `Kein Aushub${im} — im Verlauf dieses Satzes steht kein Aushub.`;
 }

@@ -170,7 +170,16 @@ describe('Idempotenz — die Eigenschaft, auf der alles ruht', () => {
 describe('Die Meldung verschweigt nichts', () => {
     it('nennt Angewandtes und beide Konfliktsorten', () => {
         expect(fasseZusammen({ angewandt: 18, konflikte: 2, ueberschnitten: 1, fehlend: 1 }))
-            .toBe('18 Festlegungen angewandt · 1 × auch vom Planer geändert · 1 × Bauteil nicht mehr im Modell');
+            .toBe('18 Schritte angewandt · 1 × auch vom Planer geändert · 1 × Bauteil nicht mehr im Modell');
+    });
+
+    it('nennt, was beim Anwenden scheiterte — ein Eigenbau-Teil „nicht gebaut", sonst „nicht angewandt" (S2)', () => {
+        expect(fasseZusammen({ angewandt: 14, konflikte: 2, fehlgeschlagen: 2, nichtGebaut: 2 }))
+            .toBe('14 Schritte angewandt · 2 nicht gebaut');
+        expect(fasseZusammen({ angewandt: 14, konflikte: 3, fehlgeschlagen: 3, nichtGebaut: 2, nurFestlegung: 1 }))
+            .toBe('14 Schritte angewandt · 2 nicht gebaut · 1 nicht angewandt · 1 × Forderung an den Planer');
+        // Auch ohne jeden Erfolg ist ein Scheitern eine Meldung, keine Stille.
+        expect(fasseZusammen({ fehlgeschlagen: 1 })).toBe('0 Schritte angewandt · 1 nicht angewandt');
     });
 
     it('bleibt still, wenn es nichts zu melden gibt', () => {
@@ -178,7 +187,7 @@ describe('Die Meldung verschweigt nichts', () => {
     });
 
     it('schreibt die Einzahl aus', () => {
-        expect(fasseZusammen({ angewandt: 1 })).toBe('1 Festlegung angewandt');
+        expect(fasseZusammen({ angewandt: 1 })).toBe('1 Schritt angewandt');
     });
 });
 

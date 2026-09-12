@@ -1,6 +1,6 @@
 <template>
   <div class="q-tab cde-card">
-    <CdeCardHeader icon="quality" titel="BIM-Qualität (IDS-Prüfung)">
+    <CdeCardHeader icon="quality" titel="Schnellcheck (IDS)">
       <CdeIconButton icon="refresh" titel="Prüfung ausführen" :busy="loading" @click="$emit('refresh')" />
     </CdeCardHeader>
 
@@ -111,7 +111,7 @@
       <p class="q-note">
         {{ warnungen }} Warnungen · {{ hinweise }} Hinweise an {{ befunde.length }} Bauteilen.
         Grenzwerte kommen aus dem Büro-Regelwerk und halten nichts auf.
-        Ein Klick auf das Bauteil öffnet es in der Toolbox — dort steht die Kur als Knopf.
+        Ein Klick auf das Bauteil öffnet es unter „Werkzeuge" — dort steht die Kur als Knopf.
       </p>
       <div class="cde-table-wrap">
         <table class="cde-table">

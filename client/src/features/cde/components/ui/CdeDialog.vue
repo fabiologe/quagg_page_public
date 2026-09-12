@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="offen" class="cde-dialog-schleier" @click.self="$emit('close')">
-      <section class="cde-dialog" role="dialog" aria-modal="true" :aria-label="titel">
+      <section class="cde-dialog" :class="{ 'cde-dialog--breit': breit }" role="dialog" aria-modal="true" :aria-label="titel">
         <header class="cd-kopf">
           <CdeIcon :name="icon" :size="15" />
           <h3 class="cd-titel">{{ titel }}</h3>
@@ -32,6 +32,8 @@ const props = defineProps({
   titel: { type: String, required: true },
   icon: { type: String, default: 'info' },
   offen: { type: Boolean, default: false },
+  /** Für Tabellen (Bauformen): breiter und höher. */
+  breit: { type: Boolean, default: false },
 });
 const emit = defineEmits(['close']);
 
@@ -66,6 +68,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onTaste, true));
   box-shadow: var(--cde-shadow);
   color: var(--cde-text);
 }
+.cde-dialog--breit { width: min(980px, 100%); max-height: min(86dvh, 820px); }
 .cd-kopf {
   display: flex; align-items: center; gap: 0.5rem;
   padding: 0.55rem 0.75rem;

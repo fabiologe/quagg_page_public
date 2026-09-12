@@ -1,7 +1,7 @@
 <template>
   <div class="layer-panel">
     <div class="panel-header">
-      <span class="panel-title"><CdeIcon name="layers" :size="14" /> Ebenen</span>
+      <span class="panel-title"><CdeIcon name="layers" :size="14" /> Kategorien</span>
       <div class="header-right">
         <button class="hdr-btn" @click="toggleAll(true)"  title="Alle anzeigen" aria-label="Alle anzeigen">
           <CdeIcon name="visible" :size="13" />

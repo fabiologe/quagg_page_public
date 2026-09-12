@@ -83,7 +83,8 @@
         <!-- Farbkatalog: was der Planer selbst gefärbt hat, bleibt stehen —
              und die Frage steht hier, statt dass still übermalt wird. -->
         <Transition name="fade">
-          <div v-if="erdbauEigene.length" class="nachspiel-hinweis">
+          <div v-if="erdbauEigene.length" class="nachspiel-hinweis"
+               :class="{ gestapelt: nachspielen.konflikte.value.length }">
             <CdeIcon name="style" :size="14" />
             <span>
               {{ erdbauEigene.length }}
@@ -127,14 +128,23 @@
                über Zurück im Journal, nicht über ein X. -->
           <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag"
                 :class="{ 'model-tag--eigenbau': modellHerkunft(m.modelId) === 'cde' }"
-                :title="modellHerkunft(m.modelId) === 'cde' ? 'Aus dem Journal gebaut — leeren über Zurück' : m.name">
+                :title="modellHerkunft(m.modelId) === 'cde' ? 'Aus dem Verlauf gebaut — Vorgänge entfernen in der Bauwerksstruktur' : m.name">
+            <!-- Das Auge am Eigenbau (Abnahme 2026-09-12, A6): ausblenden, ohne
+                 den Verlauf zu ändern — bleibt über jeden Neuaufbau. -->
+            <button v-if="modellHerkunft(m.modelId) === 'cde'" class="tag-auge"
+                    :class="{ aus: !modellIstSichtbar(m.modelId) }"
+                    :title="modellIstSichtbar(m.modelId) ? 'Eigenbau ausblenden' : 'Eigenbau einblenden'"
+                    :aria-label="modellIstSichtbar(m.modelId) ? 'Eigenbau ausblenden' : 'Eigenbau einblenden'"
+                    @click="modellSichtbarSetzen(m.modelId, !modellIstSichtbar(m.modelId))">
+              <CdeIcon :name="modellIstSichtbar(m.modelId) ? 'visible' : 'hidden'" :size="11" />
+            </button>
             <!-- Der Name in EIGENEM Element: als anonymes Flex-Kind schrumpfte
                  er nicht (`min-width: auto`), schob das X aus dem 200-px-Chip
                  und wurde von `overflow: hidden` mitsamt Knopf abgeschnitten.
                  Das Entladen sah dadurch aus, als gäbe es keins. -->
             <span class="model-tag-name">{{ modellTagText(m, eigenbauAnzahl) }}</span>
             <button v-if="modellHerkunft(m.modelId) !== 'cde'" class="tag-close" @click="removeModel(m.modelId)"
-                    :title="`${m.name} entladen`" aria-label="Modell entladen">
+                    :title="`${m.name} schließen`" aria-label="Modell schließen">
               <CdeIcon name="close" :size="11" />
             </button>
           </span>
@@ -191,9 +201,9 @@
              gespeicherte Entscheidung eine stille. -->
         <div v-else-if="meterLesart" class="einheit-banner ok einheit-lesart">
           <CdeIcon name="check" :size="14" />
-          <span>In Metern gelesen — deine Festlegung{{ meterLesart.weg === 'ablage' ? ', aus der Ablage' : '' }}.</span>
+          <span>In Metern gelesen — deine Wahl{{ meterLesart.weg === 'ablage' ? ', aus der Ablage' : '' }}.</span>
           <button class="einheit-knopf" :disabled="ablage.loading.value"
-                  title="Festlegung zurücknehmen und das Modell wieder in Modelleinheiten laden"
+                  title="Wahl zurücknehmen und das Modell wieder in Modelleinheiten laden"
                   @click="lesartZuruecknehmen()">
             <CdeIcon name="undo" :size="12" /> Zurücknehmen
           </button>
@@ -213,9 +223,9 @@
             <CdeIcon name="views" :size="14" /> Gespeicherte Ansichten
           </button>
           <button class="ap-eintrag" :class="{ aktiv: showLayerPanel }"
-                  title="Ebenen / Kategorien"
+                  title="Kategorien"
                   @click="showLayerPanel = !showLayerPanel; ansichtOffen = false">
-            <CdeIcon name="layers" :size="14" /> Ebenen / Kategorien
+            <CdeIcon name="layers" :size="14" /> Kategorien
           </button>
         </div>
 
@@ -277,7 +287,7 @@
              den Commit-Dialog; das X ist Taste E und tut dasselbe. -->
         <div v-if="bearbeitung.modusAn" class="bearb-marke">
           <CdeIcon name="edit" :size="12" />
-          <span>Sitzung</span>
+          <span>Bearbeitung</span>
           <button
             v-if="aenderungen.sitzungSchritte.length"
             class="bearb-zahl"
@@ -296,9 +306,9 @@
           <button
             v-if="aenderungen.sitzungSchritte.length"
             class="bearb-abschluss"
-            title="Sitzung abschließen — Commit mit Nachricht"
+            title="Bearbeitung sichern — mit Beschreibung"
             @click="bearbeitung.commitDialogOffen = true"
-          ><CdeIcon name="check" :size="11" /> Abschließen</button>
+          ><CdeIcon name="check" :size="11" /> Sichern</button>
           <button class="bearb-marke-aus" title="Bearbeiten beenden [E]" @click="bearbeitenUmschalten()">
             <CdeIcon name="close" :size="11" />
           </button>
@@ -493,7 +503,7 @@ import IfcSavedViews       from './IfcSavedViews.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
-import { baueBaeume } from '../services/Bauwerksstruktur.js';
+import { baueBaeume, eigenbauBaum } from '../services/Bauwerksstruktur.js';
 import { bestimmeBezug } from '../services/Projektkoordinaten.js';
 import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
@@ -506,13 +516,14 @@ import { useZeiger } from '../composables/useZeiger.js';
 import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
-import { modellHerkunft, modellTagText } from '../services/IfcAutor.js';
+import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '../services/IfcAutor.js';
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
-import { erdbauStandVon } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform } from '../services/Bauteilrezepte.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
 import { entwertetGeometrie } from '../services/bauform/FormSchreiber.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
@@ -536,6 +547,16 @@ const panels = usePanels();
 const ansicht = useAnsicht();
 const cmds = usePaletteCommands();
 const bearbeitung = useBearbeitung();
+// Heller Modus (H6): die Szene kennt keine CSS-Variablen — Grund und Raster
+// werden beim Start und bei jedem Wechsel aus den Tokens gelesen.
+const farbmodus = useFarbmodus();
+function szenenFarbenAnwenden() {
+  if (!engine.value?.setzeSzenenfarben || typeof getComputedStyle !== 'function') return;
+  const stil = getComputedStyle(document.documentElement);
+  const token = (name) => stil.getPropertyValue(name).trim() || null;
+  engine.value.setzeSzenenfarben({ grund: token('--cde-szene'), raster: token('--cde-szene-raster') });
+}
+watch(() => farbmodus.modus, szenenFarbenAnwenden);
 
 defineProps({
   propertiesOpen: { type: Boolean, default: false },
@@ -698,8 +719,11 @@ const modusMeldung = ref('');
 // Das Journal aus Stufe 7 — EIN Bezug, nicht drei Aufrufe. Der Store ist zwar
 // ein Singleton, aber drei Aufrufstellen lesen sich wie drei Dinge.
 const aenderungen = useAenderungen();
-// Wieviel steht im Eigenbau-Modell — fuer den Chip in der Leiste (D6).
-const eigenbauAnzahl = computed(() => aenderungen.wirksamerStand('erzeugt').size);
+// Wieviel steht im Eigenbau-Modell — fuer den Chip in der Leiste (D6). GEBAUT,
+// nicht verzeichnet (Abnahme 2026-09-12, A6): die Pille sagte „14 Bauteile",
+// weil sie den Verlauf zählte — samt Verborgenem und Unbaubarem. Nach jedem
+// Aufbau zieht der Geometriestand nach.
+const eigenbauAnzahl = computed(() => { void ifc.geometrieStand; return engine.value?.autor?.gebaut?.size ?? 0; });
 
 /**
  * HERKUNFT IM RAUM (9.6, U4): Wer erzeugt, muss trennen können, was
@@ -716,12 +740,16 @@ async function herkunftFaerben() {
   const warnHex = stil.getPropertyValue('--cde-warn').trim();
   const accentHex = stil.getPropertyValue('--cde-accent').trim();
 
-  const eigene = new Set([...aenderungen.wirksamerStand('erzeugt').keys()]);
+  // Die Geländekopie ist ANZEIGE, kein Bauteil (Abnahme 2026-09-12, K4): sie
+  // behält den Geländeton — sonst färbte der Schalter das ganze Gelände blau.
+  const erzeugt = aenderungen.wirksamerStand('erzeugt');
+  const anzeigen = new Set([...erzeugt].filter(([, w]) => istAnzeigeform(w)).map(([gid]) => gid));
+  const eigene = new Set([...erzeugt.keys()].filter(gid => !anzeigen.has(gid)));
   const geaendert = new Set();
   for (const art of Object.keys(AENDERUNGS_ARTEN)) {
     if (art === 'erzeugt') continue;
     for (const [gid, wert] of aenderungen.wirksamerStand(art)) {
-      if (wert !== null && wert !== undefined && !eigene.has(gid)) geaendert.add(gid);
+      if (wert !== null && wert !== undefined && !eigene.has(gid) && !anzeigen.has(gid)) geaendert.add(gid);
     }
   }
   const { karte } = await karteMitEngine(engine.value, new Set([...geaendert, ...eigene]));
@@ -838,7 +866,7 @@ const eingabe = useEingabe({
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
   nachBauen: async (eintraege) => {
     const r = await wendeEintragAn(eintraege);
-    _melderueck(_mitMengen(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Festlegung geführt.' : 'Eingetragen.', eintraege), _letztesWerkzeugId);
+    _melderueck(_mitMengen(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Forderung an den Planer geführt.' : 'Eingetragen.', eintraege), _letztesWerkzeugId);
     return r;
   },
   getHoehenversatz: () => _hoehenversatzAusBezug(),
@@ -970,7 +998,7 @@ async function uebernehmeScharf() {
     _melderueck(!r ? 'Eingetragen.'
       : r.auslegung ? 'Ausgelegt — so liest die CDE dieses Bauteil ab jetzt.'
       : r.angewandt ? _mitMengen('Übernommen.', eintrag)
-      : r.nurFestlegung ? 'Als Festlegung geführt — die Geometrie bleibt beim Planer.'
+      : r.nurFestlegung ? 'Als Forderung an den Planer geführt — die Geometrie bleibt bei ihm.'
       : `Eingetragen, aber nicht angewandt: ${r.grund ?? 'unbekannt'}`, b.id);
   } catch (fehler) {
     console.error('cde: uebernehmen (Leiste)', fehler);
@@ -1018,6 +1046,11 @@ const ablage = useModellAblage({
   onModelLoaded: () => _onModelLoaded(),
 });
 const { loading, recentModels, ablageHinweis } = ablage;
+// Ein gescheitertes Speichern des Verlaufs steht im Bild, nicht nur im Reiter
+// (Abnahme 2026-09-12) — wer den Reiter nicht offen hat, schlösse sonst den Tab.
+watch(() => aenderungen.sicherFehler, (fehler) => {
+  if (fehler) ablageHinweis.value = 'Verlauf nicht gespeichert — der Server ist nicht erreichbar. Fenster offen lassen; der nächste Schritt versucht es erneut.';
+});
 
 // ── AP-U4: Anker der Auswahl für das Kontextmenü am Objekt ─────────────────
 // Der Bildschirmpunkt wird im HUD projiziert; hier wird nur der WELT-Punkt
@@ -1036,7 +1069,7 @@ watch(() => ifc.selectedElement, async (el) => {
 function issueAmBauteil() {
   const anker = selectionAnchor.value;
   if (!anker) return;
-  const text = prompt('Issue am gewählten Bauteil — Beschreibung:', '');
+  const text = prompt('Notiz am gewählten Bauteil:', '');
   if (text === null) return;
   const letzteFarbe = ifc.annotations[ifc.annotations.length - 1]?.color ?? '#e91e63';
   annotationen.anPunkt(anker, text, letzteFarbe, ifc.selectedElement?.modelId ?? null);
@@ -1076,20 +1109,20 @@ function ansichtWaehle(e) {
  * Kopfzeile. Tasten (M, E, T/R, V, N, ?, 1–3) gelten unverändert.
  */
 const toolbarItems = computed(() => [
-  { id: 'ansicht', icon: 'fit', label: 'Ansicht', title: 'Kamera · gespeicherte Ansichten · Ebenen',
+  { id: 'ansicht', icon: 'fit', label: 'Ansicht', title: 'Kamera · gespeicherte Ansichten · Kategorien',
     active: ansichtOffen.value, action: () => { ansichtOffen.value = !ansichtOffen.value; } },
   { id: 'section', icon: 'section', label: 'Schnitt', title: 'Horizontaler Schnitt', key: 'T/R',
     active: schnitt.aktiv.value, action: () => schnitt.umschalten() },
   { divider: true },
   { id: 'measure', icon: 'measure', label: 'Messen', title: 'Strecke messen', key: 'M',
     active: messen.aktiv.value, action: () => messen.umschalten() },
-  { id: 'notiz', icon: 'issues', label: 'Notiz', title: 'Issue-Pin setzen (das Panel sitzt in der Kopfzeile)', key: 'N',
+  { id: 'notiz', icon: 'issues', label: 'Notiz', title: 'Notiz ans Modell heften — die Liste steht rechts unter „Notizen"', key: 'N',
     active: annotationActive.value, action: () => annotationen.umschalten() },
   { divider: true },
   { id: 'bearbeiten', icon: 'edit', label: 'Bearbeiten', key: 'E',
     title: bearbeitung.modusAn
-      ? 'Sitzung abschließen (Commit-Dialog)'
-      : (bearbeitenSperrgrund() ?? 'Bearbeiten einschalten — beginnt eine Sitzung'),
+      ? 'Bearbeitung sichern oder beenden'
+      : (bearbeitenSperrgrund() ?? 'Bearbeiten einschalten — deine Schritte sammeln sich, bis du sicherst'),
     active: bearbeitung.modusAn, action: () => bearbeitenUmschalten() },
 ]);
 
@@ -1341,7 +1374,7 @@ function bearbeitenSperrgrund() {
   if (dok && ['Published', 'Archived'].includes(dok.status)) {
     return `„${dok.name}" ist ${dok.status} — schreibgeschützt. Status im Register ändern.`;
   }
-  if (nachspielen.laeuft?.value) return 'Festlegungen werden gerade angewandt …';
+  if (nachspielen.laeuft?.value) return 'Der Verlauf wird gerade angewandt …';
   return null;
 }
 
@@ -1353,7 +1386,7 @@ function bearbeitenUmschalten() {
     // er fortgesetzt — die Leiste zeigt seine Schritte sofort.
     aenderungen.beginneSitzung({ wer: cde.bearbeiter || '' });
     bearbeitung.modusSetzen(true);
-    panels.open('toolbox');
+    panels.open('bauteil');
     return true;
   }
 
@@ -1366,6 +1399,36 @@ function bearbeitenUmschalten() {
   aenderungen.schliesseLeereSitzung();
   bearbeitung.modusSetzen(false);
   return false;
+}
+
+/** Die Bearbeitung einschalten, falls sie aus ist — mit den echten Sperren. */
+function bearbeitenEin() {
+  return bearbeitung.modusAn || bearbeitenUmschalten();
+}
+
+/**
+ * Ein Werkzeug wählen heißt bearbeiten (Kassensturz E4): der Store startet,
+ * der Viewer schaltet vorher ein. EIN Weg für Tafel, Pille und Palette.
+ */
+function werkzeugStarten(id, opts = {}) {
+  return bearbeitung.starteMitModus(id, { ...opts, einschalten: bearbeitenEin });
+}
+
+/**
+ * Zeichnen heißt im 3D zeichnen (Abnahme 2026-09-12, E8): der Lageplan ist
+ * das Blatt. Ein Zeichenwerkzeug startet über den Motor im Raum — Erzeugen
+ * mit Draufsicht, damit die Punkte dort landen, wo man hinsieht; Vorlagen
+ * belegen die Felder vor.
+ */
+function zeichnenStarten(id, { vorgaben = null } = {}) {
+  if (!bearbeitenEin()) return false;
+  if (!eingabe.starte(id)) {
+    if (eingabe.grund.value) melde(eingabe.grund.value);
+    return false;
+  }
+  for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
+  if (bearbeitung.scharf?.gruppe === 'erzeugen') engine.value?.viewTop?.();
+  return true;
 }
 
 /**
@@ -1396,7 +1459,7 @@ async function _mehrfachEinordnen(items) {
     if (el) weitere.push(el);
   }
   ifc.setElement(erst);
-  panels.open('toolbox');
+  panels.open('bauteil');
   await _einordnenMitHuelle(erst, { weitere });
 }
 
@@ -1455,10 +1518,71 @@ async function baueErzeugteNeu() {
       historie: aenderungen.historischerStand('erzeugt'),
     });
     if (r.misserfolge.length) {
+      // NIE STILL (Abnahme 2026-09-12): der Aufbau übersprang Unbaubares, und
+      // nur die Konsole wusste es. Die Namen sagen, WAS fehlt; der Grund
+      // bleibt für die Diagnose in der Konsole.
       console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
+      melde(nichtGebautText(r.misserfolge));
     }
     return r;
 }
+
+/** „2 Teile nicht gebaut: Graben Nord · Aushub, …" — die Namen aus dem Bauplan. */
+function nichtGebautText(misserfolge) {
+  const namen = misserfolge.map(m => m.wert?.name || 'Teil ohne Namen');
+  const n = namen.length;
+  const liste = namen.slice(0, 3).join(', ') + (n > 3 ? ` und ${n - 3} weitere` : '');
+  return `${n} ${n === 1 ? 'Teil' : 'Teile'} nicht gebaut: ${liste}`;
+}
+
+/**
+ * Das Auge je Modell (Abnahme 2026-09-12, A6/A7) — an der Eigenbau-Pille und
+ * im Kopf der Bauwerksstruktur. Die Engine führt, was verborgen ist; der
+ * Zähler im Store lässt Pille und Fenster nachziehen.
+ */
+async function modellSichtbarSetzen(modelId, sichtbar) {
+  await engine.value?.setzeModellSichtbar?.(modelId, sichtbar);
+  ifc.bumpSichtbarkeit();
+}
+function modellIstSichtbar(modelId) {
+  void ifc.sichtbarkeitStand;
+  return engine.value?.modellSichtbar?.(modelId) ?? true;
+}
+
+/**
+ * „Vorgang entfernen" (Abnahme 2026-09-12, A6) — aus dem Abschnitt „Eigenbau"
+ * der Bauwerksstruktur. Geschrieben wird durch DIESELBE Engstelle wie jede
+ * Bearbeitung (`bearbeitung.entferneVorgang`: Modus an, ein Vorgang), angewandt
+ * über denselben Weg. Ist Bearbeiten aus, schaltet der Klick es ein (E4); geht
+ * das nicht, sagt die Meldung warum.
+ */
+async function vorgangEntfernen(ableitung) {
+  const geschrieben = await bearbeitung.entferneVorgang(ableitung, { wer: cde.bearbeiter || '', einschalten: bearbeitenEin });
+  if (!geschrieben) {
+    melde(bearbeitung.letzterGrund || 'Der Vorgang wurde nicht entfernt.');
+    return false;
+  }
+  await wendeEintragAn(geschrieben);
+  return true;
+}
+
+/**
+ * Der Abschnitt „Eigenbau" der Bauwerksstruktur (Abnahme 2026-09-12, A7) — aus
+ * dem Verlauf und dem letzten Aufbau, nach jedem Aufbau neu. Die Bäume der
+ * Lieferungen bleiben, wie sie sind.
+ */
+function _eigenbauAbschnittNachziehen() {
+  const stand = aenderungen.wirksamerStand('erzeugt');
+  const abschnitt = eigenbauBaum({
+    stand, karte: engine.value?.autor?.gebaut ?? new Map(), modelId: CDE_MODELL_ID,
+    titel: vorgangstitelAus([...stand].map(([globalId, wert]) => ({ globalId, wert }))),
+    verborgen: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+    leer: engine.value?.autor?.leer ?? new Set(),
+  });
+  const lieferungen = ifc.spatialBaeume.filter(b => !b.eigenbau);
+  ifc.setSpatialBaeume(abschnitt ? [...lieferungen, abschnitt] : lieferungen);
+}
+watch(() => ifc.geometrieStand, () => _eigenbauAbschnittNachziehen());
 
 provideViewerApi({
   // Snapshots & Ansichten
@@ -1548,6 +1672,10 @@ provideViewerApi({
   geladeneModelle:      () => (engine.value?.getModelList?.() ?? [])
     .map(m => ({ modelId: m.modelId, name: m.name, sha256: ablage.identitaet(m.modelId)?.sha256 ?? null })),
   getKonflikte:         () => nachspielen.konflikte.value,
+  // Abnahme 2026-09-12 (A6/A7): das Auge je Modell und „Vorgang entfernen".
+  setzeModellSichtbar:  (modelId, sichtbar) => modellSichtbarSetzen(modelId, sichtbar),
+  modellSichtbar:       (modelId) => engine.value?.modellSichtbar?.(modelId) ?? true,
+  vorgangEntfernen:     (ableitung) => vorgangEntfernen(ableitung),
   /** Laute, nicht blockierende Meldungen des Nachspielens (quelle_geaendert, Teil XIV). */
   getHinweise:          () => nachspielen.hinweise.value,
   // ── Schacht-Griffe im Lageplan (G1) ──────────────────────────────────────
@@ -1605,18 +1733,16 @@ provideViewerApi({
     const el = await engine.value.refreshElement();
     if (!el) return false;
     ifc.setElement(el);
-    panels.open('toolbox');
+    panels.open('bauteil');
     await _einordnenMitHuelle(el);
     return true;
   },
-  /**
-   * Den Bearbeiten-Modus umschalten (Stufe 12.0d).
-   *
-   * Über die Fassade, weil die Toolbox in der CdeView hängt und nicht unter
-   * dem Viewer — ein Ereignis quer durch den Baum wäre ein zweiter Weg zu
-   * derselben Handlung.
-   */
-  bearbeitenUmschalten: () => bearbeitenUmschalten(),
+  /** Kassensturz E4: Tafel „Bauteil“, Pille und Merkmale starten über den Viewer. */
+  werkzeugStarten: (id, opts) => werkzeugStarten(id, opts),
+  /** E8: Zeichnen startet im Raum — die Tafel „Bauteil“ ist sein Einstieg. */
+  zeichnenStarten: (id, opts) => zeichnenStarten(id, opts),
+  bearbeitenEin: () => bearbeitenEin(),
+  bearbeitenSperrgrund: () => bearbeitenSperrgrund(),
   /**
    * Der Höhenversatz Welt→NN, wie ihn auch die Koordinatenleiste benutzt.
    *
@@ -1793,6 +1919,10 @@ async function entwerteNach(arten) {
     // neuen Stand kennen, bevor der nächste Klick kommt. Nur Berührtes
     // wird gerechnet (Dirty-Menge aus `setzeJournalStand`).
     await engine.value?.beziehungen?.()?.catch?.(e => console.warn('cde: beziehungen', e?.message ?? e));
+    // Der Eigenbau entsteht NACH dem Laden (beim Nachspielen) — ohne dieses
+    // Nachziehen fehlte seine Pille samt Auge (Abnahme 2026-09-12).
+    const modelle = engine.value?.getModelList?.();
+    if (Array.isArray(modelle)) ifc.setModelList(modelle);
     ifc.bumpGeometrieStand();
   } catch (fehler) {
     // Die ANWENDUNG war zu diesem Zeitpunkt erfolgreich — ein Fehler beim
@@ -1894,6 +2024,7 @@ async function wendeEinenAn(eintrag) {
     const plan = planFuerEintrag(eintrag, ort?.modelId ?? null);
     const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
       globalIdZuLocalId: new Map(ort ? [[eintrag.globalId, ort.localId]] : []),
+      globalIdZuOrt: new Map(ort ? [[eintrag.globalId, ort]] : []),
       historie: aenderungen.historischerStand('erzeugt'),
     });
     return {
@@ -1910,6 +2041,7 @@ onMounted(async () => {
 
   engine.value = new IfcEngine();
   await engine.value.init(canvasRef.value);
+  szenenFarbenAnwenden();
 
   // SelectionHandler übernimmt Click/Hover/Marquee. Coord-Bar-Update bleibt in Vue
   // (an mousemove gehängt) — der Handler triggert nur den Hover-Raycast.
@@ -1917,7 +2049,7 @@ onMounted(async () => {
   _selection.attach();
   _selection.onPick(result => {
     ifc.setElement(result);
-    panels.open('eigenschaften');
+    panels.open('bauteil');
     // Stufe 9.0: einordnen, damit das Kontextmenü weiß, was hier möglich ist.
     // Der Resolver wird JE AUSWAHL gebaut — er cached je Modell, und ein über
     // den Modellwechsel hinweg behaltener liefert Geometrie des alten Modells.
@@ -1997,11 +2129,11 @@ onMounted(async () => {
       verfuegbar: () => !!ifc.selectedElement, run: () => onIsolateSelected() },
     { id: 'sel.showall', titel: 'Alles wieder einblenden', icon: 'visible', gruppe: 'Auswahl', key: 'Shift+A',
       run: () => onShowAll() },
-    { id: 'lvl.alle', titel: 'Ebenen: alle zeigen', icon: 'layers', gruppe: 'Ebenen',
+    { id: 'lvl.alle', titel: 'Geschosse: alle zeigen', icon: 'layers', gruppe: 'Geschosse',
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('alle') },
-    { id: 'lvl.solo', titel: 'Ebenen: nur die gewählte (Solo)', icon: 'layers', gruppe: 'Ebenen',
+    { id: 'lvl.solo', titel: 'Geschosse: nur das gewählte (Solo)', icon: 'layers', gruppe: 'Geschosse',
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('solo') },
-    { id: 'lvl.bis', titel: 'Ebenen: bis zur gewählten', icon: 'layers', gruppe: 'Ebenen',
+    { id: 'lvl.bis', titel: 'Geschosse: bis zum gewählten', icon: 'layers', gruppe: 'Geschosse',
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('bis') },
 
     // Stufe 9.0: der DRITTE Verbraucher des Bearbeitungs-Katalogs. Dieselbe
@@ -2010,11 +2142,10 @@ onMounted(async () => {
     ...BEARBEITUNGEN.map(b => ({
       id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
       gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
-      // Der Modus zuerst: die Palette darf nichts anbieten, was `starte`
-      // ohnehin abweist. Ein Befehl, der nur eine Absage erzeugt, ist ein
-      // toter Knopf mit Suchfunktion.
-      verfuegbar: () => bearbeitung.modusAn && bearbeitung.moeglich.some(m => m.id === b.id),
-      run: () => bearbeitung.starte(b.id),
+      // Kassensturz E4: ein Werkzeug wählen schaltet die Bearbeitung ein —
+      // angeboten wird, was zum Bauteil passt, auch wenn der Modus noch aus ist.
+      verfuegbar: () => bearbeitung.moeglich.some(m => m.id === b.id),
+      run: () => werkzeugStarten(b.id),
     })),
     { id: 'bearb.modus', titel: 'Bearbeiten ein-/ausschalten', icon: 'edit',
       gruppe: 'Bearbeiten', key: 'E', run: () => bearbeitenUmschalten() },
@@ -2065,6 +2196,9 @@ async function anwendenViewpoint(vp) {
 
 defineExpose({
   openBySha: (sha) => ablage.openBySha(sha),
+  /** Kassensturz E4: die Schale schaltet für die Plan-Werkzeuge ein — und kennt den Grund, wenn nicht. */
+  bearbeitenEin: () => bearbeitenEin(),
+  bearbeitenSperrgrund: () => bearbeitenSperrgrund(),
   /** Die zuletzt offenen Modelle zurückholen — die Schale ruft es, weil sie
       den Deep-Link kennt und der Vorrang hat. */
   stelleOffeneWiederHer: () => ablage.stelleOffeneWiederHer(),
@@ -2121,6 +2255,11 @@ async function removeModel(modelId) {
   await _modellmengeNachziehen();
   // Seine Issues gehen mit (gespeichert bleiben sie — beim nächsten Laden sind sie wieder da).
   await _issuesNachziehen();
+  // DER EIGENBAU NEU (Abnahme 2026-09-12, P1: „das Modell bleibt, obwohl ich
+  // × gedrückt habe"). Beim Test-Erdkörper war die Lieferung längst
+  // ausgeblendet; sichtbar war die ANZEIGE ihres Geländes im Eigenbau. Die
+  // hängt am entladenen Modell und darf ohne es nicht stehen bleiben.
+  await baueErzeugteNeu();
   // Der Journalstand gehört dazu: erzeugte Bauteile und Verdecktes beziehen
   // sich auf Modelle, von denen eines gerade gegangen ist.
   await entwerteNach(['erzeugt', 'lage']);
@@ -2176,6 +2315,8 @@ async function _bauwerksstrukturNachziehen(indexFertig) {
   const beziehungen = new Map(baeume.map(b => [b.modelId, engine.value.strukturBeziehungen?.(b.modelId) ?? null]));
   ifc.setSpatialBaeume(baueBaeume({ baeume, index, beziehungen,
                                     shaVon: (modelId) => ablage.identitaet(modelId)?.sha256 ?? null }));
+  // Der Eigenbau hat keine Raumgliederung — sein Abschnitt kommt aus dem Verlauf (A7).
+  _eigenbauAbschnittNachziehen();
 }
 
 /**
@@ -2185,6 +2326,7 @@ async function _bauwerksstrukturNachziehen(indexFertig) {
  * Grau ist keine Aussage, sondern der Standard der Bibliothek. Bringt ein
  * Bauteil eine EIGENE Farbe mit, bleibt sie stehen und die Frage steht in
  * der Leiste — ein stilles Übermalen wäre Datenverlust in der Anschauung.
+ * Das GELÄNDE ausgenommen (Abnahme K4): es trägt immer den Geländeton.
  */
 async function erdbauFarbenAnwenden({ ueberschreiben = false } = {}) {
   if (!engine.value?.erdbauFaerben) return;
@@ -2721,7 +2863,7 @@ function onToggleNotes() { panels.toggle('issues'); }
   display: inline-flex; align-items: center; gap: 0.4rem;
 }
 .action-btn.laedt { opacity: 0.45; cursor: progress; pointer-events: none; }
-.action-btn.primary { background: var(--cde-accent); color: var(--cde-bg-deep); }
+.action-btn.primary { background: var(--cde-accent); color: var(--cde-text-auf-farbe); }
 .action-btn.primary:hover { background: var(--cde-accent); transform: translateY(-1px); }
 /* Vorher hellgrau (#e2e8f0) auf dunkler Leiste — der einzige helle Knopf
    der ganzen Oberfläche. Jetzt eine ruhige Zweitstufe neben dem Akzent. */
@@ -2829,7 +2971,9 @@ function onToggleNotes() { panels.toggle('issues'); }
 }
 .coord-bar b { color: var(--cde-accent); margin-right: 2px; }
 .einheit-banner {
-  position: absolute; top: 3.4rem; left: 50%; transform: translateX(-50%);
+  /* Unter der Pillenzeile (Abnahme 2026-09-12): darüber verdeckte das Banner
+     das × der Modelle. */
+  position: absolute; top: calc(1rem + 56px + 2.4rem); left: 50%; transform: translateX(-50%);
   z-index: 25; display: flex; align-items: center; gap: 0.5rem;
   max-width: min(92%, 44rem);
   padding: 0.45rem 0.8rem;
@@ -2842,7 +2986,7 @@ function onToggleNotes() { panels.toggle('issues'); }
 }
 /* Die Ergebnismeldung sitzt UNTER der Wache — sonst lägen beide übereinander
    und man läse die Warnung, die man gerade erledigt hat. */
-.einheit-banner + .einheit-banner { top: 7.2rem; }
+.einheit-banner + .einheit-banner { top: calc(1rem + 56px + 5.4rem); }
 .einheit-lesart { opacity: 0.92; }
 .einheit-banner.ok {
   border-color: var(--cde-success);
@@ -2913,6 +3057,15 @@ function onToggleNotes() { panels.toggle('issues'); }
   touch-action: manipulation;
 }
 .tag-close:hover { color: var(--cde-danger); }
+/* Das Auge am Eigenbau (Abnahme 2026-09-12, A6). */
+.tag-auge {
+  background: none; border: none; cursor: pointer; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  color: var(--cde-text-dim); transition: color 0.12s;
+  touch-action: manipulation;
+}
+.tag-auge:hover { color: var(--cde-text); }
+.tag-auge.aus { color: var(--cde-text-dimmer); }
 
 /* ── B1: Selection badge — bottom right (no longer overlaps centered coord-bar) ── */
 
@@ -2958,7 +3111,9 @@ function onToggleNotes() { panels.toggle('issues'); }
 
 .ablage-hinweis {
   position: absolute;
-  top: 3.6rem; left: 50%; transform: translateX(-50%);
+  /* Unter der Pillenzeile (Abnahme 2026-09-12): darüber verdeckte der
+     Hinweis das × der Modelle. */
+  top: calc(1rem + 56px + 2.4rem); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 0.45rem;
   max-width: min(90%, 34rem);
   padding: 0.45rem 0.5rem 0.45rem 0.7rem;
@@ -2987,9 +3142,13 @@ function onToggleNotes() { panels.toggle('issues'); }
 }
 .erdbau-uebermalen:hover { background: var(--cde-float); }
 
+/* Unter Pillenzeile und Ablage-Hinweis (Abnahme 2026-09-12); die Farb-Nachfrage
+   rückt eine Stufe tiefer, wenn der Nachspiel-Hinweis schon dasteht — beide
+   lagen deckungsgleich übereinander. */
+.nachspiel-hinweis.gestapelt { top: calc(1rem + 56px + 8.4rem); }
 .nachspiel-hinweis {
   position: absolute;
-  top: 7.2rem; left: 50%; transform: translateX(-50%);
+  top: calc(1rem + 56px + 5.4rem); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 0.45rem;
   max-width: min(90%, 34rem);
   padding: 0.45rem 0.5rem 0.45rem 0.7rem;
@@ -3076,8 +3235,8 @@ function onToggleNotes() { panels.toggle('issues'); }
 .show-all-btn, .measure-clear, .bearb-marke-aus { touch-action: manipulation; }
 @media (pointer: coarse) {
   .snap-btn, .mode-btn { padding: 0.55rem 0.75rem; }
-  .section-close, .bearb-marke-aus, .tag-close { position: relative; }
-  .bearb-marke-aus::after, .tag-close::after { content: ''; position: absolute; inset: -10px; }
+  .section-close, .bearb-marke-aus, .tag-auge, .tag-close { position: relative; }
+  .bearb-marke-aus::after, .tag-auge::after, .tag-close::after { content: ''; position: absolute; inset: -10px; }
   .section-close::after, .measure-clear::after {
     content: ''; position: absolute; inset: -9px;
   }

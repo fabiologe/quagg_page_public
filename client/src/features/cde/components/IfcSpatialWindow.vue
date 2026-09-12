@@ -38,6 +38,13 @@
             <span class="sw-chip" :class="`sw-chip--${kopf(baum).art}`" :title="kopf(baum).titel">{{ kopf(baum).text }}</span>
             <span v-if="kopf(baum).stand" class="sw-stand">{{ kopf(baum).stand }}</span>
             <span class="sw-zahl" :title="`${baum.knoten} Knoten in der Gliederung`">{{ baum.knoten }}</span>
+            <!-- Das Auge je Modell (Abnahme 2026-09-12, A7): ganz aus, ganz ein. -->
+            <button class="sw-auge" :class="{ aus: verborgen.has(baum.modelId) }"
+                    :title="verborgen.has(baum.modelId) ? 'Einblenden' : 'Ausblenden'"
+                    :aria-label="verborgen.has(baum.modelId) ? 'Modell einblenden' : 'Modell ausblenden'"
+                    @click.stop="augeUmschalten(baum.modelId)">
+              <CdeIcon :name="verborgen.has(baum.modelId) ? 'hidden' : 'visible'" :size="12" />
+            </button>
           </header>
           <template v-if="!zu.has(baum.modelId)">
             <IfcSpatialTree v-if="baum.wurzel" :tree="baum.wurzel" :bare="true" :filter="filterText"
@@ -59,7 +66,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, provide, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import IfcSpatialTree from './IfcSpatialTree.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -84,8 +91,28 @@ const aktiv = ref(null);
 const sichtbar = computed(() => ifc.spatialBaeume.filter(b =>
   !filterText.value || trifft(b.wurzel, filterText.value) || trifft(b.gruppen, filterText.value)));
 
+// DAS AUGE JE MODELL (Abnahme 2026-09-12, A7). Die Wahrheit führt die Engine
+// (`modellSichtbar`); der Zähler im Store sagt Fenster und Pille, dass sich
+// etwas geändert hat — ein eigener Spiegel hier liefe auseinander.
+const verborgen = computed(() => {
+  void ifc.sichtbarkeitStand;
+  return new Set(ifc.spatialBaeume.map(b => b.modelId).filter(id => !(api.modellSichtbar?.(id) ?? true)));
+});
+async function augeUmschalten(modelId) {
+  aktiv.value = modelId;
+  await api.setzeModellSichtbar?.(modelId, verborgen.value.has(modelId));
+}
+
+// „Vorgang entfernen" am Knoten eines Erdbau-Vorgangs (A6) — mit Rückfrage.
+provide('vorgangEntfernen', async (knoten) => {
+  if (!confirm(`„${knoten.name}" entfernen?\nAushub, Auftrag und die Grube im Gelände gehen; der Verlauf behält den Schritt.`)) return;
+  await api.vorgangEntfernen?.(knoten.vorgang);
+});
+
 /** Der Kopf je Modell: Chip und Stand aus dem Register — reaktiv, das Register kommt oft nach dem Modell. */
 function kopf(baum) {
+  // Der Eigenbau ist kein Dokument — sein Abschnitt kommt aus dem Verlauf (A7).
+  if (baum.eigenbau) return { art: 'erdbau', text: 'Eigenbau', titel: 'Aus dem Verlauf gebaut — kein Registerdokument', stand: '' };
   const dok = baum.sha256 ? (cde.dokumente ?? []).find(d => d.sha256 === baum.sha256) : null;
   const stand = dok ? `R${dok.revision ?? '?'} · ${dok.status ?? 'WIP'}` : '';
   const chip = dok ? herkunftChip(dok) : null;
@@ -211,6 +238,14 @@ defineExpose({ expandAll, collapseAll });
 }
 .sw-chip--erdbau, .sw-chip--verbund { color: var(--cde-accent-soft); border-color: var(--cde-accent-soft); }
 .sw-stand, .sw-zahl { flex-shrink: 0; font-size: 0.62rem; color: var(--cde-text-dimmer); font-variant-numeric: tabular-nums; }
+/* Das Auge je Modell (Abnahme 2026-09-12, A7) */
+.sw-auge {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 0.1rem; cursor: pointer;
+  color: var(--cde-text-dim); border-radius: var(--cde-radius-sm);
+}
+.sw-auge:hover { color: var(--cde-text); background: var(--cde-fill-hover); }
+.sw-auge.aus { color: var(--cde-text-dimmer); }
 .sw-leer { padding: 0.4rem 1.4rem; font-size: 0.7rem; color: var(--cde-text-dimmer); }
 
 /* ── Footer ── */

@@ -18,7 +18,9 @@ describe('usePanels', () => {
   it('kennt die Panel-Definitionen und startet geschlossen', async () => {
     const p = usePanels()
     await p.bereit
-    expect(p.defs.map(d => d.id)).toEqual(['eigenschaften', 'struktur', 'cockpit', 'issues', 'plan', 'toolbox', 'verlauf'])
+    // Kassensturz H1: die Reiterleiste zeigt die Tafeln in dieser Reihenfolge —
+    // erst was man mit der Auswahl tut, dann was man nachliest.
+    expect(p.defs.map(d => d.id)).toEqual(['struktur', 'bauteil', 'verlauf', 'cockpit', 'issues', 'plan'])
     expect(p.aktivLinks).toBeNull()
     expect(p.aktivRechts).toBeNull()
   })
@@ -26,11 +28,11 @@ describe('usePanels', () => {
   it('öffnet pro Leiste nur EIN Panel — das vorherige weicht', async () => {
     const p = usePanels()
     await p.bereit
-    p.open('eigenschaften')          // rechts
-    expect(p.aktivRechts.id).toBe('eigenschaften')
+    p.open('bauteil')                // rechts
+    expect(p.aktivRechts.id).toBe('bauteil')
     p.open('cockpit')                // ebenfalls rechts
     expect(p.aktivRechts.id).toBe('cockpit')
-    expect(p.isOpen('eigenschaften')).toBe(false)
+    expect(p.isOpen('bauteil')).toBe(false)
   })
 
   it('linke und rechte Leiste stören einander nicht', async () => {
@@ -94,6 +96,26 @@ describe('usePanels', () => {
     expect(p.isOpen('cockpit')).toBe(true)
     expect([...p.offen]).toEqual(['cockpit'])
     expect(p.breiten.quatsch).toBeUndefined()
+  })
+
+  // Kassensturz H2: Werkzeuge und Merkmale sind die Tafel „Bauteil“. Alte
+  // Aufrufer und gesicherte Zustände nennen noch die alten IDs.
+  it('„toolbox“ und „eigenschaften“ öffnen die Tafel „Bauteil“', async () => {
+    const p = usePanels()
+    await p.bereit
+    p.open('toolbox')
+    expect(p.aktivRechts.id).toBe('bauteil')
+    expect(p.isOpen('eigenschaften')).toBe(true)
+    p.close('eigenschaften')
+    expect(p.aktivRechts).toBeNull()
+  })
+
+  it('ein gesicherter Zustand mit alter ID landet in „Bauteil“', async () => {
+    await repo.set('panel-state', { offen: ['struktur', 'toolbox'], breiten: { toolbox: 410 } })
+    const p = usePanels()
+    await p.bereit
+    expect([...p.offen].sort()).toEqual(['bauteil', 'struktur'])
+    expect(p.breiten.bauteil).toBe(410)
   })
 
   it('jede Definition hat ein Icon und eine Seite', () => {

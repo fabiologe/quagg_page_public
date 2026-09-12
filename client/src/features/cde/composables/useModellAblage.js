@@ -118,7 +118,7 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         } else if (!cde.auftrag?.id) {
             // Kein Fehler, aber auch kein Erfolg: das Modell ist nur lokal.
             // Ohne diesen Satz sucht der Nutzer den Fehler bei sich.
-            ablageHinweis.value = 'Kein Auftrag gewaehlt — das Modell liegt nur lokal im Browser.';
+            ablageHinweis.value = 'Nur im Browser gespeichert — kein Projekt geöffnet.';
         }
     }
 

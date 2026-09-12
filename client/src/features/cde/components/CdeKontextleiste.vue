@@ -144,8 +144,8 @@ const subjektName = computed(() => {
 
 /**
  * Was der nächste Schritt ist — oder was das Werkzeug NICHT tut. Derselbe
- * Wortlaut wie in der Toolbox (`festlegungsHinweis`): Zug/Umriss werden bis
- * S3 im Lageplan gefüttert; Forderungen bleiben beim Planer; ohne
+ * Wortlaut wie in der Toolbox (`festlegungsHinweis`): Zug/Umriss kommen
+ * aus dem Raum (E8); Forderungen bleiben beim Planer; ohne
  * Höhenbezug zählt der Wert ab Modellursprung.
  */
 const hinweis = computed(() => {
@@ -153,11 +153,11 @@ const hinweis = computed(() => {
   if (!s) return '';
   const art = eingabeArt(s);
   if (art === 'zug' || art === 'umriss') {
-    // Der Motor sagt, was fehlt — im Raum ODER im Lageplan, derselbe Zug.
-    if (props.motor?.hinweis?.value) return `${props.motor.hinweis.value} — im Raum oder im Lageplan.`;
-    return `${art === 'zug' ? 'Zug' : 'Umriss'} im Raum auf dem Bauteil oder im Lageplan zeichnen.`;
+    // Der Motor sagt, was fehlt — gesetzt wird im Raum (E8: der Lageplan ist das Blatt).
+    if (props.motor?.hinweis?.value) return props.motor.hinweis.value;
+    return `${art === 'zug' ? 'Zug' : 'Umriss'} im Bild setzen — Punkte anklicken, Enter schliesst ab.`;
   }
-  if (s.nurFestlegung) return 'Wird als Festlegung geführt — die Geometrie bleibt beim Planer.';
+  if (s.nurFestlegung) return 'Wird als Forderung an den Planer geführt — die Geometrie bleibt bei ihm.';
   if (s.brauchtRolle === 'sohlhoehe' && !hatHoehenbezug(bearbeitung.bauteil?.hoehenversatz)) {
     return 'Kein Höhenbezug im Modell — der Wert zählt ab Modellursprung, nicht ab NN.';
   }

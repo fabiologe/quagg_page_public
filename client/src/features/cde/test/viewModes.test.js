@@ -36,6 +36,14 @@ describe('istVerfuegbar', () => {
     expect(istVerfuegbar('laengsschnitt', { hatModell: true, hatAchsen: false })).toBe(false)
     expect(istVerfuegbar('laengsschnitt', VOLL)).toBe(true)
   })
+
+  // Kassensturz E2: das Register ist eine Ansicht. Es liegt im Projektordner —
+  // ein Modell braucht es nicht, ein Projekt schon.
+  it('Dokumente braucht ein Projekt, aber kein Modell', () => {
+    expect(istVerfuegbar('dokumente', LEER)).toBe(false)
+    expect(istVerfuegbar('dokumente', VOLL)).toBe(false)
+    expect(istVerfuegbar('dokumente', { hatProjekt: true })).toBe(true)
+  })
 })
 
 describe('naechsterModus', () => {
@@ -53,6 +61,13 @@ describe('naechsterModus', () => {
   it('bleibt ohne Modell bei 3D stehen', () => {
     expect(naechsterModus('3d', LEER)).toBe('3d')
   })
+
+  it('nimmt Dokumente in den Kreis, sobald ein Projekt offen ist', () => {
+    const MIT = { ...VOLL, hatProjekt: true }
+    expect(naechsterModus('laengsschnitt', MIT)).toBe('dokumente')
+    expect(naechsterModus('dokumente', MIT)).toBe('3d')
+    expect(naechsterModus('3d', { hatProjekt: true })).toBe('dokumente')
+  })
 })
 
 describe('Beschriftung', () => {
@@ -60,13 +75,20 @@ describe('Beschriftung', () => {
     for (const m of modusListe()) {
       expect(m.titel).toBeTruthy()
       expect(m.icon).toBeTruthy()
-      expect(['1', '2', '3']).toContain(m.taste)
+      expect(['1', '2', '3', '4']).toContain(m.taste)
     }
   })
 
   it('vergibt die Tasten eindeutig', () => {
     const tasten = modusListe().map(m => m.taste)
     expect(new Set(tasten).size).toBe(tasten.length)
+  })
+
+  // Kassensturz: „Schnitt" hiess im Umschalter der Längsschnitt und in der
+  // Werkzeugleiste die Schnittebene. Der Umschalter schreibt deshalb aus.
+  it('der Umschalter schreibt aus — kein „Schnitt", kein „Plan"', () => {
+    const kurz = modusListe().map(m => m.kurz)
+    expect(kurz).toEqual(['3D', 'Lageplan', 'Längsschnitt', 'Dokumente'])
   })
 
   it('beschriftet auch Unsinn, statt undefined zu liefern', () => {

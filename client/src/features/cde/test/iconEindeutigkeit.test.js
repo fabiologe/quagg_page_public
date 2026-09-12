@@ -46,10 +46,10 @@ describe('Die Plan-Leiste spricht eindeutig', () => {
 describe('X schliesst, der Eimer löscht', () => {
     it('an den vier umgezogenen Lösch-Knöpfen steht delete', () => {
         for (const [datei, umfeld] of [
-            ['components/IfcAnnotations.vue', 'Issue löschen'],
+            ['components/IfcAnnotations.vue', 'Notiz löschen'],
             ['components/IfcSavedViews.vue', 'Löschen'],
             ['components/IfcPlanPanel.vue', 'Logo entfernen'],
-            ['views/CdeView.vue', 'Aus Register entfernen'],
+            ['views/CdeView.vue', 'Aus dem Projekt nehmen'],
         ]) {
             const t = lies(datei);
             const i = t.indexOf(umfeld);

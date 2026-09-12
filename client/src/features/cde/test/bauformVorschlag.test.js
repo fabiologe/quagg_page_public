@@ -32,7 +32,9 @@ describe('Toolbox', () => {
     const tb = lies('components/CdeToolbox.vue');
     it('zeigt den gemessenen Grund und bietet die Bestätigung als Auslegung an', () => {
         expect(tb).toMatch(/<dt>Gemessen<\/dt>/);
-        expect(tb).toContain("bearbeitung.starteMitVorschlag('bauform-auslegen', { bauform: herleitung.bauform })");
+        // Kassensturz E4: über den Viewer, der die Bearbeitung einschaltet — nicht mehr am Modus vorbei grau.
+        expect(tb).toMatch(/Als Auslegung übernehmen[\s\S]{0,200}@click="auslegen"|@click="auslegen"[\s\S]{0,200}Als Auslegung übernehmen/);
+        expect(tb).toContain("function auslegen() { return werkzeug('bauform-auslegen', { bauform: herleitung.value.bauform }); }");
         // Nur, wenn die Geometrie wirklich vorgeschlagen hat — nicht bei netz.
         expect(tb).toMatch(/v-if="herleitung\.quelle === 'geometrie'"[\s\S]{0,400}Als Auslegung übernehmen/);
     });

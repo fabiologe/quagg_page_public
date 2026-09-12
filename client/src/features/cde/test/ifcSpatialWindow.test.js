@@ -50,7 +50,7 @@ describe('IfcSpatialWindow — alle geladenen Modelle', () => {
 
     const koepfe = w.findAll('.sw-kopf');
     expect(koepfe).toHaveLength(2);
-    expect(w.findAll('.sw-chip').map(c => c.text())).toEqual(['Lieferung', 'Erdbau · aus Gelaende.ifc']);
+    expect(w.findAll('.sw-chip').map(c => c.text())).toEqual(['Lieferung', 'Erdbau · aus Gelaende · Satz Boden · ungeprüft']);
     expect(koepfe[1].find('.sw-stand').text()).toBe('R2 · Shared');
     expect(w.find('.sw-footer').text()).toContain('2 Modelle');
 

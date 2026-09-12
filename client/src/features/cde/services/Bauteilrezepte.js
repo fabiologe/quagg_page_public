@@ -942,3 +942,47 @@ export function erzeugtEintrag({ rezept, kategorie = null, name = '', parameter 
 export function zuruecknahmeEintrag(globalId) {
     return { art: 'erzeugt', globalId, modell: 'cde', nachher: null };
 }
+
+/**
+ * Einen ERDBAU-VORGANG wieder loswerden (Abnahme 2026-09-12, A6: „können
+ * nichts ausgeblendet oder gelöscht werden").
+ *
+ * „Löschen" am Aushub blendete nur den Körper aus — die Grube steckt in der
+ * Anzeige des Geländes (`parameter.vorgaenge`), und der geformte Boden blieb.
+ * Das hier ist die Umkehrung dessen, was ein Erdbau-Werkzeug schreibt
+ * (`Bearbeitungen._gelaendeSchritte`): jedes Teil der Klammer zurücknehmen,
+ * die Anzeige ohne den Vorgang neu schreiben — und war er ihr letzter, die
+ * Anzeige zurücknehmen und das Ur-Gelände wieder zeigen. Spätere Vorgänge
+ * rechnet der nächste Aufbau über den kürzeren Stapel neu.
+ *
+ * @param {Map<string, object>} stand     wirksamer Stand `erzeugt`
+ * @param {string} ableitung              die Klammer des Vorgangs
+ * @param {object} [o]
+ * @param {Map<string, *>} [o.geloescht]  wirksamer Stand `geloescht` — ist das Ur verborgen?
+ * @returns {Array<object>} Einträge für EINEN Vorgang; leer, wenn es die Klammer nicht gibt
+ */
+export function vorgangEntfernenSchritte(stand, ableitung, { geloescht = new Map() } = {}) {
+    if (!ableitung || !stand?.size) return [];
+    const out = [];
+    for (const [gid, wert] of stand) {
+        if (wert?.ableitung === ableitung && wert?.rezept !== 'anzeige') out.push(zuruecknahmeEintrag(gid));
+    }
+    if (!out.length) return [];
+    for (const [gid, wert] of stand) {
+        if (wert?.rezept !== 'anzeige') continue;
+        const liste = wert.parameter?.vorgaenge ?? [];
+        if (!liste.some(v => v?.ableitung === ableitung)) continue;
+        const rest = liste.filter(v => v?.ableitung !== ableitung);
+        if (rest.length) {
+            out.push({ art: 'erzeugt', globalId: gid, modell: 'cde',
+                       nachher: { ...wert, parameter: { ...wert.parameter, vorgaenge: rest } } });
+            continue;
+        }
+        out.push(zuruecknahmeEintrag(gid));
+        const ur = wert.parameter?.quellen?.gelaende ?? null;
+        if (ur && geloescht?.has?.(ur)) {
+            out.push({ art: 'geloescht', globalId: ur, nachher: null, ...(modellVon(ur) === 'cde' ? { modell: 'cde' } : {}) });
+        }
+    }
+    return out;
+}

@@ -1,9 +1,9 @@
 <template>
-  <CdeDialog :offen="bearbeitung.commitDialogOffen" titel="Sitzung abschließen"
+  <CdeDialog :offen="bearbeitung.commitDialogOffen" titel="Bearbeitung sichern"
              icon="edit" @close="weiter">
     <div class="ko-rumpf">
       <label class="ko-feld">
-        <span>Commit-Nachricht — was war das Ziel dieser Bearbeitung?</span>
+        <span>Beschreibung (optional)</span>
         <textarea
           v-model="nachricht"
           rows="2"
@@ -14,7 +14,7 @@
 
       <h4 class="ko-abschnitt">
         {{ ae.sitzungVorgaenge.length }}
-        Schritt{{ ae.sitzungVorgaenge.length === 1 ? '' : 'e' }} in dieser Sitzung
+        Schritt{{ ae.sitzungVorgaenge.length === 1 ? '' : 'e' }}
       </h4>
       <ul class="ko-liste">
         <li v-for="v in ae.sitzungVorgaenge" :key="v.schluessel" class="ko-schritt">
@@ -27,13 +27,14 @@
           </div>
           <button
             class="ko-btn klein"
-            title="Diesen Schritt aus der Sitzung nehmen — das Modell fährt ihn zurück"
+            title="Diesen Schritt herausnehmen — das Modell fährt ihn zurück"
+            aria-label="Schritt herausnehmen"
             @click="entferne(v)"
           ><CdeIcon name="delete" :size="12" /></button>
         </li>
       </ul>
       <p v-if="!ae.sitzungVorgaenge.length" class="ko-leer">
-        Kein Schritt mehr übrig — Committen schließt die Sitzung ohne Eintrag.
+        Kein Schritt mehr übrig — Sichern beendet die Bearbeitung ohne neue Version.
       </p>
       <p v-if="fehler" class="ko-fehler">{{ fehler }}</p>
     </div>
@@ -41,10 +42,10 @@
     <template #fuss>
       <button class="ko-btn" @click="weiter">Weiter bearbeiten</button>
       <button class="ko-btn gefahr" @click="verwerfen">
-        {{ verwerfenBestaetigen ? 'Wirklich alles verwerfen?' : 'Sitzung verwerfen' }}
+        {{ verwerfenBestaetigen ? 'Wirklich alles verwerfen?' : 'Verwerfen' }}
       </button>
-      <button class="ko-btn primaer" :disabled="laeuft" @click="committen">
-        <CdeIcon name="check" :size="13" /> Committen
+      <button class="ko-btn primaer" :disabled="laeuft" @click="sichern">
+        <CdeIcon name="check" :size="13" /> Sichern
       </button>
     </template>
   </CdeDialog>
@@ -116,7 +117,7 @@ async function verwerfen() {
   } finally { laeuft.value = false; }
 }
 
-async function committen() {
+async function sichern() {
   laeuft.value = true;
   try {
     await ae.commitSitzung(nachricht.value, {
@@ -129,7 +130,7 @@ async function committen() {
     usePanels().open('verlauf');
   } catch (f) {
     console.error('cde: committen', f);
-    fehler.value = `Fehler: ${f?.message ?? f}`;
+    fehler.value = `Nicht gesichert: ${f?.message ?? f}`;
   } finally { laeuft.value = false; }
 }
 </script>

@@ -52,6 +52,7 @@ import CdeIcon from './ui/CdeIcon.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { baueSicht, griffe, sohlZugEintraege, cdeZugEintraege } from '../services/LaengsschnittSicht.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
@@ -65,6 +66,7 @@ const cvRef = ref(null);
 const bearbeitung = useBearbeitung();
 const aenderungen = useAenderungen();
 const ifc = useIfcStore();
+const farbmodus = useFarbmodus();
 const cde = useCdeStore();
 const api = useViewerApi();
 
@@ -415,6 +417,7 @@ onBeforeUnmount(() => {
 // Neuer Strang → einpassen; Journal/Geometrie → neu zeichnen.
 watch(() => bearbeitung.bauteil?.globalId, () => { passendEinstellen(); });
 watch(sicht, baldZeichnen);
+watch(() => farbmodus.modus, baldZeichnen);   // H6: die Farben kommen aus den Tokens
 </script>
 
 <style scoped>

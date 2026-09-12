@@ -261,7 +261,7 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
     await cde.ready;
 
     expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(false);
-    expect(cde.statusGrund).toMatch(/Prüfbericht/);
+    expect(cde.statusGrund).toBe('Erst prüfen, dann Shared.');
     expect(api.put).not.toHaveBeenCalled();
   });
 
@@ -275,6 +275,48 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
     expect(await cde.removeDokument('aaa')).toBe(true);
     expect(api.delete).toHaveBeenCalledWith('/projekte/1338/cde/aaa');
     expect(cde.dokumente).toEqual([]);
+  });
+
+  // ── NIE STILL (Abnahme 2026-09-12) ─────────────────────────────────────
+  // Beide Handgriffe gaben bei einer Ablehnung `false` zurück — ohne Grund.
+  // Das Statusfeld sprang zurück, das Löschen tat nichts, und niemand sagte
+  // warum. Der Grund ist der Satz des Servers (`detail`).
+  const abgelehnt = (status, detail) =>
+    Object.assign(new Error(`Request failed with status code ${status}`),
+      { response: { status, data: detail ? { detail } : {} } });
+
+  it('ein vom Server abgelehnter Statuswechsel nennt den Grund des Servers', async () => {
+    const api = fakeApi([eintrag({ status: 'WIP', pruefung: { verstoesse: 0, befunde: [] } })]);
+    api.put.mockRejectedValueOnce(abgelehnt(403, 'WIP → Shared braucht mindestens PLANER.'));
+    repo.setBackend(new RemoteBackend(1338, api));
+    const cde = useCdeStore();
+    await cde.ready;
+
+    expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(false);
+    expect(cde.statusGrund).toBe('WIP → Shared braucht mindestens PLANER.');   // vorher ''
+  });
+
+  it('ein abgelehntes Entfernen nennt den Grund und lässt das Dokument stehen', async () => {
+    const api = fakeApi([eintrag()]);
+    api.delete.mockRejectedValueOnce(abgelehnt(409, 'Kanal_R02.ifc steckt im Satz „Nord".'));
+    repo.setBackend(new RemoteBackend(1338, api));
+    const cde = useCdeStore();
+    await cde.ready;
+
+    expect(await cde.removeDokument('aaa')).toBe(false);
+    expect(cde.statusGrund).toMatch(/Satz „Nord"/);                              // vorher ''
+    expect(cde.dokumente).toHaveLength(1);
+  });
+
+  it('ohne Satz vom Server steht der lesbare Netzfehler da', async () => {
+    const api = fakeApi([eintrag()]);
+    api.delete.mockRejectedValueOnce(new Error('Network Error'));
+    repo.setBackend(new RemoteBackend(1338, api));
+    const cde = useCdeStore();
+    await cde.ready;
+
+    expect(await cde.removeDokument('aaa')).toBe(false);
+    expect(cde.statusGrund).toMatch(/Kein Zugriff auf den Projektordner/);
   });
 
   it('führt ohne Server-Backend die lokale Liste weiter', async () => {

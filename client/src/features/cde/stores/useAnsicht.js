@@ -27,7 +27,7 @@ export const useAnsicht = defineStore('cde-ansicht', () => {
     const pxProMm     = ref(2);
 
     /** Was der aktuelle Modellstand hergibt — von außen gesetzt. */
-    const stand = ref({ hatModell: false, hatAchsen: false });
+    const stand = ref({ hatModell: false, hatAchsen: false, hatProjekt: false });
 
     const flaeche = computed(() => zeichenflaeche(format.value, ausrichtung.value));
 

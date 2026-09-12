@@ -520,6 +520,10 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     const _schreibstaende = { auftrag: 0, stand: 0 };
     /** {ebene, wer, wann} | null — gesetzt, sobald ein Sichern verweigert wurde. */
     const schreibKonflikt = ref(null);
+    // GESCHEITERTES SPEICHERN (Abnahme 2026-09-12): `RepoFacade.set` gibt bei
+    // einem Netzfehler `false`, und das Journal machte stumm weiter — die
+    // Arbeit lag nur noch im Speicher. `{ebene, wann, grund?}` oder null.
+    const sicherFehler = ref(null);
 
     // ── Rahmen-Nachführung (Lücke ⑤ / Stufe 13.4, 2026-09-02) ────────────────
     // Alle Punktwerte des Journals sind Weltkoordinaten, und die Welt hängt am
@@ -673,9 +677,11 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
             };
             const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
-            if (ok !== false) _schreibstaende[ebene] += 1;
+            if (ok !== false) { _schreibstaende[ebene] += 1; sicherFehler.value = null; }
+            else sicherFehler.value = { ebene, wann: Date.now(), grund: null };
         } catch (fehler) {
             console.warn('cde: aenderungen sichern', fehler?.message ?? fehler);
+            sicherFehler.value = { ebene, wann: Date.now(), grund: fehler?.message ?? String(fehler) };
         }
     }
 
@@ -861,7 +867,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // Auf Commits ist die Rücknahme selbst ein COMMIT — „Revert: …",
         // wie bei git (U2).
         await _commitAus(ziel, geschrieben,
-            `Revert: ${letzter.vorgangTitel ?? AENDERUNGS_ARTEN[letzter.art]?.titel ?? letzter.art}`,
+            `Rückgängig: ${letzter.vorgangTitel ?? AENDERUNGS_ARTEN[letzter.art]?.titel ?? letzter.art}`,
             wer);
         return geschrieben;
     }
@@ -958,11 +964,11 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 basis: istWert,
                 wer, wann: Date.now(), modellSha: q.modellSha,
                 basisGehoben: q.id,
-                vorgangTitel: 'Basis auf Planerstand gehoben (Konflikt übernommen)',
+                vorgangTitel: 'Meiner gilt — gegen den neuen Wert des Planers',
             };
             liste.push(protokoll);
             await _commitAus(ebene, [protokoll],
-                'Konflikt übernommen — Basis auf Planerstand gehoben', wer);
+                'Meiner gilt — gegen den neuen Wert des Planers', wer);
             return protokoll;
         }
         return null;
@@ -1040,7 +1046,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const ungeloest = [];
         if (!abb.size) return { schritte: alle, unaufgeloest: ungeloest };
         const rev = (x) => (x?.revision != null ? `R${String(x.revision).padStart(2, '0')}` : null);
-        const titel = `Rebase ${rev(von) ?? 'alte Revision'} → ${rev(nach) ?? 'neue Revision'}`;
+        const titel = `Zugeordnet: ${rev(von) ?? 'alte Revision'} → ${rev(nach) ?? 'neue Revision'}`;
         for (const ebene of ['auftrag', 'stand']) {
             const liste = _liste(ebene).value;
             const staende = Object.fromEntries(Object.keys(AENDERUNGS_ARTEN).map(art => [art, standAus(liste, art)]));
@@ -1098,7 +1104,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const schritte = eintraegeVon(s.schrittIds);
             out.push({
                 typ: 'sitzung', id: 'sitzung',
-                titel: 'Offene Sitzung — unversioniert',
+                titel: 'Offene Bearbeitung — nicht gesichert',
                 wer: s.wer ?? '', wann: schritte.at(-1)?.wann ?? s.begonnen,
                 vorgaenge: alsVorgaenge(schritte),
                 bauteile: [...new Set(schritte.map(e => e.globalId))],
@@ -1153,13 +1159,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(q.basis !== undefined ? { basis: q.basis } : {}),
                 ...(q.modell !== undefined ? { modell: q.modell } : {}),
                 vorgang: gegenVorgang,
-                vorgangTitel: `Revert: ${c.nachricht}`,
+                vorgangTitel: `Rückgängig: ${c.nachricht}`,
                 ruecknahmeVon: q.id,
             };
             liste.push(eintrag);
             geschrieben.push(eintrag);
         }
-        await _commitAus(ziel, geschrieben, `Revert: ${c.nachricht}`, wer);
+        await _commitAus(ziel, geschrieben, `Rückgängig: ${c.nachricht}`, wer);
         return geschrieben;
     }
 
@@ -1430,6 +1436,6 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
         schliesseLeereSitzung, nachrichtVorschlag,
         verlauf, setzeSatz, neuLaden: laden,
-        schreibKonflikt, setzeWeltversatz, ebeneVon,
+        schreibKonflikt, sicherFehler, setzeWeltversatz, ebeneVon,
     };
 });

@@ -74,8 +74,6 @@ defineEmits(['setzeWert', 'uebernehmen', 'abbrechen']);
   background: var(--cde-fill); color: var(--cde-text);
   border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
   padding: 0.22rem 0.3rem; font-size: var(--cde-font-xs);
-  /* Aufgeklappte Liste im eigenen Theme halten (nur Chromium ≥ 135) */
-  appearance: base-select;
 }
 .bearb-fehler  { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-danger); }
 .bearb-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-warn); }

@@ -30,7 +30,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { useAuthStore } from '@/stores/useAuthStore.js';
 import { pruefeStatuswechsel } from '../services/StatusWorkflow.js';
-import { dokumentAusManifest, repo } from '../services/RepoFacade.js';
+import { dokumentAusManifest, fehlerLesbar, repo } from '../services/RepoFacade.js';
 
 export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived']);
 
@@ -70,7 +70,6 @@ const KEY_PROJECTS_ALT = 'cde-projects';
 const KEY_ACTIVE_ALT   = 'cde-active-project';
 
 const KEY_SATZ       = 'cde-aktiver-satz';
-const KEY_BEARBEITER = 'cde-bearbeiter';
 const KEY_DOKUMENTE  = 'dokumente';
 
 export const useCdeStore = defineStore('cde', () => {
@@ -80,15 +79,17 @@ export const useCdeStore = defineStore('cde', () => {
   const saetze = ref([]);
   const aktiverSatzId = ref(null);
   /**
-   * Der eingegebene Bearbeiter — leer heisst: der Login-Name gilt.
-   * Fabios Journal von gestern trug überall `wer: ""` — eine Versionsliste
-   * „wann WER was" ist damit wertlos. Deshalb ist `bearbeiter` jetzt eine
-   * beschreibbare Ableitung mit dem Anzeigenamen aus der Anmeldung als
-   * Rückfall; die Eingabe im Kopf überstimmt ihn weiterhin.
+   * Wer bearbeitet — der Name aus der ANMELDUNG (Kassensturz H1).
+   * Fabios Journal trug einmal überall `wer: ""`; eine Versionsliste „wann
+   * WER was" ist damit wertlos. Bis H1 überstimmte ein Feld in der Kopfleiste
+   * den Anmeldenamen, und der Wert lag im PROJEKTordner — wer ihn tippte,
+   * setzte ihn für alle, die das Projekt danach öffneten. Das Feld ist weg;
+   * `setBearbeiter` bleibt als Rückfall für Läufe ohne Anmeldung, nur im
+   * Speicher, und der alte gespeicherte Wert wird nicht mehr gelesen.
    */
   const bearbeiterEingabe = ref('');
   const bearbeiter = computed({
-    get: () => bearbeiterEingabe.value || useAuthStore().anzeigename || '',
+    get: () => useAuthStore().anzeigename || bearbeiterEingabe.value || '',
     set: (v) => { bearbeiterEingabe.value = (v ?? '').trim(); },
   });
 
@@ -112,10 +113,7 @@ export const useCdeStore = defineStore('cde', () => {
 
   // ── Laden / Initialisierung ────────────────────────────────────────────
   async function _init() {
-    const [gespeicherterSatz, gespeicherterBearbeiter] = await Promise.all([
-      repo.get(KEY_SATZ), repo.get(KEY_BEARBEITER),
-    ]);
-    if (typeof gespeicherterBearbeiter === 'string') bearbeiterEingabe.value = gespeicherterBearbeiter;
+    const gespeicherterSatz = await repo.get(KEY_SATZ);
     if (typeof gespeicherterSatz === 'string') aktiverSatzId.value = gespeicherterSatz;
     await _loadDokumente();
   }
@@ -216,7 +214,6 @@ export const useCdeStore = defineStore('cde', () => {
 
   async function setBearbeiter(name) {
     bearbeiterEingabe.value = (name ?? '').trim();
-    await repo.set(KEY_BEARBEITER, bearbeiterEingabe.value);
   }
 
   // ── Dokument-Register (ISO 19650 light) ─────────────────────────────────
@@ -298,7 +295,10 @@ export const useCdeStore = defineStore('cde', () => {
         await _loadDokumente();
         return true;
       } catch (fehler) {
+        // NIE STILL (Abnahme 2026-09-12): das Feld sprang zurück, und
+        // niemand sagte warum. Der Server nennt den Grund selbst.
         console.warn('cde: status am server', fehler?.message ?? fehler);
+        statusGrund.value = _serverGrund(fehler);
         return false;
       }
     }
@@ -310,6 +310,13 @@ export const useCdeStore = defineStore('cde', () => {
     return true;
   }
 
+  /** Der Satz des Servers (`detail`), sonst der lesbare Netzfehler. */
+  function _serverGrund(fehler) {
+    const detail = fehler?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+    return fehlerLesbar(fehler).text;
+  }
+
   /**
    * Aus dem Register nehmen.
    *
@@ -318,9 +325,13 @@ export const useCdeStore = defineStore('cde', () => {
    * nur aus seiner eigenen Liste — Manifest und Datei blieben, und beim
    * naechsten Oeffnen war das Dokument wieder da.
    *
+   * Eine Ablehnung steht in `statusGrund` — derselbe Ort wie beim Status,
+   * denn beides sind Handgriffe an derselben Registerzeile.
+   *
    * @returns {Promise<boolean>} false, wenn der Server abgelehnt hat
    */
   async function removeDokument(sha256) {
+    statusGrund.value = '';
     if (repo.remote) {
       try {
         await repo.entferne(sha256);
@@ -328,6 +339,7 @@ export const useCdeStore = defineStore('cde', () => {
         return true;
       } catch (fehler) {
         console.warn('cde: entfernen am server', fehler?.message ?? fehler);
+        statusGrund.value = _serverGrund(fehler);
         return false;
       }
     }

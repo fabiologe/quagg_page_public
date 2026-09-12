@@ -25,7 +25,7 @@ import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
-import { rezeptNach, teileVon } from '../services/Bauteilrezepte.js';
+import { rezeptNach, teileVon, vorgangEntfernenSchritte } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
 import { befundeFuer } from '../services/Befunde.js';
 
@@ -354,6 +354,24 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         return true;
     }
 
+    /**
+     * Ein Werkzeug wählen heißt bearbeiten (Kassensturz E4).
+     *
+     * Ist der Modus aus, schaltet `einschalten` ihn ein — das ist der Viewer:
+     * er prüft die echten Sperren (kein Modell, Millimeter, ein Published-
+     * Stand) und beginnt die Bearbeitung. Lehnt er ab, startet nichts, und
+     * der Viewer sagt warum. Vorher war jeder Werkzeugknopf ohne Modus grau:
+     * „Bearbeiten ist aus — oben einschalten (oder E)".
+     */
+    function starteMitModus(id, { einschalten = null, vorschlag = null, subjekt = null } = {}) {
+        if (!modusAn.value && !einschalten?.()) {
+            letzterGrund.value = 'Bearbeiten lässt sich gerade nicht einschalten.';
+            return false;
+        }
+        if (vorschlag) return starteMitVorschlag(id, vorschlag);
+        return starte(id, subjekt ? { subjekt } : {});
+    }
+
     function modusSetzen(an) {
         const neu = !!an;
         if (neu === modusAn.value) return neu;
@@ -668,12 +686,46 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         return mehrteilig ? geschrieben : (geschrieben[0] ?? null);
     }
 
+    /**
+     * „Vorgang entfernen" (Abnahme 2026-09-12, A6) — durch DIESE Engstelle, nicht
+     * daneben: Modus an, sonst ein Grund; die Einträge rechnet
+     * `vorgangEntfernenSchritte` rein aus dem Stand, geschrieben wird EIN Vorgang.
+     *
+     * @returns {Promise<Array|object|null>} das Geschriebene (für `wendeEintragAn`), sonst null
+     */
+    async function entferneVorgang(ableitung, { wer = '', einschalten = null } = {}) {
+        letzterGrund.value = '';
+        // Eine Handlung schaltet die Bearbeitung ein (Kassensturz E4, Abnahme M4):
+        // der Viewer reicht seinen Einschalter mit den echten Sperren herein.
+        if (!modusAn.value && !einschalten?.()) {
+            letzterGrund.value = einschalten
+                ? 'Bearbeiten lässt sich gerade nicht einschalten.'
+                : 'Bearbeiten ist aus — oben einschalten (oder E), dann entfernen.';
+            return null;
+        }
+        const aenderungen = useAenderungen();
+        const schritte = vorgangEntfernenSchritte(aenderungen.wirksamerStand('erzeugt'), ableitung,
+                                                  { geloescht: aenderungen.wirksamerStand('geloescht') });
+        if (!schritte.length) {
+            letzterGrund.value = 'Diesen Vorgang gibt es nicht mehr.';
+            return null;
+        }
+        const vorgang = schritte.length > 1 ? aenderungen.neueVorgangsId() : undefined;
+        const geschrieben = [];
+        for (const s of schritte) {
+            const e = await aenderungen.eintragen({ ...s, wer, ...(vorgang ? { vorgang, vorgangTitel: 'Vorgang entfernen' } : {}) });
+            if (e) geschrieben.push(e);
+        }
+        return geschrieben.length > 1 ? geschrieben : (geschrieben[0] ?? null);
+    }
+
     return {
+        entferneVorgang,
         einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
         typprofil, scharf, felder, fehler, bereit, moeglich, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eingabe, setzeEingabe, leereEingabe,
-        ladeProfile, einordne, starte, starteMitVorschlag, setzeWert, abbrechen, ausfuehren,
+        ladeProfile, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
     };
 });

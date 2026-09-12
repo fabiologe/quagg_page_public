@@ -48,9 +48,20 @@ import {
   // IFC-Kategorien (Ebenen-Liste)
   BrickWall, Square, Columns3, Minus, Frame, DoorOpen, Cylinder, Wind,
   House, ChevronsUp, Anchor, Sofa, Fence, Grid2x2, Cog, Droplets,
+  // Kopfleiste und Reiterleisten (Kassensturz H1)
+  Ellipsis, ExternalLink, Wrench, FileOutput, SunMoon,
 } from 'lucide-vue-next';
 
 const ICONS = {
+  // ── Kopfleiste und Reiterleisten (Kassensturz H1) ──
+  // „Ausgeben" hat ein eigenes Zeichen — vorher trug es den Ebenen-Stapel,
+  // der zugleich Kategorien und Mehrfachauswahl hiess.
+  'mehr':         Ellipsis,
+  'extern':       ExternalLink,
+  'werkzeuge':    Wrench,
+  'ausgeben':     FileOutput,
+  'farbmodus':    SunMoon,        // heller/dunkler Modus (H6)
+
   // ── Kamera / Ansichten ──
   'fit':          Maximize,
   'view-top':     ArrowDownToLine,
@@ -212,6 +223,8 @@ defineExpose({ has: (n) => n in ICONS });
 
 <script>
 export const ICON_NAMES = [
+  // Kopfleiste und Reiterleisten (Kassensturz H1)
+  'mehr', 'extern', 'werkzeuge', 'ausgeben', 'farbmodus',
   'fit', 'view-top', 'view-front', 'view-side', 'view-reset',
   'layers', 'section', 'coords', 'measure', 'views', 'issues', 'help',
   'search', 'command', 'zoom-to', 'isolate', 'visible', 'hidden', 'locate',

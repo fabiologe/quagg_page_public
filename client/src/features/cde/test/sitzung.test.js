@@ -112,7 +112,7 @@ describe('Der Commit', () => {
         const gegen = await ae.zurueck('Fabio');
         expect(gegen.every(g => g.ruecknahmeVon)).toBe(true);
         expect(ae.commits).toHaveLength(2);
-        expect(ae.commits[1].nachricht).toMatch(/^Revert:/);
+        expect(ae.commits[1].nachricht).toMatch(/^Rückgängig:/);
     });
 
     it('Konflikt-Entscheidungen werden ihr EIGENER Commit — auch bei offener Sitzung', async () => {
@@ -183,7 +183,7 @@ describe('Die Commit-Zeitleiste (U3)', () => {
         expect(ae.commits).toHaveLength(2);
         const z = ae.commitZeitleiste;
         expect(z[0].typ).toBe('revert');
-        expect(z[0].titel).toBe('Revert: Arbeit');
+        expect(z[0].titel).toBe('Rückgängig: Arbeit');
         expect(z[1].zurueckgenommen).toBe(true);
         expect(standAus(ae.eintraege, 'kg').size).toBe(0);
     });

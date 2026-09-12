@@ -293,3 +293,12 @@ export function kgTitle(code) {
     const node = KG_LOOKUP.get(String(code));
     return node ? `${node.code} — ${node.label}` : String(code);
 }
+
+/**
+ * Alle Kostengruppen des Baums als Auswahl (Abnahme 2026-09-12, F2). Der
+ * WERT bleibt der Code — Verlauf, Regeln und Export ändern sich nicht —, der
+ * Titel sagt, was er heißt. Vorher stand in der Werkzeugauswahl nur die Zahl.
+ */
+export function kgOptionen() {
+    return [...KG_LOOKUP.values()].map(k => ({ wert: k.code, titel: `${k.code} · ${k.label}` }));
+}

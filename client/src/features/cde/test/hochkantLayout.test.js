@@ -13,6 +13,9 @@ import { readFileSync } from 'node:fs';
 const wurzel = new URL('..', import.meta.url);
 const panel = readFileSync(new URL('components/ui/CdePanel.vue', wurzel), 'utf8');
 const view  = readFileSync(new URL('views/CdeView.vue', wurzel), 'utf8');
+// Kassensturz H1: Kopfleiste und Reiterleisten brechen am selben Punkt um.
+const kopf   = readFileSync(new URL('components/CdeKopfleiste.vue', wurzel), 'utf8');
+const reiter = readFileSync(new URL('components/CdeReiterleiste.vue', wurzel), 'utf8');
 
 /** Alle max-width-Breakpoints einer Datei (nur Media Queries). */
 function breakpoints(text) {
@@ -27,12 +30,16 @@ describe('Hochkant (T5)', () => {
         expect(panel).toMatch(/width:\s*var\(--cp-breite/);
     });
 
-    it('beide Dateien tragen DENSELBEN Breakpoint', () => {
-        const bpPanel = breakpoints(panel);
-        const bpView  = breakpoints(view);
-        expect(bpPanel.length).toBeGreaterThan(0);
-        expect(bpView.length).toBeGreaterThan(0);
-        expect(new Set([...bpPanel, ...bpView]).size).toBe(1);
+    it('alle Dateien der Schale tragen DENSELBEN Breakpoint', () => {
+        const alle = [panel, view, kopf, reiter].map(breakpoints);
+        for (const bp of alle) expect(bp.length).toBeGreaterThan(0);
+        expect(new Set(alle.flat()).size).toBe(1);
+    });
+
+    it('hochkant liegen die Reiterleisten als dritte Zeile unter den Blättern', () => {
+        const block = view.slice(view.indexOf('T5: Hochkant'));
+        expect(block).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\)\s*auto\s+auto/);
+        expect(block).toMatch(/\.cde-workspace > \.cde-reiter\s*\{\s*grid-row:\s*3/);
     });
 
     it('im Hochkant ist die Arbeitsfläche ein Grid mit bestimmten Zeilen', () => {

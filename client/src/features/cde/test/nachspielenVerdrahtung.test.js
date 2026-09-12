@@ -117,7 +117,7 @@ describe('Das Ergebnis wird gemeldet, nicht verschluckt', () => {
         const n = useNachspielen({ engine: fakeEngine().engine, aenderungen: j });
         const r = await n.nachModellladung('m1');
         expect(r).toEqual({ angewandt: 1, konflikte: 0 });
-        expect(n.meldung.value).toBe('1 Festlegung angewandt');
+        expect(n.meldung.value).toBe('1 Schritt angewandt');
     });
 
     it('meldet einen Konflikt, wenn der Planer dasselbe Bauteil bewegt hat', async () => {
@@ -160,6 +160,22 @@ describe('Das Ergebnis wird gemeldet, nicht verschluckt', () => {
         expect(r.angewandt).toBe(0);
         expect(r.konflikte).toBe(1);
         expect(n.zustandVon({ art: 'lage', globalId: 'H1' }).zustand).toBe('fehlgeschlagen');
+        // S2: das Scheitern steht in der Zeile, nicht nur in der kleineren Zahl.
+        expect(n.meldung.value).toBe('0 Schritte angewandt · 1 nicht angewandt');
+    });
+
+    it('ein Eigenbau-Teil, das sich nicht bauen liess, heisst „nicht gebaut" (S2)', async () => {
+        // Die Form, die `IfcAutor.baueErzeugte` liefert: der Schritt samt Grund.
+        const j = useAenderungen();
+        await j.eintragen({ art: 'erzeugt', globalId: 'cde-graben', modell: 'cde',
+                            nachher: { rezept: 'kanalgraben', parameter: {} } });
+
+        const f = fakeEngine({ misserfolge: [{ art: 'erzeugt', globalId: 'cde-graben', modell: 'cde', grund: 'Rohre fehlen' }] });
+        const n = useNachspielen({ engine: f.engine, aenderungen: j });
+        const r = await n.nachModellladung('m1');
+
+        expect(r).toEqual({ angewandt: 0, konflikte: 1 });
+        expect(n.meldung.value).toBe('0 Schritte angewandt · 1 nicht gebaut');
     });
 });
 

@@ -3,14 +3,14 @@
     <div class="ann-header">
       <span class="ann-title">
         <CdeIcon name="issues" :size="15" />
-        Issues <small v-if="ifc.annotations.length">({{ openCount }} offen)</small>
+        Notizen <small v-if="ifc.annotations.length">({{ openCount }} offen)</small>
       </span>
       <div class="ann-header-actions">
         <button
           class="ann-mode-btn"
           :class="{ active: annotationActive }"
           @click="$emit('toggle-mode')"
-          :title="annotationActive ? 'Pin-Modus beenden' : 'Issue anlegen — klick aufs Modell'"
+          :title="annotationActive ? 'Pin-Modus beenden' : 'Notiz anlegen — dann auf das Modell klicken'"
         >
           <CdeIcon :name="annotationActive ? 'check' : 'add'" :size="12" />
           {{ annotationActive ? 'Aktiv' : 'Neu' }}
@@ -41,7 +41,7 @@
           class="ann-clear-btn"
           @click="onClearAll"
           title="Alle löschen"
-          aria-label="Alle Issues löschen"
+          aria-label="Alle Notizen löschen"
         ><CdeIcon name="delete" :size="12" /></button>
       </div>
     </div>
@@ -59,7 +59,7 @@
 
     <div class="ann-body">
       <div v-if="!filtered.length" class="ann-empty">
-        {{ ifc.annotations.length ? 'Kein Issue in diesem Filter.' : 'Keine Issues' }}<br>
+        {{ ifc.annotations.length ? 'Keine Notiz in diesem Filter.' : 'Keine Notizen' }}<br>
         <small v-if="!ifc.annotations.length">„＋ Neu" aktivieren, dann auf eine Stelle im Modell klicken.</small>
       </div>
 
@@ -82,7 +82,7 @@
             :value="a.text"
             @blur="onTextBlur(a, $event)"
             rows="2"
-            placeholder="Issue-Beschreibung..."
+            placeholder="Text der Notiz …"
           ></textarea>
 
           <!-- Issue-Metadaten -->
@@ -169,7 +169,7 @@
           </div>
         </div>
 
-        <button class="ann-del" @click="onDelete(a)" title="Löschen" aria-label="Issue löschen">
+        <button class="ann-del" @click="onDelete(a)" title="Löschen" aria-label="Notiz löschen">
           <CdeIcon name="delete" :size="12" />
         </button>
       </div>
@@ -256,7 +256,8 @@ function onTextBlur(a, e) {
 }
 function onDelete(a)        { ifc.removeAnnotation(a.id); }
 function onClearAll() {
-  if (confirm(`Alle ${ifc.annotations.length} Issues löschen?`)) {
+  const n = ifc.annotations.length;
+  if (confirm(n === 1 ? 'Die Notiz löschen?' : `Alle ${n} Notizen löschen?`)) {
     ifc.clearAnnotations();
   }
 }
@@ -459,7 +460,6 @@ function _download(blob, name) {
 .ann-status.st-open        { color: var(--cde-danger-soft); border-color: color-mix(in srgb, var(--cde-danger) 35%, transparent); }
 .ann-status.st-in-progress { color: var(--cde-warn-soft); border-color: color-mix(in srgb, var(--cde-warn) 35%, transparent); }
 .ann-status.st-closed      { color: var(--cde-success); border-color: color-mix(in srgb, var(--cde-success-strong) 35%, transparent); }
-.ann-due { color-scheme: dark; }
 .ann-due.overdue { color: var(--cde-danger); border-color: color-mix(in srgb, var(--cde-danger) 60%, transparent); }
 
 .ann-info-line {

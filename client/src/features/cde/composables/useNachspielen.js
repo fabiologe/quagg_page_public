@@ -151,7 +151,12 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             //     Setzen (`schachtPunkteVon`); der Hüllen-Anker daneben wäre
             //     ein anderes Mass und meldete „bewegt", wo nur zweierlei
             //     gemessen wurde. Auch das VOR jeder Anwendung.
-            const knotenStand = engine.value.schachtPunkteVon?.(modelId) ?? new Map();
+            //     Über ALLE geladenen Modelle — ein Schacht steht nicht im
+            //     ersten, nur weil dieses zuerst lud (Abnahme 2026-09-12).
+            const knotenStand = new Map();
+            for (const mid of engine.value.getModelList?.()?.map(m => m.modelId) ?? [modelId]) {
+                for (const [gid, p] of engine.value.schachtPunkteVon?.(mid) ?? []) knotenStand.set(gid, p);
+            }
 
             // 2c. Die PRÜFMASSE der Ableitungs-Quellen einfrieren (Teil XIV):
             //     nur gelieferte Quellen — eine CDE-Quelle entsteht erst im
@@ -202,6 +207,8 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             );
             const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
                 globalIdZuLocalId: localIdKarte,
+                // Das Modell JEDES Treffers — `plan.modelId` ist nur das erste.
+                globalIdZuOrt: idKarte,
                 // Die Kette zum Ur läuft durch Zurückgenommenes (Fahrplan Erdbau-Container, Stufe 1).
                 historie: aenderungen?.historischerStand?.('erzeugt') ?? null,
             });
@@ -230,6 +237,10 @@ export function useNachspielen({ engine, aenderungen } = {}) {
                 ...plan.zusammenfassung,
                 angewandt,
                 nurFestlegung: nichtAngewandt.length,
+                // Was beim Anwenden scheiterte, wird GENANNT (S2) — vorher
+                // verkleinerte es nur still die Zahl „angewandt".
+                fehlgeschlagen: misserfolge.length,
+                nichtGebaut: misserfolge.filter(m => m?.art === 'erzeugt').length,
                 konflikte: alleKonflikte.length,
             });
 
@@ -240,7 +251,7 @@ export function useNachspielen({ engine, aenderungen } = {}) {
         } catch (fehler) {
             // Ein Fehler hier darf das Laden nicht abbrechen — ein Modell ohne
             // Festlegungen ist besser als gar keins. Aber er wird gesagt.
-            meldung.value = `Festlegungen konnten nicht angewandt werden: ${fehler?.message ?? fehler}`;
+            meldung.value = `Die Schritte ließen sich nicht anwenden: ${fehler?.message ?? fehler}`;
             console.warn('cde: nachspielen', fehler);
             return { angewandt: 0, konflikte: 0 };
         } finally {
