@@ -164,7 +164,7 @@ const ICON_MAP = {
   IFCWINDOW:       'cat-window', IFCWINDOWTYPE:       'cat-window',
   IFCDOOR:         'cat-door',   IFCDOORTYPE:         'cat-door',
   IFCPIPESEGMENT:  'cat-pipe',   IFCPIPEFITTING:      'cat-pipe',
-  IFCDUCT:         'cat-duct',   IFCDUCTFITTING:      'cat-duct',
+  IFCDUCTSEGMENT:  'cat-duct',   IFCDUCTFITTING:      'cat-duct',
   IFCROOF:         'cat-roof',   IFCROOFTYPE:         'cat-roof',
   IFCSTAIR:        'cat-stair',  IFCSTAIRTYPE:        'cat-stair',
   IFCFOOTING:      'cat-footing',

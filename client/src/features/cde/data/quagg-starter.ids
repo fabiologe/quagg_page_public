@@ -1,0 +1,428 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  Quagg Starter-Anforderungen (IDS 1.0). KANONISCH ist diese Datei:
+  das Backend prueft sie mit ifctester (backend/app/ifc/pruefe.py), die CDE zeigt
+  sie als Vorschau (client/src/features/cde/services/IdsXml.js, Kopie in data/).
+  IDS kennt keine Schwere — die CDE liest sie aus dem Attribut instructions der
+  Spezifikation: "Schwere: Fehler | Warnung | Hinweis" (Vorgabe Warnung).
+-->
+<ids xmlns="http://standards.buildingsmart.org/IDS" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xs="http://www.w3.org/2001/XMLSchema" xsi:schemaLocation="http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd">
+    <info>
+        <title>Quagg Starter-Anforderungen</title>
+        <description>Mitgelieferte Projektanforderungen der CDE. Kanonisch ist diese Datei: das Backend prueft sie mit ifctester, der Client zeigt sie als Vorschau.</description>
+        <author>cde@quagg-engineering.org</author>
+        <date>2026-09-11</date>
+        <purpose>Starter-Set Hochbau und Tiefbau</purpose>
+        <milestone>Lieferung</milestone>
+    </info>
+    <specifications>
+        <specification name="Räume — Name vorhanden" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-space-name" description="Jeder Raum braucht einen Namen für Flächenbilanz und Bauantrag." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required" instructions="Raum-Name fehlt">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Räume — Fläche dokumentiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-space-area" description="GrossFloorArea oder NetFloorArea hilft bei automatischer Flächenbilanz." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="Qto_SpaceBaseQuantities.NetFloorArea fehlt (Fallback auf BBox)">
+                    <propertySet>
+                        <simpleValue>Qto_SpaceBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>NetFloorArea</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Wände — IsExternal markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-wall-external-flag" description="Für KG-Klassifikation (330 außen vs. 340 innen)." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCWALL</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="IsExternal fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_WallCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Wände — Tragend/nichttragend markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-wall-loadbearing" description="Für Statik-Koordination und KG-Untergruppen." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCWALL</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="LoadBearing fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_WallCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>LoadBearing</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Außenwände — Brandschutz-Klasse" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-wall-fire-rating" description="FireRating wird im Brandschutz-Konzept erwartet." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCWALL</simpleValue>
+                    </name>
+                </entity>
+                <property dataType="IFCBOOLEAN">
+                    <propertySet>
+                        <simpleValue>Pset_WallCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                    <value>
+                        <simpleValue>TRUE</simpleValue>
+                    </value>
+                </property>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="FireRating fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_WallCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>FireRating</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Türen — IsExternal markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-door-external-flag" description="Für KG 334 (außen) vs. 344 (innen)." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCDOOR</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="IsExternal fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_DoorCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Außentüren — Brandschutz-Klasse" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-door-fire-rating" description="FireRating ist bei Außen-/Brandschutztüren erforderlich." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCDOOR</simpleValue>
+                    </name>
+                </entity>
+                <property dataType="IFCBOOLEAN">
+                    <propertySet>
+                        <simpleValue>Pset_DoorCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                    <value>
+                        <simpleValue>TRUE</simpleValue>
+                    </value>
+                </property>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="FireRating fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_DoorCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>FireRating</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Fenster — IsExternal markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-window-external-flag" description="Für KG 334 (außen) vs. 344 (innen)." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCWINDOW</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="IsExternal fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_WindowCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Decken — Tragend markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-slab-loadbearing" description="Standard-Property für Statik-Koordination." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSLAB</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="LoadBearing fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_SlabCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>LoadBearing</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Stützen — Tragend markiert" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-column-loadbearing" description="Stützen sind in der Regel tragend; Property muss vorhanden sein." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCCOLUMN</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="LoadBearing fehlt">
+                    <propertySet>
+                        <simpleValue>Pset_ColumnCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>LoadBearing</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Schächte — Bezeichnung" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-chamber-name" description="DISTRIBUTIONCHAMBERELEMENT braucht eine Schacht-Nr / Name." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCDISTRIBUTIONCHAMBERELEMENT</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required" instructions="Schacht-Bezeichnung fehlt">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Rohrleitungen — Nennweite" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-pipe-system" description="PipeSegment trägt seine Nennweite — wichtig für Mengenermittlung." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCPIPESEGMENT</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="NominalDiameter fehlt — wichtig für Mengenermittlung">
+                    <propertySet>
+                        <simpleValue>Pset_PipeSegmentTypeCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>NominalDiameter</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Aushub — Mengen nach bSI-Vorlage" ifcVersion="IFC4X3_ADD2" identifier="spec-aushub-mengen" description="Jeder Aushub trägt Qto_EarthworksCutBaseQuantities.UndisturbedVolume, so schreibt ihn auch der CDE-Eigenbau." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSCUT</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="UndisturbedVolume fehlt">
+                    <propertySet>
+                        <simpleValue>Qto_EarthworksCutBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>UndisturbedVolume</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Auftrag — Mengen nach bSI-Vorlage" ifcVersion="IFC4X3_ADD2" identifier="spec-auftrag-mengen" description="Jede Schüttung trägt Qto_EarthworksFillBaseQuantities.CompactedVolume." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSFILL</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="CompactedVolume fehlt">
+                    <propertySet>
+                        <simpleValue>Qto_EarthworksFillBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>CompactedVolume</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Aushub der CDE — Herkunft lesbar" ifcVersion="IFC4X3_ADD2" identifier="spec-aushub-herkunft" description="Ein in der CDE erzeugter Aushub (Quagg_CDE.CdeId) nennt in Quagg_Herkunft Dokument und Revision seiner Quelle — bei einer Lieferung ihre Registerdatei, sonst das CDE-Journal (Fahrplan Erdbau-Container)." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSCUT</simpleValue>
+                    </name>
+                </entity>
+                <property>
+                    <propertySet>
+                        <simpleValue>Quagg_CDE</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>CdeId</simpleValue>
+                    </baseName>
+                </property>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="Quagg_Herkunft.QuellRevision fehlt — die Quelle dieses Aushubs ist unbekannt">
+                    <propertySet>
+                        <simpleValue>Quagg_Herkunft</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>QuellRevision</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Auftrag der CDE — Herkunft lesbar" ifcVersion="IFC4X3_ADD2" identifier="spec-auftrag-herkunft" description="Ein in der CDE erzeugter Auftrag (Quagg_CDE.CdeId) nennt in Quagg_Herkunft Dokument und Revision seiner Quelle — bei einer Lieferung ihre Registerdatei, sonst das CDE-Journal (Fahrplan Erdbau-Container)." instructions="Schwere: Fehler">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSFILL</simpleValue>
+                    </name>
+                </entity>
+                <property>
+                    <propertySet>
+                        <simpleValue>Quagg_CDE</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>CdeId</simpleValue>
+                    </baseName>
+                </property>
+            </applicability>
+            <requirements>
+                <property cardinality="required" instructions="Quagg_Herkunft.QuellRevision fehlt — die Quelle dieses Auftrags ist unbekannt">
+                    <propertySet>
+                        <simpleValue>Quagg_Herkunft</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>QuellRevision</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Aushub der CDE — PredefinedType bestimmt" ifcVersion="IFC4X3_ADD2" identifier="spec-aushub-typ" description="Ein in der CDE erzeugter Aushub trägt einen PredefinedType aus IFC4X3_ADD2, nicht NOTDEFINED oder USERDEFINED. Die Aufzählung ist die des Schemas (test_ids.py hält sie gleich)." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSCUT</simpleValue>
+                    </name>
+                </entity>
+                <property>
+                    <propertySet>
+                        <simpleValue>Quagg_CDE</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>CdeId</simpleValue>
+                    </baseName>
+                </property>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required" instructions="PredefinedType fehlt oder ist NOTDEFINED/USERDEFINED">
+                    <name>
+                        <simpleValue>PredefinedType</simpleValue>
+                    </name>
+                    <value>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="BASE_EXCAVATION"/>
+                            <xs:enumeration value="CUT"/>
+                            <xs:enumeration value="DREDGING"/>
+                            <xs:enumeration value="EXCAVATION"/>
+                            <xs:enumeration value="OVEREXCAVATION"/>
+                            <xs:enumeration value="PAVEMENTMILLING"/>
+                            <xs:enumeration value="STEPEXCAVATION"/>
+                            <xs:enumeration value="TOPSOILREMOVAL"/>
+                            <xs:enumeration value="TRENCH"/>
+                        </xs:restriction>
+                    </value>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Auftrag der CDE — PredefinedType bestimmt" ifcVersion="IFC4X3_ADD2" identifier="spec-auftrag-typ" description="Ein in der CDE erzeugter Auftrag trägt einen PredefinedType aus IFC4X3_ADD2, nicht NOTDEFINED oder USERDEFINED. Die Aufzählung ist die des Schemas (test_ids.py hält sie gleich)." instructions="Schwere: Warnung">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCEARTHWORKSFILL</simpleValue>
+                    </name>
+                </entity>
+                <property>
+                    <propertySet>
+                        <simpleValue>Quagg_CDE</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>CdeId</simpleValue>
+                    </baseName>
+                </property>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required" instructions="PredefinedType fehlt oder ist NOTDEFINED/USERDEFINED">
+                    <name>
+                        <simpleValue>PredefinedType</simpleValue>
+                    </name>
+                    <value>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="BACKFILL"/>
+                            <xs:enumeration value="COUNTERWEIGHT"/>
+                            <xs:enumeration value="EMBANKMENT"/>
+                            <xs:enumeration value="SLOPEFILL"/>
+                            <xs:enumeration value="SUBGRADE"/>
+                            <xs:enumeration value="SUBGRADEBED"/>
+                            <xs:enumeration value="TRANSITIONSECTION"/>
+                        </xs:restriction>
+                    </value>
+                </attribute>
+            </requirements>
+        </specification>
+    </specifications>
+</ids>

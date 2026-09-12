@@ -494,6 +494,17 @@ function _anModell(schritte, sha) {
  * DGM zu DGM ketteten — jeder mit eigener Geländekopie — war der Grund für
  * drei TERRAIN im Raum und 6,5 MB Paket.
  */
+/**
+ * Das vorbelegte Gelände einer Erdbau-Bearbeitung: das erste GELIEFERTE
+ * (Fahrplan Erdbau-Container, Stufe 1). Eine Anzeige der CDE als Vorgabe
+ * führte über `erdbau.ur` meist zum Ur — aber nicht, wenn die Ansicht veraltet
+ * war. Gibt es kein geliefertes, bleibt es beim ersten Kandidaten.
+ */
+function _vorbelegtesGelaende(el) {
+    const kandidaten = el?.gelaendeQuellen ?? [];
+    return (kandidaten.find(g => g.herkunft !== 'cde') ?? kandidaten[0])?.globalId ?? '';
+}
+
 function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name }) {
     const eb = quelle?.erdbau ?? null;
     const ur = eb?.ur ?? quelle.globalId;
@@ -706,7 +717,7 @@ export const BEARBEITUNGEN = Object.freeze([
             { name: 'sohle', titel: 'Sohle (leer = Unterkante des Bauwerks)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
         ],
         vorbelegung: (el) => ({
-            gelaende: el?.gelaendeQuellen?.[0]?.globalId ?? '',
+            gelaende: _vorbelegtesGelaende(el),
             arbeitsraum: '', wandform: 'boeschung', boden: 'nichtbindig', winkel: '', sohle: '',
         }),
         anwenden: (el, werte) => _bauwerksgrubeSchritte(el, werte),
@@ -748,7 +759,7 @@ export const BEARBEITUNGEN = Object.freeze([
             { name: 'dn', titel: 'DN (leer = aus der Achse)', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, leerErlaubt: true },
         ],
         vorbelegung: (el) => ({
-            gelaende: el?.gelaendeQuellen?.[0]?.globalId ?? '',
+            gelaende: _vorbelegtesGelaende(el),
             umfang: 'haltung', wandform: 'verbau', boden: 'nichtbindig', winkel: null, breite: null,
             wanddicke: 0, bettung: GRABENREGELN.bettung.ueblich, schachtMass: 1.0,
             // Der DN ist ein sichtbarer Regler: vorbelegt aus der Festlegung

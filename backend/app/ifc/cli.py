@@ -20,8 +20,10 @@ Servers keinen Befund verliert:
 
 Zustaende:  wartet (Server) -> laeuft -> geprueft | abgelehnt | fehler
 
-  geprueft   gebaut UND jedes Kriterium bestanden — der Server traegt ein
-  abgelehnt  gebaut, aber mindestens ein Kriterium verfehlt ODER ungeprueft —
+  geprueft   gebaut UND kein SPERRENDES Kriterium verfehlt (Schwere "fehler",
+             `pruefe.offen`) — der Server traegt ein. IDS-Warnungen und Hinweise
+             stehen im Bericht, halten den Verbund aber nicht auf
+  abgelehnt  gebaut, aber mindestens ein sperrendes Kriterium verfehlt ODER ungeprueft —
              oder die Quellen lassen keinen richtigen Verbund zu (verschiedene
              Bezugssysteme, keine Landeskoordinaten)
   fehler     nicht gebaut
@@ -44,7 +46,9 @@ from pathlib import Path
 
 import ifcopenshell
 
+from . import herkunft as H
 from .probe import zweiter_motor
+from .pruefe import offen as ist_offen
 from .pruefe import pruefe
 from .verbund import Quelle, VerbundUnmoeglich, fuehre_zusammen
 
@@ -124,6 +128,35 @@ def speicher() -> dict:
     return werte
 
 
+def _dokument_pruefen(ordner: Path, auftrag: dict, bericht_pfad: Path, status: dict, melde) -> None:
+    """Modus "pruefe": EIN Dokument aus dem Register durch das Tor — kein Verbund.
+
+    Derselbe Vertrag wie beim Verbund (auftrag/status/bericht im Laufordner),
+    dieselben Stufen, derselbe zweite Motor. Anders ist das Urteil: eine
+    Lieferung gehoert dem Planer. Die Verbundregeln melden (Schwere "warnung"),
+    und der Zustand ist "geprueft", sobald der Bericht steht — auch mit
+    Verstoessen. Das Register traegt ihn ein; WIP -> Shared verlangt, dass er
+    DA ist, nicht dass er gruen ist.
+    """
+    datei = Path(auftrag["datei"])
+    if not datei.is_file():
+        raise ValueError(f"{datei.name} liegt nicht im Register-Ordner")
+    melde("pruefen: Syntax, Schema, Regeln, Anforderungen")
+    ids = [ordner / n for n in auftrag.get("ids") or []]
+    ergebnis = pruefe(datei, ids=ids, verbund=False)
+    bericht = {"modus": "pruefe", "datei": datei.name, "sha256": auftrag.get("sha256"),
+               "werkzeug": H.werkzeug(), **(ergebnis.get("zaehlung") or {})}
+    # Der zweite Motor vergleicht gegen diesen Bericht — er muss vorher stehen.
+    schreibe_json(bericht_pfad, bericht)
+    melde("pruefen: zweiter Motor (web-ifc)")
+    deckel_aufheben()
+    befunde = ergebnis["befunde"] + [zweiter_motor(datei, bericht_pfad)]
+    offen = [b for b in befunde if ist_offen(b)]
+    bericht.update(befunde=befunde, verstoesse=len(offen), speicher=speicher())
+    schreibe_json(bericht_pfad, bericht)
+    status.update(zustand="geprueft", verstoesse=len(offen), offen=[f"{b['id']} {b['titel']}" for b in offen])
+
+
 def lauf(ordner: Path) -> int:
     ordner = Path(ordner)
     auftrag = lies_json(ordner / "auftrag.json")
@@ -144,64 +177,78 @@ def lauf(ordner: Path) -> int:
     verbund = ordner / "verbund.ifc"
     bericht_pfad = ordner / "bericht.json"
     try:
-        if not auftrag.get("quellen"):
-            raise ValueError("auftrag.json nennt keine Quelle")
-        quellen = [Quelle(**q) for q in auftrag["quellen"]]
-        # DIE HAKEN LAUFEN IMMER (Stufe 2/3 des Aushub-Fachmodells). Ein
-        # Erdbau-Dokument aus dem Register bringt seine Aushuebe mit — deren
-        # Wirte sind schon geschlossen (`schon_da`), aber seine Vorgaenge kennen
-        # Rohre und Bauwerke erst im Verbund. Ohne Eigenbau und ohne
-        # Erdbau-Dokument finden beide nichts und kosten nichts.
-        from .eigenbau import baue_datei, vorgaenge_schliessen_in, wirte_herstellen_in
-        nachbearbeiten = [("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)]
-        eigenbau_bericht = None
-        paket_pfad = ordner / "eigenbau.json"
-        if paket_pfad.is_file():
-            # Der CDE-Eigenbau (app/ifc/eigenbau.py) wird zu einer GEWOEHNLICHEN
-            # Quelle: eine eigene IFC-Datei, die durch denselben Verbund und
-            # dieselbe Pruefung geht wie jede Lieferung. Erst im Verbund liegen
-            # Aushub und Ur-Gelaende nebeneinander — deshalb schliesst dort ein
-            # Haken die Wirt-Beziehungen (IfcRelVoidsElement).
-            melde("CDE-Eigenbau als Quelle bauen")
-            roh = paket_pfad.read_bytes()
-            eigen = ordner / "eigenbau.ifc"
-            paket = json.loads(roh)
-            eigenbau_bericht = baue_datei(
-                paket, eigen, schluessel=f"{auftrag.get('schluessel') or 'verbund'}/eigenbau")
-            # Was NICHT ins Paket kam (misslungen, leer, ausgeblendet), gehoert in den
-            # Bericht — ein Export, der still weniger enthaelt als die Ansicht, waere
-            # eine falsche Aussage ueber den Stand.
-            nicht_drin = {k: paket.get(k) for k in ("misserfolge", "leer", "verborgen") if paket.get(k)}
-            if nicht_drin:
-                eigenbau_bericht = {**eigenbau_bericht, "nicht_im_paket": nicht_drin}
-            quellen.append(Quelle(eigen, name="CDE-Eigenbau", sha256=hashlib.sha256(roh).hexdigest()))
-        bericht = fuehre_zusammen(
-            quellen, verbund,
-            projektname=auftrag.get("projektname") or "Verbundmodell",
-            crs=auftrag.get("crs"),
-            schluessel=auftrag.get("schluessel") or "verbund",
-            bearbeiter=auftrag.get("bearbeiter") or "", melde=melde,
-            nachbearbeiten=nachbearbeiten)
-        if eigenbau_bericht is not None:
-            bericht["eigenbau"] = eigenbau_bericht
-        # verbund | erdbau — derselbe Lauf, dasselbe Tor; nur Quellenliste und
-        # Dateiname unterscheiden sich, und die entscheidet der Server.
-        bericht["modus"] = auftrag.get("modus") or "verbund"
-        bericht["werkzeug"] = f"ifcopenshell {ifcopenshell.version}"
-        # Der zweite Motor vergleicht gegen diesen Bericht — er muss vorher stehen.
-        schreibe_json(bericht_pfad, bericht)
+        if (auftrag.get("modus") or "verbund") == "pruefe":
+            # Ein einzelnes Registerdokument durch das Tor (Stufe 4b) — kein Verbund.
+            _dokument_pruefen(ordner, auftrag, bericht_pfad, status, melde)
+        else:
+            if not auftrag.get("quellen"):
+                raise ValueError("auftrag.json nennt keine Quelle")
+            quellen = [Quelle(**q) for q in auftrag["quellen"]]
+            # DIE HAKEN LAUFEN IMMER (Stufe 2/3 des Aushub-Fachmodells). Ein
+            # Erdbau-Dokument aus dem Register bringt seine Aushuebe mit — deren
+            # Wirte sind schon geschlossen (`schon_da`), aber seine Vorgaenge kennen
+            # Rohre und Bauwerke erst im Verbund. Ohne Eigenbau und ohne
+            # Erdbau-Dokument finden beide nichts und kosten nichts.
+            from .eigenbau import baue_datei, vorgaenge_schliessen_in, wirte_herstellen_in
+            nachbearbeiten = [("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)]
+            eigenbau_bericht = None
+            paket = None
+            paket_pfad = ordner / "eigenbau.json"
+            if paket_pfad.is_file():
+                # Der CDE-Eigenbau (app/ifc/eigenbau.py) wird zu einer GEWOEHNLICHEN
+                # Quelle: eine eigene IFC-Datei, die durch denselben Verbund und
+                # dieselbe Pruefung geht wie jede Lieferung. Erst im Verbund liegen
+                # Aushub und Ur-Gelaende nebeneinander — deshalb schliesst dort ein
+                # Haken die Wirt-Beziehungen (IfcRelVoidsElement).
+                melde("CDE-Eigenbau als Quelle bauen")
+                roh = paket_pfad.read_bytes()
+                eigen = ordner / "eigenbau.ifc"
+                paket = json.loads(roh)
+                # Das Geruest heisst nach dem Satz DES AUFTRAGS (Fahrplan Erdbau-Container,
+                # Stufe 2) — nicht nach dem, was der Browser gerade als Projekt fuehrte.
+                eigenbau_bericht = baue_datei(
+                    paket, eigen, schluessel=f"{auftrag.get('schluessel') or 'verbund'}/eigenbau",
+                    projektname=f"{auftrag.get('satz_name') or 'Satz'} (CDE-Eigenbau)",
+                    ablage=auftrag.get("ablage"))
+                # Was NICHT ins Paket kam (misslungen, leer, ausgeblendet), gehoert in den
+                # Bericht — ein Export, der still weniger enthaelt als die Ansicht, waere
+                # eine falsche Aussage ueber den Stand.
+                nicht_drin = {k: paket.get(k) for k in ("misserfolge", "leer", "verborgen") if paket.get(k)}
+                if nicht_drin:
+                    eigenbau_bericht = {**eigenbau_bericht, "nicht_im_paket": nicht_drin}
+                quellen.append(Quelle(eigen, name="CDE-Eigenbau", sha256=hashlib.sha256(roh).hexdigest()))
+            bericht = fuehre_zusammen(
+                quellen, verbund,
+                projektname=auftrag.get("projektname") or "Verbundmodell",
+                crs=auftrag.get("crs"),
+                schluessel=auftrag.get("schluessel") or "verbund",
+                bearbeiter=auftrag.get("bearbeiter") or "", melde=melde,
+                nachbearbeiten=nachbearbeiten, ablage=auftrag.get("ablage"))
+            if eigenbau_bericht is not None:
+                bericht["eigenbau"] = eigenbau_bericht
+            # verbund | erdbau — derselbe Lauf, dasselbe Tor; nur Quellenliste und
+            # Dateiname unterscheiden sich, und die entscheidet der Server.
+            bericht["modus"] = auftrag.get("modus") or "verbund"
+            bericht["werkzeug"] = H.werkzeug()
+            # Der zweite Motor vergleicht gegen diesen Bericht — er muss vorher stehen.
+            schreibe_json(bericht_pfad, bericht)
 
-        melde("pruefen: Schema und Verbundregeln")
-        befunde = pruefe(verbund)["befunde"]
-        melde("pruefen: zweiter Motor (web-ifc)")
-        deckel_aufheben()
-        befunde.append(zweiter_motor(verbund, bericht_pfad))
+            melde("pruefen: Schema, Verbundregeln, Anforderungen")
+            # IDS-Dateien legt der Server in den Laufordner (`auftrag.ids`, Namen relativ).
+            ids = [ordner / n for n in auftrag.get("ids") or []]
+            # Mit dem Eigenbau-Paket: V10 sperrt, was der Eigenbau nicht bauen konnte
+            # (Fahrplan Erdbau-Container, Stufe 1) — in beiden Modi, verbund und erdbau.
+            befunde = pruefe(verbund, ids=ids, paket=paket)["befunde"]
+            melde("pruefen: zweiter Motor (web-ifc)")
+            deckel_aufheben()
+            befunde.append(zweiter_motor(verbund, bericht_pfad))
 
-        offen = [b for b in befunde if b["ok"] is not True]
-        bericht.update(befunde=befunde, verstoesse=len(offen), speicher=speicher())
-        schreibe_json(bericht_pfad, bericht)
-        status.update(zustand="abgelehnt" if offen else "geprueft", verstoesse=len(offen),
-                      offen=[f"{b['id']} {b['titel']}" for b in offen])
+            # Sperrend ist nur Schwere "fehler" — EINE Stelle (pruefe.offen).
+            offen = [b for b in befunde if ist_offen(b)]
+            bericht.update(befunde=befunde, verstoesse=len(offen), speicher=speicher())
+            schreibe_json(bericht_pfad, bericht)
+            status.update(zustand="abgelehnt" if offen else "geprueft", verstoesse=len(offen),
+                          offen=[f"{b['id']} {b['titel']}" for b in offen])
     except VerbundUnmoeglich as urteil:
         # Kein Programmfehler, sondern ein Urteil ueber die Daten: die Quellen
         # lassen keinen RICHTIGEN Verbund zu. Der Grund steht im Status.

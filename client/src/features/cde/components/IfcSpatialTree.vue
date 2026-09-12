@@ -23,6 +23,7 @@
 <script setup>
 import { defineComponent, h, ref, computed, provide, inject } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
+import { trifft } from '../services/Bauwerksstruktur.js';
 
 const props = defineProps({
   tree:   { type: Object,  default: null  },
@@ -35,13 +36,7 @@ const emit = defineEmits(['toggle-storey', 'close', 'zoom-to']);
 const treeFilter = computed(() => (props.filter ?? '').toLowerCase().trim());
 provide('treeFilter', treeFilter);
 
-// ── Helper: does node or any descendant match the filter? ──────────────────
-function nodeMatches(node, filter) {
-  if (!filter) return true;
-  const lbl = ((node.name ?? '') + ' ' + (node.category ?? '')).toLowerCase();
-  if (lbl.includes(filter)) return true;
-  return (node.children ?? []).some(c => nodeMatches(c, filter));
-}
+// Filter: `trifft` aus Bauwerksstruktur.js — derselbe Maßstab wie im Fenster (Stufe 8).
 
 // ── Recursive tree node (inline renderless component) ──────────────────────
 const TreeNode = defineComponent({
@@ -62,18 +57,23 @@ const TreeNode = defineComponent({
       open.value = !open.value;
     }
 
+    // Stufe 8 (Fahrplan Erdbau-Container): jedes Ereignis nennt sein MODELL — ohne
+    // fiel es aufs erste zurück, auch bei localId-Kollision in einem zweiten.
+    // Gruppen sind keine Geometrie: kein Zoom, kein Auge.
+    const bedienbar = () => props.node.localId != null && !props.node.gruppe;
+
     function toggleVisibility(e) {
       e.stopPropagation();
       visible.value = !visible.value;
-      if (props.node.localId != null) {
-        emit('toggle-storey', { localId: props.node.localId, visible: visible.value });
+      if (bedienbar()) {
+        emit('toggle-storey', { localId: props.node.localId, visible: visible.value, modelId: props.node.modelId ?? null });
       }
     }
 
     function zoomToNode(e) {
       e.stopPropagation();
-      if (props.node.localId != null) {
-        emit('zoom-to', { localId: props.node.localId });
+      if (bedienbar()) {
+        emit('zoom-to', { localId: props.node.localId, modelId: props.node.modelId ?? null });
       }
     }
 
@@ -107,7 +107,7 @@ const TreeNode = defineComponent({
       const hasChildren = node.children?.length > 0;
 
       // A1: filter — hide nodes (and subtrees) that don't match
-      if (f && !nodeMatches(node, f)) return null;
+      if (f && !trifft(node, f)) return null;
 
       const isStorey  = STOREY_TYPES.has((node.category ?? '').toUpperCase());
       const forceOpen = f && hasChildren; // keep expanded when filter is active
@@ -115,7 +115,8 @@ const TreeNode = defineComponent({
 
       return h('div', { class: 'tree-node' }, [
         h('div', {
-          class: ['node-row', { open: isOpen, 'is-storey': isStorey }],
+          class: ['node-row', { open: isOpen, 'is-storey': isStorey, 'is-aussparung': node.aussparung,
+                               'is-verweis': node.verweis, 'is-gruppe': node.gruppe }],
           style: { paddingLeft: `${0.4 + depth * 0.9}rem` },
           onClick: hasChildren ? toggleExpand : undefined,
         }, [
@@ -125,14 +126,17 @@ const TreeNode = defineComponent({
                 [h(CdeIcon, { name: isOpen ? 'chevron-down' : 'chevron-right', size: 12 })])
             : h('span', { class: 'leaf-dot' }, '·'),
 
-          h('span', { class: 'node-icon' }, [h(CdeIcon, { name: icon(node.category), size: 13 })]),
+          h('span', { class: 'node-icon' }, [h(CdeIcon, {
+            name: node.gruppe ? 'layers' : node.aussparung ? 'ausheben' : icon(node.category), size: 13 })]),
           h('span', {
             class: 'node-label',
-            title: node.localId != null ? `${label(node)} — Klick zum Zoomen` : label(node),
-            onClick: node.localId != null ? zoomToNode : undefined,
+            title: bedienbar()
+              ? `${label(node)}${node.aussparung ? ' — Aussparung in ihrem Wirt' : ''} — Klick zum Zoomen`
+              : label(node),
+            onClick: bedienbar() ? zoomToNode : undefined,
           }, label(node)),
 
-          node.localId != null
+          bedienbar()
             ? h('button', {
                 class: ['vis-btn', { hidden: !visible.value }],
                 title: visible.value ? 'Ausblenden' : 'Einblenden',
@@ -145,7 +149,7 @@ const TreeNode = defineComponent({
           ? h('div', { class: 'children' },
               node.children.map((child, i) =>
                 h(TreeNode, {
-                  key: child.localId ?? i,
+                  key: child.localId != null ? `id${child.localId}` : `i${i}`,
                   node: child,
                   depth: depth + 1,
                   onToggleStorey: (e) => emit('toggle-storey', e),
@@ -276,6 +280,10 @@ const TreeNode = defineComponent({
 }
 .node-row.is-storey .node-label { color: var(--cde-accent-soft); font-weight: 500; }
 .node-label:hover { color: var(--cde-text-bright); text-decoration: underline; }
+/* Stufe 8: Aussparung unter ihrem Wirt, Verweis in einer Gruppe, Gruppe selbst */
+.node-row.is-aussparung .node-label { font-style: italic; }
+.node-row.is-verweis .node-label { color: var(--cde-text-dim); }
+.node-row.is-gruppe .node-label { color: var(--cde-text-soft); }
 
 .vis-btn {
   display: inline-flex; align-items: center; justify-content: center;

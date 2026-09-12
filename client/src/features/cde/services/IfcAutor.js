@@ -45,6 +45,7 @@ import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
 import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
+import { verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
@@ -607,10 +608,11 @@ export class IfcAutor {
      *   gelieferten Modells.
      */
     /** EIN Ableitungslauf je Durchgang (Teil XIV) — für den Raum wie für den Export. */
-    _neuerLauf(schritte) {
+    _neuerLauf(schritte, historie = null) {
         const stand = new Map((schritte ?? []).map(s => [s.globalId, s.wert]));
         return neuerAbleitungslauf({
-            stand, rezeptNach,
+            // `historie` nur für die Kette zum Ur (Fahrplan Erdbau-Container, Stufe 1).
+            stand, rezeptNach, historie,
             holeQuellForm: this._holeQuellForm,
             holeQuellBauform: this._holeQuellBauform,
             kernel: this._kernel,
@@ -680,8 +682,8 @@ export class IfcAutor {
      *           name, predefinedType, geschlossen, kennzahlen, mengen, fachmodell,
      *           vorgang, schneidetAuffuellung}>, misserfolge, leer, verborgen, anzeigeformen}>}
      */
-    async eigenbauGeometrien(schritte, { verdeckt = new Set() } = {}) {
-        const lauf = this._neuerLauf(schritte);
+    async eigenbauGeometrien(schritte, { verdeckt = new Set(), historie = null } = {}) {
+        const lauf = this._neuerLauf(schritte, historie);
         const bauteile = [], misserfolge = [], leer = [], verborgen = [], anzeigeformen = [];
         const titel = vorgangstitelAus(schritte);
         for (const schritt of schritte ?? []) {
@@ -727,11 +729,11 @@ export class IfcAutor {
         return { bauteile, misserfolge, leer, verborgen, anzeigeformen };
     }
 
-    async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set() } = {}) {
+    async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
         const karte = new Map();
         const misserfolge = [];
         await this.verwirfEigenesModell(modelId);
-        if (!schritte?.length) { this.ableitungen = new Map(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [] }; }
+        if (!schritte?.length) { this.ableitungen = new Map(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] }; }
 
         const angelegt = await this.eigenesModell(modelId);
         if (!angelegt.ok) {
@@ -741,11 +743,17 @@ export class IfcAutor {
         // EIN Ableitungslauf für den ganzen Aufbau (Teil XIV): Quellen lösen
         // sich lazy auf, `leite` läuft einmal je Ableitung, der Cache stirbt
         // mit diesem Durchlauf.
-        const lauf = this._neuerLauf(schritte);
+        const lauf = this._neuerLauf(schritte, historie);
         const leer = [];
         const verborgen = [];
+        // EINE ANZEIGE JE GELÄNDE (Fahrplan Erdbau-Container, Stufe 1): wird eine
+        // zweite über die Historie wieder ableitbar, stünde sie deckungsgleich
+        // neben der wirksamen im Raum. Sie wird nicht gebaut — und genannt.
+        const verdraengtVon = verdraengteAnzeigen(new Map(schritte.map(s => [s.globalId, s.wert])), { rezeptNach, historie });
+        const verdraengt = [];
 
         for (const schritt of schritte) {
+            if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
             // VERBORGEN, nicht gebaut (G6): ein eigenes DGM, das Quelle eines
             // Kanalgrabens wurde, bleibt im Stand — der Lauf löst seine Form
             // auf, sobald der Graben sie braucht —, kommt aber nicht in den
@@ -776,7 +784,7 @@ export class IfcAutor {
         }
         this.ableitungen = lauf.ableitungen;
         await this._neuZeichnen();
-        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen };
+        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt };
     }
 
     /**
@@ -840,7 +848,7 @@ export class IfcAutor {
      * Bauen. Andersherum liefe die Verschiebung ins Leere und meldete
      * „keine_localId" für etwas, das eine Zeile später existiert.
      */
-    async wendeAn(plan, { globalIdZuLocalId } = {}) {
+    async wendeAn(plan, { globalIdZuLocalId, historie = null } = {}) {
         const misserfolge = [];
         const schritte = plan?.anzuwenden ?? [];
 
@@ -865,7 +873,7 @@ export class IfcAutor {
         const verdeckt = verdeckteAus(schritte, { nur: 'cde' });
         let erzeugte = new Map();
         if (plan?.vollstaendig || erzeugtSchritte.length) {
-            const gebaut = await this.baueErzeugte(erzeugtSchritte, CDE_MODELL_ID, { verdeckt });
+            const gebaut = await this.baueErzeugte(erzeugtSchritte, CDE_MODELL_ID, { verdeckt, historie });
             erzeugte = gebaut.karte;
             misserfolge.push(...gebaut.misserfolge);
         }

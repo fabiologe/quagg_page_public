@@ -1,5 +1,7 @@
 #!/bin/sh
-# Waechter fuer das Token-System von client/src/features/isybau.
+# Zwei Waechter — jeder prueft NUR, wenn vorgemerkte Dateien ihn betreffen:
+#   1. IFC: Client-Woerterbuch == Schema-Schnappschuss, docs/ifc == Code (backend/app/ifc/README.md)
+#   2. isybau: das Token-System von client/src/features/isybau (stylelint)
 #
 # Prueft NUR die vorgemerkten Dateien, nicht den ganzen Baum - ein Commit an
 # einem anderen Feature soll nicht an isybau haengenbleiben.
@@ -7,6 +9,28 @@
 # Aktivieren:   git config core.hooksPath .githooks
 # Umgehen:      git commit --no-verify   (fuer den einen Notfall, nicht als Gewohnheit)
 
+# ── 1. IFC (Fahrplan IFC-Konsistenz, Stufe 8) ─────────────────────────────
+# Die Dateien in client/src/features/cde/data/ sind ERZEUGT. Ein Commit, der die
+# Schema-Wahrheit oder die erzeugten Dateien aendert, muss beide gleich halten.
+# Geprueft wird der Arbeitsbaum — wie beim isybau-Block unten.
+ifc=$(git diff --cached --name-only --diff-filter=ACMD \
+      | grep -E '^(backend/app/ifc/|client/src/features/cde/(data/|services/(bauform/Typprofile|Bauteilrezepte|GelaendeQuelle|Kategorien)\.js)|docs/ifc/)' || true)
+if [ -n "$ifc" ]; then
+    (cd backend && python3 -m app.ifc.generiere_client --pruefe) || {
+        echo "" >&2
+        echo "pre-commit: Client-Woerterbuch weicht vom Schema-Schnappschuss ab." >&2
+        echo "  neu erzeugen:  (cd backend && python3 -m app.ifc.generiere_client) && git add client/src/features/cde/data" >&2
+        exit 1
+    }
+    (cd backend && python3 -m app.ifc.diagramme --pruefe) || {
+        echo "" >&2
+        echo "pre-commit: docs/ifc weicht vom Code ab." >&2
+        echo "  neu erzeugen:  (cd backend && python3 -m app.ifc.diagramme) && git add docs/ifc" >&2
+        exit 1
+    }
+fi
+
+# ── 2. isybau ─────────────────────────────────────────────────────────────
 dateien=$(git diff --cached --name-only --diff-filter=ACM \
           | grep -E '^client/src/features/isybau/.*\.(vue|css)$' || true)
 [ -z "$dateien" ] && exit 0

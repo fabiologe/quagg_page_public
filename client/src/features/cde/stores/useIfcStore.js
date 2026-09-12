@@ -69,6 +69,8 @@ export const useIfcStore = defineStore('cde-modell', () => {
 
   // Spatial tree (set after IFC load)
   const spatialTree = ref(null);
+  // Stufe 8 (Fahrplan Erdbau-Container): je geladenem Modell ein Baum (Bauwerksstruktur.baueBaeume).
+  const spatialBaeume = ref([]);
 
   // Loaded model list [{modelId, name}]
   const modelList = ref([]);
@@ -541,6 +543,10 @@ export const useIfcStore = defineStore('cde-modell', () => {
     spatialTree.value = tree;
   }
 
+  function setSpatialBaeume(baeume) {
+    spatialBaeume.value = Array.isArray(baeume) ? baeume : [];
+  }
+
   function setModelList(list) {
     modelList.value = list;
   }
@@ -571,11 +577,11 @@ export const useIfcStore = defineStore('cde-modell', () => {
   }
 
   return {
-    selectedElement, psetError, modelLoaded, spatialTree, modelList,
+    selectedElement, psetError, modelLoaded, spatialTree, spatialBaeume, modelList,
     geometrieStand, bumpGeometrieStand,
     ready,
     setElement, clearElement, setPsetError,
-    setSpatialTree, setModelList,
+    setSpatialTree, setSpatialBaeume, setModelList,
     setSearchIndex, getSearchIndex,
     // T2.2: Saved Views
     savedViews, saveView, deleteSavedView, renameSavedView,

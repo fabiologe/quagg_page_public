@@ -273,11 +273,14 @@
             <th class="doc-satz" :title="cde.aktiverSatz ? `Im Modellsatz „${cde.aktiverSatz.name}“` : ''">
               {{ cde.aktiverSatz ? 'Satz' : '' }}
             </th>
-            <th>Dokument</th><th title="Woraus die CDE das Dokument erzeugt hat — hochgeladene haben keine Herkunft">Herkunft</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th>Aufgenommen</th><th></th>
+            <th>Dokument</th><th title="Woraus die CDE das Dokument erzeugt hat — hochgeladene haben keine Herkunft">Herkunft</th><th>Rev.</th><th>Größe</th><th>Status (ISO 19650)</th><th title="Letzter Bericht des Prüftors: Syntax, Schema, Regeln, zweiter Motor">Prüfung</th><th>Aufgenommen</th><th></th>
           </tr>
         </thead>
-        <tbody>
-          <tr v-for="d in sortedDokumente" :key="d.sha256">
+        <!-- Fahrplan Erdbau-Container (T3): Geliefertes und Erzeugtes getrennt — ein
+             Verbund stand bis hierher zwischen den Lieferungen wie eine von ihnen. -->
+        <tbody v-for="teil in registerAbschnitte" :key="teil.key">
+          <tr class="doc-abschnitt"><td colspan="9">{{ teil.titel }} · {{ teil.dokumente.length }}</td></tr>
+          <tr v-for="d in teil.dokumente" :key="d.sha256">
             <!-- Stufe 11.4: Was liegt im aktiven Modellsatz? Der Haken ist die
                  EINZIGE Stelle, an der sich Varianten unterscheiden — alles
                  andere (Dateien, Register, Status) gehört dem Auftrag. -->
@@ -286,7 +289,10 @@
                 v-if="cde.aktiverSatz"
                 type="checkbox"
                 :checked="(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
-                :title="`In „${cde.aktiverSatz.name}“ führen`"
+                :disabled="istAbgabeContainer(d) && !(cde.aktiverSatz.enthaelt ?? []).includes(d.sha256)"
+                :title="istAbgabeContainer(d)
+                  ? 'Ein Verbund ist ein Abgabe-Container, kein Fachmodell — er gehört in keinen Satz'
+                  : `In „${cde.aktiverSatz.name}“ führen`"
                 @change="satzUmschalten(d.sha256)"
               />
             </td>
@@ -295,8 +301,22 @@
             <td class="doc-herkunft">
               <span v-if="herkunftJe.get(d.sha256)" class="cde-badge" :class="herkunftJe.get(d.sha256).veraltet ? 'warn' : 'mute'"
                     :title="herkunftJe.get(d.sha256).titel">{{ herkunftJe.get(d.sha256).text }}</span>
+              <!-- Stufe 6 (Fahrplan Erdbau-Container): neu erzeugen — oder der Schritt davor. -->
+              <button v-if="d.herkunft?.art === 'erdbau' && repo.remote" class="cde-btn sm doc-regen"
+                      title="Erdbau neu erzeugen — prüft vorher Satz, geladene Revision und Journal"
+                      aria-label="Erdbau neu erzeugen" :disabled="verbundLaeuft || verbundStartet" @click="erdbauNeu(d)">
+                <CdeIcon name="refresh" :size="11" />
+              </button>
+              <div v-if="regenHinweis?.sha256 === d.sha256" class="doc-regen-hinweis" :class="{ ok: regenHinweis.ok }">
+                {{ regenHinweis.text }}
+              </div>
             </td>
-            <td class="doc-rev">{{ d.revision }}</td>
+            <!-- T4: eine Revision ohne Vorgänger im Register sagt es (R01 gelöscht oder nie da). -->
+            <td class="doc-rev" :class="{ 'rev-luecke': revisionOhneVorgaenger.has(d.sha256) }"
+                :title="revisionOhneVorgaenger.has(d.sha256)
+                  ? `Revision ${d.revision} — keine frühere Revision dieses Modells im Register (gelöscht oder nie hochgeladen)` : ''">
+              {{ d.revision }}<span v-if="revisionOhneVorgaenger.has(d.sha256)" aria-hidden="true">*</span>
+            </td>
             <td class="doc-size">{{ fmtBytes(d.size) }}</td>
             <td>
               <!-- Lücke ④: das Feld bietet nur ISO-19650-Wege an — Gesperrtes
@@ -310,11 +330,34 @@
                 @change="statusWechseln(d, $event)"
               >
                 <option
-                  v-for="z in statusZiele(d.status, auth.rolle)"
+                  v-for="z in statusZiele(d.status, auth.rolle, undefined, { art: d.art, hatPruefung: !repo.remote || !!d.pruefung })"
                   :key="z.status" :value="z.status"
                   :disabled="!z.ok" :title="z.grund ?? ''"
                 >{{ z.status }}</option>
               </select>
+              <span v-if="d.eignung" class="cde-badge mute doc-eignung"
+                    :title="`Eignung ${d.eignung}: ${EIGNUNG[d.eignung] ?? 'unbekannt'} (ISO 19650)`">{{ d.eignung }}</span>
+            </td>
+            <td class="doc-pruefung">
+              <!-- IFC-Konsistenz 4b: der letzte Bericht des Prüftors. Grün heißt
+                   „nichts Sperrendes", sonst steht die Zahl da; ohne Bericht bietet
+                   die Zeile das Prüfen an — WIP → Shared verlangt, dass er DA ist. -->
+              <template v-if="d.art === 'modell'">
+                <span v-if="pruefLaeufe[d.sha256]" class="cde-badge mute" :title="pruefLaeufe[d.sha256].schritt">
+                  <CdeIcon name="busy" :size="11" /> prüft
+                </span>
+                <button v-else-if="d.pruefung" class="cde-badge doc-bericht" :class="d.pruefung.verstoesse ? 'warn' : 'ok'"
+                        :title="pruefTitel(d.pruefung)" @click="berichtOeffnen(d)">
+                  <CdeIcon :name="d.pruefung.verstoesse ? 'status-error' : 'status-ok'" :size="11" />
+                  {{ d.pruefung.verstoesse ? `${d.pruefung.verstoesse} Verstoß` : 'konform' }}
+                </button>
+                <button v-if="repo.remote && !pruefLaeufe[d.sha256]" class="cde-btn sm"
+                        :title="d.pruefung ? 'Erneut durch das Prüftor' : 'Durch das Prüftor schicken'"
+                        :aria-label="d.pruefung ? 'Erneut prüfen' : 'Prüfen'"
+                        @click="pruefeDokument(d)">
+                  <CdeIcon :name="d.pruefung ? 'refresh' : 'check'" :size="11" />
+                </button>
+              </template>
             </td>
             <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
             <td class="doc-actions">
@@ -364,7 +407,7 @@
         <!-- Erster Nutzer des head-actions-Slots: die beiden Baum-Knöpfe, die
              früher im Modal-Kopf der Struktur saßen (Sprint P/AP-12). -->
         <template v-if="panels.isOpen('struktur')" #head-actions>
-          <button class="cp-head-btn" title="Alle aufklappen" @click="strukturRef?.expandAll()">
+          <button class="cp-head-btn" title="Aufklappen — im zuletzt berührten Modell" @click="strukturRef?.expandAll()">
             <CdeIcon name="chevron-down" :size="13" />
           </button>
           <button class="cp-head-btn" title="Alle zuklappen" @click="strukturRef?.collapseAll()">
@@ -631,6 +674,16 @@
           <span class="tm-name">CDE-Eigenbau live mitnehmen</span>
           <span class="tm-meta">{{ verbundErdbauImSatz.length ? `nicht nötig — ${verbundErdbauImSatz.join(', ')} im Satz` : 'was die CDE selbst erzeugt hat' }}</span>
         </label>
+        <!-- Fahrplan Erdbau-Container, Stufe 1: tote Quellen und doppelte Anzeigen — BEVOR es läuft. -->
+        <p v-for="t in verbundDiagnose.unloesbar" :key="`tot-${t.globalId}`" class="tm-meldung">
+          <CdeIcon name="warn" :size="12" /> {{ t.name || t.globalId }} hängt an {{ t.quelle }} — weder im Journal noch in seiner Geschichte: ausblenden oder neu ableiten
+        </p>
+        <p v-if="verbundToteGeheilt.length" class="tm-satz">
+          <CdeIcon name="info" :size="12" /> {{ verbundToteGeheilt.length }} Einträge nennen eine zurückgenommene Anzeige als Gelände — gebaut wird am Ur-Gelände {{ verbundToteGeheilt[0].ur }}
+        </p>
+        <p v-if="verbundDiagnose.verdraengteAnzeigen.length" class="tm-satz">
+          <CdeIcon name="info" :size="12" /> {{ verbundDiagnose.verdraengteAnzeigen.length }} doppelte Anzeige(n) desselben Geländes werden nicht gebaut
+        </p>
         <p class="tm-satz">
           <b>Erdbau registrieren</b> legt den Erdbau der CDE als eigenes Dokument ab: das
           gelieferte Gelände unverändert, je Vorgang Aushub und Auftrag mit Mengen —
@@ -665,10 +718,10 @@
         <p v-for="w in verbundLauf.weggelassen || []" :key="`weg-${w.datei}`" class="tm-satz">
           <CdeIcon name="info" :size="12" /> {{ w.datei }} — {{ w.grund }}
         </p>
-        <div v-for="b in verbundLauf.befunde || []" :key="b.id" class="tm-zeile" :title="b.sagt">
-          <CdeIcon :name="b.ok === true ? 'status-ok' : b.ok === false ? 'status-error' : 'status-warn'" :size="12" />
-          <span class="tm-name">{{ b.id }} · {{ b.titel }}</span>
-        </div>
+        <!-- Stufe 6: der Bericht im Panel — Gruppen nach Stufe, nur Schwere „fehler" sperrt. -->
+        <PruefberichtPanel v-if="verbundLauf.befunde?.length" :befunde="verbundLauf.befunde"
+                           :kopf="verbundLauf.bericht" herunterladbar
+                           @herunterladen="berichtHerunterladen(verbundLauf.lauf_id, verbundLauf.dokument?.datei)" />
         <template v-for="q in verbundLauf.quellen_bericht || []" :key="q.name">
           <div class="tm-zeile">
             <span class="tm-name">{{ q.name }}</span>
@@ -684,13 +737,14 @@
       </p>
       <template #fuss>
         <button class="cde-btn ghost" @click="verbundOffen = false">{{ verbundLauf ? 'Schließen' : 'Abbrechen' }}</button>
-        <button v-if="!verbundLauf" class="cde-btn" :disabled="verbundStartet"
+        <button v-if="!verbundLauf" class="cde-btn" :disabled="verbundStartet || verbundDiagnose.unloesbar.length > 0"
                 title="Den Erdbau der CDE als eigenes, geprüftes Dokument ins Register — Erdbau_<Satz>_R<nn>.ifc"
                 @click="verbundStarten('erdbau')">
           <CdeIcon name="terrain" :size="13" /> Erdbau registrieren
         </button>
         <button v-if="!verbundLauf" class="cde-btn primary"
-                :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)"
+                :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)
+                           || (verbundEigenbau && !verbundErdbauImSatz.length && verbundDiagnose.unloesbar.length > 0)"
                 @click="verbundStarten('verbund')">
           {{ verbundStartet ? 'Startet …' : 'Verbund erzeugen' }}
         </button>
@@ -698,6 +752,14 @@
           <CdeIcon name="download" :size="13" /> Herunterladen
         </button>
       </template>
+    </CdeDialog>
+
+    <!-- Stufe 6: der Prüfbericht eines Registerdokuments. Voll aus dem Laufordner,
+         solange er steht; sonst die Kurzform aus dem Register — und das steht dabei. -->
+    <CdeDialog :offen="!!bericht" :titel="`Prüfbericht — ${bericht?.datei ?? ''}`" icon="check" @close="bericht = null">
+      <PruefberichtPanel v-if="bericht" :befunde="bericht.befunde" :kopf="bericht.kopf"
+                         :hinweis="bericht.hinweis" :herunterladbar="bericht.voll"
+                         @herunterladen="berichtHerunterladen(bericht.laufId, bericht.datei)" />
     </CdeDialog>
   </div>
 </template>
@@ -711,6 +773,8 @@ import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import LaengsschnittCanvas from '../components/LaengsschnittCanvas.vue';
 import CommitDialog from '../components/CommitDialog.vue';
 import CdeDialog from '../components/ui/CdeDialog.vue';
+import PruefberichtPanel from '../components/PruefberichtPanel.vue';
+import { ampel, istOffen } from '../services/Pruefbericht.js';
 import { REPO_KEY_TRANSMITTALS, UEBERGABEFAEHIG, baueSchein, paketName, protokollEintrag, pruefeAuswahl } from '../services/Transmittal.js';
 import IfcSemanticWindow from '../components/IfcSemanticWindow.vue';
 import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
@@ -724,7 +788,7 @@ import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';
 import { useZoomSperre } from '../composables/useZoomSperre.js';
-import { statusZiele } from '../services/StatusWorkflow.js';
+import { EIGNUNG, statusZiele } from '../services/StatusWorkflow.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { useAuthStore } from '@/stores/useAuthStore.js';
 import { usePlan } from '../stores/usePlan.js';
@@ -733,7 +797,14 @@ import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
 import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
-import { herkunftChip, imErdbauEnthalten, quellenVeraltet } from '../services/Herkunft.js';
+import {
+  fruehereRevisionFehlt, herkunftChip, imErdbauEnthalten, istAbgabeContainer, quellenVeraltet, regenerierbar,
+  teileRegister,
+} from '../services/Herkunft.js';
+import { fehlendeAusJournal } from '../services/GlobalIdAbbildung.js';
+import { eigenbauDiagnose } from '../services/EigenbauDiagnose.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { verdeckteAus } from '../services/CdeAchsen.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1239,6 +1310,19 @@ const verbundErdbauImSatz = computed(() =>
 const verbundErdbauVeraltet = computed(() => verbundModelle.value
   .filter(d => d.herkunft?.art === 'erdbau')
   .flatMap(d => quellenVeraltet(d, cde.dokumente).map(v => ({ ...v, erdbau: d.datei ?? d.name }))));
+// TOTE QUELLEN VOR DEM START (Fahrplan Erdbau-Container, Stufe 1): was der
+// Eigenbau nicht bauen könnte, sagt der Dialog, bevor zwei Minuten laufen —
+// der Server lehnt es sonst ab (V10). Gerechnet nur, solange der Dialog offen ist.
+const verbundDiagnose = computed(() => {
+  if (!verbundOffen.value || verbundLauf.value) return { toteQuellen: [], unloesbar: [], verdraengteAnzeigen: [] };
+  return eigenbauDiagnose({
+    stand: aenderungen.wirksamerStand('erzeugt'),
+    historie: aenderungen.historischerStand('erzeugt'),
+    rezeptNach,
+    verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+  });
+});
+const verbundToteGeheilt = computed(() => verbundDiagnose.value.toteQuellen.filter(t => t.loesbar));
 
 function verbundOeffnen() {
   // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder
@@ -1282,6 +1366,36 @@ async function verbundStarten(modus = 'verbund') {
     verbundMeldung.value = fehler?.response?.data?.detail || fehler?.message || 'Der Verbund ließ sich nicht starten.';
   } finally {
     verbundStartet.value = false;
+  }
+}
+
+/**
+ * „Erdbau neu erzeugen" am Dokument (Fahrplan Erdbau-Container, Stufe 6, G5): ein
+ * Klick — oder genau der Schritt, der vorher fehlt. Die Regel steht in
+ * `Herkunft.regenerierbar`; gefragt wird beim Klick, weil geladene Modelle und
+ * Konflikte aus dem Viewer kommen und nicht reaktiv sind.
+ */
+const regenHinweis = ref(null);
+async function erdbauNeu(d) {
+  const api = useViewerApi();
+  const fehlend = fehlendeAusJournal({ konflikte: api.getKonflikte?.() ?? [],
+                                       erzeugtStand: aenderungen.wirksamerStand('erzeugt') }).map(f => f.gid);
+  const geladen = (api.geladeneModelle?.() ?? []).map(m => m.sha256).filter(Boolean);
+  const r = regenerierbar({ dok: d, alle: cde.dokumente, aktiverSatzId: cde.aktiverSatzId, geladen, fehlend });
+  regenHinweis.value = { sha256: d.sha256, text: r.grund, ok: r.ok };
+  if (r.handlung === 'satz') {
+    // Wie der Satzwähler: bei offener Sitzung erst abschließen (U2).
+    if (aenderungen.sitzungSchritte.length) { bearbeitung.commitDialogOffen = true; return; }
+    await cde.setzeSatz(r.ziel);
+    await aenderungen.setzeSatz(cde.aktiverSatzId);
+    regenHinweis.value = { sha256: d.sha256, text: 'Satz aktiviert — noch einmal klicken, wenn die Modelle geladen sind', ok: false };
+    return;
+  }
+  if (r.handlung === 'laden') { openDokument({ sha256: r.ziel }); return; }
+  if (r.handlung === 'rebase') { panels.open('verlauf'); return; }
+  if (r.ok) {
+    verbundOeffnen();
+    await verbundStarten('erdbau');
   }
 }
 
@@ -1487,6 +1601,17 @@ const herkunftJe = computed(() => new Map(sortedDokumente.value.map(d => {
         titel: [...alt.map(v => `${v.quelle} → ${v.neu} vorhanden — neu erzeugen`), chip.titel].join(' · ') }
     : chip];
 })));
+// Fahrplan Erdbau-Container (T3/T4): das Register in zwei Abschnitten — geliefert
+// und erzeugt — und die Revisionen, vor denen keine frühere im Register steht.
+const registerAbschnitte = computed(() => {
+  const { lieferungen, erzeugte } = teileRegister(sortedDokumente.value);
+  return [
+    { key: 'lieferungen', titel: 'Lieferungen', dokumente: lieferungen },
+    { key: 'erzeugt', titel: 'Erzeugt von der CDE — Verbund und Erdbau', dokumente: erzeugte },
+  ].filter(teil => teil.dokumente.length);
+});
+const revisionOhneVorgaenger = computed(() => new Set(
+  sortedDokumente.value.filter(d => fruehereRevisionFehlt(d, cde.dokumente)).map(d => d.sha256)));
 
 /** Beim ersten geladenen Modell die Struktur-Leiste anbieten. */
 function onModelLoaded() {
@@ -1624,6 +1749,121 @@ async function statusWechseln(d, ev) {
 }
 const statusHinweis = ref('');
 let _statusHinweisTimer = 0;
+
+function _statusMeldung(text, ms = 8000) {
+  statusHinweis.value = text;
+  clearTimeout(_statusHinweisTimer);
+  _statusHinweisTimer = setTimeout(() => { statusHinweis.value = ''; }, ms);
+}
+
+// ── Prüfbericht je Dokument (IFC-Konsistenz, Stufe 4b) ─────────────────────
+// Derselbe Laufordner-Vertrag wie der Verbund: starten (202), abholen, danach
+// das Register neu übernehmen — der Bericht hängt dann am Eintrag.
+const pruefLaeufe = ref({});                     // sha256 → { laufId, schritt }
+const _pruefUhren = new Map();
+
+async function pruefeDokument(d) {
+  if (!cde.auftrag?.id || pruefLaeufe.value[d.sha256]) return;
+  try {
+    const angenommen = await AuftragApi.pruefungStarten(cde.auftrag.id, d.sha256);
+    pruefLaeufe.value = { ...pruefLaeufe.value, [d.sha256]: { laufId: angenommen.lauf_id, schritt: 'wartet' } };
+    _pruefAbholen(d.sha256, angenommen.lauf_id);
+  } catch (fehler) {
+    _statusMeldung(`Prüfen: ${fehler?.response?.data?.detail || fehler?.message || fehler}`);
+  }
+}
+
+function _pruefFertig(sha) {
+  const { [sha]: _fertig, ...rest } = pruefLaeufe.value;
+  pruefLaeufe.value = rest;
+}
+
+function _pruefAbholen(sha, laufId, fehlversuche = 0) {
+  clearTimeout(_pruefUhren.get(sha));
+  _pruefUhren.set(sha, setTimeout(async () => {
+    try {
+      const st = await AuftragApi.verbundStatus(cde.auftrag.id, laufId);
+      if (['wartet', 'laeuft'].includes(st.zustand) || (st.zustand === 'geprueft' && !st.dokument)) {
+        pruefLaeufe.value = { ...pruefLaeufe.value, [sha]: { laufId, schritt: st.schritt || st.zustand } };
+        _pruefAbholen(sha, laufId);
+        return;
+      }
+      _pruefFertig(sha);
+      if (st.dokument) {
+        await cde.uebernehmeRegister(await AuftragApi.register(cde.auftrag.id), cde.auftrag.id);
+      } else {
+        _statusMeldung(`Prüfung ${st.zustand}: ${st.fehler || (st.offen ?? []).join(', ') || 'ohne Grund'}`);
+      }
+    } catch (fehler) {
+      if (fehlversuche < 5) { _pruefAbholen(sha, laufId, fehlversuche + 1); return; }
+      _pruefFertig(sha);
+      _statusMeldung(`Prüfung abholen misslang: ${fehler?.response?.data?.detail || fehler?.message || fehler}`);
+    }
+  }, 2000));
+}
+onBeforeUnmount(() => { for (const u of _pruefUhren.values()) clearTimeout(u); });
+
+/** Der Bericht als Tooltip: sperrende Verstöße, Warnungen, Schema, Stand. Die Sperr-Regel: services/Pruefbericht.js. */
+function pruefTitel(p) {
+  const bef = p?.befunde ?? [];
+  const sperrend = bef.filter(istOffen).map(b => b.id);
+  const warn = bef.filter(b => ampel(b) === 'warnung').map(b => b.id);
+  return [
+    `Prüftor: ${p?.verstoesse ?? '?'} sperrende Verstöße${sperrend.length ? ` (${sperrend.join(', ')})` : ''}`,
+    warn.length ? `Warnungen: ${warn.join(', ')}` : '',
+    p?.schema ? `Schema ${p.schema}` : '',
+    p?.stand ? `Stand ${p.stand}` : '',
+    'Klicken: der ganze Bericht',
+  ].filter(Boolean).join('\n');
+}
+
+// ── Der ganze Prüfbericht (IFC-Konsistenz, Stufe 6) ────────────────────────
+// Der Status kürzt, das Register noch mehr (ohne Text und Beispiele). Den
+// ganzen Bericht hält der Laufordner — bis er weggeräumt ist (MAX_LAEUFE).
+const bericht = ref(null);                       // { datei, laufId, befunde, kopf, voll, hinweis }
+
+async function berichtOeffnen(d) {
+  const p = d.pruefung;
+  bericht.value = {
+    datei: d.datei ?? d.name, laufId: p?.lauf_id, befunde: p?.befunde ?? [], kopf: p, voll: false,
+    hinweis: 'Kurzfassung aus dem Register — der ganze Bericht wird geladen …',
+  };
+  if (!p?.lauf_id || !cde.auftrag?.id) {
+    bericht.value.hinweis = 'Kurzfassung aus dem Register (ohne Text und Beispiele).';
+    return;
+  }
+  try {
+    const voll = await AuftragApi.pruefbericht(cde.auftrag.id, p.lauf_id);
+    if (bericht.value?.laufId !== p.lauf_id) return;    // inzwischen ein anderer Bericht offen
+    bericht.value = { ...bericht.value, befunde: voll.befunde ?? [], kopf: voll, voll: true, hinweis: '' };
+  } catch (fehler) {
+    if (bericht.value?.laufId !== p.lauf_id) return;
+    bericht.value = {
+      ...bericht.value,
+      hinweis: fehler?.response?.status === 404
+        ? 'Kurzfassung aus dem Register — der Laufordner mit dem ganzen Bericht ist weggeräumt. Erneut prüfen legt ihn wieder an.'
+        : `Kurzfassung aus dem Register — der ganze Bericht ließ sich nicht laden: ${fehler?.response?.data?.detail || fehler?.message || fehler}`,
+    };
+  }
+}
+
+async function berichtHerunterladen(laufId, datei = '') {
+  if (!laufId || !cde.auftrag?.id) return;
+  try {
+    const voll = await AuftragApi.pruefbericht(cde.auftrag.id, laufId);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(voll, null, 1)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Pruefbericht_${String(datei || laufId).replace(/\.ifc$/i, '')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (fehler) {
+    const text = `Bericht laden misslang: ${fehler?.response?.data?.detail || fehler?.message || fehler}`;
+    if (verbundOffen.value) verbundMeldung.value = text;
+    else if (bericht.value) bericht.value = { ...bericht.value, hinweis: text };
+    else _statusMeldung(text);
+  }
+}
 
 function fmtBytes(n) {
   if (!Number.isFinite(n) || n <= 0) return '–';
@@ -1882,7 +2122,17 @@ function fmtDate(ts) {
 .doc-name { color: var(--cde-text-bright); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-rev, .doc-size, .doc-date { font-variant-numeric: tabular-nums; color: var(--cde-text-dim); }
 .doc-herkunft { white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.doc-abschnitt td { padding-top: 0.6rem; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--cde-text-dim); }
+.doc-rev.rev-luecke { text-decoration: underline dotted; cursor: help; }
+.doc-eignung { margin-left: 0.3rem; }
+.doc-regen { margin-left: 0.25rem; vertical-align: middle; }
+.doc-regen-hinweis { white-space: normal; font-size: 0.66rem; line-height: 1.25; margin-top: 0.15rem;
+  color: var(--cde-text-dim); }
 .doc-actions { display: flex; gap: 0.25rem; }
+/* Stufe 6: der Prüfstand öffnet den ganzen Bericht — ein Knopf im Kleid der Plakette. */
+.doc-bericht { background: none; font-family: inherit; cursor: pointer; }
+.doc-bericht:hover { background: var(--cde-fill-hover); }
 
 .doc-status-hinweis {
   display: flex; align-items: center; gap: 0.35rem;

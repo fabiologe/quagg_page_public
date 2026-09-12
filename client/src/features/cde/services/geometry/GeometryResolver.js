@@ -32,14 +32,12 @@ import { deriveSurface } from './SurfaceOps.js';
 import { extractAxisPolylines, polylineLength } from '../AxisAnnotations.js';
 import { collectQto, pickQtoValue, LENGTH_KEYS } from '../QuantitySummary.js';
 import { FRAGMENTS_DATA_CONFIG } from '../IfcDataConfig.js';
+import { istLinear } from '../Kategorien.js';
 
 const VOLUME_KEYS = ['NetVolume', 'GrossVolume'];
 
-// Kategorien, deren BBox-Längskante als Längen-Fallback taugt
-const LINEAR_CATEGORIES = new Set([
-    'IFCPIPESEGMENT', 'IFCFLOWSEGMENT', 'IFCDUCT', 'IFCDUCTSEGMENT',
-    'IFCKERB', 'IFCBEAM', 'IFCMEMBER', 'IFCCABLESEGMENT', 'IFCCABLECARRIERSEGMENT',
-]);
+// Die BBox-Längskante als Längen-Fallback taugt nur für lineare Bauteile —
+// „linear" steht EINMAL, als Wurzeln im IFC-Baum (Kategorien.js).
 
 /**
  * @param {object} deps
@@ -385,7 +383,7 @@ export function createGeometryResolver({
                             const qv = pickQtoValue(qtos.get(k) ?? {}, LENGTH_KEYS);
                             if (qv != null) {
                                 out.set(k, { value: qv, unit: 'm', source: 'qto', path: ['src:qto'], warnings: [] });
-                            } else if (LINEAR_CATEGORIES.has(el.category) && boxes.get(k)) {
+                            } else if (istLinear(el.category) && boxes.get(k)) {
                                 const box = boxes.get(k);
                                 out.set(k, {
                                     value: Math.max(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z),

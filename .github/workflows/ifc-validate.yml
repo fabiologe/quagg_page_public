@@ -1,0 +1,52 @@
+# Waechter fuer die IFC-Kette der CDE (Fahrplan IFC-Konsistenz, Stufe 8):
+# Schema-Wahrheit == Client-Woerterbuch, Prueftor, IDS, Berichtsvertrag, CDE-Client.
+# Laeuft nur an, wenn dort etwas angefasst wurde. Der Probelauf (app.ifc.probe)
+# laeuft NICHT — er braucht die Gruppenmodelle der StorageBox. Was StorageBox
+# oder client/testdata-local braucht, wird uebersprungen; die Zahl steht im Log.
+name: IFC-Waechter
+
+on:
+  push:
+    paths: ['backend/app/ifc/**', 'backend/app/api/projekt/**', 'client/src/features/cde/**',
+            '.github/workflows/ifc-validate.yml']
+  pull_request:
+    paths: ['backend/app/ifc/**', 'backend/app/api/projekt/**', 'client/src/features/cde/**',
+            '.github/workflows/ifc-validate.yml']
+
+jobs:
+  ifc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Zuerst der Client: der zweite Motor (V09) liest mit web-ifc aus client/node_modules.
+      - name: Client installieren
+        working-directory: client
+        run: npm ci
+      - name: Client-Woerterbuch == Schema-Schnappschuss
+        working-directory: backend
+        run: python -m app.ifc.generiere_client --pruefe
+      # Derselbe Ort wie auf dem Server: verbund_lauf und das MCP-Werkzeug suchen den Interpreter dort.
+      - name: IFC-venv
+        run: |
+          python -m venv backend/app/ifc/.venv-ifc
+          backend/app/ifc/.venv-ifc/bin/pip install -r backend/app/ifc/requirements-ifc.txt
+      - name: IFC-Tests
+        working-directory: backend
+        env:
+          PYTHONPATH: '.'
+        run: app/ifc/.venv-ifc/bin/python -m pytest app/ifc/tests -q -rs -p no:cacheprovider
+      - name: CDE-Tests (Client)
+        working-directory: client
+        run: |
+          npx vitest run src/features/cde/test 2>&1 | tee vitest.log
+          echo "Uebersprungen (StorageBox/testdata-local fehlen im CI; auf dem Server 6):"
+          grep -E "Tests .*skipped" vitest.log || echo "keine"

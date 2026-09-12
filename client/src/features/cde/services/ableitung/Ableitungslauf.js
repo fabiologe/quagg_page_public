@@ -42,9 +42,13 @@ import { erdbauStapelVon, urGelaendeVon } from './Bezuege.js';
  *   Ohne sie bleibt das Gate für gelieferte Quellen ungeprüft und sagt es.
  * @param {object} opts.kernel
  * @param {number} [opts.hoehenversatz]
+ * @param {Map<string, object>} [opts.historie]
+ *   Der letzte bekannte Bauplan je Kennung, auch für Zurückgenommenes
+ *   (`useAenderungen.historieAus`). NUR für die Kette zum Ur-Gelände —
+ *   gebaut wird ausschliesslich aus `stand` (Fahrplan Erdbau-Container, Stufe 1).
  */
 export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuellBauform = null,
-                                      kernel, hoehenversatz = 0 } = {}) {
+                                      kernel, hoehenversatz = 0, historie = null } = {}) {
     const memo = new Map();       // ableitungId → Promise<leite-Ergebnis>
     const memoPlan = new Map();   // ableitungId → JSON der Parameter des ersten Aufrufs
     const teilForm = new Map();   // globalId → {form, daten}
@@ -61,7 +65,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
     function _istErdbau(rz) { return !!rz?.erdbau; }
 
     /** Das Ur-Gelände hinter einer Quelle — geliefert, oder die Wurzel einer Alt-Kette. */
-    function urGidVon(gid) { return urGelaendeVon(stand, gid, { rezeptNach }); }
+    function urGidVon(gid) { return urGelaendeVon(stand, gid, { rezeptNach, historie }); }
 
     /**
      * Die Erdbau-Vorgänge auf EINEM Ur-Gelände, geordnet — die Regel steht
@@ -72,7 +76,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         return _stapel(urGid).vorgaenge.map(v => v.ableitung);
     }
     function _stapel(urGid) {
-        if (!stapelMemo.has(urGid)) stapelMemo.set(urGid, erdbauStapelVon(stand, urGid, { rezeptNach }));
+        if (!stapelMemo.has(urGid)) stapelMemo.set(urGid, erdbauStapelVon(stand, urGid, { rezeptNach, historie }));
         return stapelMemo.get(urGid);
     }
     /** Je Vorgänger seine Operationen (in Welt), in Stapelreihenfolge — die ersten `bis`. */

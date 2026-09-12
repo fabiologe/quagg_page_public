@@ -27,12 +27,13 @@ ifcopenshell = pytest.importorskip(
     "ifcopenshell", reason="ifcopenshell fehlt — siehe backend/app/ifc/README.md")
 
 from app.ifc import guids                          # noqa: E402
+from app.ifc import herkunft as H                  # noqa: E402
 from app.ifc import verbund as V                   # noqa: E402
 from app.ifc.eigenbau import (                     # noqa: E402
     PAKET_VERSION, PSET_CDE, PSET_VORGANG, PaketFehler, baue_datei, vorgaenge_schliessen_in,
     wirte_herstellen, wirte_herstellen_in)
 from app.ifc.probe import zweiter_motor            # noqa: E402
-from app.ifc.pruefe import pruefe                  # noqa: E402
+from app.ifc.pruefe import ids_pruefen, offen, pruefe  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[4]
 
@@ -116,7 +117,8 @@ def _regel(ergebnis, kennung):
 
 
 def _fehl(ergebnis):
-    return [(b["id"], str(b["sagt"])[:400]) for b in ergebnis["befunde"] if not b["ok"]]
+    # Offen heisst: sperrt (pruefe.offen). Ein Hinweis „keine IDS hinterlegt" ist keiner.
+    return [(b["id"], str(b["sagt"])[:400]) for b in ergebnis["befunde"] if offen(b)]
 
 
 # ── 1. Die Eigenbau-Datei allein ────────────────────────────────────────────
@@ -646,6 +648,21 @@ FIXTURE = Path(__file__).parent / "daten" / "paket_v2.json"
 VERTRAG = {"ur": "1Ur0Gelaende0Vertrag00", "rohr": ROHR_GUID, "bauteil": "3Fundament0A0000000001"}
 
 
+def _welt(datei, guid):
+    """Die Punkte eines Bauteils in Weltkoordinaten — Platzierungskette mal Koordinatenliste (G6)."""
+    import numpy as np
+    import ifcopenshell.util.placement as PL
+    el = datei.by_guid(guid)
+    punkte = np.array(el.Representation.Representations[0].Items[0].Coordinates.CoordList, dtype=float)
+    return (np.c_[punkte, np.ones(len(punkte))] @ PL.get_local_placement(el.ObjectPlacement).T)[:, :3]
+
+
+def _fingerabdruck(pfad):
+    """sha256 und Aenderungszeit einer Datei — was ein Verbund an seinen Quellen nie aendern darf (G1)."""
+    import hashlib
+    return hashlib.sha256(pfad.read_bytes()).hexdigest(), pfad.stat().st_mtime_ns
+
+
 @pytest.mark.skipif(not FIXTURE.is_file(), reason="Fixture fehlt — im Client: PAKET_VERTRAG_SCHREIBEN=1 "
                     "npx vitest run src/features/cde/test/paketVertrag.test.js")
 def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
@@ -675,12 +692,16 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
     _gelieferte_datei(gelaende, "IfcGeographicElement", VERTRAG["ur"], _gitter(12, 5.0), "Urgelaende", "TERRAIN")
     rohr = tmp_path / "rohr.ifc"
     _gelieferte_datei(rohr, "IfcPipeSegment", VERTRAG["rohr"], _kasten(30, 0.3, 0.3), "H-001", "RIGIDSEGMENT")
+    # Stufe 7 (Fahrplan Erdbau-Container): G1 — die Quellen vorher; G6 — das Ur in Weltkoordinaten vorher.
+    quellen_vorher = {p.name: _fingerabdruck(p) for p in (gelaende, rohr, eigen)}
+    ur_vorher = _welt(ifcopenshell.open(gelaende), VERTRAG["ur"])
     ziel = tmp_path / "verbund.ifc"
     b = V.fuehre_zusammen(
         [V.Quelle(gelaende, name="Urgelaende.ifc", sha256="d" * 64), V.Quelle(rohr, name="Kanal.ifc", sha256="c" * 64),
          V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
         ziel, projektname="Vertrag",
         nachbearbeiten=[("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)])
+    assert {p.name: _fingerabdruck(p) for p in (gelaende, rohr, eigen)} == quellen_vorher   # G1: Quellen unveraendert
     w = b["nachbearbeitung"]["wirte"]
     assert (w["geschlossen"], w["fehlende_wirte"], w["ohne_wirtangabe"]) == (3, [], [])
     v = b["nachbearbeitung"]["vorgaenge"]
@@ -689,6 +710,8 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
 
     f = ifcopenshell.open(ziel)
     assert len(f.by_type("IfcGeographicElement")) == 1          # TERRAIN = 1 (mit Paket v1: zwei)
+    ur_nachher = _welt(f, VERTRAG["ur"])                         # G6: dieselben Punkte, dieselbe Lage
+    assert ur_vorher.shape == ur_nachher.shape and float(abs(ur_vorher - ur_nachher).max()) < 1e-6
     assert len(f.by_type("IfcEarthworksCut")) == 3
     for c in cuts:
         el = f.by_guid(guids.guid_aus_cde_id(c["cdeId"]))
@@ -704,4 +727,138 @@ def test_das_paket_der_echten_kette_besteht_mit_seinen_lieferungen(tmp_path):
     el = f.by_guid(guids.guid_aus_cde_id(graben["cdeId"]))
     assert guids.guid_aus_cde_id(fills[0]["cdeId"]) in _pset(el, PSET_CDE)["SchneidetAuffuellung"]
     assert el.VoidsElements[0].RelatingBuildingElement.GlobalId == VERTRAG["ur"]
+    # Stufe 3 (Erdbau-Container): je Quelle EIN Dokument. Das Ur-Gelaende nennen der
+    # Eigenbau (mit Revision) UND der Verbund an der Gruppe der Lieferung (ohne) —
+    # verschmolzen bleibt eins, und es kennt die Revision.
+    infos = {i.Identification: i for i in f.by_type("IfcDocumentInformation")}
+    assert sorted(infos) == ["c" * 64, "d" * 64, "e" * 64]
+    assert (infos["d" * 64].Name, infos["d" * 64].Revision) == ("Urgelaende.ifc", "1")
+    assert len(f.by_type("IfcDocumentReference")) == 3
+    am_ur = {o.GlobalId for r in f.by_type("IfcRelAssociatesDocument")
+             if r.RelatingDocument.ReferencedDocument == infos["d" * 64] for o in r.RelatedObjects}
+    assert {guids.guid_aus_cde_id(c["cdeId"]) for c in cuts} <= am_ur
+    # Stufe 4: die Regeln des abgeleiteten Containers — jede trifft alle Elemente der CDE, keine verfehlt.
+    urteil = {b["titel"].split(" (")[0]: b for b in ids_pruefen(f, [REPO / "backend/app/ifc/daten/quagg-starter.ids"])}
+    for titel, n in (("Aushub der CDE — Herkunft lesbar", len(cuts)),
+                     ("Aushub der CDE — PredefinedType bestimmt", len(cuts)),
+                     ("Auftrag der CDE — Herkunft lesbar", len(fills)),
+                     ("Auftrag der CDE — PredefinedType bestimmt", len(fills))):
+        assert (urteil[titel]["ok"], urteil[titel]["teile"]) == (True, {"anwendbar": n, "erfuellt": n}), \
+            (titel, urteil[titel]["sagt"])
     _sauber(pruefe(ziel))
+
+
+# ── Die Herkunft am Element (Fahrplan Erdbau-Container, Stufe 3) ────────────
+
+@pytest.mark.skipif(not FIXTURE.is_file(), reason="Fixture fehlt — siehe test_das_paket_der_echten_kette")
+def test_jedes_erzeugte_element_traegt_quagg_herkunft(tmp_path):
+    """Quelle, Revision, sha256, Journalstand, Werkzeug, Eingabe-Hash — am Element, wo ein fremdes Werkzeug liest."""
+    paket = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    doc = paket["quellDokumente"][0]
+    baue_datei(paket, tmp_path / "a.ifc", schluessel="herkunft")
+    f = ifcopenshell.open(tmp_path / "a.ifc")
+    werte = {b["cdeId"]: _pset(f.by_guid(guids.guid_aus_cde_id(b["cdeId"])), H.PSET_HERKUNFT)
+             for b in paket["bauteile"]}
+    for b in paket["bauteile"]:
+        w = werte[b["cdeId"]]
+        assert (w["QuellDokument"], w["QuellRevision"], w["QuellSHA256"]) == \
+            (doc["datei"], str(doc["revision"]), doc["sha256"])
+        assert (w["Journalstand"], w["Erzeugt"], w["Werkzeug"]) == ("c-vertrag", paket["erzeugt"], H.werkzeug())
+        assert w["EingabeHash"] == H.eingabe_hash(b)
+        assert json.loads(w["QuellGlobalIds"])["gelaende"] == VERTRAG["ur"]
+    assert len({w["EingabeHash"] for w in werte.values()}) == len(werte)
+    # Derselbe Stand -> dieselben Hashes; ein Punkt anders -> genau dieser Hash anders.
+    paket["bauteile"][0]["punkte"][0][2] += 0.01
+    baue_datei(paket, tmp_path / "b.ifc", schluessel="herkunft")
+    g = ifcopenshell.open(tmp_path / "b.ifc")
+    anders = [b["cdeId"] for b in paket["bauteile"]
+              if _pset(g.by_guid(guids.guid_aus_cde_id(b["cdeId"])), H.PSET_HERKUNFT)["EingabeHash"]
+              != werte[b["cdeId"]]["EingabeHash"]]
+    assert anders == [paket["bauteile"][0]["cdeId"]]
+
+
+@pytest.mark.skipif(not FIXTURE.is_file(), reason="Fixture fehlt — siehe test_das_paket_der_echten_kette")
+def test_dokumentverweis_je_quellcontainer(tmp_path):
+    """Je Registerdatei EIN IfcDocumentInformation — die Referenz an der Gruppe UND an jedem Element daraus."""
+    paket = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    paket["quellDokumente"] = paket["quellDokumente"] * 2            # zweimal genannt, einmal geschrieben
+    doc = paket["quellDokumente"][0]
+    bericht = baue_datei(paket, tmp_path / "e.ifc", schluessel="dok", ablage="01_Laufend/42069_BlazeIT/CDE")
+    f = ifcopenshell.open(tmp_path / "e.ifc")
+    assert bericht["dokumente"] == 1
+    (info,) = f.by_type("IfcDocumentInformation")
+    assert (info.Identification, info.Name, info.Revision) == (doc["sha256"], doc["datei"], str(doc["revision"]))
+    assert info.Location == f"01_Laufend/42069_BlazeIT/CDE/{doc['datei']}"
+    (ref,) = f.by_type("IfcDocumentReference")
+    assert ref.ReferencedDocument == info and ref.Name is None        # IfcDocumentReference.WR1
+    (rel,) = f.by_type("IfcRelAssociatesDocument")
+    assert {guids.guid_aus_cde_id(b["cdeId"]) for b in paket["bauteile"]} <= {o.GlobalId for o in rel.RelatedObjects}
+    assert [o.Name for o in rel.RelatedObjects if o.is_a("IfcGroup")] == ["Erdbau"]
+
+
+def test_die_herkunft_sagt_nie_mehr_als_sie_weiss(tmp_path):
+    """Stufe 4: nur aus der CDE -> Quelle „CDE-Journal", Revision = Journalstand. Aus einer Lieferung ohne
+    Registerdatei -> KEINE Quelle (die IDS-Regel `spec-*-herkunft` meldet es), statt einer erfundenen."""
+    eigen = tmp_path / "cde.ifc"
+    baue_datei(_paket(_alle_arten(), journal={"commit": "c-7", "sitzungOffen": True}), eigen, schluessel="journal")
+    w = _pset(ifcopenshell.open(eigen).by_type("IfcEarthworksCut")[0], H.PSET_HERKUNFT)
+    assert (w["QuellDokument"], w["QuellRevision"], w["Journalstand"]) == \
+        (H.QUELLE_JOURNAL, "c-7+Sitzung", "c-7+Sitzung")
+    assert "QuellSHA256" not in w
+    fremd = tmp_path / "fremd.ifc"
+    baue_datei(_paket(_alle_arten(wirt="1OaU$rmOTF_8XVO$FIs70b")), fremd, schluessel="fremd")
+    w = _pset(ifcopenshell.open(fremd).by_type("IfcEarthworksCut")[0], H.PSET_HERKUNFT)
+    assert not {"QuellDokument", "QuellRevision"} & set(w) and w["EingabeHash"]
+
+
+# ── Das Vergleichsmodell der Bauwerksstruktur (Fahrplan Erdbau-Container, Stufe 8) ──
+
+ERDBAU_VERGLEICH = Path(__file__).parent / "daten" / "erdbau_vergleich.ifc"
+
+
+def baue_erdbau_vergleich(ziel: Path, arbeit: Path) -> dict:
+    """Der Erdbau-Verbund, an dem der Client seine Bauwerksstruktur misst.
+
+    paket_v2.json (die Kette des Browsers) + gelieferte Gelaende- und Rohrdatei,
+    Wirte und Vorgaenge geschlossen: 3 Aushuebe mit IfcRelVoidsElement am Ur,
+    1 Auftrag, 4 Vorgaenge. Eingecheckt wie ids_vergleich.ifc; gelesen von
+    client/.../test/bauwerksstrukturAmEchtenModell.test.js. Neu schreiben:
+        PYTHONPATH=. app/ifc/.venv-ifc/bin/python app/ifc/tests/test_eigenbau.py
+    """
+    paket = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    eigen = arbeit / "eigenbau.ifc"
+    baue_datei(paket, eigen, schluessel="erdbau-vergleich")
+    gelaende = arbeit / "gelaende.ifc"
+    _gelieferte_datei(gelaende, "IfcGeographicElement", VERTRAG["ur"], _gitter(12, 5.0), "Urgelaende", "TERRAIN")
+    rohr = arbeit / "rohr.ifc"
+    _gelieferte_datei(rohr, "IfcPipeSegment", VERTRAG["rohr"], _kasten(30, 0.3, 0.3), "H-001", "RIGIDSEGMENT")
+    return V.fuehre_zusammen(
+        [V.Quelle(gelaende, name="Urgelaende.ifc", sha256="d" * 64), V.Quelle(rohr, name="Kanal.ifc", sha256="c" * 64),
+         V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+        ziel, projektname="Erdbau-Vergleich", schluessel="erdbau-vergleich",
+        nachbearbeiten=[("wirte", wirte_herstellen_in), ("vorgaenge", vorgaenge_schliessen_in)])
+
+
+def _struktur(pfad):
+    f = ifcopenshell.open(str(pfad))
+    return {"voids": sorted((r.RelatingBuildingElement.GlobalId, r.RelatedOpeningElement.GlobalId)
+                            for r in f.by_type("IfcRelVoidsElement")),
+            "gruppen": sorted((g.Name, g.ObjectType, len({o.id() for r in g.IsGroupedBy for o in r.RelatedObjects}))
+                              for g in f.by_type("IfcGroup"))}
+
+
+@pytest.mark.skipif(not FIXTURE.is_file(), reason="Fixture fehlt — siehe test_das_paket_der_echten_kette")
+def test_der_erdbau_vergleich_des_clients_ist_der_erzeugte(tmp_path):
+    """Die eingecheckte Datei hat die Struktur eines frischen Laufs — der Client misst an keinem Einzelstueck."""
+    assert ERDBAU_VERGLEICH.is_file(), "neu schreiben: PYTHONPATH=. app/ifc/.venv-ifc/bin/python app/ifc/tests/test_eigenbau.py"
+    baue_erdbau_vergleich(tmp_path / "neu.ifc", tmp_path)
+    frisch = _struktur(tmp_path / "neu.ifc")
+    assert frisch == _struktur(ERDBAU_VERGLEICH)
+    assert len(frisch["voids"]) == 3 and sum(1 for g in frisch["gruppen"] if g[1] == "Vorgang") == 4
+
+
+if __name__ == "__main__":
+    import tempfile
+    with tempfile.TemporaryDirectory() as t:
+        b = baue_erdbau_vergleich(ERDBAU_VERGLEICH, Path(t))
+    print(ERDBAU_VERGLEICH, b["produkte"], "Produkte,", len(_struktur(ERDBAU_VERGLEICH)["voids"]), "Aushuebe am Wirt")

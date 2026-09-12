@@ -126,3 +126,68 @@ def test_liest_die_echten_gruppenmodelle():
         f = ifcopenshell.open(TESTDATEN / name)
         assert f.schema_identifier == schema, (name, f.schema_identifier)
         assert ifcopenshell.util.unit.calculate_unit_scale(f) == pytest.approx(faktor), name
+
+
+def test_was_der_schema_schnappschuss_verlangt():
+    """`schema.baue_snapshot()` (2026-09-11) liest das Schema, die Where-Rules,
+    die Vorlagen und die Doku-Dateien — namentlich, damit ein Umbau in
+    ifcopenshell HIER auffaellt und nicht als halber Schnappschuss."""
+    import importlib
+
+    import ifcopenshell.util.pset
+    import ifcopenshell.validate
+
+    s = ifcopenshell.schema_by_name("IFC4X3_ADD2")
+    d = s.declaration_by_name("IfcWall")
+    for methode in ("name", "supertype", "attributes", "all_attributes", "all_inverse_attributes", "is_abstract"):
+        assert callable(getattr(d, methode)), methode
+    assert callable(s.entities)
+    # Das Pruefgeruest liest den strukturierten Bericht, nicht den Logtext.
+    assert hasattr(ifcopenshell.validate, "json_logger")
+    regeln = importlib.import_module("ifcopenshell.express.rules.IFC4X3_ADD2")
+    assert regeln.IfcFeatureElement_NotContained.RULE_NAME == "NotContained"
+    assert ifcopenshell.util.pset.get_template("IFC4X3_ADD2").get_by_name("Qto_EarthworksCutBaseQuantities")
+    doku = pathlib.Path(ifcopenshell.__file__).parent / "util" / "schema"
+    for datei in ("ifc4x3_entities.json", "ifc4_entities.json", "ifc2x3_entities.json"):
+        assert (doku / datei).is_file(), datei
+
+
+def test_was_das_prueftor_von_validate_verlangt():
+    """`pruefe._Protokoll` ordnet Parserfehler an ihrem Aufrufer ein: der Name
+    `log_internal_cpp_errors` und die Form `json_logger.log(level, message, *args)`
+    tragen die Teilzaehlung „syntax". Faellt einer weg, zaehlte das Tor Syntax-
+    fehler still als Schemaverstoesse — dieser Test sagt es vorher."""
+    import inspect
+
+    import ifcopenshell.validate
+
+    assert callable(ifcopenshell.validate.log_internal_cpp_errors)
+    assert list(inspect.signature(ifcopenshell.validate.json_logger.log).parameters) == [
+        "self", "level", "message", "args"]
+    assert "log_internal_cpp_errors(" in inspect.getsource(ifcopenshell.validate.validate)
+
+
+def test_partof_voids_kennt_keinen_earthworkscut():
+    """M2 (Fahrplan Erdbau-Container): ifctester 0.8.5 prueft `partOf IFCRELVOIDSELEMENT` nur fuer IfcOpeningElement.
+
+    Ein IfcEarthworksCut mit seinem Wirt faellt durch (NOVALUE), obwohl die
+    Beziehung dasteht — deshalb steht die Wirt-Regel NICHT in der IDS, sondern
+    bleibt V07 (Stufe verbund). Aendert ifctester das, sagt es dieser Test.
+    """
+    import ifcopenshell.api
+    import ifcopenshell.guid
+    from ifctester import facet
+
+    run = ifcopenshell.api.run
+    f = ifcopenshell.file(schema="IFC4X3_ADD2")
+    run("root.create_entity", f, ifc_class="IfcProject", name="P")
+    wirt = run("root.create_entity", f, ifc_class="IfcGeographicElement", name="Ur")
+    aushub = run("root.create_entity", f, ifc_class="IfcEarthworksCut", name="A")
+    oeffnung = run("root.create_entity", f, ifc_class="IfcOpeningElement", name="O")
+    for x in (aushub, oeffnung):
+        f.create_entity("IfcRelVoidsElement", GlobalId=ifcopenshell.guid.new(), RelatingBuildingElement=wirt,
+                        RelatedOpeningElement=x)
+    teil_von = facet.PartOf(name="IFCGEOGRAPHICELEMENT", relation="IFCRELVOIDSELEMENT IFCRELFILLSELEMENT")
+    assert aushub.VoidsElements[0].RelatingBuildingElement == wirt          # die Beziehung steht
+    assert bool(teil_von(oeffnung)) is True
+    assert bool(teil_von(aushub)) is False and teil_von(aushub).reason == {"type": "NOVALUE"}

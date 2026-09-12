@@ -1,0 +1,448 @@
+{
+ "modus": "pruefe",
+ "datei": "Vergleich.ifc",
+ "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+ "werkzeug": "quagg CDE 2 (ifcopenshell 0.8.5)",
+ "schema": "IFC4X3_ADD2",
+ "entitaeten": 103,
+ "produkte": 26,
+ "raumwurzeln": 1,
+ "kontexte": 0,
+ "befunde": [
+  {
+   "id": "V00",
+   "titel": "Schema ist IFC4X3_ADD2",
+   "ok": true,
+   "sagt": "IFC4X3_ADD2",
+   "zahl": null,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V01",
+   "titel": "genau ein IfcProject",
+   "ok": true,
+   "sagt": "1 gefunden",
+   "zahl": 1,
+   "stufe": "verbund",
+   "schwere": "fehler",
+   "beispiele": []
+  },
+  {
+   "id": "V02",
+   "titel": "eine Einheitenzuweisung, Laenge in Metern",
+   "ok": false,
+   "sagt": "1 Zuweisung(en), Faktor 0.001",
+   "zahl": 1,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V03",
+   "titel": "ein Wurzelkontext, jede Darstellung zeigt hinein",
+   "ok": false,
+   "sagt": "0 Wurzelkontext(e), 0 Darstellung(en) ohne Kontext",
+   "zahl": 0,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V04",
+   "titel": "GlobalIds eindeutig und formgerecht (22 Zeichen, erstes 0-3)",
+   "ok": true,
+   "sagt": "0 doppelt, 0 ungueltig",
+   "zahl": 0,
+   "stufe": "verbund",
+   "schwere": "fehler",
+   "beispiele": []
+  },
+  {
+   "id": "V05",
+   "titel": "genau eine Raumwurzel unter dem Projekt",
+   "ok": true,
+   "sagt": "1 direkt unter dem Projekt, 1 IfcSite gesamt",
+   "zahl": 1,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V06a",
+   "titel": "Georeferenzierung vorhanden (CRS + MapConversion)",
+   "ok": false,
+   "sagt": "0 IfcProjectedCRS, 0 IfcMapConversion",
+   "zahl": null,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V06b",
+   "titel": "groesste Koordinate liegt im Fenster des Bezugssystems",
+   "ok": false,
+   "sagt": "kein Bezugssystem deklariert; groesste Koordinate keine Koordinaten passt zu keinem bekannten System",
+   "zahl": null,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "V07",
+   "titel": "jedes Bauteil haengt in der Raumgliederung (Aussparungen ueber ihren Wirt)",
+   "ok": false,
+   "sagt": "0 ohne Zuordnung, 4 Aussparung(en) ohne Wirt — z. B. ['IfcEarthworksCut 3464Jj2J9LzeU5GEvMuPmW', 'IfcEarthworksCut 0XyD4kDYfKzRZVQSKS$Nyh', 'IfcEarthworksCut 2nY2PjBnjPaBxGCbmR9liI']",
+   "zahl": 4,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": [
+    "IfcEarthworksCut 3464Jj2J9LzeU5GEvMuPmW",
+    "IfcEarthworksCut 0XyD4kDYfKzRZVQSKS$Nyh",
+    "IfcEarthworksCut 2nY2PjBnjPaBxGCbmR9liI",
+    "IfcEarthworksCut 3lcV2$Dj9J5Bki0pu58VHf"
+   ]
+  },
+  {
+   "id": "V08",
+   "titel": "jedes Bauteil traegt seine Herkunft (Fachmodell-Gruppe)",
+   "ok": false,
+   "sagt": "0 von 21 Bauteilen in 0 Gruppe(n)",
+   "zahl": 21,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
+   "id": "SPF",
+   "titel": "SPF-Syntax, EXPRESS-Schema und Where-Rules",
+   "ok": false,
+   "sagt": "0 Zeilen-/Verweisfehler, 4 Schemaverstoesse, 1 Where-Rules\n[schema] IfcEarthworksCut.VoidsElements: With inverse:\n    VoidsElements : IfcRelVoidsElement FOR RelatedOpeningElement\nValue:\n    ()\nNot valid\n[schema] IfcEarthworksCut.VoidsElements: With inverse:\n    VoidsElements : IfcRelVoidsElement FOR RelatedOpeningElement\nValue:\n    ()\nNot valid\n[schema] IfcEarthworksCut.VoidsElements: With inverse:\n    VoidsElements : IfcRelVoidsElement FOR RelatedOpeningElement\nValue:\n    ()\nNot valid\n[schema] IfcEarthworksCut.VoidsElements: With inverse:\n    VoidsElements : IfcRelVoidsElement FOR RelatedOpeningElement\nValue:\n    ()\nNot valid\n[regeln] IfcWallStandardCase.HasMaterialLayerSetUsage: (sizeof([temp for temp in usedin(SELF, 'ifc4x3_add2.ifcrelassociates.relatedobjects') if 'ifc4x3_add2.ifcrelassociatesmaterial' in typeof(temp) and 'ifc4x3_add2.ifcmateriallayersetusage' in typeof(temp.RelatingMaterial)]) == 1)\n\nViolated by:\n    (0 == 1)\n     +  where 0 = sizeof([])\n\nOn instance:\n    #35=IfcWallStandardCase('08X3Oq5bTS_w$8s$rlMiQv',$,'W5',$,$,$,$,$,$)",
+   "zahl": 5,
+   "stufe": "schema",
+   "schwere": "fehler",
+   "beispiele": [
+    "schema: #60=IfcEarthworksCut('3464Jj2J9LzeU5GEvMuPmW',$,'Aushub 1',$,$,$,$,$,$)",
+    "schema: #64=IfcEarthworksCut('0XyD4kDYfKzRZVQSKS$Nyh',$,'Aushub 2',$,$,$,$,$,$)",
+    "schema: #70=IfcEarthworksCut('2nY2PjBnjPaBxGCbmR9liI',$,'Aushub CDE 1',$,$,$,$,$,.TRENCH.)",
+    "schema: #80=IfcEarthworksCut('3lcV2$Dj9J5Bki0pu58VHf',$,'Aushub CDE 2',$,$,$,$,$,.NOTDEFINED.)",
+    "regeln: #35=IfcWallStandardCase('08X3Oq5bTS_w$8s$rlMiQv',$,'W5',$,$,$,$,$,$)"
+   ],
+   "teile": {
+    "syntax": 0,
+    "schema": 4,
+    "regeln": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:01",
+   "titel": "Räume — Name vorhanden (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The attribute value \"None\" is empty",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "1RqX2RFk5PQ9hfbTPnoDTW"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:02",
+   "titel": "Räume — Fläche dokumentiert (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "1RqX2RFk5PQ9hfbTPnoDTW"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:03",
+   "titel": "Wände — IsExternal markiert (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "3 von 4 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "2W6ZNxLNvSVx5tyjp8B9gq"
+   ],
+   "teile": {
+    "anwendbar": 4,
+    "erfuellt": 3
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:04",
+   "titel": "Wände — Tragend/nichttragend markiert (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "2 von 4 Elementen erfuellen die Anforderung — The property set does not contain the required property; The required property set does not exist",
+   "zahl": 2,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "1G41aSPD5K1wYHsgBM2xvd",
+    "2W6ZNxLNvSVx5tyjp8B9gq"
+   ],
+   "teile": {
+    "anwendbar": 4,
+    "erfuellt": 2
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:05",
+   "titel": "Außenwände — Brandschutz-Klasse (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The property set does not contain the required property",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "0eyVrLSBXKS9gxf2l6Jw5v"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:06",
+   "titel": "Türen — IsExternal markiert (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "3RL3V_cPnNaOlHWZflt6q7"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:07",
+   "titel": "Außentüren — Brandschutz-Klasse (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "0 von 1 Elementen erfuellen die Anforderung — The property set does not contain the required property",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "0sLAjb6dLHg9EGg7dV0oec"
+   ],
+   "teile": {
+    "anwendbar": 1,
+    "erfuellt": 0
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:08",
+   "titel": "Fenster — IsExternal markiert (ids-01-quagg-starter.ids)",
+   "ok": true,
+   "sagt": "1 von 1 Elementen erfuellen die Anforderung",
+   "zahl": 0,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [],
+   "teile": {
+    "anwendbar": 1,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:09",
+   "titel": "Decken — Tragend markiert (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "0 von 1 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "27mH3sd4vKg8AgMotSn4rI"
+   ],
+   "teile": {
+    "anwendbar": 1,
+    "erfuellt": 0
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:10",
+   "titel": "Stützen — Tragend markiert (ids-01-quagg-starter.ids)",
+   "ok": true,
+   "sagt": "1 von 1 Elementen erfuellen die Anforderung",
+   "zahl": 0,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [],
+   "teile": {
+    "anwendbar": 1,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:11",
+   "titel": "Schächte — Bezeichnung (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The attribute value \"None\" is empty",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "3yMa6Pl69U9fxN6BsDlTvv"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:12",
+   "titel": "Rohrleitungen — Nennweite (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "2TGansR3vVkRzMvRSGT8vp"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:13",
+   "titel": "Aushub — Mengen nach bSI-Vorlage (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "3 von 4 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "0XyD4kDYfKzRZVQSKS$Nyh"
+   ],
+   "teile": {
+    "anwendbar": 4,
+    "erfuellt": 3
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:14",
+   "titel": "Auftrag — Mengen nach bSI-Vorlage (ids-01-quagg-starter.ids)",
+   "ok": true,
+   "sagt": "3 von 3 Elementen erfuellen die Anforderung",
+   "zahl": 0,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [],
+   "teile": {
+    "anwendbar": 3,
+    "erfuellt": 3
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:15",
+   "titel": "Aushub der CDE — Herkunft lesbar (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "3lcV2$Dj9J5Bki0pu58VHf"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:16",
+   "titel": "Auftrag der CDE — Herkunft lesbar (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The required property set does not exist",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "0oPxRoZPPRphLnifEM$Lbl"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:17",
+   "titel": "Aushub der CDE — PredefinedType bestimmt (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The attribute value \"NOTDEFINED\" does not match the requirement",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "3lcV2$Dj9J5Bki0pu58VHf"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "IDS:ids-01-quagg-starter:18",
+   "titel": "Auftrag der CDE — PredefinedType bestimmt (ids-01-quagg-starter.ids)",
+   "ok": false,
+   "sagt": "1 von 2 Elementen erfuellen die Anforderung — The attribute value \"USERDEFINED\" does not match the requirement",
+   "zahl": 1,
+   "stufe": "ids",
+   "schwere": "warnung",
+   "beispiele": [
+    "0oPxRoZPPRphLnifEM$Lbl"
+   ],
+   "teile": {
+    "anwendbar": 2,
+    "erfuellt": 1
+   }
+  },
+  {
+   "id": "GHERKIN",
+   "titel": "Normative Regeln (buildingSMART Implementer Agreements)",
+   "ok": null,
+   "sagt": "nicht eingerichtet — buildingSMART ifc-gherkin-rules verlangt eigene numpy- und shapely-Fassungen und django (backend/app/ifc/README.md, Pruefaufwand und Werkzeuge)",
+   "zahl": null,
+   "stufe": "gherkin",
+   "schwere": "hinweis",
+   "beispiele": []
+  },
+  {
+   "id": "V09",
+   "titel": "zweiter Motor (web-ifc) sieht dasselbe",
+   "ok": true,
+   "sagt": "web-ifc liest Vergleich.ifc\n  Schema        IFC4X3_ADD2\n  Entitaeten    103\n  IfcProduct    26\n  IfcProject    1\n  IfcSite       1\n  IfcGroup      0\n  Kontexte      0\n\nEINIG — beide Motoren sehen dieselbe Datei.",
+   "zahl": 0,
+   "stufe": "motor",
+   "schwere": "fehler",
+   "beispiele": []
+  }
+ ],
+ "verstoesse": 1,
+ "speicher": {
+  "rss_max_mb": 297,
+  "vmpeak_mb": 563,
+  "vmhwm_mb": 297
+ }
+}

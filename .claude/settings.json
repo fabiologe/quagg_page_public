@@ -235,5 +235,19 @@
       "/home/fabio/quagg_page/backend/data/flood2d_jobs/pod-bf3b5648d68a/inputs",
       "/home/fabio/quagg_page/backend/data/flood2d_jobs/pod-118a620402ec/inputs"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ifc-wache.sh",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
   }
 }

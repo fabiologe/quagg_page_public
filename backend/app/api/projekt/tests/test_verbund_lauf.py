@@ -11,9 +11,11 @@ StorageBox: die CDE-Endpunkte schreiben sofort.
 Dauer: der Durchstich rechnet einen echten Verbund (~30-60 s). Fehlt das
 IFC-venv, wird er mit Begruendung uebersprungen — nicht gruen gemeldet.
 """
+import asyncio
 import hashlib
 import json
 import re
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -100,7 +102,9 @@ def test_verbund_ueber_die_echte_schnittstelle(frische_db, app_conn, projekte_wu
     assert st["zustand"] == "geprueft", st.get("fehler") or st.get("offen")
     ids = {b["id"] for b in st["befunde"]}
     assert {"V01", "V02", "V04", "V08", "SPF", "V09"} <= ids
-    assert all(b["ok"] is True for b in st["befunde"]), [b for b in st["befunde"] if b["ok"] is not True]
+    # Hinweise (keine IDS hinterlegt, Gherkin nicht eingerichtet) sperren nicht — Fehler schon.
+    fehler = [b for b in st["befunde"] if b["ok"] is not True and b.get("schwere", "fehler") == "fehler"]
+    assert fehler == [], fehler
     assert st["bericht"]["weltbezug_plausibel"] is True
 
     dok = st["dokument"]
@@ -194,10 +198,32 @@ def test_zweiter_verbund_ist_revision_zwei(frische_db, app_conn, projekte_wurzel
     assert cde._basisname("Verbund_Boden_R02.ifc") == "Verbund_Boden"
     # Ein Schraegstrich im Satznamen darf den Praefix nicht abschneiden.
     assert cde.erzeugt_dateiname(o, cde.VERBUND_PRAEFIX, "Nord/Sued") == "Verbund_Nord_Sued_R01.ifc"
-    # Eine Ziffer am Ende des Satznamens bleibt Teil des Namens.
-    assert cde.erzeugt_dateiname(o, cde.VERBUND_PRAEFIX, "Variante 2") == "Verbund_Variante 2_R01.ifc"
+    # Eine Ziffer am Ende des Satznamens bleibt Teil des Namens (seit E3 mit Unterstrich).
+    assert cde.erzeugt_dateiname(o, cde.VERBUND_PRAEFIX, "Variante 2") == "Verbund_Variante_2_R01.ifc"
     # Das Erdbau-Dokument desselben Satzes ist eine EIGENE Linie mit eigenem Zaehler.
     assert cde.erzeugt_dateiname(o, cde.ERDBAU_PRAEFIX, "Boden") == "Erdbau_Boden_R01.ifc"
+
+
+def test_erzeugte_namen_folgen_der_regel(frische_db, app_conn, projekte_wurzel):
+    """E3 (Fahrplan Erdbau-Container): Praefix, Satzname in ASCII, Revision — und die Linie ueberlebt die Umstellung."""
+    _p, o = _projekt_mit_manifest(
+        app_conn, [_dok("a" * 64, "Verbund_Boden Nord_R01.ifc", herkunft={"art": "verbund"})], [])
+    faelle = {
+        (cde.VERBUND_PRAEFIX, "Boden Nord"): "Verbund_Boden_Nord_R02.ifc",       # die alte Linie geht weiter
+        (cde.ERDBAU_PRAEFIX, "Böschung Süd"): "Erdbau_Boeschung_Sued_R01.ifc",
+        (cde.ERDBAU_PRAEFIX, "Straße  /  Nord."): "Erdbau_Strasse_Nord_R01.ifc",
+        (cde.VERBUND_PRAEFIX, "Variante 2.1"): "Verbund_Variante_2_1_R01.ifc",
+        (cde.VERBUND_PRAEFIX, "???"): "Verbund_Satz_R01.ifc",
+    }
+    for (praefix, satz), soll in faelle.items():
+        name = cde.erzeugt_dateiname(o, praefix, satz)
+        assert name == soll and cde.ERZEUGT_MUSTER.match(name), (satz, name)
+    # Eingetragen sagen Name und Register dieselbe Revision — und die Eignung S1.
+    quelle = o.pfad / cde.ORDNER / "lauf.ifc"
+    quelle.write_text("ISO-10303-21;\n", encoding="utf-8")
+    d = cde.erzeugtes_eintragen(app_conn, o, quelle, praefix=cde.VERBUND_PRAEFIX, satz_name="Boden Nord",
+                                akteur="pytest", herkunft={"art": "verbund"}, aktion="cde_verbund")
+    assert (d["datei"], d["revision"], d["eignung"]) == ("Verbund_Boden_Nord_R02.ifc", 2, "S1")
 
 
 def test_abgelehnt_wird_nicht_eingetragen(frische_db, app_conn, projekte_wurzel):
@@ -419,15 +445,192 @@ def test_erdbau_als_registerdokument_und_im_verbund(frische_db, app_conn, projek
     assert [(q["sha256"], q["globalIds"]) for q in h["quellen"]] == [(gel["sha256"], [guid])]
     assert h["journal"] == {"commit": "c-vertrag", "sitzungOffen": False}
     assert h["pruefung"]["verstoesse"] == 0
-    assert (h["eigenbau"]["version"], h["eigenbau"]["aushuebe"], h["eigenbau"]["vorgaenge"]) == (2, 3, 3)
+    # Seit Teil XX ist jede Werkzeug-Anwendung ein eigener Vorgang: die Fuellung der Fixture
+    # (paket_v2.json) ist ihr eigener — 3 Aushuebe, 4 Vorgaenge.
+    assert (h["eigenbau"]["version"], h["eigenbau"]["aushuebe"], h["eigenbau"]["vorgaenge"]) == (2, 3, 4)
     assert h["crs_herkunft"] and "Annahme aus den Ostwerten" not in h["crs_herkunft"]
     erdbau_text = (o.pfad / cde.ORDNER / "Erdbau_Boden_R01.ifc").read_text(encoding="latin-1")
     assert erdbau_text.count("IFCGEOGRAPHICELEMENT(") == 1              # das Ur, unveraendert —
     assert f"IFCGEOGRAPHICELEMENT('{guid}'" in erdbau_text                 # mit seiner Original-GlobalId
     assert erdbau_text.count("IFCEARTHWORKSCUT(") == 3
+    assert erdbau_text.count("IFCSITE(") == 1                  # Stufe 2: eine Site, auch mit Eigenbau
+    # Stufe 3: je Quelle EIN Dokument (Gelaende + CDE-Eigenbau), die Ablage am Gelaende,
+    # `Quagg_Herkunft` an jedem Cut und Fill.
+    assert erdbau_text.count("IFCDOCUMENTINFORMATION(") == 2
+    assert f"'{o.phase}/{o.ordnername}/CDE/{gel['datei']}'" in erdbau_text
+    assert erdbau_text.count("'Quagg_Herkunft'") == \
+        erdbau_text.count("IFCEARTHWORKSCUT(") + erdbau_text.count("IFCEARTHWORKSFILL(")
     assert erdbau_text.count("IFCELEMENTQUANTITY(") >= 3
     verbund_text = (o.pfad / cde.ORDNER / st3["dokument"]["datei"]).read_text(encoding="latin-1")
     assert verbund_text.count("IFCGEOGRAPHICELEMENT(") == 1              # TERRAIN = 1: das Gelaende fiel aus dem Satz
     assert verbund_text.count("IFCEARTHWORKSCUT(") == 3
+    assert verbund_text.count("IFCSITE(") == 1
+    eigen = (o.pfad / cde.ORDNER / verbund_lauf.LAUF_ORDNER / st1["lauf_id"] / "eigenbau.ifc").read_text(encoding="latin-1")
+    assert "'Boden (CDE-Eigenbau)'" in eigen                       # das Geruest heisst nach dem Satz des Auftrags
+    # Stufe 7 (Fahrplan Erdbau-Container). G1: die Gelaendedatei in CDE/ ist nach drei Laeufen, was das
+    # Register sagt. G4: R01 und R02 fuehren dieselben Aushub-GlobalIds und dasselbe IfcProject. G6: das
+    # Bezugssystem ist das GEMESSENE (GK2), und der Bericht sagt, dass die Quelle anderes deklarierte.
+    assert hashlib.sha256((o.pfad / cde.ORDNER / gel["datei"]).read_bytes()).hexdigest() == gel["sha256"]
+    r02_text = (o.pfad / cde.ORDNER / st2["dokument"]["datei"]).read_text(encoding="latin-1")
+
+    def aushuebe(t):
+        return set(re.findall(r"IFCEARTHWORKSCUT\('([0-9A-Za-z_$]{22})'", t))
+
+    def projekt(t):
+        return re.search(r"IFCPROJECT\('([0-9A-Za-z_$]{22})'", t).group(1)
+
+    assert len(aushuebe(erdbau_text)) == 3 and aushuebe(erdbau_text) == aushuebe(r02_text)
+    assert projekt(erdbau_text) == projekt(r02_text)
+    assert "IFCPROJECTEDCRS('EPSG:31466'" in erdbau_text
+    lauf1 = json.loads((o.pfad / cde.ORDNER / verbund_lauf.LAUF_ORDNER / st1["lauf_id"] / "bericht.json")
+                       .read_text(encoding="utf-8"))
+    assert any("deklariert EPSG:25832" in w and "EPSG:31466" in w for q in lauf1["quellen"] for w in q["warnungen"])
     assert register[st3["dokument"]["sha256"]]["herkunft"]["weggelassen"] == [
         {"datei": gel["datei"], "grund": "steckt in Erdbau_Boden_R02.ifc"}]
+
+
+def test_ein_dokument_durch_das_prueftor(frische_db, app_conn, projekte_wurzel):
+    """Stufe 4b (IFC-Konsistenz): ein Registerdokument durch Syntax, Schema, Regeln und zweiten
+    Motor — der Bericht haengt danach am Eintrag, und WIP -> Shared geht."""
+    p = projekte.anlegen(app_conn, name="Pruefung", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        d = _hochladen(c, p["id"], METER)
+        # Erst die Eingabe, dann die Spur: falsche Dokumente sind 404/422, nie 409.
+        plan = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+                      files={"datei": ("Plan.pdf", b"%PDF-1.4", "application/pdf")}).json()
+        assert c.post(f"/FastAPI/projekte/{p['id']}/cde/{plan['sha256']}/pruefung").status_code == 422
+        assert c.post(f"/FastAPI/projekte/{p['id']}/cde/{'0' * 64}/pruefung").status_code == 404
+        assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}/status",
+                     json={"status": "Shared"}).status_code == 422          # noch kein Bericht
+
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}/pruefung")
+        assert r.status_code == 202, r.text
+        assert r.json()["lauf_id"].startswith("p-") and r.json()["modus"] == "pruefe"
+        st = _warte(c, p["id"], r.json()["lauf_id"])
+        assert st["zustand"] == "geprueft", st.get("fehler") or st.get("offen")
+        assert st["dokument"]["sha256"] == d["sha256"]
+        b = {x["id"]: x for x in st["befunde"]}
+        assert b["SPF"]["ok"] is True, b["SPF"]["sagt"][:400]
+        assert b["V09"]["ok"] is True, b["V09"]["sagt"][-400:]         # web-ifc zaehlt dasselbe wie ifcopenshell
+        assert b["V08"]["schwere"] == "warnung"                        # eine Lieferung ist kein Verbund
+        assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}/status",
+                     json={"status": "Shared"}).status_code == 200
+    eintrag = next(x for x in cde.register(ordner.finde(p["id"])) if x["sha256"] == d["sha256"])
+    assert eintrag["pruefung"]["verstoesse"] == 0 and eintrag["pruefung"]["lauf_id"].startswith("p-")
+    assert {x["id"] for x in eintrag["pruefung"]["befunde"]} >= {"SPF", "V01", "V09", "IDS", "GHERKIN"}
+
+
+def test_das_regelwerk_des_projekts_geht_in_jede_pruefung(frische_db, app_conn, projekte_wurzel):
+    """Stufe 5: ein hochgeladenes IDS-Regelwerk wird mitgeprueft — als Warnung, nicht als Sperre."""
+    from pathlib import Path
+    starter = Path(__file__).parents[3] / "ifc" / "daten" / "quagg-starter.ids"
+    p = projekte.anlegen(app_conn, name="Regelwerk", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+                   files={"datei": ("Anforderungen.ids", starter.read_bytes(), "application/xml")})
+        assert r.status_code == 201 and r.json()["art"] == "regelwerk", r.text
+        d = _hochladen(c, p["id"], METER)
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}/pruefung")
+        assert r.status_code == 202, r.text
+        st = _warte(c, p["id"], r.json()["lauf_id"])
+        assert st["zustand"] == "geprueft", st.get("fehler") or st.get("offen")
+    ids = [b for b in st["befunde"] if b.get("stufe") == "ids"]
+    assert len(ids) == 18, [b["id"] for b in ids]
+    rot = [(b["titel"].split(" (")[0], b["zahl"]) for b in ids if b["ok"] is False]
+    # Die BODEN-Lieferung: zwei Schuettungen ohne Qto_EarthworksFillBaseQuantities.CompactedVolume.
+    assert rot == [("Auftrag — Mengen nach bSI-Vorlage", 2)]
+    eintrag = next(x for x in cde.register(ordner.finde(p["id"])) if x["sha256"] == d["sha256"])
+    assert eintrag["pruefung"]["verstoesse"] == 0                       # Warnungen sperren nicht
+    assert eintrag["pruefung"]["ids"] == ["ids-01-Anforderungen.ids"]
+    # Stufe 6: der GANZE Bericht — jeder Befund mit Text und Beispielen, nicht die Kurzform des Status.
+    with TestClient(_app()) as c:
+        r = c.get(f"/FastAPI/projekte/{p['id']}/cde/verbund/{st['lauf_id']}/bericht")
+        assert r.status_code == 200 and r.headers["content-type"].startswith("application/json"), r.text
+        voll = r.json()
+        assert [b["id"] for b in voll["befunde"]] == [b["id"] for b in st["befunde"]]
+        assert voll["verstoesse"] == 0 and all("sagt" in b and "beispiele" in b for b in voll["befunde"])
+        assert c.get(f"/FastAPI/projekte/{p['id']}/cde/verbund/p-0-000000/bericht").status_code == 404
+        assert c.get(f"/FastAPI/projekte/{p['id']}/cde/verbund/nicht-da/bericht").status_code == 404
+
+
+def test_das_buero_regelwerk_kommt_vor_dem_des_projekts(frische_db, app_conn, projekte_wurzel, tmp_path, monkeypatch):
+    """Stufe 5: Buero-IDS (Buero-Repository, Schluessel `ids:`) gelten in jedem Projekt und stehen vorn."""
+    monkeypatch.setenv("BUERO_ROOT", str(tmp_path / "0_Buero"))
+    starter = Path(__file__).parents[3] / "ifc" / "daten" / "quagg-starter.ids"
+    cde.buero_repo_setzen("ids:starter", {"datei": "quagg-starter.ids", "xml": starter.read_text(encoding="utf-8")})
+    p = projekte.anlegen(app_conn, name="Buero-IDS", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/upload",
+                   files={"datei": ("Anforderungen.ids", starter.read_bytes(), "application/xml")})
+        assert r.status_code == 201, r.text
+    lauf = tmp_path / "lauf"
+    lauf.mkdir()
+    namen = verbund_lauf._ids_ablegen(ordner.finde(p["id"]), lauf)
+    assert namen == ["ids-b01-quagg-starter.ids", "ids-01-Anforderungen.ids"]
+    assert [(lauf / n).read_bytes() for n in namen] == [starter.read_bytes()] * 2
+
+
+@braucht_werkzeug
+@braucht_erdkoerper
+def test_ein_eigenbau_mit_misserfolg_kommt_nicht_ins_register(frische_db, app_conn, projekte_wurzel):
+    """Fahrplan Erdbau-Container, Stufe 1 — der Befund aus Projekt 1337 als Durchstich.
+
+    Zwei Aushuebe liessen sich nicht ableiten (tote Gelaende-Quelle); der Verbund
+    lief trotzdem durch und kam als „geprueft, 0 Verstoesse" ins Register. Jetzt
+    sperrt V10: dasselbe Paket mit einem Misserfolg wird abgelehnt, nichts wird
+    eingetragen — der Grund steht im Status.
+    """
+    p = projekte.anlegen(app_conn, name="Misserfolg", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        gel = _hochladen(c, p["id"], ERDKOERPER)
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/saetze",
+                   json={"name": "Boden", "zweck": "variante", "enthaelt": [gel["sha256"]]})
+        assert r.status_code == 201, r.text
+        paket, _guid = _paket_auf_gelaende(ERDKOERPER, gel)
+        paket["misserfolge"] = [{"globalId": "cde-tot-aushub",
+                                 "grund": "Quelle „cde-mtvxl4co-0tcaoz38\" (gelaende) nicht ableitbar — nicht im Modell"}]
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": r.json()["id"], "modus": "erdbau"},
+                   files={"eigenbau": ("eigenbau.json", json.dumps(paket).encode(), "application/json")})
+        assert r.status_code == 202, r.text
+        st = _warte(c, p["id"], r.json()["lauf_id"])
+    assert st["zustand"] == "abgelehnt", st
+    assert any(z.startswith("V10 ") for z in st["offen"]), st["offen"]
+    v10 = next(b for b in st["befunde"] if b["id"] == "V10")
+    assert v10["zahl"] == 1 and v10["beispiele"][0].startswith("cde-tot-aushub")
+    assert not st.get("dokument")
+    assert not [d for d in cde.register(ordner.finde(p["id"])) if d["datei"].startswith("Erdbau_")]
+
+
+def test_ein_fertiger_lauf_belegt_die_spur_nicht_mehr(tmp_path, monkeypatch):
+    """Der 409-Wettlauf (2026-09-11): der Status-Abruf traegt einen fertigen Lauf ein,
+    der Hintergrund-Task gibt die Spur erst Millisekunden spaeter frei — ein
+    Folgeauftrag in dieser Luecke bekam „es laeuft schon ein Verbund". Belegt ist
+    die Spur nur, solange der Status nicht fertig ist (bei „geprueft": eingetragen).
+    """
+    monkeypatch.setattr(verbund_lauf, "python_pfad", lambda: Path(sys.executable))
+    schleife = asyncio.new_event_loop()
+    halt = asyncio.Event()
+    task = schleife.create_task(halt.wait())            # haengt, bis er abgebrochen wird
+    try:
+        laufordner = tmp_path / "v-1-abcdef"
+        laufordner.mkdir()
+        monkeypatch.setitem(verbund_lauf._laufend, "v-1-abcdef", task)
+        monkeypatch.setitem(verbund_lauf._ordner_der_laeufe, "v-1-abcdef", laufordner)
+
+        def status(**st):
+            (laufordner / "status.json").write_text(json.dumps(st), encoding="utf-8")
+
+        for belegt in ({"zustand": "wartet"}, {"zustand": "laeuft"}, {"zustand": "geprueft"}):
+            status(**belegt)
+            with pytest.raises(verbund_lauf.VerbundBesetzt):
+                verbund_lauf._spur_und_werkzeug()
+        for frei in ({"zustand": "geprueft", "dokument": {"datei": "Erdbau_Boden_R01.ifc"}},
+                     {"zustand": "abgelehnt"}, {"zustand": "fehler"}):
+            status(**frei)
+            verbund_lauf._spur_und_werkzeug()
+        assert "v-1-abcdef" in verbund_lauf._laufend       # der Task bleibt referenziert
+    finally:
+        task.cancel()
+        schleife.run_until_complete(asyncio.gather(task, return_exceptions=True))
+        schleife.close()
+

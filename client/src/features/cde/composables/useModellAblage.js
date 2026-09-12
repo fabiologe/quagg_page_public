@@ -23,7 +23,7 @@
 
 import { ref } from 'vue';
 import { fehlerLesbar, repo } from '../services/RepoFacade.js';
-import { computeModelIdentity } from '../services/ModelIdentity.js';
+import { computeModelIdentity, kopfAblehnung } from '../services/ModelIdentity.js';
 
 /** Wie viele Modelle die lokale Ablage höchstens behält. */
 const MAX_RECENT_MODELS = 5;
@@ -73,6 +73,12 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
      */
     async function _ladeBytes(buf, name, { persist = true, inMeter = false } = {}) {
         const bytes = new Uint8Array(buf);
+        // ERST DER KOPF (2026-09-11): eine PDF mit der Endung .ifc lief bis in
+        // den Importer und scheiterte dort mit einer Bibliotheksmeldung.
+        // Dieselbe Regel wie beim Upload (backend/app/ifc/kopf.py) — sie lehnt
+        // nur ab, was sicher keine IFC-Datei ist. `_mitSperre` zeigt den Grund.
+        const abgelehnt = kopfAblehnung(bytes, name);
+        if (abgelehnt) throw new Error(abgelehnt);
         // Die IDENTITÄT kommt aus den ORIGINALBYTES — immer. Eine
         // Einheiten-Umrechnung ist unsere Lesart, keine neue Lieferung: die
         // Prüfsumme muss die des Planers bleiben, sonst zerfiele das

@@ -21,26 +21,37 @@
         </button>
       </div>
 
-      <!-- Tree content -->
+      <!-- Stufe 8 (Fahrplan Erdbau-Container, T6): je geladenem Modell ein Abschnitt
+           mit seiner Herkunft — bis 2026-09-11 stand hier nur das ERSTE Modell, während
+           die Fußzeile „n Modelle" zählte. Aushübe hängen unter ihrem Wirt, Gruppen
+           (Fachmodell, Vorgang, System) stehen als eigener Zweig daneben. -->
       <div class="sw-body" ref="bodyRef">
-        <div v-if="!ifc.spatialTree" class="empty-state">
+        <div v-if="!ifc.spatialBaeume.length" class="empty-state">
           <CdeIcon class="empty-icon" name="bim" :size="30" />
           <div class="empty-text">IFC-Modell laden um die<br>Gebäudestruktur anzuzeigen</div>
         </div>
 
-        <IfcSpatialTree
-          v-else
-          :tree="ifc.spatialTree"
-          :bare="true"
-          :filter="filterText"
-          @toggle-storey="onToggleStorey"
-          @zoom-to="onZoomTo"
-        />
+        <section v-for="baum in sichtbar" :key="baum.modelId" class="sw-modell" :data-modell="baum.modelId">
+          <header class="sw-kopf" :class="{ aktiv: aktiv === baum.modelId }" @click="umschalten(baum.modelId)">
+            <CdeIcon :name="zu.has(baum.modelId) ? 'chevron-right' : 'chevron-down'" :size="12" />
+            <span class="sw-name" :title="baum.name">{{ baum.name }}</span>
+            <span class="sw-chip" :class="`sw-chip--${kopf(baum).art}`" :title="kopf(baum).titel">{{ kopf(baum).text }}</span>
+            <span v-if="kopf(baum).stand" class="sw-stand">{{ kopf(baum).stand }}</span>
+            <span class="sw-zahl" :title="`${baum.knoten} Knoten in der Gliederung`">{{ baum.knoten }}</span>
+          </header>
+          <template v-if="!zu.has(baum.modelId)">
+            <IfcSpatialTree v-if="baum.wurzel" :tree="baum.wurzel" :bare="true" :filter="filterText"
+                            @toggle-storey="onToggleStorey" @zoom-to="onZoomTo" />
+            <div v-else class="sw-leer">ohne Raumgliederung</div>
+            <IfcSpatialTree v-if="baum.gruppen" :tree="baum.gruppen" :bare="true" :filter="filterText"
+                            @toggle-storey="onToggleStorey" @zoom-to="onZoomTo" />
+          </template>
+        </section>
       </div>
 
       <!-- Footer stats -->
-      <div v-if="ifc.spatialTree" class="sw-footer">
-        <span class="footer-info">{{ ifc.modelList.length }} Modell{{ ifc.modelList.length !== 1 ? 'e' : '' }}</span>
+      <div v-if="ifc.spatialBaeume.length" class="sw-footer">
+        <span class="footer-info">{{ ifc.spatialBaeume.length }} Modell{{ ifc.spatialBaeume.length !== 1 ? 'e' : '' }}</span>
       </div>
 
     </div>
@@ -48,29 +59,65 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import IfcSpatialTree from './IfcSpatialTree.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { herkunftChip } from '../services/Herkunft.js';
+import { trifft } from '../services/Bauwerksstruktur.js';
 
 // Kein 'close'-Emit mehr: Das Schließen liegt bei CdePanel, das die
 // Leiste kennt und den Panel-Store führt.
 const ifc  = useIfcStore();
+const cde  = useCdeStore();
 const api = useViewerApi();
 
 const filterText = ref('');
 const bodyRef    = ref(null);
+// Zugeklappte Abschnitte und der zuletzt berührte. „Aufklappen" wirkt NUR dort
+// (Landmine des Fahrplans: IFCOUT hat 187 000 Entitäten — alles auf einmal hängt den Tab).
+const zu    = ref(new Set());
+const aktiv = ref(null);
 
-async function onToggleStorey({ localId, visible }) {
-  await api.setStoreyVisible(localId, visible);
+const sichtbar = computed(() => ifc.spatialBaeume.filter(b =>
+  !filterText.value || trifft(b.wurzel, filterText.value) || trifft(b.gruppen, filterText.value)));
+
+/** Der Kopf je Modell: Chip und Stand aus dem Register — reaktiv, das Register kommt oft nach dem Modell. */
+function kopf(baum) {
+  const dok = baum.sha256 ? (cde.dokumente ?? []).find(d => d.sha256 === baum.sha256) : null;
+  const stand = dok ? `R${dok.revision ?? '?'} · ${dok.status ?? 'WIP'}` : '';
+  const chip = dok ? herkunftChip(dok) : null;
+  if (chip) return { ...chip, stand };
+  return dok ? { art: 'lieferung', text: 'Lieferung', titel: dok.name ?? '', stand }
+             : { art: 'lokal', text: 'lokal', titel: 'nicht im Register', stand: '' };
 }
 
-async function onZoomTo({ localId }) {
-  await api.zoomToLocalId(localId);
+function umschalten(modelId) {
+  const neu = new Set(zu.value);
+  if (neu.has(modelId)) neu.delete(modelId); else neu.add(modelId);
+  zu.value = neu;
+  aktiv.value = modelId;
 }
 
-function expandAll()   { bodyRef.value?.querySelectorAll('.caret[data-open="false"]').forEach(el => el.click()); }
+async function onToggleStorey({ localId, visible, modelId }) {
+  if (modelId != null) aktiv.value = modelId;
+  await api.setStoreyVisible(localId, visible, modelId ?? null);
+}
+
+async function onZoomTo({ localId, modelId }) {
+  if (modelId != null) aktiv.value = modelId;
+  await api.zoomToLocalId(localId, modelId ?? null);
+}
+
+/** Der Abschnitt, auf den „Aufklappen" wirkt: der zuletzt berührte, sonst der erste offene. */
+function _abschnitt() {
+  const id = aktiv.value ?? sichtbar.value.find(b => !zu.value.has(b.modelId))?.modelId;
+  if (id == null) return null;
+  return [...(bodyRef.value?.querySelectorAll('.sw-modell') ?? [])].find(s => s.dataset.modell === String(id)) ?? null;
+}
+function expandAll()   { _abschnitt()?.querySelectorAll('.caret[data-open="false"]').forEach(el => el.click()); }
 function collapseAll() { bodyRef.value?.querySelectorAll('.caret[data-open="true"]').forEach(el => el.click()); }
 
 // Sprint P/AP-12: Die beiden Knöpfe saßen im entfallenen Modal-Kopf. Sie
@@ -147,6 +194,24 @@ defineExpose({ expandAll, collapseAll });
   text-align: center;
   line-height: 1.5;
 }
+
+/* ── Abschnitt je Modell (Stufe 8) ── */
+.sw-modell + .sw-modell { border-top: 1px solid var(--cde-tint-weak); }
+.sw-kopf {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.6rem; cursor: pointer; user-select: none;
+  position: sticky; top: 0; z-index: 1;
+  background: var(--cde-float-deep); color: var(--cde-text-soft); font-size: 0.74rem;
+}
+.sw-kopf.aktiv { color: var(--cde-text-bright); }
+.sw-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sw-chip {
+  flex-shrink: 0; font-size: 0.62rem; padding: 0.05rem 0.35rem;
+  border: 1px solid var(--cde-tint); border-radius: var(--cde-radius-sm); color: var(--cde-text-dimmer);
+}
+.sw-chip--erdbau, .sw-chip--verbund { color: var(--cde-accent-soft); border-color: var(--cde-accent-soft); }
+.sw-stand, .sw-zahl { flex-shrink: 0; font-size: 0.62rem; color: var(--cde-text-dimmer); font-variant-numeric: tabular-nums; }
+.sw-leer { padding: 0.4rem 1.4rem; font-size: 0.7rem; color: var(--cde-text-dimmer); }
 
 /* ── Footer ── */
 .sw-footer {

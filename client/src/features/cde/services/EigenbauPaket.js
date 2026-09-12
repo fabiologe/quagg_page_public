@@ -45,13 +45,12 @@
  * Positions-/Indexfelder herein (aus `IfcAutor.eigenbauGeometrien`).
  */
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
+import { istAushub } from './Kategorien.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
 export const SCHWEISS_M = 0.001;
 
-/** Welche IFC-Klassen sind AUSHUB (brauchen einen Wirt)? */
-const AUSHUB_KLASSEN = new Set(['IFCEARTHWORKSCUT']);
 
 /**
  * Welt-Positionen (x, y, z je Ecke) → Landeskoordinaten (Ost, Nord, Höhe).
@@ -122,12 +121,19 @@ export function mitUrsprung(punkte) {
  * Quellen zurückgegangen — bis zu einem exportierten Bauteil oder einem
  * gelieferten. Zyklen sind durch das Journal ausgeschlossen (Teil XIV); ein
  * Deckel schützt trotzdem.
+ *
+ * Die `historie` (letzter bekannter Bauplan je Kennung) trägt die Kette durch
+ * ZURÜCKGENOMMENES (Fahrplan Erdbau-Container, Stufe 1): ohne sie blieb der
+ * Wirt eines Aushubs, dessen Anzeige zurückgenommen war, die tote `cde-`-Kennung
+ * — und der Server lehnte „Wirt ohne Registerdokument" ab. Die Regel selbst
+ * bleibt die alte (jedes nicht exportierte eigene Glied wird durchlaufen) —
+ * sie ist weiter als `urGelaendeVon`, das nur über Anzeigeformen läuft.
  */
-export function wirtVon(plan, stand, exportiert) {
+export function wirtVon(plan, stand, exportiert, historie = null) {
     let gid = plan?.parameter?.quellen?.gelaende ?? null;
     for (let tiefe = 0; gid && tiefe < 16; tiefe++) {
         if (!String(gid).startsWith('cde-') || exportiert.has(gid)) return gid;
-        const vorher = stand?.get?.(gid);
+        const vorher = stand?.get?.(gid) ?? historie?.get?.(gid);
         const weiter = vorher?.parameter?.quellen?.gelaende ?? null;
         if (!weiter) return gid;            // Ende der Kette — dann eben der letzte bekannte
         gid = weiter;
@@ -143,7 +149,7 @@ export function wirtVon(plan, stand, exportiert) {
  *        kennzahlen, mengen, fachmodell, vorgang, schneidetAuffuellung}
  * @returns {object|null}  null, wenn nach dem Verschweissen nichts übrig bleibt
  */
-export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN } = {}) {
+export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN, historie = null } = {}) {
     const plan = teil?.wert ?? {};
     const landes = nachLandes(teil.positionen, nachProjekt);
     const { punkte, dreiecke, entartet } = verschweisse(landes, teil.index ?? null);
@@ -152,8 +158,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
     const f = farbeFuer(klasse, farbsatz);
     const q = plan?.parameter?.quellen ?? {};
-    const ur = q.gelaende ? wirtVon(plan, stand, exportiert) : null;
-    const aushub = AUSHUB_KLASSEN.has(klasse);
+    const ur = q.gelaende ? wirtVon(plan, stand, exportiert, historie) : null;
+    const aushub = istAushub(klasse);          // Wurzel im Baum (Kategorien.js): Wirt = Ur-Gelände
     return {
         cdeId: teil.globalId,
         klasse,
@@ -211,13 +217,13 @@ function _quellenFuersPaket(q, ur) {
 export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
                                    projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
                                    anzeigeformen = [], quellDokumente = [], journal = null,
-                                   jetzt = new Date() } = {}) {
+                                   jetzt = new Date(), historie = null } = {}) {
     if (typeof nachProjekt !== 'function') throw new Error('EigenbauPaket: ohne nachProjekt keine Landeskoordinaten');
     const exportiert = new Set(teile.map(t => t.globalId));
     const bauteile = [];
     const uebersprungen = [];
     for (const t of teile) {
-        const b = bauteilFuersPaket(t, { nachProjekt, stand, exportiert, farbsatz });
+        const b = bauteilFuersPaket(t, { nachProjekt, stand, exportiert, farbsatz, historie });
         if (b) bauteile.push(b);
         else uebersprungen.push({ cdeId: t.globalId, grund: 'nach dem Verschweissen keine Fläche übrig' });
     }

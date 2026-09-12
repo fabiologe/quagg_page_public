@@ -124,7 +124,7 @@ def test_herkunft_bleibt_lesbar(verbund_boden):
     f = ifcopenshell.open(ziel)
     gruppen = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Fachmodell"]
     assert {g.Name for g in gruppen} == {METER.name, MILLIMETER.name}
-    saetze = [p for p in f.by_type("IfcPropertySet") if p.Name == V.PSET_HERKUNFT]
+    saetze = [p for p in f.by_type("IfcPropertySet") if p.Name == V.PSET_FACHMODELL]
     assert len(saetze) == len(gruppen)
     werte = {e.Name: e.NominalValue.wrappedValue
              for e in saetze[0].HasProperties}
@@ -279,3 +279,99 @@ def test_provi_wandert_ueber_ifc4_und_behaelt_ihre_farben(tmp_path):
     # Genau hier stand beim ersten Lauf eine 0 neben `stile_gerettet == 37`.
     assert len(f.by_type("IfcStyledItem")) > 0
     assert pruefe(ziel)["verstoesse"] == 0
+
+
+# ── Eine Site (Fahrplan Erdbau-Container, Stufe 2) ──────────────────────────
+
+@haben_boden
+def test_der_verbund_hat_genau_eine_site(verbund_boden):
+    """Die Sites der Lieferungen gehen in der des Verbunds auf.
+
+    Bis 2026-09-11 hing jede Quell-Site UNTER der des Verbunds (Projekt 1337: vier
+    IfcSite). V05 zaehlte eine Raumwurzel und war zufrieden — jeder Empfaenger sah
+    vier Standorte.
+    """
+    ziel, bericht = verbund_boden
+    f = ifcopenshell.open(ziel)
+    sites = f.by_type("IfcSite")
+    assert len(sites) == 1 and bericht["raumwurzeln"] == 1
+    gebaeude = f.by_type("IfcBuilding")
+    assert len(gebaeude) == 2
+    assert all(g.Decomposes[0].RelatingObject == sites[0] for g in gebaeude)
+    assert {q["name"]: [s["name"] for s in q["sites_aufgeloest"]] for q in bericht["quellen"]} == \
+        {METER.name: ["Standort"], MILLIMETER.name: ["Standort"]}
+    # BODEN 2, BODEN3 7 — vorher direkt in ihren Quell-Sites enthalten (gemessen 2026-09-11)
+    assert sum(len(r.RelatedElements) for r in sites[0].ContainsElements or ()) == 2 + 7
+
+
+@haben_boden
+def test_die_lage_ueberlebt_das_aufloesen(verbund_boden):
+    """Die Kinder zeigen auf die PLATZIERUNG der Quell-Site, nicht auf die Site — keine Koordinate wandert."""
+    import ifcopenshell.util.placement as PL
+    ziel, _bericht = verbund_boden
+    f = ifcopenshell.open(ziel)
+    quelle = ifcopenshell.open(METER)
+    abweichung = []
+    for p in quelle.by_type("IfcProduct"):
+        if not p.ObjectPlacement or p.is_a("IfcSite"):
+            continue
+        a = PL.get_local_placement(p.ObjectPlacement)[:3, 3]
+        b = PL.get_local_placement(f.by_guid(p.GlobalId).ObjectPlacement)[:3, 3]
+        abweichung.append(float(abs(a - b).max()))
+    assert abweichung and max(abweichung) < 1e-6
+
+
+def test_eine_site_geht_auf_attribute_und_saetze_wandern_die_georeferenz_nicht():
+    import ifcopenshell.guid
+    g = V.zielgeruest("T", crs=None, schluessel="t")
+    f, unsere = g["datei"], g["site"]
+    platz = f.create_entity("IfcLocalPlacement", RelativePlacement=f.create_entity(
+        "IfcAxis2Placement3D", Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))))
+    fremd = f.create_entity("IfcSite", GlobalId=ifcopenshell.guid.new(), Name="Standort", ObjectPlacement=platz,
+                            RefLatitude=(50, 7, 12, 0), RefElevation=301.5)
+    haus = f.create_entity("IfcBuilding", GlobalId=ifcopenshell.guid.new(), Name="Haus")
+    f.create_entity("IfcRelAggregates", GlobalId=ifcopenshell.guid.new(), RelatingObject=fremd, RelatedObjects=[haus])
+    wand = f.create_entity("IfcWall", GlobalId=ifcopenshell.guid.new(), Name="W")
+    f.create_entity("IfcRelContainedInSpatialStructure", GlobalId=ifcopenshell.guid.new(),
+                    RelatedElements=[wand], RelatingStructure=fremd)
+    V._merkmale(f, g["besitz"], fremd, "Pset_SiteCommon", {"BuildableArea": 12})
+    V._merkmale(f, g["besitz"], fremd, V.PSET_GEOREF, {"CRS": "EPSG:25832"})
+    befund = V.Befund(name="Lieferung")
+    assert V._site_aufloesen(f, g, fremd, befund) is True
+    assert f.by_type("IfcSite") == [unsere]
+    assert haus.Decomposes[0].RelatingObject == unsere
+    assert wand.ContainedInStructure[0].RelatingStructure == unsere
+    assert (unsere.RefLatitude, unsere.RefElevation) == ((50, 7, 12, 0), 301.5)
+    assert set(V._merkmalsaetze(unsere)) == {"Pset_SiteCommon"}          # die Georeferenz setzt der Verbund selbst
+    assert befund.sites_aufgeloest[0]["merkmalsaetze_verworfen"] == [V.PSET_GEOREF]
+    assert V._leere_beziehungen_entfernen(f) == 1                        # die leer gewordene Georeferenz-Beziehung
+
+
+def test_ein_widerspruch_laesst_die_site_stehen():
+    import ifcopenshell.guid
+    g = V.zielgeruest("T", crs=None, schluessel="t2")
+    f, unsere = g["datei"], g["site"]
+    unsere.RefLatitude = (51, 0, 0, 0)
+    fremd = f.create_entity("IfcSite", GlobalId=ifcopenshell.guid.new(), Name="Anderswo", RefLatitude=(50, 7, 12, 0))
+    befund = V.Befund(name="Lieferung")
+    assert V._site_aufloesen(f, g, fremd, befund) is False
+    assert len(f.by_type("IfcSite")) == 2 and not befund.sites_aufgeloest
+    assert "RefLatitude" in befund.warnungen[0]
+
+
+def test_zwei_fassungen_desselben_programms_bleiben_eindeutig():
+    """UR1: ein Erdbau-Dokument der Fassung 1 im Verbund der Fassung 2 — zwei Nennungen, zwei Kennungen.
+
+    Mit der Fassung 2 (Fahrplan Erdbau-Container, Stufe 3) traf das jedes
+    Erdbau-Dokument, das vorher im Register lag: gleiche ApplicationIdentifier,
+    andere Version — `_einmalige_verschmelzen` liess beide stehen, UR1 lehnte ab.
+    """
+    g = V.zielgeruest("T", crs=None, schluessel="ur1")
+    f = g["datei"]
+    (unsere,) = f.by_type("IfcApplication")
+    f.create_entity("IfcApplication", ApplicationDeveloper=unsere.ApplicationDeveloper, Version="1",
+                    ApplicationFullName=unsere.ApplicationFullName, ApplicationIdentifier=unsere.ApplicationIdentifier)
+    bericht = V._einmalige_verschmelzen(f)
+    kennungen = [a.ApplicationIdentifier for a in sorted(f.by_type("IfcApplication"), key=lambda a: a.id())]
+    assert kennungen == ["quagg-cde", "quagg-cde 1"]                     # unsere bleibt, wie sie ist
+    assert unsere.Version == V.FASSUNG and bericht == {"IfcApplication (Kennung um Fassung ergaenzt)": 1}

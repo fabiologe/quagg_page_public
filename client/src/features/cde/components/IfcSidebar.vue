@@ -33,7 +33,7 @@
           <button class="entity-header" @click="showEntityDetail = !showEntityDetail">
             <span class="entity-label">{{ entityInfo?.label || entityInfo?.name || element.type || '—' }}</span>
             <span class="entity-name">{{ entityInfo?.name || element.type }}</span>
-            <span v-if="entityInfo?.domain" class="entity-domain">{{ entityInfo.domain }}</span>
+            <span v-if="fachbereich" class="entity-domain">{{ fachbereich }}</span>
             <span class="entity-chevron">{{ showEntityDetail ? '▲' : '▼' }}</span>
           </button>
 
@@ -67,6 +67,8 @@
                 <span v-if="element.predefinedType" class="badge badge-predtype">
                   {{ element.predefinedType }}
                 </span>
+                <span v-if="entityInfo.abgekuendigt" class="badge badge-schema">abgekündigt</span>
+                <span v-if="entityInfo.nachfolger" class="badge badge-schema">in 4.3: {{ entityInfo.nachfolger }}</span>
               </div>
 
               <!-- EXPRESS-Attribute -->
@@ -180,6 +182,7 @@ import { ref, computed, reactive, watch } from 'vue';
 import PsetBrowser from './PsetBrowser.vue';
 import { getEntityInfo } from '../data/entity-schema.js';
 import { getPsetsForType } from '../data/pset-templates.js';
+import { fachbereichVon } from '../data/fachbereiche.js';
 
 const props = defineProps({
   element:   { type: Object, required: true },
@@ -211,9 +214,13 @@ watch(
 
 // ── derived ─────────────────────────────────────────────────────────────────
 const entityInfo = computed(() => getEntityInfo(props.element.type));
+// Anzeige-Etikett aus dem Baum (data/fachbereiche.js) — kein Schemawissen.
+const fachbereich = computed(() => fachbereichVon(entityInfo.value?.hierarchy));
 
+// Über die Vererbung und mit PredefinedType: eine Vorlage für IfcElement gilt
+// für jede Wand, eine für IfcActuator/ELECTRICACTUATOR nur für diesen Typ.
 const applicablePsets = computed(() =>
-  getPsetsForType(props.element.type).filter(([, t]) => t.applicableTo[0] !== '*')
+  getPsetsForType(props.element.type, props.element.predefinedType)
 );
 
 // ── actions ─────────────────────────────────────────────────────────────────

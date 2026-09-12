@@ -202,6 +202,8 @@ export function useNachspielen({ engine, aenderungen } = {}) {
             );
             const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
                 globalIdZuLocalId: localIdKarte,
+                // Die Kette zum Ur läuft durch Zurückgenommenes (Fahrplan Erdbau-Container, Stufe 1).
+                historie: aenderungen?.historischerStand?.('erzeugt') ?? null,
             });
 
             // Was beim Anwenden scheiterte, ist kein Erfolg — es wandert zu den

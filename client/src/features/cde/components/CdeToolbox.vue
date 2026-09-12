@@ -53,6 +53,21 @@
       </p>
     </details>
 
+    <!-- IMPORT (IFC-Konsistenz, Stufe 4c). Je Modell, was die Datei über sich
+         sagt. Hier wird nichts abgelehnt — das Urteil spricht das Prüftor im
+         Backend; der Client sagt, was er beim Laden ohnehin weiß. -->
+    <details v-for="b in importBefunde" :key="b.modelId" class="tb-geo"
+             :open="b.texte.some(t => t.schwere === 'warnung')">
+      <summary>
+        Import · {{ b.modelId }}
+        <span class="tb-dim">{{ b.schema ?? 'Schema unbekannt' }} · {{ b.bauteile }} Bauteile</span>
+      </summary>
+      <p v-for="(t, i) in b.texte" :key="i" class="tb-warnung">
+        <CdeIcon :name="t.schwere === 'warnung' ? 'warn' : 'info'" :size="12" /> {{ t.text }}
+      </p>
+      <p v-if="!b.texte.length" class="tb-dim">Nichts Auffälliges.</p>
+    </details>
+
     <!-- DER MODUS. Er steht ganz oben und immer, weil er die Antwort auf
          „warum tut hier nichts etwas?" ist. Ausserhalb des Modus zeigt die
          Toolbox trotzdem die HERLEITUNG weiter — was an einem Bauteil möglich
@@ -203,7 +218,7 @@
 
           <dt>Vererbung</dt>
           <dd v-if="!herleitung.imWoerterbuch" class="tb-dim">
-            nicht im IFC-4.3-Wörterbuch — die Vererbung greift hier nicht
+            in keinem IFC-Schema (2x3, 4, 4.3) — die Vererbung greift hier nicht
           </dd>
           <dd v-else class="tb-hierarchie">
             <span
@@ -353,6 +368,17 @@ const georeferenz = computed(() => {
   void ifc.modelList.length;                       // reaktiver Anker
   const alle = api.getGeoreferenzen?.() ?? {};
   return Object.values(alle)[0] ?? null;
+});
+
+/**
+ * Was jede geladene Datei über sich sagt (services/ImportBefund.js): Schema,
+ * abgekündigte und fremde Klassen, Proxy-Anteil, fehlende Lesequelle. Je
+ * MODELL, nicht nur das erste — eine Lieferung in IFC2x3 neben einer in 4.3
+ * ist genau der Fall, den man sehen muss.
+ */
+const importBefunde = computed(() => {
+  void ifc.modelList.length;                       // reaktiver Anker, wie oben
+  return Object.entries(api.getImportBefunde?.() ?? {}).map(([modelId, b]) => ({ modelId, ...b }));
 });
 
 /**

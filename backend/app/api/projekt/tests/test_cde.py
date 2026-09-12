@@ -81,6 +81,9 @@ def test_register_upload_revision_status(frische_db, app_conn, projekte_wurzel):
     # der Status geht vorwaerts ueber die Stufen. Der volle Weg unten.
     kaputt = c.put(f"/FastAPI/projekte/{p['id']}/cde/{d1['sha256']}/status", json={"status": "Archived"})
     assert kaputt.status_code == 422 and "ISO-19650-Weg" in kaputt.json()["detail"]
+    # Stufe 4b: WIP -> Shared verlangt fuer ein Modell einen Pruefbericht (hier eingetragen, nicht gerechnet).
+    cde.pruefung_eintragen(app_conn, o, d1["sha256"], {"stand": "test", "verstoesse": 0, "befunde": []},
+                           akteur="pytest")
     for stufe in ("Shared", "Published", "Archived"):
         s = c.put(f"/FastAPI/projekte/{p['id']}/cde/{d1['sha256']}/status", json={"status": stufe})
         assert s.status_code == 200 and s.json()["status"] == stufe
@@ -180,6 +183,8 @@ def test_status_workflow_rechte(frische_db, app_conn, projekte_wurzel):
                files={"datei": ("W.ifc", b"ISO-10303-21;", "application/octet-stream")}).json()
     sha = d["sha256"]
     url = f"/FastAPI/projekte/{p['id']}/cde/{sha}/status"
+    cde.pruefung_eintragen(app_conn, ordner.finde(p["id"]), sha, {"stand": "test", "verstoesse": 0, "befunde": []},
+                           akteur="pytest")                      # Stufe 4b: der Bericht muss da sein
 
     # Mitarbeiter: vorwaerts geht, rueckwaerts von Published nicht.
     assert c.put(url, json={"status": "Shared"}).status_code == 200
@@ -313,3 +318,122 @@ def test_eine_linie_auch_wenn_nur_die_neue_revision_eine_projektkennung_traegt(f
     with pytest.raises(cde.CdeAbgelehnt, match="zwei Revisionen desselben Modells: Gelaende.ifc und Gelaende_R02.ifc"):
         cde._satz_pruefen(cde.manifest_lesen(o), ["a" * 64, "b" * 64])
     assert cde._satz_pruefen(cde.manifest_lesen(o), ["b" * 64, "c" * 64]) == ["b" * 64, "c" * 64]
+
+
+# ── Der Kopf beim Upload (IFC-Konsistenz, Stufe 4a, 2026-09-11) ─────────────
+
+def test_keine_ifc_datei_kommt_nicht_ins_register(frische_db, app_conn, projekte_wurzel):
+    """Eine PDF mit der Endung .ifc landete bis 2026-09-11 als Modell im Register."""
+    p = projekte.anlegen(app_conn, name="KopfTor", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    r = _up(c, p["id"], "Lieferung.ifc", b"%PDF-1.4\n% ISO-10303-21;\n")
+    assert r.status_code == 422 and "STEP-Kopf" in r.json()["detail"], r.text
+    r = _up(c, p["id"], "Paket.ifczip", b"ISO-10303-21;\nHEADER;")
+    assert r.status_code == 422 and "ZIP-Kopf" in r.json()["detail"], r.text
+    o = ordner.finde(p["id"])
+    cde_ordner = o.pfad / "CDE"
+    assert not list(cde_ordner.glob("Lieferung*")) and not list(cde_ordner.glob("Paket*"))
+    assert not list(cde_ordner.glob(".tmp-*")), "abgelehnter Upload hinterliess eine Temporaerdatei"
+    assert cde.manifest_lesen(o)["dokumente"] == []
+
+
+def test_das_register_traegt_schema_und_einheit_aus_dem_kopf(frische_db, app_conn, projekte_wurzel):
+    """Hinweise, kein Urteil: die Millimeter-Lieferung kommt herein und sagt, dass sie eine ist."""
+    from pathlib import Path
+    datei = Path(__file__).parents[5] / "client/src/features/cde/test/BIM26_Gruppe5_BODEN_Erdarbeiten3.ifc"
+    if not datei.is_file():
+        pytest.skip("Gruppendatei liegt nicht im Baum")
+    p = projekte.anlegen(app_conn, name="KopfHinweis", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    e = _up(c, p["id"], "Boden_mm.ifc", datei.read_bytes()).json()
+    assert (e["schema"], e["einheit_hinweis"]) == ("IFC4X3_ADD2", "mm")
+    assert e["projekt_global_id"]
+    # Ein Plan traegt keine Kopfangaben — und bekommt keine erfundenen.
+    plan = _up(c, p["id"], "Plan.pdf", b"%PDF-1.4 ").json()
+    assert "schema" not in plan and "einheit_hinweis" not in plan
+    # Die Registertests laden „ISO-10303-21;" ohne Schemazeile hoch — das bleibt erlaubt.
+    kurz = _up(c, p["id"], "Kurz.ifc", b"ISO-10303-21;\nHEADER;").json()
+    assert kurz["schema"] is None
+
+
+def test_der_kopf_steht_einmal():
+    """Die IFCPROJECT-Regel lebte hier UND im Client; jetzt in app/ifc/kopf.py (Spiegel: ModelIdentity.js)."""
+    from pathlib import Path
+    quelle = Path(cde.__file__).read_text(encoding="utf-8")
+    assert "IFCPROJECT" not in quelle.split("def _projekt_global_id_aus")[0].split("KOPF_BYTES")[-1]
+    assert "re.compile(rb\"IFCPROJECT" not in quelle
+
+
+# ── Pruefbericht vor dem Teilen (IFC-Konsistenz, Stufe 4b, 2026-09-11) ──────
+
+def test_wip_nach_shared_verlangt_einen_pruefbericht(frische_db, app_conn, projekte_wurzel):
+    """Vorhanden, nicht gruen. Plaene brauchen keinen, ADMIN darf springen."""
+    p = projekte.anlegen(app_conn, name="Pruefbericht", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    m = _up(c, p["id"], "Modell.ifc", b"ISO-10303-21;\nHEADER;").json()
+    url = f"/FastAPI/projekte/{p['id']}/cde/{m['sha256']}/status"
+    r = c.put(url, json={"status": "Shared"})
+    assert r.status_code == 422 and "Pruefbericht" in r.json()["detail"], r.text
+    plan = _up(c, p["id"], "Plan.pdf", b"%PDF-1.4").json()
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{plan['sha256']}/status", json={"status": "Shared"}).status_code == 200
+    o = ordner.finde(p["id"])
+    cde.pruefung_eintragen(app_conn, o, m["sha256"], {"stand": "t", "verstoesse": 3, "befunde": []}, akteur="pytest")
+    r = c.put(url, json={"status": "Shared"})
+    assert r.status_code == 200, r.text            # drei Verstoesse — geteilt wird trotzdem, der Bericht ist da
+    reg = {d["sha256"]: d for d in c.get(f"/FastAPI/projekte/{p['id']}/cde").json()["dokumente"]}
+    assert reg[m["sha256"]]["pruefung"]["verstoesse"] == 3
+    zweites = _up(c, p["id"], "Zweites.ifc", b"ISO-10303-21;\nHEADER;v2").json()
+    c.app.dependency_overrides[get_current_active_user] = lambda: SimpleNamespace(role="ADMIN", username="chef")
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{zweites['sha256']}/status",
+                 json={"status": "Shared"}).status_code == 200
+
+
+def test_pruefbericht_regel_gleich_der_des_clients():
+    """Spiegel: StatusWorkflow.js fuehrt dieselben Paare (Muster test_bezugssysteme.py)."""
+    import re
+    from pathlib import Path
+    js = Path(__file__).parents[5] / "client/src/features/cde/services/StatusWorkflow.js"
+    if not js.is_file():
+        pytest.skip("Client liegt nicht im Baum")
+    m = re.search(r"UEBERGANG_VERLANGT_PRUEFUNG = Object\.freeze\(\[(.*?)\]\);", js.read_text(encoding="utf-8"), re.S)
+    assert m, "UEBERGANG_VERLANGT_PRUEFUNG in StatusWorkflow.js nicht gefunden"
+    assert set(re.findall(r"\['(\w+)',\s*'(\w+)'\]", m.group(1))) == cde.UEBERGANG_VERLANGT_PRUEFUNG
+
+
+def test_ein_ids_regelwerk_kommt_als_regelwerk_ins_register(frische_db, app_conn, projekte_wurzel):
+    """Stufe 5: .ids ist ein Regelwerk — kein Modell, kein Kopf-Tor, keine Pruefbericht-Pflicht."""
+    from pathlib import Path
+    starter = Path(__file__).parents[3] / "ifc" / "daten" / "quagg-starter.ids"
+    p = projekte.anlegen(app_conn, name="Regelwerk", honorarmodell="pauschal", akteur="pytest")
+    c = _client()
+    e = _up(c, p["id"], "Anforderungen.ids", starter.read_bytes()).json()
+    assert e["art"] == "regelwerk" and "schema" not in e
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/{e['sha256']}/status", json={"status": "Shared"}).status_code == 200
+
+
+def test_eignung_folgt_dem_status_und_bleibt_wenn_gesetzt(frische_db, app_conn, projekte_wurzel):
+    """E3 (Fahrplan Erdbau-Container): Eignung nach ISO 19650 — Vorgabe je Status, ausdruecklich gesetzt bleibt sie."""
+    p = projekte.anlegen(app_conn, name="Eignung", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    url = f"/FastAPI/projekte/{p['id']}/cde"
+    d = c.post(f"{url}/upload", files={"datei": ("Lageplan.pdf", b"%PDF-1.4", "application/pdf")}).json()
+    assert "eignung" not in d                                            # eine WIP-Lieferung hat keine
+    assert c.put(f"{url}/{d['sha256']}/status", json={"status": "Shared"}).json()["eignung"] == "S2"
+    s = c.put(f"{url}/{d['sha256']}/status", json={"status": "Shared", "eignung": "S3"}).json()
+    assert (s["status"], s["eignung"]) == ("Shared", "S3")               # gesetzt ohne Statuswechsel
+    assert c.put(f"{url}/{d['sha256']}/status", json={"status": "Published"}).json()["eignung"] == "A1"
+    assert c.put(f"{url}/{d['sha256']}/status", json={"status": "Archived", "eignung": "X9"}).status_code == 422
+    assert [x.get("eignung") for x in cde.register(o)] == ["A1"]
+
+
+def test_eignung_gleich_der_des_clients():
+    """Spiegel: StatusWorkflow.js fuehrt dieselben Eignungs-Codes (Muster test_pruefbericht_regel_gleich_der_des_clients)."""
+    import re
+    from pathlib import Path
+    js = Path(__file__).parents[5] / "client/src/features/cde/services/StatusWorkflow.js"
+    if not js.is_file():
+        pytest.skip("Client liegt nicht im Baum")
+    m = re.search(r"EIGNUNG = Object\.freeze\(\{(.*?)\}\);", js.read_text(encoding="utf-8"), re.S)
+    assert m, "EIGNUNG in StatusWorkflow.js nicht gefunden"
+    assert dict(re.findall(r"(\w+): '([^']+)'", m.group(1))) == cde.EIGNUNG

@@ -74,6 +74,22 @@ export const AuftragApi = {
         return (await api.get(`/projekte/${id}/cde/verbund/${laufId}`)).data;
     },
 
+    /**
+     * Ein Registerdokument durch das Prüftor schicken (IFC-Konsistenz, Stufe 4b).
+     * Abgeholt wird über `verbundStatus` — derselbe Laufordner-Vertrag, dieselbe Spur.
+     */
+    async pruefungStarten(id, sha256) {
+        return (await api.post(`/projekte/${id}/cde/${sha256}/pruefung`)).data;
+    },
+
+    /**
+     * Der GANZE Prüfbericht eines Laufs (IFC-Konsistenz, Stufe 6) — jeder Befund mit
+     * Text und Beispielen. 404, sobald der Laufordner weggeräumt ist (MAX_LAEUFE).
+     */
+    async pruefbericht(id, laufId) {
+        return (await api.get(`/projekte/${id}/cde/verbund/${laufId}/bericht`)).data;
+    },
+
     /** Eine Datei des Projektbestands, Pfad relativ zu 1_Projekte (so steht er im Laufstatus). */
     async datei(pfad) {
         return (await api.get('/projects/file', { params: { path: pfad }, responseType: 'blob' })).data;

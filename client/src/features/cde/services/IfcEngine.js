@@ -6,6 +6,7 @@ import { formeNach, massenAus } from './gelaende/Operationen.js';
 import { BAUTEILFARBEN, eigeneFarbe, farbeFuer } from './Bauteilfarben.js';
 import { karteMitEngine } from './GlobalIdKarte.js';
 import { DELTA_MARKE, basisModelId, istDeltaModell } from './DeltaBoxen.js';
+import { strukturBeziehungen } from './Bauwerksstruktur.js';
 import * as THREE from 'three';
 import * as FRAGS from '@thatopen/fragments';
 import { IfcCamera } from './IfcCamera.js';
@@ -34,6 +35,7 @@ import { makeHeightSampler } from './TerrainMesh.js';
 import { GelaendeKanten } from './GelaendeKanten.js';
 import { collectElementTriangles } from './geometry/MeshAcquire.js';
 import { IfcQuelle } from './IfcQuelle.js';
+import { importBefund, zaehltAlsBauteil } from './ImportBefund.js';
 import { inMeterUmrechnen } from './Einheiten.js';
 import { erzeugeEinheitenWorker } from './EinheitenWorker.js';
 import { extractAxisPolylines } from './AxisAnnotations.js';
@@ -84,8 +86,8 @@ const CATEGORY_COLORS = {
     IFCPIPESEGMENT:        new THREE.Color(0.45, 0.55, 0.75),
     IFCPIPESEGMENTTYPE:    new THREE.Color(0.45, 0.55, 0.75),
     IFCPIPEFITTING:        new THREE.Color(0.45, 0.55, 0.75),
-    IFCDUCT:               new THREE.Color(0.80, 0.70, 0.28),
-    IFCDUCTTYPE:           new THREE.Color(0.80, 0.70, 0.28),
+    IFCDUCTSEGMENT:        new THREE.Color(0.80, 0.70, 0.28),
+    IFCDUCTSEGMENTTYPE:    new THREE.Color(0.80, 0.70, 0.28),
     IFCDUCTFITTING:        new THREE.Color(0.80, 0.70, 0.28),
     IFCROOF:               new THREE.Color(0.55, 0.34, 0.22),
     IFCROOFTYPE:           new THREE.Color(0.55, 0.34, 0.22),
@@ -323,6 +325,7 @@ export class IfcEngine {
             components: this.components,
             fitToBox: (box, o) => this.camera.fitToBox(box, o),
             schnitt: this.section,
+            quelleVon: (modelId) => this.quelleVon(modelId),
         });
         this.annotations = new IfcAnnotations({ getWorld: () => this._getWorld(), probePoint,
                                                 probeTreffer: (x, y) => this.probeTreffer(x, y) });
@@ -613,14 +616,19 @@ export class IfcEngine {
             });
             if (quelle) {
                 this._quellen.set(model.modelId, quelle);
+                this._quellenFehler?.delete(model.modelId);
                 this._beziehungenVerwerfen(true);
             } else {
                 console.warn('cde: keine IFC-Quelle für', model.modelId, '— Georeferenz und Achsen bleiben ungelesen');
+                // Der Grund gehört in den Import-Befund, nicht nur in die Konsole.
+                this._quelleFehlt(model.modelId, IfcQuelle.letzterFehler ?? 'OpenModel gab nichts zurück');
             }
         } catch (fehler) {
             // Ohne Quelle läuft alles wie bisher weiter. Sie ist ein Zugewinn,
-            // keine Voraussetzung — der Viewer darf daran nicht hängen.
+            // keine Voraussetzung — der Viewer darf daran nicht hängen. Aber
+            // sie SAGT es: der Import-Befund zeigt den Grund (2026-09-11).
             console.warn('cde: IFC-Quelle', fehler?.message ?? fehler);
+            this._quelleFehlt(model.modelId, String(fehler?.message ?? fehler));
         }
         // Legacy single-model accessor — first model wins
         if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
@@ -755,6 +763,7 @@ export class IfcEngine {
         // Den wasm-Speicher wirklich freigeben — sonst liegt die Datei für
         // immer im Heap, und sie liegt dort schon ein zweites Mal.
         this._quellen.get(modelId)?.schliesse();
+        this._quellenFehler?.delete(modelId);
         this._quellen.delete(modelId);
         this._beziehungenVerwerfen(true);
         this._einheitsUmrechnungen.delete(modelId);
@@ -1596,6 +1605,7 @@ export class IfcEngine {
 
     // ── Raumstruktur & Geschosse (Implementierung in IfcStoreys.js) ─────────
     getSpatialTree()                     { return this.storeys.getSpatialTree(); }
+    getSpatialTrees()                    { return this.storeys.getSpatialTrees(); }
     getStoreyElements(modelId, localId)  { return this.storeys.getStoreyElements(modelId, localId); }
     setStoreyVisible(localId, v, mid)    { return this.storeys.setStoreyVisible(localId, v, mid); }
     getStoreyList()                      { return this.storeys.getStoreyList(); }
@@ -2054,9 +2064,46 @@ export class IfcEngine {
     }
 
     /** Der lebende Lesezugriff auf ein Modell, oder null. */
+    /** Aussparungen und Gruppen eines Modells für die Bauwerksstruktur (Stufe 8) — aus seiner IfcQuelle. */
+    strukturBeziehungen(modelId) { return strukturBeziehungen(this.quelleVon(modelId)); }
+
     quelleVon(modelId) {
         const q = this._quellen.get(modelId) ?? null;
         return q?.lebt() ? q : null;
+    }
+
+    /**
+     * Der Import-Befund je Modell (services/ImportBefund.js, 2026-09-11).
+     *
+     * Die Engine sammelt nur Zahlen — Schema aus der Quelle, Anzahl je
+     * Bauteilklasse —, bewertet wird im reinen Dienst. Ein Modell, dessen
+     * Lesequelle nicht aufging, bekommt einen Befund MIT Grund; vorher stand
+     * der nur in der Konsole, und Georeferenz, Achsen und Geschosshöhen
+     * fehlten still.
+     */
+    importBefunde() {
+        const out = {};
+        for (const [modelId, q] of this._quellen ?? new Map()) {
+            if (!q?.lebt?.()) continue;
+            try {
+                const typen = q.typenImModell()
+                    .filter(({ typ }) => zaehltAlsBauteil(typ))
+                    .map(({ typ }) => ({ typ, anzahl: q.zaehle(typ) }));
+                out[modelId] = importBefund({ schema: q.schema(), typen });
+            } catch (fehler) {
+                out[modelId] = importBefund({ quelle: 'fehlt', grund: String(fehler?.message ?? fehler) });
+            }
+        }
+        for (const [modelId, grund] of this._quellenFehler ?? new Map()) {
+            if (!(modelId in out)) out[modelId] = importBefund({ quelle: 'fehlt', grund });
+        }
+        return out;
+    }
+
+    /** Merken, warum ein Modell keine Lesequelle bekam — für den Import-Befund. */
+    _quelleFehlt(modelId, grund) {
+        if (!this._quellenFehler) this._quellenFehler = new Map();
+        this._quellenFehler.set(modelId, grund);
     }
 
     /**

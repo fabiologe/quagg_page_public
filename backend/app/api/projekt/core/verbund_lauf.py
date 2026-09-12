@@ -47,6 +47,10 @@ from pathlib import Path
 from . import cde, ordner
 from .env import env
 
+# Rein, ohne ifcopenshell: welche Klasse ein Aushub ist, sagt die Wurzel im IFC-Baum
+# (app/ifc/kategorien.py, gespiegelt in der CDE). Hier stand zweimal der Klassenname.
+from app.ifc import kategorien
+
 BACKEND = Path(__file__).resolve().parents[4]          # .../backend
 VORGABE_PYTHON = BACKEND / "app" / "ifc" / ".venv-ifc" / "bin" / "python"
 LAUF_ORDNER = "_verbund"
@@ -58,7 +62,8 @@ MODI = ("verbund", "erdbau")
 PRAEFIX = {"verbund": cde.VERBUND_PRAEFIX, "erdbau": cde.ERDBAU_PRAEFIX}
 # `herkunft.art` erzeugter Dokumente — keine taugt als Gelaende eines Erdbaus.
 ERZEUGT = ("verbund", "erdbau")
-_LAUF_ID = re.compile(r"^v-[0-9a-f]+-[0-9a-f]{6}$")
+# v- = Verbund/Erdbau, p- = Pruefung eines Registerdokuments (Stufe 4b).
+_LAUF_ID = re.compile(r"^[vp]-[0-9a-f]+-[0-9a-f]{6}$")
 
 # lauf_id -> Task. Mit workers=1 ist das die ganze Wahrheit ueber laufende
 # Verbuende in diesem Server; was ein Neustart abreisst, erkennt `status()` an
@@ -104,6 +109,31 @@ def _schreibe(pfad: Path, daten: dict) -> None:
 
 
 # ── Auftrag ─────────────────────────────────────────────────────────────────
+
+def _ids_ablegen(o: ordner.Ordner, laufordner: Path) -> list[str]:
+    """Die IDS-Regelwerke in den Laufordner — der Unterprozess prueft gegen sie (Stufe 5).
+
+    Zuerst die des Bueros (Buero-Repository, Schluessel `ids:…`, gelten in jedem
+    Projekt), dann die des Projekts (Register: Art "regelwerk", nicht
+    archiviert). KOPIERT, nicht verlinkt: der Laufordner ist der ganze Vertrag,
+    und ein spaeter geaendertes Regelwerk soll den Bericht dieses Laufs nicht
+    nachtraeglich luegen lassen.
+    """
+    namen = []
+    for i, w in enumerate(cde.buero_regelwerke(), 1):
+        name = f"ids-b{i:02d}-{w['datei']}"
+        (laufordner / name).write_text(w["xml"], encoding="utf-8")
+        namen.append(name)
+    werke = [d for d in cde.register(o) if d.get("art") == "regelwerk" and d.get("status") != "Archived"]
+    for i, d in enumerate(werke, 1):
+        quelle = o.pfad / cde.ORDNER / d["datei"]
+        if not quelle.is_file():
+            continue
+        name = f"ids-{i:02d}-{d['datei']}"
+        shutil.copyfile(quelle, laufordner / name)
+        namen.append(name)
+    return namen
+
 
 def _modelldatei(o: ordner.Ordner, d: dict, hindernisse: list) -> dict | None:
     """Ein Registerdokument als Quelle — oder ein Hindernis mit Namen."""
@@ -231,7 +261,7 @@ def _auftrag_erdbau(o: ordner.Ordner, satz: dict, bekannt: dict, *, projektname:
     satz_name = satz.get("name") or satz["id"]
     if not isinstance(paket, dict):
         raise cde.CdeAbgelehnt("Erdbau braucht den Stand der CDE (Eigenbau-Paket) — ohne ihn gibt es keinen Aushub")
-    aushuebe = [b for b in paket.get("bauteile") or [] if str(b.get("klasse", "")).upper() == "IFCEARTHWORKSCUT"]
+    aushuebe = [b for b in paket.get("bauteile") or [] if kategorien.ist_aushub(b.get("klasse"))]
     if not aushuebe:
         raise cde.CdeAbgelehnt("das Paket enthaelt keinen Aushub — ein Erdbau-Dokument ohne Erdbau ist keins")
     hindernisse, quellen, globalids = [], [], {}
@@ -281,6 +311,45 @@ def _auftrag_erdbau(o: ordner.Ordner, satz: dict, bekannt: dict, *, projektname:
 
 # ── Lauf ────────────────────────────────────────────────────────────────────
 
+# Der Laufordner je laufendem Task — damit die Spur am STATUS sieht, ob ein Lauf
+# noch rechnet (`_belegt`).
+_ordner_der_laeufe: dict = {}
+
+
+def _belegt(kennung: str, task) -> bool:
+    """Belegt dieser Lauf die Spur? Solange sein Unterprozess rechnet — nicht mehr,
+    sobald sein Status fertig ist (bei „geprueft": eingetragen).
+
+    Der 409-Wettlauf (Fahrplan Erdbau-Container, 2026-09-11): der Status-Abruf
+    traegt einen fertigen Lauf ein, der Hintergrund-Task gibt die Spur erst
+    Millisekunden spaeter frei — ein Folgeauftrag in dieser Luecke bekam „es
+    laeuft schon ein Verbund", obwohl nichts mehr rechnete. Der Task bleibt
+    trotzdem in `_laufend` (eine Referenz, sonst verwirft asyncio ihn mitten im
+    Eintragen); er belegt nur nicht mehr.
+    """
+    if task.done():
+        return False
+    pfad = _ordner_der_laeufe.get(kennung)
+    st = _lies(pfad / "status.json") if pfad else {}
+    zustand = st.get("zustand")
+    return not (zustand in FERTIG and (zustand != "geprueft" or st.get("dokument")))
+
+
+def _spur_und_werkzeug() -> None:
+    """Die EINE Spur (einer nach dem anderen) und das Werkzeug — fuer Verbund UND Pruefung."""
+    for kennung in [k for k, t in _laufend.items() if t.done()]:
+        _laufend.pop(kennung, None)
+        _ordner_der_laeufe.pop(kennung, None)
+    belegt = [k for k, t in _laufend.items() if _belegt(k, t)]
+    if belegt:
+        raise VerbundBesetzt(
+            f"es laeuft schon ein Verbund ({belegt[0]}) — "
+            "der Server rechnet einen nach dem anderen")
+    py = python_pfad()
+    if not py.is_file():
+        raise WerkzeugFehlt(f"IFC-Werkzeug fehlt ({py}) — Einrichtung: backend/app/ifc/README.md")
+
+
 async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
                  projektname: str | None = None, crs: str | None = None,
                  eigenbau: bytes | None = None, modus: str = "verbund") -> dict:
@@ -292,15 +361,7 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
     Unterprozess (die Tabelle lebt beim Werkzeug), gleich als erster Schritt:
     ein unbekanntes System scheitert nach einer Sekunde, nicht nach zwei Minuten.
     """
-    for kennung in [k for k, t in _laufend.items() if t.done()]:
-        _laufend.pop(kennung, None)
-    if _laufend:
-        raise VerbundBesetzt(
-            f"es laeuft schon ein Verbund ({next(iter(_laufend))}) — "
-            "der Server rechnet einen nach dem anderen")
-    py = python_pfad()
-    if not py.is_file():
-        raise WerkzeugFehlt(f"IFC-Werkzeug fehlt ({py}) — Einrichtung: backend/app/ifc/README.md")
+    _spur_und_werkzeug()
 
     paket = None
     if eigenbau is not None:
@@ -321,12 +382,14 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
                             modus=(modus or "verbund").strip().lower(), paket=paket)
     auftrag["bearbeiter"] = akteur
     auftrag["crs"] = (crs or "").strip().upper() or None
+    # Wo die Registerdateien liegen — `Location` ihrer Dokumentverweise (app/ifc/herkunft.py).
+    auftrag["ablage"] = f"{o.phase}/{o.ordnername}/{cde.ORDNER}"
     if eigenbau is not None:
         teile = paket.get("bauteile") or []
         auftrag["eigenbau"] = {
             "groesse": len(eigenbau), "sha256": hashlib.sha256(eigenbau).hexdigest(),
             "version": paket.get("version"),
-            "aushuebe": sum(1 for b in teile if str(b.get("klasse", "")).upper() == "IFCEARTHWORKSCUT"),
+            "aushuebe": sum(1 for b in teile if kategorien.ist_aushub(b.get("klasse"))),
             "vorgaenge": len({(b.get("vorgang") or {}).get("ableitung") for b in teile if b.get("vorgang")}),
         }
     namen = [q["name"] for q in auftrag["quellen"]] + (["CDE-Eigenbau"] if eigenbau is not None else [])
@@ -334,6 +397,7 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
     lauf_id = f"v-{int(time.time()):x}-{secrets.token_hex(3)}"
     laufordner = _laufordner(o, lauf_id)
     laufordner.mkdir(parents=True)
+    auftrag["ids"] = _ids_ablegen(o, laufordner)
     _schreibe(laufordner / "auftrag.json", auftrag)
     if eigenbau is not None:
         # VOR dem Start: der Unterprozess liest es als Erstes.
@@ -344,9 +408,44 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
         "quellen": namen, "weggelassen": auftrag["weggelassen"],
     })
     _laufend[lauf_id] = asyncio.create_task(_fahre(o, lauf_id))
+    _ordner_der_laeufe[lauf_id] = laufordner
     _aufraeumen(o, behalte=lauf_id)
     return {"lauf_id": lauf_id, "zustand": "wartet", "modus": auftrag["modus"], "quellen": namen,
             "uebergangen": auftrag["uebergangen"], "weggelassen": auftrag["weggelassen"]}
+
+
+async def pruefung_starten(o: ordner.Ordner, sha256: str, *, akteur: str) -> dict:
+    """EIN Registerdokument durch das Prueftor (Fahrplan IFC-Konsistenz, Stufe 4b).
+
+    Derselbe Unterprozess (`cli.py`, Modus "pruefe"), dieselbe Spur und derselbe
+    Laufordner-Vertrag wie der Verbund. Das Ergebnis haengt als `pruefung` am
+    Registereintrag (`eintragen_wenn_fertig`), es entsteht kein neues Dokument.
+    Erst die Eingabe, dann die Spur: ein falsches Dokument ist 404/422, auch
+    wenn gerade gerechnet wird.
+    """
+    d = next((x for x in cde.register(o) if x.get("sha256") == sha256), None)
+    if d is None:
+        raise cde.CdeUnbekannt(sha256)
+    if d.get("art") != "modell" or not str(d.get("datei", "")).lower().endswith(".ifc"):
+        raise cde.CdeAbgelehnt(f"{d.get('datei')}: geprueft werden IFC-Modelle (.ifc)")
+    pfad = o.pfad / cde.ORDNER / d["datei"]
+    if not pfad.is_file():
+        raise cde.CdeAbgelehnt(f"{d['datei']} fehlt im Projektordner")
+    _spur_und_werkzeug()
+
+    lauf_id = f"p-{int(time.time()):x}-{secrets.token_hex(3)}"
+    laufordner = _laufordner(o, lauf_id)
+    laufordner.mkdir(parents=True)
+    _schreibe(laufordner / "auftrag.json", {"modus": "pruefe", "sha256": sha256, "datei": str(pfad),
+                                           "dokument": d["datei"], "ids": _ids_ablegen(o, laufordner),
+                                           "bearbeiter": akteur})
+    _schreibe(laufordner / "status.json", {"zustand": "wartet", "akteur": akteur, "modus": "pruefe",
+                                          "angenommen": cde._jetzt(), "quellen": [d["datei"]],
+                                          "weggelassen": []})
+    _laufend[lauf_id] = asyncio.create_task(_fahre(o, lauf_id))
+    _ordner_der_laeufe[lauf_id] = laufordner
+    _aufraeumen(o, behalte=lauf_id)
+    return {"lauf_id": lauf_id, "zustand": "wartet", "modus": "pruefe", "quellen": [d["datei"]]}
 
 
 async def _fahre(o: ordner.Ordner, lauf_id: str) -> None:
@@ -436,13 +535,29 @@ def status(o: ordner.Ordner, lauf_id: str, conn=None) -> dict:
             # Welches Bezugssystem der Verbund bekam, und ob es eine Angabe oder
             # eine Annahme war — das muss man sehen, bevor man die Datei weitergibt.
             "crs", "crs_herkunft", "crs_mehrdeutig", "nachbearbeitung", "eigenbau")}
-        st["befunde"] = [{k: b.get(k) for k in ("id", "titel", "ok", "sagt")}
+        # stufe/zahl/schwere/teile/beispiele seit dem Prueftor mit Stufen (2026-09-11):
+        # ohne `schwere` saehe ein Hinweis („keine IDS hinterlegt") aus wie ein Fehler.
+        st["befunde"] = [{k: b.get(k) for k in ("id", "titel", "ok", "sagt", "stufe", "zahl", "schwere",
+                                                "teile", "beispiele")}
                          for b in bericht.get("befunde") or []]
         st["quellen_bericht"] = [{k: q.get(k) for k in (
             "name", "schema", "einheit_faktor", "produkte", "uebernommen", "verworfen",
             "stile_uebernommen", "warnungen")} for q in bericht.get("quellen") or []]
     st["lauf_id"] = lauf_id
     return st
+
+
+def bericht_pfad(o: ordner.Ordner, lauf_id: str) -> Path:
+    """Die bericht.json eines Laufs — der GANZE Pruefbericht (IFC-Konsistenz, Stufe 6).
+
+    Der Status reicht die Befunde gekuerzt weiter, das Manifest noch kuerzer. Hier
+    steht jeder Befund mit Text und Beispielen — solange der Laufordner steht
+    (`_aufraeumen`, MAX_LAEUFE). Fehlt er: unbekannt.
+    """
+    pfad = _laufordner(o, lauf_id) / "bericht.json"
+    if not pfad.is_file():
+        raise cde.CdeUnbekannt(f"{lauf_id}/bericht.json")
+    return pfad
 
 
 # ── Eintragen ───────────────────────────────────────────────────────────────
@@ -485,13 +600,47 @@ def _herkunft(auftrag: dict, bericht: dict, lauf_id: str) -> dict:
         "quellen": [quelle(q) for q in auftrag.get("quellen") or []],
         "eigenbau": auftrag.get("eigenbau"),
         "pruefung": {"verstoesse": bericht.get("verstoesse"),
-                     "kriterien": [b.get("id") for b in bericht.get("befunde") or []]},
+                     "kriterien": [b.get("id") for b in bericht.get("befunde") or []],
+                     # Gegen welche Projektanforderungen geprueft wurde (Stufe 5).
+                     "ids": auftrag.get("ids") or [],
+                     # Was gemeldet, aber nicht gesperrt hat (IDS-Anforderungen, Hinweise).
+                     "hinweise": [b.get("id") for b in bericht.get("befunde") or []
+                                  if b.get("ok") is not True and b.get("schwere") in ("warnung", "hinweis")]},
     }
     if auftrag.get("weggelassen"):
         herkunft["weggelassen"] = auftrag["weggelassen"]
     if auftrag.get("erdbau"):
         herkunft["journal"] = auftrag["erdbau"].get("journal")
     return herkunft
+
+
+def _pruefung_eintragen(o, laufordner: Path, st: dict, auftrag: dict, bericht: dict, lauf_id: str,
+                        conn=None) -> dict | None:
+    """Modus "pruefe": den Bericht als `pruefung` an den Registereintrag haengen — kein neues Dokument."""
+    status_pfad = laufordner / "status.json"
+    befunde = bericht.get("befunde") or []
+    block = {"stand": cde._jetzt(), "lauf_id": lauf_id, "schema": bericht.get("schema"),
+             "werkzeug": bericht.get("werkzeug"), "verstoesse": bericht.get("verstoesse"),
+             "ids": auftrag.get("ids") or [],
+             "befunde": [{k: b.get(k) for k in ("id", "titel", "ok", "zahl", "schwere", "stufe")}
+                         for b in befunde]}
+    akteur = st.get("akteur") or "cde"
+    try:
+        if conn is None:
+            from app.api.pedant import db
+            with db.pool().connection() as eigene:
+                dok = cde.pruefung_eintragen(eigene, o, auftrag["sha256"], block, akteur=akteur)
+        else:
+            dok = cde.pruefung_eintragen(conn, o, auftrag["sha256"], block, akteur=akteur)
+    except (cde.CdeAbgelehnt, cde.CdeUnbekannt, OSError) as fehler:
+        st.update(zustand="fehler", fehler=f"Pruefbericht nicht eingetragen: {fehler}")
+        _schreibe(status_pfad, st)
+        return None
+    st["dokument"] = {"sha256": dok["sha256"], "datei": dok["datei"], "revision": dok.get("revision"),
+                      "pfad": f"{o.phase}/{o.ordnername}/{cde.ORDNER}/{dok['datei']}"}
+    st["eingetragen"] = cde._jetzt()
+    _schreibe(status_pfad, st)
+    return st["dokument"]
 
 
 def eintragen_wenn_fertig(o: ordner.Ordner, lauf_id: str, conn=None) -> dict | None:
@@ -510,6 +659,8 @@ def eintragen_wenn_fertig(o: ordner.Ordner, lauf_id: str, conn=None) -> dict | N
             return st.get("dokument")
         auftrag = _lies(laufordner / "auftrag.json")
         bericht = _lies(laufordner / "bericht.json")
+        if (auftrag.get("modus") or "verbund") == "pruefe":
+            return _pruefung_eintragen(o, laufordner, st, auftrag, bericht, lauf_id, conn)
         herkunft = _herkunft(auftrag, bericht, lauf_id)
         akteur = st.get("akteur") or "cde"
         modus = auftrag.get("modus") or "verbund"

@@ -73,7 +73,10 @@ from pathlib import Path
 import ifcopenshell
 
 from . import guids
-from .verbund import ZIELSCHEMA, VerbundUnmoeglich, zielgeruest
+from . import herkunft as H
+from . import schema as S
+from .schema import ZIELSCHEMA
+from .verbund import VerbundUnmoeglich, zielgeruest
 
 PSET_CDE = "Quagg_CDE"
 PSET_VORGANG = "Quagg_Vorgang"
@@ -94,7 +97,6 @@ MENGEN_METHODE = ("Quagg CDE: Differenz der Gelaenderaster vor und nach dem Vorg
 _MENGENTYP = {"Q_VOLUME": ("IfcQuantityVolume", "VolumeValue"), "Q_LENGTH": ("IfcQuantityLength", "LengthValue"),
               "Q_AREA": ("IfcQuantityArea", "AreaValue"), "Q_WEIGHT": ("IfcQuantityWeight", "WeightValue"),
               "Q_COUNT": ("IfcQuantityCount", "CountValue")}
-_VORLAGEN = None
 
 # Das Bezugssystem schreibt das Geruest der Verbund-Sitzung
 # (`verbund.georeferenz_setzen`, Systeme aus `bezugssysteme.py`) — EIN Weg fuer
@@ -120,47 +122,33 @@ def _pruefe_paket(paket: dict) -> None:
         raise PaketFehler("Paket ohne Bauteilliste")
 
 
-def _klasse(schema, name):
-    """Kategorie aus dem Journal ('IFCEARTHWORKSCUT') -> Schemadeklaration, oder None.
+def _klasse(name):
+    """Kategorie aus dem Journal ('IFCEARTHWORKSCUT') -> kanonischer Klassenname, oder None.
 
-    Die Nachschlagung ist unabhaengig von Gross-/Kleinschreibung (gemessen).
-    Eine Klasse, die das Schema nicht kennt, die abstrakt ist oder die kein
-    Bauteil ist, wird nicht geschrieben — der Aufrufer meldet sie.
+    Gross-/Kleinschreibung egal. Eine Klasse, die das Schema nicht kennt, die
+    abstrakt ist oder die kein Bauteil ist, wird nicht geschrieben — der
+    Aufrufer meldet sie. Die Regel steht EINMAL (`schema.ist_schreibbar`); der
+    Client prueft dieselbe vorab (`Bauteilrezepte.istSchreibbar`).
     """
-    try:
-        decl = schema.declaration_by_name(str(name))
-    except Exception:                               # noqa: BLE001 — unbekannt heisst: nicht schreiben
-        return None
-    if decl.is_abstract():
-        return None
-    t = decl
-    while t is not None:
-        if t.name() == "IfcProduct":
-            return decl
-        t = t.supertype()
-    return None
+    return S.ist_schreibbar(name)
 
 
-def _predefined(decl, wert):
+def _predefined(klasse, wert):
     """PredefinedType gegen die Aufzaehlung der Klasse pruefen.
 
     Rueckgabe (wert, warnung). Ein Wert, den das Schema nicht kennt, wird
     NOTDEFINED — nie USERDEFINED: das verlangte ObjectType, und das haetten wir
-    erfinden muessen.
+    erfinden muessen. Eine Klasse ohne PredefinedType bekommt keinen.
     """
-    attr = {a.name(): a for a in decl.all_attributes()}.get("PredefinedType")
-    if attr is None:
+    erlaubt = S.predefined(klasse)
+    if not erlaubt:
         return None, None
-    t = attr.type_of_attribute()
-    while hasattr(t, "declared_type"):
-        t = t.declared_type()
-    erlaubt = list(t.enumeration_items()) if hasattr(t, "enumeration_items") else []
     if wert is None or wert == "":
         return "NOTDEFINED", None
     w = str(wert).upper()
     if w in erlaubt and w != "USERDEFINED":
         return w, None
-    return "NOTDEFINED", f"PredefinedType {wert!r} ist fuer {decl.name()} nicht erlaubt — NOTDEFINED geschrieben"
+    return "NOTDEFINED", f"PredefinedType {wert!r} ist fuer {klasse} nicht erlaubt — NOTDEFINED geschrieben"
 
 
 def _stil(f, farbe: int, deckkraft: float, cache: dict):
@@ -243,7 +231,7 @@ def _nach_guid(f, guid):
     except Exception:                               # noqa: BLE001 — nicht vorhanden
         pass
     for satz in f.by_type("IfcPropertySet"):
-        if satz.Name != "Quagg_Herkunft":
+        if satz.Name != H.PSET_HERKUNFT:
             continue
         if any(e.Name == "OriginalGlobalId" and e.NominalValue is not None
                and e.NominalValue.wrappedValue == guid for e in (satz.HasProperties or [])):
@@ -276,16 +264,11 @@ def _volumen(wert):
 def _qto_vorlage(klasse: str):
     """Die bSI-Vorlage `Qto_<Klasse>BaseQuantities` — oder None.
 
-    Aus ifcopenshells Vorlagen, NICHT aus einer eigenen Liste: welche Mengen
-    es gibt und welchen Typ sie haben, entscheidet die Norm. Eine eigene
-    Aufzaehlung waere irgendwann eine andere (die 4.3-Liste der CDE hat so
-    schon IfcCivilElement verloren).
+    Aus den Vorlagen der Norm (Schema-Schnappschuss, `schema.py`), NICHT aus
+    einer eigenen Liste: welche Mengen es gibt und welchen Typ sie haben,
+    entscheidet die Norm. Eine eigene Aufzaehlung waere irgendwann eine andere.
     """
-    global _VORLAGEN
-    if _VORLAGEN is None:
-        import ifcopenshell.util.pset
-        _VORLAGEN = ifcopenshell.util.pset.get_template(ZIELSCHEMA)
-    return _VORLAGEN.get_by_name(f"Qto_{klasse[3:]}BaseQuantities")
+    return S.qto_vorlage(klasse)
 
 
 def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_id: str):
@@ -302,13 +285,13 @@ def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_i
     if vorlage is None:
         warnungen.append(f"{cde_id}: fuer {el.is_a()} gibt es keine Qto-Vorlage — Mengen nicht geschrieben")
         return None
-    typen = {v.Name: v.TemplateType for v in (vorlage.HasPropertyTemplates or [])}
+    typen = {merkmal[0]: merkmal[1] for merkmal in vorlage["merkmale"]}
     werte = []
     for schl, roh in mengen.items():
         name = str(schl)[:1].upper() + str(schl)[1:]
         typ = _MENGENTYP.get(typen.get(name))
         if typ is None:
-            warnungen.append(f"{cde_id}: {name} steht nicht in {vorlage.Name} — nicht geschrieben")
+            warnungen.append(f"{cde_id}: {name} steht nicht in {vorlage['name']} — nicht geschrieben")
             continue
         try:
             zahl = float(roh)
@@ -322,7 +305,7 @@ def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_i
     if not werte:
         return None
     qto = f.create_entity("IfcElementQuantity", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto"),
-                          OwnerHistory=besitz, Name=vorlage.Name, MethodOfMeasurement=MENGEN_METHODE,
+                          OwnerHistory=besitz, Name=vorlage["name"], MethodOfMeasurement=MENGEN_METHODE,
                           Quantities=werte)
     f.create_entity("IfcRelDefinesByProperties", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto|rel"),
                     OwnerHistory=besitz, RelatedObjects=[el], RelatingPropertyDefinition=qto)
@@ -336,13 +319,48 @@ def _ifc_id(wert: str | None) -> str | None:
     return guids.guid_aus_cde_id(wert) if str(wert).startswith("cde-") else str(wert)
 
 
+def _quelldokumente_von(b: dict, quell_dokumente: list) -> tuple[list, bool]:
+    """Die Registerdateien, aus denen dieses Bauteil stammt — die des Wirts zuerst.
+
+    Der Browser nennt je Registerdatei die gelieferten GlobalIds, die er darin
+    fand (`paket.quellDokumente[].globalIds`: die Wirte der Aushuebe, die
+    Ur-Gelaende der Auftraege); das Bauteil nennt seinen Wirt und seine Quellen.
+    Eine CDE-Kennung liegt in keiner Datei.
+
+    @returns (Registerdateien, ob das Bauteil GELIEFERTE Quellen hat)
+    """
+    q = b.get("quellen") or {}
+    gesucht = [b.get("wirt"), q.get("gelaende"), q.get("bauteil"), *(q.get("rohre") or []),
+               *(q.get("schaechte") or [])]
+    geliefert = [str(g) for g in gesucht if g and not str(g).startswith("cde-")]
+    out = []
+    for g in geliefert:
+        for d in quell_dokumente:
+            if g in (d.get("globalIds") or []) and d not in out:
+                out.append(d)
+    return out, bool(geliefert)
+
+
+def _quellen_json(b: dict) -> str | None:
+    """Wirt und Quellen, wie sie im IFC heissen — `Quagg_Herkunft.QuellGlobalIds`."""
+    werte = {}
+    for k, v in (b.get("quellen") or {}).items():
+        v = [_ifc_id(x) for x in v if x] if isinstance(v, list) else _ifc_id(v)
+        if v:
+            werte[k] = v
+    if b.get("wirt"):
+        werte["wirt"] = _ifc_id(b["wirt"])
+    return json.dumps(werte, sort_keys=True, separators=(",", ":")) if werte else None
+
+
 def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str | None = None,
-               bearbeiter: str = "") -> dict:
+               bearbeiter: str = "", ablage: str | None = None) -> dict:
     """Das Paket als eigenstaendige IFC4X3_ADD2-Datei schreiben.
 
     Der Einhaengepunkt fuer den Verbundlauf (`cli.py`, Sitzung quagg-page-de).
 
     @param schluessel  macht die abgeleiteten GlobalIds je Satz eindeutig
+    @param ablage      wo die Registerdateien liegen — `Location` der Dokumentverweise
     @returns Bericht: {"bauteile": n, "uebersprungen": [...], "warnungen": [...],
              "wirte_offen": n, ...}
     """
@@ -363,7 +381,6 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         raise PaketFehler(str(e)) from e
     f, site, besitz, koerper_ctx = g["datei"], g["site"], g["besitz"], g["koerper"]
 
-    schema = ifcopenshell.schema_by_name(ZIELSCHEMA)
     stile = {}
     produkte, uebersprungen, warnungen = [], [], []
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
@@ -372,13 +389,24 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         warnungen.append("Paket ohne Bezugssystem — die Datei traegt Landeskoordinaten ohne "
                          "Georeferenz; der Verbund entscheidet an den Lieferungen")
 
+    # Die Herkunft jedes Elements (Fahrplan Erdbau-Container, Stufe 3): die
+    # Registerdateien der Quellen — je sha256 EINE, auch wenn der Browser sie
+    # zweimal nennt —, der Journalstand, das Werkzeug.
+    quell_dokumente = {}
+    for q in paket.get("quellDokumente") or []:
+        if isinstance(q, dict) and q.get("sha256"):
+            quell_dokumente.setdefault(q["sha256"], q)
+    quell_dokumente = list(quell_dokumente.values())
+    stand, werkzeug = H.journalstand(paket.get("journal")), H.werkzeug()
+    je_dokument, referenzen = {}, {}                 # sha256 -> [Element] | Dokumentverweis
+
     for b in paket["bauteile"]:
         cde_id = b.get("cdeId")
         if not cde_id:
             uebersprungen.append({"grund": "ohne cdeId", "name": b.get("name")})
             continue
-        decl = _klasse(schema, b.get("klasse"))
-        if decl is None:
+        klasse = _klasse(b.get("klasse"))
+        if klasse is None:
             uebersprungen.append({"cdeId": cde_id,
                                   "grund": f"Klasse {b.get('klasse')!r} ist kein IfcProduct in {ZIELSCHEMA}"})
             continue
@@ -392,7 +420,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             uebersprungen.append({"cdeId": cde_id, "grund": "Dreiecksindex ausserhalb der Punktliste"})
             continue
 
-        pt, warnung = _predefined(decl, b.get("predefinedType"))
+        pt, warnung = _predefined(klasse, b.get("predefinedType"))
         if warnung:
             warnungen.append(f"{cde_id}: {warnung}")
 
@@ -422,7 +450,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                      Name=b.get("name") or None, ObjectPlacement=platz, Representation=form)
         if pt is not None:
             attrs["PredefinedType"] = pt
-        el = f.create_entity(decl.name(), **attrs)
+        el = f.create_entity(klasse, **attrs)
 
         vorgang = b.get("vorgang") or {}
         _merkmale(f, besitz, el, PSET_CDE, {
@@ -441,6 +469,31 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         }, schluessel=f"{satz}|{cde_id}")
         if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id):
             mengen_n += 1
+        docs, geliefert = _quelldokumente_von(b, quell_dokumente)
+        if docs:
+            quelle = {"QuellDokument": "; ".join(str(d.get("datei") or d["sha256"][:12]) for d in docs),
+                      "QuellRevision": "; ".join("?" if d.get("revision") is None else str(d["revision"])
+                                                 for d in docs),
+                      "QuellSHA256": "; ".join(d["sha256"] for d in docs)}
+        elif not geliefert:
+            # Nur aus der CDE (ein Aushub auf selbst gezeichnetem Gelaende, ein
+            # gezeichnetes Bauteil): die Quelle IST das Journal (Stufe 4).
+            quelle = {"QuellDokument": H.QUELLE_JOURNAL, "QuellRevision": stand or "ohne Commit"}
+        else:
+            # Aus einer Lieferung, deren Registerdatei der Browser nicht fand: unbekannt
+            # bleibt unbekannt — die IDS-Regel `spec-*-herkunft` meldet es.
+            quelle = {}
+        H.schreibe(f, besitz, el, {
+            **quelle,
+            "QuellGlobalIds": _quellen_json(b),
+            "Journalstand": stand,
+            "Erzeugt": paket.get("erzeugt"),
+            "Werkzeug": werkzeug,
+            "EingabeHash": H.eingabe_hash(b),
+        }, guid_von=lambda teil, _s=f"{satz}|{cde_id}|{H.PSET_HERKUNFT}": guids.guid_aus_cde_id(
+            _s if teil == "satz" else f"{_s}|{teil}"))
+        for d in docs:
+            je_dokument.setdefault(d["sha256"], []).append(el)
         produkte.append(el)
         geschrieben.append((el, b))
 
@@ -478,6 +531,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         for el, b in geschrieben:
             art = b.get("fachmodell") if b.get("fachmodell") in FACHMODELLE else "cde"
             je_fachmodell.setdefault(art, []).append(el)
+        gruppe_von = {}                              # Element-Id -> seine Fachmodell-Gruppe
         for art, glieder in je_fachmodell.items():
             name, beschreibung, anhang = FACHMODELLE[art]
             gruppe = f.create_entity("IfcGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|{anhang}"),
@@ -486,7 +540,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             f.create_entity("IfcRelAssignsToGroup",
                             GlobalId=guids.guid_aus_cde_id(f"{satz}|{anhang}-rel"), OwnerHistory=besitz,
                             RelatedObjects=glieder, RelatingGroup=gruppe)
-            _merkmale(f, besitz, gruppe, "Quagg_Fachmodell", {
+            _merkmale(f, besitz, gruppe, H.PSET_FACHMODELL, {
                 "Datei": name,
                 "Quelle": "CDE-Journal",
                 "Bauteile": len(glieder),
@@ -494,7 +548,18 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                 "Journalstand": (paket.get("journal") or {}).get("commit"),
             }, schluessel=f"{satz}|{anhang}")
             fachmodelle[name] = len(glieder)
+            gruppe_von.update({el.id(): gruppe for el in glieder})
         vorgaenge = _vorgaenge_gruppieren(f, besitz, geschrieben, satz)
+        # Je Quelldokument EIN Verweis — an jedem Element, das daraus stammt, und an
+        # dessen Fachmodell-Gruppe (Fahrplan Erdbau-Container, Stufe 3). Nennt kein
+        # Element das Dokument, gilt es fuer alle Gruppen der Datei.
+        for d in quell_dokumente:
+            elemente = je_dokument.get(d["sha256"], [])
+            gruppen = [gruppe_von[e.id()] for e in elemente] or list(gruppe_von.values())
+            ref = H.dokument(f, referenzen, sha256=d["sha256"], datei=d.get("datei"),
+                             revision=d.get("revision"), ablage=ablage)
+            H.verknuepfe(f, besitz, ref, [*gruppen, *elemente],
+                         guid=guids.guid_aus_cde_id(f"{satz}|dokument|{d['sha256']}"))
     else:
         warnungen.append("keine Bauteile geschrieben — die Datei traegt nur das Geruest")
 
@@ -512,6 +577,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "mengen": mengen_n,
         "vorgaenge": vorgaenge,
         "fachmodelle": fachmodelle,
+        "dokumente": len(referenzen),
         "dauer_s": round(time.time() - begonnen, 2),
     }
 

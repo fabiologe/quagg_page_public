@@ -7,6 +7,15 @@
  *     Ebenenfehler verhindert, bevor sie im Journal stehen.
  *   - `abhaengige`: der Rückwärtsindex „wer hängt an A?" — für Verlauf,
  *     Löschen-Sperre und die Meldung beim Nachspielen. Abgeleitet je Aufruf.
+ *
+ * DIE HISTORIE (Fahrplan Erdbau-Container, Stufe 1, 2026-09-11): wer eine
+ * Kette zum Ur-Gelände läuft, darf eine optionale `historie` mitgeben — den
+ * letzten bekannten Bauplan je Kennung, auch für Zurückgenommenes
+ * (`useAenderungen.historieAus`). Im Projekt 1337 nannten zwei Aushübe als
+ * Gelände eine Anzeige, die einen Commit vorher zurückgenommen worden war (die
+ * Szene stand noch, die Bearbeitung griff hinein). Die Kette brach an der
+ * toten Kennung, und die Aushübe waren nie wieder ableitbar. Die Historie dient
+ * NUR der Kette — gebaut wird weiter ausschliesslich aus dem wirksamen Stand.
  */
 
 /** Quellen eines Bauplans — liest auch die Altform `{quelle}` des gelaende-Rezepts. */
@@ -52,9 +61,12 @@ const EBENEN_RANG = { auftrag: 0, stand: 1 };
  * @param {Map<string, object>} opts.stand        wirksamer erzeugt-Stand
  * @param {(gid: string) => string|null} [opts.ebeneVon]  'auftrag'|'stand' der Quelle (CDE-Objekte)
  * @param {string} [opts.zielEbene]               Ebene, in die geschrieben wird
+ * @param {Map<string, object>} [opts.historie]   letzter bekannter Bauplan je Kennung (auch Zurückgenommenes)
+ * @param {(id: string) => object|null} [opts.rezeptNach]
  * @returns {string[]} leer = in Ordnung
  */
-export function pruefeBezuege({ quellen = {}, globalId, stand = new Map(), ebeneVon = null, zielEbene = 'stand' } = {}) {
+export function pruefeBezuege({ quellen = {}, globalId, stand = new Map(), ebeneVon = null, zielEbene = 'stand',
+                                historie = null, rezeptNach = null } = {}) {
     const fehler = [];
     const paare = [];
     for (const [schlitz, q] of Object.entries(quellen)) {
@@ -66,6 +78,20 @@ export function pruefeBezuege({ quellen = {}, globalId, stand = new Map(), ebene
     for (const [schlitz, gid] of paare) {
         if (!gid) { fehler.push(`Quelle „${schlitz}" fehlt`); continue; }
         if (gid === globalId) { fehler.push(`„${schlitz}" zeigt auf das Bauteil selbst`); continue; }
+        // DIE GELÄNDE-QUELLE IST DAS UR (Fahrplan Erdbau-Container, Stufe 1): nie
+        // etwas Zurückgenommenes, nie eine Anzeigeform. Beides lief am 2026-09-11
+        // in 1337 durch — danach war der Aushub nicht mehr ableitbar.
+        if (schlitz === 'gelaende' && String(gid).startsWith('cde-')) {
+            const plan = stand.get(gid);
+            if (!plan && historie?.has?.(gid)) {
+                fehler.push(`„gelaende" (${gid}) ist zurückgenommen — die Ansicht war nicht mehr aktuell, bitte das Gelände neu wählen`);
+                continue;
+            }
+            if (plan && _istAnzeigeGlied(plan, rezeptNach)) {
+                fehler.push(`„gelaende" (${gid}) ist eine Anzeigeform — Quelle eines Erdbau-Vorgangs ist das Ur-Gelände`);
+                continue;
+            }
+        }
         if (!stand.has(gid)) continue;                 // geliefert — die Existenz prüft das Nachspielen
         if (haengtAn(stand, gid, globalId)) {
             fehler.push(`Zyklus: „${schlitz}" (${gid}) hängt bereits an ${globalId}`);
@@ -106,11 +132,13 @@ export function abhaengige(stand = new Map()) {
  *
  * @param {Map} stand        erzeugt-Stand (globalId → Bauplan)
  * @param {string} gid
- * @param {{rezeptNach: Function}} opts  — ob ein `dgm`-Teil zu einer Ableitung gehört, sagt das Rezept
+ * @param {{rezeptNach?: Function, historie?: Map}} opts  — ob ein `dgm`-Teil zu
+ *        einer Ableitung gehört, sagt das Rezept; die Historie trägt die Kette
+ *        durch Zurückgenommenes (siehe Kopf)
  * @returns {string} die Kennung des Ur-Geländes (im Zweifel die übergebene)
  */
-export function urGelaendeVon(stand, gid, { rezeptNach = null } = {}) {
-    return _kette(stand, gid, rezeptNach).ur;
+export function urGelaendeVon(stand, gid, { rezeptNach = null, historie = null } = {}) {
+    return _kette(stand, gid, rezeptNach, historie).ur;
 }
 
 /**
@@ -118,20 +146,25 @@ export function urGelaendeVon(stand, gid, { rezeptNach = null } = {}) {
  * die KETTENTIEFE. Für Alt-Journale ist sie die Reihenfolge: ein Vorgang auf
  * dem DGM eines anderen kam NACH ihm, egal, wo er im Stand steht.
  */
-export function kettentiefe(stand, gid, { rezeptNach = null } = {}) {
-    return _kette(stand, gid, rezeptNach).tiefe;
+export function kettentiefe(stand, gid, { rezeptNach = null, historie = null } = {}) {
+    return _kette(stand, gid, rezeptNach, historie).tiefe;
 }
 
-function _kette(stand, gid, rezeptNach) {
+/** Ein Glied, über das die Kette weiterläuft: Anzeigeform, Alt-DGM einer Ableitung, Alt-`gelaende`. */
+function _istAnzeigeGlied(plan, rezeptNach) {
+    return plan?.rolle === 'anzeige'
+        || (plan?.rolle === 'dgm' && typeof rezeptNach?.(plan.rezept)?.leite === 'function')
+        || plan?.rezept === 'gelaende';                 // Altbestand vor Teil XIV: `{quelle, operationen}`
+}
+
+function _kette(stand, gid, rezeptNach, historie = null) {
     let g = gid;
     let tiefe = 0;
     for (; g && tiefe < 16; tiefe++) {
-        const plan = stand?.get?.(g);
+        // Zurückgenommenes kennt nur die Historie — die Kette läuft trotzdem hindurch.
+        const plan = stand?.get?.(g) ?? historie?.get?.(g);
         if (!plan) break;
-        const istAnzeige = plan.rolle === 'anzeige'
-            || (plan.rolle === 'dgm' && typeof rezeptNach?.(plan.rezept)?.leite === 'function')
-            || plan.rezept === 'gelaende';                 // Altbestand vor Teil XIV: `{quelle, operationen}`
-        if (!istAnzeige) break;
+        if (!_istAnzeigeGlied(plan, rezeptNach)) break;
         const weiter = plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? null;
         if (!weiter) break;
         g = weiter;
@@ -169,30 +202,39 @@ export function vorgangstitel(plan, rezept = null) {
  * `dgm`-Teile stehen in `altDgm`, damit die Bearbeitung sie beim ersten
  * Anfassen verbergen kann — die Anzeige übernimmt dann.
  *
+ * DIE ANZEIGE: die erste, die DIREKT das Ur nennt. Nur wenn es keine solche
+ * gibt, eine, deren Quelle erst über die Kette (auch durch Zurückgenommenes)
+ * zum Ur führt — sonst stünde ein Gelände ohne geformte Fläche da.
+ *
  * @returns {{anzeige: {globalId, bauplan}|null,
  *            vorgaenge: Array<{ableitung, art, titel, bauplan}>,
  *            altDgm: string[]}}
  */
-export function erdbauStapelVon(stand, urGid, { rezeptNach = null } = {}) {
+export function erdbauStapelVon(stand, urGid, { rezeptNach = null, historie = null } = {}) {
     const out = { anzeige: null, vorgaenge: [], altDgm: [] };
     if (!urGid || !stand?.[Symbol.iterator]) return out;
     const gefunden = new Map();                                   // ableitung → Vorgang
+    let ueberKette = null;
     for (const [gid, plan] of stand) {
         if (!plan?.ableitung) continue;
         const rz = rezeptNach?.(plan.rezept) ?? null;
         const q = plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? null;
         if (rz?.id === 'anzeige') {
-            if (q === urGid && !out.anzeige) out.anzeige = { globalId: gid, bauplan: plan };
+            if (q === urGid) { if (!out.anzeige) out.anzeige = { globalId: gid, bauplan: plan }; }
+            else if (!ueberKette && q && _kette(stand, q, rezeptNach, historie).ur === urGid) {
+                ueberKette = { globalId: gid, bauplan: plan };
+            }
             continue;
         }
         if (!rz?.erdbau || !q) continue;
-        const { ur, tiefe } = _kette(stand, q, rezeptNach);
+        const { ur, tiefe } = _kette(stand, q, rezeptNach, historie);
         if (ur !== urGid) continue;
         if (plan.rolle === 'dgm') out.altDgm.push(gid);
         if (!gefunden.has(plan.ableitung)) {
             gefunden.set(plan.ableitung, { ableitung: plan.ableitung, art: plan.rezept, titel: vorgangstitel(plan, rz), bauplan: plan, tiefe, reihe: gefunden.size });
         }
     }
+    if (!out.anzeige && ueberKette) out.anzeige = ueberKette;
     const drin = (id) => out.vorgaenge.some(v => v.ableitung === id);
     for (const v of out.anzeige?.bauplan?.parameter?.vorgaenge ?? []) {
         const id = typeof v === 'string' ? v : v?.ableitung;
@@ -202,5 +244,29 @@ export function erdbauStapelVon(stand, urGid, { rezeptNach = null } = {}) {
     const rest = [...gefunden.values()].filter(g => !drin(g.ableitung))
         .sort((a, b) => (a.tiefe - b.tiefe) || (a.reihe - b.reihe));
     for (const { tiefe, reihe, ...g } of rest) out.vorgaenge.push(g);
+    return out;
+}
+
+/**
+ * Anzeigen, die NICHT die Anzeige ihres Ur-Geländes sind (Fahrplan
+ * Erdbau-Container, Stufe 1). EIN Gelände, EINE Anzeige (Stufe 1 des
+ * Aushub-Fachmodells). Wird eine zweite ableitbar — weil ihre Quelle über die
+ * Historie wieder aufgelöst wird —, stünde sonst eine zweite geformte Fläche
+ * deckungsgleich im Raum. Der Aufbau lässt sie aus und sagt es.
+ *
+ * @returns {Map<string, string>} Kennung der verdrängten Anzeige → Kennung der wirksamen
+ */
+export function verdraengteAnzeigen(stand, { rezeptNach = null, historie = null } = {}) {
+    const out = new Map();
+    const wirksam = new Map();                                    // urGid → Kennung der wirksamen Anzeige
+    for (const [gid, plan] of stand ?? []) {
+        if (rezeptNach?.(plan?.rezept)?.id !== 'anzeige') continue;
+        const q = plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? null;
+        if (!q) continue;
+        const ur = _kette(stand, q, rezeptNach, historie).ur;
+        if (!wirksam.has(ur)) wirksam.set(ur, erdbauStapelVon(stand, ur, { rezeptNach, historie }).anzeige?.globalId ?? null);
+        const w = wirksam.get(ur);
+        if (w && w !== gid) out.set(gid, w);
+    }
     return out;
 }

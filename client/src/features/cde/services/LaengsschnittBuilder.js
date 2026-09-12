@@ -15,10 +15,10 @@ import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { hoehenversatzAus } from './Koordinaten.js';
 import { buildLaengsschnitt } from './Laengsschnitt.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { istSchacht } from './Kategorien.js';
 
 const DN_MESH_FALLBACK_LIMIT = 200; // Querschnitts-Schätzung deckeln (teuer)
 
-const MANHOLE_CATEGORIES = ['IFCDISTRIBUTIONCHAMBERELEMENT'];
 
 function _scalar(v) {
     if (v == null) return null;
@@ -105,7 +105,7 @@ export async function buildLaengsschnittFromModel({
     // ── Schächte ───────────────────────────────────────────────────────────
     const manholes = [];
     for (const group of categoryGroups) {
-        if (!MANHOLE_CATEGORIES.includes(group.name)) continue;
+        if (!istSchacht(group.name)) continue;
         let map;
         try { map = await group.groupData.get(); } catch { continue; }
         const entries = map instanceof Map ? [...map.entries()] : Object.entries(map ?? {});

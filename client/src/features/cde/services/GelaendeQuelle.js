@@ -47,7 +47,7 @@ export const GELAENDE_VORBELEGUNG = Object.freeze([
     'IFCGEOGRAPHICELEMENT',
     'IFCEARTHWORKSFILL',
     'IFCEARTHWORKSELEMENT',
-    'IFCCIVILELEMENT',           // IFC4-Erdkörper (in 4.3 gestrichen, in Dateien noch da)
+    'IFCCIVILELEMENT',           // IFC4-Erdkörper (in 4.3 abgekündigt, im Schema ADD2 noch da)
 ]);
 
 /** Altname — Verbraucher, die noch die reine Liste lesen. */

@@ -281,6 +281,8 @@ export const useCdeStore = defineStore('cde', () => {
     const pruefung = pruefeStatuswechsel({
       von: doc.status, nach: status,
       rolle: useAuthStore().rolle ?? null,
+      // Stufe 4b: nur mit Server gibt es Prüfberichte — lokal gilt die Regel nicht.
+      art: doc.art ?? null, hatPruefung: !repo.remote || !!doc.pruefung,
     });
     if (!pruefung.ok) {
       statusGrund.value = pruefung.grund;

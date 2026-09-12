@@ -16,6 +16,7 @@
 
 import * as OBC from '@thatopen/components';
 import * as THREE from 'three';
+import { istDeltaModell } from './DeltaBoxen.js';
 
 export class IfcStoreys {
     /**
@@ -23,11 +24,13 @@ export class IfcStoreys {
      * @param {object}   opt.components  OBC.Components
      * @param {Function} opt.fitToBox    (box, opts) => Promise  — Kamera
      * @param {object}   opt.schnitt     IfcSection
+     * @param {Function} [opt.quelleVon] modelId => IfcQuelle — Name und Höhe je Geschoss
      */
-    constructor({ components, fitToBox, schnitt }) {
+    constructor({ components, fitToBox, schnitt, quelleVon = null }) {
         this._components = components;
         this._fitToBox = fitToBox;
         this._schnitt = schnitt;
+        this._quelleVon = quelleVon;
         this._storeyElementCache = null;
     }
 
@@ -36,6 +39,27 @@ export class IfcStoreys {
         const model = [...fragments.list.values()][0];
         if (!model) return null;
         return model.getSpatialStructure();
+    }
+
+    /**
+     * Die Raumgliederung JEDES geladenen Modells (Fahrplan Erdbau-Container, Stufe 8).
+     *
+     * `getSpatialTree` nimmt das erste Modell — so bleibt es für die DIN-277-Einordnung
+     * des Cockpits. Die Bauwerksstruktur braucht alle. Delta-Modelle (Bearbeitungen,
+     * keine Dateien) bleiben draußen, wie in `getModelList`.
+     *
+     * @returns {Promise<Array<{modelId: string, name: string, wurzel: object|null}>>}
+     */
+    async getSpatialTrees() {
+        const fragments = this._components.get(OBC.FragmentsManager);
+        const aus = [];
+        for (const model of fragments.list.values()) {
+            if (istDeltaModell(model.modelId)) continue;
+            let wurzel = null;
+            try { wurzel = await model.getSpatialStructure(); } catch { /* ohne Raumgliederung */ }
+            aus.push({ modelId: model.modelId, name: model.name ?? model.modelId, wurzel });
+        }
+        return aus;
     }
 
     /**
@@ -119,9 +143,17 @@ export class IfcStoreys {
             walk(tree);
 
             for (const node of found) {
-                // Elevation from web-ifc raw entity
+                // Name und Höhe aus der IfcQuelle DIESES Modells (Fahrplan Erdbau-Container,
+                // Stufe 8). Bis dahin las die Liste `GetLine(0, …)` — Modell 0 für jedes
+                // Modell — und `node.name`, den fragments nie setzt: jedes Geschoss hieß
+                // „Storey <localId>". Ohne Quelle bleibt der alte Weg.
                 let elevation = null;
-                if (webIfc) {
+                let name = '';
+                const zeile = this._quelleVon?.(model.modelId)?.zeile?.(node.localId) ?? null;
+                if (zeile) {
+                    elevation = zeile.Elevation?.value ?? null;
+                    name = String(zeile.Name?.value ?? zeile.LongName?.value ?? '');
+                } else if (webIfc) {
                     try {
                         const ent = webIfc.GetLine(0, node.localId, false);
                         elevation = ent?.Elevation?.value ?? null;
@@ -150,7 +182,7 @@ export class IfcStoreys {
                 storeys.push({
                     modelId:   model.modelId,
                     localId:   node.localId,
-                    name:      (node.name ?? '').trim() || `Storey ${node.localId}`,
+                    name:      (name || node.name || '').trim() || `Storey ${node.localId}`,
                     elevation,
                     box, // THREE.Box3 or null
                 });

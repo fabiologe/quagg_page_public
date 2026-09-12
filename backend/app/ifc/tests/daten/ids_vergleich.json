@@ -1,0 +1,146 @@
+{
+ "_zweck": "Zwei Motoren, eine Zahl (IFC-Konsistenz, Stufe 5): die Zaehlung des Prueftors (ifctester) am Vergleichsmodell. Die Vorschau im Client (IdsValidator.js) muss dieselbe liefern — client/src/features/cde/test/idsVergleich.test.js. Neu schreiben: PYTHONPATH=. app/ifc/.venv-ifc/bin/python app/ifc/tests/test_ids.py",
+ "ids": "backend/app/ifc/daten/quagg-starter.ids",
+ "modell": "backend/app/ifc/tests/daten/ids_vergleich.ifc",
+ "spezifikationen": [
+  {
+   "kennung": "spec-space-name",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "1RqX2RFk5PQ9hfbTPnoDTW"
+   ]
+  },
+  {
+   "kennung": "spec-space-area",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "1RqX2RFk5PQ9hfbTPnoDTW"
+   ]
+  },
+  {
+   "kennung": "spec-wall-external-flag",
+   "anwendbar": 4,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "2W6ZNxLNvSVx5tyjp8B9gq"
+   ]
+  },
+  {
+   "kennung": "spec-wall-loadbearing",
+   "anwendbar": 4,
+   "verfehlt": 2,
+   "verfehlt_von": [
+    "1G41aSPD5K1wYHsgBM2xvd",
+    "2W6ZNxLNvSVx5tyjp8B9gq"
+   ]
+  },
+  {
+   "kennung": "spec-wall-fire-rating",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "0eyVrLSBXKS9gxf2l6Jw5v"
+   ]
+  },
+  {
+   "kennung": "spec-door-external-flag",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "3RL3V_cPnNaOlHWZflt6q7"
+   ]
+  },
+  {
+   "kennung": "spec-door-fire-rating",
+   "anwendbar": 1,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "0sLAjb6dLHg9EGg7dV0oec"
+   ]
+  },
+  {
+   "kennung": "spec-window-external-flag",
+   "anwendbar": 1,
+   "verfehlt": 0,
+   "verfehlt_von": []
+  },
+  {
+   "kennung": "spec-slab-loadbearing",
+   "anwendbar": 1,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "27mH3sd4vKg8AgMotSn4rI"
+   ]
+  },
+  {
+   "kennung": "spec-column-loadbearing",
+   "anwendbar": 1,
+   "verfehlt": 0,
+   "verfehlt_von": []
+  },
+  {
+   "kennung": "spec-chamber-name",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "3yMa6Pl69U9fxN6BsDlTvv"
+   ]
+  },
+  {
+   "kennung": "spec-pipe-system",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "2TGansR3vVkRzMvRSGT8vp"
+   ]
+  },
+  {
+   "kennung": "spec-aushub-mengen",
+   "anwendbar": 4,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "0XyD4kDYfKzRZVQSKS$Nyh"
+   ]
+  },
+  {
+   "kennung": "spec-auftrag-mengen",
+   "anwendbar": 3,
+   "verfehlt": 0,
+   "verfehlt_von": []
+  },
+  {
+   "kennung": "spec-aushub-herkunft",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "3lcV2$Dj9J5Bki0pu58VHf"
+   ]
+  },
+  {
+   "kennung": "spec-auftrag-herkunft",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "0oPxRoZPPRphLnifEM$Lbl"
+   ]
+  },
+  {
+   "kennung": "spec-aushub-typ",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "3lcV2$Dj9J5Bki0pu58VHf"
+   ]
+  },
+  {
+   "kennung": "spec-auftrag-typ",
+   "anwendbar": 2,
+   "verfehlt": 1,
+   "verfehlt_von": [
+    "0oPxRoZPPRphLnifEM$Lbl"
+   ]
+  }
+ ]
+}

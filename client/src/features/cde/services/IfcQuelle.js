@@ -127,6 +127,9 @@ export class IfcQuelle {
             return quelle;
         } catch (fehler) {
             console.warn('cde: IFC-Quelle öffnen', fehler?.message ?? fehler);
+            // Der Grund bleibt abrufbar: die Engine zeigt ihn im Import-Befund,
+            // statt dass er in der Konsole verschwindet (2026-09-11).
+            IfcQuelle.letzterFehler = String(fehler?.message ?? fehler);
             return null;      // die gemeinsame API bleibt stehen — andere Modelle hängen dran
         }
     }
@@ -189,14 +192,21 @@ export class IfcQuelle {
     }
 
     /**
-     * Typen des Modells, die das IFC-4.3-Wörterbuch NICHT kennt — aber
-     * STRUKTURELL Nachfahren von `wurzel` sind (2026-09-07).
+     * Typen des Modells, die das Wörterbuch NICHT kennt — aber STRUKTURELL
+     * Nachfahren von `wurzel` sind (2026-09-07).
      *
-     * DER BEFUND: `IfcCivilElement` (IFC4, Fabios Gelände), `IfcProxy`,
-     * `IfcWallStandardCase`, `IfcElectricalElement`, … sind in 4.3 gestrichen.
-     * Wer „alle Produkte" über das 4.3-Wörterbuch aufzählt, fragt web-ifc nach
-     * diesen Typen NIE — Suchindex, Bauformen-Panel, Gelände-Kandidaten sahen
-     * das DGM nicht, und nichts meldete es. Ein Schema-Fehler erster Güte.
+     * DER BEFUND DAMALS: `IfcCivilElement` (Fabios Gelände), `IfcProxy`,
+     * `IfcWallStandardCase` fehlten im Wörterbuch, und „alle Produkte" fragte
+     * web-ifc nach diesen Typen NIE — Suchindex, Bauformen-Panel,
+     * Gelände-Kandidaten sahen das DGM nicht, und nichts meldete es.
+     *
+     * NACHGEMESSEN 2026-09-11: sie fehlten nicht, weil 4.3 sie gestrichen
+     * hätte — `IfcCivilElement` und `IfcWallStandardCase` stehen in ADD2,
+     * abgekündigt. Das alte Wörterbuch war ein bSDD-Export, und der lässt
+     * Abgekündigtes weg. Seit das Wörterbuch aus dem SCHEMA erzeugt wird
+     * (ADD2 + die Produkt-Waisen aus IFC4/IFC2x3), kennt es alle drei. Dieser
+     * Weg fängt nur noch Namen, die KEIN Schema kennt — Eigenerfindungen
+     * eines Exporteurs.
      *
      * Die Kur rät keine Vererbung, sie prüft die DEFINITION: ein IfcProduct
      * ist in jeder Schemafassung das, was `ObjectPlacement` und

@@ -110,3 +110,24 @@ def test_buero_route_liegt_nicht_unter_projekte():
     pfade = {r.path for r in router.routes}
     assert not any("buero" in p for p in pfade)
     assert {r.path for r in router_buero.routes} == {"/cde/repo", "/cde/repo/{key}"}
+
+
+def test_ids_regelwerke_im_buero(buero_wurzel):
+    """Stufe 5 (IFC-Konsistenz): IDS-Regelwerke des Bueros stehen im Buero-Repository unter `ids:`.
+
+    Keine zweite Ablage und keine neue Route — aber unter dem Praefix landet
+    nur eine IDS-Datei, mit einem Dateinamen, der im Laufordner taugt.
+    """
+    from pathlib import Path
+    xml = (Path(__file__).parents[3] / "ifc" / "daten" / "quagg-starter.ids").read_text(encoding="utf-8")
+    c = _client()
+    r = c.put("/FastAPI/buero/cde/repo/ids:starter", json={"datei": "quagg-starter.ids", "xml": xml})
+    assert r.status_code == 200, r.text
+    for falsch in ({"datei": "x.ids", "xml": "<foo/>"}, {"datei": "../x.ids", "xml": xml},
+                   {"datei": "x.xml", "xml": xml}, {"xml": xml}, "nur text"):
+        r = c.put("/FastAPI/buero/cde/repo/ids:falsch", json=falsch)
+        assert r.status_code == 422, (falsch, r.text)
+    assert not (buero_wurzel / "CDE" / "_repo" / "ids:falsch.json").exists()
+    assert c.put("/FastAPI/buero/cde/repo/linienstile", json={"xml": "egal"}).status_code == 200  # nur ids: wird geprueft
+    assert [w["datei"] for w in cde.buero_regelwerke()] == ["quagg-starter.ids"]
+

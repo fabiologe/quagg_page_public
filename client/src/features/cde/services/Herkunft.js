@@ -96,6 +96,83 @@ export function gleicheLinie(a, b) {
  *
  * @returns {Array<{quelle: string, neu: string, revision: number}>}
  */
+/**
+ * Ein ABGABE-CONTAINER (E1, Fahrplan Erdbau-Container): der Verbund — Prüfbericht
+ * und Herkunft, aus den Quellen jederzeit neu baubar. Er gehört in keinen Satz
+ * (Server: `cde._satz_pruefen`). Ein Erdbau-Dokument IST ein Fachmodell.
+ */
+export function istAbgabeContainer(dok) {
+    return dok?.herkunft?.art === 'verbund';
+}
+
+/**
+ * Das Register in zwei Abschnitten (T3): was geliefert wurde, und was die CDE
+ * erzeugt hat. Bis 2026-09-11 stand ein Verbund zwischen den Lieferungen wie
+ * eine von ihnen — nur der Chip unterschied ihn. Die Reihenfolge bleibt.
+ *
+ * @returns {{lieferungen: object[], erzeugte: object[]}}
+ */
+export function teileRegister(dokumente) {
+    const lieferungen = [];
+    const erzeugte = [];
+    for (const d of dokumente ?? []) (d?.herkunft?.art ? erzeugte : lieferungen).push(d);
+    return { lieferungen, erzeugte };
+}
+
+/**
+ * Steht vor dieser Revision KEINE frühere derselben Linie im Register? (T4) Der
+ * Server zählt die Revision über die Geschwister beim Hochladen; wird R01 danach
+ * gelöscht, steht R02 allein da — im Projekt 1337 TEST-ERDKOERPER_R02. Das
+ * gehört gesagt, nicht erraten.
+ */
+export function fruehereRevisionFehlt(dok, alle) {
+    const rev = Number(dok?.revision ?? 1);
+    if (!(rev > 1)) return false;
+    return !(alle ?? []).some(x => x?.sha256 !== dok.sha256 && gleicheLinie(x, dok) && Number(x.revision ?? 0) < rev);
+}
+
+/**
+ * Lässt sich dieses Erdbau-Dokument JETZT neu erzeugen? (Fahrplan Erdbau-Container,
+ * Stufe 6, G5) — und wenn nicht, welcher Schritt vorher fehlt. Die Reihenfolge ist
+ * die, in der der Server scheitern würde (`verbund_lauf._auftrag_erdbau`): der
+ * Satz des Auftrags, die geladene Revision seiner Quellen, ein Journal, das an
+ * Kennungen der alten Revision hängt.
+ *
+ * @param {object}   o
+ * @param {object}   o.dok            Registerzeile des Erdbau-Dokuments
+ * @param {object[]} o.alle           das Register
+ * @param {string}   o.aktiverSatzId
+ * @param {string[]} o.geladen        sha256 der geladenen Dateien
+ * @param {string[]} o.fehlend        GlobalIds, die das Journal nennt und kein geladenes Modell führt
+ * @returns {{ok: boolean, grund: string, handlung: 'satz'|'laden'|'rebase'|null, ziel?: string}}
+ */
+export function regenerierbar({ dok, alle = [], aktiverSatzId = null, geladen = [], fehlend = [] } = {}) {
+    const h = dok?.herkunft;
+    if (h?.art !== 'erdbau') return { ok: false, grund: 'kein Erdbau-Dokument', handlung: null };
+    if (h.satz_id && h.satz_id !== aktiverSatzId) {
+        return { ok: false, handlung: 'satz', ziel: h.satz_id,
+                 grund: `erst den Satz „${h.satz_name ?? h.satz_id}“ aktivieren — aus ihm entstand das Dokument` };
+    }
+    const veraltet = quellenVeraltet(dok, alle);
+    const geladenSet = new Set(geladen ?? []);
+    for (const v of veraltet) {
+        const neuer = (alle ?? []).find(x => (x.name ?? x.datei) === v.neu);
+        if (neuer && !geladenSet.has(neuer.sha256)) {
+            return { ok: false, handlung: 'laden', ziel: neuer.sha256,
+                     grund: `${v.neu} zuerst laden — daraus entsteht die neue Revision` };
+        }
+    }
+    const wirte = new Set((h.quellen ?? []).flatMap(q => q?.globalIds ?? []));
+    const haengt = (fehlend ?? []).filter(g => wirte.has(g));
+    if (haengt.length) {
+        return { ok: false, handlung: 'rebase',
+                 grund: `das Journal hängt an ${haengt.length} Kennung${haengt.length === 1 ? '' : 'en'} der alten Revision — erst im Reiter Änderungen umhängen` };
+    }
+    return { ok: true, handlung: null,
+             grund: veraltet.length ? `neu erzeugen aus ${veraltet.map(v => v.neu).join(', ')}`
+                                    : 'neu erzeugen — derselbe Satz, der heutige Journalstand' };
+}
+
 export function quellenVeraltet(dok, alle) {
     const quellen = dok?.herkunft?.quellen ?? [];
     if (!quellen.length) return [];

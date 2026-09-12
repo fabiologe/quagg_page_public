@@ -45,6 +45,12 @@ describe('baueSchein', () => {
         expect(schein).toContain('Revision 2 · Status Published');
         expect(schein).toContain('Dokumente (2)');
     });
+
+    it('nennt die Eignung, wenn das Register sie führt (Fahrplan Erdbau-Container, E3)', () => {
+        const schein = baueSchein({ auftrag: {}, dokumente: [{ ...DOKU[0], eignung: 'A1' }, DOKU[1]] });
+        expect(schein).toContain('Revision 2 · Status Published · Eignung A1');
+        expect(schein).toContain('Revision 1 · Status Shared\n');
+    });
 });
 
 describe('Protokoll und Paketname', () => {

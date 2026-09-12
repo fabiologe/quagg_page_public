@@ -34,7 +34,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .pruefe import pruefe
+from .pruefe import _befund, pruefe, zeichen
 from .verbund import Quelle, fuehre_zusammen
 
 REPO = Path(__file__).resolve().parents[3]
@@ -104,17 +104,24 @@ def umgebung_fuer_node() -> dict:
     return {k: v for k, v in os.environ.items() if not k.startswith("NODE_CHANNEL")}
 
 
+V09_TITEL = "zweiter Motor (web-ifc) sieht dasselbe"
+
+
 def zweiter_motor(verbund: Path, bericht: Path) -> dict:
-    """V09 — dieselbe Datei, von web-ifc gelesen."""
+    """V09 — dieselbe Datei, von web-ifc gelesen.
+
+    Der Befund entsteht ueber `pruefe._befund` wie jeder andere. Bis 2026-09-11
+    stand er hier als eigenes dict, und ihm fehlten `beispiele` (in den
+    Fruehausstiegen auch `zahl`) — gefunden vom Vertragstest des Berichts
+    (tests/test_bericht.py), den das Berichtspanel im Client braucht.
+    """
     skript = CLIENT / "scripts/verbund_webifc.mjs"
     if not skript.is_file():
-        return {"id": "V09", "titel": "zweiter Motor (web-ifc) sieht dasselbe",
-                "ok": None, "sagt": f"{skript} fehlt"}
+        return _befund("V09", V09_TITEL, None, f"{skript} fehlt", stufe="motor", schwere="fehler")
     node = finde_node()
     if node is None:
-        return {"id": "V09", "titel": "zweiter Motor (web-ifc) sieht dasselbe",
-                "ok": None, "sagt": "node nicht gefunden (QUAGG_NODE, PATH, nvm, /usr/bin) — "
-                                    "UNGEPRUEFT, nicht bestanden"}
+        return _befund("V09", V09_TITEL, None, "node nicht gefunden (QUAGG_NODE, PATH, nvm, /usr/bin) — "
+                       "UNGEPRUEFT, nicht bestanden", stufe="motor", schwere="fehler")
     lauf = subprocess.run([node, str(skript), str(verbund), str(bericht)],
                           cwd=CLIENT, capture_output=True, text=True, timeout=600,
                           env=umgebung_fuer_node())
@@ -127,8 +134,8 @@ def zweiter_motor(verbund: Path, bericht: Path) -> dict:
         # (-9 = OOM-Killer, -11 = Absturz).
         signal = f", Signal {-lauf.returncode}" if lauf.returncode < 0 else ""
         ausgabe += f"\n[node {node} endete mit Rueckgabewert {lauf.returncode}{signal}]"
-    return {"id": "V09", "titel": "zweiter Motor (web-ifc) sieht dasselbe",
-            "ok": lauf.returncode == 0, "sagt": ausgabe[-1500:], "zahl": lauf.returncode}
+    return _befund("V09", V09_TITEL, lauf.returncode == 0, ausgabe[-1500:], lauf.returncode,
+                   stufe="motor", schwere="fehler")
 
 
 def _main(argv=None):
@@ -176,13 +183,14 @@ def _main(argv=None):
     offen = 0
     ungeprueft = 0
     for x in befunde:
-        if x["ok"] is None:
-            zeichen, ungeprueft = "?   ", ungeprueft + 1
-        elif x["ok"]:
-            zeichen = "ok  "
-        else:
-            zeichen, offen = "FEHL", offen + 1
-        print(f"  [{zeichen}] {x['id']:5} {x['titel']}")
+        # Gezaehlt wird nur, was sperrt (Schwere "fehler"): ein Hinweis "keine IDS
+        # hinterlegt" ist kein ungeprueftes Kriterium.
+        z = zeichen(x)
+        if z == "?   ":
+            ungeprueft += 1
+        elif z == "FEHL":
+            offen += 1
+        print(f"  [{z}] {x['id']:5} {x['titel']}")
         if x["ok"] is not True:
             for zeile in str(x["sagt"]).splitlines()[:10]:
                 print(f"           {zeile}")

@@ -211,6 +211,13 @@ export function dokumentAusManifest(d) {
         // Server es seit dem ersten Verbund ins Manifest schreibt. Ein
         // hochgeladenes Dokument hat keine: woher es kam, weiss der Planer.
         herkunft:        d.herkunft ?? null,
+        // IFC-Konsistenz 4a/4b (2026-09-11): was der Kopf der Datei SAGT (Hinweis)
+        // und der letzte Bericht des Prüftors — beim Erzeugten der seines Verbunds.
+        schema:          d.schema ?? null,
+        einheitHinweis:  d.einheit_hinweis ?? null,
+        pruefung:        d.pruefung ?? d.herkunft?.pruefung ?? null,
+        // Fahrplan Erdbau-Container (E3): die Eignung nach ISO 19650 — alte Einträge führen keine.
+        eignung:         d.eignung ?? null,
         // Der Viewer rechnet in ms-Epoche (Date.now()), das Manifest schreibt
         // ISO-Strings. Eine Form gewinnt, sonst sortiert das Register falsch.
         addedAt:         Date.parse(d.hochgeladen_am) || 0,

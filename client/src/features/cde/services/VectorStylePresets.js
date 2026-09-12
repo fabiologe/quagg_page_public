@@ -80,7 +80,7 @@ const SEWER_STYLES = {
     IFCFLOWSEGMENT:       mk('#b43c00', 0.30, 'solid'),
     IFCFLOWFITTING:       mk('#b43c00', 0.30, 'solid'),
     IFCFLOWTERMINAL:      mk('#b43c00', 0.30, 'solid'),
-    IFCDUCT:              mk('#007878', 0.25, 'solid'),
+    IFCDUCTSEGMENT:       mk('#007878', 0.25, 'solid'),
     IFCDUCTFITTING:       mk('#007878', 0.25, 'solid'),
     IFCAIRTERMINAL:       mk('#00a0a0', 0.25, 'solid'),
     IFCVALVE:             mk('#6400c8', 0.30, 'solid'),

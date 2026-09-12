@@ -138,7 +138,12 @@ describe('WÄCHTER: die Verklebung', () => {
     it('jede Änderung der Modellmenge merkt sich den Stand', () => {
         const viewer = lies('components/IfcViewer.vue');
         const ab = viewer.indexOf('async function _modellmengeNachziehen()');
-        expect(viewer.slice(ab, ab + 1800)).toContain('ablage.merkeOffene()');
+        // Der RUMPF der Funktion (bis zur schließenden Klammer auf Spalte 0), kein festes
+        // Fenster: bis 2026-09-11 waren es 1800 Zeichen, und drei Zeilen mehr im Rumpf
+        // (Bauwerksstruktur, Fahrplan Erdbau-Container Stufe 8) machten den Wächter rot,
+        // obwohl der Aufruf dastand.
+        expect(ab).toBeGreaterThan(-1);
+        expect(viewer.slice(ab, viewer.indexOf('\n}\n', ab))).toContain('ablage.merkeOffene()');
     });
 
     it('die Schale holt sie NACH dem Auftrag zurück — sonst spielt das Journal gegen einen leeren Satz nach', () => {

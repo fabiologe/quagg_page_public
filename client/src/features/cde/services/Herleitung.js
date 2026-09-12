@@ -135,9 +135,9 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
 
     return {
         kategorie: kategorie || null,
-        // Ein Typ, den das IFC-4.3-Wörterbuch nicht kennt, ist etwas anderes
-        // als ein Typ ohne Profil: das Modell ist älter, oder der Exporteur
-        // benutzt einen eigenen Namen. Beides ist behebbar, aber verschieden.
+        // Ein Typ, den KEIN IFC-Schema kennt, ist etwas anderes als ein Typ
+        // ohne Profil: der Exporteur benutzt einen eigenen Namen. Ältere
+        // Schemata (IFC4, IFC2x3) führt das Wörterbuch seit 2026-09-11 mit.
         imWoerterbuch: kategorie ? imWoerterbuch(kategorie) : false,
         kette,
         profilAus: ausTyp,
@@ -170,10 +170,9 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
 function _luecke({ kategorie, profil, bauform, quelle, guete = 'unbekannt' }) {
     if (!kategorie) return null;
     if (!imWoerterbuch(kategorie)) {
-        return { stufe: 'schema', text: `„${kategorie}" steht nicht im IFC-4.3-Wörterbuch. `
-            + 'Entweder ist das Modell älter (2x3 oder IFC4) und der Typ wurde umbenannt, oder der Exporteur '
-            + 'benutzt einen eigenen Namen. Die Vererbung greift hier nicht — ein Typprofil unter genau diesem '
-            + 'Namen wirkt trotzdem.' };
+        return { stufe: 'schema', text: `„${kategorie}" steht in keinem IFC-Schema (IFC2x3, IFC4, IFC4.3 ADD2), `
+            + 'auch nicht unter einem Altnamen — der Exporteur benutzt einen eigenen Namen. '
+            + 'Die Vererbung greift hier nicht — ein Typprofil unter genau diesem Namen wirkt trotzdem.' };
     }
     if (!profil && bauform === 'netz') {
         return { stufe: 'form', text: `Für „${kategorie}" gibt es kein Typprofil, und aus der Geometrie `

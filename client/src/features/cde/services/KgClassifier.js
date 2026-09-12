@@ -19,13 +19,11 @@ import { findMatchingRule } from './VectorRuleEngine.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
 import { collectQto, pickQtoValue, LENGTH_KEYS } from './QuantitySummary.js';
 import * as THREE from 'three';
+import { istLinear } from './Kategorien.js';
 
-// T1/E2: Kategorien, deren BBox-Längskante als Laufmeter-Fallback taugt
-// (lineare Bauteile) — für alles andere wäre die BBox-Kante Unsinn.
-const LINEAR_CATEGORIES = new Set([
-    'IFCPIPESEGMENT', 'IFCFLOWSEGMENT', 'IFCDUCT', 'IFCDUCTSEGMENT',
-    'IFCKERB', 'IFCBEAM', 'IFCMEMBER', 'IFCCABLESEGMENT', 'IFCCABLECARRIERSEGMENT',
-]);
+// T1/E2: nur bei linearen Bauteilen taugt die BBox-Längskante als Laufmeter-
+// Fallback — für alles andere wäre sie Unsinn. „Linear" steht EINMAL, als Wurzeln
+// im IFC-Baum (Kategorien.js); bis 2026-09-11 stand hier eine Liste samt IFCDUCT.
 
 /** Unwrap OBC's `{value: x}` shape. */
 function _scalar(v) {
@@ -190,7 +188,7 @@ export async function classifyKg({
                 // T1/E2: Laufmeter — Qto zuerst, BBox-Längskante nur für
                 // lineare Kategorien (Rohr/Bordstein/Träger), sonst 0.
                 let laenge = elemData?.laenge ?? null;
-                if (collectLengths && laenge == null && LINEAR_CATEGORIES.has(category)
+                if (collectLengths && laenge == null && istLinear(category)
                     && box && !box.isEmpty()) {
                     box.getSize(size);
                     laenge = Math.max(size.x, size.y, size.z);

@@ -107,10 +107,11 @@ def test_linie_bevorzugt_die_global_id(frische_db, app_conn, projekte_wurzel):
     c = _client()
     basis = f"/FastAPI/projekte/{p['id']}/cde"
     gid = "0aB$cd12345678901234"
+    # Seit dem Import-Tor (IFC-Konsistenz, Stufe 4a) beginnt eine .ifc mit dem STEP-Kopf — sonst 422.
     a = c.post(f"{basis}/upload", params={"projekt_global_id": gid},
-               files={"datei": ("Alt.ifc", b"ISO-1", "application/octet-stream")}).json()
+               files={"datei": ("Alt.ifc", b"ISO-10303-21;1", "application/octet-stream")}).json()
     b = c.post(f"{basis}/upload", params={"projekt_global_id": gid},
-               files={"datei": ("Neu.ifc", b"ISO-2", "application/octet-stream")}).json()
+               files={"datei": ("Neu.ifc", b"ISO-10303-21;2", "application/octet-stream")}).json()
     # Verschiedene Basisnamen, aber dieselbe GlobalId -> dieselbe Linie.
     r = c.post(f"{basis}/saetze", json={"name": "Doppelt", "enthaelt": [a["sha256"], b["sha256"]]})
     assert r.status_code == 422
@@ -184,3 +185,22 @@ def test_verwaiste_verweise_werden_gemeldet(frische_db, app_conn, projekte_wurze
     gelesen = cde.saetze(o)[0]
     assert gelesen["dokumente"] == []
     assert gelesen["verwaist"] == [kanal1["sha256"]]
+
+
+def test_ein_verbund_gehoert_in_keinen_satz(frische_db, app_conn, projekte_wurzel):
+    """E1 (Fahrplan Erdbau-Container): ein Verbund ist ein Abgabe-Container — ein Erdbau-Dokument ein Fachmodell."""
+    p, c, basis, kanal1, _kanal2, gelaende = _projekt_mit_modellen(app_conn)
+    o = ordner.finde(p["id"])
+    daten = cde.manifest_lesen(o)
+    for d in daten["dokumente"]:
+        if d["sha256"] == kanal1["sha256"]:
+            d["herkunft"] = {"art": "verbund"}
+        elif d["sha256"] == gelaende["sha256"]:
+            d["herkunft"] = {"art": "erdbau"}
+    cde._manifest_schreiben(o, daten)
+    r = c.post(f"{basis}/saetze", json={"name": "Mit Verbund", "zweck": "variante", "enthaelt": [kanal1["sha256"]]})
+    assert r.status_code == 422 and "Abgabe-Container" in r.json()["detail"], r.text
+    r = c.post(f"{basis}/saetze", json={"name": "Mit Erdbau", "zweck": "variante", "enthaelt": [gelaende["sha256"]]})
+    assert r.status_code == 201, r.text
+    r = c.put(f"{basis}/saetze/{r.json()['id']}", json={"enthaelt": [gelaende["sha256"], kanal1["sha256"]]})
+    assert r.status_code == 422 and "Abgabe-Container" in r.json()["detail"], r.text

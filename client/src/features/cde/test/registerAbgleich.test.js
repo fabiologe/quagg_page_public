@@ -240,7 +240,9 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
   });
 
   it('reicht den Statuswechsel an den Server durch', async () => {
-    const api = fakeApi([eintrag({ status: 'WIP' })]);
+    // Seit IFC-Konsistenz 4b braucht ein Modell für WIP → Shared einen
+    // Prüfbericht — hier liegt einer am Eintrag, mit Verstößen: vorhanden, nicht grün.
+    const api = fakeApi([eintrag({ status: 'WIP', pruefung: { verstoesse: 2, befunde: [] } })]);
     repo.setBackend(new RemoteBackend(1338, api));
 
     const cde = useCdeStore();
@@ -249,6 +251,18 @@ describe('Der Store führt EINE Liste, nicht zwei', () => {
     expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(true);
     expect(api.put).toHaveBeenCalledWith('/projekte/1338/cde/aaa/status', { status: 'Shared' });
     expect(cde.dokumente[0].status).toBe('Shared');
+  });
+
+  it('sperrt WIP → Shared für ein Modell ohne Prüfbericht — begründet, ohne den Server zu fragen', async () => {
+    const api = fakeApi([eintrag({ status: 'WIP' })]);
+    repo.setBackend(new RemoteBackend(1338, api));
+
+    const cde = useCdeStore();
+    await cde.ready;
+
+    expect(await cde.setDokumentStatus('aaa', 'Shared')).toBe(false);
+    expect(cde.statusGrund).toMatch(/Prüfbericht/);
+    expect(api.put).not.toHaveBeenCalled();
   });
 
   it('entfernt über den Server statt nur aus der eigenen Liste', async () => {

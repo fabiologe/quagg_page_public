@@ -41,14 +41,13 @@ import ifcopenshell
 import ifcopenshell.util.schema
 import ifcopenshell.util.unit
 
+from . import FASSUNG, WERKZEUG
 from . import bezugssysteme as bz
 from . import guids
-
-# Das Zielschema. `schema=` nimmt die FASSUNG, `f.schema` meldet die FAMILIE
-# ('IFC4X3') — zwei Ebenen derselben Sache, siehe README. Der Migrator arbeitet
-# mit der Familie.
-ZIELSCHEMA = "IFC4X3_ADD2"
-ZIELFAMILIE = "IFC4X3"
+from . import herkunft as H
+# Das Zielschema steht EINMAL: in schema.py (Fassung != Familie, siehe dort und
+# README). Hier weitergereicht, weil Tests und Aufrufer es von hier holen.
+from .schema import ZIELFAMILIE, ZIELSCHEMA  # noqa: F401
 
 # Der Migrator kennt GENAU zwei Paare (im Vertragstest festgenagelt). Einen
 # direkten Weg IFC2X3 -> IFC4X3 gibt es nicht, deshalb die Kette.
@@ -65,8 +64,11 @@ MIGRATIONSWEG = {
 # System in die Datei geschrieben.
 
 # Merkmalssaetze bekommen das Praefix `Quagg_`. `Pset_` ist bSI-reserviert;
-# eigene Saetze dort hineinzuschreiben ist ein Konformitaetsverstoss.
-PSET_HERKUNFT = "Quagg_Fachmodell"
+# eigene Saetze dort hineinzuschreiben ist ein Konformitaetsverstoss. Bis
+# 2026-09-11 hiess die Konstante des Gruppen-Satzes hier PSET_HERKUNFT und trug
+# „Quagg_Fachmodell" — neben `Quagg_Herkunft` am Element lief der Name
+# auseinander. Beide Namen stehen jetzt in herkunft.py.
+PSET_FACHMODELL = H.PSET_FACHMODELL
 PSET_GEOREF = "Quagg_Georeferenz"
 
 
@@ -129,6 +131,8 @@ class Befund:
     mapconversion: dict | None = None
     mapconversion_angewandt: bool = False
     warnungen: list = field(default_factory=list)
+    # Die Sites der Lieferung, die in der des Verbunds aufgingen (`_site_aufloesen`).
+    sites_aufgeloest: list = field(default_factory=list)
 
 
 # ── Messen ──────────────────────────────────────────────────────────────────
@@ -459,7 +463,7 @@ def schreibe_kopf(f, *, dateiname: str, bearbeiter: str = "", firma: str = "quag
     name.setArgumentAsString(0, dateiname)
     name.setArgumentAsAggregateOfString(2, [bearbeiter or "CDE"])
     name.setArgumentAsAggregateOfString(3, [firma])
-    name.setArgumentAsString(5, "quagg CDE Verbundexport")
+    name.setArgumentAsString(5, f"{WERKZEUG} Verbundexport {FASSUNG}")
     name.setArgumentAsString(6, "None")
 
 
@@ -483,7 +487,7 @@ def zielgeruest(projektname: str, *, crs: str | None, zone: str | None = None,
     person = f.create_entity("IfcPerson", FamilyName=bearbeiter or "CDE")
     firma = f.create_entity("IfcOrganization", Name="quagg engineering")
     anwendung = f.create_entity("IfcApplication", ApplicationDeveloper=firma,
-                                Version="1", ApplicationFullName="quagg CDE Verbundexport",
+                                Version=FASSUNG, ApplicationFullName=f"{WERKZEUG} Verbundexport",
                                 ApplicationIdentifier="quagg-cde")
     wer = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=firma)
     # `LastModifiedDate` ist bei ChangeAction ADDED PFLICHT — die Where-Rule
@@ -658,6 +662,96 @@ def _beruehrt_projekt(rel) -> bool:
     return False
 
 
+_SITE_ATTRIBUTE = ("RefLatitude", "RefLongitude", "RefElevation", "LandTitleNumber", "SiteAddress")
+
+
+def _site_leer(wert) -> bool:
+    """Traegt ein Site-Attribut nichts? None, leer — oder die Nullen, die Exporteure schreiben.
+
+    Gemessen 2026-09-11: die BricsCAD-Lieferungen tragen RefLatitude (0, 0, 0, 0)
+    und RefElevation 0.0, ENQUIER und IFCOUT gar nichts. Eine Null ist kein Standort.
+    """
+    if wert is None:
+        return True
+    if isinstance(wert, tuple):
+        return not wert or all(v == 0 for v in wert)
+    if isinstance(wert, (int, float)):
+        return wert == 0
+    if isinstance(wert, str):
+        return not wert.strip()
+    return False
+
+
+def _merkmalsaetze(objekt) -> dict:
+    """Name -> Merkmalssatz der Saetze, die an einem Objekt haengen."""
+    out = {}
+    for rel in getattr(objekt, "IsDefinedBy", None) or ():
+        if rel.is_a("IfcRelDefinesByProperties"):
+            satz = rel.RelatingPropertyDefinition
+            name = getattr(satz, "Name", None)
+            if name:
+                out[name] = satz
+    return out
+
+
+def _site_aufloesen(ziel, geruest: dict, site, befund: Befund) -> bool:
+    """Die Site einer Lieferung in UNSERER aufgehen lassen — der Verbund hat EINE Site.
+
+    Fahrplan Erdbau-Container, Stufe 2: bis 2026-09-11 hing jede Quell-Site UNTER
+    der des Verbunds — im Projekt 1337 vier IfcSite (Geruest, zweimal „Site", die
+    Site des Eigenbaus). V05 zaehlte eine Raumwurzel unter dem Projekt und war
+    zufrieden; jeder Empfaenger sah vier Standorte. Jetzt wandern die Kinder
+    (Gebaeude, direkt enthaltene Bauteile) und jeder andere Verweis auf die
+    Quell-Site an unsere, und die Site faellt.
+
+    DIE LAGE AENDERT SICH DABEI NICHT: die Kinder zeigen mit ihren Platzierungen
+    auf die PLATZIERUNG der Quell-Site, nicht auf die Site. Die Platzierung bleibt
+    stehen und wird wie jede freie in `_platzierungen_verankern` unter unsere
+    gehaengt — auch dann, wenn `_mapconversion_anwenden` den Versatz in genau
+    sie geschrieben hat.
+
+    Was die Quell-Site sagt, geht nicht still verloren: ihre Attribute
+    (Referenzkoordinaten, Adresse) wandern an unsere, wenn dort nichts steht.
+    WIDERSPRECHEN sie dem, was schon da ist, bleibt die Quell-Site geschachtelt
+    stehen, und der Bericht sagt es. Merkmalssaetze wandern mit — ausser einem
+    gleichnamigen, den unsere Site schon traegt, und der Georeferenz: die setzt
+    der Verbund selbst, nach allen Quellen (`georeferenz_setzen`).
+
+    @returns True, wenn die Site aufgeloest (und entfernt) wurde
+    """
+    import ifcopenshell.util.element
+
+    ziel_site = geruest["site"]
+    widerspruch = [a for a in _SITE_ATTRIBUTE
+                   if not _site_leer(getattr(site, a, None)) and not _site_leer(getattr(ziel_site, a, None))
+                   and getattr(site, a) != getattr(ziel_site, a)]
+    if widerspruch:
+        befund.warnungen.append(f"Site {site.Name!r} bleibt geschachtelt: {', '.join(widerspruch)} "
+                                "widersprechen der Site des Verbunds")
+        return False
+    uebernommen = []
+    for a in _SITE_ATTRIBUTE:
+        wert = getattr(site, a, None)
+        if not _site_leer(wert) and _site_leer(getattr(ziel_site, a, None)):
+            setattr(ziel_site, a, wert)
+            uebernommen.append(a)
+    belegt = set(_merkmalsaetze(ziel_site)) | {PSET_GEOREF}
+    verworfen = []
+    for verweiser in list(ziel.get_inverse(site)):
+        if verweiser.is_a("IfcRelDefinesByProperties"):
+            name = getattr(verweiser.RelatingPropertyDefinition, "Name", None)
+            if name in belegt:
+                # Leer geworden, raeumt `_leere_beziehungen_entfernen` die Beziehung weg.
+                verweiser.RelatedObjects = [o for o in verweiser.RelatedObjects if o.id() != site.id()]
+                verworfen.append(name)
+                continue
+        ifcopenshell.util.element.replace_attribute(verweiser, site, ziel_site)
+    befund.sites_aufgeloest.append({"name": site.Name, "globalId": site.GlobalId,
+                                    "attribute_uebernommen": uebernommen, "merkmalsaetze_verworfen": verworfen})
+    ziel.remove(site)
+    return True
+
+
 def _uebernimm(ziel, quelle, geruest: dict, befund: Befund, quell_sha: str, bekannt: set) -> list:
     """Eine normalisierte Quelle in das Zielgeruest haengen.
 
@@ -739,24 +833,35 @@ def _uebernimm(ziel, quelle, geruest: dict, befund: Befund, quell_sha: str, beka
                 befund.warnungen.append(f"{typ} nicht uebernommen: {fehler}")
     befund.stile_uebernommen = stile
 
-    # Die Raumwurzeln der Quelle unter UNSERE Site haengen. Damit hat der
-    # Verbund genau eine Wurzel, und die Gliederung der Lieferung bleibt
-    # trotzdem erhalten.
-    unter_uns = [zuordnung[w.GlobalId] for w in wurzeln_quelle if w.GlobalId in zuordnung]
+    # Die Raumwurzeln der Quelle: eine SITE geht in UNSERER auf (`_site_aufloesen`
+    # — der Verbund hat genau eine Site), alles andere (ein Gebaeude, eine Anlage
+    # direkt unter dem Projekt) haengt darunter. Die Gliederung der Lieferung
+    # unterhalb der Site bleibt erhalten.
+    unter_uns = []
+    for w in wurzeln_quelle:
+        inst = zuordnung.get(w.GlobalId)
+        if inst is None:
+            continue
+        if inst.is_a("IfcSite") and _site_aufloesen(ziel, geruest, inst, befund):
+            zuordnung.pop(w.GlobalId, None)          # entfernt — danach nicht mehr anfassen
+            continue
+        unter_uns.append(inst)
     if unter_uns:
         ziel.create_entity(
             "IfcRelAggregates", GlobalId=_guid("wurzel", quell_sha),
             OwnerHistory=geruest["besitz"], RelatingObject=geruest["site"],
             RelatedObjects=unter_uns)
-    else:
+    elif not befund.sites_aufgeloest:
         befund.warnungen.append("keine Raumwurzel gefunden — Bauteile haengen direkt am Verbund")
 
-    # Die ersetzten GlobalIds am Bauteil festhalten.
+    # Die ersetzten GlobalIds am Bauteil festhalten — in `Quagg_Herkunft`, und zwar
+    # in DEM Satz, den ein erzeugtes Element schon mitbringt (herkunft.schreibe).
     for alt, neu, _inst in ersetzte:
         ziel_inst = zuordnung.get(neu)
         if ziel_inst is not None:
-            _merkmale(ziel, geruest["besitz"], ziel_inst, "Quagg_Herkunft",
-                      {"OriginalGlobalId": alt, "Quelle": befund.name}, schluessel=quell_sha)
+            H.schreibe(ziel, geruest["besitz"], ziel_inst, {"OriginalGlobalId": alt, "OriginalDatei": befund.name},
+                       guid_von=lambda teil, _n=neu: _guid(quell_sha, H.PSET_HERKUNFT,
+                                                           *(() if teil == "satz" else (teil,)), _n))
 
     bauteile = [i for g, i in zuordnung.items() if not _ist_raum(i)]
     befund.uebernommen = len(bauteile)
@@ -854,10 +959,18 @@ def _einmalige_verschmelzen(ziel) -> dict:
     """
     import ifcopenshell.util.element
 
-    # Typ -> was diesen Eintrag ausmacht. Erweiterbar; heute traegt nur
-    # IfcApplication eine Eindeutigkeitsregel, die uns beim Merge trifft.
+    # Typ -> was diesen Eintrag ausmacht. Erweiterbar. IfcApplication traegt eine
+    # Eindeutigkeitsregel, die uns beim Merge trifft; die Quelldokumente
+    # (herkunft.dokument, Fahrplan Erdbau-Container Stufe 3) keine Regel, aber
+    # dieselbe Sorte: der Eigenbau bringt das Dokument seines Gelaendes mit, und
+    # der Verbund nennt dieselbe Lieferung an ihrer Gruppe noch einmal. Die
+    # Reihenfolge traegt: erst die Dokumente, dann die Referenzen, die danach auf
+    # dasselbe Dokument zeigen.
     EINMALIG = {
         "IfcApplication": lambda a: (a.ApplicationFullName, a.Version, a.ApplicationIdentifier),
+        "IfcDocumentInformation": H.dokument_schluessel,
+        "IfcDocumentReference": lambda r: (r.ReferencedDocument.id() if r.ReferencedDocument else None,
+                                           r.Location, r.Identification, r.Name),
     }
 
     verschmolzen = collections.Counter()
@@ -869,10 +982,26 @@ def _einmalige_verschmelzen(ziel) -> dict:
             if erster is None:
                 behalten[schluessel] = inst
                 continue
+            # Was der Erste nicht weiss, weiss vielleicht der Zweite — die Revision
+            # eines Dokuments, das eine Seite ohne sie nannte.
+            for i in range(len(erster)):
+                if erster[i] is None and inst[i] is not None:
+                    erster[i] = inst[i]
             for verweiser in ziel.get_inverse(inst):
                 ifcopenshell.util.element.replace_attribute(verweiser, inst, erster)
             ziel.remove(inst)
             verschmolzen[typ] += 1
+
+    # UR1 verlangt eine eindeutige ApplicationIdentifier. Zwei FASSUNGEN desselben
+    # Programms — ein Erdbau-Dokument der Fassung 1 im Verbund der Fassung 2 —
+    # verschmelzen oben nicht (UR2 unterscheidet sie, jede steht an ihren
+    # Bauteilen); die spaetere Nennung bekommt ihre Fassung in die Kennung.
+    kennungen = set()
+    for a in sorted(ziel.by_type("IfcApplication"), key=lambda a: a.id()):
+        if a.ApplicationIdentifier in kennungen:
+            a.ApplicationIdentifier = f"{a.ApplicationIdentifier} {a.Version}"
+            verschmolzen["IfcApplication (Kennung um Fassung ergaenzt)"] += 1
+        kennungen.add(a.ApplicationIdentifier)
     return dict(verschmolzen)
 
 
@@ -911,7 +1040,8 @@ def _leere_beziehungen_entfernen(ziel) -> int:
     return entfernt
 
 
-def _herkunft(ziel, geruest: dict, quelle: Quelle, befund: Befund, bauteile: list) -> None:
+def _herkunft(ziel, geruest: dict, quelle: Quelle, befund: Befund, bauteile: list, *,
+              ablage: str | None = None, dokumente: dict | None = None) -> None:
     """Je Fachmodell eine Gruppe — damit im Verbund sichtbar bleibt, wer was lieferte.
 
     Die Merkmale haengen an der GRUPPE, nicht an jedem Bauteil. Bei sechsstelligen
@@ -929,7 +1059,7 @@ def _herkunft(ziel, geruest: dict, quelle: Quelle, befund: Befund, bauteile: lis
     ziel.create_entity(
         "IfcRelAssignsToGroup", GlobalId=_guid("gruppe-rel", quelle.sha256),
         OwnerHistory=geruest["besitz"], RelatedObjects=bauteile, RelatingGroup=gruppe)
-    _merkmale(ziel, geruest["besitz"], gruppe, PSET_HERKUNFT, {
+    werte = {
         "Datei": quelle.name,
         "SHA256": quelle.sha256,
         "Revision": quelle.revision,
@@ -939,7 +1069,17 @@ def _herkunft(ziel, geruest: dict, quelle: Quelle, befund: Befund, bauteile: lis
         "Bauteile": len(bauteile),
         "MigrationVerworfen": befund.verworfen,
         "GlobalIdErsetzt": befund.guid_ersetzt,
-    }, schluessel=quelle.sha256)
+    }
+    if befund.sites_aufgeloest:
+        # Die Site der Lieferung ging in der des Verbunds auf — ihre Kennung bleibt hier lesbar.
+        werte["OriginalSiteGlobalId"] = ", ".join(s["globalId"] for s in befund.sites_aufgeloest)
+        werte["OriginalSiteName"] = ", ".join(str(s["name"]) for s in befund.sites_aufgeloest)
+    _merkmale(ziel, geruest["besitz"], gruppe, PSET_FACHMODELL, werte, schluessel=quelle.sha256)
+    # Die Lieferung als Dokument an ihrer Gruppe (herkunft.dokument). Einen
+    # Ablageort hat nur, was als Registerdatei kam — der Eigenbau entsteht im Laufordner.
+    ref = H.dokument(ziel, {} if dokumente is None else dokumente, sha256=quelle.sha256, datei=quelle.name,
+                     revision=quelle.revision, ablage=ablage if quelle.pfad.name == quelle.name else None)
+    H.verknuepfe(ziel, geruest["besitz"], ref, [gruppe], guid=_guid("dokument", quelle.sha256))
 
 
 def _bezug_pruefen(befund: Befund, crs, kandidaten, befunde) -> list | None:
@@ -1004,7 +1144,8 @@ def _bezug_entscheiden(crs, kandidaten, befunde) -> tuple[str, str, tuple]:
 
 def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
                     crs: str | None = None, bearbeiter: str = "",
-                    schluessel: str = "verbund", melde=None, nachbearbeiten=None) -> dict:
+                    schluessel: str = "verbund", melde=None, nachbearbeiten=None,
+                    ablage: str | None = None) -> dict:
     """Der ganze Weg: normalisieren, Geruest bauen, hineinhaengen, aufraeumen, schreiben.
 
     @param quellen      Liste von `Quelle` oder von dicts mit denselben Feldern
@@ -1022,6 +1163,8 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
                         CDE-Eigenbau seine Aushuebe an ihre Wirte, ohne dass diese
                         Datei ihn kennen muss.
     @param melde        optionaler Rueckruf `melde(text)` fuer den Fortschritt
+    @param ablage       wo die Registerdateien liegen (`<Phase>/<Projekt>/CDE`) —
+                        `Location` ihrer Dokumentverweise (herkunft.dokument)
     @returns            der Bericht (dict, JSON-tauglich)
     """
     begonnen = time.time()
@@ -1041,6 +1184,7 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
     ziel = geruest["datei"]
     bekannt = {i.GlobalId for i in ziel.by_type("IfcRoot")}
     befunde = []
+    dokumente = {}                            # sha256 -> Dokumentverweis (herkunft.dokument)
     kandidaten = None                         # Systeme, in denen ALLE bisherigen Quellen liegen
 
     for nr, quelle in enumerate(quellen, 1):
@@ -1049,7 +1193,7 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         kandidaten = _bezug_pruefen(befund, crs, kandidaten, befunde)
         sag(f"({nr}/{len(quellen)}) {quelle.name}: {befund.entitaeten_nachher} Entitaeten uebernehmen")
         bauteile = _uebernimm(ziel, datei, geruest, befund, quelle.sha256, bekannt)
-        _herkunft(ziel, geruest, quelle, befund, bauteile)
+        _herkunft(ziel, geruest, quelle, befund, bauteile, ablage=ablage, dokumente=dokumente)
         befunde.append(befund)
         del datei                                 # Speicher zurueckgeben, bevor die naechste kommt
 
@@ -1102,6 +1246,7 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         "kontexte_entfernt": kontexte["entfernt"],
         "platzierungen_verankert": verankert,
         "einmalige_verschmolzen": verschmolzen,
+        "dokumente": len(ziel.by_type("IfcDocumentInformation")),
         "fremde_projekte_entfernt": len(fremde),
         "leere_beziehungen_entfernt": leere,
         "huelle": huelle(ziel),

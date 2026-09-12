@@ -493,6 +493,7 @@ import IfcSavedViews       from './IfcSavedViews.vue';
 import IfcAnnotationOverlay from './IfcAnnotationOverlay.vue';
 import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
+import { baueBaeume } from '../services/Bauwerksstruktur.js';
 import { bestimmeBezug } from '../services/Projektkoordinaten.js';
 import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
@@ -1193,19 +1194,34 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     // Achse (Kanalgraben); die Bauwerksgrube braucht sie am Fundament, am
     // Schacht, an jedem Körper. Eigene DGM-Teile heissen im Journal, nicht in
     // der Engine.
+    // DIE HISTORIE (Fahrplan Erdbau-Container, Stufe 1): wer in eine Anzeige
+    // tippt, die im Journal schon zurückgenommen ist (die Szene stand noch),
+    // bekommt trotzdem das Ur-Gelände — nicht die tote Kennung als „Ur".
+    // So entstanden in 1337 zwei Aushübe, die nie wieder ableitbar waren.
     if (!angereichert.gelaendeQuellen) {
       const kandidaten = await engine.value?.gelaendeKandidaten?.() ?? [];
       if (kandidaten.length) {
         const erzeugt = aenderungen.wirksamerStand('erzeugt');
+        const historie = aenderungen.historischerStand('erzeugt');
         angereichert = {
           ...angereichert,
           gelaendeQuellen: kandidaten
             .filter(k => k.globalId !== result.globalId)          // nie sich selbst ausheben
             // … und je Kandidat sein ERDBAU-STAND (Stufe 1): Ur-Gelände, Anzeige,
             // Stapel — `anwenden` hängt daran an, statt eine Kette zu bauen.
-            .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '', erdbau: erdbauStandVon(erzeugt, k.globalId) })),
+            .map(k => ({ ...k, name: k.name || erzeugt.get(k.globalId)?.name || '', erdbau: erdbauStandVon(erzeugt, k.globalId, { historie }) })),
         };
       }
+    } else if (angereichert.gelaendeQuellen.some(k => !k.erdbau)) {
+      // Brachte der Aufrufer die Kandidaten mit, fehlte ihnen der Erdbau-Stand —
+      // und `_erdbauVorgang` nahm dann die Kennung des Kandidaten als Ur.
+      const erzeugt = aenderungen.wirksamerStand('erzeugt');
+      const historie = aenderungen.historischerStand('erzeugt');
+      angereichert = {
+        ...angereichert,
+        gelaendeQuellen: angereichert.gelaendeQuellen
+          .map(k => (k.erdbau ? k : { ...k, erdbau: erdbauStandVon(erzeugt, k.globalId, { historie }) })),
+      };
     }
 
     // DER ERDBAU-STAND DES SUBJEKTS (Stufe 1; Stufe 0 nannte es D3): wer das
@@ -1213,7 +1229,8 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     // vorhandenen Stapel anhängen statt ihn zu klonen. Gefunden über die
     // QUELLEN im Journal — nicht über den Namen.
     if (result.globalId && !angereichert.erdbau) {
-      angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId) };
+      angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId,
+                                                               { historie: aenderungen.historischerStand('erzeugt') }) };
     }
 
     // DAS MODELL, AN DEM DIE BEARBEITUNG HÄNGT (Stufe 4, Lücke L6): der Commit
@@ -1434,6 +1451,8 @@ async function baueErzeugteNeu() {
     const r = await engine.value.autor.baueErzeugte(plan.anzuwenden, undefined, {
       // Eigene Teile, die als Quelle eines Kanalgrabens verborgen sind (G6).
       verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+      // Die Kette zum Ur läuft durch Zurückgenommenes (Fahrplan Erdbau-Container, Stufe 1).
+      historie: aenderungen.historischerStand('erzeugt'),
     });
     if (r.misserfolge.length) {
       console.warn('[CDE] erzeugte Bauteile', r.misserfolge.map(m => m.grund));
@@ -1502,6 +1521,8 @@ provideViewerApi({
    * Handle ohne Modell — und hat damit den Viewer gekostet.
    */
   getGeoreferenzen:     () => engine.value?.leseGeoreferenzen() ?? {},
+  // IFC-Konsistenz 4c (2026-09-11): Schema, abgekündigte/fremde Klassen, Proxys, fehlende Lesequelle.
+  getImportBefunde:     () => engine.value?.importBefunde?.() ?? {},
   /**
    * Wie der Höhenversatz je Modell zustande kam (Stufe 13.3).
    *
@@ -1873,6 +1894,7 @@ async function wendeEinenAn(eintrag) {
     const plan = planFuerEintrag(eintrag, ort?.modelId ?? null);
     const { misserfolge, nichtAngewandt = [] } = await engine.value.wendeFestlegungenAn(plan, {
       globalIdZuLocalId: new Map(ort ? [[eintrag.globalId, ort.localId]] : []),
+      historie: aenderungen.historischerStand('erzeugt'),
     });
     return {
       weg,
@@ -2132,7 +2154,10 @@ async function _modellmengeNachziehen() {
   ifc.setModelList(engine.value.getModelList());
   const tree = await engine.value.getSpatialTree();
   ifc.setSpatialTree(tree ?? null);
-  engine.value.buildSearchIndex().then(entries => ifc.setSearchIndex(entries));
+  const index = engine.value.buildSearchIndex().then(entries => { ifc.setSearchIndex(entries); return entries; });
+  // Stufe 8 (Fahrplan Erdbau-Container): die Bauwerksstruktur JEDES Modells — mit
+  // Namen aus dem Suchindex, Aushüben unter ihrem Wirt, den Gruppen der Datei.
+  _bauwerksstrukturNachziehen(index).catch(e => console.warn('cde: bauwerksstruktur', e?.message ?? e));
   engine.value.getStoreyList().then(list => { storeyList.value = list; }).catch(() => {});
 
   // Erdbau-Farben auf GELIEFERTES Material (2026-09-09). Erzeugtes trägt
@@ -2142,6 +2167,15 @@ async function _modellmengeNachziehen() {
 
   // Und merken, was jetzt offen ist — der nächste Start holt genau das zurück.
   ablage.merkeOffene();
+}
+
+/** Die Bäume der Bauwerksstruktur neu bauen (Stufe 8) — nach dem Suchindex, der die Namen trägt. */
+async function _bauwerksstrukturNachziehen(indexFertig) {
+  if (!engine.value?.getSpatialTrees) return;
+  const [baeume, index] = await Promise.all([engine.value.getSpatialTrees(), indexFertig.catch(() => [])]);
+  const beziehungen = new Map(baeume.map(b => [b.modelId, engine.value.strukturBeziehungen?.(b.modelId) ?? null]));
+  ifc.setSpatialBaeume(baueBaeume({ baeume, index, beziehungen,
+                                    shaVon: (modelId) => ablage.identitaet(modelId)?.sha256 ?? null }));
 }
 
 /**
@@ -2182,9 +2216,10 @@ async function eigenbauPaket() {
   const bezug = Object.values(bezuege.value)[0] ?? null;
   if (!bezug?.nachProjekt) throw new Error('Eigenbau-Paket: kein Koordinatenbezug — erst ein Modell laden');
   const erzeugt = aenderungen.wirksamerStand('erzeugt');
+  const historie = aenderungen.historischerStand('erzeugt');
   const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
   const schritte = [...erzeugt].filter(([, w]) => w).map(([globalId, wert]) => ({ globalId, wert }));
-  const gebaut = await engine.value.eigenbauGeometrien(schritte, { verdeckt });
+  const gebaut = await engine.value.eigenbauGeometrien(schritte, { verdeckt, historie });
   const c = bezug.crs ?? {};
   const herkunft = c.deklariert && c.erkannt && !c.stimmt
     ? `Georeferenz-Erkennung der CDE: die Datei deklariert ${c.deklariert}, die Koordinaten liegen in ${c.erkannt}`
@@ -2193,7 +2228,7 @@ async function eigenbauPaket() {
   // eine offene Sitzung dazukommt (dann ist der Stand MEHR als der Commit).
   const letzter = [...(aenderungen.commits ?? [])].sort((a, b) => (a.wann ?? 0) - (b.wann ?? 0)).at(-1) ?? null;
   const paket = baueEigenbauPaket({
-    teile: gebaut.bauteile, stand: erzeugt, nachProjekt: bezug.nachProjekt,
+    teile: gebaut.bauteile, stand: erzeugt, historie, nachProjekt: bezug.nachProjekt,
     crs: c.wirksam ?? null, crsHerkunft: herkunft,
     projektname: cde.auftrag?.name ?? '', schluessel: cde.aktiverSatzId ?? 'cde',
     bearbeiter: cde.bearbeiter ?? '',
@@ -2242,7 +2277,10 @@ function _modellShaVon(globalId) {
 }
 
 /**
- * Die REGISTERDOKUMENTE, in denen die Wirte der Aushübe liegen (Paket v2).
+ * Die REGISTERDOKUMENTE, in denen die Wirte der Aushübe und die Ur-Gelände der
+ * Aufträge liegen (Paket v2). Bis 2026-09-11 nur die Wirte: eine Auffüllung ohne
+ * Aushub fand ihr Gelände nicht, und ihre Herkunft (`Quagg_Herkunft.QuellRevision`)
+ * blieb leer (Fahrplan Erdbau-Container, Stufe 4).
  *
  * Das Erdbau-Dokument (Stufe 3) nimmt genau sie als Quelle; der Server prüft
  * sie gegen das Register. Gefunden über den GUID-Index der geladenen Modelle
@@ -2251,7 +2289,8 @@ function _modellShaVon(globalId) {
  * sagt der Server, WAS fehlt.
  */
 async function quellDokumenteFuer(bauteile) {
-  const gesucht = [...new Set((bauteile ?? []).map(b => b.wirt).filter(g => g && !String(g).startsWith('cde-')))];
+  const gesucht = [...new Set((bauteile ?? []).flatMap(b => [b.wirt, b.quellen?.gelaende])
+    .filter(g => g && !String(g).startsWith('cde-')))];
   if (!gesucht.length || !engine.value) return [];
   const { karte, fehlend } = await karteMitEngine(engine.value, gesucht);
   const je = new Map();

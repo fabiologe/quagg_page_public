@@ -8,7 +8,10 @@
  * steht dasselbe Manifest aus Sicht des Viewers.
  */
 import { describe, expect, it } from 'vitest';
-import { gleicheLinie, herkunftChip, imErdbauEnthalten, quellenVeraltet } from '../services/Herkunft.js';
+import {
+    fruehereRevisionFehlt, gleicheLinie, herkunftChip, imErdbauEnthalten, istAbgabeContainer, quellenVeraltet,
+    regenerierbar, teileRegister,
+} from '../services/Herkunft.js';
 
 const GELAENDE = { sha256: 'a'.repeat(64), datei: 'Gelaende.ifc', revision: 1 };
 const erdbau = (datei, quellen = [GELAENDE], mehr = {}) => ({
@@ -89,5 +92,61 @@ describe('Veraltete Quellen (Stufe 4) — das Gelände ist im Register neuer als
         expect(quellenVeraltet(erdbauAus(r01), [r01, verbundR05])).toEqual([]);
         expect(quellenVeraltet(erdbauAus(r01), [r02])).toEqual([]);
         expect(quellenVeraltet({ sha256: 'x', name: 'Hochgeladen.ifc' }, [r01, r02])).toEqual([]);
+    });
+});
+
+describe('Das Register: geliefert und erzeugt, kein Verbund im Satz, R02 ohne R01 (Fahrplan Erdbau-Container)', () => {
+    const lief = { sha256: 'l1', name: 'Gelaende.ifc', basisname: 'Gelaende', art: 'modell', revision: 1 };
+    const verbund = { sha256: 'v1', name: 'Verbund_Boden_R01.ifc', basisname: 'Verbund_Boden', art: 'modell', revision: 1, herkunft: { art: 'verbund' } };
+    const erd = { sha256: 'e1', name: 'Erdbau_Boden_R01.ifc', basisname: 'Erdbau_Boden', art: 'modell', revision: 1, herkunft: { art: 'erdbau' } };
+
+    it('teilt in Lieferungen und Erzeugtes — die Reihenfolge bleibt', () => {
+        expect(teileRegister([verbund, lief, erd])).toEqual({ lieferungen: [lief], erzeugte: [verbund, erd] });
+        expect(teileRegister(null)).toEqual({ lieferungen: [], erzeugte: [] });
+    });
+
+    it('nur der Verbund ist ein Abgabe-Container — das Erdbau-Dokument ist ein Fachmodell', () => {
+        expect([lief, verbund, erd].map(istAbgabeContainer)).toEqual([false, true, false]);
+    });
+
+    it('R02 ohne R01 im Register sagt es; mit R01, als R01 selbst oder bei anderer Linie nicht', () => {
+        const r01 = { sha256: 'k1', name: 'Kanal_R01.ifc', basisname: 'Kanal', art: 'modell', revision: 1 };
+        const r02 = { sha256: 'k2', name: 'Kanal_R02.ifc', basisname: 'Kanal', art: 'modell', revision: 2 };
+        expect(fruehereRevisionFehlt(r02, [r02, lief])).toBe(true);
+        expect(fruehereRevisionFehlt(r02, [r01, r02])).toBe(false);
+        expect(fruehereRevisionFehlt(r01, [r01])).toBe(false);
+        expect(fruehereRevisionFehlt(r02, [r02, { ...r01, basisname: 'Anders' }])).toBe(true);
+    });
+});
+
+describe('Regenerierung: neu erzeugen — oder der Schritt davor (Fahrplan Erdbau-Container, Stufe 6)', () => {
+    const r01 = { sha256: 'g1', name: 'Gelaende_R01.ifc', basisname: 'Gelaende', art: 'modell', revision: 1 };
+    const r02 = { sha256: 'g2', name: 'Gelaende_R02.ifc', basisname: 'Gelaende', art: 'modell', revision: 2 };
+    const dok = {
+        sha256: 'e1', name: 'Erdbau_Boden_R01.ifc',
+        herkunft: { art: 'erdbau', satz_id: 's-1', satz_name: 'Boden',
+                    quellen: [{ sha256: 'g1', datei: 'Gelaende_R01.ifc', revision: 1, globalIds: ['1Ur'] }] },
+    };
+
+    it('ein Klick, wenn alles steht — und der Grund sagt, woraus', () => {
+        expect(regenerierbar({ dok, alle: [r01, dok], aktiverSatzId: 's-1', geladen: ['g1'] }))
+            .toMatchObject({ ok: true, handlung: null });
+        expect(regenerierbar({ dok, alle: [r01, r02, dok], aktiverSatzId: 's-1', geladen: ['g2'] }))
+            .toMatchObject({ ok: true, grund: expect.stringMatching(/Gelaende_R02/) });
+    });
+
+    it('in der Reihenfolge des Servers: erst der Satz, dann die Revision, dann das Journal', () => {
+        expect(regenerierbar({ dok, alle: [r01, r02, dok], aktiverSatzId: 's-2', geladen: [], fehlend: ['1Ur'] }))
+            .toMatchObject({ ok: false, handlung: 'satz', ziel: 's-1' });
+        expect(regenerierbar({ dok, alle: [r01, r02, dok], aktiverSatzId: 's-1', geladen: ['g1'], fehlend: ['1Ur'] }))
+            .toMatchObject({ ok: false, handlung: 'laden', ziel: 'g2' });
+        expect(regenerierbar({ dok, alle: [r01, r02, dok], aktiverSatzId: 's-1', geladen: ['g2'], fehlend: ['1Ur'] }))
+            .toMatchObject({ ok: false, handlung: 'rebase' });
+    });
+
+    it('eine fehlende Kennung abseits des Wirts hält nichts auf; ein Verbund ist nicht gemeint', () => {
+        expect(regenerierbar({ dok, alle: [r01, dok], aktiverSatzId: 's-1', geladen: ['g1'], fehlend: ['2Rohr'] }).ok).toBe(true);
+        expect(regenerierbar({ dok: { ...dok, herkunft: { art: 'verbund' } }, alle: [], aktiverSatzId: 's-1' }))
+            .toMatchObject({ ok: false, handlung: null });
     });
 });

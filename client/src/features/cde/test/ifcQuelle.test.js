@@ -52,8 +52,17 @@ describe('Untertypen kommen aus der IFC-Vererbung, nicht aus einer Liste', () =>
         expect(u).toContain('IFCCABLESEGMENT');
     });
 
-    it('deckt mit IFCELEMENT den ganzen Bauteil-Ast ab', () => {
-        expect(mitUntertypen('IFCELEMENT').length).toBeGreaterThan(900);
+    it('deckt mit IFCELEMENT den ganzen Bauteil-Ast ab — auch Abgekündigtes und Waisen', () => {
+        // Bis 2026-09-11 stand hier „> 900": das alte bSDD-Wörterbuch zählte
+        // 1.035 PredefinedType-Abflachungen (IFCPIPESEGMENTCULVERT) als
+        // Klassen mit. Das Schema hat 177 Nachfahren von IfcElement — dafür
+        // jetzt auch die, die der Export wegliess.
+        const u = mitUntertypen('IFCELEMENT');
+        expect(u.length).toBeGreaterThan(150);
+        for (const t of ['IFCEARTHWORKSCUT', 'IFCCIVILELEMENT', 'IFCWALLSTANDARDCASE', 'IFCBEAMSTANDARDCASE']) {
+            expect(u, t).toContain(t);
+        }
+        expect(u).not.toContain('IFCPIPESEGMENTCULVERT');
     });
 
     it('gibt für einen erfundenen Typ eine leere Liste, nicht den nächstbesten', () => {

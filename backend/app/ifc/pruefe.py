@@ -1,34 +1,43 @@
-"""Das Prueftor: ist diese Datei buildingSMART-konform?
+"""Das Prueftor: ist diese Datei buildingSMART-konform — und was verlangt das Projekt?
 
-DREI EBENEN, in der Reihenfolge, in der der offizielle Validierungsdienst von
-buildingSMART prueft:
+STUFEN, in der Reihenfolge des offiziellen Validierungsdienstes von
+buildingSMART, dazu die eigenen:
 
-  1. SPF-Syntax und EXPRESS-Schema samt Where-Rules  -> `ifcopenshell.validate`
-  2. Eigene Regeln zum Verbund (V01-V08)             -> hier
-  3. Der ZWEITE Motor (V09)                          -> scripts/verbund_webifc.mjs
+  schema   SPF-Syntax, EXPRESS-Schema, Where-Rules    -> ifcopenshell.validate (mit PFAD)
+  verbund  was ein Verbund leisten muss (V00-V08)      -> hier
+  ids      Projektanforderungen (IDS 1.0)              -> ifctester
+  gherkin  normative Regeln (Implementer Agreements)   -> nicht eingerichtet (README)
+  motor    der ZWEITE Motor (V09)                      -> probe.zweiter_motor
 
-Ebene 1 ist genau das, was der bSI-Dienst als „Schema Compliance" fuehrt; die
-normativen Gherkin-Regeln (Implementer Agreements) kommen spaeter dazu.
+JEDER BEFUND hat dieselbe Form (`_befund`): id, titel, ok, sagt, zahl, stufe,
+schwere, beispiele (dazu `teile` beim SPF- und beim IDS-Befund). `ok=None` heisst „nicht
+pruefbar" — etwas anderes als „durchgefallen" und als „bestanden".
 
-WARUM EBENE 2 UEBERHAUPT NOETIG IST: das Schema laesst vieles zu, was einen
-Verbund praktisch unbrauchbar macht. Drei Geometriekontexte nebeneinander sind
-schemakonform. Ein Modell in Millimetern neben einem in Metern ist es auch —
-solange nur eine Einheitenzuweisung dasteht. Die Datei oeffnet sich, und alles
-liegt falsch. Ebene 2 prueft, was ein VERBUND leisten muss, nicht nur, was IFC
-erlaubt.
+DIE SCHWERE entscheidet, was sperrt (`offen`), und nur „fehler" tut es. Eine
+verfehlte IDS-Anforderung ist eine WARNUNG: die Datei bleibt konform, das
+Projekt verlangt nur mehr. Ein nicht eingerichteter Pruefschritt ist ein
+HINWEIS. Bis 2026-09-11 zaehlte jeder nicht bestandene Befund als Verstoss —
+mit einer Stufe „keine IDS hinterlegt" haette das jeden Verbund abgelehnt.
 
-JEDE REGEL MISST DIE GROESSE, DIE SIE BEHAUPTET. Ein Befund „nicht konform"
-heisst hier: „N benannte Verstoesse". Geheilt ist er, wenn dieselbe Zahl 0 ist —
-nicht, wenn sich die Datei oeffnen laesst.
+WARUM DIE STUFE „verbund" UEBERHAUPT NOETIG IST: das Schema laesst vieles zu,
+was einen Verbund praktisch unbrauchbar macht. Drei Geometriekontexte
+nebeneinander sind schemakonform. Ein Modell in Millimetern neben einem in
+Metern ist es auch — solange nur eine Einheitenzuweisung dasteht. Die Datei
+oeffnet sich, und alles liegt falsch.
+
+JEDE REGEL MISST DIE GROESSE, DIE SIE BEHAUPTET. Genau daran fehlte es der
+Syntaxpruefung bis 2026-09-11: `schema_pruefen` bekam das GEOEFFNETE
+Dateiobjekt, und `validate` sammelt Parserfehler der C++-Schicht nur mit dem
+PFAD. Gemessen an zwei beschaedigten Kopien: halb abgeschnitten 1 statt 5.691
+Befunde, zwei Unsinnszeilen 0 statt 2. Der Befund hiess „SPF-Syntax,
+EXPRESS-Schema und Where-Rules" und sah die Syntax nie.
 
 Aufruf:
-    .venv-ifc/bin/python -m app.ifc.pruefe <datei.ifc> [--json]
-Exit 0 = sauber, 1 = Verstoesse.
+    .venv-ifc/bin/python -m app.ifc.pruefe <datei.ifc> [--ids a.ids ...] [--ohne-regeln] [--json]
+Exit 0 = nichts Sperrendes, 1 = Verstoesse.
 """
 import argparse
-import io
 import json
-import logging
 import sys
 from pathlib import Path
 
@@ -38,40 +47,105 @@ import ifcopenshell.validate
 
 from . import bezugssysteme
 from .guids import ist_gueltig
-from .verbund import ZIELSCHEMA, by_type_weich, huelle
+from .schema import ZIELSCHEMA
+from .verbund import anzahl, by_type_weich, huelle
+
+SCHWEREN = ("fehler", "warnung", "hinweis")
+# Was nur ein VERBUND leisten muss. Bei einer einzelnen Lieferung (`verbund=False`)
+# melden diese Regeln, sperren aber nicht. Konformitaet (SPF), genau ein Projekt
+# (V01) und gueltige GlobalIds (V04) bleiben auch dort Fehler.
+NUR_IM_VERBUND = ("V00", "V02", "V03", "V05", "V06a", "V06b", "V07", "V08")
+GHERKIN_GRUND = ("nicht eingerichtet — buildingSMART ifc-gherkin-rules verlangt eigene numpy- und "
+                 "shapely-Fassungen und django (backend/app/ifc/README.md, Pruefaufwand und Werkzeuge)")
 
 
-def _befund(kennung, titel, ok, sagt="", zahl=None):
+def _befund(kennung, titel, ok, sagt="", zahl=None, *, stufe="verbund", schwere="fehler",
+            beispiele=(), teile=None):
     # `None` bleibt `None`: „nicht pruefbar" ist etwas anderes als „durchgefallen",
-    # und beides etwas anderes als „bestanden". Gezaehlt wird es wie ein Verstoss
-    # (ein Tor, das Ungeprueftes durchwinkt, ist keines) — aber es SAGT, was es ist.
-    return {"id": kennung, "titel": titel, "ok": None if ok is None else bool(ok),
-            "sagt": sagt, "zahl": zahl}
+    # und beides etwas anderes als „bestanden". Mit Schwere „fehler" sperrt es wie
+    # ein Verstoss (ein Tor, das Ungeprueftes durchwinkt, ist keines) — aber es
+    # SAGT, was es ist.
+    b = {"id": kennung, "titel": titel, "ok": None if ok is None else bool(ok), "sagt": sagt, "zahl": zahl,
+         "stufe": stufe, "schwere": schwere, "beispiele": [str(x)[:200] for x in list(beispiele)[:5]]}
+    if teile is not None:
+        b["teile"] = teile
+    return b
 
 
-def schema_pruefen(datei) -> dict:
-    """Ebene 1: Syntax, Schema und Where-Rules — der bSI-Massstab.
+def offen(befund: dict) -> bool:
+    """Sperrt dieser Befund? Nicht bestanden (False ODER ungeprueft) UND Schwere „fehler".
 
-    `validate` schreibt in einen Logger statt zurueckzugeben; wir fangen den ab.
-    `express_rules=True` schaltet die Where-Rules zu — ohne sie faende die
-    Pruefung z. B. `IfcOwnerHistory.CorrectChangeAction` nicht, und genau die
-    war der erste echte Befund an unserem eigenen Geruest.
+    EINE Stelle: der Unterprozess (`cli.py`), der Probelauf (`probe.py`) und
+    `pruefe()` selbst zaehlen hierueber. Ein Befund ohne Schwere ist ein Fehler —
+    so waren alle Befunde vor den Stufen gemeint.
     """
-    puffer = io.StringIO()
-    log = logging.getLogger("quagg.ifc.validate")
-    log.handlers = [logging.StreamHandler(puffer)]
-    log.setLevel(logging.DEBUG)
-    log.propagate = False
-    ifcopenshell.validate.validate(datei, log, express_rules=True)
-    text = puffer.getvalue().strip()
-    # Der Logger schreibt je Verstoss einen Block, eingeleitet mit
-    # "On instance:" oder "For instance:".
-    verstoesse = text.count("On instance:") + text.count("For instance:")
-    return _befund("SPF", "SPF-Syntax, EXPRESS-Schema und Where-Rules",
-                   verstoesse == 0,
-                   "keine Beanstandung" if verstoesse == 0 else text[:4000],
-                   verstoesse)
+    return befund.get("ok") is not True and befund.get("schwere", "fehler") == "fehler"
 
+
+# ── Stufe schema ────────────────────────────────────────────────────────────
+
+class _Protokoll(ifcopenshell.validate.json_logger):
+    """Der strukturierte Logger von `validate`, der zusaetzlich die QUELLE jeder Meldung festhaelt.
+
+    `validate` setzt fuer die Parserfehler der C++-Schicht keinen eigenen
+    Zustand — sie erben das zuletzt gesetzte Attribut und sehen aus wie
+    Schemaverstoesse. Woher eine Meldung kommt, verraet nur ihr Aufrufer
+    (`log_internal_cpp_errors`; der Vertragstest nagelt den Namen fest).
+    """
+
+    def log(self, level, message, *args):
+        herkunft = sys._getframe(1).f_code.co_name
+        super().log(level, message, *args)
+        self.statements[-1]["herkunft"] = herkunft
+
+
+def schema_pruefen(pfad, *, regeln: bool = True) -> dict:
+    """Syntax, Schema und Where-Rules — der bSI-Massstab, als EIN Befund mit Teilzaehlung.
+
+    Mit dem PFAD, nicht dem Dateiobjekt (siehe Kopf). Die Kennung bleibt „SPF":
+    sie steht in Tests, im Register (`herkunft.pruefung.kriterien`) und im Client.
+    `teile` sagt, woraus die Zahl besteht:
+      syntax  Zeilen- und Verweisfehler (unbekannte Klasse, falsche Attributzahl,
+              Verweis ins Leere) — was der Parser beim Lesen fand
+      schema  Typen, Kardinalitaeten, inverse Attribute
+      regeln  Where-Rules (`express_rules`)
+    """
+    titel = ("SPF-Syntax, EXPRESS-Schema und Where-Rules" if regeln
+             else "SPF-Syntax und EXPRESS-Schema (ohne Where-Rules)")
+    log = _Protokoll()
+    try:
+        ifcopenshell.validate.validate(str(pfad), log, express_rules=regeln)
+    except Exception as e:                           # noqa: BLE001 — unlesbar ist ein Befund
+        return _befund("SPF", titel, False, f"Datei nicht lesbar: {type(e).__name__}: {e}"[:800], 1,
+                       stufe="schema", teile={"syntax": 1, "schema": 0, "regeln": 0})
+    teile = {"syntax": 0, "schema": 0, "regeln": 0}
+    texte, beispiele = [], []
+    for s in log.statements:
+        if s.get("herkunft") == "log_internal_cpp_errors":
+            art = "syntax"
+        elif s.get("type") != "schema":
+            art = "regeln"
+        else:
+            art = "schema"
+        teile[art] += 1
+        # Das Feld `attribute` traegt bei Where-Rules den REGELNAMEN
+        # (IfcFeatureElement.NotContained), bei Schemaverstoessen das Attribut.
+        # Ohne es stuende nur der Regelrumpf da. Bei Parserfehlern ist es ein
+        # Rest der letzten Meldung und bleibt weg.
+        wo = s.get("attribute")
+        meldung = str(s.get("message", "")).strip()
+        texte.append(f"[{art}] {wo}: {meldung}" if wo and art != "syntax" else f"[{art}] {meldung}")
+        ort = s.get("instance") or s.get("attribute")
+        if ort and len(beispiele) < 5:
+            beispiele.append(f"{art}: {str(ort)[:160]}")
+    zahl = sum(teile.values())
+    sagt = ("keine Beanstandung" if not zahl else
+            f"{teile['syntax']} Zeilen-/Verweisfehler, {teile['schema']} Schemaverstoesse, "
+            f"{teile['regeln']} Where-Rules\n" + "\n".join(texte))[:4000]
+    return _befund("SPF", titel, zahl == 0, sagt, zahl, stufe="schema", beispiele=beispiele, teile=teile)
+
+
+# ── Stufe verbund ───────────────────────────────────────────────────────────
 
 def _wirt_von(merkmal):
     """Der Wirt eines IfcFeatureElement — ueber die Beziehung, die seine Art verlangt.
@@ -91,7 +165,7 @@ def _wirt_von(merkmal):
 
 
 def verbundregeln(datei) -> list:
-    """Ebene 2: was ein VERBUND leisten muss, ueber das Schema hinaus."""
+    """Stufe verbund: was ein VERBUND leisten muss, ueber das Schema hinaus."""
     b = []
 
     projekte = datei.by_type("IfcProject")
@@ -127,7 +201,7 @@ def verbundregeln(datei) -> list:
                      not doppelt and not ungueltig,
                      f"{len(doppelt)} doppelt, {len(ungueltig)} ungueltig"
                      + (f" — z. B. {ungueltig[:3]}" if ungueltig else ""),
-                     len(doppelt) + len(ungueltig)))
+                     len(doppelt) + len(ungueltig), beispiele=doppelt + ungueltig))
 
     sites = [s for s in datei.by_type("IfcSite")]
     unter_projekt = []
@@ -200,7 +274,7 @@ def verbundregeln(datei) -> list:
                      not ohne_raum and not ohne_wirt,
                      f"{len(ohne_raum)} ohne Zuordnung, {len(ohne_wirt)} Aussparung(en) ohne Wirt"
                      + (f" — z. B. {beispiele}" if beispiele else ""),
-                     len(ohne_raum) + len(ohne_wirt)))
+                     len(ohne_raum) + len(ohne_wirt), beispiele=ohne_wirt + ohne_raum))
 
     gruppen = [g for g in datei.by_type("IfcGroup") if g.ObjectType == "Fachmodell"]
     in_gruppen = set()
@@ -217,41 +291,167 @@ def verbundregeln(datei) -> list:
     return b
 
 
-def pruefe(pfad) -> dict:
-    """Alles, was ohne den zweiten Motor geht. V09 faehrt `probe.py` dazu."""
+# ── Stufe ids ───────────────────────────────────────────────────────────────
+
+def ids_pruefen(datei, ids_dateien=()) -> list:
+    """Projektanforderungen nach IDS 1.0, geprueft mit ifctester — je Spezifikation ein Befund.
+
+    Keine IDS-Datei heisst NICHT „bestanden": ein Hinweis (ok=None), der nicht
+    sperrt. Eine verfehlte Anforderung ist eine WARNUNG. Eine unlesbare IDS-Datei
+    auch — die Lieferung ist dadurch nicht schlechter geworden.
+    """
+    pfade = [Path(p) for p in ids_dateien or ()]
+    if not pfade:
+        return [_befund("IDS", "Projektanforderungen (IDS 1.0)", None,
+                        "keine IDS-Datei hinterlegt — nichts zu pruefen", stufe="ids", schwere="hinweis")]
+    import ifctester.ids
+    import ifctester.reporter
+
+    out = []
+    for pfad in pfade:
+        try:
+            spez = ifctester.ids.open(str(pfad))
+            spez.validate(datei)
+            bericht = ifctester.reporter.Json(spez).report()
+        except Exception as e:                       # noqa: BLE001 — eine kaputte IDS ist ein Befund
+            out.append(_befund(f"IDS:{pfad.stem}", f"IDS {pfad.name}", None,
+                               f"nicht lesbar: {type(e).__name__}: {e}"[:600], stufe="ids", schwere="warnung"))
+            continue
+        for nr, s in enumerate(bericht["specifications"], 1):
+            fehl = [f for r in s["requirements"] for f in r["failed_entities"]]
+            kennungen = []
+            for f in fehl:
+                g = f.get("global_id") or f"#{f.get('id')}"
+                if g not in kennungen:
+                    kennungen.append(g)
+            anwendbar = s["total_applicable"]
+            if s.get("is_skipped"):
+                sagt = "trifft auf kein Element zu (optional)"
+            elif not s["status"] and anwendbar == 0:
+                sagt = "verlangt, aber kein Element trifft zu"
+            else:
+                sagt = f"{s['total_applicable_pass']} von {anwendbar} Elementen erfuellen die Anforderung"
+                gruende = sorted({str(f.get("reason")) for f in fehl if f.get("reason")})[:3]
+                if gruende:
+                    sagt += " — " + "; ".join(gruende)
+            out.append(_befund(f"IDS:{pfad.stem}:{nr:02d}", f"{s['name']} ({pfad.name})", bool(s["status"]),
+                               sagt[:1000], s["total_applicable_fail"], stufe="ids", schwere="warnung",
+                               beispiele=kennungen,
+                               teile={"anwendbar": anwendbar, "erfuellt": s["total_applicable_pass"]}))
+    return out
+
+
+def gherkin_hinweis() -> dict:
+    """Stufe gherkin: ausdruecklich NICHT eingerichtet — und das steht im Bericht, nicht nur im README."""
+    return _befund("GHERKIN", "Normative Regeln (buildingSMART Implementer Agreements)", None, GHERKIN_GRUND,
+                   stufe="gherkin", schwere="hinweis")
+
+
+def paketregeln(paket: dict) -> list:
+    """Was der CDE-Eigenbau NICHT in die Datei brachte (Fahrplan Erdbau-Container, Stufe 1).
+
+    V10 sperrt: ein Bauteil des Journals, das sich nicht ableiten liess
+    (`misserfolge` des Pakets). Bis 2026-09-11 stand das nur im Bericht, und im
+    Projekt 1337 kam ein Verbund, dem zwei Aushuebe fehlten, als „geprueft,
+    0 Verstoesse" ins Register. V11 meldet nur: leere Gegenstuecke (ein Gerinne
+    hat keinen Auftrag) und Ausgeblendetes gehoeren nicht in die Datei.
+    """
+    fehl = [m for m in paket.get("misserfolge") or [] if isinstance(m, dict)]
+    leer = [str(x) for x in paket.get("leer") or []]
+    verborgen = [str(x) for x in paket.get("verborgen") or []]
+    gebaut = len(paket.get("bauteile") or [])
+    gruende = sorted({str(m.get("grund") or "ohne Grund")[:160] for m in fehl})
+    v10 = _befund("V10", "Eigenbau vollstaendig — jedes Bauteil des Journals ist gebaut", not fehl,
+                  (f"{len(fehl)} von {len(fehl) + gebaut} Bauteilen nicht ableitbar: " + "; ".join(gruende[:3]))
+                  if fehl else f"{gebaut} Bauteile gebaut", len(fehl),
+                  beispiele=[f"{m.get('globalId')} · {m.get('grund') or 'ohne Grund'}" for m in fehl])
+    v11 = _befund("V11", "Eigenbau: Leeres und Ausgeblendetes", True if not (leer or verborgen) else None,
+                  f"{len(leer)} leer (ohne Gegenstueck), {len(verborgen)} ausgeblendet — nicht in der Datei",
+                  len(leer) + len(verborgen), schwere="hinweis", beispiele=leer + verborgen)
+    return [v10, v11]
+
+
+# ── Alles zusammen ──────────────────────────────────────────────────────────
+
+def pruefe(pfad, *, ids=(), regeln: bool = True, verbund: bool = True, paket: dict | None = None) -> dict:
+    """Alle Stufen ausser dem zweiten Motor (den faehrt `cli.py` bzw. `probe.py` dazu).
+
+    `verbund=False` prueft eine LIEFERUNG (Registerdokument, Stufe 4b): die
+    Verbundregeln melden als Warnung (`NUR_IM_VERBUND`), und `zaehlung` traegt
+    dieselben Groessen wie der Verbundbericht — fuer den zweiten Motor.
+    `paket` ist das Eigenbau-Paket eines Verbund- oder Erdbau-Laufs — dann
+    kommen V10/V11 dazu (`paketregeln`).
+
+    Reihenfolge fuer den SPEICHER: erst `validate` mit dem Pfad (oeffnet selbst
+    und gibt wieder frei), danach `ifcopenshell.open` fuer die Verbundregeln —
+    nacheinander, nicht nebeneinander (RLIMIT_AS im Unterprozess).
+    """
     pfad = Path(pfad)
-    datei = ifcopenshell.open(pfad)
-    befunde = [_befund("V00", f"Schema ist {ZIELSCHEMA}",
-                       datei.schema_identifier == ZIELSCHEMA,
+    spf = schema_pruefen(pfad, regeln=regeln)
+    try:
+        datei = ifcopenshell.open(pfad)
+    except Exception as e:                           # noqa: BLE001 — unlesbar ist ein Befund, kein Absturz
+        befunde = [_befund("OPEN", "Datei laesst sich oeffnen", False, f"{type(e).__name__}: {e}"[:800],
+                           stufe="schema"), spf]
+        return {"datei": str(pfad), "schema": None, "befunde": befunde,
+                "verstoesse": sum(1 for x in befunde if offen(x))}
+    befunde = [_befund("V00", f"Schema ist {ZIELSCHEMA}", datei.schema_identifier == ZIELSCHEMA,
                        datei.schema_identifier)]
     befunde += verbundregeln(datei)
-    befunde.append(schema_pruefen(datei))
+    if paket is not None:
+        befunde += paketregeln(paket)
+    if not verbund:
+        # Eine Lieferung ist kein Verbund: ihr fehlen Fachmodell-Gruppe und oft
+        # die Georeferenz, sie darf IFC2X3 und Millimeter sein. Das gehoert
+        # gesagt, sperrt aber nicht — die Lieferung gehoert dem Planer.
+        for b in befunde:
+            if b["id"] in NUR_IM_VERBUND:
+                b["schwere"] = "warnung"
+    befunde.append(spf)
+    befunde += ids_pruefen(datei, ids)
+    befunde.append(gherkin_hinweis())
     return {
         "datei": str(pfad),
         "schema": datei.schema_identifier,
         "befunde": befunde,
-        "verstoesse": sum(1 for x in befunde if not x["ok"]),
+        "verstoesse": sum(1 for x in befunde if offen(x)),
+        # Was der zweite Motor nachzaehlt — dieselben Groessen wie der Verbundbericht.
+        "zaehlung": {"schema": datei.schema_identifier, "entitaeten": anzahl(datei),
+                     "produkte": len(datei.by_type("IfcProduct")),
+                     "raumwurzeln": len(datei.by_type("IfcSite")),
+                     "kontexte": len(datei.by_type("IfcGeometricRepresentationContext"))},
     }
+
+
+def zeichen(befund: dict) -> str:
+    """Die Spalte der Tabelle: ok, FEHL, ? (ungeprueft, sperrt), warn, info."""
+    if befund.get("ok") is True:
+        return "ok  "
+    if befund.get("schwere", "fehler") != "fehler":
+        return "info" if befund.get("ok") is None else "warn"
+    return "?   " if befund.get("ok") is None else "FEHL"
 
 
 def _main(argv=None):
     p = argparse.ArgumentParser(description="Konformitaetspruefung einer IFC-Datei")
     p.add_argument("datei")
+    p.add_argument("--ids", nargs="*", default=[], help="IDS-Dateien mit Projektanforderungen")
+    p.add_argument("--ohne-regeln", action="store_true", help="Where-Rules auslassen (schneller)")
+    p.add_argument("--lieferung", action="store_true", help="einzelne Lieferung: Verbundregeln nur melden")
     p.add_argument("--json", action="store_true", help="Bericht als JSON statt als Tabelle")
     a = p.parse_args(argv)
 
-    ergebnis = pruefe(a.datei)
+    ergebnis = pruefe(a.datei, ids=a.ids, regeln=not a.ohne_regeln, verbund=not a.lieferung)
     if a.json:
         print(json.dumps(ergebnis, indent=1, ensure_ascii=False))
     else:
         print(f"Pruefung {Path(a.datei).name}  (Schema {ergebnis['schema']})")
         for x in ergebnis["befunde"]:
-            zeichen = "ok  " if x["ok"] else "FEHL"
-            print(f"  [{zeichen}] {x['id']:5} {x['titel']}")
-            if not x["ok"] or x["sagt"]:
+            print(f"  [{zeichen(x)}] {x['id']:5} {x['titel']}")
+            if x["ok"] is not True or x["sagt"]:
                 for zeile in str(x["sagt"]).splitlines()[:8]:
                     print(f"           {zeile}")
-        print(f"\n{ergebnis['verstoesse']} Verstoss(e)")
+        print(f"\n{ergebnis['verstoesse']} sperrende(r) Verstoss(e)")
     return 1 if ergebnis["verstoesse"] else 0
 
 

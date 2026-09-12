@@ -27,6 +27,7 @@
 
 import { waehleMitVorrang } from '../RepoFacade.js';
 import { ENTITY_META } from '../../data/entity-schema.js';
+import { ALTNAMEN, ENDUNGEN } from '../../data/altnamen.js';
 
 export const REPO_KEY = 'typprofile';
 
@@ -437,8 +438,9 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     /**
      * `IfcCivilElement` (IFC4 / 4x1 / 4x2) ist der Sammeltyp des Infrastruktur-
      * baus: „ein Bauteil des Ingenieurbaus, für das es keinen eigenen Typ
-     * gibt". In 4.3 wurde er ersatzlos gestrichen, taucht aber in jeder
-     * älteren Tiefbau-Lieferung auf — genau in Fabios Lage.
+     * gibt". In 4.3 ist er abgekündigt — im Schema ADD2 steht er noch
+     * (nachgemessen 2026-09-11; hier stand „ersatzlos gestrichen") — und er
+     * taucht in jeder älteren Tiefbau-Lieferung auf, genau in Fabios Lage.
      *
      * Er sagt über die Form GENAUSO WENIG wie ein Proxy: darunter steckt mal
      * ein Bordstein, mal eine Schutzplanke, mal ein Entwässerungsbauwerk.
@@ -460,39 +462,22 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
 });
 
 /**
- * Namen, die es in IFC 4.3 nicht mehr gibt — und wie sie dort heissen.
+ * Namen älterer Schemata und wie sie in IFC 4.3 heissen — ERZEUGT.
  *
- * DER ANLASS: `data/entity-schema.js` ist reines IFC 4.3. Jede Kategorie, die
- * ein älteres Modell anders schreibt, fällt sonst durch den Rost — sie hat
- * keine Vererbungskette, bekommt kein Typprofil, und die Toolbox zeigt einem
- * `IFCCIVILELEMENT` genau nichts. Fabio arbeitet mit Fremdlieferungen; welches
- * Schema die haben, bestimmt er nicht.
+ * Bis 2026-09-11 stand die Tabelle hier von Hand, „gemessen aus den
+ * web-ifc-Schemata". Sie lebt jetzt in `backend/app/ifc/schema.py`; dort
+ * verlangt ein Test, dass JEDE Produkt-Waise aus IFC4/IFC2x3 eine Antwort hat
+ * (die zwei `IfcStructural…ActionVarying` fehlten hier). In den Client kommt
+ * sie über `data/altnamen.js`, und `test/woerterbuch.test.js` hält die
+ * Normierung unten gegen die Tabelle `NORMIERT`, die der Schreiber erzeugt.
  *
- * DIE LISTE IST NICHT GERATEN, SONDERN GEMESSEN: aus den in `web-ifc`
- * mitgelieferten Schemata IFC2X3, IFC4 und IFC4X3 wurden je die
- * `IfcProduct`-Nachfahren gezogen und gegen das Wörterbuch gehalten. Ergebnis:
- * 11 unbekannte Namen aus 2x3 (davon 7 instanzierbar), 5 aus IFC4 (4
- * instanzierbar). Mehr ist es nicht — die Lücke ist abzählbar, und deshalb
- * schliesst eine Tabelle sie vollständig statt nur ungefähr.
- *
- * Hier stehen nur die UMBENENNUNGEN. Namen, die es in 4.3 gar nicht mehr gibt
- * (`IfcCivilElement`, `IfcProxy`, `IfcEquipmentElement`), sind keine
- * Umbenennung — sie bekommen unten im Satz ein eigenes Profil.
+ * Seitdem führt auch das Wörterbuch selbst die Waisen (`schema: ['IFC4']`) —
+ * `IFCCIVILELEMENT` hatte nie gefehlt, weil es gestrichen wäre, sondern weil
+ * der alte bSDD-Export abgekündigte Klassen weglässt. Im Schema ADD2 steht es.
  */
-export const ALTNAMEN = Object.freeze({
-    // IFC4 → IFC4.3: umbenannt.
-    IFCBUILDINGELEMENT:           'IFCBUILTELEMENT',
-    IFCELECTRICDISTRIBUTIONBOARD: 'IFCDISTRIBUTIONBOARD',
-    // Das Suffix-Abschneiden allein ergäbe `IFCOPENING` — das gibt es nicht.
-    IFCOPENINGSTANDARDCASE:       'IFCOPENINGELEMENT',
-    // IFC2x3 → IFC4: umbenannt bzw. zusammengefasst.
-    IFCBUILDINGELEMENTCOMPONENT:  'IFCELEMENTCOMPONENT',
-    IFCEDGEFEATURE:               'IFCFEATUREELEMENTSUBTRACTION',
-    IFCCHAMFEREDGEFEATURE:        'IFCFEATUREELEMENTSUBTRACTION',
-    IFCROUNDEDEDGEFEATURE:        'IFCFEATUREELEMENTSUBTRACTION',
-});
+export { ALTNAMEN };
 
-/** Kennt das IFC-4.3-Wörterbuch diesen Namen (nach Normierung)? */
+/** Kennt das Wörterbuch diesen Namen (IFC 4.3 ADD2 oder eine Waise aus IFC4/IFC2x3)? */
 export function imWoerterbuch(kategorie) {
     const roh = String(kategorie ?? '').toUpperCase().trim();
     return !!(ENTITY_META[roh] ?? ENTITY_META[normalisiereKategorie(kategorie)]);
@@ -515,16 +500,19 @@ export function normalisiereKategorie(kategorie) {
     if (!kategorie) return '';
     const k = String(kategorie).toUpperCase().trim();
     if (ALTNAMEN[k]) return ALTNAMEN[k];
-    const ohneSuffix = k.replace(/(STANDARDCASE|ELEMENTEDCASE)$/, '');
+    const ohneSuffix = k.replace(ENDUNG_AM_SCHLUSS, '');
     return ALTNAMEN[ohneSuffix] ?? ohneSuffix;
 }
+// Aus der erzeugten Tabelle (data/altnamen.js), nicht noch einmal von Hand.
+const ENDUNG_AM_SCHLUSS = new RegExp(`(${ENDUNGEN.join('|')})$`);
 
 /**
  * Die IFC-Vererbungskette einer Kategorie, vom Typ selbst aufwärts.
  *
- * Quelle ist `data/entity-schema.js` — 1.418 IFC-4.3-Klassen, jede mit ihrer
- * vollen `hierarchy`, erzeugt aus dem buildingSMART-Wörterbuch. Ein Typ, den
- * der Katalog nicht kennt, hat trotzdem eine Kette.
+ * Quelle ist `data/entity-schema.js` — jede Klasse aus IFC4X3_ADD2 und die
+ * Produkt-Waisen aus IFC4/IFC2x3, jede mit ihrer vollen `hierarchy`, erzeugt
+ * aus dem Schema selbst (backend/app/ifc/schema.py). Ein Typ, den der Katalog
+ * nicht kennt, hat trotzdem eine Kette.
  *
  * @returns {string[]} GROSSSCHRIFT, spezifisch zuerst: ['IFCPIPESEGMENT',
  *   'IFCFLOWSEGMENT', 'IFCDISTRIBUTIONFLOWELEMENT', …]

@@ -5,7 +5,7 @@
  * Zwei Befunde vom selben Tag, beide nur an der echten Datei sichtbar:
  *
  *   1. Das DGM der fertigen Planung ist ein `IfcCivilElement` — IFC4, in 4.3
- *      GESTRICHEN. Die Aufzählung „alle Produkte" lief über das 4.3-Wörterbuch
+ *      abgekündigt (das damalige bSDD-Wörterbuch führte ihn deshalb nicht). Die Aufzählung „alle Produkte" lief über das 4.3-Wörterbuch
  *      und fragte web-ifc nach diesem Typ nie: Suchindex, Bauformen-Panel und
  *      Gelände-Kandidaten sahen das Gelände nicht. Kur: `fremdeUntertypen`
  *      erkennt Typen STRUKTURELL (ObjectPlacement + Representation).
@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IfcQuelle, STRUKTUR_MERKMALE } from '../services/IfcQuelle.js';
+import { IfcQuelle, STRUKTUR_MERKMALE, mitUntertypen } from '../services/IfcQuelle.js';
 import { bestimme } from '../services/bauform/Bauformen.js';
 import { bauformAusNetz, FLACH } from '../services/bauform/Formsignatur.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
@@ -65,21 +65,25 @@ function resolverAus(q, id) {
     };
 }
 
-describe('Befund 1 — ein gestrichener Typ wird strukturell gefunden', () => {
+// Die Planungsdatei lag im Projekt 1337 und liegt dort nicht mehr (2026-09-11
+// nachgesehen). Bis dahin kehrten diese Tests mit `if (!q) return;` still
+// zurück und zählten als BESTANDEN — jetzt stehen sie als übersprungen da.
+const PLANUNG_DA = fs.existsSync(PLANUNG);
+
+describe.skipIf(!PLANUNG_DA)('Befund 1 — ein abgekündigter Typ wird gefunden', () => {
     let q;
     beforeAll(async () => { q = await oeffne(PLANUNG); }, 120_000);
 
-    it('das Wörterbuch kennt IFCCIVILELEMENT nicht, die Datei führt ihn — die Struktur erkennt ihn', () => {
-        if (!q) return;
+    it('das Wörterbuch kennt IFCCIVILELEMENT selbst — der strukturelle Weg bleibt für Fremdnamen', () => {
+        // Bis 2026-09-11 kannte das (bSDD-)Wörterbuch ihn nicht, und
+        // `fremdeUntertypen` fand ihn über die Struktur. Er steht aber in
+        // IFC4X3_ADD2, abgekündigt; das Wörterbuch aus dem Schema führt ihn.
         expect(STRUKTUR_MERKMALE.IFCPRODUCT).toEqual(['ObjectPlacement', 'Representation']);
-        const fremde = q.fremdeUntertypen('IFCPRODUCT');
-        expect(fremde).toEqual([{ typ: 'IFCCIVILELEMENT', anzahl: 1 }]);
-        // … und als ELEMENT (mit Tag) ebenso.
-        expect(q.fremdeUntertypen('IFCELEMENT').map(f => f.typ)).toContain('IFCCIVILELEMENT');
+        expect(mitUntertypen('IFCPRODUCT')).toContain('IFCCIVILELEMENT');
+        expect(q.fremdeUntertypen('IFCPRODUCT')).toEqual([]);
     });
 
     it('„alle Produkte" enthält das DGM jetzt — mit Namen', () => {
-        if (!q) return;
         const ids = q.ids('IFCPRODUCT', { untertypen: true });
         const dgm = ids.map(id => q.zeile(id)).find(z => q.kategorieVon(z) === 'IFCCIVILELEMENT');
         expect(dgm).toBeTruthy();
@@ -89,7 +93,6 @@ describe('Befund 1 — ein gestrichener Typ wird strukturell gefunden', () => {
     });
 
     it('die Dreiecke kommen aus der Quelle — 45.710, Platzierung angewandt', () => {
-        if (!q) return;
         const [id] = q.ids('IFCCIVILELEMENT');
         const netz = q.dreiecke(id);
         expect(netz.triCount).toBe(45710);
@@ -98,9 +101,8 @@ describe('Befund 1 — ein gestrichener Typ wird strukturell gefunden', () => {
 });
 
 describe('Befund 2 — das DGM wird als Höhenfeld VORGESCHLAGEN, mit Grund', () => {
-    it('IfcCivilElement „DGM der fertigen Planung" → hoehenfeld, geschätzt, aus der Geometrie', async () => {
+    it.skipIf(!PLANUNG_DA)('IfcCivilElement „DGM der fertigen Planung" → hoehenfeld, geschätzt, aus der Geometrie', async () => {
         const q = await oeffne(PLANUNG);
-        if (!q) return;
         const [id] = q.ids('IFCCIVILELEMENT');
         const r = await bestimme({ modelId: 'm', localId: id, category: 'IFCCIVILELEMENT' },
             { resolver: resolverAus(q, id), typprofil: profilFuer('IFCCIVILELEMENT') });
@@ -116,7 +118,7 @@ describe('Befund 2 — das DGM wird als Höhenfeld VORGESCHLAGEN, mit Grund', ()
 
     it('die geschlossenen IfcEarthworksElement wären auch OHNE Typprofil Höhenfelder', async () => {
         const q = await oeffne(ERDARBEITEN);
-        if (!q) return;
+        expect(q, 'Testdatei liegt im Repo').not.toBe(null);
         for (const id of q.ids('IFCEARTHWORKSELEMENT').slice(0, 3)) {
             const netz = q.dreiecke(id);
             const att = meshVolume(netz.positions, netz.triCount);

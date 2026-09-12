@@ -221,6 +221,32 @@ export function standAus(eintraege, art) {
 }
 
 /**
+ * Der LETZTE BEKANNTE Wert je Bauteil — auch für Zurückgenommenes (Fahrplan
+ * Erdbau-Container, Stufe 1, 2026-09-11).
+ *
+ * `standAus` nimmt einen Eintrag mit `nachher: null` heraus: das Bauteil ist
+ * weg. Für den AUFBAU ist das richtig. Für die Frage „worauf fusste das hier?"
+ * nicht: im Projekt 1337 nannten zwei Aushübe als Gelände eine Anzeige, die im
+ * Commit davor zurückgenommen worden war — die Szene stand noch, die
+ * Bearbeitung griff hinein. Die Kette zum Ur-Gelände brach an der toten
+ * Kennung, und die Aushübe waren nie wieder ableitbar.
+ *
+ * Diese Faltung behält den letzten Wert ≠ null. Sie dient NUR der Kette
+ * (`Bezuege.urGelaendeVon`), nie dem Bauen — sonst stünde Zurückgenommenes
+ * wieder im Raum.
+ */
+export function historieAus(eintraege, art) {
+    const falte = AENDERUNGS_ARTEN[art]?.falte ?? null;
+    const hist = new Map();
+    for (const e of eintraege ?? []) {
+        if (e.art !== art || !e.globalId) continue;
+        if (e.nachher === null || e.nachher === undefined) continue;
+        hist.set(e.globalId, falte ? falte(hist.get(e.globalId), e.nachher) : e.nachher);
+    }
+    return hist;
+}
+
+/**
  * Der wirksame Stand aus BEIDEN Ebenen (Stufe 11.1).
  *
  * Auftragsjournal: „das Rohr liegt 20 cm tiefer als geliefert" — wahr in jeder
@@ -589,6 +615,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     /** Der wirksame Stand einer beliebigen Art — für Nachspielen und Anzeige. */
     function wirksamerStand(art) {
         return ebenenStand(auftragsEintraege.value, standEintraege.value, art);
+    }
+
+    /** Der letzte bekannte Wert je Bauteil über beide Ebenen — NUR für die Quellen-Kette (`historieAus`). */
+    function historischerStand(art) {
+        const hist = historieAus(auftragsEintraege.value, art);
+        for (const [gid, wert] of historieAus(standEintraege.value, art)) hist.set(gid, wert);
+        return hist;
     }
 
     async function _sichern(ebene) {
@@ -1391,7 +1424,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         neueVorgangsId: _neueVorgangsId,
         auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
         anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
-        wirksamerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
+        wirksamerStand, historischerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
         commits, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
         beginneSitzung, entferneSitzungsVorgang, verwerfeSitzung, commitSitzung,
         commitZeitleiste, revertiereCommit, zurueckBisCommit,

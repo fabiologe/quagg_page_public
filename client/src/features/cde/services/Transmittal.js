@@ -53,7 +53,7 @@ export function baueSchein({ auftrag, empfaenger = '', anmerkung = '', wer = '',
     for (const d of dokumente) {
         zeilen.push(
             `  ${d.name}`,
-            `      Revision ${d.revision ?? '—'} · Status ${d.status}`,
+            `      Revision ${d.revision ?? '—'} · Status ${d.status}${d.eignung ? ` · Eignung ${d.eignung}` : ''}`,
             `      SHA-256  ${d.sha256}`,
         );
     }

@@ -7,7 +7,7 @@ Registriert in app/main.py unter /FastAPI/projekte; der Client ruft /api/projekt
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from app.api.deps import get_current_active_user
@@ -207,6 +207,7 @@ class VorlageEingabeDok(BaseModel):
 
 class CdeStatus(BaseModel):
     status: str
+    eignung: str | None = None
 
 
 class SatzNeu(BaseModel):
@@ -791,6 +792,49 @@ def cde_verbund_status(projekt_id: int, lauf_id: str):
         return _uebersetzt(lauf)
 
 
+@router.get("/{projekt_id}/cde/verbund/{lauf_id}/bericht")
+def cde_verbund_bericht(projekt_id: int, lauf_id: str):
+    """Der GANZE Pruefbericht eines Laufs (IFC-Konsistenz, Stufe 6) — solange der Laufordner steht.
+
+    Der Status kuerzt, das Manifest noch mehr; hier steht jeder Befund mit Text,
+    Zahl und Beispielen. Nach MAX_LAEUFE ist der Laufordner weggeraeumt: 404.
+    """
+    with db.pool().connection() as conn:
+        def lauf():
+            projekte.lesen(conn, projekt_id)
+            pfad = verbund_lauf.bericht_pfad(_ordner_oder_422(projekt_id), lauf_id)
+            return FileResponse(pfad, media_type="application/json", filename=f"Pruefbericht_{lauf_id}.json")
+        return _uebersetzt(lauf)
+
+
+@router.post("/{projekt_id}/cde/{sha256}/pruefung", status_code=202)
+async def cde_pruefung_starten(projekt_id: int, sha256: str, nutzer=Depends(_gate)):
+    """Ein Registerdokument durch das Prueftor (IFC-Konsistenz, Stufe 4b).
+
+    Abgeholt wird wie beim Verbund ueber GET /{id}/cde/verbund/{lauf_id}.
+    """
+    with db.pool().connection() as conn:
+        try:
+            projekte.lesen(conn, projekt_id)
+            o = _ordner_oder_422(projekt_id)
+        except projekte.ProjektUnbekannt as fehler:
+            raise HTTPException(status_code=404, detail=f"unbekannt: {fehler.args[0]}")
+        except (projekte.ProjektAbgelehnt, ordner.OrdnerFehler) as fehler:
+            raise HTTPException(status_code=422, detail=str(fehler))
+        except ordner.OrdnerNichtBereit as fehler:
+            raise HTTPException(status_code=503, detail=str(fehler))
+    try:
+        return await verbund_lauf.pruefung_starten(o, sha256, akteur=nutzer.username)
+    except cde.CdeUnbekannt as fehler:
+        raise HTTPException(status_code=404, detail=f"unbekannt: {fehler.args[0]}")
+    except cde.CdeAbgelehnt as fehler:
+        raise HTTPException(status_code=422, detail=str(fehler))
+    except verbund_lauf.VerbundBesetzt as fehler:
+        raise HTTPException(status_code=409, detail=str(fehler))
+    except (verbund_lauf.WerkzeugFehlt, ordner.OrdnerNichtBereit) as fehler:
+        raise HTTPException(status_code=503, detail=str(fehler))
+
+
 @router.post("/{projekt_id}/cde/upload", status_code=201)
 async def cde_hochladen(projekt_id: int, datei: UploadFile = File(...), art: str | None = Query(default=None),
                         status: str = Query(default="WIP"),
@@ -816,7 +860,7 @@ def cde_status(projekt_id: int, sha256: str, eingabe: CdeStatus, nutzer=Depends(
         def lauf():
             projekte.lesen(conn, projekt_id)
             return cde.status_setzen(conn, _ordner_oder_422(projekt_id), sha256, eingabe.status,
-                                     akteur=nutzer.username,
+                                     akteur=nutzer.username, eignung=eingabe.eignung,
                                      rolle=getattr(nutzer, "rolle", None) or getattr(nutzer, "role", None))
         return _uebersetzt(lauf)
 

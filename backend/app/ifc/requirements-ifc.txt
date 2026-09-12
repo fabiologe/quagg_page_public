@@ -15,6 +15,10 @@
 # api.georeference.*). Der Vertragstest in tests/test_vertrag.py prueft sie.
 ifcopenshell==0.8.5
 ifcpatch==0.8.5
+# IDS-Pruefung (Projektanforderungen, IDS 1.0 von buildingSMART). Gleiche Fassung
+# wie ifcopenshell; zieht flask, xmlschema, bcf-client mit und beruehrt numpy und
+# shapely nicht (gemessen 2026-09-11: venv 287 -> 355 MB).
+ifctester==0.8.5
 # Die Tests dieses Ordners laufen mit DIESEM venv, nicht mit dem Produktions-venv
 # (dort steht pytest 9.1.1, aber ohne ifcopenshell waeren sie sinnlos).
 pytest

@@ -25,7 +25,7 @@ import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
 import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
 import { useAenderungen } from './useAenderungen.js';
-import { teileVon } from '../services/Bauteilrezepte.js';
+import { rezeptNach, teileVon } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
 import { befundeFuer } from '../services/Befunde.js';
 
@@ -608,6 +608,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // Auftragsebene auf ein Variantenbauteil — eine Zeile hier, kein
         // topologischer Sortierer später.
         const erzeugtStand = aenderungen.wirksamerStand('erzeugt');
+        // Die Historie weist eine zurückgenommene Gelände-Quelle ab (Fahrplan
+        // Erdbau-Container, Stufe 1) — die Ansicht war dann nicht mehr aktuell.
+        const historie = aenderungen.historischerStand?.('erzeugt') ?? null;
         for (const b of beschreibungen) {
             const quellen = b?.art === 'erzeugt' ? b.nachher?.parameter?.quellen : null;
             if (!quellen) continue;
@@ -615,6 +618,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
                 quellen, globalId: b.globalId, stand: erzeugtStand,
                 ebeneVon: (gid) => aenderungen.ebeneVon(gid),
                 zielEbene: aenderungen.vorgabeEbene,
+                historie, rezeptNach,
             });
             if (fehler.length) {
                 letzterGrund.value = `Bezug unzulässig: ${fehler.join(' · ')}`;

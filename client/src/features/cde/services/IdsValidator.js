@@ -21,15 +21,34 @@ function _scalar(v) {
     return typeof v === 'object' ? null : v;
 }
 
+/** Der Wert einer IfcPhysicalSimpleQuantity steht je nach Art in einem anderen Feld. */
+const MENGENWERTE = ['LengthValue', 'AreaValue', 'VolumeValue', 'CountValue', 'WeightValue', 'TimeValue'];
+function _mengenwert(q) {
+    for (const k of MENGENWERTE) {
+        const v = _scalar(q?.[k]);
+        if (v != null) return v;
+    }
+    return null;
+}
+
+/**
+ * Merkmal- UND Mengensätze eines Elements → {Satzname: {Name: Wert}}.
+ *
+ * Mengen (IfcElementQuantity) führen ihre Einträge unter `Quantities`, nicht
+ * unter `HasProperties`, und den Wert als VolumeValue/AreaValue/… — so liest
+ * sie auch QuantitySummary.collectQto. Bis 2026-09-11 las die Vorschau nur
+ * `HasProperties`: eine Qto_*-Anforderung galt ihr IMMER als verfehlt, während
+ * ifctester sie erfüllt fand (IFC-Konsistenz, Stufe 5 — zwei Motoren, eine Zahl).
+ */
 function _flattenPsets(item) {
     const out = {};
     for (const rel of (item?.IsDefinedBy ?? [])) {
         const psetName = _scalar(rel?.Name);
         if (!psetName) continue;
         const props = {};
-        for (const p of (rel?.HasProperties ?? [])) {
+        for (const p of (rel?.HasProperties ?? rel?.Quantities ?? [])) {
             const propName = _scalar(p?.Name);
-            const v = _scalar(p?.NominalValue) ?? _scalar(p?.Value);
+            const v = _scalar(p?.NominalValue) ?? _scalar(p?.Value) ?? _mengenwert(p);
             if (propName) props[propName] = v;
         }
         out[psetName] = props;
@@ -78,6 +97,7 @@ function _matchesPreFilter(cond, ctx) {
     if (!cond) return true;
     const v = _psetValue(ctx.psets, cond.psetName, cond.propertyName);
     if (!_isPresent(v)) return false;
+    if (cond.value == null) return true;                 // IDS: Property ohne Wert = vorhanden
     return String(v).toLowerCase() === String(cond.value).toLowerCase();
 }
 
@@ -105,30 +125,39 @@ export async function validateIds({ specs, categoryGroups, fragmentsList, fragme
     const dataByCategory = new Map(); // category → [{modelId, localId, globalId, attributes, psets}]
 
     for (const category of wantedCategories) {
-        const group = categoryGroups.find(g => g.name === category);
-        if (!group) { dataByCategory.set(category, []); continue; }
+        // GENAU diese Klasse, keine Untertypen — so will es IDS 1.0, und so zählt
+        // der Prüfer: ifctester (facet.Entity) holt `by_type(name,
+        // include_subtypes=False)` und vergleicht `inst.is_a().upper() == name`.
+        // Wer Untertypen meint, zählt sie in der IDS-Datei als Aufzählung auf.
+        // Der Fahrplan sah hier zuerst eine Vereinigung über die Vererbung vor;
+        // nachgemessen hätte sie die Vorschau vom Urteil abweichen lassen
+        // (IFC-Konsistenz, Stufe 5 — zwei Motoren, eine Zahl).
+        const name = String(category).toUpperCase();
+        const gruppen = categoryGroups.filter(g => String(g.name ?? '').toUpperCase() === name);
         const elements = [];
-        try {
-            const map = await group.groupData.get();
-            const entries = map instanceof Map ? [...map.entries()] : Object.entries(map ?? {});
-            for (const [modelId, rawIds] of entries) {
-                const localIds = Array.isArray(rawIds) ? rawIds : (rawIds instanceof Set ? [...rawIds] : null);
-                if (!localIds?.length || !fragmentsList.get(modelId)) continue;
-                const raw = await fragmentsManager.getData({ [modelId]: localIds }, FRAGMENTS_DATA_CONFIG);
-                const items = Object.values(raw ?? {})[0] ?? [];
-                for (const item of items) {
-                    const localId = _scalar(item._localId ?? item.localId ?? item.expressID);
-                    if (localId == null) continue;
-                    elements.push({
-                        modelId, localId,
-                        globalId:   _scalar(item.GlobalId) ?? '',
-                        attributes: _flattenAttrs(item),
-                        psets:      _flattenPsets(item),
-                    });
+        for (const group of gruppen) {
+            try {
+                const map = await group.groupData.get();
+                const entries = map instanceof Map ? [...map.entries()] : Object.entries(map ?? {});
+                for (const [modelId, rawIds] of entries) {
+                    const localIds = Array.isArray(rawIds) ? rawIds : (rawIds instanceof Set ? [...rawIds] : null);
+                    if (!localIds?.length || !fragmentsList.get(modelId)) continue;
+                    const raw = await fragmentsManager.getData({ [modelId]: localIds }, FRAGMENTS_DATA_CONFIG);
+                    const items = Object.values(raw ?? {})[0] ?? [];
+                    for (const item of items) {
+                        const localId = _scalar(item._localId ?? item.localId ?? item.expressID);
+                        if (localId == null) continue;
+                        elements.push({
+                            modelId, localId,
+                            globalId:   _scalar(item.GlobalId) ?? '',
+                            attributes: _flattenAttrs(item),
+                            psets:      _flattenPsets(item),
+                        });
+                    }
                 }
+            } catch (e) {
+                console.warn('[IDS] Daten-Fetch fehlgeschlagen für', group.name, e?.message ?? e);
             }
-        } catch (e) {
-            console.warn('[IDS] Daten-Fetch fehlgeschlagen für', category, e?.message ?? e);
         }
         dataByCategory.set(category, elements);
     }

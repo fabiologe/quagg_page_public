@@ -20,6 +20,9 @@ import yaml
 from . import ordner
 from .env import env
 from .audit import audit_schreiben
+# Der Kopf einer IFC-Datei steht EINMAL: app/ifc/kopf.py (rein, ohne ifcopenshell),
+# gespiegelt in ModelIdentity.js — beide gegen tests/daten/kopf_faelle.json.
+from app.ifc import kopf as ifc_kopf
 
 ORDNER = "CDE"
 MANIFEST = "manifest.yaml"
@@ -38,6 +41,42 @@ STATUS_UEBERGAENGE = {
     ("Published", "Shared"): "ADMIN",
     ("Archived", "Published"): "ADMIN",
 }
+# Stufe 4b (IFC-Konsistenz, 2026-09-11): wer ein MODELL teilt, soll wissen, was
+# das Prueftor zu ihm sagt. Verlangt wird ein VORHANDENER Pruefbericht, kein
+# gruener: die Lieferung gehoert dem Planer, die CDE meldet. Spiegel im Client:
+# StatusWorkflow.js (UEBERGANG_VERLANGT_PRUEFUNG).
+UEBERGANG_VERLANGT_PRUEFUNG = {("WIP", "Shared")}
+# Eignung (Fahrplan Erdbau-Container, E3): WOFUER ein Dokument taugt — neben dem
+# Status, der sagt, WO es steht (ISO 19650-2, Codes nach dem britischen Anhang
+# NA). Ein erzeugter Container kommt mit S1 (Koordination) ins Register; ein
+# Statuswechsel setzt die Vorgabe, wenn niemand ausdruecklich etwas anderes sagt.
+# Spiegel im Client: StatusWorkflow.js (EIGNUNG) — test_cde.py haelt beide gleich.
+EIGNUNG = {"S1": "Koordination", "S2": "Information", "S3": "Prüfung und Kommentar",
+           "S4": "Freigabe", "A1": "Freigegeben", "CR": "Bestand"}
+EIGNUNG_VORGABE = {"Shared": "S2", "Published": "A1", "Archived": "CR"}
+EIGNUNG_ERZEUGT = "S1"
+
+
+def hat_pruefung(d: dict) -> bool:
+    """Ein Pruefbericht am Eintrag — aus einem Pruefauf oder, bei Erzeugtem, aus dem Verbund."""
+    return bool(d.get("pruefung") or (d.get("herkunft") or {}).get("pruefung"))
+
+
+def _pruefe_pruefbericht(d: dict, nach: str, rolle) -> None:
+    """Wirft CdeAbgelehnt, wenn dieser Wechsel einen Pruefbericht verlangt und keiner da ist.
+
+    ADMIN darf auch hier springen — dieselbe Korrektur-Eskape wie beim Graphen.
+    """
+    from app.core.rollen import Rolle, normalisiert
+
+    if (d.get("status"), nach) not in UEBERGANG_VERLANGT_PRUEFUNG or d.get("art") != "modell":
+        return
+    if rolle is not None and normalisiert(rolle) is Rolle.ADMIN:
+        return
+    if not hat_pruefung(d):
+        raise CdeAbgelehnt(f"{d.get('datei')}: {d.get('status')} -> {nach} braucht einen Pruefbericht — "
+                           "im Register erst pruefen lassen (der Bericht darf Verstoesse nennen, "
+                           "er muss nur da sein)")
 
 
 def _pruefe_uebergang(von: str, nach: str, rolle) -> None:
@@ -60,12 +99,14 @@ def _pruefe_uebergang(von: str, nach: str, rolle) -> None:
     if r is None or RANG[r] < RANG[Rolle(mindest)]:
         raise CdeAbgelehnt(f"{von} -> {nach} braucht mindestens {mindest}")
 
-ARTEN = ("modell", "plan", "bcf", "sonstiges")
+# "regelwerk" = IDS 1.0 (Projektanforderungen). Jeder Pruef- und Verbundlauf bekommt
+# die Regelwerke des Projekts in den Laufordner (verbund_lauf._ids_ablegen, Stufe 5).
+ARTEN = ("modell", "plan", "bcf", "regelwerk", "sonstiges")
 # Modellsaetze (Stufe 11): benannte AUSWAHLEN aus der Ablage. Ein Satz besitzt
 # nichts — er verweist. Dasselbe Gelaende in drei Varianten kostet einmal Platz.
 SATZ_ZWECKE = ("bestand", "variante", "vorzug", "ausschreibung")
 ENDUNGEN = {".ifc": "modell", ".ifczip": "modell", ".pdf": "plan", ".dxf": "plan", ".dwg": "plan",
-            ".bcf": "bcf", ".bcfzip": "bcf"}
+            ".bcf": "bcf", ".bcfzip": "bcf", ".ids": "regelwerk"}
 MAX_GROESSE = 400 * 1024 * 1024
 CHUNK = 1024 * 1024
 # Streng, damit DELETE /cde/{sha256} nicht versehentlich auf /cde/repo passt:
@@ -170,9 +211,9 @@ def _basis(d: dict) -> str:
     return _basisname(d["datei"]) if d.get("datei") else (d.get("basisname") or "")
 
 
-# Die IFCPROJECT-GlobalId steht im Kopf der Datei — Spiegel von ModelIdentity.js (PROJECT_RE).
-KOPF_BYTES = 4 * 1024 * 1024
-_IFCPROJECT = re.compile(rb"IFCPROJECT\s*\(\s*'([^']{1,64})'")
+# Wie viel der Upload vom Anfang der Datei mitliest (IFCPROJECT, STEP-Kopf,
+# Schema, Einheit) — die Regeln dazu stehen in app/ifc/kopf.py.
+KOPF_BYTES = ifc_kopf.KOPF_BYTES
 
 
 def _projekt_global_id_aus(kopf: bytes) -> str | None:
@@ -183,8 +224,7 @@ def _projekt_global_id_aus(kopf: bytes) -> str | None:
     2026-09-10: 9 von 9 Registereintraegen). Die Saetze pruefen ihre Linien aber
     zuerst ueber genau diese Kennung (`_linie`).
     """
-    m = _IFCPROJECT.search(kopf or b"")
-    return m.group(1).decode("ascii", "replace") if m else None
+    return ifc_kopf.lies_kopf(kopf or b"")["projekt_global_id"]
 
 
 def _sicherer_name(name: str) -> str:
@@ -237,20 +277,30 @@ async def hochladen(conn, o: ordner.Ordner, upload, *, akteur: str, art: str | N
             os.fsync(f.fileno())
         if groesse == 0:
             raise CdeAbgelehnt("leere datei")
+        # DER KOPF (2026-09-11): eine PDF mit der Endung .ifc landete bis hierher
+        # als Modell im Register. Abgelehnt wird nur, was SICHER keine IFC-Datei
+        # ist; Schema und Einheit gehen als Hinweis ins Manifest (unten).
+        grund = ifc_kopf.ablehnung(bytes(kopf), endung)
+        if grund:
+            raise CdeAbgelehnt(f"{name}: {grund}")
         os.replace(temp, ziel)
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
+    kopfinfo = ifc_kopf.lies_kopf(bytes(kopf)) if endung == ".ifc" else None
     # Was der Viewer schickt, gilt (er hat das Modell offen); sonst liest der Server selbst.
-    if not projekt_global_id and endung == ".ifc":
-        projekt_global_id = _projekt_global_id_aus(bytes(kopf))
+    if not projekt_global_id and kopfinfo:
+        projekt_global_id = kopfinfo["projekt_global_id"]
     return _registriere(conn, o, name=name, sha=pruefsumme.hexdigest(), groesse=groesse, art=art,
-                        status=status, akteur=akteur, projekt_global_id=projekt_global_id)
+                        status=status, akteur=akteur, projekt_global_id=projekt_global_id,
+                        kopf=kopfinfo)
 
 
 def _registriere(conn, o: ordner.Ordner, *, name: str, sha: str, groesse: int, art: str,
                  status: str, akteur: str, projekt_global_id: str | None = None,
-                 herkunft: dict | None = None, aktion: str = "cde_hochladen") -> dict:
+                 herkunft: dict | None = None, aktion: str = "cde_hochladen",
+                 kopf: dict | None = None, revision: int | None = None,
+                 eignung: str | None = None) -> dict:
     """Die EINE Stelle, die einen Dokumenteintrag ins Manifest schreibt.
 
     Bis zum Verbundexport fuehrte nur ein Weg ins Register: der Upload. Jetzt
@@ -260,17 +310,29 @@ def _registriere(conn, o: ordner.Ordner, *, name: str, sha: str, groesse: int, a
 
     `herkunft` steht nur an erzeugten Dokumenten. Ein hochgeladenes hat keine —
     woher es kam, weiss der Planer, nicht wir.
+
+    `revision` gibt der ERZEUGER vor, wenn der Name sie schon traegt
+    (`erzeugt_dateiname` zaehlt auch die Linie unter dem alten Stamm mit) — sonst
+    zaehlte der Eintrag anders als der Dateiname. `eignung` fehlt, gilt die
+    Vorgabe des Status (EIGNUNG_VORGABE; eine WIP-Lieferung hat keine).
     """
     daten = manifest_lesen(o)
     basis = _basisname(name)
-    geschwister = [d for d in daten["dokumente"] if _basis(d) == basis and d.get("art") == art]
-    revision = max((int(d.get("revision", 1)) for d in geschwister), default=0) + 1
+    if revision is None:
+        geschwister = [d for d in daten["dokumente"] if _basis(d) == basis and d.get("art") == art]
+        revision = max((int(d.get("revision", 1)) for d in geschwister), default=0) + 1
     eintrag = {"sha256": sha, "datei": name, "basisname": basis, "art": art, "revision": revision,
                "status": status, "groesse": groesse, "hochgeladen_am": _jetzt(), "von": akteur,
                "projekt_global_id": projekt_global_id or None,
                "status_historie": [{"status": status, "von": akteur, "am": _jetzt()}]}
     if herkunft:
         eintrag["herkunft"] = herkunft
+    if eignung or EIGNUNG_VORGABE.get(status):
+        eintrag["eignung"] = eignung or EIGNUNG_VORGABE[status]
+    if kopf:
+        # Was der Kopf der Datei SAGT — Hinweis, kein Urteil (app/ifc/kopf.py).
+        eintrag["schema"] = kopf.get("schema")
+        eintrag["einheit_hinweis"] = kopf.get("einheit_hinweis")
     daten["dokumente"].append(eintrag)
     _manifest_schreiben(o, daten)
     conn.rollback()
@@ -289,6 +351,17 @@ def _registriere(conn, o: ordner.Ordner, *, name: str, sha: str, groesse: int, a
 
 VERBUND_PRAEFIX = "Verbund_"
 ERDBAU_PRAEFIX = "Erdbau_"
+# Erzeugte Container heissen nach EINER Regel (Fahrplan Erdbau-Container, E3):
+# Praefix, Satzname in ASCII, Revision — `Erdbau_Boeschung_Sued_R02.ifc`.
+# Lieferungen bleiben, wie sie geliefert wurden.
+ERZEUGT_MUSTER = re.compile(r"^(Verbund|Erdbau)_[A-Za-z0-9_\-]+_R\d{2,}\.ifc$")
+_UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
+
+
+def _satz_stamm(satz_name: str) -> str:
+    """Der Satzname als Teil eines Dateinamens: ASCII, ein Unterstrich statt Leerzeichen, Punkt, Schraegstrich."""
+    t = re.sub(r"[^A-Za-z0-9_\-]+", "_", (satz_name or "").translate(_UMLAUTE))
+    return re.sub(r"_+", "_", t).strip("_-") or "Satz"
 
 
 def erzeugt_dateiname(o: ordner.Ordner, praefix: str, satz_name: str) -> str:
@@ -300,17 +373,21 @@ def erzeugt_dateiname(o: ordner.Ordner, praefix: str, satz_name: str) -> str:
     ein Satzname, der die Konvention unterlaeuft, soll laut scheitern, nicht
     still eine neue Linie beginnen.
 
-    Der Satzname wird hier selbst gesaeubert. `_sicherer_name` taugt dafuer
-    nicht: es nimmt zuerst `Path(name).name`, und aus „Nord/Sued" wuerde „Sued" —
-    der Praefix ginge mit verloren.
+    Der Satzname wird hier selbst gesaeubert (`_satz_stamm`). `_sicherer_name`
+    taugt dafuer nicht: es nimmt zuerst `Path(name).name`, und aus „Nord/Sued"
+    wuerde „Sued" — der Praefix ginge mit verloren.
+
+    Bis 2026-09-11 blieben Leerzeichen und Umlaute im Namen („Verbund_Boden
+    Nord_R01.ifc"). Die Linie geht weiter: die Geschwister werden auch unter dem
+    ALTEN Stamm gesucht, und der naechste heisst `Verbund_Boden_Nord_R02.ifc`.
     """
-    sauber = re.sub(r"[^A-Za-z0-9._\-äöüÄÖÜß ]+", "_", satz_name or "").strip(" ._") or "Satz"
-    basis = f"{praefix}{sauber}"
+    basis = f"{praefix}{_satz_stamm(satz_name)}"
+    alt = praefix + (re.sub(r"[^A-Za-z0-9._\-äöüÄÖÜß ]+", "_", satz_name or "").strip(" ._") or "Satz")
     daten = manifest_lesen(o)
-    geschwister = [d for d in daten["dokumente"] if _basis(d) == basis and d.get("art") == "modell"]
+    geschwister = [d for d in daten["dokumente"] if _basis(d) in (basis, alt) and d.get("art") == "modell"]
     revision = max((int(d.get("revision", 1)) for d in geschwister), default=0) + 1
     name = f"{basis}_R{revision:02d}.ifc"
-    if _basisname(name) != basis:
+    if not ERZEUGT_MUSTER.match(name) or _basisname(name) != basis:
         raise CdeAbgelehnt(f"der Satzname {satz_name!r} ergibt keinen eindeutigen Dateinamen ({praefix}…)")
     return name
 
@@ -329,6 +406,7 @@ def erzeugtes_eintragen(conn, o: ordner.Ordner, quelle: Path, *, praefix: str, s
     if not quelle.is_file():
         raise CdeAbgelehnt(f"erzeugte Datei fehlt: {quelle.name}")
     name = erzeugt_dateiname(o, praefix, satz_name)
+    revision = int(re.search(r"_R(\d+)\.ifc$", name).group(1))
     ziel = _cde_ordner(o) / name
     if ziel.exists():
         raise CdeAbgelehnt(f"{name} liegt bereits in CDE/, aber nicht im Register — bitte pruefen")
@@ -347,27 +425,66 @@ def erzeugtes_eintragen(conn, o: ordner.Ordner, quelle: Path, *, praefix: str, s
         # Linie fuer R01, R02, …; das Erdbau-Dokument desselben Satzes hat eine andere.
         return _registriere(conn, o, name=name, sha=pruefsumme.hexdigest(), groesse=groesse,
                             art="modell", status="WIP", akteur=akteur, herkunft=herkunft, aktion=aktion,
-                            projekt_global_id=_projekt_global_id_aus(kopf))
+                            projekt_global_id=_projekt_global_id_aus(kopf), revision=revision,
+                            eignung=EIGNUNG_ERZEUGT)
     except BaseException:
         os.replace(ziel, quelle)
         raise
 
 
-def status_setzen(conn, o: ordner.Ordner, sha256: str, status: str, *, akteur: str, rolle=None) -> dict:
+def status_setzen(conn, o: ordner.Ordner, sha256: str, status: str, *, akteur: str, rolle=None,
+                  eignung: str | None = None) -> dict:
+    """Status (und Eignung) eines Registereintrags setzen.
+
+    Die Eignung folgt dem Status (EIGNUNG_VORGABE), wenn niemand ausdruecklich
+    eine nennt; genannt gilt sie — auch ohne Statuswechsel (E3).
+    """
     if status not in STATUS:
         raise CdeAbgelehnt(f"status muss einer von {STATUS} sein")
+    if eignung is not None and eignung not in EIGNUNG:
+        raise CdeAbgelehnt(f"eignung muss eine von {tuple(EIGNUNG)} sein")
     daten = manifest_lesen(o)
     for d in daten["dokumente"]:
         if d["sha256"] == sha256:
+            geaendert = False
             if d["status"] != status:
                 _pruefe_uebergang(d["status"], status, rolle)
+                _pruefe_pruefbericht(d, status, rolle)
                 d["status"] = status
                 d.setdefault("status_historie", []).append({"status": status, "von": akteur, "am": _jetzt()})
+                ziel_eignung = eignung if eignung is not None else EIGNUNG_VORGABE.get(status)
+                geaendert = True
+            else:
+                ziel_eignung = eignung if eignung is not None else d.get("eignung")
+            if ziel_eignung != d.get("eignung"):
+                if ziel_eignung:
+                    d["eignung"] = ziel_eignung
+                else:
+                    d.pop("eignung", None)
+                geaendert = True
+            if geaendert:
                 _manifest_schreiben(o, daten)
                 conn.rollback()
                 with conn.transaction():
                     audit_schreiben(conn, akteur, "cde_status", erfolg=True,
-                                    nutzlast={"projekt_id": o.id, "sha256": sha256, "status": status})
+                                    nutzlast={"projekt_id": o.id, "sha256": sha256, "status": status,
+                                              "eignung": d.get("eignung")})
+            return {**d, "vorhanden": (o.pfad / ORDNER / d["datei"]).is_file(), "pfad": f"{ORDNER}/{d['datei']}"}
+    raise CdeUnbekannt(sha256)
+
+
+def pruefung_eintragen(conn, o: ordner.Ordner, sha256: str, pruefung: dict, *, akteur: str) -> dict:
+    """Den Pruefbericht eines Laufs an den Registereintrag haengen — der letzte gilt (Stufe 4b)."""
+    daten = manifest_lesen(o)
+    for d in daten["dokumente"]:
+        if d["sha256"] == sha256:
+            d["pruefung"] = pruefung
+            _manifest_schreiben(o, daten)
+            conn.rollback()
+            with conn.transaction():
+                audit_schreiben(conn, akteur, "cde_pruefung", erfolg=True,
+                                nutzlast={"projekt_id": o.id, "sha256": sha256,
+                                          "verstoesse": pruefung.get("verstoesse")})
             return {**d, "vorhanden": (o.pfad / ORDNER / d["datei"]).is_file(), "pfad": f"{ORDNER}/{d['datei']}"}
     raise CdeUnbekannt(sha256)
 
@@ -459,6 +576,16 @@ def _satz_pruefen(daten: dict, enthaelt: list[str]) -> list[str]:
     fehlend = [s for s in sauber if s not in bekannt]
     if fehlend:
         raise CdeAbgelehnt(f"nicht im Register: {', '.join(s[:12] for s in fehlend)}")
+
+    # E1 (Fahrplan Erdbau-Container): ein VERBUND ist ein Abgabe-Container —
+    # Pruefbericht und Herkunft, aus den Quellen jederzeit neu baubar —, kein
+    # Fachmodell. Im Satz stuende er neben seinen eigenen Quellen, und der naechste
+    # Verbund enthielte alles doppelt (dort sperrt `verbund_lauf.auftrag_bauen`,
+    # hier schon das Haekchen). Ein Erdbau-Dokument IST ein Fachmodell und bleibt erlaubt.
+    abgabe = [bekannt[s]["datei"] for s in sauber if (bekannt[s].get("herkunft") or {}).get("art") == "verbund"]
+    if abgabe:
+        raise CdeAbgelehnt(f"{', '.join(abgabe)}: ein Verbund ist ein Abgabe-Container, kein Fachmodell — "
+                           "er gehoert in keinen Satz")
 
     # Zwei Revisionen desselben Fachmodells duerfen nicht gleichzeitig im Satz
     # liegen — sonst stuenden zwei Fassungen nebeneinander im Raum, und keine
@@ -758,8 +885,48 @@ def buero_repo_lesen() -> dict:
 
 
 def buero_repo_setzen(key: str, wert) -> None:
+    if str(key).startswith(BUERO_IDS_PRAEFIX):
+        _buero_ids_pruefen(key, wert)
     _ablage_setzen(_buero_repo_pfad(), key, wert)
 
 
 def buero_repo_loeschen(key: str) -> bool:
     return _ablage_loeschen(_buero_repo_pfad(), key)
+
+
+# IDS-Regelwerke des Bueros (Fahrplan IFC-Konsistenz, Stufe 5): Schluessel
+# `ids:<name>` im Buero-Repository, Wert {"datei": "<name>.ids", "xml": "<ids …>"}.
+# Dieselbe Ablage wie alles andere Buerowissen, keine zweite und keine neue
+# Route. Jede Pruefung (Dokument und Verbund) nimmt sie VOR den Regelwerken des
+# Projekts mit (verbund_lauf._ids_ablegen). Ob die IDS gueltig ist, urteilt
+# ifctester im Pruefbericht; hier wird nur verhindert, dass etwas anderes als
+# eine IDS-Datei unter diesem Praefix landet.
+
+BUERO_IDS_PRAEFIX = "ids:"
+_IDS_DATEI = re.compile(r"^\w[\w.\- ]{0,118}\.ids$", re.IGNORECASE)
+_IDS_WURZEL = re.compile(r"<(?:[A-Za-z_][\w.-]*:)?ids[\s>]")
+
+
+def _buero_ids_pruefen(key: str, wert) -> None:
+    if not (isinstance(wert, dict) and isinstance(wert.get("datei"), str) and isinstance(wert.get("xml"), str)):
+        raise CdeAbgelehnt(f"{key}: erwartet {{\"datei\": \"<name>.ids\", \"xml\": \"<ids …>\"}}")
+    if not _IDS_DATEI.match(wert["datei"]):
+        raise CdeAbgelehnt(f"{key}: datei muss ein schlichter Dateiname auf .ids sein, nicht {wert['datei']!r}")
+    if not _IDS_WURZEL.search(wert["xml"][:8192]):
+        raise CdeAbgelehnt(f"{key}: keine IDS-Datei — die Wurzel <ids> fehlt")
+
+
+def buero_regelwerke() -> list[dict]:
+    """Die IDS-Regelwerke des Bueros, nach Schluessel sortiert: [{key, datei, xml}].
+
+    Was nicht die Form hat, kann nur von Hand in die Ablage gekommen sein (der
+    Setter prueft) und faellt hier weg; eine kaputte IDS in richtiger Form geht
+    durch und steht im Pruefbericht als unlesbar.
+    """
+    out = []
+    for key, wert in sorted(buero_repo_lesen().items()):
+        if not key.startswith(BUERO_IDS_PRAEFIX):
+            continue
+        if isinstance(wert, dict) and isinstance(wert.get("xml"), str) and _IDS_DATEI.match(str(wert.get("datei"))):
+            out.append({"key": key, "datei": wert["datei"], "xml": wert["xml"]})
+    return out

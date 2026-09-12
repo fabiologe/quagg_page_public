@@ -74,9 +74,24 @@ export function punkteAus(parameter) {
         .map(p => [Number(p[0]), Number(p[1] ?? 0), Number(p[2] ?? 0)]);
 }
 
-/** Kennt das IFC-4.3-Wörterbuch diesen Typ? */
+/** Kennt das Wörterbuch diesen Typ (IFC 4.3 ADD2 oder eine Waise älterer Schemata)? */
 export function istKategorie(name) {
     return !!ENTITY_META[String(name ?? '').toUpperCase().trim()];
+}
+
+/**
+ * Darf der Eigenbau diesen Typ SCHREIBEN? Im Zielschema IFC4X3_ADD2, nicht
+ * abstrakt, ein IfcProduct — dieselbe Regel wie `schema.ist_schreibbar` im
+ * Backend, aus demselben Schnappschuss erzeugt.
+ *
+ * Bis 2026-09-11 genügte „steht im Wörterbuch": damit ging auch
+ * `IFCPIPESEGMENTCULVERT` durch (eine bSDD-Abflachung, keine Klasse) oder ein
+ * abstraktes `IFCFEATUREELEMENT` — und erst der Schreiber im Backend lehnte ab,
+ * nachdem der Eintrag längst im Journal stand.
+ */
+export function istSchreibbar(name) {
+    const e = ENTITY_META[String(name ?? '').toUpperCase().trim()];
+    return !!e && e.schema.includes('IFC4X3_ADD2') && !e.abstract && e.hierarchy.includes('IfcProduct');
 }
 
 // ── Die Rezepte ─────────────────────────────────────────────────────────────
@@ -634,11 +649,14 @@ export function teileVon(erzeugtStand, ableitungId) {
  * Bis Stufe 0 hiess das `ableitungAuf` und kannte nur die eine erdbau-
  * Ableitung — Graben und Grube ketteten sich daneben mit eigener Kopie.
  */
-export function erdbauStandVon(erzeugtStand, gid) {
+export function erdbauStandVon(erzeugtStand, gid, { historie = null } = {}) {
     if (!gid) return null;
     const stand = erzeugtStand instanceof Map ? erzeugtStand : new Map(Object.entries(erzeugtStand ?? {}));
-    const ur = urGelaendeVon(stand, gid, { rezeptNach });
-    const { anzeige, vorgaenge, altDgm } = erdbauStapelVon(stand, ur, { rezeptNach });
+    // Die Historie trägt die Kette durch Zurückgenommenes (Fahrplan
+    // Erdbau-Container, Stufe 1): wer in eine veraltete Anzeige tippt, bekommt
+    // trotzdem das Ur-Gelände — nicht die tote Kennung als „Ur".
+    const ur = urGelaendeVon(stand, gid, { rezeptNach, historie });
+    const { anzeige, vorgaenge, altDgm } = erdbauStapelVon(stand, ur, { rezeptNach, historie });
     const l = vorgaenge.at(-1) ?? null;
     const basis = anzeige?.bauplan
         ?? vorgaenge.find(v => v.bauplan?.parameter?.quellen?.gelaende === ur)?.bauplan
@@ -776,7 +794,9 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
         fehler.push(`${r.titel}: mindestens ${r.mindestPunkte} Punkte, ${punkte.length} gesetzt`);
     }
     const typ = kategorie ?? r.kategorieVorgabe;
-    if (!istKategorie(typ)) fehler.push(`„${typ}" ist kein IFC-Typ`);
+    if (!istSchreibbar(typ)) {
+        fehler.push(`„${typ}" ist kein IFC-Typ, den der Eigenbau schreiben kann (IFC 4.3, konkret, ein Bauteil)`);
+    }
     return fehler;
 }
 
