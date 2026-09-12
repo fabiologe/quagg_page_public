@@ -15,6 +15,7 @@ import { haengeLeereSeiteAn } from '../services/BlankPdf';
 import { verwirfDokument } from '../services/SeitenBitmapCache';
 import { vergiss as vergissRenderZeiten } from '../services/RenderProfil';
 import { verwirfDokument as verwirfBilder, loescheBilder } from '../services/BildAblage';
+import { klon } from '../composables/useCommandStack';
 import { useViewStore } from './useViewStore';
 
 const SCHEMA_VERSION = 1;
@@ -56,8 +57,12 @@ export const useDocStore = defineStore('pdfed-doc', () => {
             : [];
     }
 
+    // Alles, was aus reaktivem Zustand in die IndexedDB geht, läuft über
+    // klon(): Vue-Proxies sind nicht strukturiert klonbar, PdfRepo.set liefert
+    // dann still false — Liste, Kalibrierung und Tab-Ansicht gingen so bis
+    // 2026-09-12 beim Neuladen verloren (test/persistenz.test.js).
     async function _schreibeIndex() {
-        await repo.set('doc-index', dokIndex.value);
+        await repo.set('doc-index', klon(dokIndex.value));
     }
 
     function _indexEintragAktualisieren(eintrag) {
@@ -117,10 +122,10 @@ export const useDocStore = defineStore('pdfed-doc', () => {
     // ── Tab-Verwaltung ──────────────────────────────────────────────────────
 
     async function _persistiereTabs() {
-        await repo.set('tabs', {
+        await repo.set('tabs', klon({
             liste: tabs.value.map(t => ({ dokId: t.dokId, name: t.name, ansicht: t.ansicht ?? null })),
             aktiv: dokId.value,
-        });
+        }));
     }
 
     /** Zoom + oberste Seite des aktiven Dokuments in seinen Tab schreiben. */
@@ -373,7 +378,7 @@ export const useDocStore = defineStore('pdfed-doc', () => {
     async function speichereMeta() {
         if (!dokId.value || !meta.value) return;
         meta.value.modifiedAt = Date.now();
-        await repo.set(`doc:${dokId.value}:meta`, { ...meta.value });
+        await repo.set(`doc:${dokId.value}:meta`, klon(meta.value));
     }
 
     return {

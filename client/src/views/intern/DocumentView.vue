@@ -1,112 +1,167 @@
 <template>
-  <div class="document-view">
-    <div v-if="loading" class="loading">
-      <div class="spinner">↻</div>
-      <p>Lade Dokument...</p>
+  <div class="dv-uebergabe">
+    <div v-if="!fehler" class="dv-karte" role="status" aria-live="polite">
+      <span class="dv-spinner" aria-hidden="true"></span>
+      <p class="dv-titel">Dokument wird geladen …</p>
+      <p v-if="titel" class="dv-name">{{ titel }}</p>
+      <p class="dv-hinweis">Öffnet im Quagg-PDF</p>
     </div>
-    <div v-else-if="error" class="error">
-      {{ error }}
+    <div v-else class="dv-karte ist-fehler" role="alert">
+      <p class="dv-titel">{{ fehler }}</p>
+      <div class="dv-aktionen">
+        <button type="button" class="dv-knopf" @click="lade">Erneut versuchen</button>
+        <button type="button" class="dv-knopf ist-primaer" @click="schliesse">Fenster schließen</button>
+      </div>
     </div>
-    <DocReader
-      v-else
-      :src="docSrc"
-      :title="docTitle"
-      :doc-id="route.params.id"
-      :save-endpoint="`/library/save/${route.params.id}`"
-      :is-embedded="true"
-      @close="closeTab"
-    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+/**
+ * DocumentView — Übergabeseite der Bibliothek an Quagg-PDF.
+ *
+ * Lädt die PDF mit Anmeldung (Bearer über `api`), übergibt sie an den Editor
+ * und springt ins Quagg-PDF. Dieselbe Quelle öffnet beim nächsten Mal
+ * dasselbe lokale Dokument samt Anmerkungen (keine Dublette, kein erneuter
+ * Download). Originale werden nie überschrieben — Anmerkungen leben im
+ * Editor, Export über dessen Speichern-Dialog.
+ *
+ * Volltexttreffer kommen über ihren Dateinamen (`?file=`, der Volltextindex
+ * ist aktuell), Kacheln der Titelansicht über die doc_id (`/view/:id`).
+ */
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import DocReader from '@/features/documents/components/DocReader.vue'
+import { oeffneQuelle } from '@/features/pdfeditor/services/QuellenUebergabe'
 
 const route = useRoute()
-const loading = ref(true)
-const error = ref(null)
-const docSrc = ref(null)
-const docTitle = ref('')
+const router = useRouter()
+const fehler = ref(null)
+const titel = ref('')
 
-const closeTab = () => {
+const dateiname = computed(() => route.query.file || null)
+const quelle = computed(() =>
+  dateiname.value ? `literatur:${dateiname.value}` : `bibliothek:${route.params.id}`
+)
+
+/** Dateiname aus Content-Disposition — erst filename*=UTF-8'' (Umlaute), dann filename=. */
+function nameAusKopf(kopf) {
+  if (!kopf) return ''
+  const stern = kopf.match(/filename\*\s*=\s*utf-8''([^;]+)/i)
+  if (stern) {
+    try { return decodeURIComponent(stern[1].trim().replace(/^"|"$/g, '')) } catch { /* weiter unten */ }
+  }
+  const einfach = kopf.match(/filename\s*=\s*"?([^";]+)"?/i)
+  return einfach ? einfach[1].trim() : ''
+}
+
+async function holePdf() {
+  if (dateiname.value) {
+    const res = await api.get('/library/fulltext/file', {
+      params: { filename: dateiname.value },
+      responseType: 'blob'
+    })
+    return { blob: res.data, name: dateiname.value }
+  }
+  const id = route.params.id
+  const res = await api.get(`/library/download/${id}`, {
+    params: { t: Date.now() },
+    responseType: 'blob'
+  })
+  return { blob: res.data, name: nameAusKopf(res.headers['content-disposition']) || `Dokument ${id}.pdf` }
+}
+
+async function lade() {
+  fehler.value = null
+  titel.value = dateiname.value || ''
+  try {
+    const { dokId } = await oeffneQuelle(quelle.value, holePdf)
+    await router.replace({ name: 'pdf-editor', params: { docId: dokId } })
+  } catch (err) {
+    console.error('Dokument konnte nicht an Quagg-PDF übergeben werden', err)
+    fehler.value = err?.response?.status === 404
+      ? 'Die Datei wurde im Literaturbestand nicht gefunden.'
+      : 'Dokument konnte nicht geladen werden.'
+  }
+}
+
+function schliesse() {
   window.close()
 }
 
-const fetchDocument = async () => {
-  const docId = route.params.id
-  try {
-    // 1. Get Metadata for title
-    // We might need a separate endpoint for metadata if we want to avoid fetching the list
-    // For now, we fetch the blob directly and use a generic title or fetch metadata if possible.
-    // Let's try to fetch the blob.
-    
-    // Actually, we need the title. Let's assume we can get it from the list or add a metadata endpoint.
-    // Since we don't have a specific "get metadata" endpoint yet (only list), 
-    // we'll just fetch the file and use the filename from the header if possible, or just "Dokument".
-    
-    // Better: Fetch the blob.
-    const res = await api.get(`/library/download/${docId}`, { 
-      params: { t: Date.now() },
-      responseType: 'blob' 
-    })
-    
-    docSrc.value = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-    
-    // Try to get filename from content-disposition if available, otherwise default
-    const contentDisposition = res.headers['content-disposition']
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="?([^"]+)"?/)
-      if (match) docTitle.value = match[1]
-    } else {
-      docTitle.value = `Dokument ${docId}`
-    }
-
-  } catch (err) {
-    console.error('Failed to load document', err)
-    error.value = 'Dokument konnte nicht geladen werden.'
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  fetchDocument()
-})
-
-onBeforeUnmount(() => {
-  if (docSrc.value) {
-    window.URL.revokeObjectURL(docSrc.value)
-  }
-})
+onMounted(lade)
 </script>
 
 <style scoped>
-.document-view {
+/* Farben wie Quagg-PDF (Petrol auf warmem Grau), damit der Übergang ins
+   Editorfenster ruhig bleibt. */
+.dv-uebergabe {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100vw;
   height: 100vh;
-  background: #f5f5f5;
+  background: #e9e7e2;
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
 }
-
-.loading, .error {
+.dv-karte {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 8px;
+  min-width: min(360px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: 28px 24px;
+  background: #f8f7f4;
+  color: #22262b;
+  border: 1px solid #d6d3cc;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(25, 28, 32, 0.10), 0 4px 16px rgba(25, 28, 32, 0.08);
+  text-align: center;
+}
+.dv-karte.ist-fehler { border-left: 3px solid #b91c1c; }
+.dv-spinner {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 4px;
+  border: 3px solid rgba(15, 118, 110, 0.18);
+  border-top-color: #0f766e;
+  border-radius: 50%;
+  animation: dv-drehen 0.9s linear infinite;
+}
+.dv-titel { margin: 0; font-size: 15px; font-weight: 600; }
+.dv-name {
+  margin: 0;
+  max-width: 100%;
+  font-size: 13px;
+  color: #6d757e;
+  overflow-wrap: anywhere;
+}
+.dv-hinweis { margin: 0; font-size: 12px; color: #6d757e; }
+.dv-aktionen {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  height: 100%;
-  color: #7f8c8d;
+  gap: 8px;
+  margin-top: 8px;
 }
-
-.spinner {
-  font-size: 2rem;
-  margin-bottom: 1rem;
-  animation: spin 1s linear infinite;
+.dv-knopf {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #d6d3cc;
+  border-radius: 6px;
+  background: #eeece7;
+  color: #22262b;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
 }
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.dv-knopf:hover { background: #e2dfd9; }
+.dv-knopf.ist-primaer {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #ffffff;
 }
+.dv-knopf.ist-primaer:hover { background: #0d655e; }
+@keyframes dv-drehen { to { transform: rotate(360deg); } }
 </style>

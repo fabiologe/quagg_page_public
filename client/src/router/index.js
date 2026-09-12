@@ -167,6 +167,14 @@ const router = createRouter({
       meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
     },
     {
+      // Volltexttreffer werden über ihren Dateinamen geöffnet statt über eine
+      // doc_id — der Volltextindex ist aktuell, die Bibliothekspfade oft nicht.
+      path: '/intern/library/file',
+      name: 'document-view-file',
+      component: () => import('@/views/intern/DocumentView.vue'),
+      meta: { layout: 'empty', requiresAuth: true, minRole: 'WERKSTUDENT' }
+    },
+    {
       // Alte Triage-Inbox — vom Mail-Client (/mail, Ordner „Nicht zugewiesen") abgelöst
       path: '/intern/inbox',
       redirect: '/mail'
