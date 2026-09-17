@@ -282,7 +282,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | Klasse | genutzt von | abstrakt | Schema |
 |---|---|---|---|
 | [IfcAlignment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcAlignment.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcAnnotation](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcAnnotation.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
+| [IfcAnnotation](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcAnnotation.htm) | Bauteilrezepte, Eigenbau, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBeam](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBeam.htm) | Kategorien, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBorehole](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBorehole.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBuildingElementProxy](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBuildingElementProxy.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
@@ -377,7 +377,8 @@ Geometrie, Einheiten, Werte, Stile — ohne GlobalId, deshalb nicht im Baum oben
 | IfcDocumentInformation | Herkunft, Verbund |
 | IfcDocumentReference | Herkunft, Verbund |
 | IfcGeometricRepresentationContext | Verbund |
-| IfcGeometricRepresentationSubContext | Verbund |
+| IfcGeometricRepresentationSubContext | Eigenbau, Verbund |
+| IfcIndexedPolyCurve | Eigenbau |
 | IfcLocalPlacement | Eigenbau, Verbund |
 | IfcMapConversion | Verbund |
 | IfcOrganization | Verbund |

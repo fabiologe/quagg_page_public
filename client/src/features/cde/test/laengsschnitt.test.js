@@ -45,6 +45,41 @@ describe('buildStrang', () => {
   it('leere Eingabe → null', () => {
     expect(buildStrang([])).toBeNull()
   })
+
+  // ── Der Achsbezug (Teil XXI, E4) ───────────────────────────────────────
+  //
+  // Bis 2026-09-17 war „die Achshöhe IST die Sohle" eine Annahme im Kopf
+  // dieses Moduls, und der Kanalgraben nebenan las dieselbe Zahl als
+  // Rohrmitte. Jetzt sagt jede Achse, wo sie liegt — und `buildStrang`
+  // rechnet sie an genau einer Stelle auf die Sohle.
+  it('eine Achse in ROHRMITTE wird um DN/2 auf die Sohle gelegt', () => {
+    const mitte = { ...PIPE_1, achsbezug: 'mitte', dn: 400 }
+    const strang = buildStrang([mitte])
+    expect(strang.points[0].y).toBeCloseTo(99.8, 9)          // 100 − 0,20
+    expect(strang.points[strang.points.length - 1].y).toBeCloseTo(99.65, 9)
+    expect(strang.pipes[0].y0).toBeCloseTo(99.8, 9)
+  })
+
+  it('eine Achse auf SOHLNIVEAU bleibt, wo sie ist', () => {
+    const strang = buildStrang([{ ...PIPE_1, achsbezug: 'sohle', dn: 400 }])
+    expect(strang.points[0].y).toBeCloseTo(100, 9)
+  })
+
+  it('ohne Angabe bleibt es beim bisherigen Lesen — kein stiller Versatz', () => {
+    // Eine Achse ohne Herkunft soll ihren Schnitt nicht um DN/2 verschieben,
+    // nur weil das Feld fehlt.
+    const strang = buildStrang([{ ...PIPE_1, dn: 400 }])
+    expect(strang.points[0].y).toBeCloseTo(100, 9)
+  })
+
+  it('jede Haltung bringt ihren eigenen Bezug mit', () => {
+    const strang = buildStrang([
+      { ...PIPE_1, achsbezug: 'sohle', dn: 400 },
+      { ...PIPE_2, achsbezug: 'mitte', dn: 300 },
+    ])
+    expect(strang.pipes[0].y0).toBeCloseTo(100, 9)
+    expect(strang.pipes[1].y0).toBeCloseTo(99.7, 9)          // 99,85 − 0,15
+  })
 })
 
 describe('pointAt / sohleAt', () => {

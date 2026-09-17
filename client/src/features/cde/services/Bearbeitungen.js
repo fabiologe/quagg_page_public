@@ -68,8 +68,26 @@ export function eingabeArt(bearbeitung) {
     return art && art in EINGABEN ? art : 'wert';
 }
 
-import { WANDFORMEN, BODENKLASSEN, GRABENREGELN, schaechteAnKanten } from './gelaende/Grabenregeln.js';
+import { AUFLOCKERUNG, WANDFORMEN, BODENKLASSEN, GRABENREGELN, auflockerungFuer, auflockerungOder, schaechteAnKanten } from './gelaende/Grabenregeln.js';
+// Die Bauformen, an denen eine Aussparung fachlich geht — DIE Liste des
+// Rezepts, nicht eine Kopie daneben (Gesetz 7).
+import { ERDBAU_PUNKTHOEHEN, KOERPERHAFT } from './ableitung/Ableitungen.js';
 import { achsmassAus } from './geometrie/ops/Raster.js';
+
+/**
+ * DER AUFLOCKERUNGSFAKTOR (Teil XXI, P4) — EIN Feld, überall dasselbe.
+ *
+ * Gemessen wird gewachsener Boden, abgefahren wird loser. Der Faktor steht
+ * deshalb am Vorgang und geht als `LooseVolume` ins IFC. Erfahrungswerte,
+ * keine Norm (siehe `AUFLOCKERUNG` in Grabenregeln.js) — darum ein Regler.
+ */
+const AUFLOCKERUNG_FELD = Object.freeze({
+    name: 'auflockerung',
+    titel: 'Auflockerung (loses Volumen je m³ gewachsen)',
+    typ: 'zahl', min: AUFLOCKERUNG.min, max: AUFLOCKERUNG.max, schritt: 0.01,
+    vorgabe: AUFLOCKERUNG.vorgabe,
+});
+import { ACHSBEZUEGE } from './Achsbezug.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -419,7 +437,7 @@ function _grubeSchritte(el, werte, zug) {
         umriss,
         sohle: Math.round((_mittelY(umriss) - tiefe) * 1000) / 1000,
         neigung: Number.isFinite(n) && n > 0 ? n : null,
-    } }], { titel: 'Ausheben' });
+    } }], { titel: 'Ausheben', auflockerung: auflockerungOder(werte?.auflockerung) });
 }
 
 /**
@@ -441,6 +459,76 @@ function _schuettungSchritte(el, werte, zug) {
         hoehe: Math.round((_mittelY(umriss) + mass) * 1000) / 1000,
         neigung: Number.isFinite(n) && n > 0 ? n : null,
     } }], { titel: 'Auffüllen' });
+}
+
+/**
+ * EIN KNICKPUNKT EINER OPERATION (Teil XXI, P5) — {op, feld, index, punkt}.
+ *
+ * Welche Op-Felder Punktlisten sind, sagt `ERDBAU_PUNKTHOEHEN` (dieselbe
+ * Tabelle, die sie an der NN-Grenze umrechnet). Ohne Angabe: der erste
+ * gefundene Punkt — das ist die Vorbelegung des Formulars.
+ */
+function _erdbauPunkt(bauplan, op = null, feld = null, index = 0) {
+    const ops = bauplan?.parameter?.operationen;
+    if (!Array.isArray(ops)) return null;
+    for (let j = 0; j < ops.length; j++) {
+        if (op != null && j !== Number(op)) continue;
+        // Je Art ihre Punktfelder — dieselbe Tabelle, die `_opsInWelt` die
+        // Höhen umrechnen lässt. Ein fremdes Feld an einer Operation trüge
+        // sonst einen Griff, den die Rechnung nie liest.
+        for (const f of (ERDBAU_PUNKTHOEHEN[ops[j]?.art] ?? [])) {
+            if (feld && f !== feld) continue;
+            const liste = ops[j]?.parameter?.[f];
+            if (!Array.isArray(liste) || !liste.length) continue;
+            const k = Number(index) || 0;
+            const punkt = liste[k];
+            if (!punkt || ![punkt.x, punkt.y, punkt.z].every(v => Number.isFinite(Number(v)))) continue;
+            return { op: j, feld: f, index: k, punkt, liste };
+        }
+    }
+    return null;
+}
+
+/**
+ * Den gezogenen Knickpunkt zurückschreiben — als VOLLE Operationsliste über
+ * `ableitungsSchritte({bestehend})`, damit alle Teile des Vorgangs denselben
+ * Parametersatz behalten.
+ */
+function _erdbauStuetzpunktSchritte(el, werte) {
+    const plan = el?.stand?.bauplan;
+    if (!el?.globalId || !plan?.ableitung || !rezeptNach(plan.rezept)?.erdbau) return null;
+    const treffer = _erdbauPunkt(plan, werte?.op, werte?.feld || null, werte?.index);
+    if (!treffer) return null;
+    const ost = Number(werte?.ost), nord = Number(werte?.nord), hoehe = Number(werte?.hoehe);
+    if (![ost, nord, hoehe].every(Number.isFinite)) return null;
+    const v = el.versatz ?? { x: 0, y: 0, z: 0 };
+    // Die Höhe bleibt in NN — die Op-Punktlisten tragen sie so.
+    const neu = { ...treffer.punkt, x: ost - v.x, y: hoehe, z: -nord - v.z };
+    const alt = treffer.punkt;
+    if (Math.abs(alt.x - neu.x) < 1e-4 && Math.abs(alt.y - neu.y) < 1e-4 && Math.abs(alt.z - neu.z) < 1e-4) return null;
+    const operationen = plan.parameter.operationen.map((op, j) => (j !== treffer.op ? op : {
+        ...op,
+        parameter: { ...op.parameter,
+                     [treffer.feld]: treffer.liste.map((p, k) => (k === treffer.index ? neu : p)) },
+    }));
+    // Die TEILE des Vorgangs: ohne sie bekämen Aushub und Auftrag neue
+    // Kennungen, und im Raum stünde der Vorgang doppelt.
+    const teile = el.vorgangTeile ?? null;
+    return _anModell(ableitungsSchritte({
+        rezept: plan.rezept,
+        quellen: plan.parameter.quellen ?? {},
+        quellBasis: plan.parameter.quellBasis ?? {},
+        raster: plan.parameter.raster ?? {},
+        operationen,
+        auflockerung: plan.parameter.auflockerung ?? null,
+        name: _vorgangsStamm(plan.name),
+        bestehend: { ableitung: plan.ableitung, teile: teile ?? { [plan.rolle]: { globalId: el.globalId, bauplan: plan } } },
+    }), el.modellSha);
+}
+
+/** Der Name eines Vorgangs ohne den Teil-Anhang — `ableitungsSchritte` hängt ihn neu an. */
+function _vorgangsStamm(name) {
+    return String(name ?? '').replace(/ · (Aushub|Auftrag|Graben|Verfüllung|Baugrube|Anzeige)$/, '');
 }
 
 /**
@@ -512,13 +600,14 @@ function _vorbelegtesGelaende(el) {
     return (kandidaten.find(g => g.herkunft !== 'cde') ?? kandidaten[0])?.globalId ?? '';
 }
 
-function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name }) {
+function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name, auflockerung = null }) {
     const eb = quelle?.erdbau ?? null;
     const ur = eb?.ur ?? quelle.globalId;
     const basisMass = { gelaende: eb?.quellBasis ?? quelle.pruefmass ?? null };
     const raster = { cell: eb?.cell ?? quelle.cell ?? null };
     const neu = ableitungsSchritte({
         rezept, quellen: { ...quellen, gelaende: ur }, quellBasis: { ...quellBasis, ...basisMass }, raster, operationen, name,
+        auflockerung,
     });
     const urName = _urName({ name: quelle.name }, eb);
     return _anModell([
@@ -529,7 +618,7 @@ function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name
     ], quelle.modellSha);
 }
 
-function _gelaendeSchritte(el, neueOps, { titel = null } = {}) {
+function _gelaendeSchritte(el, neueOps, { titel = null, auflockerung = null } = {}) {
     const bauplan = el?.stand?.bauplan;
     const eb = el?.erdbau ?? null;
     const alt = bauplan?.rezept === 'gelaende' ? bauplan : null;   // Altbestand vor Teil XIV
@@ -553,6 +642,9 @@ function _gelaendeSchritte(el, neueOps, { titel = null } = {}) {
         rezept: 'erdbau',
         quellen: { gelaende: ur }, quellBasis, raster,
         operationen: [...(alt?.parameter?.operationen ?? []), ...neueOps],
+        // Der Auflockerungsfaktor gehört dem Vorgang (Teil XXI, P4) — er ändert
+        // keine Geometrie, nur die Menge, die abgefahren wird.
+        auflockerung,
         name: titel ? `${name} · ${titel}` : name,
     });
     const vorgangTitel = titel ? `${name} · ${titel}` : vorgangstitel(neu[0].nachher, rezeptNach('erdbau'));
@@ -606,6 +698,7 @@ function _kanalgrabenSchritte(el, werte) {
             quellBasis: { rohre: kanten.map(_achsmass), schaechte: schaechte.map(() => null) },
             operationen: [{ art: 'kanalgraben', parameter: {
                 umfang: strang ? 'strang' : 'haltung',
+                achsbezug: ACHSBEZUEGE[werte?.achsbezug] ? werte.achsbezug : 'quelle',
                 wandform: WANDFORMEN[werte?.wandform] ? werte.wandform : 'verbau',
                 boden: BODENKLASSEN[werte?.boden] ? werte.boden : 'nichtbindig',
                 winkelGrad: zahlOderNull(werte?.winkel),
@@ -615,6 +708,7 @@ function _kanalgrabenSchritte(el, werte) {
                 schachtMass: zahlOderNull(werte?.schachtMass) ?? 1.0,
                 dn: zahlOderNull(werte?.dn),
             } }],
+            auflockerung: auflockerungOder(werte?.auflockerung),
             name: strang ? `${name} · Strang` : name,
     });
 }
@@ -644,6 +738,7 @@ function _bauwerksgrubeSchritte(el, werte) {
                 arbeitsraum: zahlOderNull(werte?.arbeitsraum),
                 sohle: zahlOderNull(werte?.sohle),
             } }],
+            auflockerung: auflockerungOder(werte?.auflockerung),
             name: el.name || 'Bauwerk',
     });
 }
@@ -669,13 +764,25 @@ function _aussparungSchritte(el, werte) {
 }
 
 export const BEARBEITUNGEN = Object.freeze([
-    ...Object.values(REZEPTE).map(zeichenBearbeitung),
+    // NUR REZEPTE, DIE AUS EINEM ZUG BAUEN (2026-09-17). „Gelände zeichnen"
+    // stand hier, weil es sich aus dem Rezept-Register von selbst ergab — und
+    // war ein toter Knopf: `gelaende` hat `baue: null` (es baut mit
+    // `baueMit(parameter, quellraster)` aus Quelle + Operationen, nicht aus
+    // Punkten), `mindestPunkte: 0` und keine Felder. Wer ihn drückte, legte
+    // einen Bauplan an, den sein eigenes Rezept nicht bauen kann. Ein Gelände
+    // entsteht über die Erdbau-Werkzeuge, nie über einen gezeichneten Zug.
+    ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function').map(zeichenBearbeitung),
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',
         icon: 'schnitt',
         gruppe: 'gelaende',
-        bauform: ['koerper'],
+        // SO WEIT WIE DAS REZEPT (2026-09-17): `aussparung` verlangt in beiden
+        // Schlitzen `KOERPERHAFT` — Körper, Fläche+Dicke, Achse+Profil —, weil
+        // die Aussparung in einer WAND der Regelfall schlechthin ist und eine
+        // Rohrdurchführung das kanonische Werkzeug. Der Katalog liess nur
+        // `koerper` zu; am Wand-Bauteil erschien das Werkzeug deshalb nie.
+        bauform: KOERPERHAFT,
         mindestGuete: 'unbekannt',
         art: 'erzeugt',
         felder: [
@@ -722,10 +829,12 @@ export const BEARBEITUNGEN = Object.freeze([
               optionen: Object.entries(BODENKLASSEN).map(([wert, b]) => ({ wert, titel: b.titel })) },
             { name: 'winkel', titel: 'Böschungswinkel (leer = aus der Bodenklasse)', einheit: '°', typ: 'zahl', min: 10, max: 89, leerErlaubt: true },
             { name: 'sohle', titel: 'Sohle (leer = Unterkante des Bauwerks)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+            AUFLOCKERUNG_FELD,
         ],
         vorbelegung: (el) => ({
             gelaende: _vorbelegtesGelaende(el),
             arbeitsraum: '', wandform: 'boeschung', boden: 'nichtbindig', winkel: '', sohle: '',
+            auflockerung: auflockerungFuer('nichtbindig'),
         }),
         anwenden: (el, werte) => _bauwerksgrubeSchritte(el, werte),
     },
@@ -754,6 +863,16 @@ export const BEARBEITUNGEN = Object.freeze([
                 { wert: 'haltung', titel: 'Nur diese Haltung' },
                 { wert: 'strang', titel: 'Strang ab hier — Kette stromab, mit Schachtbaugruben' },
             ] },
+            // WO DIE ACHSE LIEGT (Teil XXI, E4): „aus der Quelle" leitet es aus
+            // der Herkunft ab — eine Achs-Repräsentation ist auf Sohlniveau
+            // geschrieben, eine aus der Extrusion oder dem Netz gewonnene liegt
+            // in der Rohrmitte. Sichtbar und umstellbar, weil „axisRep = Sohle"
+            // für isyifc belegt ist, nicht für jedes Fremdsystem.
+            { name: 'achsbezug', titel: 'Achshöhe der Haltung', typ: 'auswahl', optionen: [
+                { wert: 'quelle', titel: 'Aus der Quelle — Achs-Repräsentation = Sohle, Extrusion/Netz = Rohrmitte' },
+                { wert: 'sohle', titel: 'Sohle' },
+                { wert: 'mitte', titel: 'Rohrmitte' },
+            ] },
             { name: 'wandform', titel: 'Grabenwand', typ: 'auswahl',
               optionen: Object.entries(WANDFORMEN).map(([wert, w]) => ({ wert, titel: w.titel })) },
             { name: 'boden', titel: 'Bodenklasse (Böschungswinkel ohne Nachweis, DIN 4124)', typ: 'auswahl',
@@ -764,10 +883,12 @@ export const BEARBEITUNGEN = Object.freeze([
             { name: 'bettung', titel: 'Untere Bettung (0,10 üblich · 0,15 Fels)', einheit: 'm', typ: 'zahl', min: 0, max: 1, vorgabe: GRABENREGELN.bettung.ueblich },
             { name: 'schachtMass', titel: 'Schacht-Außenmaß (Ø oder Kantenlänge) — Baugrube eckig', einheit: 'm', typ: 'zahl', min: 0.3, max: 5, vorgabe: 1.0 },
             { name: 'dn', titel: 'DN (leer = aus der Achse)', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, leerErlaubt: true },
+            AUFLOCKERUNG_FELD,
         ],
         vorbelegung: (el) => ({
             gelaende: _vorbelegtesGelaende(el),
-            umfang: 'haltung', wandform: 'verbau', boden: 'nichtbindig', winkel: null, breite: null,
+            auflockerung: auflockerungFuer('nichtbindig'),
+            umfang: 'haltung', achsbezug: 'quelle', wandform: 'verbau', boden: 'nichtbindig', winkel: null, breite: null,
             wanddicke: 0, bettung: GRABENREGELN.bettung.ueblich, schachtMass: 1.0,
             // Der DN ist ein sichtbarer Regler: vorbelegt aus der Festlegung
             // (parametrik), sonst aus der Achse — nie still geraten.
@@ -1506,6 +1627,53 @@ export const BEARBEITUNGEN = Object.freeze([
             eintraege.push(..._anschluesseNachfuehren(el, werte, { ost, nord, zielX: ziel.x, zielZ: ziel.z }));
             return eintraege;
         },
+    },
+    {
+        /**
+         * KNICKPUNKT EINES ERDBAU-VORGANGS ZIEHEN (Teil XX Stufe C / Teil XXI, P5).
+         *
+         * Fabio (2026-09-10): „Knickpunkte XYZ-ziehbar." Ein Erdbau-Vorgang
+         * hat keine `punkte` im Bauplan — seine Ecken stecken in den
+         * OPERATIONEN (`umriss`, `linie`, `stationen`), und ihre Höhen stehen
+         * dort in m NN. Deshalb ein eigenes Werkzeug neben
+         * `stuetzpunkt-verschieben`: derselbe Weg, andere Fundstelle.
+         *
+         * GESCHRIEBEN WIRD DIE VOLLE OPERATIONSLISTE über `ableitungsSchritte`
+         * mit `bestehend` — eine Klammer, ein Parametersatz, dieselben
+         * GlobalIds für Aushub UND Auftrag. Ein Eintrag nur am gezogenen Teil
+         * liesse die Geschwister mit einem alten Bauplan zurück (Befund
+         * `ableitung_uneinheitlich`).
+         *
+         * DIE HÖHE BLEIBT IN NN: die Punktlisten der Operationen tragen sie so
+         * (`ERDBAU_PUNKTHOEHEN`), und `_opsInWelt` rechnet sie an genau einer
+         * Grenze um. Wer hier Welt-Y schriebe, verschöbe den Punkt um den
+         * Höhenversatz.
+         */
+        id: 'erdbau-stuetzpunkt-verschieben',
+        titel: 'Knickpunkt verschieben',
+        icon: 'pointer',
+        gruppe: 'gelaende',
+        bauform: ['koerper'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [
+            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, aus: { geste: 'griff' } },
+            { name: 'feld', titel: 'Punktliste', typ: 'text' },
+            { name: 'index', titel: 'Knickpunkt Nr.', typ: 'zahl', min: 0 },
+            { name: 'ost', titel: 'Rechtswert', einheit: 'm', typ: 'zahl' },
+            { name: 'nord', titel: 'Hochwert', einheit: 'm', typ: 'zahl' },
+            { name: 'hoehe', titel: 'Höhe', einheit: 'm NN', typ: 'zahl' },
+        ],
+        vorbelegung: (el) => {
+            const p = _erdbauPunkt(el?.stand?.bauplan, 0, null, 0);
+            const v = el?.versatz ?? { x: 0, y: 0, z: 0 };
+            if (!p) return { op: 0, feld: '', index: 0 };
+            return { op: p.op, feld: p.feld, index: 0,
+                     ost: _rundeM(p.punkt.x + v.x), nord: _rundeM(-(p.punkt.z + v.z)),
+                     hoehe: _rundeM(Number(p.punkt.y)) };
+        },
+        anwenden: (el, werte) => _erdbauStuetzpunktSchritte(el, werte),
     },
     {
         /**
@@ -2590,8 +2758,9 @@ export const BEARBEITUNGEN = Object.freeze([
         felder: [
             { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
             { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
+            AUFLOCKERUNG_FELD,
         ],
-        vorbelegung: () => ({ mass: 2, neigung: 1.5 }),
+        vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: AUFLOCKERUNG.vorgabe }),
         hoehenAus: 'gelaende',
         anwenden: (el, werte, { zug = [] } = {}) => _grubeSchritte(el, werte, zug),
     },

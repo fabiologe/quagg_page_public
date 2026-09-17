@@ -82,7 +82,8 @@ describe('naechsterSchritt und enterRegel', () => {
     it('zählt die fehlenden Punkte, dann „Enter schliesst ab", dann das Formular', () => {
         expect(naechsterSchritt(zug, { punkte: 0 })).toMatchObject({ art: 'zug', hinweis: 'noch 2 Punkte' });
         expect(naechsterSchritt(zug, { punkte: 1 })).toMatchObject({ art: 'zug', hinweis: 'noch 1 Punkt' });
-        expect(naechsterSchritt(zug, { punkte: 3 })).toMatchObject({ art: 'zug', hinweis: '3 Punkte — Enter oder Doppelklick schliesst ab' });
+        // Kein Doppelklick mehr: gezeichnet wird im Raum, Enter schliesst ab (2026-09-17).
+        expect(naechsterSchritt(zug, { punkte: 3 })).toMatchObject({ art: 'zug', hinweis: '3 Punkte — Enter schliesst ab' });
         expect(naechsterSchritt(zug, { punkte: 3, zugGeschlossen: true, bereit: false })).toMatchObject({ art: 'feld' });
         expect(naechsterSchritt(zug, { punkte: 3, zugGeschlossen: true, bereit: true })).toMatchObject({ art: 'bereit' });
     });

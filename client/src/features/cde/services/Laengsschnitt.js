@@ -7,16 +7,28 @@
  * Fließrichtung orientiert (fallende Achshöhe). Dazu: Geländeprofil über den
  * Höhen-Sampler und Schacht-Projektion auf die Stationierung.
  *
- * Höhen-Konvention: Die Achshöhe der Haltung wird als SOHLE geführt —
- * isyifc schreibt die Achse auf Sohlniveau. Liegt die Achse in Rohrmitte
- * (fremde Autorensysteme), sind die Werte um DN/2 zu hoch — am Realmodell
- * prüfen (dokumentierte Annahme).
+ * Höhen-Konvention: Der Strang führt die Höhe als SOHLE. Das war bis
+ * Teil XXI (2026-09-17) eine ANNAHME — „isyifc schreibt die Achse auf
+ * Sohlniveau" —, und der Kanalgraben nahm nebenan dieselbe Zahl als
+ * Rohrmitte. Zwei Wege, eine Höhe, zwei Bedeutungen: bei DN 400 zwanzig
+ * Zentimeter Unterschied. Jetzt sagt jede Achse, WO sie liegt
+ * (`achsbezug`, siehe Achsbezug.js), und `buildStrang` rechnet sie an
+ * EINER Stelle auf die Sohle. Alles danach — Sicht, PDF, Leinwand —
+ * liest weiter Sohlhöhen und bleibt unberührt.
  */
+import { rohrsohle } from './Achsbezug.js';
 
 /** Endpunkt-Kettung der Haltungen zum längsten Strang. */
 export function buildStrang(axisItems, opts = {}) {
     const eps = opts.chainEps ?? 1.5; // m — überbrückt den Schacht zwischen zwei Haltungen
-    const items = (axisItems ?? []).filter(it => it.polyline?.length >= 2);
+    // AUF DIE SOHLE, EINMAL. Ohne `achsbezug` bleibt es beim bisherigen Lesen
+    // (die Höhe IST die Sohle) — eine Achse ohne Angabe soll ihren Schnitt
+    // nicht still um DN/2 verschieben.
+    const items = (axisItems ?? []).filter(it => it.polyline?.length >= 2).map((it) => (
+        it.achsbezug && it.achsbezug !== 'sohle'
+            ? { ...it, polyline: it.polyline.map(p => ({ ...p, y: rohrsohle(p.y, it) })) }
+            : it
+    ));
     if (!items.length) return null;
 
     const start = (i) => items[i].polyline[0];

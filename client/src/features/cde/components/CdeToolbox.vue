@@ -260,70 +260,6 @@
       </details>
     </template>
 
-    <!-- DAS MODELL: Lage und Import. Beides hängt am Modell, nicht an der
-         Auswahl — bis H3 steht es hier unten, danach im Modell-Eintrag links.
-         Der Import klappt von selbst auf, wenn er warnt. -->
-    <details v-if="georeferenz" class="tb-geo">
-      <summary>
-        Georeferenz
-        <span :class="['tb-stufe', 'tb-stufe--' + (georeferenz.stufe.wert >= 40 ? 'gut' : georeferenz.stufe.wert > 0 ? 'teil' : 'keine')]">
-          {{ georeferenz.stufe.wert }}
-        </span>
-      </summary>
-      <dl class="tb-kette">
-        <dt>Lage</dt>
-        <dd>{{ georeferenz.stufe.text }}</dd>
-
-        <template v-if="georeferenz.crs">
-          <dt>System</dt>
-          <dd>
-            <code>{{ georeferenz.crs.name || 'unbenannt' }}</code>
-            <span class="tb-dim">{{ georeferenz.crs.beschreibung }}</span>
-          </dd>
-        </template>
-
-        <template v-if="georeferenz.kartenbezug">
-          <dt>Ursprung</dt>
-          <dd class="tb-dim">
-            O {{ georeferenz.kartenbezug.ost.toFixed(2) }} ·
-            N {{ georeferenz.kartenbezug.nord.toFixed(2) }} ·
-            H {{ georeferenz.kartenbezug.hoehe.toFixed(2) }}
-          </dd>
-        </template>
-
-        <dt>Nord</dt>
-        <dd class="tb-dim">
-          {{ nordGrad }}° ({{ georeferenz.nordrichtung.quelle === 'TrueNorth' ? 'aus der Datei' : 'Vorgabe der Norm' }})
-        </dd>
-
-        <dt>Höhe</dt>
-        <dd :class="hoehenbezug.warnung ? 'tb-warnung' : 'tb-dim'">
-          {{ hoehenbezug.text }}
-          <template v-if="hoehenbezug.raeume"><br>{{ hoehenbezug.raeume }}</template>
-        </dd>
-
-        <dt>Einheit</dt>
-        <dd class="tb-dim">
-          {{ georeferenz.einheit.name }}<template v-if="georeferenz.einheit.faktor !== 1"> × {{ georeferenz.einheit.faktor }}</template>
-          <span v-if="georeferenz.einheit.quelle === 'angenommen'"> — nicht in der Datei</span>
-        </dd>
-      </dl>
-      <p v-for="(b, i) in georeferenz.befunde" :key="i" class="tb-warnung">
-        <CdeIcon name="warn" :size="12" /> {{ b.text ?? b }}
-      </p>
-    </details>
-
-    <details v-for="b in importBefunde" :key="b.modelId" class="tb-geo"
-             :open="b.texte.some(t => t.schwere === 'warnung')">
-      <summary>
-        Import · {{ b.modelId }}
-        <span class="tb-dim">{{ b.schema ?? 'Schema unbekannt' }} · {{ b.bauteile }} Bauteile</span>
-      </summary>
-      <p v-for="(t, i) in b.texte" :key="i" class="tb-warnung">
-        <CdeIcon :name="t.schwere === 'warnung' ? 'warn' : 'info'" :size="12" /> {{ t.text }}
-      </p>
-      <p v-if="!b.texte.length" class="tb-dim">Nichts Auffälliges.</p>
-    </details>
   </div>
 </template>
 
@@ -388,58 +324,6 @@ const WARNUNG_TEXT = Object.freeze({
   achse_skelettiert:        'Die Achse ist aus dem Netz geschätzt, nicht vom Planer gezeichnet.',
   kein_koerper:             'Kein Volumen — Mengen und Massen sind hier nicht belastbar.',
   koerper_nicht_geschlossen: 'Das Volumen ist nicht geschlossen — Massen nur näherungsweise.',
-});
-
-/**
- * Die Georeferenz des geladenen Modells.
- *
- * Der Bezug auf `ifc.modelList` ist KEIN Zierrat: ohne eine reaktive
- * Abhängigkeit würde dieses `computed` genau einmal ausgewertet — womöglich
- * bevor überhaupt ein Modell geladen ist — und danach nie wieder. Es zeigte
- * dann für immer „keine Georeferenz".
- *
- * Bei mehreren Modellen die des ersten; welches „das" Bezugssystem ist,
- * entscheidet heute die Ladereihenfolge (bekannte Schwäche, Koordinaten.js).
- */
-const georeferenz = computed(() => {
-  void ifc.modelList.length;                       // reaktiver Anker
-  const alle = api.getGeoreferenzen?.() ?? {};
-  return Object.values(alle)[0] ?? null;
-});
-
-/**
- * Was jede geladene Datei über sich sagt (services/ImportBefund.js): Schema,
- * abgekündigte und fremde Klassen, Proxy-Anteil, fehlende Lesequelle. Je
- * MODELL, nicht nur das erste — eine Lieferung in IFC2x3 neben einer in 4.3
- * ist genau der Fall, den man sehen muss.
- */
-const importBefunde = computed(() => {
-  void ifc.modelList.length;                       // reaktiver Anker, wie oben
-  return Object.entries(api.getImportBefunde?.() ?? {}).map(([modelId, b]) => ({ modelId, ...b }));
-});
-
-/**
- * Woher der Höhenversatz kommt — und ob er überhaupt gemessen wurde.
- *
- * Der Versatz entscheidet, ob die Leiste „H" als Höhe über NN oder als
- * Three-Welt-Y zeigt. Er wurde zweimal still falsch bestimmt, beide Male ohne
- * dass es der Anzeige anzusehen war. Deshalb steht hier, was passiert ist.
- */
-const hoehenbezug = computed(() => {
-  void ifc.modelList.length;                       // reaktiver Anker, wie oben
-  const b = Object.values(api.getHoehenBefunde?.() ?? {})[0] ?? null;
-  if (!b) return { text: 'nicht bestimmt', warnung: true };
-  if (b.art === 'gemessen') {
-    return {
-      text: `Versatz ${b.wert.toFixed(3)} m — ${b.text}`,
-      // Beide Räume, damit eine Höhe in der Leiste, die zu keinem passt,
-      // sofort als anderes Problem erkennbar ist.
-      raeume: `Datei ${b.datei.min.toFixed(1)}…${b.datei.max.toFixed(1)} m · `
-            + `Viewer ${b.welt.min.toFixed(1)}…${b.welt.max.toFixed(1)} m`,
-      warnung: false,
-    };
-  }
-  return { text: `nicht bestimmt (${b.text})`, warnung: true };
 });
 
 /**
@@ -511,8 +395,6 @@ const mehrfach = computed(() => {
 });
 
 /** Nordrichtung in Grad — die Umrechnung gehört nicht in die Vorlage. */
-const nordGrad = computed(() =>
-  ((georeferenz.value?.nordrichtung?.rad ?? 0) * 180 / Math.PI).toFixed(2));
 
 const herleitung = computed(() => herleite({
   el: bearbeitung.bauteil,
@@ -529,12 +411,13 @@ const herleitung = computed(() => herleite({
  * eine Planhöhe ein und wundert sich.
  */
 const festlegungsHinweis = computed(() => {
-  // Zug- und Umriss-Bearbeitungen werden im LAGEPLAN gefüttert — das
-  // Formular hier kann sie nicht abschliessen. Ohne den Hinweis sähe der
-  // Kur-Knopf zu `loses_ende` aus wie ein toter Knopf (Gesetz 10).
+  // Zug- und Umriss-Bearbeitungen werden im BILD gefüttert — das Formular
+  // hier kann sie nicht abschliessen. Ohne den Hinweis sähe der Kur-Knopf zu
+  // `loses_ende` aus wie ein toter Knopf (Gesetz 10). (Bis `c8ce9c4` stand
+  // hier „im Lageplan"; gezeichnet wird seitdem nur im 3D.)
   const art = eingabeArt(bearbeitung.scharf);
-  if (art === 'zug') return 'Im Lageplan zeichnen/antippen — dort wird diese Bearbeitung abgeschlossen.';
-  if (art === 'umriss') return 'Im Lageplan den Umriss zeichnen — dort wird diese Bearbeitung abgeschlossen.';
+  if (art === 'zug') return 'Im Bild auf das Gelände tippen — dort wird diese Bearbeitung abgeschlossen.';
+  if (art === 'umriss') return 'Im Bild den Umriss zeichnen — der erste Punkt schliesst ihn.';
   if (bearbeitung.scharf?.nurFestlegung) {
     return 'Wird als Forderung an den Planer geführt und geht in den Änderungsbericht — die Geometrie bleibt bei ihm.';
   }
@@ -682,25 +565,6 @@ async function vorlageEntfernen(v) {
 .tb-kur:hover:not(:disabled) { background: var(--cde-fill-hover); }
 .tb-kur:disabled { opacity: 0.5; cursor: not-allowed; }
 .tb-bestaetigen { margin-top: 0.25rem; }
-
-.tb-geo {
-  border: 1px solid var(--cde-line);
-  border-radius: var(--cde-radius-sm);
-  padding: 0.35rem 0.45rem;
-  background: var(--cde-fill);
-}
-.tb-geo > summary {
-  cursor: pointer; font-size: var(--cde-font-xs);
-  color: var(--cde-text-dim); user-select: none;
-  display: flex; align-items: center; gap: 0.35rem;
-}
-.tb-stufe {
-  margin-left: auto; padding: 0 0.3rem;
-  border-radius: var(--cde-radius-sm); font-weight: 600;
-}
-.tb-stufe--gut   { background: var(--cde-accent-fill-hi); color: var(--cde-success-strong); }
-.tb-stufe--teil  { background: var(--cde-accent-fill-hi); color: var(--cde-warn); }
-.tb-stufe--keine { background: var(--cde-danger-fill); color: var(--cde-danger); }
 
 .tb-titel { display: flex; flex-direction: column; gap: 0.1rem; }
 .tb-titel code { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }

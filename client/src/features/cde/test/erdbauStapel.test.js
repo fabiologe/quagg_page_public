@@ -90,11 +90,17 @@ describe('Ein Ur-Gelände, ein Stapel, eine Anzeige', () => {
         await l.baue(teil(B, 'aushub').globalId);
         const z = await l.baue(Z[0].globalId);
         const kA = l.ableitungen.get(idVon(A)).kennzahlen, kB = l.ableitungen.get(idVon(B)).kennzahlen;
-        const gesamt = massenAus(urRaster(1), z.teil.daten);
+        // GESAMT IST DIE SUMME DER VORGÄNGE (Teil XXI, P1b) — nicht eine zweite
+        // Rechnung am groben Raster. Jeder Vorgang misst auf seinem feinen
+        // Korridor; die grobe Gegenprobe darf um Zellmittel abweichen (gemessen
+        // 2026-09-17: 656,19 gegen 658,90 m³).
+        const k = l.ableitungen.get(Z[0].nachher.ableitung).kennzahlen;
         expect(kA.aushubRaster).toBeGreaterThan(10);
-        expect(kA.aushubRaster + kB.aushubRaster).toBeCloseTo(gesamt.aushub, 6);
-        expect(kA.auftragRaster + kB.auftragRaster).toBeCloseTo(gesamt.auftrag, 6);
-        expect(l.ableitungen.get(Z[0].nachher.ableitung).kennzahlen).toMatchObject({ aushubGesamt: gesamt.aushub, vorgaenge: 2 });
+        expect(k.aushubGesamt).toBeCloseTo(kA.aushubRaster + kB.aushubRaster, 9);
+        expect(k.auftragGesamt).toBeCloseTo(kA.auftragRaster + kB.auftragRaster, 9);
+        expect(k).toMatchObject({ vorgaenge: 2, gesamtQuelle: 'vorgaenge' });
+        const gesamt = massenAus(urRaster(1), z.teil.daten);
+        expect(Math.abs(k.aushubGesamt - gesamt.aushub) / gesamt.aushub).toBeLessThan(0.02);
         // Reihe: A ist der erste, B der zweite Vorgang
         expect([kA.reihe, kB.reihe]).toEqual([0, 1]);
     });

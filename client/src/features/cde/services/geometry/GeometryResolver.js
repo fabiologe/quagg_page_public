@@ -33,6 +33,7 @@ import { extractAxisPolylines, polylineLength } from '../AxisAnnotations.js';
 import { collectQto, pickQtoValue, LENGTH_KEYS } from '../QuantitySummary.js';
 import { FRAGMENTS_DATA_CONFIG } from '../IfcDataConfig.js';
 import { istLinear } from '../Kategorien.js';
+import { achsbezugVon } from '../Achsbezug.js';
 
 const VOLUME_KEYS = ['NetVolume', 'GrossVolume'];
 
@@ -272,6 +273,12 @@ export function createGeometryResolver({
                             const ausExtrusion = rep.quelle === 'extrusion';
                             perElement.push({
                                 ...el, polyline: rep.polyline, dn: rep.dn ?? null,
+                                // WO DIE ACHSE LIEGT (Teil XXI, E4): eine
+                                // Achs-Repräsentation ist auf Sohlniveau
+                                // geschrieben, eine aus der Extrusion
+                                // zurückgerechnete in der Rohrmitte. Wer die
+                                // Höhe liest, muss wissen, welche er hat.
+                                achsbezug: achsbezugVon(ausExtrusion ? 'extrusion' : 'axisRep'),
                                 // Beide zählen als GEMESSEN (siehe `_achsGuete`
                                 // in Bauformen.js) — sie sind exakt, im
                                 // Gegensatz zur Skelettierung.
@@ -293,6 +300,8 @@ export function createGeometryResolver({
                             if (skel?.polyline?.length >= 2) {
                                 perElement.push({
                                     ...el, polyline: skel.polyline,
+                                    // Ein Skelett läuft durch die MITTE des Körpers.
+                                    achsbezug: achsbezugVon('mesh'),
                                     source: 'mesh', path: ['src:fragments', 'mesh', 'axis:skelett'],
                                     warnings: skel.warnings,
                                 });

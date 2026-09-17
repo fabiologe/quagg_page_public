@@ -82,10 +82,17 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         const k = cuts.map(([, p]) => l.ableitungen.get(p.ableitung).kennzahlen);
         expect(k.map(x => x.reihe)).toEqual([0, 1, 2]);
         expect(k.every(x => x.aushubRaster > 5)).toBe(true);
-        const gesamt = massenAus(urRaster(), rz.teil.daten);
+        // GESAMT IST DIE SUMME DER VORGÄNGE (Teil XXI): jeder Vorgang misst auf
+        // seinem feinen Korridor; die Anzeige trägt das grobe Raster. Die
+        // Gesamtmasse ist deshalb die Summe der Vorgangszahlen — dieselben, die
+        // im Mengenreiter und als Qto im IFC stehen.
         const summe = k.reduce((a, x) => a + x.aushubRaster, 0);
-        expect(summe).toBeCloseTo(gesamt.aushub, 6);
-        expect(l.ableitungen.get(s.get(anzeigeGid).ableitung).kennzahlen).toMatchObject({ aushubGesamt: gesamt.aushub, vorgaenge: 3 });
+        const anzeigeK = l.ableitungen.get(s.get(anzeigeGid).ableitung).kennzahlen;
+        expect(anzeigeK).toMatchObject({ aushubGesamt: summe, vorgaenge: 3, gesamtQuelle: 'vorgaenge' });
+        // Die grobe Gegenprobe am Raster bleibt in Sichtweite — sie misst
+        // dieselbe Sache, nur zellweit gemittelt.
+        const gesamt = massenAus(urRaster(), rz.teil.daten);
+        expect(Math.abs(summe - gesamt.aushub) / gesamt.aushub).toBeLessThan(0.02);
         // Kein Vorgang schneidet hier durch einen Auftrag (es gibt keinen).
         expect(k.map(x => x.aushubAusAuffuellung)).toEqual([0, 0, 0]);
         // Zelle für Zelle: die Anzeige liegt nirgends ÜBER dem Ur (drei Cuts, kein Auftrag)
@@ -138,9 +145,24 @@ describe('Stufe 1 — Abnahme am Szenario Ur + Gerinne + Kanalgraben + Bauwerksg
         expect(cuts.map(b => b.vorgang.titel)).toEqual(['Urgelände · Gerinne', 'H-001 · Kanalgraben', 'Fundament A · Bauwerksgrube']);
         expect(cuts.every(b => b.kennzahlen.aushubRaster > 5)).toBe(true);
         // Stufe 2: die MENGE ist die Kennzahl, die das Rezept deklariert — DIESELBE Zahl wie im Mengenreiter.
-        expect(cuts.map(b => b.mengen.undisturbedVolume)).toEqual(cuts.map(b => b.kennzahlen.aushubRaster));
         const graben = cuts.find(b => b.vorgang.art === 'kanalgraben');
+        for (const b of cuts) {
+            expect(b.mengen.undisturbedVolume, b.vorgang.titel)
+                .toBe(b === graben ? b.kennzahlen.aushubMasse : b.kennzahlen.aushubRaster);
+        }
         expect(graben.mengen.length).toBe(graben.kennzahlen.laenge);
+        /**
+         * DER KANALGRABEN RECHNET MIT QUERPROFILEN (Teil XXI, P6).
+         *
+         * Dieser Graben ist VERBAUT — senkrechte Wände, 0,90 m Sohle, 30 m
+         * lang, mittlere Tiefe 3,00 m. Von Hand: 0,90 · 3,00 · 30 = 81,00 m³.
+         * Aus Rasterknoten bei 0,5 m Zellweite kamen 45,75 m³ heraus, und die
+         * alte Gegenprobe war zufrieden, weil sie Rasterkörper gegen
+         * Rastermasse hielt — zweimal derselbe Fehler.
+         */
+        expect(graben.kennzahlen.koerperArt).toBe('profil');
+        expect(graben.mengen.undisturbedVolume).toBeCloseTo(81.0, 1);
+        expect(graben.kennzahlen.aushubRaster).toBeLessThan(60);
         expect(g.bauteile.every(b => b.fachmodell === 'erdbau')).toBe(true);
         expect(cuts.every(b => b.schneidetAuffuellung.length === 0)).toBe(true);
         // Das Paket: keine Anzeigeform (sie steht, mit Grund, unter `uebersprungen`),

@@ -214,10 +214,15 @@ export function baueBaeume({ baeume = [], index = [], beziehungen = new Map(), s
  * @param {Map<string, string>} [o.titel]   Ableitung → Vorgangstitel (`vorgangstitelAus`)
  * @param {Set<string>} [o.verborgen]       eigene Teile, die verborgen sind (G6)
  * @param {Set<string>} [o.leer]            eigene Teile ohne Volumen — kein Fehlschlag (Auftrag eines reinen Aushubs)
+ * @param {Map<string, {sichtbar: boolean, verdecktVon: Array}>} [o.vorgangsAugen]
+ *   Je Ableitung, was die Engine über ihre Sichtbarkeit sagt (Teil XXI, E3).
+ *   Ein Vorgang, den ein späterer überformt hat, steht nicht im Raum — der
+ *   Knoten sagt es und trägt das Auge, das ihn zurückholt.
  * @param {string} o.modelId                das Eigenbau-Modell
  * @returns {{modelId, name, sha256: null, eigenbau: true, wurzel, gruppen: null, knoten}|null}
  */
-export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new Map(), verborgen = new Set(), leer = new Set(), modelId } = {}) {
+export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new Map(), verborgen = new Set(),
+                               leer = new Set(), vorgangsAugen = new Map(), modelId } = {}) {
     if (!stand?.size) return null;
     const teil = (gid, wert) => {
         const localId = karte?.get?.(gid) ?? null;
@@ -234,8 +239,16 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
         const a = wert?.ableitung ?? null;
         if (a && titel?.has?.(a)) {
             if (!vorgaenge.has(a)) {
+                // ÜBERDECKT (Teil XXI, E3): der Knoten sagt, WER den Vorgang
+                // überformt hat, und trägt das Auge, das ihn zurückholt. Ohne
+                // Angabe der Engine gilt „sichtbar" — ein Baum ohne Raum
+                // (Test, Kopfleiste) soll nichts verbergen.
+                const auge = vorgangsAugen?.get?.(a) ?? null;
+                const verdecktVon = (auge?.verdecktVon ?? []).map(v => titel.get(v.ableitung) || v.ableitung);
                 vorgaenge.set(a, { localId: null, modelId, category: 'VORGANG', gruppe: true, vorgang: a,
-                                   name: titel.get(a) || 'Vorgang', children: [] });
+                                   name: titel.get(a) || 'Vorgang', children: [],
+                                   sichtbar: auge ? !!auge.sichtbar : true,
+                                   ...(verdecktVon.length ? { verdecktVon } : {}) });
             }
             vorgaenge.get(a).children.push(teil(gid, wert));
         } else {

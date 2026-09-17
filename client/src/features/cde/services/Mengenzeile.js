@@ -2,10 +2,12 @@
  * Die MENGEN eines Vorgangs als eine Zeile (Teil XX, Fabio 2026-09-10: „es
  * fehlen nur die Volumen in m³").
  *
- * Rein. Gelesen werden DIESELBEN Kennzahlen wie im Mengen-Reiter und in der
- * IFC-Qto (`aushubRaster`, `auftragRaster`, beim Kanalgraben die
- * `verfuellung`) — eine zweite Rechnung gäbe irgendwann eine zweite Zahl.
+ * Gelesen werden DIESELBEN Kennzahlen wie im Mengen-Reiter und in der IFC-Qto
+ * — eine zweite Rechnung gäbe irgendwann eine zweite Zahl. Welche Kennzahl
+ * der Aushub IST, sagt `aushubMasseVon`: seit Teil XXI, P6 ist das beim
+ * Kanalgraben der Profilkörper und nicht mehr das Raster.
  */
+import { aushubMasseVon } from './ableitung/Ableitungen.js';
 
 /** m³ deutsch: ab 10 m³ ganze, darunter eine Nachkommastelle. */
 export function m3(v) {
@@ -22,7 +24,8 @@ export function mengenZeile(kennzahlenListe = []) {
     for (const k of kennzahlenListe ?? []) {
         if (!k) continue;
         gefunden = true;
-        if (Number.isFinite(k.aushubRaster)) aushub += k.aushubRaster;
+        const a = aushubMasseVon(k);
+        if (Number.isFinite(a)) aushub += a;
         if (Number.isFinite(k.verfuellung)) verfuellung += k.verfuellung;
         else if (Number.isFinite(k.auftragRaster)) auftrag += k.auftragRaster;
     }

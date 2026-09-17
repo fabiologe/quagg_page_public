@@ -234,7 +234,20 @@ export function rohrKoerper(punkte, dnMm = 300, seiten = 12) {
 function _formAusRohr(parameter, form, seiten) {
     const punkte = punkteAus(parameter);
     if (punkte.length < 2) return null;
-    if (form === 'linie') return { punkte: punkte.map(_p), dn: Number(parameter?.dn) || null };
+    // EIN EIGENES ROHR LIEGT IN DER ROHRMITTE (Teil XXI, E4): der Sweep legt
+    // sein Kreisprofil UM die gezeichneten Punkte. Ohne diese Angabe müsste
+    // der Kanalgraben raten, und er riet anders als der Längsschnitt.
+    if (form === 'linie') {
+        return { punkte: punkte.map(_p), dn: Number(parameter?.dn) || null,
+                 achsbezug: 'mitte', quelle: 'bauplan' };
+    }
+    // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster Punkt IST
+    // seine Sohle. Vorher lieferte ein eigener Schacht gar keine Form `knoten`
+    // — im Strang fiel er still aus der Baugrubenrechnung.
+    if (form === 'knoten') {
+        const tief = punkte.map(_p).reduce((a, p) => (p.y <= a.y ? p : a));
+        return { x: tief.x, y: tief.y, z: tief.z, unterkante: tief.y, name: String(parameter?.name ?? '') };
+    }
     if (form === 'koerper' || form === 'mesh') return rohrKoerper(punkte, parameter?.dn, seiten);
     return null;
 }
@@ -717,13 +730,18 @@ export function mengenVon(bauplan, kennzahlen) {
  * Listen von selbst) — ein Teil allein wäre ein halbes Ding.
  */
 export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, raster = {},
-                                     operationen = [], name = '', bestehend = null, vorgaenge = null } = {}) {
+                                     operationen = [], name = '', bestehend = null, vorgaenge = null,
+                                     auflockerung = null } = {}) {
     const r = ABLEITUNGEN[rezept];
     if (!r) throw new Error(`Ableitung „${rezept}" gibt es nicht`);
     const ableitung = bestehend?.ableitung ?? neueAbleitungsId();
     // `vorgaenge` trägt nur die Anzeige (Stufe 1): die Reihenfolge der
     // Erdbau-Vorgänge — eine Entscheidung, nichts Gerechnetes.
-    const parameter = { quellen, quellBasis, raster, operationen, ...(vorgaenge ? { vorgaenge } : {}) };
+    // `auflockerung` gehört dem VORGANG, nicht einer Operation: sie ändert
+    // keine Geometrie, nur die Menge, die abgefahren wird (Teil XXI, P4).
+    const parameter = { quellen, quellBasis, raster, operationen,
+                        ...(vorgaenge ? { vorgaenge } : {}),
+                        ...(Number.isFinite(Number(auflockerung)) ? { auflockerung: Number(auflockerung) } : {}) };
     const vorhandene = bestehend?.teile instanceof Map ? bestehend.teile : new Map(Object.entries(bestehend?.teile ?? {}));
     // NACHGEZOGENE Teile: Rollen, die das Rezept nicht mehr kennt (der
     // `dgm`-Teil aus der Zeit vor Stufe 1), aber die Klammer noch trägt. Sie
@@ -755,22 +773,39 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
     }).concat(nachgezogen);
 }
 
+/** Dieselben Punkte, um `d` tiefer — eine Kopie, die Kernel-Form bleibt unberührt. */
+function _abgesenkt(positions, d) {
+    const p = Float64Array.from(positions);
+    for (let i = 1; i < p.length; i += 3) p[i] -= d;
+    return p;
+}
+
 /**
  * Die Kernel-Form eines gebauten Teils → BufferGeometry, Float32 erst hier.
  * Raster werden trianguliert (Löcher bleiben Löcher), Körper und Netze
  * gehen so, wie sie sind.
+ *
+ * `absenkung` ist eine DARSTELLUNGSgrösse (Teil XXI, `ERDKOERPER_ABSENKUNG`):
+ * ein Erdkörper, dessen Deckel die Geländeanzeige IST, liegt im Raum zwei
+ * Zentimeter tiefer, damit nicht jeder Bildpunkt neu entscheidet, welche der
+ * beiden Flächen vorn liegt. Der Export ruft ohne — im IFC steht, was
+ * gerechnet wurde.
  */
-export function geometrieAusTeil(teil) {
+export function geometrieAusTeil(teil, { absenkung = 0 } = {}) {
     if (!teil) return null;
+    const fertig = (positions, triCount) => {
+        if (!triCount) return null;
+        return dreiecksGeometrie(absenkung ? _abgesenkt(positions, absenkung) : positions);
+    };
     if (teil.form === 'raster') {
         // Feine Flicken (Teil XX): die Anzeige wird dort fein, wo Operationen wirken.
         const { positions, triCount } = teil.flicken?.length
             ? dreieckeMitFlicken(teil.daten, teil.flicken)
             : dreieckeAusRaster(teil.daten);
-        return triCount ? dreiecksGeometrie(positions) : null;
+        return fertig(positions, triCount);
     }
     if (teil.form === 'koerper' || teil.form === 'mesh') {
-        return teil.daten?.triCount ? dreiecksGeometrie(teil.daten.positions) : null;
+        return fertig(teil.daten?.positions, teil.daten?.triCount);
     }
     return null;
 }

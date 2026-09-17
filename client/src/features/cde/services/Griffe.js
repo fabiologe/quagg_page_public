@@ -38,13 +38,23 @@
  * Rein: kein three, kein Vue. Vektoren sind {x, y, z}.
  */
 
-import { nnAusWelt } from './Hoehenbezug.js';
+import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { achsenErlaubt } from './Achszug.js';
+import { ERDBAU_PUNKTHOEHEN } from './ableitung/Ableitungen.js';
 
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
 
 const LAGE_REZEPTE = new Set(['linie', 'rohr', 'schacht', 'flaeche']);
+/**
+ * Welche Rezepte ihre Ecken in OPERATIONEN tragen statt in `parameter.punkte`
+ * (Teil XXI, P5) — und in welchen Feldern.
+ *
+ * Die Felder stehen NICHT hier: `ERDBAU_PUNKTHOEHEN` sagt schon, welche
+ * Op-Parameter Punktlisten mit Höhe sind, und dieselbe Tabelle rechnet sie an
+ * der NN-Grenze um. Eine zweite Liste liefe beim ersten neuen Werkzeug weg.
+ */
+const erdbauRezepte = new Set(['erdbau', 'kanalgraben', 'bauwerksgrube']);
 /** Welche Rezepte einen geschlossenen Ring beschreiben (die letzte Kante zählt mit). */
 const RING_REZEPTE = new Set(['flaeche']);
 /** Ein Bauteil mit weniger Punkten als hier lässt sich nicht mehr sinnvoll drehen. */
@@ -182,6 +192,48 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         return aus;
     }
 
+    // ── KNICKPUNKTE EINES ERDBAU-VORGANGS (Teil XX Stufe C / Teil XXI, P5) ──
+    //
+    // Fabio (2026-09-10): „Knickpunkte XYZ-ziehbar". Ein Erdbau-Vorgang hat
+    // keine `punkte` im Bauplan — seine Ecken stecken in den OPERATIONEN
+    // (`umriss`, `linie`, `stationen`), und ihre Höhen stehen dort in m NN.
+    // Deshalb ein eigener Zweig: derselbe Griff, dieselben Achsen, dasselbe
+    // Muster mit Höhengriff daneben — nur eine andere Fundstelle.
+    if (eigen && bauplan && Array.isArray(bauplan.parameter?.operationen) && erdbauRezepte.has(bauplan.rezept)) {
+        const gid = subjekt.globalId;
+        const versatz = subjekt.hoehenversatz ?? 0;
+        bauplan.parameter.operationen.forEach((op, j) => {
+            for (const feld of (ERDBAU_PUNKTHOEHEN[op?.art] ?? [])) {
+                const liste = op?.parameter?.[feld];
+                if (!Array.isArray(liste) || liste.length < 2) continue;
+                liste.forEach((p, k) => {
+                    const x = Number(p?.x), z = Number(p?.z), nn = Number(p?.y);
+                    if (![x, z, nn].every(Number.isFinite)) return;
+                    const pos = { x, y: weltAusNn(nn, versatz), z };
+                    const key = `erdbau-stuetz:${gid}:${j}:${feld}:${k}`;
+                    const werte = { op: j, feld, index: k };
+                    aus.push({
+                        key, globalId: gid, name: subjekt.name ?? '',
+                        herkunft: 'cde', art: 'stuetzpunkt', index: k, op: j, feld,
+                        pos, achsen: 'XZ', alternativ: 'Y',
+                        werkzeug: 'erdbau-stuetzpunkt-verschieben',
+                        felder: ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'], werte,
+                    });
+                    // Der Höhengriff — der Ersatz für die Shift-Taste, die es
+                    // auf dem Tablet nicht gibt (Tablet-Regel, siehe Kopf).
+                    aus.push({
+                        key: `erdbau-stuetz-hoch:${gid}:${j}:${feld}:${k}`, globalId: gid, name: subjekt.name ?? '',
+                        herkunft: 'cde', art: 'stuetzpunkt', index: k, op: j, feld,
+                        pos, achsen: 'Y', rolle: 'hoehe', zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 },
+                        werkzeug: 'erdbau-stuetzpunkt-verschieben',
+                        felder: ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'], werte,
+                    });
+                });
+            }
+        });
+        return aus;
+    }
+
     if (eigen) return aus;
     const a = subjekt.achse ?? null;
     if (a?.anfang && a?.ende && rolle('sohlhoeheAnfang') && rolle('sohlhoeheEnde')) {
@@ -238,7 +290,11 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
         case 'bezugshoehe':
             return { hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
         case 'stuetzpunkt':
-            return { index: griff.index, ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)), hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
+            // `werte` trägt, was der Griff über seine FUNDSTELLE weiss und was
+            // kein Zug ändert — beim Erdbau Operation und Feld. Ohne das
+            // schriebe ein Zug am zweiten Vorgang in die erste Operation.
+            return { ...(griff.werte ?? {}), index: griff.index,
+                     ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)), hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
         case 'kante':
             // Der Griff SITZT auf der Kantenmitte — die neue Lage IST der
             // Zielwert. `anwenden` rechnet daraus das Delta beider Endpunkte,

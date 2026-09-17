@@ -75,7 +75,9 @@ describe('Keine Daten verlieren — die Vorgabe als Vertrag', () => {
         const schritte = b('graben-ausheben').anwenden(GELAENDE(), { mass: 2, neigung: 1.5 }, { zug: UMRISS() });
         const neu = schritte.filter(s => s.art === 'erzeugt' && s.nachher.rezept === 'erdbau');
         const p = neu[0].nachher.parameter;
-        expect(Object.keys(p).sort()).toEqual(['operationen', 'quellBasis', 'quellen', 'raster']);
+        // `auflockerung` gehört dem VORGANG (Teil XXI, P4) — sie ändert keine
+        // Geometrie, nur die Menge, die abgefahren wird.
+        expect(Object.keys(p).sort()).toEqual(['auflockerung', 'operationen', 'quellBasis', 'quellen', 'raster']);
         expect(p.operationen.map(o => o.art)).toEqual(['grube']);   // Teil XX: EINE Op, Böschung nach innen
         // Kein Netz, kein Höhenfeld, kein Volumen — nur die Anweisung (Gesetz 5).
         expect(JSON.stringify(p)).not.toMatch(/heights|positions|volumen/);

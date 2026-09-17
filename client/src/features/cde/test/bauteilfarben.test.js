@@ -15,7 +15,9 @@ import {
 } from '../services/Bauteilfarben.js';
 import { BELEUCHTUNG } from '../services/IfcBeleuchtung.js';
 import { IfcAutor } from '../services/IfcAutor.js';
-import { erdbauRolle } from '../services/IfcEngine.js';
+import { erdbauRolle, faerbeStilFuer } from '../services/IfcEngine.js';
+import { FAERBE_FARBEN, FAERBE_ROLLEN } from '../services/Vorschau.js';
+import { AUSWAHL_FARBE } from '../services/GelaendeKanten.js';
 
 describe('der Katalog', () => {
     it('kennt Aushub, Auftrag und Gelände', () => {
@@ -52,7 +54,7 @@ describe('der Katalog', () => {
     });
 });
 
-describe('Aushub scheint durch, Auftrag deckt', () => {
+describe('Die Erdkörper scheinen durch, das Gelände gewinnt', () => {
     it('der Aushub ist transparent — ein Void zeigt seinen Inhalt', () => {
         const m = materialWerte(farbeFuer('IFCEARTHWORKSCUT'));
         expect(m.transparent).toBe(true);
@@ -60,14 +62,31 @@ describe('Aushub scheint durch, Auftrag deckt', () => {
         expect(m.opacity).toBeLessThan(0.8);
     });
 
-    it('der Auftrag ist solide — er IST Material', () => {
+    it('der Auftrag ebenso (E2, 2026-09-17) — sein Deckel IST die Geländeanzeige', () => {
+        // Fachlich ist er Material; im Bild verdeckt er aber nicht Erde, sondern
+        // die Fläche, die ihn beschreibt — zwei deckende Flächen am selben Ort
+        // flimmern. Deshalb dieselbe Deckkraft wie der Aushub.
         const m = materialWerte(farbeFuer('IFCEARTHWORKSFILL'));
-        expect(m.transparent).toBe(false);
-        expect(m.opacity).toBe(1);
+        expect(m.transparent).toBe(true);
+        expect(m.opacity).toBe(materialWerte(farbeFuer('IFCEARTHWORKSCUT')).opacity);
     });
 
-    it('das Gelände ist solide', () => {
-        expect(materialWerte(farbeFuer('IFCGEOGRAPHICELEMENT')).transparent).toBe(false);
+    it('das Gelände ist solide und schreibt Tiefe — es trägt das Bild', () => {
+        const m = materialWerte(farbeFuer('IFCGEOGRAPHICELEMENT'));
+        expect(m.transparent).toBe(false);
+        expect(m.depthWrite).toBe(true);
+    });
+
+    it('`depthWrite` folgt der Deckkraft — an EINER Stelle, für Material und Färbe-Stapel', () => {
+        expect(materialWerte({ farbe: 0x808080, deckkraft: 1 }).depthWrite).toBe(true);
+        expect(materialWerte({ farbe: 0x808080, deckkraft: 0.55 }).depthWrite).toBe(false);
+        // Ein durchscheinendes Volumen, das Tiefe schreibt, verdeckt seinen Inhalt.
+        for (const typ of ['IFCEARTHWORKSCUT', 'IFCEARTHWORKSFILL']) {
+            const stil = faerbeStilFuer(erdbauRolle(typ));
+            const m = materialWerte(farbeFuer(typ));
+            expect({ typ, o: stil.opacity, t: stil.transparent, d: stil.depthWrite })
+                .toEqual({ typ, o: m.opacity, t: m.transparent, d: m.depthWrite });
+        }
     });
 
     it('Deckkraft 1 meldet NICHT transparent — sonst kostet es Sortierung ohne Gewinn', () => {
@@ -148,10 +167,13 @@ describe('die Verdrahtung', () => {
         expect(m.depthWrite).toBe(false);
     });
 
-    it('ein Auftrag bekommt solides Material, das Tiefe schreibt', () => {
+    it('ein Auftrag bekommt durchscheinendes Material ohne Tiefe (E2) — das Gelände gewinnt', () => {
         const m = autor._materialFuer('IFCEARTHWORKSFILL');
-        expect(m.transparent).toBe(false);
-        expect(m.depthWrite).toBe(true);
+        expect(m.transparent).toBe(true);
+        expect(m.depthWrite).toBe(false);
+        // Das Gelände selbst bleibt solide und schreibt Tiefe.
+        const g = autor._materialFuer('IFCGEOGRAPHICELEMENT');
+        expect({ t: g.transparent, d: g.depthWrite }).toEqual({ t: false, d: true });
     });
 
     // Abnahme 2026-09-12 (K4): der Editor speichert `255 · color.r` und liest es als sRGB
@@ -188,5 +210,33 @@ describe('die Verdrahtung', () => {
         for (const typ of Object.keys(BAUTEILFARBEN)) {
             expect(erdbauRolle(typ)).toBe(`erdbau:${typ}`);
         }
+    });
+});
+
+describe('eine Rolle, eine Farbe (2026-09-17)', () => {
+    /**
+     * Gemessen in three r181 mit ColorManagement: ein Float-Tripel gilt als
+     * LINEAR. `new THREE.Color(0.31, 0.76, 0.97)` — aus `#4fc3f7` gerechnet —
+     * erschien deshalb als `#97e2fc`, während der Geist derselben Bearbeitung
+     * mit `#4fc3f7` gezeichnet wurde. Gemessen wird hier dieselbe Grösse wie
+     * im Bild: die sRGB-Darstellung der Farbe.
+     */
+    it('die Färbe-Rollen der Engine zeigen genau die Farbe, die der Geist zeichnet', () => {
+        for (const rolle of FAERBE_ROLLEN) {
+            const stil = faerbeStilFuer(rolle);
+            expect(`#${stil.color.getHexString()}`, rolle).toBe(FAERBE_FARBEN[rolle]);
+        }
+        expect(FAERBE_FARBEN.kandidat).toBe(AUSWAHL_FARBE);          // Akzent von Geist, Zeiger und Kanten
+    });
+
+    it('kein Float-Tripel mehr im Färbe-Stapel — sonst kommt die Gammastufe zurück', () => {
+        const quelle = readFileSync(new URL('../services/IfcEngine.js', import.meta.url), 'utf8');
+        const stapel = quelle.slice(quelle.indexOf('const FAERBE_STILE'), quelle.indexOf('const VORSCHAU_RANG'));
+        expect(stapel).not.toMatch(/new THREE\.Color\(\s*[01]?\.\d/);
+    });
+
+    it('der Erdbau-Katalog ging diesen Weg immer — Hex hinein, Hex heraus', () => {
+        const stil = faerbeStilFuer(erdbauRolle('IFCEARTHWORKSCUT'));
+        expect(`#${stil.color.getHexString()}`).toBe(`#${BAUTEILFARBEN.IFCEARTHWORKSCUT.farbe.toString(16)}`);
     });
 });

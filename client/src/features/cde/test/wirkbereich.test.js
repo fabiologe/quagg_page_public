@@ -158,6 +158,12 @@ describe('und es ist wirklich schneller', () => {
  * zweites Mal — fein und nur im Korridor —, rechnet Körper und Massen
  * darauf und lässt das sichtbare DGM beim vollen Raster (sonst hätte die
  * Oberfläche ein Loch, wo der Korridor endet).
+ *
+ * TEIL XXI: der Korridor ist nicht mehr nur eine Frage der Genauigkeit,
+ * sondern die Grundlage des Bildes. Erdkörper und Geländeanzeige sind
+ * DIESELBE Fläche; sie entstehen nur, wenn beide dasselbe Gelände am
+ * gleichen Gitter abtasten. Deshalb gibt es keine Schwelle mehr, ab der ein
+ * Vorgang ohne Korridor rechnet — es gibt nur noch das Zellbudget.
  */
 describe('der feine Korridor der Erdbau-Ableitung', () => {
     const gerinneOps = [{
@@ -168,7 +174,7 @@ describe('der feine Korridor der Erdbau-Ableitung', () => {
         },
     }];
 
-    /** Eine SCHMALE Sohle — nur dann lohnt der feine Korridor. */
+    /** Eine schmale Sohle — der Fall, für den der Korridor einmal gebaut wurde. */
     const schmalOps = [{
         art: 'gerinne',
         parameter: {
@@ -177,13 +183,25 @@ describe('der feine Korridor der Erdbau-Ableitung', () => {
         },
     }];
 
-    it('eine breite Sohle braucht ihn NICHT — zwei Sekunden für die dritte Nachkommastelle', async () => {
-        const { ABLEITUNGEN } = await import('../services/ableitung/Ableitungen.js');
+    it('auch eine breite Sohle bekommt ihn — sonst zeichnet die Anzeige eine andere Fläche', async () => {
+        // BIS TEIL XXI galt hier das Gegenteil: 4 m Sohle liegen über zwei
+        // Zellen, das Grobe war auf 0,05 % genau, und der Korridor kostete
+        // zwei Sekunden (4,4 s gegen 6,6 s je Übernehmen). Die Zeit war
+        // gespart, die Fläche nicht: der Erdkörper tastete dann das grobe
+        // Raster ab, die Anzeige ihren feinen Flicken — gemessen 2026-09-17
+        // an einer offenen Grube 0,673 m Durchdringung, im Bild das Flimmern.
+        // Jetzt bekommt JEDER Vorgang den Korridor; die Feinheit deckelt das
+        // Zellbudget, nicht die Sohlbreite.
+        const { ABLEITUNGEN, ERDBAU_ZELLE } = await import('../services/ableitung/Ableitungen.js');
         const r = raster({ nx: 500, nz: 500 });          // 2-m-Zellen
-        // 4 m Sohle liegen über zwei Zellen: am echten Gelände gemessen
-        // 4,4 s / 0,05 % ohne gegen 6,6 s / 0,01 % mit Korridor.
-        expect(ABLEITUNGEN.erdbau.zusatzQuellen(
-            { operationen: gerinneOps }, { gelaende: r }, { gelaende: 'g' }).gelaendeFein).toBeUndefined();
+        const zusatz = ABLEITUNGEN.erdbau.zusatzQuellen(
+            { operationen: gerinneOps }, { gelaende: r }, { gelaende: 'g' });
+        expect(zusatz.gelaendeFein).toBeTruthy();
+        expect(zusatz.gelaendeFein.opts.cell).toBeLessThan(r.cell);
+        expect(zusatz.gelaendeFein.opts.cell).toBeGreaterThanOrEqual(ERDBAU_ZELLE);
+        // Und er hängt am GROBEN Gitter — dieselben Knoten, die die Anzeige
+        // ihrem Flicken gibt (sonst wären es wieder zwei Flächen).
+        expect(zusatz.gelaendeFein.opts.gitter).toEqual({ x0: r.x0, z0: r.z0, cell: r.cell });
     });
 
     it('eine schmale Sohle fordert ein feineres Raster an — und nur im Korridor', async () => {

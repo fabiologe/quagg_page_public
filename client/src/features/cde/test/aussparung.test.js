@@ -22,9 +22,17 @@ const BAUWERK = {
 };
 
 describe('Der Katalog', () => {
-    it('hängt am Körper; das Werkzeug kommt aus den eigenen Körpern des Subjekts', () => {
-        expect(passende({ bauform: 'koerper', guete: 'geschaetzt' }).map(b => b.id)).toContain('aussparung-ableiten');
-        expect(passende({ bauform: 'achse+profil', guete: 'gemessen' }).map(b => b.id)).not.toContain('aussparung-ableiten');
+    it('hängt an allem Körperhaften — auch an der Wand; das Werkzeug kommt aus den eigenen Körpern des Subjekts', () => {
+        // Das Rezept verlangt `KOERPERHAFT` in beiden Schlitzen; der Katalog liess
+        // bis 2026-09-17 nur `koerper` zu, und die Aussparung in einer WAND — der
+        // Regelfall schlechthin — erschien nie. Eine Rohrdurchführung ebenso.
+        for (const bauform of ['koerper', 'flaeche+dicke', 'achse+profil']) {
+            expect(passende({ bauform, guete: 'geschaetzt' }).map(b => b.id), bauform).toContain('aussparung-ableiten');
+        }
+        // Ein Gelände ist kein Stemmeisen, ein Punkt hat kein Volumen.
+        for (const bauform of ['hoehenfeld', 'punkt', 'linie', 'flaeche']) {
+            expect(passende({ bauform, guete: 'gemessen' }).map(b => b.id), bauform).not.toContain('aussparung-ableiten');
+        }
         const [feld] = felderFuer(nachId('aussparung-ableiten'), null, BAUWERK);
         expect(feld.optionen.map(o => o.titel)).toEqual(['H-001 · Graben', 'Rohr 1']);
         expect(nachId('aussparung-ableiten').vorbelegung(BAUWERK)).toEqual({ werkzeug: 'cde-graben' });

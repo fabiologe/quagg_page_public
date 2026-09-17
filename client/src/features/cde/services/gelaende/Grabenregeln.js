@@ -81,6 +81,41 @@ export const BODENKLASSEN = Object.freeze({
     fels:        { titel: 'Fels (80°)' },
 });
 
+/**
+ * DIE AUFLOCKERUNG (Teil XXI, P4).
+ *
+ * Gewachsener Boden nimmt beim Lösen mehr Raum ein: was als 100 m³ im
+ * Baugrund steht, füllt auf der Mulde 115 bis 160 m³. Der Aushub wird in
+ * `UndisturbedVolume` gemessen, abgefahren wird `LooseVolume` — beide Mengen
+ * stehen im IFC (`Qto_EarthworksCutBaseQuantities`), und ohne die zweite
+ * rechnet jeder Empfänger sie sich selbst aus, jeder mit seinem Faktor.
+ *
+ * DIE ZAHLEN SIND ERFAHRUNGSWERTE, keine Norm. DIN 18300 kennt seit 2015
+ * Homogenbereiche statt Bodenklassen und schreibt keinen Faktor vor; er
+ * gehört in die Kalkulation. Deshalb ist er hier ein REGLER mit Vorgabe —
+ * sichtbar im Formular, änderbar, und als Merkmal am Vorgang.
+ */
+export const AUFLOCKERUNG = Object.freeze({
+    quelle: 'Erfahrungswerte des Erdbaus — kein Normwert; im Formular änderbar',
+    /** Loses Volumen je Kubikmeter gewachsenem Boden. */
+    nachBoden: Object.freeze({ nichtbindig: 1.15, bindigSteif: 1.25, fels: 1.45 }),
+    vorgabe: 1.15,
+    min: 1,
+    max: 2,
+});
+
+/** Der Faktor zu einer Bodenklasse — oder die Vorgabe. */
+export function auflockerungFuer(boden, regeln = AUFLOCKERUNG) {
+    const v = regeln.nachBoden?.[String(boden ?? '')];
+    return Number.isFinite(v) ? v : regeln.vorgabe;
+}
+
+/** Ein gültiger Faktor, oder null (dann gilt die Vorgabe des Rezepts). */
+export function auflockerungOder(wert, vorgabe = null) {
+    const z = Number(wert);
+    return Number.isFinite(z) && z >= AUFLOCKERUNG.min && z <= AUFLOCKERUNG.max ? z : vorgabe;
+}
+
 const fin = (v) => Number.isFinite(v);
 const rund = (v) => Math.round(v * 1000) / 1000;
 

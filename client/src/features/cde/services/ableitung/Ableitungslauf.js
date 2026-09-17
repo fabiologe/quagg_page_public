@@ -29,8 +29,13 @@
  * Die Reihenfolge entscheidet der Planer (`vorgaenge` an der Anzeige-
  * Ableitung); was er nicht geordnet hat, folgt in Stand-Reihenfolge.
  */
-import { formeNach } from '../gelaende/Operationen.js';
+import { formeNach, zellenIntegral } from '../gelaende/Operationen.js';
 import { erdbauStapelVon, urGelaendeVon } from './Bezuege.js';
+
+/** Ab welchem Anteil der Wirkfläche ein späterer Vorgang einen älteren verdeckt (E3). */
+export const VERDECKT_AB = 0.5;
+/** Ab welcher Höhenänderung ein Knoten als „verändert" zählt — 1 mm, die Bautoleranz. */
+export const VERDECKT_SCHWELLE = 0.001;
 
 /**
  * @param {object} opts
@@ -58,6 +63,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
     /** Formpaare, die nicht geprüft werden konnten — sichtbar, nicht verschluckt. */
     const _ungeprueft = [];
     const stapelMemo = new Map();  // urGid → erdbauStapelVon(...)
+    const urRasterJeUr = new Map(); // urGid → das GROBE Ur-Raster, wie es der Lauf gelesen hat
 
     // ── Der Erdbau-Stapel ────────────────────────────────────────────────────
 
@@ -128,8 +134,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
      */
     async function _durchAuffuellung({ ur: urGid, ableitung }, vorher, ops, urRaster) {
         const nachher = formeNach(vorher, ops, { ur: urRaster }).raster;
-        const { nx, nz, cell } = vorher;
-        const ueber = new Float64Array(nx * nz);
+        const ueber = new Float64Array(vorher.nx * vorher.nz);
         const knoten = [];
         for (let i = 0; i < ueber.length; i++) {
             const v = vorher.heights[i], n = nachher.heights[i], u = urRaster.heights[i];
@@ -138,19 +143,12 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             if (ueber[i] > 1e-9) knoten.push(i);
         }
         if (!knoten.length) return { volumen: 0, vorgaenge: [] };
+        // DIESELBE ZELLFORMEL WIE `massenAus` — jetzt auch dieselbe FUNKTION
+        // (Teil XXI): die Kennzahl steht neben `aushubRaster` und muss sich an
+        // ihm messen lassen. Zwei Abschriften derselben Regel liefen beim
+        // ersten Sonderfall auseinander.
         let volumen = 0;
-        for (let ix = 0; ix + 1 < nx; ix++) {
-            for (let iz = 0; iz + 1 < nz; iz++) {
-                let summe = 0;
-                let gueltig = true;
-                for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-                    const w = ueber[(ix + dx) * nz + (iz + dz)];
-                    if (!Number.isFinite(w)) { gueltig = false; break; }
-                    summe += w;
-                }
-                if (gueltig) volumen += (summe / 4) * cell * cell;
-            }
-        }
+        zellenIntegral(vorher, (i) => ueber[i], (dv) => { volumen += dv; });
         const { vorgaenge } = _stapel(urGid);
         const bis = vorgaenge.findIndex(v => v.ableitung === ableitung);
         const listen = await _opsListen(urGid, Math.max(0, bis));
@@ -162,6 +160,62 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             davor = danach;
         }
         return { volumen, vorgaenge: treffer };
+    }
+
+    /**
+     * WELCHER VORGANG WIRD VON EINEM SPÄTEREN ÜBERDECKT? (Teil XXI, E3)
+     *
+     * Fabio 2026-09-17: nach einer Auffüllung stehen Aushub, Auffüllung und
+     * Netz übereinander, „wodurch es zittert und überlappt und unklar wird, was
+     * was ist". Seine Entscheidung: im Raum steht der JÜNGERE Vorgang; ältere,
+     * die ein späterer wieder überformt hat, erscheinen nur über ihr Auge.
+     * Die MENGEN bleiben beide — verdeckt heisst nicht ungültig.
+     *
+     * DIE REGEL misst, was sie behauptet: die Wirkfläche eines Vorgangs sind
+     * die Knoten, an denen ER das Gelände um mehr als einen Millimeter
+     * geändert hat. Ein späterer Vorgang verdeckt ihn, wenn er MEHR ALS DIE
+     * HÄLFTE dieser Knoten erneut ändert. Eine Auffüllung bis GOK über einer
+     * Grube trifft 100 % — verdeckt. Ein Gerinne quer durch eine Ecke trifft
+     * wenig — beide bleiben sichtbar.
+     *
+     * Gerechnet auf dem GROBEN Ur (die Frage ist „welche Fläche", nicht
+     * „wie viel Masse") und über den Präfix-Cache, der vom Aufbau noch liegt.
+     * Nichts davon wird gespeichert (Gesetz 5): die Verdeckung ist gerechnet,
+     * und beim nächsten Lauf wieder.
+     *
+     * @returns {Promise<Map<string, Array<{ableitung: string, anteil: number}>>>}
+     */
+    async function verdeckungen() {
+        const aus = new Map();
+        for (const urGid of [...urRasterJeUr.keys()]) {
+            const ur = urRasterJeUr.get(urGid);
+            const { vorgaenge } = _stapel(urGid);
+            if (!ur?.heights?.length || !vorgaenge.length) continue;
+            const listen = await _opsListen(urGid, vorgaenge.length);
+            const stufen = [];
+            for (let k = 0; k <= vorgaenge.length; k++) stufen.push(_gefaltet(ur, urGid, listen, k));
+            const geaendert = (k, n) => {
+                const a = stufen[k].heights[n], b = stufen[k + 1].heights[n];
+                return Number.isFinite(a) && Number.isFinite(b) && Math.abs(b - a) > VERDECKT_SCHWELLE;
+            };
+            for (let i = 0; i < vorgaenge.length; i++) {
+                const wirk = [];
+                for (let n = 0; n < ur.heights.length; n++) if (geaendert(i, n)) wirk.push(n);
+                const liste = [];
+                // Ein Vorgang ohne Wirkfläche (nichts geändert) kann von
+                // niemandem überdeckt werden — sonst hiesse „0 von 0" verdeckt.
+                for (let j = i + 1; wirk.length && j < vorgaenge.length; j++) {
+                    let getroffen = 0;
+                    for (const n of wirk) if (geaendert(j, n)) getroffen++;
+                    const anteil = getroffen / wirk.length;
+                    if (anteil > VERDECKT_AB) liste.push({ ableitung: vorgaenge[j].ableitung, anteil });
+                }
+                const eintrag = ableitungen.get(vorgaenge[i].ableitung);
+                if (eintrag) eintrag.kennzahlen = { ...(eintrag.kennzahlen ?? {}), verdecktVon: liste };
+                aus.set(vorgaenge[i].ableitung, liste);
+            }
+        }
+        return aus;
     }
 
     function _eintrag(ableitungId, rezeptId) {
@@ -234,6 +288,8 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 const listen = await _opsListen(urGid, Math.max(0, bis));
                 const vor = listen.flat();
                 const urRaster = quellen.gelaende;
+                // Fürs Nachrechnen der Verdeckungen (`verdeckungen`) nach dem Aufbau.
+                urRasterJeUr.set(urGid, urRaster);
                 quellen.gelaende = _gefaltet(urRaster, urGid, listen, listen.length);
                 stapel = {
                     ur: urGid, urRaster, ableitung: id, opsVor: vor,
@@ -241,6 +297,45 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                     // Dieselbe Faltung für ein anderes Raster derselben Quelle —
                     // der feine Korridor braucht die Vorgänger genauso (eigener Präfix-Cache).
                     vorherVon: (r) => (r ? _gefaltet(r, urGid, listen, listen.length) : r),
+                    /**
+                     * DAS UR-GELÄNDE FEIN, AUS DERSELBEN QUELLE (Teil XXI).
+                     *
+                     * Ein Erdkörper rechnet auf dem feinen Korridor — der tastet
+                     * die gelieferte Fläche ab. Die Anzeige verfeinerte bisher
+                     * ihr GROBES Raster; beide Flächen meinten dasselbe Gelände
+                     * und durchdrangen sich um Zentimeter (gemessen 2026-09-17:
+                     * 8,5 cm an einer Gerinnesohle). Wer die Anzeige feiner
+                     * zeichnet, holt sich das Ur deshalb HIER — dieselbe Quelle,
+                     * dasselbe Gitter, dieselbe Fläche.
+                     */
+                    feinesUr: (bereich, cell) => formVon(urGid, 'raster', {
+                        cell, bereich, gitter: { x0: urRaster.x0, z0: urRaster.z0, cell: urRaster.cell },
+                    }),
+                    /**
+                     * DIE MASSEN JE VORGANG — für die Gesamtmasse der Anzeige
+                     * (Teil XXI, P1b).
+                     *
+                     * Jeder Vorgang rechnet auf seinem feinen Korridor, die
+                     * Anzeige trägt das grobe Raster. „Gesamt" aus dem groben
+                     * Raster war deshalb nicht die Summe der Vorgänge (gemessen
+                     * 2026-09-17: 658,90 gegen 656,19 m³ — 0,4 %), und zwei
+                     * Zahlen für dieselbe Sache sind eine zu viel. Die Summe
+                     * gewinnt: sie steht auch im IFC (je Vorgang ein Qto).
+                     *
+                     * Gültig erst, wenn alle Vorgänger geleitet sind — die
+                     * Anzeige faltet ALLE Vorgänge, also ist sie es dort immer.
+                     *
+                     * `gemessen` trennt „dieser Vorgang hat keinen Auftrag"
+                     * (die Bauwerksgrube meldet gar keinen — ihre Zahl ist 0)
+                     * von „dieser Vorgang hat nicht gerechnet" (sein `leite`
+                     * ist gescheitert; dann darf niemand eine Summe bilden).
+                     */
+                    massenJeVorgang: () => _stapel(urGid).vorgaenge.map(v => {
+                        const k = ableitungen.get(v.ableitung)?.kennzahlen ?? null;
+                        return { ableitung: v.ableitung,
+                                 gemessen: Number.isFinite(k?.aushubRaster),
+                                 aushub: k?.aushubRaster ?? 0, auftrag: k?.auftragRaster ?? 0 };
+                    }),
                 };
             }
             // ZUSATZQUELLEN (Teil XVII, B3): ein Rezept darf NACH den Hauptquellen
@@ -289,6 +384,10 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 ...(eintrag.warnungen ?? []), ...(erg.warnungen ?? []), ..._ungeprueft,
             ])];
             if (erg.bild) eintrag.bild = erg.bild;         // das Planbild (G5), nie im Journal
+            // DIE KANTEN (Teil XX Stufe B): Böschungsoberkante, Fuss, Sohl- und
+            // Kronenkante — gerechnet wie die Massen, nie gespeichert. Raum und
+            // Paket lesen sie hier, nicht aus dem Journal.
+            if (erg.kanten) eintrag.kanten = erg.kanten;
             return erg;
         })();
         memo.set(id, versprechen);
@@ -411,5 +510,5 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         }
     }
 
-    return { baue, formVon, ableitungen, misserfolge, stapelVon, urGidVon, opsVor };
+    return { baue, formVon, ableitungen, misserfolge, stapelVon, urGidVon, opsVor, verdeckungen };
 }

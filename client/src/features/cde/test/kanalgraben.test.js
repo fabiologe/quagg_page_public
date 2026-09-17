@@ -79,8 +79,11 @@ describe('Der Katalog', () => {
         expect(p.quellBasis.gelaende.triCount).toBe(3200);
         expect(p.quellBasis.rohre).toEqual([{ achse: true, laenge: 30, dn: 300, dy: -0.3 }]);
         expect(p.raster.cell).toBe(0.5);
+        // `achsbezug` steht seit Teil XXI im Bauplan: wo die Achshöhe liegt,
+        // verschiebt jede Höhe des Grabens um DN/2 — das gehört ins Journal,
+        // nicht in eine Annahme im Code (E4).
         expect(p.operationen).toEqual([{ art: 'kanalgraben', parameter: {
-            umfang: 'haltung', wandform: 'boeschung', boden: 'nichtbindig', winkelGrad: null, wanddickeMm: 0,
+            umfang: 'haltung', achsbezug: 'quelle', wandform: 'boeschung', boden: 'nichtbindig', winkelGrad: null, wanddickeMm: 0,
             breite: null, bettung: 0.15, schachtMass: 1, dn: 300 } }]);
         expect(JSON.stringify(p)).not.toMatch(/heights|positions/);
     });
@@ -144,8 +147,14 @@ describe('Der Lauf am echten Rezept', () => {
         expect(k.laenge).toBeCloseTo(30.0015, 3);
         expect(k.rohrVolumen).toBeGreaterThan(1.9);           // 12-Eck ≈ 2,03 m³ (π wäre 2,12)
         expect(k.rohrVolumen).toBeLessThan(2.2);
-        expect(k.verfuellung).toBeCloseTo(k.aushubRaster - k.rohrVolumen, 6);
+        // Die Verfüllung geht von der GELTENDEN Masse aus (Teil XXI, P6) —
+        // hier der Profilkörper, denn dieser Vorgang ist genau ein Graben.
+        expect(k.koerperArt).toBe('profil');
+        expect(k.massenQuelle).toBe('Querprofile');
+        expect(k.aushubMasse).toBe(k.aushubKoerper);
+        expect(k.verfuellung).toBeCloseTo(k.aushubMasse - k.rohrVolumen, 6);
         expect(k.aushubRaster).toBeGreaterThan(50);
+        // Geböscht: beide Wege MÜSSEN übereinstimmen.
         expect(Math.abs(k.aushubKoerper - k.aushubRaster) / k.aushubRaster).toBeLessThan(0.02);
         expect(k.ueberdeckungMin).toBeGreaterThan(MINDEST_UEBERDECKUNG);
         // B3: das Alt-Journal trägt Böschung 1:0,5 (63°) — steiler als die 45° der

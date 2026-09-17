@@ -154,12 +154,13 @@
           <!-- Teil XIV: ZWEI Wege zur Masse — Raster (Zellsummen) und Körper
                (Divergenzsatz am geschlossenen Aushubkörper). Die Abweichung
                ist die Gegenprobe; über 2 % meldet die Prüfliste. -->
-          <tr><th>Gelände</th><th>Aushub</th><th title="Auftragskörper — beim Kanalgraben die Verfüllung (Graben minus Rohr)">Auftrag / Verf.</th><th title="Volumen des Aushubkörpers">Körper</th><th title="Gegenprobe Körper gegen Raster">Abw.</th></tr>
+          <tr><th>Gelände</th><th>Aushub</th><th title="Aushub mal Auflockerungsfaktor — die Masse, die abgefahren wird">Lose</th><th title="Auftragskörper — beim Kanalgraben die Verfüllung (Graben minus Rohr)">Auftrag / Verf.</th><th title="Volumen des Aushubkörpers">Körper</th><th title="Gegenprobe Körper gegen Raster">Abw.</th></tr>
         </thead>
         <tbody>
           <tr v-for="(z, i) in erdmassen" :key="i" :class="{ gesamt: z.gesamt }">
             <td>{{ z.name }}<span v-if="z.gesamt && z.vorgaenge != null" class="zusatz"> · {{ z.vorgaenge }} {{ z.vorgaenge === 1 ? 'Vorgang' : 'Vorgänge' }}</span></td>
             <td class="mono">{{ z.aushub == null ? (z.grund ?? '—') : `${z.aushub.toFixed(1)} m³` }}</td>
+            <td class="mono" :title="z.auflockerung != null ? `Auflockerung × ${z.auflockerung.toFixed(2)}` : ''">{{ z.aushubLose == null ? '—' : `${z.aushubLose.toFixed(1)} m³` }}</td>
             <td class="mono" :title="z.rohrVolumen != null ? `Rohr ${z.rohrVolumen.toFixed(2)} m³ abgezogen` : ''">{{ z.auftrag != null ? `${z.auftrag.toFixed(1)} m³` : (z.verfuellung != null ? `${z.verfuellung.toFixed(1)} m³ Verf.` : '—') }}</td>
             <td class="mono">{{ z.aushubKoerper == null ? '—' : `${z.aushubKoerper.toFixed(1)} m³` }}</td>
             <td class="mono" :class="{ warn: abweichung(z) > 2 }">{{ abweichung(z) == null ? '—' : `${abweichung(z).toFixed(1)} %` }}</td>

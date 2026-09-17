@@ -233,8 +233,13 @@ describe('Verträge über die Grenze', () => {
         const autor = lies('src/features/cde/services/IfcAutor.js');
         const raum = autor.slice(autor.indexOf('async baueErzeugte('));
         const exp = autor.slice(autor.indexOf('async eigenbauGeometrien('), autor.indexOf('async baueErzeugte('));
-        expect(raum).toMatch(/this\._baueSchritt\(lauf, schritt\)/);
+        expect(raum).toMatch(/this\._baueSchritt\(lauf, schritt, \{ fuerRaum: true \}\)/);
         expect(exp).toMatch(/this\._baueSchritt\(lauf, schritt\)/);
+        // DER EINZIGE UNTERSCHIED IST `fuerRaum` (Teil XXI): der Raum senkt den
+        // Erdkörper um `ERDKOERPER_ABSENKUNG` unter die Geländeanzeige, damit
+        // nicht zwei deckungsgleiche Flächen um den Tiefenwert streiten. Der
+        // Export senkt nichts — im IFC steht die gerechnete Geometrie.
+        expect(exp).not.toMatch(/fuerRaum/);
         // Der Export nimmt NICHT das fragments-Modell — dort liegt die Geometrie im Modellrahmen.
         expect(exp).not.toMatch(/getItemsGeometry|_getFragments/);
     });

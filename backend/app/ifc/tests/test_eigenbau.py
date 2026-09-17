@@ -509,6 +509,101 @@ def test_eine_menge_ausserhalb_der_vorlage_wird_gemeldet_nicht_geschrieben(tmp_p
     assert set(_qto(ifcopenshell.open(ziel).by_type("IfcEarthworksCut")[0])) == {"_name", "UndisturbedVolume"}
 
 
+# ── Boeschungskanten (Teil XX Stufe B) ──────────────────────────────────────
+
+# Die CDE zeichnet auch LINIEN, und die sind ebenfalls `IfcAnnotation`. Die
+# Kanten erkennt man am ObjectType — danach wird hier gefiltert.
+KANTEN_TYPEN = {"Boeschungsoberkante", "Boeschungsfuss", "Sohlkante", "Kronenkante"}
+
+
+def _kanten_annotationen(f):
+    return sorted((a for a in f.by_type("IfcAnnotation") if a.ObjectType in KANTEN_TYPEN),
+                  key=lambda a: a.Name)
+
+
+KANTEN = [
+    {"ableitung": "ab-1", "art": "oberkante", "geschlossen": True, "ursprung": [410000, 5460000, 100],
+     "punkte": [[0, 0, 2], [20, 0, 2], [20, 12, 2], [0, 12, 2]]},
+    {"ableitung": "ab-1", "art": "sohlkante", "geschlossen": False, "ursprung": [410000, 5460000, 97],
+     "punkte": [[4, 4, 0], [16, 4, 0], [16, 8, 0]]},
+]
+
+
+def test_boeschungskanten_werden_annotationen_in_der_vorgangsgruppe(tmp_path):
+    """Fabio (2026-09-10): „die Boeschungskanten leicht hervorheben."
+
+    WIE SIE IM SCHEMA HEISSEN (am gepinnten IFC4X3_ADD2 nachgeschlagen, auf
+    Fabios Frage 2026-09-17): ein `IfcSurveyPoint` gibt es nicht, und
+    Vermessungsdaten SIND `IfcAnnotation` — `Pset_AnnotationSurveyArea` gilt
+    fuer `IfcAnnotation/SURVEY` und spricht von „survey point set". Deshalb
+    SURVEY, verfeinert durch den deutschen `ObjectType`, als 3D-Kurve, in
+    DERSELBEN Vorgangsgruppe wie Aushub und Auftrag.
+    """
+    ziel = tmp_path / "kanten.ifc"
+    bericht = baue_datei(_paket(_alle_arten(), kanten=KANTEN), ziel, schluessel="kanten")
+    assert bericht["kanten"] == 2
+    f = ifcopenshell.open(ziel)
+    ann = _kanten_annotationen(f)
+    assert [(a.Name, a.ObjectType, a.PredefinedType) for a in ann] == [
+        ("Boeschungsoberkante", "Boeschungsoberkante", "SURVEY"),
+        ("Sohlkante", "Sohlkante", "SURVEY"),
+    ]
+    # KEINE FALSCHE AUSSAGE: die Kanten sind gerechnet, nicht gemessen — das
+    # Pset ueber die Erfassungsmethode bleibt weg, die Herkunft steht in Quagg_CDE.
+    assert not [s for s in (ann[0].IsDefinedBy or [])
+                if getattr(getattr(s, "RelatingPropertyDefinition", None), "Name", None)
+                == "Pset_AnnotationSurveyArea"]
+    # Eine 3D-Kurve, kein Koerper — und der geschlossene Ring schliesst sich.
+    dar = ann[0].Representation.Representations[0]
+    assert (dar.RepresentationIdentifier, dar.RepresentationType) == ("Annotation", "Curve3D")
+    assert dar.ContextOfItems.ContextIdentifier == "Annotation"
+    assert len(dar.Items[0].Points.CoordList) == 5          # vier Ecken + Schluss
+    assert dar.Items[0].Points.CoordList[0] == dar.Items[0].Points.CoordList[-1]
+    assert len(ann[1].Representation.Representations[0].Items[0].Points.CoordList) == 3   # offen
+    # In der Vorgangsgruppe — zusammen mit Aushub und Auftrag.
+    [vorgang] = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Vorgang"]
+    glieder = {o.is_a() for rel in vorgang.IsGroupedBy for o in rel.RelatedObjects}
+    assert glieder == {"IfcEarthworksCut", "IfcEarthworksFill", "IfcAnnotation"}
+    # Und sie tragen ihre Herkunft wie jedes Bauteil.
+    assert _pset(ann[0], PSET_CDE)["Ableitung"] == "ab-1"
+    assert _pset(ann[1], PSET_CDE)["Rolle"] == "sohlkante"
+
+
+def test_kanten_haengen_in_der_raumgliederung_und_im_fachmodell(tmp_path):
+    """V07 und V08 zaehlen `IfcProduct` — ein Annotation ist eines."""
+    ziel = tmp_path / "kanten-raum.ifc"
+    baue_datei(_paket(_alle_arten(), kanten=KANTEN), ziel, schluessel="kanten-raum")
+    f = ifcopenshell.open(ziel)
+    eingeordnet = {o.id() for rel in f.by_type("IfcRelContainedInSpatialStructure")
+                   for o in rel.RelatedElements}
+    im_fachmodell = {o.id() for g in f.by_type("IfcGroup") if g.ObjectType == "Fachmodell"
+                     for rel in g.IsGroupedBy for o in rel.RelatedObjects}
+    for a in _kanten_annotationen(f):
+        assert a.id() in eingeordnet, f"{a.Name} haengt nicht in der Raumgliederung"
+        assert a.id() in im_fachmodell, f"{a.Name} hat kein Fachmodell"
+
+
+def test_kanten_ohne_vorgang_oder_unbekannter_art_werden_genannt(tmp_path):
+    """Nie still: was nicht geschrieben wird, steht unter `uebersprungen`."""
+    ziel = tmp_path / "kanten-weg.ifc"
+    weg = [{"ableitung": "gibt-es-nicht", "art": "oberkante", "punkte": [[0, 0, 0], [1, 0, 0]]},
+           {"ableitung": "ab-1", "art": "hangkante", "punkte": [[0, 0, 0], [1, 0, 0]]},
+           {"ableitung": "ab-1", "art": "fuss", "punkte": [[0, 0, 0]]}]
+    bericht = baue_datei(_paket(_alle_arten(), kanten=weg), ziel, schluessel="kanten-weg")
+    assert bericht["kanten"] == 0
+    gruende = " | ".join(str(u.get("grund")) for u in bericht["uebersprungen"])
+    assert "ohne Vorgang" in gruende and "unbekannte Kantenart" in gruende and "zwei Punkten" in gruende
+    assert not _kanten_annotationen(ifcopenshell.open(ziel))
+
+
+def test_ein_paket_ohne_kanten_bleibt_gueltig(tmp_path):
+    """Ein aelterer Client schickt keine — das ist der Stand von vorher, kein Fehler."""
+    ziel = tmp_path / "ohne.ifc"
+    bericht = baue_datei(_paket(_alle_arten()), ziel, schluessel="ohne")
+    assert bericht["kanten"] == 0
+    assert not _kanten_annotationen(ifcopenshell.open(ziel))
+
+
 def test_ein_vorgang_ist_eine_gruppe_mit_cut_und_fill(tmp_path):
     """Fabios Entscheidung 2: ein Cut je Vorgang — und was zum Vorgang gehoert, haelt eine Gruppe zusammen."""
     ziel = tmp_path / "vorgang.ifc"
@@ -862,3 +957,27 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as t:
         b = baue_erdbau_vergleich(ERDBAU_VERGLEICH, Path(t))
     print(ERDBAU_VERGLEICH, b["produkte"], "Produkte,", len(_struktur(ERDBAU_VERGLEICH)["voids"]), "Aushuebe am Wirt")
+
+
+# ── S4 neu: Weggelassenes und fuer wen ──────────────────────────────────────
+
+def test_weggelassenes_steht_am_fachmodell_und_die_organisation_im_besitz(tmp_path):
+    """K7: was beim Ausgeben abgewaehlt wurde, steht in der Datei — und fuer wen sie ausgegeben wurde."""
+    import ifcopenshell
+    import ifcopenshell.util.element as UE
+    paket = _paket(_alle_arten(), organisation="Ingenieurbuero Muster",
+                   ausgelassen=[{"globalId": "cde-graben", "vorgang": "Kanalgraben Nord", "grund": "weggelassen"}])
+    ziel = tmp_path / "eigen.ifc"
+    baue_datei(paket, ziel, bearbeiter="Anna Muster")
+    f = ifcopenshell.open(str(ziel))
+    gruppen = [g for g in f.by_type("IfcGroup") if g.ObjectType == "Fachmodell"]
+    assert gruppen
+    for g in gruppen:
+        werte = UE.get_psets(g)[H.PSET_FACHMODELL]
+        assert (werte["Ausgelassen"], werte["AusgelasseneVorgaenge"]) == (1, "Kanalgraben Nord")
+    wer = f.by_type("IfcOwnerHistory")[0].OwningUser
+    assert (wer.ThePerson.FamilyName, wer.TheOrganization.Name) == ("Anna Muster", "Ingenieurbuero Muster")
+    ohne = tmp_path / "ohne.ifc"
+    baue_datei(_paket(_alle_arten()), ohne)
+    g = next(g for g in ifcopenshell.open(str(ohne)).by_type("IfcGroup") if g.ObjectType == "Fachmodell")
+    assert "Ausgelassen" not in UE.get_psets(g)[H.PSET_FACHMODELL]

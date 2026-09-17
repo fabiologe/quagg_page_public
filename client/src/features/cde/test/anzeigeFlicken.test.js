@@ -124,8 +124,8 @@ describe('Die Böschungskante aus dem Browser — grob verschmiert, fein an ihre
         expect(grob(25, 10.7) - 10).toBeGreaterThan(0.3);
     });
 
-    it('mit Flicken: links unberührt, rechts auf 1 cm die Böschung — dieselben Stellen', () => {
-        const { flicken, zelle, warnungen } = anzeigeFlicken(r, stand, ops, OPT);
+    it('mit Flicken: links unberührt, rechts auf 1 cm die Böschung — dieselben Stellen', async () => {
+        const { flicken, zelle, warnungen } = await anzeigeFlicken(r, stand, ops, OPT);
         expect(warnungen).toEqual([]);
         expect(flicken).toHaveLength(1);
         expect(zelle).toBe(ERDBAU_ZELLE);
@@ -135,8 +135,8 @@ describe('Die Böschungskante aus dem Browser — grob verschmiert, fein an ihre
         }
     });
 
-    it('kein Riss: der Rand des Flickens liegt exakt auf der groben Anzeige, die Grundfläche bleibt', () => {
-        const { flicken } = anzeigeFlicken(r, stand, ops, OPT);
+    it('kein Riss: der Rand des Flickens liegt exakt auf der groben Anzeige, die Grundfläche bleibt', async () => {
+        const { flicken } = await anzeigeFlicken(r, stand, ops, OPT);
         const f = flicken[0].raster;
         const rand = [];
         for (let i = 0; i < f.nx; i++) rand.push([i, 0], [i, f.nz - 1]);
@@ -155,25 +155,112 @@ describe('Wann es Flicken gibt', () => {
         umriss: [{ x: x0, y: 10, z: z0 }, { x: x0 + 4, y: 10, z: z0 }, { x: x0 + 4, y: 10, z: z0 + 4 }, { x: x0, y: 10, z: z0 + 4 }],
         sohle: 8, neigung: 1 } });
 
-    it('zwei Gruben nebeneinander: EIN Flicken; weit auseinander: zwei', () => {
+    it('zwei Gruben nebeneinander: EIN Flicken; weit auseinander: zwei', async () => {
         const nah = [grube(6, 6), grube(12, 6)];
-        expect(anzeigeFlicken(r, formeNach(r, nah, { ur: r }).raster, nah, OPT).flicken).toHaveLength(1);
+        expect((await anzeigeFlicken(r, formeNach(r, nah, { ur: r }).raster, nah, OPT)).flicken).toHaveLength(1);
         const fern = [grube(6, 6), grube(36, 36)];
-        expect(anzeigeFlicken(r, formeNach(r, fern, { ur: r }).raster, fern, OPT).flicken).toHaveLength(2);
+        expect((await anzeigeFlicken(r, formeNach(r, fern, { ur: r }).raster, fern, OPT)).flicken).toHaveLength(2);
     });
 
-    it('über dem Budget bleibt die Anzeige grob — mit Warnung, nicht still', () => {
-        const ops = [grube(6, 6)];
-        const { flicken, warnungen } = anzeigeFlicken(r, formeNach(r, ops, { ur: r }).raster, ops, { ...OPT, budget: 50 });
+    // DAS BUDGET MACHT GRÖBER, DIE FORM SCHÜTZT (Teil XXI, 2026-09-17).
+    //
+    // Bis dahin konnte ein knappes Budget die Anzeige grob lassen, gleich wie
+    // schmal die Form war — ein 0,9 m breiter Graben wäre über dreihundert
+    // Meter verschwunden. Jetzt überstimmt die Kennweite das Budget.
+    it('ohne schmale Form macht ein knappes Budget die Anzeige grob', async () => {
+        // Ein Planum OHNE Böschung hat keine schmale Stelle: nichts zu schützen.
+        const ops = [{ art: 'planum', parameter: {
+            umriss: [{ x: 6, z: 6 }, { x: 40, z: 6 }, { x: 40, z: 40 }, { x: 6, z: 40 }], hoehe: 9, neigung: 0 } }];
+        const { flicken } = await anzeigeFlicken(r, formeNach(r, ops, { ur: r }).raster, ops, { ...OPT, budget: 50 });
         expect(flicken).toEqual([]);
-        expect(warnungen.join()).toMatch(/anzeige_flicken_budget/);
     });
 
-    it('ohne Operation oder mit einer Anzeige, die schon fein genug ist: keine Flicken', () => {
-        expect(anzeigeFlicken(r, r, [], OPT).flicken).toEqual([]);
+    it('eine SCHMALE Form bleibt fein — auch unter demselben knappen Budget', async () => {
+        const ops = [grube(6, 6)];                     // 4 m breit, 2 m tief, 1 : 1 → Böschung 2 m
+        const { flicken, zelle } = await anzeigeFlicken(r, formeNach(r, ops, { ur: r }).raster, ops, { ...OPT, budget: 50 });
+        expect(flicken).toHaveLength(1);
+        expect(zelle).toBeLessThanOrEqual(2 / 3 + 1e-9);
+    });
+
+    it('ohne Operation oder mit einer Anzeige, die schon fein genug ist: keine Flicken', async () => {
+        expect((await anzeigeFlicken(r, r, [], OPT)).flicken).toEqual([]);
         const fein = raster({ cell: ERDBAU_ZELLE });
         const ops = [grube(2, 2)];
-        expect(anzeigeFlicken(fein, formeNach(fein, ops, { ur: fein }).raster, ops, OPT).flicken).toEqual([]);
+        expect((await anzeigeFlicken(fein, formeNach(fein, ops, { ur: fein }).raster, ops, OPT)).flicken).toEqual([]);
+    });
+});
+
+/**
+ * Teil XXI, P1b: das Ur im Flicken kommt aus DERSELBEN Quelle wie der Korridor
+ * der Erdkörper — sonst beschreiben zwei Wege dieselbe Fläche verschieden, und
+ * im Bild durchdringen sie einander (gemessen: 8,5 cm an einer Gerinnesohle).
+ */
+describe('Das Ur im Flicken kommt aus der Quelle, nicht aus dem groben Netz', () => {
+    const r = raster({ hoehe: welle });
+    const ops = [{ art: 'grube', parameter: {
+        umriss: [{ x: 12, y: welle(12, 10), z: 10 }, { x: 22, y: welle(22, 10), z: 10 },
+                 { x: 22, y: welle(22, 16), z: 16 }, { x: 12, y: welle(12, 16), z: 16 }],
+        sohle: 8, neigung: 1.5 } }];
+    const stand = formeNach(r, ops, { ur: r }).raster;
+
+    /** Ein feines Ur auf dem GROBEN Gitter — so liefert es `IfcEngine._quellFormVon` mit `gitter`. */
+    const quelleAufGitter = async (bereich, cell) => {
+        const x0 = Math.floor(bereich.minX / r.cell) * r.cell, z0 = Math.floor(bereich.minZ / r.cell) * r.cell;
+        const nx = Math.round((bereich.maxX - x0) / cell) + 1, nz = Math.round((bereich.maxZ - z0) / cell) + 1;
+        const heights = new Float64Array(nx * nz);
+        for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) heights[i * nz + j] = welle(x0 + i * cell, z0 + j * cell);
+        return { x0, z0, maxX: x0 + (nx - 1) * cell, maxZ: z0 + (nz - 1) * cell, cell, nx, nz, heights };
+    };
+
+    it('die Knoten des Flickens tragen die Welle selbst, nicht die Sehne zwischen groben Knoten', async () => {
+        const ohne = await anzeigeFlicken(r, stand, ops, OPT);
+        const mit = await anzeigeFlicken(r, stand, ops, { ...OPT, feinesUr: quelleAufGitter });
+        expect(mit.warnungen).toEqual([]);
+        expect(mit.flicken).toHaveLength(1);
+        expect(mit.zelle).toBe(ohne.zelle);
+        // Ein Knoten AUSSERHALB der Grube, zwischen zwei groben Knoten: dort
+        // ist die Sehne des groben Netzes flacher als die Welle.
+        const f = mit.flicken[0].raster, g = ohne.flicken[0].raster;
+        let groesste = 0, verglichen = 0;
+        for (let i = 1; i < f.nx - 1; i++) for (let j = 1; j < f.nz - 1; j++) {
+            const p = rasterKnoten(f, i, j);
+            if (p.x > 11 && p.x < 23 && p.z > 9 && p.z < 17) continue;      // in der Grube formt die Op
+            expect(f.heights[i * f.nz + j]).toBeCloseTo(welle(p.x, p.z), 9);
+            groesste = Math.max(groesste, Math.abs(f.heights[i * f.nz + j] - g.heights[i * g.nz + j]));
+            verglichen++;
+        }
+        expect(verglichen).toBeGreaterThan(100);
+        expect(groesste).toBeGreaterThan(0.001);            // die beiden Wege sind wirklich verschieden
+    });
+
+    it('liegt die Quelle auf einem fremden Gitter, gilt das grobe Netz — laut, nicht still', async () => {
+        const verschoben = async (bereich, cell) => {
+            const echt = await quelleAufGitter(bereich, cell);
+            return { ...echt, x0: echt.x0 + 0.17, maxX: echt.maxX + 0.17 };
+        };
+        const { flicken, warnungen } = await anzeigeFlicken(r, stand, ops, { ...OPT, feinesUr: verschoben });
+        expect(flicken).toHaveLength(1);
+        expect(warnungen.join()).toMatch(/anzeige_flicken_gitter/);
+        const ohne = await anzeigeFlicken(r, stand, ops, OPT);
+        expect([...flicken[0].raster.heights]).toEqual([...ohne.flicken[0].raster.heights]);
+    });
+
+    it('eine Quelle, die nichts liefert oder wirft, kostet nur die Feinheit — keinen Absturz', async () => {
+        const ohne = await anzeigeFlicken(r, stand, ops, OPT);
+        for (const quelle of [async () => null, async () => { throw new Error('weg'); }]) {
+            const { flicken, warnungen } = await anzeigeFlicken(r, stand, ops, { ...OPT, feinesUr: quelle });
+            expect(warnungen).toEqual([]);                  // kein Gitterstreit — die Quelle schweigt
+            expect([...flicken[0].raster.heights]).toEqual([...ohne.flicken[0].raster.heights]);
+        }
+    });
+
+    it('der Flickenrand bleibt auf der groben Anzeige — auch mit Quelle kein Riss', async () => {
+        const { flicken } = await anzeigeFlicken(r, stand, ops, { ...OPT, feinesUr: quelleAufGitter });
+        const f = flicken[0].raster;
+        for (let i = 0; i < f.nx; i++) for (const j of [0, f.nz - 1]) {
+            const p = rasterKnoten(f, i, j);
+            expect(f.heights[i * f.nz + j]).toBeCloseTo(hoeheImRaster(stand, p.x, p.z), 9);
+        }
     });
 });
 

@@ -105,10 +105,14 @@ describe('ausGruppe — der Einstieg über die Werkzeugleiste', () => {
         expect(ausGruppe('gibtsnicht')).toEqual([]);
     });
 
-    it('führt die Zeichenwerkzeuge — je Rezept eines (Stufe 9.4)', () => {
+    it('führt die Zeichenwerkzeuge — je Rezept, DAS AUS EINEM ZUG BAUT, eines (Stufe 9.4)', () => {
         // Abgeleitet aus REZEPTE, nicht daneben aufgezählt: zwei Listen, die
-        // dasselbe meinen, laufen auseinander.
-        expect(ausGruppe('erzeugen').map(b => b.rezept)).toEqual(Object.keys(REZEPTE));
+        // dasselbe meinen, laufen auseinander. Aber abgeleitet heisst nicht
+        // „alle": `gelaende` baut mit Quellraster (`baue: null`), nicht aus
+        // Punkten — als Zeichenwerkzeug war es ein toter Knopf (2026-09-17).
+        const ausZug = Object.entries(REZEPTE).filter(([, r]) => typeof r.baue === 'function').map(([id]) => id);
+        expect(ausGruppe('erzeugen').map(b => b.rezept)).toEqual(ausZug);
+        expect(ausZug).not.toContain('gelaende');
     });
 
     it('bietet Erzeugen am BAUTEIL nicht an — es hat kein Subjekt', () => {

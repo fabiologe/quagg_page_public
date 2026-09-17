@@ -6,12 +6,20 @@
  * wenig transparent sein und beige-braun, Aufschütten solide und pastellgrün,
  * das Hauptgelände weiss-beige."
  *
- * WARUM DER AUSHUB DURCHSCHEINT und der Auftrag nicht — das ist keine Optik,
- * sondern die Fachlage: ein `IfcEarthworksCut` beschreibt FEHLENDE Masse. Er
- * ist ein Hohlraum, und in ihm liegt das, wofür er ausgehoben wird (Rohr,
- * Fundament, Verbau). Solide wäre er ein Klotz, der genau das verdeckt, was
- * er zeigen soll. Ein `IfcEarthworksFill` dagegen IST Material — es wurde
- * hingeschüttet, und es verdeckt zu Recht, was darunter liegt.
+ * WARUM DER AUSHUB DURCHSCHEINT: ein `IfcEarthworksCut` beschreibt FEHLENDE
+ * Masse. Er ist ein Hohlraum, und in ihm liegt das, wofür er ausgehoben wird
+ * (Rohr, Fundament, Verbau). Solide wäre er ein Klotz, der genau das
+ * verdeckt, was er zeigen soll.
+ *
+ * WARUM DER AUFTRAG SEIT 2026-09-17 EBENSO DURCHSCHEINT. Fachlich IST er
+ * Material und dürfte verdecken — nur verdeckt er im Bild nicht Erde,
+ * sondern das GELÄNDE, das ihn beschreibt: sein Deckel und die geformte
+ * Anzeige sind dieselbe Fläche, Knoten für Knoten (`koerperZwischenRastern`
+ * gegen `dreieckeAusRaster`). Zwei deckende Flächen am selben Ort flimmern.
+ * Fabios Entscheidung (E2): „Gelände gewinnt, Körper halbtransparent
+ * darunter" — die Anzeige trägt das Bild, Aushub und Auftrag sind
+ * Mengenkörper mit Umriss. Deshalb ist Deckkraft hier eine DARSTELLUNGS-
+ * entscheidung, keine Fachaussage; die Fachaussage steht im Titel und im IFC.
  *
  * WARUM DAS GELÄNDE NICHT WEISS IST. Es ist der Bezug, auf dem die Eingriffe
  * lesbar sein müssen — und es ist die grösste Fläche im Bild. Reines Weiss
@@ -62,8 +70,9 @@ export const GELAENDE_FARBE = Object.freeze({ farbe: 0xa4a198, deckkraft: 1, tit
 export const BAUTEILFARBEN = Object.freeze({
     // Aushub — erdiges Sandbraun, durchscheinend. Ein Void zeigt, was darin liegt.
     IFCEARTHWORKSCUT:     Object.freeze({ farbe: 0x8a7145, deckkraft: 0.55, titel: 'Aushub' }),
-    // Auftrag/Damm — gedämpftes Pastellgrün, solide. Zugeführtes Material.
-    IFCEARTHWORKSFILL:    Object.freeze({ farbe: 0x79a06a, deckkraft: 1, titel: 'Auftrag' }),
+    // Auftrag/Damm — gedämpftes Pastellgrün, durchscheinend wie der Aushub
+    // (E2): sein Deckel IST die Geländeanzeige, deckend flimmerten beide.
+    IFCEARTHWORKSFILL:    Object.freeze({ farbe: 0x79a06a, deckkraft: 0.55, titel: 'Auftrag' }),
     // Gewachsenes und geformtes Gelände — der Geländeton (siehe oben). Die
     // Kopie im Eigenbau baut ihr Material aus genau diesem Eintrag.
     IFCGEOGRAPHICELEMENT: GELAENDE_FARBE,
@@ -129,16 +138,57 @@ export function kanaele(farbe) {
 }
 
 /**
- * Was three braucht: `{ color, opacity, transparent }`.
+ * Was three braucht: `{ color, opacity, transparent, depthWrite }`.
  * `transparent` folgt der Deckkraft — ein Material mit Deckkraft 1, das
  * trotzdem als transparent gemeldet wird, kostet eine Sortierung und
  * schreibt keine Tiefe.
+ *
+ * `depthWrite` GEHÖRT HIERHER (2026-09-17): ein durchscheinendes Volumen darf
+ * nicht verdecken, was in ihm liegt — sonst ist die Transparenz umsonst. Die
+ * Regel stand zweimal im Code (`IfcAutor._materialFuer` rechnete
+ * `!transparent`, der Färbe-Stapel der Engine `deckkraft >= 1`); zwei Orte für
+ * eine Regel laufen beim ersten Sonderfall auseinander.
  */
 export function materialWerte(eintrag) {
     if (!eintrag) return null;
     const deckkraft = Number.isFinite(eintrag.deckkraft) ? Math.min(1, Math.max(0, eintrag.deckkraft)) : 1;
-    return { color: eintrag.farbe, opacity: deckkraft, transparent: deckkraft < 1 };
+    return { color: eintrag.farbe, opacity: deckkraft, transparent: deckkraft < 1, depthWrite: deckkraft >= 1 };
 }
+
+/**
+ * WIE TIEF EIN ERDKÖRPER UNTER DER ANZEIGE LIEGT — NUR IM RAUM (Teil XXI, E2).
+ *
+ * Der Deckel eines Auftrags und die geformte Geländeanzeige sind DIESELBE
+ * Fläche: seit P1b tasten beide dasselbe Gelände am gleichen Gitter ab und
+ * triangulieren jede Zelle über dieselbe Diagonale (gemessen 2026-09-17:
+ * grösster Abstand 0,000 m bei der Auffüllung, 0,005 m an Grube und Gerinne).
+ * Genau das ist der schlimmste Fall fürs Bild: zwei Flächen auf demselben
+ * Tiefenwert entscheiden je Bildpunkt neu, welche vorn liegt — das Flimmern,
+ * das Fabio beschreibt.
+ *
+ * Deshalb gewinnt das Gelände durch ABSTAND, nicht durch Zufall: der
+ * Mengenkörper sitzt zwei Zentimeter tiefer und ist dort zu sehen, wo er
+ * gemeint ist — im Aushubloch, im Schnitt und von der Seite.
+ *
+ * ZWEI ZENTIMETER, weil das unter der Genauigkeit liegt, die ein Erdbau
+ * überhaupt beansprucht (Rasterzelle 0,5 m), und über dem, was die
+ * Tiefenpuffer-Auflösung in dieser Szene auflöst.
+ *
+ * NUR IM RAUM: der Export (`eigenbauGeometrien`) baut ohne sie. Im IFC steht
+ * die Geometrie, die gerechnet wurde — eine Darstellungsentscheidung darf
+ * nicht in eine Lieferung wandern (Gesetz 5).
+ *
+ * WAS DAMIT NICHT GELÖST IST (benannt, nicht gekurt — Teil XXI, P1e):
+ *  1. `RenderedFaces.TWO`: ein durchscheinender Körper zeigt Vorder- UND
+ *     Rückseite, also blendet jede Fläche zweimal. Eine Grube wirkt deshalb
+ *     dunkler als ihre Deckkraft sagt. Einseitig zu zeichnen ginge nur über
+ *     die Wicklung jedes Kernel-Körpers, und die ist heute nicht zugesichert.
+ *  2. fragments sortiert Transparentes JE BATCH, nicht je Fläche: ein Rohr im
+ *     Aushub kann in falscher Reihenfolge durchblenden, wenn beide im selben
+ *     Zeichenaufruf liegen. Ein `renderOrder` je Element gibt die Bibliothek
+ *     nicht her (`fragments/dist/index.d.ts`, MaterialDefinition).
+ */
+export const ERDKOERPER_ABSENKUNG = 0.02;
 
 /**
  * Überstrahlt diese Farbe unter der Hausbeleuchtung?

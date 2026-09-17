@@ -42,7 +42,7 @@
 import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
-import { BAUTEILFARBEN, farbeFuer, materialWerte } from './Bauteilfarben.js';
+import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
 import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { verdraengteAnzeigen } from './ableitung/Bezuege.js';
@@ -199,6 +199,13 @@ export class IfcAutor {
         this._getHoehenversatz = getHoehenversatz ?? (() => 0);
         /** Kennzahlen/Befunde/Teile je Ableitung aus dem LETZTEN Aufbau — im Speicher, nie im Journal. */
         this.ableitungen = new Map();
+        /**
+         * Die ERDKÖRPER aus dem letzten Aufbau (Teil XXI, E3): globalId →
+         * {ableitung, rolle, kategorie, localId}. Wer im Raum ein Auge je
+         * Vorgang schalten will, braucht die Bauteile dieses Vorgangs — und
+         * sie entstehen nur hier. Verworfen wird sie mit jedem Neuaufbau.
+         */
+        this.erdkoerper = new Map();
         /**
          * Welche Merkmalssätze DIESER LAUF schon geschrieben hat (Lücke ⑧).
          *
@@ -458,7 +465,8 @@ export class IfcAutor {
      * `depthWrite` fällt bei durchscheinendem Material weg — sonst
      * verdeckt der Aushubkörper das Rohr in seinem Inneren, obwohl man
      * hindurchsieht; das ist der klassische Fehler bei transparenten
-     * Volumen und genau der Fall, für den er gebaut ist.
+     * Volumen und genau der Fall, für den er gebaut ist. Die Regel steht
+     * seit 2026-09-17 in `materialWerte` (ein Ort, zwei Leser).
      */
     _materialFuer(kategorie) {
         const werte = materialWerte(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN));
@@ -467,7 +475,7 @@ export class IfcAutor {
             color: werte.color,
             opacity: werte.opacity,
             transparent: werte.transparent,
-            depthWrite: !werte.transparent,
+            depthWrite: werte.depthWrite,
         });
     }
 
@@ -709,16 +717,28 @@ export class IfcAutor {
      * (IFC-Export). Zwei Wege zur selben Geometrie liefen auseinander, und dann
      * zeigte die CDE etwas anderes, als sie exportiert (Gesetz 7).
      *
+     * @param {object} [opt]
+     * @param {boolean} [opt.fuerRaum]  true = die Geometrie geht in den RAUM.
+     *   Dann sinkt ein Erdkörper um `ERDKOERPER_ABSENKUNG` unter die
+     *   Geländeanzeige (Teil XXI, E2: „Gelände gewinnt, Körper halbtransparent
+     *   darunter") — sein Deckel und die Anzeige sind sonst dieselbe Fläche auf
+     *   demselben Tiefenwert. Der Export ruft OHNE: im IFC steht die gerechnete
+     *   Geometrie, nie eine Darstellungsentscheidung.
      * @returns {{ok: true, geometrie, kategorie, name, predefinedType, geschlossen}
      *          | {ok: false, fehler: string[], leer?: true}}
      */
-    async _baueSchritt(lauf, schritt) {
+    async _baueSchritt(lauf, schritt, { fuerRaum = false } = {}) {
         const rezept = rezeptNach(schritt.wert?.rezept);
         if (istAbleitung(rezept)) {
             const r = await lauf.baue(schritt.globalId);
             if (!r.ok) return { ok: false, fehler: r.fehler };
             if (r.leer) return { ok: false, leer: true, fehler: [] };
-            const geometrie = geometrieAusTeil(r.teil);
+            // Ein ERDKÖRPER ist ein Volumen eines geländeformenden Rezepts —
+            // Aushub, Auftrag, Graben, Grube. Die Anzeigefläche desselben
+            // Rezepts (`form: 'raster'`) bleibt, wo sie ist: sie IST das Bild.
+            const erdkoerper = !!rezept?.erdbau && r.teil?.form === 'koerper';
+            const geometrie = geometrieAusTeil(r.teil,
+                { absenkung: fuerRaum && erdkoerper ? ERDKOERPER_ABSENKUNG : 0 });
             if (!geometrie) return { ok: false, fehler: ['Teil ohne Geometrie'] };
             return {
                 ok: true, geometrie, kategorie: schritt.wert.kategorie, name: schritt.wert.name,
@@ -773,14 +793,21 @@ export class IfcAutor {
             if (istAnzeigeform(schritt.wert)) { anzeigeformen.push(schritt.globalId); continue; }
             const g = await this._baueSchritt(lauf, schritt);
             if (g.leer) { leer.push(schritt.globalId); continue; }
-            if (!g.ok) { misserfolge.push({ globalId: schritt.globalId, grund: (g.fehler ?? []).join(' · ') }); continue; }
-            const pos = g.geometrie.getAttribute('position');
             const ableitung = schritt.wert?.ableitung ?? null;
-            const a = ableitung ? (lauf.ableitungen.get(ableitung) ?? null) : null;
             // Ein ERDBAU-Vorgang (das Rezept sagt es) wird im IFC eine
             // Vorgangsgruppe im Fachmodell „Erdbau"; alles andere — auch eine
             // Aussparung, obwohl sie eine Ableitung ist — bleibt Eigenbau.
             const erdbau = !!rezeptNach(schritt.wert?.rezept)?.erdbau;
+            if (!g.ok) {
+                // Mit Vorgang und Namen (S4 neu): der Auswahlbaum hängt den Misserfolg
+                // an seinen Knoten — dort wird er weggelassen oder sein Modell geladen.
+                misserfolge.push({ globalId: schritt.globalId, grund: (g.fehler ?? []).join(' · '),
+                                   name: schritt.wert?.name ?? null,
+                                   vorgang: erdbau && ableitung ? { ableitung, titel: titel.get(ableitung) ?? null } : null });
+                continue;
+            }
+            const pos = g.geometrie.getAttribute('position');
+            const a = ableitung ? (lauf.ableitungen.get(ableitung) ?? null) : null;
             bauteile.push({
                 globalId: schritt.globalId, wert: schritt.wert,
                 positionen: pos.array, index: g.geometrie.index?.array ?? null,
@@ -808,7 +835,18 @@ export class IfcAutor {
             if (b.kategorie !== 'IFCEARTHWORKSCUT') continue;
             b.schneidetAuffuellung = (b.kennzahlen?.schneidetAuffuellung ?? []).flatMap(id => fuellungen.get(id) ?? []);
         }
-        return { bauteile, misserfolge, leer, verborgen, anzeigeformen };
+        // DIE BÖSCHUNGSKANTEN (Teil XX Stufe B): je Vorgang, der auch ein
+        // Bauteil exportiert. Sie sind keine Bauteile — im IFC werden sie
+        // `IfcAnnotation` in derselben Vorgangsgruppe. Gerechnet hat sie der
+        // Lauf; hier werden sie nur eingesammelt.
+        const kanten = [];
+        for (const id of new Set(bauteile.map(b => b.vorgang?.ableitung).filter(Boolean))) {
+            for (const k of (lauf.ableitungen.get(id)?.kanten ?? [])) {
+                if (!(k?.punkte?.length >= 2)) continue;
+                kanten.push({ ableitung: id, art: k.art, geschlossen: !!k.geschlossen, punkte: k.punkte });
+            }
+        }
+        return { bauteile, kanten, misserfolge, leer, verborgen, anzeigeformen };
     }
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
@@ -819,7 +857,10 @@ export class IfcAutor {
         this.gebaut = karte;
         const misserfolge = [];
         await this.verwirfEigenesModell(modelId);
-        if (!schritte?.length) { this.ableitungen = new Map(); this.leer = new Set(); return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] }; }
+        if (!schritte?.length) {
+            this.ableitungen = new Map(); this.leer = new Set(); this.erdkoerper = new Map();
+            return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] };
+        }
 
         const angelegt = await this.eigenesModell(modelId);
         if (!angelegt.ok) {
@@ -850,7 +891,7 @@ export class IfcAutor {
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.
-            const gebaut = await this._baueSchritt(lauf, schritt);
+            const gebaut = await this._baueSchritt(lauf, schritt, { fuerRaum: true });
             // Ein leeres Teil (kein Auftrag beim reinen Gerinne) ist kein
             // Fehler: es entsteht kein Bauteil, die Kennzahl sagt null.
             if (gebaut.leer) { leer.push(schritt.globalId); continue; }
@@ -878,6 +919,21 @@ export class IfcAutor {
         // Leer ist kein Fehlschlag (der Auftrag eines reinen Aushubs) — die Struktur
         // sagt „leer“, nicht „nicht gebaut“ (Abnahme 2026-09-12, M2).
         this.leer = new Set(leer);
+        // ÜBERDECKTE VORGÄNGE (Teil XXI, E3): erst JETZT, wo alle Ableitungen
+        // geleitet sind, steht der ganze Stapel. Die Kennzahl `verdecktVon`
+        // wandert damit in `this.ableitungen`; welche BAUTEILE dazugehören,
+        // weiss nur dieser Aufbau — deshalb die Karte daneben.
+        await lauf.verdeckungen();
+        this.erdkoerper = new Map();
+        for (const { schritt } of zuErzeugen) {
+            const w = schritt.wert ?? {};
+            if (!rezeptNach(w.rezept)?.erdbau || !w.ableitung) continue;
+            const localId = karte.get(schritt.globalId);
+            if (localId == null) continue;
+            this.erdkoerper.set(schritt.globalId, {
+                ableitung: w.ableitung, rolle: w.rolle ?? null, kategorie: w.kategorie ?? null, localId,
+            });
+        }
         await this._neuZeichnen();
         return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt };
     }

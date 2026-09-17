@@ -21,10 +21,12 @@ import { gleicherBezug } from '../../gelaende/Operationen.js';
  * Dreiecke → Raster mit VORGEGEBENER Zellweite.
  * @returns {{ergebnis: raster|null, warnungen: string[]}}
  */
-export function rasterAusMesh({ mesh } = {}, { cell, bereich = null } = {}) {
+export function rasterAusMesh({ mesh } = {}, { cell, bereich = null, gitter = null } = {}) {
     if (!(cell > 0)) throw new Error('rasterAusMesh: `cell` ist Pflicht (sonst kein gemeinsamer Bezug)');
     const warnungen = [];
-    const raster = heightfieldRaster(mesh.positions, mesh.triCount, cell, warnungen, { bereich });
+    // `gitter` (Teil XXI): auf den Knoten eines gröberen Rasters aufsetzen —
+    // damit Korridor und Anzeige dieselbe Fläche zeigen, nicht zwei fast gleiche.
+    const raster = heightfieldRaster(mesh.positions, mesh.triCount, cell, warnungen, { bereich, gitter });
     if (!raster) return { ergebnis: null, warnungen: ['kein_raster: Netz ohne Ausdehnung'] };
     return { ergebnis: raster, warnungen };
 }

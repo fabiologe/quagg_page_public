@@ -152,7 +152,8 @@ describe('Der Katalogeintrag', () => {
 
     it('die Norm ist die Vorgabe, die Eingabe überschreibt sie', () => {
         const felder = b('bauwerksgrube-ableiten').felder.map(f => f.name);
-        expect(felder).toEqual(['gelaende', 'arbeitsraum', 'wandform', 'boden', 'winkel', 'sohle']);
+        // `auflockerung` seit Teil XXI (P4): gemessen wird gewachsen, abgefahren lose.
+        expect(felder).toEqual(['gelaende', 'arbeitsraum', 'wandform', 'boden', 'winkel', 'sohle', 'auflockerung']);
         expect(b('bauwerksgrube-ableiten').vorbelegung(BAUWERK())).toMatchObject({ gelaende: 'DGM-1', arbeitsraum: '', wandform: 'boeschung' });
         const s = b('bauwerksgrube-ableiten').anwenden(BAUWERK(), { gelaende: 'DGM-1', arbeitsraum: 1.2, sohle: 295 });
         const op = s[2].nachher.parameter.operationen[0].parameter;
@@ -173,7 +174,9 @@ describe('Der Katalogeintrag', () => {
         // Der Wächter steht im Quelltext — gemessen an der Schachtbaugrube.
         const quelle = readFileSync(new URL('../services/ableitung/Ableitungen.js', import.meta.url), 'utf8');
         expect(quelle).toMatch(/GEGENPROBE_MINDEST_M3\s*=\s*5/);
-        expect(quelle).toMatch(/if \(Math\.max\(rasterWert, koerper\.volumen\) < GEGENPROBE_MINDEST_M3\) return;/);
+        // Seit Teil XXI gibt `_gegenprobe` die Abweichung ZURÜCK (sie steht als
+        // Kennzahl neben der Menge) — unter der Mindestmenge eben `null`.
+        expect(quelle).toMatch(/if \(Math\.max\(rasterWert, koerper\.volumen\) < GEGENPROBE_MINDEST_M3\) return null;/);
         expect(befunde).toEqual([]);
     });
 

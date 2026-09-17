@@ -16,6 +16,7 @@ import { hoehenversatzAus } from './Koordinaten.js';
 import { buildLaengsschnitt } from './Laengsschnitt.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
 import { istSchacht } from './Kategorien.js';
+import { achsbezugVon } from './Achsbezug.js';
 
 const DN_MESH_FALLBACK_LIMIT = 200; // Querschnitts-Schätzung deckeln (teuer)
 
@@ -100,6 +101,10 @@ export async function buildLaengsschnittFromModel({
         gefaelle: polylineGefaellePromille(e.polyline),
         dn: dnById.get(`${e.modelId}|${e.localId}`) ?? null,
         source: e.source, // 'axisRep' | 'mesh' (Skelett)
+        // WO DIE HÖHE LIEGT (Teil XXI, E4): `buildStrang` rechnet damit auf die
+        // Sohle. Vorher galt jede Achse als Sohle — auch eine aus dem Netz
+        // skelettierte, die durch die Rohrmitte läuft.
+        achsbezug: achsbezugVon(e.source),
     }));
 
     // ── Schächte ───────────────────────────────────────────────────────────

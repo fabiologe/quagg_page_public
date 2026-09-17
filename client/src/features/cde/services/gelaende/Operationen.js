@@ -74,12 +74,37 @@ function _anAchse(px, pz, achse) {
             let ueberstand = 0;
             if (i === 0 && r.tRoh < 0) ueberstand = -r.tRoh * seg;
             else if (i === n - 1 && r.tRoh > 1) ueberstand = (r.tRoh - 1) * seg;
-            bester = { abstand: r.abstand, quer: ueberstand > 0 ? r.quer : r.abstand, ueberstand };
+            // `i`/`t` (Teilstrecke und Lage darin) braucht das Gerinne mit
+            // STATIONEN: Sohle stückweise linear, Sohlbreite stückweise
+            // konstant — beides hängt daran, WELCHE Teilstrecke es ist.
+            bester = { abstand: r.abstand, quer: ueberstand > 0 ? r.quer : r.abstand, ueberstand, i, t: r.t };
             station = laenge + r.t * seg;
         }
         laenge += seg;
     }
     return bester ? { ...bester, station, laenge } : null;
+}
+
+/**
+ * Die STATIONEN eines Gerinnes prüfen (Teil XXI, P2b) — oder null.
+ *
+ * Eine Station ist ein Punkt der Achse MIT seiner Sohlhöhe (`y`, Welt) und
+ * der Sohlbreite der Teilstrecke, die dort BEGINNT. Damit folgt ein
+ * Kanalgraben der Haltung: die Tiefe wechselt mit dem Gelände, die Breite
+ * nach DIN EN 1610 Tabelle 2 — eine Stufenfunktion, kein Mittelwert.
+ *
+ * Fehlt einer Station die Breite, gilt die des Ganzen (`sohlbreite`).
+ */
+function _stationenAus(stationen, sohlbreite) {
+    if (!Array.isArray(stationen) || stationen.length < 2) return null;
+    const aus = [];
+    for (const s of stationen) {
+        const x = Number(s?.x), z = Number(s?.z), y = Number(s?.y);
+        if (![x, y, z].every(Number.isFinite)) return null;
+        const b = Number(s?.sohlbreite);
+        aus.push({ x, y, z, sohlbreite: Number.isFinite(b) && b >= 0 ? b : Math.max(0, Number(sohlbreite) || 0) });
+    }
+    return aus;
 }
 
 /**
@@ -184,19 +209,32 @@ function _kopie(raster) {
  * ein Rechteck. Vorher drehte sich die Böschung rund um den Endpunkt und
  * die Sohle ragte um die halbe Breite über das Ende hinaus.
  *
+ * STATIONEN (Teil XXI, P2b — Fabio: „Kanalgraben stimmt nicht mit
+ * Geländeverlauf und Neigung der Haltung überein"). Bis dahin kannte diese
+ * Operation nur zwei Sohlhöhen und EINE Sohlbreite; der Kanalgraben zerlegte
+ * eine Haltung deshalb in ein Gerinne je Segment, und die Grabenbreite kam
+ * aus der grössten Tiefe der beiden Segmentenden — über 60 m Haltung eine
+ * Stufe zu viel oder zu wenig. Mit `stationen: [{x, y, z, sohlbreite}]`
+ * läuft die Sohle stückweise linear durch die gelieferten Höhen und die
+ * Breite stückweise konstant je Teilstrecke (DIN EN 1610 Tabelle 2 IST eine
+ * Stufenfunktion). Die alte Form bleibt — Alt-Journale bauen unverändert.
+ *
  * @returns {{raster, warnungen: string[]}}
  */
-export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfang, sohleEnde } = {}, { bereich = null } = {}) {
+export function gerinne(raster, { achse, stationen, sohlbreite, boeschung = 1.5, sohleAnfang, sohleEnde } = {}, { bereich = null } = {}) {
     const warnungen = [];
-    if (!Array.isArray(achse) || achse.length < 2) return { raster, warnungen: ['gerinne_ohne_achse'] };
-    if (!Number.isFinite(sohleAnfang)) return { raster, warnungen: ['gerinne_ohne_sohle'] };
+    const st = _stationenAus(stationen, sohlbreite);
+    const pfad = st ?? achse;
+    if (!Array.isArray(pfad) || pfad.length < 2) return { raster, warnungen: ['gerinne_ohne_achse'] };
+    if (!st && !Number.isFinite(sohleAnfang)) return { raster, warnungen: ['gerinne_ohne_sohle'] };
     const ende = Number.isFinite(sohleEnde) ? sohleEnde : sohleAnfang;
-    const b2 = Math.max(0, (sohlbreite ?? 0) / 2);
+    const b2Fest = Math.max(0, (sohlbreite ?? 0) / 2);
     const n = Math.max(0, Number(boeschung) || 0);
 
     // Feiner als die Zelle wird es nicht: melden, nicht still vergröbern.
-    if (sohlbreite > 0 && raster.cell > sohlbreite) {
-        warnungen.push(`gerinne_feiner_als_zelle: Sohlbreite ${sohlbreite} m < Zellweite ${raster.cell.toFixed(2)} m`);
+    const schmalste = st ? Math.min(...st.map(s => s.sohlbreite)) : Number(sohlbreite);
+    if (schmalste > 0 && raster.cell > schmalste) {
+        warnungen.push(`gerinne_feiner_als_zelle: Sohlbreite ${schmalste} m < Zellweite ${raster.cell.toFixed(2)} m`);
     }
 
     const neu = _kopie(raster);
@@ -209,11 +247,22 @@ export function gerinne(raster, { achse, sohlbreite, boeschung = 1.5, sohleAnfan
             const h = heights[i];
             if (!Number.isFinite(h)) continue;                    // NaN bleibt NaN
             const k = rasterKnoten(raster, ix, iz);
-            const lage = _anAchse(k.x, k.z, achse);
+            const lage = _anAchse(k.x, k.z, pfad);
             if (!lage) continue;
-            const sohle = lage.laenge > 0
-                ? sohleAnfang + (ende - sohleAnfang) * (lage.station / lage.laenge)
-                : sohleAnfang;
+            let sohle, b2;
+            if (st) {
+                // Stückweise linear zwischen den beiden Stationen der
+                // Teilstrecke; die BREITE gehört der Teilstrecke, die dort
+                // beginnt. Über die Enden hinaus gilt die Randstation.
+                const a = st[lage.i], b = st[lage.i + 1];
+                sohle = a.y + (b.y - a.y) * Math.min(1, Math.max(0, lage.t));
+                b2 = a.sohlbreite / 2;
+            } else {
+                sohle = lage.laenge > 0
+                    ? sohleAnfang + (ende - sohleAnfang) * (lage.station / lage.laenge)
+                    : sohleAnfang;
+                b2 = b2Fest;
+            }
             // Abstand zum SOHLSTREIFEN: quer über die halbe Breite hinaus,
             // längs über das Ende hinaus — beides zusammen als Hypotenuse.
             const d = Math.hypot(Math.max(0, lage.quer - b2), lage.ueberstand);
@@ -421,28 +470,44 @@ export function boeschungLinie(raster, { linie, seite = 'rechts', neigung = 1.5 
  */
 export function massenAus(vorher, nachher) {
     if (!gleicherBezug(vorher, nachher)) return null;
-    const { nx, nz, cell } = vorher;
-    const flaeche = cell * cell;
     let aushub = 0;
     let auftrag = 0;
+    zellenIntegral(vorher, (i) => {
+        const a = vorher.heights[i], b = nachher.heights[i];
+        return (Number.isFinite(a) && Number.isFinite(b)) ? b - a : NaN;
+    }, (dv) => { if (dv < 0) aushub -= dv; else auftrag += dv; });
+    return { aushub, auftrag };
+}
+
+/**
+ * DIE EINE ZELLFORMEL (Teil XXI, 2026-09-17).
+ *
+ * Je Zelle das Mittel der vier Eckwerte mal Zellfläche; eine Zelle zählt nur,
+ * wenn alle vier Ecken einen Wert tragen. Die Formel stand zweimal im Code —
+ * hier und in `_durchAuffuellung` des Ableitungslaufs, dort mit dem Kommentar
+ * „dieselbe Zellformel wie `massenAus`". Zwei Abschriften derselben Regel
+ * laufen beim ersten Sonderfall auseinander, und dann stünden zwei Massen
+ * nebeneinander, deren Differenz nichts bedeutet.
+ *
+ * @param {object} raster           gibt nx, nz und cell
+ * @param {(i: number) => number} wertAn   der Knotenwert (NaN = keine Auskunft)
+ * @param {(dv: number) => void} nimm      je gültiger Zelle ihr Volumen (m³, vorzeichenbehaftet)
+ */
+export function zellenIntegral(raster, wertAn, nimm) {
+    const { nx, nz, cell } = raster;
+    const flaeche = cell * cell;
     for (let ix = 0; ix + 1 < nx; ix++) {
         for (let iz = 0; iz + 1 < nz; iz++) {
             let summe = 0;
             let gueltig = true;
             for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-                const i = (ix + dx) * nz + (iz + dz);
-                const a = vorher.heights[i];
-                const b = nachher.heights[i];
-                if (!Number.isFinite(a) || !Number.isFinite(b)) { gueltig = false; break; }
-                summe += b - a;
+                const w = wertAn((ix + dx) * nz + (iz + dz));
+                if (!Number.isFinite(w)) { gueltig = false; break; }
+                summe += w;
             }
-            if (!gueltig) continue;
-            const dv = (summe / 4) * flaeche;
-            if (dv < 0) aushub -= dv;
-            else auftrag += dv;
+            if (gueltig) nimm((summe / 4) * flaeche);
         }
     }
-    return { aushub, auftrag };
 }
 
 /**
@@ -574,12 +639,20 @@ export function wirkbereichVon(raster, art, parameter = {}) {
     let rand = RAND_MINDEST_M;
 
     if (art === 'gerinne') {
-        huelle = _huelleXZ(p.achse);
+        // MIT STATIONEN (Teil XXI): die Achse sind die Stationen, die Breite
+        // die GRÖSSTE und die Sohle die TIEFSTE — der Bereich muss alles
+        // fassen, was die Operation berührt, sonst rechnet sie ausserhalb
+        // ihres Korridors ins Leere.
+        const st = Array.isArray(p.stationen) && p.stationen.length >= 2 ? p.stationen : null;
+        huelle = _huelleXZ(st ?? p.achse);
         if (!huelle) return null;
         const neigung = Math.max(0, Number(p.boeschung) || 0);
-        const breite = Math.max(0, Number(p.sohlbreite) || 0) / 2;
+        const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [];
+        const breite = Math.max(0, breiten.length ? Math.max(...breiten) : (Number(p.sohlbreite) || 0)) / 2;
         const oben = _hoechsteIn(raster, huelle);
-        const sohle = Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
+        const sohle = st
+            ? Math.min(...st.map(s => Number(s?.y)).filter(Number.isFinite))
+            : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
         const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
         rand += breite + tiefe * neigung;
     } else if (art === 'planum' || art === 'boeschung') {
@@ -636,6 +709,194 @@ export function wirkbereichVon(raster, art, parameter = {}) {
         minX: huelle.minX - rand, maxX: huelle.maxX + rand,
         minZ: huelle.minZ - rand, maxZ: huelle.maxZ + rand,
     };
+}
+
+// ── Wie fein muss gerechnet werden? (Teil XXI, 2026-09-17) ──────────────────
+//
+// FABIOS BEFUND: „Gräben können zig Meter lang werden — dort braucht es ein
+// smartes Handling." Bis hierher gab es DREI Regeln für dieselbe Frage:
+//   - der Erdbau-Korridor rechnete `max(0,5; sqrt(Hüllfläche / Budget))`,
+//   - der Kanalgraben nahm FEST 0,5 m ohne jedes Budget,
+//   - die Anzeige-Flicken zählten grobe Zellen unter den Wirkbereichen.
+// Drei Formeln, ein Ergebnis — und sie stimmten nur zufällig überein. Seit
+// Teil XXI müssen sie es aber: Erdkörper und Geländeanzeige sind DIESELBE
+// Fläche, und das sind sie nur, wenn beide dasselbe Gitter nehmen.
+//
+// ZWEI GRÖSSEN entscheiden, nicht eine:
+//   FLÄCHE      wie viel Gelände die Operation wirklich anfasst. Für einen
+//               langen, schmalen Graben ist das Länge × Breite — NICHT das
+//               Hüllrechteck: ein diagonaler 300-m-Graben hat eine Hülle von
+//               90.000 m², berührt aber 7.000. Genau daran wurde er grob.
+//   KENNWEITE   das SCHMALSTE, was aufgelöst werden muss: die Sohlbreite
+//               eines Gerinnes, die Breite einer Böschung. Drei Zellen quer
+//               darüber sind das Mindeste, unter dem eine Form verschwindet.
+//
+// Das Budget ist die harte Schranke gegen Ausreisser. Gewinnt es gegen die
+// Kennweite, sagt die Regel es (`knapp`) — die Operation meldet dann selbst
+// `gerinne_feiner_als_zelle`.
+
+/** So viele Zellen müssen quer über die schmalste Form liegen. */
+export const ZELLEN_JE_KENNWEITE = 3;
+
+/** Die Punkte einer Achse oder Stationsliste, als {x,z}. */
+function _achsPunkte(p) {
+    const st = Array.isArray(p?.stationen) && p.stationen.length >= 2 ? p.stationen : null;
+    const roh = st ?? (Array.isArray(p?.achse) ? p.achse : (Array.isArray(p?.linie) ? p.linie : null));
+    return roh ? roh.map(_xz).filter(q => Number.isFinite(q.x) && Number.isFinite(q.z)) : null;
+}
+const _laengeVon = (pts) => {
+    let l = 0;
+    for (let i = 0; i + 1 < (pts?.length ?? 0); i++) l += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+    return l;
+};
+/** Fläche eines Rings im Grundriss (Betrag) und sein Umfang. */
+function _ringMass(punkte) {
+    const p = (punkte ?? []).map(_xz).filter(q => Number.isFinite(q.x) && Number.isFinite(q.z));
+    if (p.length < 3) return null;
+    let a = 0, u = 0;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        a += p[j].x * p[i].z - p[i].x * p[j].z;
+        u += Math.hypot(p[i].x - p[j].x, p[i].z - p[j].z);
+    }
+    return { flaeche: Math.abs(a) / 2, umfang: u };
+}
+
+/**
+ * Die Fläche, die eine Operation WIRKLICH anfasst (m²) — nicht ihr
+ * Hüllrechteck. Ohne Angabe: die Fläche des Wirkbereichs (dieselbe Schranke
+ * wie bisher).
+ */
+export function wirkflaecheVon(raster, art, parameter = {}) {
+    const p = parameter ?? {};
+    const box = wirkbereichVon(raster, art, p);
+    const ausBox = box ? Math.max(0, (box.maxX - box.minX) * (box.maxZ - box.minZ)) : null;
+    const eng = (wert) => (ausBox == null ? wert : Math.min(ausBox, wert));
+    if (art === 'gerinne' || art === 'boeschungLinie') {
+        const pts = _achsPunkte(p);
+        const h = _huelleXZ(pts);
+        if (!pts || pts.length < 2 || !box || !h) return ausBox;
+        // DER SAUM, den der Wirkbereich um die Achse legt — er ist die halbe
+        // Streifenbreite. Aus dem Unterschied Box zu Hülle gelesen, nicht aus
+        // den Parametern nachgerechnet: die Formel steht schon in
+        // `wirkbereichVon`, und zweimal dieselbe Rechnung laufen mit dem
+        // ersten Sonderfall auseinander. Das funktioniert für JEDE Richtung —
+        // ein diagonaler Graben hat eine fast quadratische Hülle, aber
+        // denselben schmalen Streifen.
+        const saum = Math.max(0, ((box.maxX - box.minX) - (h.maxX - h.minX)) / 2);
+        const laenge = _laengeVon(pts);
+        return eng(laenge * 2 * saum + Math.PI * saum * saum);   // Streifen plus die zwei Enden
+    }
+    if (['grube', 'schuettung', 'planum', 'boeschung'].includes(art)) {
+        const m = _ringMass(p.umriss);
+        if (!m || !box) return ausBox;
+        // Der Ring selbst plus der Saum, den die Böschung nach aussen wirft.
+        // Wie breit der Saum ist, sagt der Wirkbereich: er ist genau um ihn
+        // grösser als die Hülle des Rings.
+        const h = _huelleXZ(p.umriss);
+        const saum = h ? Math.max(0, (box.maxX - box.minX) - (h.maxX - h.minX)) / 2 : RAND_MINDEST_M;
+        return eng(m.flaeche + m.umfang * Math.max(RAND_MINDEST_M, saum));
+    }
+    return ausBox;
+}
+
+/**
+ * Das SCHMALSTE, was diese Operation auflösen muss (m) — oder null, wenn sie
+ * keine feine Form hat (dann entscheidet allein die Fläche).
+ */
+export function kennweiteVon(raster, art, parameter = {}) {
+    const p = parameter ?? {};
+    const masse = [];
+    const nimm = (v) => { const z = Number(v); if (Number.isFinite(z) && z > 0) masse.push(z); };
+    const neigung = Math.max(0, Number(p.boeschung ?? p.neigung) || 0);
+    const box = wirkbereichVon(raster, art, p);
+    const huelleVon = (liste) => _huelleXZ(liste);
+
+    if (art === 'gerinne') {
+        const st = Array.isArray(p.stationen) && p.stationen.length >= 2 ? p.stationen : null;
+        const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [Number(p.sohlbreite)];
+        const schmalste = breiten.filter(b => b > 0);
+        if (schmalste.length) nimm(Math.min(...schmalste));
+        const h = huelleVon(st ?? p.achse);
+        const oben = h ? _hoechsteIn(raster, h) : null;
+        const sohle = st ? Math.min(...st.map(s => Number(s?.y)).filter(Number.isFinite))
+                         : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
+        if (Number.isFinite(oben) && Number.isFinite(sohle) && neigung > 0) nimm((oben - sohle) * neigung);
+    } else if (art === 'grube' || art === 'schuettung' || art === 'planum' || art === 'boeschung') {
+        const h = huelleVon(p.umriss);
+        const oben = h ? _hoechsteIn(raster, h) : null;
+        const unten = h ? _tiefsteIn(raster, h) : null;
+        const ziel = Number(p.sohle ?? p.hoehe);
+        if (neigung > 0 && Number.isFinite(ziel)) {
+            const spanne = Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0,
+                                    Number.isFinite(unten) ? Math.abs(ziel - unten) : 0);
+            nimm(spanne * neigung);
+        }
+    } else if (art === 'boeschungLinie') {
+        if (box && neigung > 0) nimm(Math.min(box.maxX - box.minX, box.maxZ - box.minZ) / 2);
+    } else if (art === 'baugrube') {
+        nimm(Number(p.laenge)); nimm(Number(p.breite)); nimm(2 * (Number(p.radius) || 0));
+        const oben = box ? _hoechsteIn(raster, box) : null;
+        if (Number.isFinite(oben) && Number.isFinite(Number(p.sohle)) && neigung > 0) nimm((oben - Number(p.sohle)) * neigung);
+    }
+    return masse.length ? Math.min(...masse) : null;
+}
+
+/**
+ * DIE EINE FEINHEITSREGEL für alle, die ein feines Raster brauchen: der
+ * Korridor der Erdkörper UND die Flicken der Anzeige.
+ *
+ * @param {object} raster   das grobe Ur-Raster (gibt `cell` und die Höhen)
+ * @param {Array}  ops      die Operationen des Vorgangs (Welt)
+ * @param {object} o
+ * @param {number} o.zelle  die feinste erlaubte Zelle (`ERDBAU_ZELLE`)
+ * @param {number} o.budget Höchstzahl feiner Zellen im Bereich
+ * @returns {{k: number, cell: number, flaeche: number, kennweite: number|null, knapp: boolean}}
+ *   `k` ist der GANZZAHLIGE Teiler der groben Zelle — nur so liegen feines
+ *   und grobes Gitter aufeinander (Teil XXI, P1b).
+ */
+export function feinheitFuer(raster, ops = [], { zelle = 0.5, budget = 160000 } = {}) {
+    const grob = Number(raster?.cell) || 1;
+    if (!raster?.heights?.length || !ops.length) return feinheitAus({ grob, flaeche: 0, zelle, budget });
+    let flaeche = 0;
+    let kennweite = Infinity;
+    for (const op of ops) {
+        const f = wirkflaecheVon(raster, op?.art, op?.parameter ?? {});
+        if (Number.isFinite(f)) flaeche += Math.max(0, f);
+        const w = kennweiteVon(raster, op?.art, op?.parameter ?? {});
+        if (Number.isFinite(w) && w > 0) kennweite = Math.min(kennweite, w);
+    }
+    return feinheitAus({ grob, flaeche, kennweite: Number.isFinite(kennweite) ? kennweite : null, zelle, budget });
+}
+
+/**
+ * Dieselbe Rechnung für Aufrufer, die ihre Fläche und Kennweite SELBST
+ * kennen — der Kanalgraben etwa fragt, BEVOR seine Operationen entstehen
+ * (seine Sohlbreite hängt an der Tiefe, die Tiefe am Gelände).
+ *
+ * @returns {{k, cell, flaeche, kennweite, knapp}}
+ */
+export function feinheitAus({ grob = 1, flaeche = 0, kennweite = null, zelle = 0.5, budget = 160000 } = {}) {
+    const g = Number(grob) || 1;
+    if (!(flaeche > 0) || !(zelle > 0) || !(budget > 0)) {
+        return { k: 1, cell: g, flaeche: 0, kennweite: null, ueberBudget: false };
+    }
+    const kMax = Math.max(1, Math.floor(g / zelle + 1e-9));
+    // Was das BUDGET erlaubt: so viele Teilungen, dass `flaeche / cell²` unter
+    // dem Budget bleibt. Das ist die Regel für die FLÄCHE.
+    const ausBudget = Math.max(1, Math.floor(Math.sqrt(Math.max(1, budget) * g * g / flaeche)));
+    // Was die FORM braucht: drei Zellen quer über die schmalste Stelle. Das
+    // ist KEIN Deckel, sondern ein SCHUTZ — sonst verschwände ein 0,9 m
+    // breiter Graben, nur weil er dreihundert Meter lang ist. Genau der Fall,
+    // den Fabio nennt.
+    const ausForm = kennweite > 0
+        ? Math.max(1, Math.ceil(g / Math.max(zelle, kennweite / ZELLEN_JE_KENNWEITE) - 1e-9))
+        : 1;
+    const k = Math.max(1, Math.min(kMax, Math.max(ausBudget, ausForm)));
+    return { k, cell: g / k, flaeche: +flaeche.toFixed(1),
+             kennweite: kennweite > 0 ? +Number(kennweite).toFixed(3) : null,
+             // Die Form hat das Budget überstimmt: mehr Zellen, als die Fläche
+             // sich leisten wollte — bewusst, damit die Form überhaupt entsteht.
+             ueberBudget: ausForm > ausBudget && ausForm <= kMax };
 }
 
 /** Indexgrenzen zu einer Weltausdehnung — geklemmt aufs Raster. */
@@ -703,6 +964,7 @@ export function verschiebeOperationen(operationen, delta) {
         parameter: {
             ...op.parameter,
             ...(Array.isArray(op.parameter?.achse) ? { achse: op.parameter.achse.map(punktXZ) } : {}),
+            ...(Array.isArray(op.parameter?.stationen) ? { stationen: op.parameter.stationen.map(punktXZ) } : {}),
             ...(Array.isArray(op.parameter?.umriss) ? { umriss: op.parameter.umriss.map(punktXZ) } : {}),
             ...(Array.isArray(op.parameter?.linie) ? { linie: op.parameter.linie.map(punktXZ) } : {}),
             ...(op.parameter?.mitte ? { mitte: punktXZ(op.parameter.mitte) } : {}),

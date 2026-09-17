@@ -14,39 +14,25 @@
              die Engine setzt keinen Inline-Style mehr. -->
         <div class="canvas-root" :class="zeiger.klasse.value" ref="canvasRef"></div>
 
-        <!-- Toolbar: Datei laden -->
-        <div class="top-bar">
-          <div class="top-bar-left">
-            <!-- Während einer Ladung sichtbar gesperrt: die Ablage nimmt
-                 nur EINEN Vorgang zugleich, und ein Klick, der nichts tut,
-                 ist schlimmer als ein Knopf, der grau ist (Gesetz 10). -->
-            <label
-              class="action-btn primary"
-              :class="{ laedt: ablage.loading.value }"
-              :title="ablage.loading.value ? 'Es wird gerade ein Modell geladen' : 'IFC-Datei öffnen'"
-            >
-              <input type="file" accept=".ifc" :disabled="ablage.loading.value" @change="ablage.onFileUpload" class="sr-only" />
-              <CdeIcon name="documents" :size="13" /> IFC laden
-            </label>
-
-            <label
-              v-if="ifc.modelList.length"
-              class="action-btn secondary"
-              :class="{ laedt: ablage.loading.value }"
-              :title="ablage.loading.value ? 'Es wird gerade ein Modell geladen' : 'Weiteres IFC dazuladen'"
-            >
-              <input type="file" accept=".ifc" :disabled="ablage.loading.value" @change="ablage.onFileUploadAdd" class="sr-only" />
-              <CdeIcon name="add" :size="13" /> Hinzufügen
-            </label>
-
-          </div>
-
-          <div v-if="loading" class="loading-badge">
-            <span class="spinner"></span> Wird geladen…
-          </div>
+        <!-- H3: Laden und Modelle wohnen links in „Modelle“. Hier bleiben die
+             Ladeanzeige und der Leerzustand — mit demselben EINEN Weg hinein. -->
+        <div v-if="loading" class="loading-badge lade-marke">
+          <span class="spinner"></span> Wird geladen…
+        </div>
+        <div v-if="!ifc.modelList.length && !loading" class="leer-zustand">
+          <p class="leer-text">
+            {{ cde.aktiverSatz ? `Im Satz „${cde.aktiverSatz.name}“ ist noch kein Modell.` : 'Noch kein Modell geladen.' }}
+          </p>
+          <label
+            class="action-btn primary"
+            :class="{ laedt: ablage.loading.value }"
+            :title="cde.aktiverSatz ? `IFC-Datei ins Projekt und in den Satz „${cde.aktiverSatz.name}“` : 'IFC-Datei öffnen'"
+          >
+            <input type="file" accept=".ifc" :disabled="ablage.loading.value" @change="modellHinzufuegen" class="sr-only" />
+            <CdeIcon name="add" :size="13" /> Modell hinzufügen
+          </label>
         </div>
 
-        <!-- Full-canvas loading overlay — hides the half-tessellated frames during initial load -->
         <IfcLoadOverlay :visible="loading" />
 
         <!-- Ablage-Meldung: der Server kann einen Upload ablehnen (Datei
@@ -57,6 +43,21 @@
             <CdeIcon name="warn" :size="14" />
             <span>{{ ablageHinweis }}</span>
             <button class="ablage-hinweis-zu" @click="ablageHinweis = null" title="Ausblenden" aria-label="Ausblenden">
+              <CdeIcon name="close" :size="12" />
+            </button>
+          </div>
+        </Transition>
+
+        <!-- Viewer = Satz (S3): was nicht zum Satz passte oder nicht zu laden war —
+             ein Satz Text, höchstens ein Knopf. -->
+        <Transition name="fade">
+          <div v-if="satzHinweis" class="nachspiel-hinweis" :class="{ gestapelt: nachspielen.konflikte.value.length }">
+            <CdeIcon name="info" :size="14" />
+            <span>{{ satzHinweis.text }}</span>
+            <button v-if="satzHinweis.aufnehmen" class="erdbau-uebermalen" @click="inSatzAufnehmen(satzHinweis.aufnehmen)">
+              In den Satz aufnehmen
+            </button>
+            <button class="ablage-hinweis-zu" @click="satzHinweis = null" title="Ausblenden" aria-label="Ausblenden">
               <CdeIcon name="close" :size="12" />
             </button>
           </div>
@@ -106,7 +107,7 @@
         </Transition>
 
         <!-- B4: Zuletzt geöffnete Modelle (lokale Ablage) — nur im Leerzustand -->
-        <div v-if="!ifc.modelList.length && !loading && recentModels.length" class="recent-panel">
+        <div v-if="!ifc.modelList.length && !loading && recentModels.length && !cde.auftrag" class="recent-panel">
           <div class="recent-title">Zuletzt geöffnete Modelle</div>
           <div v-for="r in recentModels" :key="r.key" class="recent-item">
             <button class="recent-open" @click="ablage.openRecent(r)">
@@ -120,35 +121,6 @@
           <div class="recent-hint">Im Browser gespeichert — ohne Netzverbindung verfügbar.</div>
         </div>
 
-        <!-- B2: Model tags in separate row below top-bar -->
-        <div v-if="ifc.modelList.length" class="model-tag-row">
-          <!-- Das Eigenbau-Modell ist KEIN Dokument (Stufe 0, D6): es wird aus
-               dem Journal gebaut. Es heisst deshalb „Eigenbau", steht
-               gestrichelt da und hat keinen Entladen-Knopf — leer wird es
-               über Zurück im Journal, nicht über ein X. -->
-          <span v-for="m in ifc.modelList" :key="m.modelId" class="model-tag"
-                :class="{ 'model-tag--eigenbau': modellHerkunft(m.modelId) === 'cde' }"
-                :title="modellHerkunft(m.modelId) === 'cde' ? 'Aus dem Verlauf gebaut — Vorgänge entfernen in der Bauwerksstruktur' : m.name">
-            <!-- Das Auge am Eigenbau (Abnahme 2026-09-12, A6): ausblenden, ohne
-                 den Verlauf zu ändern — bleibt über jeden Neuaufbau. -->
-            <button v-if="modellHerkunft(m.modelId) === 'cde'" class="tag-auge"
-                    :class="{ aus: !modellIstSichtbar(m.modelId) }"
-                    :title="modellIstSichtbar(m.modelId) ? 'Eigenbau ausblenden' : 'Eigenbau einblenden'"
-                    :aria-label="modellIstSichtbar(m.modelId) ? 'Eigenbau ausblenden' : 'Eigenbau einblenden'"
-                    @click="modellSichtbarSetzen(m.modelId, !modellIstSichtbar(m.modelId))">
-              <CdeIcon :name="modellIstSichtbar(m.modelId) ? 'visible' : 'hidden'" :size="11" />
-            </button>
-            <!-- Der Name in EIGENEM Element: als anonymes Flex-Kind schrumpfte
-                 er nicht (`min-width: auto`), schob das X aus dem 200-px-Chip
-                 und wurde von `overflow: hidden` mitsamt Knopf abgeschnitten.
-                 Das Entladen sah dadurch aus, als gäbe es keins. -->
-            <span class="model-tag-name">{{ modellTagText(m, eigenbauAnzahl) }}</span>
-            <button v-if="modellHerkunft(m.modelId) !== 'cde'" class="tag-close" @click="removeModel(m.modelId)"
-                    :title="`${m.name} schließen`" aria-label="Modell schließen">
-              <CdeIcon name="close" :size="11" />
-            </button>
-          </span>
-        </div>
 
         <!-- Kamera-Toolbox (links) -->
         <!-- Werkzeugleiste — datengetrieben aus `toolbarItems` (Sprint U):
@@ -222,9 +194,9 @@
                   @click="showSavedViews = !showSavedViews; ansichtOffen = false">
             <CdeIcon name="views" :size="14" /> Gespeicherte Ansichten
           </button>
-          <button class="ap-eintrag" :class="{ aktiv: showLayerPanel }"
-                  title="Kategorien"
-                  @click="showLayerPanel = !showLayerPanel; ansichtOffen = false">
+          <button class="ap-eintrag"
+                  title="Kategorien — links in der Tafel „Modelle“"
+                  @click="panels.zeigeAbschnitt('kategorien'); ansichtOffen = false">
             <CdeIcon name="layers" :size="14" /> Kategorien
           </button>
         </div>
@@ -421,28 +393,28 @@
           </button>
         </Transition>
 
-        <!-- Layer-Panel (floating) -->
-        <Transition name="panel-slide">
+        <!-- H3: Kategorien und Geschosse wohnen in der linken Tafel „Modelle“. Hier
+             bleiben Instanz, Daten und Handler (die Palette ruft `storeyNavRef`);
+             gezeigt wird per Teleport — ohne offene Tafel gar nicht. -->
+        <Teleport v-if="tafelZiele.kategorien" :to="tafelZiele.kategorien">
           <IfcLayerPanel
-            v-if="showLayerPanel && categoryList.length"
+            eingebettet
             :categories="categoryList"
             :hasIfcGrids="!!engine?.getIfcGridAxes()?.length"
             @toggle="onToggleCategory"
             @zoom="({ name }) => engine?.zoomToCategory(name)"
             @toggle-ifc-grids="(v) => engine?.setIfcGridsVisible(v)"
-            @close="showLayerPanel = false"
           />
-        </Transition>
-
-        <!-- T1.5: Storey-Quick-Nav (floating left) — shifts right when LayerPanel is open -->
-        <IfcStoreyNav
-          v-if="showStoreyNav"
-          ref="storeyNavRef"
-          :storeys="storeyList"
-          :style="{ left: showLayerPanel && categoryList.length ? '320px' : '70px' }"
-          @goto="onGotoStorey"
-          @set-visible="onStoreyVisible"
-        />
+        </Teleport>
+        <Teleport v-if="tafelZiele.geschosse" :to="tafelZiele.geschosse">
+          <IfcStoreyNav
+            eingebettet
+            ref="storeyNavRef"
+            :storeys="storeyList"
+            @goto="onGotoStorey"
+            @set-visible="onStoreyVisible"
+          />
+        </Teleport>
 
         <!-- T2.2: Saved Views (floating right, toggleable) -->
         <Transition name="panel-slide">
@@ -484,7 +456,7 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, reactive, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -520,10 +492,11 @@ import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
-import { erdbauStandVon, istAnzeigeform } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform, teileVon } from '../services/Bauteilrezepte.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
+import { ausgelasseneErdbau, satzAbgleich, satzModelle, satzUmsetzen } from '../services/SatzAnsicht.js';
 import { useNachspielen } from '../composables/useNachspielen.js';
 import { entwertetGeometrie } from '../services/bauform/FormSchreiber.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
@@ -684,14 +657,14 @@ const projektKoords = computed(() => {
 });
 
 // Layer panel
-const showLayerPanel = ref(false);
 const categoryList   = ref([]); // [{name, count, visible}]
 const storeyList     = ref([]); // [{modelId, localId, name, elevation, box}]
 // Template-Ref auf IfcStoreyNav. In <script setup> muss sie ausdruecklich
 // deklariert werden — fehlte sie, warf jeder der drei Ebenen-Befehle aus der
 // Befehlspalette einen ReferenceError.
 const storeyNavRef   = ref(null);
-const showStoreyNav  = ref(true);
+// H3: wohin Kategorien und Geschosse teleportiert werden — die Tafel „Modelle“ meldet ihre Ziele an.
+const tafelZiele = reactive({ kategorien: null, geschosse: null });
 const showSavedViews = ref(false);
 
 // ── Schnittebene (Sprint I, Stufe 5) ────────────────────────────────────────
@@ -1043,7 +1016,7 @@ let _selection   = null;  // IfcSelectionHandler — der EINE Zeiger-Stapel (Tip
 // die Orchestrierung nach dem Laden und fasst sechs Belange an.
 const ablage = useModellAblage({
   engine, ifc, cde,
-  onModelLoaded: () => _onModelLoaded(),
+  onModelLoaded: (opts) => _onModelLoaded(opts),
 });
 const { loading, recentModels, ablageHinweis } = ablage;
 // Ein gescheitertes Speichern des Verlaufs steht im Bild, nicht nur im Reiter
@@ -1264,6 +1237,17 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     if (result.globalId && !angereichert.erdbau) {
       angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId,
                                                                { historie: aenderungen.historischerStand('erzeugt') }) };
+    }
+    // DIE TEILE SEINES EIGENEN VORGANGS (Teil XXI, P5): wer einen Knickpunkt
+    // zieht, schreibt die volle Operationsliste zurück — und dafür müssen die
+    // GlobalIds von Aushub UND Auftrag stehen bleiben. `erdbau.letzter` hilft
+    // nur beim jüngsten Vorgang; gezogen wird an dem, der gewählt ist.
+    {
+      const abl = angereichert.stand?.bauplan?.ableitung;
+      if (abl && !angereichert.vorgangTeile) {
+        const teile = teileVon(aenderungen.wirksamerStand('erzeugt'), abl);
+        if (teile.size) angereichert = { ...angereichert, vorgangTeile: Object.fromEntries(teile) };
+      }
     }
 
     // DAS MODELL, AN DEM DIE BEARBEITUNG HÄNGT (Stufe 4, Lücke L6): der Commit
@@ -1517,6 +1501,10 @@ async function baueErzeugteNeu() {
       // Die Kette zum Ur läuft durch Zurückgenommenes (Fahrplan Erdbau-Container, Stufe 1).
       historie: aenderungen.historischerStand('erzeugt'),
     });
+    // Der Aufbau verwirft das Eigenbau-Modell und baut es neu — der
+    // Hider-Zustand stirbt mit ihm. Das Auge je Vorgang lebt in der Engine
+    // und wird hier wieder aufgetragen (Teil XXI, E3).
+    await engine.value.erdkoerperSichtbarkeitAnwenden?.();
     if (r.misserfolge.length) {
       // NIE STILL (Abnahme 2026-09-12): der Aufbau übersprang Unbaubares, und
       // nur die Konsole wusste es. Die Namen sagen, WAS fehlt; der Grund
@@ -1562,8 +1550,24 @@ async function vorgangEntfernen(ableitung) {
     melde(bearbeitung.letzterGrund || 'Der Vorgang wurde nicht entfernt.');
     return false;
   }
+  // Ein Vorgang, den es nicht mehr gibt, braucht kein Auge mehr (Teil XXI, E3).
+  engine.value?.vergissVorgangsauge?.(ableitung);
   await wendeEintragAn(geschrieben);
   return true;
+}
+
+/**
+ * Das Auge je VORGANG (Teil XXI, E3) — im Abschnitt „Eigenbau" der
+ * Bauwerksstruktur. Es holt einen Erdkörper zurück, den ein späterer Vorgang
+ * überdeckt hat, oder schickt einen sichtbaren weg. Die Engine führt den
+ * Zustand; der Zähler im Store lässt den Baum nachziehen.
+ */
+async function vorgangSichtbarSetzen(ableitung, sichtbar) {
+  await engine.value?.setzeVorgangSichtbar?.(ableitung, sichtbar);
+  ifc.bumpSichtbarkeit();
+}
+function vorgangIstSichtbar(ableitung) {
+  return engine.value?.vorgangSichtbar?.(ableitung) ?? { sichtbar: true, verdecktVon: [] };
 }
 
 /**
@@ -1573,16 +1577,28 @@ async function vorgangEntfernen(ableitung) {
  */
 function _eigenbauAbschnittNachziehen() {
   const stand = aenderungen.wirksamerStand('erzeugt');
+  // Was die Engine über jeden Vorgang sagt (Teil XXI, E3) — sichtbar, und von
+  // wem überdeckt. Die Regel steht in der Engine, hier wird sie nur gelesen.
+  const vorgangsAugen = new Map();
+  for (const [, wert] of stand) {
+    const a = wert?.ableitung;
+    if (!a || vorgangsAugen.has(a)) continue;
+    const s = engine.value?.vorgangSichtbar?.(a);
+    if (s) vorgangsAugen.set(a, s);
+  }
   const abschnitt = eigenbauBaum({
     stand, karte: engine.value?.autor?.gebaut ?? new Map(), modelId: CDE_MODELL_ID,
     titel: vorgangstitelAus([...stand].map(([globalId, wert]) => ({ globalId, wert }))),
     verborgen: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
     leer: engine.value?.autor?.leer ?? new Set(),
+    vorgangsAugen,
   });
   const lieferungen = ifc.spatialBaeume.filter(b => !b.eigenbau);
   ifc.setSpatialBaeume(abschnitt ? [...lieferungen, abschnitt] : lieferungen);
 }
-watch(() => ifc.geometrieStand, () => _eigenbauAbschnittNachziehen());
+// Auch am Sichtbarkeitszähler: das Auge je Vorgang ändert nichts an der
+// Geometrie, aber am Knoten (Teil XXI, E3).
+watch(() => [ifc.geometrieStand, ifc.sichtbarkeitStand], () => _eigenbauAbschnittNachziehen());
 
 provideViewerApi({
   // Snapshots & Ansichten
@@ -1676,6 +1692,9 @@ provideViewerApi({
   setzeModellSichtbar:  (modelId, sichtbar) => modellSichtbarSetzen(modelId, sichtbar),
   modellSichtbar:       (modelId) => engine.value?.modellSichtbar?.(modelId) ?? true,
   vorgangEntfernen:     (ableitung) => vorgangEntfernen(ableitung),
+  // Teil XXI (E3): das Auge je Vorgang — überdeckte Erdkörper zurückholen.
+  setzeVorgangSichtbar: (ableitung, sichtbar) => vorgangSichtbarSetzen(ableitung, sichtbar),
+  vorgangSichtbar:      (ableitung) => vorgangIstSichtbar(ableitung),
   /** Laute, nicht blockierende Meldungen des Nachspielens (quelle_geaendert, Teil XIV). */
   getHinweise:          () => nachspielen.hinweise.value,
   // ── Schacht-Griffe im Lageplan (G1) ──────────────────────────────────────
@@ -1741,6 +1760,13 @@ provideViewerApi({
   werkzeugStarten: (id, opts) => werkzeugStarten(id, opts),
   /** E8: Zeichnen startet im Raum — die Tafel „Bauteil“ ist sein Einstieg. */
   zeichnenStarten: (id, opts) => zeichnenStarten(id, opts),
+  /** H3: die Tafel „Modelle“ — der eine Weg hinein, das × am Modell, die Ladeanzeige, die Teleport-Ziele. */
+  modellHinzufuegen: (e) => modellHinzufuegen(e),
+  modellEntfernen: (modelId) => modellEntfernen(ifc.modelList.find(m => m.modelId === modelId) ?? { modelId, name: modelId }),
+  laedtGerade: () => !!ablage.loading.value,
+  tafelZielSetzen: (name, el) => { if (name in tafelZiele) tafelZiele[name] = el ?? null; },
+  geschosseDa: () => storeyList.value.length > 0,
+  kategorienDa: () => categoryList.value.length > 0,
   bearbeitenEin: () => bearbeitenEin(),
   bearbeitenSperrgrund: () => bearbeitenSperrgrund(),
   /**
@@ -2195,14 +2221,15 @@ async function anwendenViewpoint(vp) {
 }
 
 defineExpose({
-  openBySha: (sha) => ablage.openBySha(sha),
+  /** Viewer = Satz (S3): die Schale ruft es nach jeder Satzwahl, jedem Häkchen und beim Start. */
+  zeigeSatz: () => zeigeSatz(),
   /** Kassensturz E4: die Schale schaltet für die Plan-Werkzeuge ein — und kennt den Grund, wenn nicht. */
   bearbeitenEin: () => bearbeitenEin(),
   bearbeitenSperrgrund: () => bearbeitenSperrgrund(),
   /** Die zuletzt offenen Modelle zurückholen — die Schale ruft es, weil sie
       den Deep-Link kennt und der Vorrang hat. */
   stelleOffeneWiederHer: () => ablage.stelleOffeneWiederHer(),
-  openFromProjectPath: (pfad) => ablage.openFromProjectPath(pfad),
+  openFromProjectPath: (pfad) => ladeAusProjektpfad(pfad),
   zoomToPoint: (position) => annotationen.zoomeAufPin(position),
   applyViewpoint: anwendenViewpoint,
   captureViewpoint: erfasseViewpoint,
@@ -2370,7 +2397,11 @@ async function eigenbauPaket() {
   // eine offene Sitzung dazukommt (dann ist der Stand MEHR als der Commit).
   const letzter = [...(aenderungen.commits ?? [])].sort((a, b) => (a.wann ?? 0) - (b.wann ?? 0)).at(-1) ?? null;
   const paket = baueEigenbauPaket({
-    teile: gebaut.bauteile, stand: erzeugt, historie, nachProjekt: bezug.nachProjekt,
+    teile: gebaut.bauteile,
+    // Die Böschungskanten (Teil XX Stufe B) — keine Bauteile, sondern
+    // `IfcAnnotation` in der Vorgangsgruppe.
+    kanten: gebaut.kanten ?? [],
+    stand: erzeugt, historie, nachProjekt: bezug.nachProjekt,
     crs: c.wirksam ?? null, crsHerkunft: herkunft,
     projektname: cde.auftrag?.name ?? '', schluessel: cde.aktiverSatzId ?? 'cde',
     bearbeiter: cde.bearbeiter ?? '',
@@ -2470,7 +2501,7 @@ async function _mitModellSha(el) {
 }
 
 /** Called after every successful loadIfc() to refresh UI state. */
-async function _onModelLoaded() {
+async function _onModelLoaded({ nachspielen: mitNachspielen = true } = {}) {
   // Bezüge, Rahmen, Achsen, Listen — dieselbe Nacharbeit wie beim Entladen.
   // Sie stand bis 2026-09-03 nur hier, und das Entladen liess deshalb den
   // halben Zustand des verschwundenen Modells stehen.
@@ -2490,7 +2521,8 @@ async function _onModelLoaded() {
     // weg — das Journal liegt in der RepoFacade, das Modell kommt roh vom
     // Planer. Bewusst NICHT awaited an einer Stelle, die das Anzeigen
     // aufhielte: ein Modell ohne Festlegungen ist besser als gar keins.
-    nachspielen.nachModellladung(firstModel.modelId).then(async ({ konflikte }) => {
+    // S3: zeigt der Viewer einen Satz, spielt `zeigeSatz` EINMAL am Ende nach — nicht je Modell.
+    if (mitNachspielen) nachspielen.nachModellladung(firstModel.modelId).then(async ({ konflikte }) => {
       if (konflikte) console.info('[CDE]', nachspielen.meldung.value);
       // Die Achsen wurden oben VOR dem Nachspielen gezählt — trug das
       // Journal Geometrieänderungen, sind sie damit schon veraltet.
@@ -2502,6 +2534,96 @@ async function _onModelLoaded() {
   schnitt.verwerfen();
 
   emit('model-loaded');
+}
+
+// ── Viewer = Satz (Fahrplan „Klare Abläufe“, S3, D1) ────────────────────────
+/** Was nicht zum Satz passte — ein Satz Text, höchstens ein Knopf. */
+const satzHinweis = ref(null);
+let _satzGeneration = 0;
+
+/**
+ * DER VIEWER ZEIGT DEN AKTIVEN SATZ. Entlädt, was nicht dazugehört, lädt,
+ * was fehlt — in Satz-Reihenfolge, eins nach dem anderen — und spielt den
+ * Verlauf EINMAL nach. Vorher lud ein Satzwechsel gar nichts, und
+ * nachgespielt wurde je geladenem Modell. Ein neuerer Aufruf bricht einen
+ * älteren ab. Die Schale ruft es (Satzwahl, Häkchen, Start); die Pille und
+ * „Modell hinzufügen“ rufen es hier.
+ */
+async function zeigeSatz() {
+  const gen = ++_satzGeneration;
+  for (let i = 0; i < 60 && !engine.value; i += 1) await new Promise(r => setTimeout(r, 250));
+  if (!engine.value || gen !== _satzGeneration) return { abgebrochen: true };
+  const satz = cde.aktiverSatz;
+  const soll = satzModelle(satz, cde.dokumente);
+  const offen = engine.value.getModelList().filter(m => modellHerkunft(m.modelId) !== 'cde')
+    .map(m => ({ modelId: m.modelId, sha: ablage.identitaet(m.modelId)?.sha256 ?? `#${m.modelId}` }));
+  const plan = satzAbgleich({ geladen: offen.map(o => o.sha), soll: soll.map(d => d.sha256) });
+  const r = await satzUmsetzen({
+    plan,
+    aktuell: () => gen === _satzGeneration,
+    entlade: async (sha) => {
+      const o = offen.find(x => x.sha === sha);
+      if (!o) return;
+      await engine.value.unloadModel(o.modelId);
+      ablage.vergiss(o.modelId);
+    },
+    lade: (sha) => ablage.openBySha(sha, { nachspielen: false }),
+  });
+  if (r.abgebrochen) return r;
+  // EINE Nacharbeit für die ganze Menge (das Laden zog je Modell selbst nach).
+  if (r.entladen) {
+    await _modellmengeNachziehen();
+    await _issuesNachziehen();
+  }
+  // Den Verlauf EINMAL nachspielen — auch ohne Ladewechsel: jeder Satz hat seinen eigenen.
+  const erstes = engine.value.getModelList().find(m => modellHerkunft(m.modelId) !== 'cde');
+  if (erstes) await nachspielen.nachModellladung(erstes.modelId);
+  else await baueErzeugteNeu();
+  await entwerteNach(['lage', 'erzeugt']);
+  const ausgelassen = ausgelasseneErdbau(satz, cde.dokumente);
+  const fehlend = r.fehlend.map(sha => soll.find(d => d.sha256 === sha)?.name ?? sha.slice(0, 12));
+  const teile = [];
+  if (fehlend.length) teile.push(`Nicht geladen: ${fehlend.join(', ')}`);
+  if (ausgelassen.length) {
+    teile.push(`${ausgelassen.join(', ')} ${ausgelassen.length === 1 ? 'wurde aus diesem Satz ausgegeben und bleibt' : 'wurden aus diesem Satz ausgegeben und bleiben'} hier ungeladen`);
+  }
+  satzHinweis.value = teile.length ? { text: `${teile.join(' · ')}.` } : null;
+  return { ...r, ausgelassen };
+}
+
+/** EIN Weg hinein (S3): laden, ins Projekt, in den Satz — dann zeigt der Viewer den Satz. */
+async function modellHinzufuegen(e) {
+  const r = await ablage.modellHinzufuegen(e);
+  if (r?.imSatz) await zeigeSatz();
+}
+
+/** × an der Pille (K5): „Aus dem Satz nehmen“, mit Rückfrage — ohne Satz schliesst es nur. */
+async function modellEntfernen(m) {
+  const satz = cde.aktiverSatz;
+  const sha = ablage.identitaet(m.modelId)?.sha256 ?? null;
+  if (!satz || !sha || !(satz.enthaelt ?? []).includes(sha)) return removeModel(m.modelId);
+  if (!confirm(`„${m.name}“ aus dem Satz „${satz.name}“ nehmen?\nDie Datei bleibt im Projekt.`)) return;
+  try { await cde.nimmAusSatz(sha); }
+  catch (fehler) { ablageHinweis.value = `Nicht aus dem Satz genommen: ${fehler?.response?.data?.detail ?? fehler?.message ?? fehler}`; return; }
+  await zeigeSatz();
+}
+
+/** „In den Satz aufnehmen“ aus der Satz-Zeile (Deep-Link auf ein Modell ausserhalb des Satzes). */
+async function inSatzAufnehmen(sha) {
+  satzHinweis.value = null;
+  try { await cde.nimmInSatzAuf(sha); }
+  catch (fehler) { ablageHinweis.value = `Nicht in den Satz aufgenommen: ${fehler?.response?.data?.detail ?? fehler?.message ?? fehler}`; return; }
+  await zeigeSatz();
+}
+
+/** Deep-Link (`?datei=`): laden — und sagen, wenn es nicht zum Satz gehört (S3). */
+async function ladeAusProjektpfad(pfad) {
+  const sha = await ablage.openFromProjectPath(pfad);
+  const satz = cde.aktiverSatz;
+  if (sha && satz && !(satz.enthaelt ?? []).includes(sha)) {
+    satzHinweis.value = { text: `${String(pfad).split('/').pop()} ist nicht im Satz „${satz.name}“.`, aufnehmen: sha };
+  }
+  return sha;
 }
 
 /**
@@ -2842,14 +2964,17 @@ function onToggleNotes() { panels.toggle('issues'); }
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='36'%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='rgba(0,0,0,0.6)' stroke-width='3'/%3E%3Crect x='2' y='2' width='32' height='32' fill='none' stroke='%23ffeb3b' stroke-width='1.5'/%3E%3Cline x1='18' y1='6' x2='18' y2='30' stroke='%23ffeb3b' stroke-width='2'/%3E%3Cline x1='6' y1='18' x2='30' y2='18' stroke='%23ffeb3b' stroke-width='2'/%3E%3C/svg%3E") 18 18, crosshair;
 }
 
-/* ── Top bar ── */
-.top-bar {
-  position: absolute; top: 1rem; left: 1rem; right: 1rem; z-index: 20;
-  display: flex; justify-content: space-between; align-items: center;
-  background: var(--cde-float); padding: 0.65rem 1.25rem;
-  border-radius: 8px; box-shadow: var(--cde-shadow-sm);
+/* ── H3: Leerzustand und Ladeanzeige (Kopfband und Pillen sind in die Tafel „Modelle“ gezogen) ── */
+.leer-zustand {
+  position: absolute; top: 18%; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
+  max-width: min(90%, 28rem); padding: 1rem 1.2rem;
+  background: var(--cde-float); border: 1px solid var(--cde-line);
+  border-radius: var(--cde-radius-lg); box-shadow: var(--cde-shadow-float);
+  text-align: center;
 }
-.top-bar-left { display: flex; gap: 0.75rem; align-items: center; }
+.leer-text { margin: 0; color: var(--cde-text); font-size: var(--cde-font-md); }
+.lade-marke { position: absolute; top: 1rem; right: 1rem; z-index: 20; }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -2971,9 +3096,8 @@ function onToggleNotes() { panels.toggle('issues'); }
 }
 .coord-bar b { color: var(--cde-accent); margin-right: 2px; }
 .einheit-banner {
-  /* Unter der Pillenzeile (Abnahme 2026-09-12): darüber verdeckte das Banner
-     das × der Modelle. */
-  position: absolute; top: calc(1rem + 56px + 2.4rem); left: 50%; transform: translateX(-50%);
+  /* Oben mittig (H3: Kopfband und Pillen sind in die Tafel „Modelle“ gezogen). */
+  position: absolute; top: 1rem; left: 50%; transform: translateX(-50%);
   z-index: 25; display: flex; align-items: center; gap: 0.5rem;
   max-width: min(92%, 44rem);
   padding: 0.45rem 0.8rem;
@@ -2986,7 +3110,7 @@ function onToggleNotes() { panels.toggle('issues'); }
 }
 /* Die Ergebnismeldung sitzt UNTER der Wache — sonst lägen beide übereinander
    und man läse die Warnung, die man gerade erledigt hat. */
-.einheit-banner + .einheit-banner { top: calc(1rem + 56px + 5.4rem); }
+.einheit-banner + .einheit-banner { top: 4rem; }
 .einheit-lesart { opacity: 0.92; }
 .einheit-banner.ok {
   border-color: var(--cde-success);
@@ -3029,43 +3153,6 @@ function onToggleNotes() { panels.toggle('issues'); }
   background: var(--cde-tint-weak); border-radius: 3px;
   padding: 0.05rem 0.3rem; letter-spacing: 0.05em;
 }
-
-/* ── B2: Model tag row below top-bar ── */
-.model-tag-row {
-  position: absolute; top: calc(1rem + 56px); left: 1rem; z-index: 19;
-  display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
-}
-.model-tag {
-  display: flex; align-items: center; gap: 0.3rem;
-  background: color-mix(in srgb, var(--cde-accent) 15%, transparent); border: 1px solid color-mix(in srgb, var(--cde-accent) 35%, transparent);
-  border-radius: 4px; padding: 0.2rem 0.5rem;
-  font-size: 0.78rem; color: var(--cde-accent-soft); max-width: 200px;
-  /* Der Chip schneidet NICHTS mehr ab — das tut der Name für sich. Ein
-     Doppelklick soll ausserdem entladen wollen, nicht Text markieren. */
-  user-select: none;
-}
-.model-tag-name {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  min-width: 0;                 /* ohne das schrumpft ein Flex-Kind nie */
-}
-/* Eigenbau: gestrichelt, damit es sich von einer Lieferung unterscheidet. */
-.model-tag--eigenbau { border-style: dashed; color: var(--cde-text-dim); }
-.tag-close {
-  background: none; border: none; cursor: pointer;
-  color: var(--cde-text-dimmer); font-size: 0.7rem; padding: 0; line-height: 1;
-  flex-shrink: 0; transition: color 0.12s;
-  touch-action: manipulation;
-}
-.tag-close:hover { color: var(--cde-danger); }
-/* Das Auge am Eigenbau (Abnahme 2026-09-12, A6). */
-.tag-auge {
-  background: none; border: none; cursor: pointer; padding: 0; line-height: 1;
-  display: inline-flex; align-items: center; flex-shrink: 0;
-  color: var(--cde-text-dim); transition: color 0.12s;
-  touch-action: manipulation;
-}
-.tag-auge:hover { color: var(--cde-text); }
-.tag-auge.aus { color: var(--cde-text-dimmer); }
 
 /* ── B1: Selection badge — bottom right (no longer overlaps centered coord-bar) ── */
 
@@ -3111,9 +3198,8 @@ function onToggleNotes() { panels.toggle('issues'); }
 
 .ablage-hinweis {
   position: absolute;
-  /* Unter der Pillenzeile (Abnahme 2026-09-12): darüber verdeckte der
-     Hinweis das × der Modelle. */
-  top: calc(1rem + 56px + 2.4rem); left: 50%; transform: translateX(-50%);
+  /* Oben mittig (H3: Kopfband und Pillen sind in die Tafel „Modelle“ gezogen). */
+  top: 1rem; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 0.45rem;
   max-width: min(90%, 34rem);
   padding: 0.45rem 0.5rem 0.45rem 0.7rem;
@@ -3145,10 +3231,10 @@ function onToggleNotes() { panels.toggle('issues'); }
 /* Unter Pillenzeile und Ablage-Hinweis (Abnahme 2026-09-12); die Farb-Nachfrage
    rückt eine Stufe tiefer, wenn der Nachspiel-Hinweis schon dasteht — beide
    lagen deckungsgleich übereinander. */
-.nachspiel-hinweis.gestapelt { top: calc(1rem + 56px + 8.4rem); }
+.nachspiel-hinweis.gestapelt { top: 7rem; }
 .nachspiel-hinweis {
   position: absolute;
-  top: calc(1rem + 56px + 5.4rem); left: 50%; transform: translateX(-50%);
+  top: 4rem; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 0.45rem;
   max-width: min(90%, 34rem);
   padding: 0.45rem 0.5rem 0.45rem 0.7rem;
@@ -3235,8 +3321,8 @@ function onToggleNotes() { panels.toggle('issues'); }
 .show-all-btn, .measure-clear, .bearb-marke-aus { touch-action: manipulation; }
 @media (pointer: coarse) {
   .snap-btn, .mode-btn { padding: 0.55rem 0.75rem; }
-  .section-close, .bearb-marke-aus, .tag-auge, .tag-close { position: relative; }
-  .bearb-marke-aus::after, .tag-auge::after, .tag-close::after { content: ''; position: absolute; inset: -10px; }
+  .section-close, .bearb-marke-aus { position: relative; }
+  .bearb-marke-aus::after { content: ''; position: absolute; inset: -10px; }
   .section-close::after, .measure-clear::after {
     content: ''; position: absolute; inset: -9px;
   }

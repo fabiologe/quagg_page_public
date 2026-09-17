@@ -46,6 +46,17 @@ export const PX_AUS = 3;
 export const PX_VOLL = 10;
 const LIFT_MIN = 0.02;                      // m — wie `IfcOverlay.LIFT`
 const LIFT_ANTEIL = 1e-4;                   // der Diagonale
+/**
+ * Deckel des Lifts (Teil XXI, 2026-09-17).
+ *
+ * `LIFT_ANTEIL` wächst mit der Ausdehnung, weil die Auflösung des
+ * Tiefenpuffers es auch tut — bei einem 700-m-Gelände waren das aber 7 cm,
+ * und damit schwebte das Netz sichtbar über seiner eigenen Fläche: an einer
+ * Böschung stand die Kante neben dem Knick, den sie beschreibt. Drei
+ * Zentimeter reichen gegen das Z-Fighting und liegen unter jeder
+ * Genauigkeit, die ein Erdbau beansprucht.
+ */
+export const LIFT_MAX = 0.03;
 const MAX_DREIECKE = 1_500_000;             // darüber: keine Kanten, sondern eine Meldung
 /** Der Umriss braucht einen Kanten-Hash — er entsteht erst bei der Auswahl, und nur bis hierher. */
 const MAX_UMRISS_DREIECKE = 600_000;
@@ -147,7 +158,7 @@ export function umrissAusNetz({ positions, triCount } = {}, { lift = 0 } = {}) {
     return Float32Array.from(aus);
 }
 
-/** Lift gegen Z-Fighting: mindestens 2 cm, sonst ein Zehntausendstel der Diagonale. */
+/** Lift gegen Z-Fighting: mindestens 2 cm, sonst ein Zehntausendstel der Diagonale — höchstens `LIFT_MAX`. */
 export function liftFuer({ positions } = {}) {
     if (!positions?.length) return LIFT_MIN;
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -159,7 +170,7 @@ export function liftFuer({ positions } = {}) {
         }
     }
     const diag = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
-    return Math.max(LIFT_MIN, LIFT_ANTEIL * (Number.isFinite(diag) ? diag : 0));
+    return Math.min(LIFT_MAX, Math.max(LIFT_MIN, LIFT_ANTEIL * (Number.isFinite(diag) ? diag : 0)));
 }
 
 // Bildpunkte je Meter in DIESER Tiefe: perspektivisch halbeHoehe·P[1][1]/w,

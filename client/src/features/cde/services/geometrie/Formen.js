@@ -23,8 +23,8 @@ export const FORMEN = Object.freeze({
     mesh:    'Dreiecksliste — {positions: Float64Array (9 je Δ, Welt), triCount}',
     koerper: 'geschlossene Dreiecksliste mit Volumen-Attest — mesh + {closed, volumen, warnungen}',
     raster:  'Höhenraster — {x0, z0, maxX, maxZ, cell, nx, nz, heights: Float64Array}; Index ix*nz+iz, NaN = kein Treffer',
-    linie:   'Polylinie — {punkte: [{x, y, z}]}; y darf NaN sein (noch nicht auf eine Fläche gelegt); eine ROHRACHSE trägt zusätzlich dn (mm)',
-    knoten:  'Ein Punkt in Welt — {x, y, z}; der Netzknoten eines Schachts (Sohle), optional name',
+    linie:   'Polylinie — {punkte: [{x, y, z}]}; y darf NaN sein (noch nicht auf eine Fläche gelegt); eine ROHRACHSE trägt zusätzlich dn (mm) und achsbezug (\'sohle\'|\'mitte\', siehe Achsbezug.js)',
+    knoten:  'Ein Punkt in Welt — {x, y, z}; der Netzknoten eines Schachts, optional name und unterkante (tiefster Punkt der Hülle = Schachtsohle)',
     umriss:  'Grundriss-Ring mit Löchern — {ring: [{x, z}], loecher: [[{x, z}]]}',
     profil:  'Querschnitt im Achsrahmen — {punkte: [{u, v}]}, geschlossen, gegen den Uhrzeigersinn',
     // Sammelformen für Ein-/Ausgänge, die Listen tragen:

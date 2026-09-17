@@ -3,7 +3,8 @@ import { heightfieldRaster } from './geometry/SurfaceOps.js';
 import { grundrissAusMesh, umrissFlaeche } from './geometrie/ops/Umriss.js';
 import { setzeBeleuchtung } from './IfcBeleuchtung.js';
 import { formeNach, massenAus } from './gelaende/Operationen.js';
-import { BAUTEILFARBEN, eigeneFarbe, faerbePlan, farbeFuer } from './Bauteilfarben.js';
+import { BAUTEILFARBEN, eigeneFarbe, faerbePlan, farbeFuer, materialWerte } from './Bauteilfarben.js';
+import { FAERBE_FARBEN } from './Vorschau.js';
 import { karteMitEngine } from './GlobalIdKarte.js';
 import { DELTA_MARKE, basisModelId, istDeltaModell } from './DeltaBoxen.js';
 import { strukturBeziehungen } from './Bauwerksstruktur.js';
@@ -27,12 +28,15 @@ import { erzeugeServerBackend } from './geometrie/KernelServer.js';
 import backendApi from '@/services/api';
 import { gelaendeElemente, GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
 import { rezeptNach as _rezeptNach } from './Bauteilrezepte.js';
+import { aushubMasseVon } from './ableitung/Ableitungen.js';
 import { bauformAusNetz } from './bauform/Formsignatur.js';
 import { achsGuete } from './bauform/Bauformen.js';
 import { pruefmassVon, zellweiteVorschlag, achsmassAus } from './geometrie/ops/Raster.js';
 import { meshVolume } from './geometry/MeshOps.js';
 import { makeHeightSampler } from './TerrainMesh.js';
 import { GelaendeKanten } from './GelaendeKanten.js';
+import { ErdbauUmrisse } from './ErdbauUmrisse.js';
+import { achsbezugVon } from './Achsbezug.js';
 import { collectElementTriangles } from './geometry/MeshAcquire.js';
 import { IfcQuelle } from './IfcQuelle.js';
 import { importBefund, zaehltAlsBauteil } from './ImportBefund.js';
@@ -132,25 +136,35 @@ const CATEGORY_COLORS = {
 export const erdbauRolle = (kategorie) => `erdbau:${String(kategorie).toUpperCase()}`;
 
 const FAERBE_STILE = Object.freeze({
-    dimmen:   { color: new THREE.Color(0.45, 0.45, 0.45), renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 0.25, transparent: true },
-    kandidat: { color: new THREE.Color(0.31, 0.76, 0.97), renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 0.9,  transparent: true },
-    ziel:     { color: new THREE.Color(1.0, 0.72, 0.30),  renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 1.0,  transparent: false },
+    // DIE FARBE KOMMT ALS HEX (2026-09-17). Vorher standen hier Float-Tripel,
+    // die aus eben diesen Hex-Werten gerechnet waren — three (ColorManagement
+    // an) liest Floats aber als LINEAR: `(0.31, 0.76, 0.97)` erschien als
+    // `#97e2fc`, der Geist derselben Bearbeitung als `#4fc3f7`. Eine Rolle,
+    // eine Farbe: `FAERBE_FARBEN` (Vorschau.js).
+    dimmen:   { color: new THREE.Color(FAERBE_FARBEN.dimmen),   renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 0.25, transparent: true },
+    kandidat: { color: new THREE.Color(FAERBE_FARBEN.kandidat), renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 0.9,  transparent: true },
+    ziel:     { color: new THREE.Color(FAERBE_FARBEN.ziel),     renderedFaces: FRAGS.RenderedFaces.TWO, opacity: 1.0,  transparent: false },
     // Die Erdbau-Farben kommen aus dem KATALOG (`Bauteilfarben.js`) — je
     // IFC-Typ eine Rolle. Sie stehen hier, damit `faerbe(rolle, orte)` der
     // eine Weg bleibt und nicht ein zweiter mit eigenem Stil entsteht.
-    ...Object.fromEntries(Object.entries(BAUTEILFARBEN).map(([typ, f]) => [
-        erdbauRolle(typ),
-        {
-            color: new THREE.Color(f.farbe),
+    ...Object.fromEntries(Object.entries(BAUTEILFARBEN).map(([typ, f]) => {
+        // Deckkraft, Transparenz und `depthWrite` rechnet der Katalog
+        // (`materialWerte`) — dieselbe Quelle wie das Material im Bauteil
+        // (`IfcAutor._materialFuer`). Vorher stand die Regel hier ein zweites
+        // Mal; ein Katalogeintrag mit Sonderfall hätte sie auseinandergeführt.
+        const m = materialWerte(f);
+        return [erdbauRolle(typ), {
+            color: new THREE.Color(m.color),
             renderedFaces: FRAGS.RenderedFaces.TWO,
-            opacity: f.deckkraft,
-            transparent: f.deckkraft < 1,
-            // Ein durchscheinendes Volumen darf nicht verdecken, was in ihm
-            // liegt — sonst ist die Transparenz umsonst.
-            depthWrite: f.deckkraft >= 1,
-        },
-    ])),
+            opacity: m.opacity,
+            transparent: m.transparent,
+            depthWrite: m.depthWrite,
+        }];
+    })),
 });
+
+/** Der Stil einer Färbe-Rolle — der eine Zugang zum Stapel (auch für Wächter). */
+export const faerbeStilFuer = (rolle) => FAERBE_STILE[rolle] ?? null;
 
 /**
  * Rang im Färbe-Stapel (Abnahme 2026-09-12, K4): der Katalog unten, die
@@ -357,6 +371,10 @@ export class IfcEngine {
         this.overlay     = new IfcOverlay({ getWorld: () => this._getWorld() });
         // Die Dreieckskanten der Gelände (2026-09-10) — mit Tiefentest, deshalb nicht im Overlay.
         this.gelaendeKanten = new GelaendeKanten({ getWorld: () => this._getWorld() });
+        // Der Umriss jedes Erdkörpers auf dem Gelände (Teil XXI, E2): der
+        // Körper liegt durchscheinend UNTER der Anzeige, seine Fussspur steht
+        // darüber — sonst sähe man von oben nur unberührtes Gelände.
+        this.erdbauUmrisse = new ErdbauUmrisse({ getWorld: () => this._getWorld() });
         // Stufe 9.2: der einzige Kanal zur Editor-API von @thatopen/fragments.
         this.autor       = new IfcAutor({
             getFragments: () => this.components.get(OBC.FragmentsManager),
@@ -777,14 +795,17 @@ export class IfcEngine {
         for (const rolle of rollen) {
             const teil = _schnitt(this._faerbungen.get(rolle), items);
             if (!teil) continue;
-            try { await this._highlight(FAERBE_STILE[rolle], teil); }
+            try { await this._highlight(faerbeStilFuer(rolle), teil); }
             catch (e) { console.warn('[Engine] stapel', rolle, e?.message ?? e); }
         }
     }
 
     async _hiderSet(sichtbar, items) {
         // Die Geländekanten folgen dem Hider — sonst schwebten sie über einem ausgeblendeten Gelände.
-        this.gelaendeKanten?.sichtbarkeit(sichtbar, this._schluesselVon(items));
+        const schluessel = this._schluesselVon(items);
+        this.gelaendeKanten?.sichtbarkeit(sichtbar, schluessel);
+        // Der Umriss gehört zum Körper: geht der Körper, geht die Linie (E2/E3).
+        this.erdbauUmrisse?.sichtbarkeit(sichtbar, schluessel);
         const hider = this.components.get(OBC.Hider);
         try { await hider.set(sichtbar, this._mitDelta(items)); }
         catch { await hider.set(sichtbar, items); }
@@ -846,6 +867,7 @@ export class IfcEngine {
         if (model?.object) model.object.visible = !!sichtbar;
         // Die Kanten liegen in einer eigenen Gruppe der Szene — das Auge muss sie erreichen (M2).
         this.gelaendeKanten?.modellSichtbarkeit?.(modelId, sichtbar);
+        this.erdbauUmrisse?.modellSichtbarkeit?.(modelId, sichtbar);
         try { await fragments.core?.update?.(true); } catch { /* Anzeige */ }
     }
 
@@ -933,6 +955,81 @@ export class IfcEngine {
         group.visible = visible;
         const map   = await group.groupData.get();
         await this._hiderSet(visible, map);
+        // Ein „Kategorie an" darf einen überdeckten Erdkörper nicht wieder
+        // hervorholen — die Regel dafür ist das Auge je Vorgang (Teil XXI, E3).
+        if (visible) await this.erdkoerperSichtbarkeitAnwenden();
+    }
+
+    // ── Erdkörper: das Auge je Vorgang (Teil XXI, E3) ───────────────────────
+
+    /**
+     * WER STEHT IM RAUM, WENN ZWEI VORGÄNGE DENSELBEN BODEN MEINEN?
+     *
+     * Fabio 2026-09-17: nach einer Auffüllung liegen Aushub, Auffüllung und
+     * Netz übereinander, „unklar, was was ist". Seine Entscheidung (E3): der
+     * JÜNGERE Vorgang steht im Raum; ein älterer, den ein späterer wieder
+     * überformt hat, kommt nur über sein AUGE zurück. Die Mengen bleiben
+     * beide — verdeckt heisst nicht ungültig.
+     *
+     * WARUM ÜBER DEN HIDER und nicht über die Farbe: fragments kennt weder
+     * `polygonOffset` noch `renderOrder` je Element. Die einzigen Hebel sind
+     * Sichtbarkeit je Bauteil, Deckkraft und die Geometrie selbst.
+     *
+     * EIN Mechanismus: das Auge. Die Auswahl schaltet nichts implizit, sonst
+     * hätte man zwei Regeln für dieselbe Frage.
+     *
+     * Der Zustand lebt in `_vorgangAugen` und überlebt den Neuaufbau — das
+     * fragments-Modell wird bei jeder Bearbeitung verworfen und neu gebaut,
+     * der Hider-Zustand stirbt mit ihm. Deshalb wird nach JEDEM Aufbau neu
+     * angewandt.
+     */
+    _vorgangAugenKarte() {
+        this._vorgangAugen ??= new Map();
+        return this._vorgangAugen;
+    }
+
+    /** Ist der Vorgang im Raum zu sehen — und wenn nicht, wer überdeckt ihn? */
+    vorgangSichtbar(ableitung) {
+        const verdecktVon = this.autor?.ableitungen?.get(ableitung)?.kennzahlen?.verdecktVon ?? [];
+        const auge = this._vorgangAugenKarte().get(ableitung);
+        return { sichtbar: auge ?? !verdecktVon.length, verdecktVon };
+    }
+
+    /**
+     * Das Auge eines Vorgangs stellen. `null` gibt ihn der Regel zurück
+     * (sichtbar, solange ihn niemand überdeckt).
+     */
+    async setzeVorgangSichtbar(ableitung, sichtbar) {
+        const augen = this._vorgangAugenKarte();
+        if (sichtbar == null) augen.delete(ableitung);
+        else augen.set(ableitung, !!sichtbar);
+        await this.erdkoerperSichtbarkeitAnwenden();
+        return this.vorgangSichtbar(ableitung);
+    }
+
+    /** Ein Vorgang, den es nicht mehr gibt, braucht kein Auge. */
+    vergissVorgangsauge(ableitung) { this._vorgangAugenKarte().delete(ableitung); }
+
+    /**
+     * Die Regel auf den aktuellen Aufbau anwenden — nach jedem Neuaufbau, nach
+     * `showAll` und nach jedem „Kategorie an". Ohne gebaute Erdkörper ist es
+     * ein No-op.
+     */
+    async erdkoerperSichtbarkeitAnwenden() {
+        const koerper = this.autor?.erdkoerper;
+        if (!koerper?.size) return;
+        const zeigen = [], verbergen = [];
+        for (const [, k] of koerper) {
+            if (k.localId == null) continue;
+            (this.vorgangSichtbar(k.ableitung).sichtbar ? zeigen : verbergen).push(k.localId);
+        }
+        if (zeigen.length)     await this._hiderSet(true,  { [CDE_MODELL_ID]: zeigen });
+        if (verbergen.length)  await this._hiderSet(false, { [CDE_MODELL_ID]: verbergen });
+        // Ein zurückgeholter Vorgang hat noch keinen Umriss — er wurde beim
+        // letzten Nachziehen ausgelassen (E2).
+        await this._erdbauUmrisseNachziehen().catch(e => console.warn('[CDE] Erdbau-Umrisse:', e?.message ?? e));
+        try { await this.components.get(OBC.FragmentsManager).core?.update?.(true); }
+        catch { /* Anzeige */ }
     }
 
     /**
@@ -1282,7 +1379,7 @@ export class IfcEngine {
      * @returns {Promise<number>} wie viele Bauteile gefärbt sind
      */
     async faerbe(rolle, orte = []) {
-        if (!FAERBE_STILE[rolle]) throw new Error(`IfcEngine.faerbe: unbekannte Rolle „${rolle}"`);
+        if (!faerbeStilFuer(rolle)) throw new Error(`IfcEngine.faerbe: unbekannte Rolle „${rolle}"`);
         const karte = {};
         let n = 0;
         for (const o of orte) {
@@ -1557,7 +1654,7 @@ export class IfcEngine {
     async _stapelNeuAuftragen() {
         if (!this._faerbungen?.size) return;
         for (const rolle of [...this._faerbungen.keys()].sort((a, b) => faerbeRang(a) - faerbeRang(b))) {
-            try { await this._highlight(FAERBE_STILE[rolle], this._faerbungen.get(rolle)); }
+            try { await this._highlight(faerbeStilFuer(rolle), this._faerbungen.get(rolle)); }
             catch (e) { console.warn('[Engine] stapel', rolle, e?.message ?? e); }
         }
         await this._auswahlErneuern();
@@ -1710,6 +1807,9 @@ export class IfcEngine {
         const r = await this.autor.wendeAn(plan, opts);
         await this._sichtbarkeitSetzen(r.auszublenden, false);
         await this._sichtbarkeitSetzen(r.einzublenden, true);
+        // Der Aufbau hat das Eigenbau-Modell verworfen und neu gebaut; der
+        // Hider-Zustand ist mit ihm gestorben (Teil XXI, E3).
+        await this.erdkoerperSichtbarkeitAnwenden();
         return r;
     }
 
@@ -1717,7 +1817,9 @@ export class IfcEngine {
         if (!orte?.length) return;
         const karte = {};
         for (const o of orte) (karte[o.modelId] ??= []).push(o.localId);
-        this.gelaendeKanten?.sichtbarkeit(sichtbar, this._schluesselVon(karte));
+        const schluessel = this._schluesselVon(karte);
+        this.gelaendeKanten?.sichtbarkeit(sichtbar, schluessel);
+        this.erdbauUmrisse?.sichtbarkeit(sichtbar, schluessel);
         try {
             await this.components.get(OBC.Hider).set(sichtbar, karte);
             await this.components.get(OBC.FragmentsManager).core.update(true);
@@ -1936,6 +2038,9 @@ export class IfcEngine {
         for (const g of this._categoryGroups) {
             try { await this.setCategoryVisible(g.name, true); } catch { /* */ }
         }
+        // „Alles einblenden" meint alle KATEGORIEN, nicht die Vorgänge: ein
+        // überdeckter Erdkörper bleibt verborgen, bis sein Auge ihn holt (E3).
+        await this.erdkoerperSichtbarkeitAnwenden();
     }
 
     /**
@@ -2738,11 +2843,96 @@ export class IfcEngine {
 
     /** Die Dreieckskanten nachziehen — 250 ms nach dem LETZTEN Verwerfen. */
     _gelaendeKantenPlanen() {
-        if (!this.gelaendeKanten) return;
+        if (!this.gelaendeKanten && !this.erdbauUmrisse) return;
         clearTimeout(this._gelaendeKantenUhr);
         this._gelaendeKantenUhr = setTimeout(() => {
             this._gelaendeKantenNachziehen().catch(e => console.warn('[CDE] Geländekanten:', e?.message ?? e));
+            // Dieselbe Uhr: die Umrisse der Erdkörper hängen an denselben
+            // Netzen und sollen mit den Kanten zusammen erscheinen (E2).
+            this._erdbauUmrisseNachziehen().catch(e => console.warn('[CDE] Erdbau-Umrisse:', e?.message ?? e));
         }, 250);
+    }
+
+    /**
+     * DIE FUSSSPUR JEDES ERDKÖRPERS (Teil XXI, E2).
+     *
+     * Die Orte kommen aus dem letzten Aufbau (`autor.erdkoerper`), die Netze
+     * aus demselben Resolver wie die Geländekanten — also aus dem gebauten
+     * fragments-Modell, in dem der Körper schon abgesenkt liegt. Die Farbe ist
+     * die des Katalogs: dieselbe wie sein Material.
+     *
+     * Verborgene Vorgänge (`vorgangSichtbar`) bekommen gar keinen Umriss —
+     * sonst zeigte eine Linie einen Körper an, den niemand sieht.
+     * @returns {Promise<boolean>} gezeichnet?
+     */
+    async _erdbauUmrisseNachziehen() {
+        if (!this.erdbauUmrisse) return false;
+        const koerper = this.autor?.erdkoerper;
+        if (!koerper?.size) {
+            this.erdbauUmrisse.setze(new Map());
+            this._umrisseStand = koerper ?? null; this._umrisseSchluessel = '';
+            return true;
+        }
+        // SCHON GEZEICHNET? Je Übernehmen ruft zweierlei hier an: die Uhr der
+        // Geländekanten und `erdkoerperSichtbarkeitAnwenden`. Der Umriss eines
+        // 52.000-Dreieck-Körpers kostet dabei jedes Mal rund eine Sekunde
+        // (gemessen 2026-09-17: 0,76 s und 2,07 s je Übernehmen). Solange
+        // derselbe Aufbau dieselben Körper zeigt, gibt es nichts zu tun.
+        const gewollt = [...koerper.values()]
+            .filter(k => k.localId != null && this.vorgangSichtbar(k.ableitung).sichtbar)
+            .map(k => k.localId).sort((a, b) => a - b).join(',');
+        if (this._umrisseStand === koerper && this._umrisseSchluessel === gewollt) return true;
+        const generation = this._gelaendeGeneration ?? 0;
+        const aus = new Map();
+        for (const [, k] of koerper) {
+            if (k.localId == null || !this.vorgangSichtbar(k.ableitung).sichtbar) continue;
+            const farbe = farbeFuer(k.kategorie)?.farbe;
+            if (farbe == null) continue;
+            const ort = { modelId: CDE_MODELL_ID, localId: k.localId };
+            let d = null;
+            try { d = (await this.makeGeometryResolver()?.forElements([ort])?.getForm('mesh'))?.data ?? null; }
+            catch { d = null; }
+            if ((this._gelaendeGeneration ?? 0) !== generation) return false;
+            if (d?.positions?.length && d.triCount > 0) {
+                aus.set(`${CDE_MODELL_ID}|${k.localId}`, { netz: { positions: d.positions, triCount: d.triCount }, farbe });
+            }
+        }
+        if ((this._gelaendeGeneration ?? 0) !== generation) return false;
+        for (const [schluessel, eintrag] of this._erdbauKanten(koerper)) aus.set(schluessel, eintrag);
+        this.erdbauUmrisse.setze(aus);
+        this._umrisseStand = koerper; this._umrisseSchluessel = gewollt;
+        return true;
+    }
+
+    /**
+     * DIE BÖSCHUNGSKANTEN je sichtbarem Vorgang (Teil XX Stufe B).
+     *
+     * Sie kommen fertig aus dem Ableitungslauf (`ableitungen.<id>.kanten`) —
+     * gerechnet auf demselben Raster wie die Massen, in Weltkoordinaten. Hier
+     * werden sie nur eingefärbt: was abgetragen wurde, trägt den Ton des
+     * Aushubs, was aufgetragen wurde den des Auftrags. Eine Kante ist die
+     * Grenze eines Erdkörpers, also gehört sie zu seiner Farbe.
+     *
+     * @returns {Array<[string, {linien, farbe}]>}
+     */
+    _erdbauKanten(koerper) {
+        const aus = [];
+        const sichtbar = new Set([...koerper.values()]
+            .filter(k => k.localId != null && this.vorgangSichtbar(k.ableitung).sichtbar)
+            .map(k => k.ableitung));
+        const abtrag = farbeFuer('IFCEARTHWORKSCUT')?.farbe;
+        const auftrag = farbeFuer('IFCEARTHWORKSFILL')?.farbe;
+        for (const id of sichtbar) {
+            const kanten = this.autor?.ableitungen?.get(id)?.kanten ?? [];
+            if (!kanten.length) continue;
+            for (const [art, farbe] of [['oberkante', abtrag], ['sohlkante', abtrag],
+                                        ['fuss', auftrag], ['kronenkante', auftrag]]) {
+                const linien = kanten.filter(k => k.art === art);
+                if (!linien.length || farbe == null) continue;
+                aus.push([`kante:${id}:${art}`, { linien, farbe }]);
+            }
+        }
+        return aus;
     }
 
     /**
@@ -3645,12 +3835,12 @@ export class IfcEngine {
      * und den Erdmassen-Auszug. Über den Resolver (dieselbe Ableitung wie
      * die Analyse), nie aus dem Journal (Stufe 15).
      */
-    async _quellFormVon(globalId, form = 'raster', { cell = null, bereich = null } = {}) {
+    async _quellFormVon(globalId, form = 'raster', { cell = null, bereich = null, gitter = null } = {}) {
         // Die ACHSE eines gelieferten Rohrs (G6) steht seit dem Laden im
         // Achsenband — mit DN, in Welt. Kein Resolver, kein Netz.
         if (form === 'linie') return this._achseAlsLinie(globalId);
         // Der KNOTEN eines Schachts (B3) — wirksam, aus dem Fachmodell, kein Netz.
-        if (form === 'knoten') return this._knotenAlsPunkt(globalId);
+        if (form === 'knoten') return this._knotenMitUnterkante(globalId);
         // `karteMitEngine` liefert den UMSCHLAG {karte, fehlend} — hier stand
         // `karte.get(…)` auf dem Umschlag, und damit warf jeder Gelände-
         // Neuaufbau nach F5 und jeder Erdmassen-Auszug (Teil XIV, Stufe 0;
@@ -3685,7 +3875,37 @@ export class IfcEngine {
         // `cell` MUSS von aussen kommen, sobald zwei Raster verglichen werden:
         // die Automatik rechnet die Zellweite aus der Dreieckszahl der
         // jeweiligen Quelle, und zwei Quellen ergäben zwei Bezüge.
-        return heightfieldRaster(d.positions, d.triCount, cell ?? null, [], { bereich });
+        // `gitter` legt einen Korridor auf die Knoten des groben Rasters —
+        // sonst zeigen Erdkörper und Geländeanzeige zwei fast gleiche Flächen
+        // (Teil XXI).
+        return heightfieldRaster(d.positions, d.triCount, cell ?? null, [], { bereich, gitter });
+    }
+
+    /**
+     * Die Kernel-Form `knoten` samt UNTERKANTE (Teil XXI, P2c).
+     *
+     * `_knotenAlsPunkt` liefert die PLATZIERUNG eines Schachts — und die ist
+     * nicht seine Sohle. Der Kanalgraben setzte seine Baugrube auf
+     * `platzierung − Bettung` und blieb damit um den Rohrhalbmesser über der
+     * Grabensohle stehen: ein Absatz von 0,15 m, in `b3.test.js` sogar
+     * festgeschrieben. Die Sohle steht in der HÜLLE (tiefster Punkt), und
+     * genau so liest sie der Längsschnitt schon lange.
+     *
+     * Ohne Hülle bleibt die Platzierung — mit dem Unterschied, dass das Rezept
+     * es dann WEISS (`unterkante` fehlt) statt zu raten.
+     */
+    async _knotenMitUnterkante(globalId) {
+        const k = this._knotenAlsPunkt(globalId);
+        if (!k) return null;
+        try {
+            const { karte } = await karteMitEngine(this, [globalId]);
+            const ort = karte.get(globalId);
+            if (ort) {
+                const h = (await this.autor.huellenVon(ort.modelId, [ort.localId]))?.get(ort.localId);
+                if (Number.isFinite(h?.unterkante)) return { ...k, unterkante: h.unterkante };
+            }
+        } catch { /* ohne Hülle gilt die Platzierung */ }
+        return k;
     }
 
     /** Kernel-Form `knoten` eines Schachts (geliefert oder eigen): {x, y, z, name} oder null. */
@@ -3705,7 +3925,13 @@ export class IfcEngine {
             for (const a of karte.values()) {
                 if (a.globalId !== globalId) continue;
                 const punkte = (a.polyline ?? []).map(p => ({ x: p.x, y: p.y, z: p.z }));
-                return punkte.length >= 2 ? { punkte, dn: a.dn ?? null } : null;
+                // DER ACHSBEZUG WANDERT MIT (Teil XXI, E4): ob diese Höhe die
+                // Sohle oder die Rohrmitte meint, weiss nur, WOHER die Achse
+                // kommt. Ohne die Angabe raten Graben und Längsschnitt jeder
+                // für sich — und unterschiedlich (siehe Achsbezug.js).
+                return punkte.length >= 2
+                    ? { punkte, dn: a.dn ?? null, achsbezug: achsbezugVon(a.quelle), quelle: a.quelle ?? null }
+                    : null;
             }
         }
         return null;
@@ -3821,12 +4047,20 @@ export class IfcEngine {
                 }
                 zeilen.push({
                     name, ableitung: b.ableitung, art: b.rezept, reihe: k.reihe ?? null,
-                    aushub: k.aushubRaster ?? null,
+                    // Die GELTENDE Masse (Teil XXI, P6) — dieselbe Zahl wie in
+                    // der Meldung, im Eigenschaftsfenster und in der IFC-Qto.
+                    aushub: aushubMasseVon(k),
+                    massenQuelle: k.massenQuelle ?? null,
                     // Beim Kanalgraben ist der „Auftrag" die VERFÜLLUNG (Graben − Rohr).
                     auftrag: (b.rezept === 'kanalgraben' || b.rezept === 'bauwerksgrube') ? null : (k.auftragRaster ?? null),
                     verfuellung: b.rezept === 'kanalgraben' ? (k.verfuellung ?? null) : null,
                     rohrVolumen: k.rohrVolumen ?? null,
                     aushubKoerper: k.aushubKoerper ?? null, auftragKoerper: k.auftragKoerper ?? null,
+                    // Teil XXI (P4): die LOSE Masse (die abgefahren wird), der
+                    // Faktor, mit dem sie entstand, und die Gegenprobe als Zahl
+                    // — sie sprach bisher nur, wenn sie ausschlug.
+                    aushubLose: k.aushubLose ?? null, auflockerung: k.auflockerung ?? null,
+                    gegenprobeAushub: k.gegenprobeAushub ?? null, gegenprobeAuftrag: k.gegenprobeAuftrag ?? null,
                     befunde: a.befunde ?? [],
                 });
                 continue;
@@ -4017,6 +4251,7 @@ export class IfcEngine {
         this.overlay?.dispose?.();
         clearTimeout(this._gelaendeKantenUhr);
         this.gelaendeKanten?.dispose?.();
+        this.erdbauUmrisse?.dispose?.();
         if (this.components) this.components.dispose();
         if (this.container?.innerHTML) this.container.innerHTML = '';
     }

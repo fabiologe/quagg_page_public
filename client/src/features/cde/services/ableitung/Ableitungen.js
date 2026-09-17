@@ -24,14 +24,17 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { feinheitAus, feinheitFuer, formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
-import { GRABENREGELN, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
+import { AUFLOCKERUNG, GRABENREGELN, auflockerungFuer, auflockerungOder, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
 import { rasterAbtasten } from '../geometrie/ops/Raster.js';
+import { GRABEN_QUER, GRABEN_SCHRITT } from '../geometrie/ops/Graben.js';
 import { kreisProfil, trapezProfil, sweep, extrudiere } from '../geometrie/ops/Sweep.js';
 import { versetztePunkte, ringFlaeche } from '../geometrie/ops/Linien.js';
 import { umrissFlaeche } from '../geometrie/ops/Umriss.js';
+import { bezugTitel, bezugWaehlen, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
+import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
 
 /** Welche Op-Parameter Höhen in m NN sind — und deshalb an der Grenze in Welt-Y wandern. */
 export const ERDBAU_HOEHENFELDER = Object.freeze({
@@ -56,6 +59,9 @@ export const ERDBAU_PUNKTHOEHEN = Object.freeze({
     grube:          ['umriss'],
     schuettung:     ['umriss'],
     boeschungLinie: ['linie'],
+    // Teil XXI: ein Gerinne darf seine Sohle stationsweise tragen — auch die
+    // Stationen sind Punkte mit Höhe in m NN.
+    gerinne:        ['stationen'],
 });
 
 /** Gegenprobe Körper ↔ Raster: darüber ist etwas faul. */
@@ -78,21 +84,22 @@ export const KANALGRABEN_VORGABEN = Object.freeze({ arbeitsraum: 0.4, bettung: 0
 export const KOERPERHAFT = Object.freeze(['koerper', 'flaeche+dicke', 'achse+profil']);
 
 /**
- * Das PLANBILD (G5): die Nulllinie der Differenz ist die Böschungsoberkante
- * — je eine Isolinie knapp unter und über null, damit Rauschen keine
- * Konfetti-Linien erzeugt.
+ * Das PLANBILD (G5) UND DIE KANTEN (Teil XX Stufe B) — aus EINER Rechnung.
+ *
+ * Die Nulllinie der Differenz ist die Böschungsoberkante; genau die zeichnet
+ * der Lageplan als Planbild. Bis Teil XXI wurde sie hier gerechnet und später
+ * für die Kanten ein zweites Mal — zwei Wege zu derselben Linie. Jetzt liefert
+ * `boeschungskanten` beides: die Linien mit Höhe (Kanten) und ihre Grundrisse
+ * (Bild). Details und die vier Arten stehen in `gelaende/Boeschungskanten.js`.
  */
-async function _planbild(kernel, ur, neu) {
-    const differenz = await kernel.op('rasterDifferenz', { a: ur, b: neu });
-    const bild = [];
-    if (!differenz.ergebnis) return bild;
-    for (const w of [-BILD_SCHWELLE, BILD_SCHWELLE]) {
-        const iso = await kernel.op('isolinie', { raster: differenz.ergebnis }, { wert: w });
-        for (const l of iso.ergebnis ?? []) {
-            if (l.punkte.length >= 2) bild.push({ punkte: l.punkte, geschlossen: l.geschlossen });
-        }
+async function _kantenUndBild(kernel, vorher, nachher, ops = []) {
+    try {
+        return await boeschungskanten(kernel, { vorher, nachher, ops, schwelle: BILD_SCHWELLE });
+    } catch (fehler) {
+        // Ein Bild ist kein Bauteil: fällt es aus, läuft der Vorgang weiter —
+        // aber nicht still.
+        return { kanten: [], bild: [], warnungen: [`kanten_nicht_gerechnet: ${fehler?.message ?? fehler}`] };
     }
-    return bild;
 }
 
 function _opsInWelt(operationen, versatz) {
@@ -155,17 +162,62 @@ function _parallele(punkte, d) {
 const GEGENPROBE_MINDEST_M3 = 5;
 
 function _gegenprobe(rolle, koerper, rasterWert, befunde, warnungen) {
-    if (!koerper) return;
+    if (!koerper) return null;
     if (!koerper.closed) warnungen.push(`${rolle}: Körper nicht geschlossen — Volumen unsicher`);
     const bezug = Math.max(rasterWert, 1e-6);
     const abweichung = Math.abs(koerper.volumen - rasterWert) / bezug;
-    if (Math.max(rasterWert, koerper.volumen) < GEGENPROBE_MINDEST_M3) return;
+    if (Math.max(rasterWert, koerper.volumen) < GEGENPROBE_MINDEST_M3) return null;
     if (abweichung > GEGENPROBE_TOLERANZ) {
         befunde.push({
             regel: 'aushub_gegenprobe', schwere: 'warnung',
             text: `${rolle}: Körper ${koerper.volumen.toFixed(1)} m³ gegen Raster ${rasterWert.toFixed(1)} m³ — ${(abweichung * 100).toFixed(1)} % Abweichung`,
         });
     }
+    // DIE GEGENPROBE IST EINE ZAHL, KEIN GEHEIMNIS (Teil XXI, P4). Bis hierher
+    // sprach sie nur, wenn sie ausschlug; der Planer sah nie, wie gut Raster
+    // und Körper übereinstimmen. Jetzt steht sie als Kennzahl neben der Menge.
+    return +abweichung.toFixed(5);
+}
+
+/**
+ * DIE GELTENDE AUSHUBMASSE einer Ableitung — eine Regel, vier Leser.
+ *
+ * Meldung nach dem Übernehmen, Mengen-Reiter, Eigenschaftsfenster und
+ * IFC-Qto müssen dieselbe Zahl zeigen; sonst streitet die Oberfläche mit dem
+ * Export. Seit P6 ist das nicht mehr immer `aushubRaster`: wo ein
+ * Profilkörper gebaut werden konnte, zählt der (`aushubMasse`). Rezepte ohne
+ * Profilkörper tragen keine `aushubMasse` — dort bleibt es beim Raster.
+ */
+export function aushubMasseVon(kennzahlen) {
+    const k = kennzahlen ?? {};
+    if (Number.isFinite(k.aushubMasse)) return k.aushubMasse;
+    return Number.isFinite(k.aushubRaster) ? k.aushubRaster : null;
+}
+
+/**
+ * Die Gegenprobe des PROFILKÖRPERS (Teil XXI, P6) — zwei unabhängige Wege zu
+ * derselben Menge: Querprofile gegen Rasterknoten.
+ *
+ * Bei geböschten Wänden MÜSSEN sie übereinstimmen (gemessen: 0,03 %); tun sie
+ * es nicht, ist einer von beiden falsch, und das ist ein Befund. Bei
+ * SENKRECHTEN Wänden dürfen sie auseinanderlaufen — dort misst das Raster
+ * eine Sprungfunktion und liegt nachweislich daneben. Das ist dann kein
+ * Fehler, sondern der Grund, warum der Profilkörper zählt; gesagt wird es
+ * trotzdem, sonst wundert sich jemand über zwei Zahlen.
+ */
+function _profilGegenprobe(koerper, rasterWert, wand, befunde) {
+    const bezug = Math.max(rasterWert, 1e-6);
+    const abweichung = Math.abs(koerper.volumen - rasterWert) / bezug;
+    if (Math.max(rasterWert, koerper.volumen) < GEGENPROBE_MINDEST_M3) return +abweichung.toFixed(5);
+    if (abweichung > GEGENPROBE_TOLERANZ) {
+        befunde.push(wand.n > 0
+            ? { regel: 'aushub_gegenprobe', schwere: 'warnung',
+                text: `Graben: Profilkörper ${koerper.volumen.toFixed(1)} m³ gegen Raster ${rasterWert.toFixed(1)} m³ — ${(abweichung * 100).toFixed(1)} % Abweichung` }
+            : { regel: 'masse_senkrecht_raster', schwere: 'hinweis',
+                text: `Senkrechte Wände: gerechnet wird mit dem Profilkörper ${koerper.volumen.toFixed(1)} m³; das Raster misst hier ${rasterWert.toFixed(1)} m³ (${(abweichung * 100).toFixed(1)} % daneben) — eine Sprungfunktion lässt sich an Knoten nicht messen`,
+                quelle: 'Kanalgraben-Ableitung (Teil XXI, P6)' });
+    }
+    return +abweichung.toFixed(5);
 }
 
 // ── Vorschau (Teil XVI, S2) ────────────────────────────────────────────────
@@ -280,7 +332,12 @@ const ABLEITUNGEN_ERWEITERT = {
                 // ist. Es ist die Rasterzahl — dieselbe, die der Mengenreiter
                 // zeigt und die sich mit den anderen Vorgängen zur Gesamtmasse
                 // summiert. Der Körper ist die Gegenprobe, nicht die Menge.
-                menge: { undisturbedVolume: 'aushubRaster' },
+                //
+                // DAZU DAS LOSE VOLUMEN (Teil XXI, P4): gewachsener Boden
+                // nimmt beim Lösen mehr Raum ein. Gemessen wird gewachsen,
+                // abgefahren wird lose — beide Zahlen gehören in die Datei,
+                // sonst rechnet sie jeder Empfänger mit seinem eigenen Faktor.
+                menge: { undisturbedVolume: 'aushubRaster', looseVolume: 'aushubLose' },
             },
             {
                 rolle: 'auftrag', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
@@ -317,24 +374,30 @@ const ABLEITUNGEN_ERWEITERT = {
             const gid = genannt?.gelaende;
             const ur = quellen?.gelaende;
             if (!gid || !ur) return {};
-            // NUR WENN ER NÖTIG IST. Gemessen an Fabios Gerinne (4 m Sohle,
-            // 2-m-Zellen): ohne Korridor 4,4 s und eine Gegenprobe von
-            // 0,05 %, mit Korridor 6,6 s und 0,01 %. Zwei Sekunden für die
-            // dritte Nachkommastelle sind ein schlechtes Geschäft — die
-            // Sohle liegt ja über zwei Zellen. Anders beim Kanalgraben: ein
-            // 0,9-m-Graben verschwindet in 2-m-Zellen ganz, und dort ist der
-            // Korridor deshalb fest eingebaut.
-            if (!_zuFeinFuerZelle(ur, parameter?.operationen ?? [])) return {};
+            // JEDER VORGANG BEKOMMT IHN (Teil XXI, 2026-09-17). Bis dahin nur
+            // die schmalen (`_zuFeinFuerZelle`: Gerinne, Baugrube) — „zwei
+            // Sekunden für die dritte Nachkommastelle sind ein schlechtes
+            // Geschäft". Das galt, solange nur die MASSE daran hing. Seit die
+            // Anzeige ihre Flicken fein zeichnet, hängt auch das BILD daran:
+            // eine Grube ohne Korridor lieferte einen Körper mit 2-m-Rand,
+            // während die Anzeige den Rand auf 0,5 m auflöste — gemessen
+            // 2026-09-17: 0,67 m Unterschied am Grubenrand, im Bild ein
+            // Erdkörper, der aus dem Gelände ragt. Bild und Zahl kommen aus
+            // derselben Rechnung, oder sie widersprechen sich.
             const b = _erdbauKorridor(ur, parameter?.operationen ?? []);
             if (!b) return {};
-            const flaeche = (b.maxX - b.minX) * (b.maxZ - b.minZ);
-            const grob = Number(ur.cell) || Number(parameter?.raster?.cell) || 1;
-            // Fein, aber nicht unbegrenzt: über dem Budget wird die Zelle
-            // gröber, und wo sie den groben Wert erreicht, lohnt der zweite
-            // Durchgang gar nicht mehr.
-            const cell = Math.max(ERDBAU_ZELLE, Math.sqrt(flaeche / ERDBAU_ZELLBUDGET));
-            if (!(cell < grob * 0.9)) return {};
-            return { gelaendeFein: { gid, form: 'raster', opts: { cell, bereich: b } } };
+            // DIE EINE FEINHEITSREGEL (Teil XXI, 2026-09-17): Fläche UND
+            // schmalste Kennweite entscheiden — dieselbe Funktion, die auch
+            // die Anzeige-Flicken befragen. Zwei Formeln für dieselbe Zelle
+            // hiessen zwei Gitter, und damit zwei Flächen im Bild.
+            const { k, cell } = feinheitFuer(ur, parameter?.operationen ?? [],
+                                             { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET });
+            if (k < 2) return {};
+            // AUF DEM GITTER DES GROBEN RASTERS (Teil XXI): sonst liegen die
+            // Knoten des Korridors zwischen denen der Anzeige, und Erdkörper
+            // und Gelände durchdringen sich sichtbar.
+            return { gelaendeFein: { gid, form: 'raster',
+                opts: { cell, bereich: b, gitter: { x0: ur.x0, z0: ur.z0, cell: ur.cell } } } };
         },
 
         async leite(parameter, quellen, { kernel, hoehenversatz = 0, stapel = null } = {}) {
@@ -366,13 +429,18 @@ const ABLEITUNGEN_ERWEITERT = {
                 rechenAlt = fein; rechenNeu = feinNeu;
             }
 
+            const faktor = auflockerungOder(parameter?.auflockerung, AUFLOCKERUNG.vorgabe);
             const aushub = await kernel.op('koerperZwischenRastern', { oben: rechenAlt, unten: rechenNeu });
             const auftrag = await kernel.op('koerperZwischenRastern', { oben: rechenNeu, unten: rechenAlt });
             const massen = massenAus(rechenAlt, rechenNeu) ?? { aushub: 0, auftrag: 0 };
-            _gegenprobe('Aushub', aushub.ergebnis, massen.aushub, befunde, warnungen);
-            _gegenprobe('Auftrag', auftrag.ergebnis, massen.auftrag, befunde, warnungen);
+            const abwAushub = _gegenprobe('Aushub', aushub.ergebnis, massen.aushub, befunde, warnungen);
+            const abwAuftrag = _gegenprobe('Auftrag', auftrag.ergebnis, massen.auftrag, befunde, warnungen);
 
-            const bild = await _planbild(kernel, ur, neu);
+            // DIE KANTEN auf DEMSELBEN Raster wie die Massen (feiner Korridor,
+            // wenn es einen gibt): eine Oberkante aus dem groben Raster läge
+            // neben dem Erdkörper, den sie beschreibt.
+            const { kanten, bild, warnungen: w3 } = await _kantenUndBild(kernel, rechenAlt, rechenNeu, ops);
+            warnungen.push(...w3);
 
             return {
                 teile: {
@@ -385,15 +453,24 @@ const ABLEITUNGEN_ERWEITERT = {
                     auftragRaster: massen.auftrag,
                     aushubKoerper: aushub.ergebnis?.volumen ?? 0,
                     auftragKoerper: auftrag.ergebnis?.volumen ?? 0,
+                    // DIE AUFLOCKERUNG (Teil XXI, P4): gemessen wird gewachsen,
+                    // abgefahren wird lose. Der Faktor steht im Bauplan, nicht
+                    // im Code — jeder Boden lockert anders auf.
+                    auflockerung: faktor,
+                    aushubLose: massen.aushub * faktor,
+                    gegenprobeAushub: abwAushub,
+                    gegenprobeAuftrag: abwAuftrag,
                     operationen: ops.length,
                     zellweite: rechenAlt.cell,
                     zellweiteDgm: ur.cell,
                     korridor: !!fein,
                     reihe: stapel?.reihe ?? 0,
+                    kanten: kantenUebersicht(kanten),
                 },
                 befunde,
                 warnungen,
                 bild,
+                kanten,
                 ops,       // in Welt — der Stapel faltet damit die Nachfolger
             };
         },
@@ -533,6 +610,10 @@ function _kanalgrabenWerte(parameter, rohr) {
     }
     return {
         dn, dnFest,
+        // ALT-JOURNALE KENNEN DAS FELD NICHT (Teil XXI, E4): `quelle` heisst
+        // „nimm den Bezug der Achse". Für isyifc-Daten ist das die Sohle —
+        // genau die Kur; wer den alten Stand braucht, stellt „Rohrmitte" ein.
+        achsbezug: g.achsbezug ?? 'quelle',
         umfang: g.umfang ?? 'haltung',
         wandform: WANDFORMEN[wandform] ? wandform : 'verbau',
         boden: g.boden ?? 'nichtbindig',
@@ -604,11 +685,68 @@ function _erdbauKorridor(raster, operationen) {
  */
 export const ERDBAU_ZELLE = 0.5;
 export const ERDBAU_KORRIDOR_RAND = 15;
-/** Über so vielen Zellen lohnt der feine Korridor nicht mehr — dann gröber. */
-export const ERDBAU_ZELLBUDGET = 160000;
+/**
+ * SO VIELE FEINE ZELLEN DARF EIN VORGANG KOSTEN (Teil XXI, 2026-09-17).
+ *
+ * Gemessen im Browser an der 80 × 80 m grossen Testgrube: bei 0,5 m sind das
+ * rund 31.000 Zellen, der Körper bekommt 52.784 Dreiecke, und ein Übernehmen
+ * dauert 10,7 s statt 6,6 s. Fabio: „Gräben können zig Meter lang werden —
+ * dort braucht es ein smartes Handling."
+ *
+ * 20.000 setzt die Grube auf 0,667 m (drei Teilungen statt vier) und spart
+ * damit knapp die Hälfte der Dreiecke. Was SCHMAL ist, bleibt fein: die
+ * Kennweite in `feinheitAus` überstimmt das Budget, sonst verschwände eine
+ * 0,9-m-Grabensohle, nur weil ihr Graben lang ist.
+ *
+ * Vorher 160.000 — eine Zahl, die nie band.
+ */
+export const ERDBAU_ZELLBUDGET = 20000;
 
 export const KANALGRABEN_ZELLE = 0.5;
 export const KANALGRABEN_KORRIDOR_RAND = 12;
+/**
+ * Abstand der Stationen entlang einer Haltung (m) — Teil XXI, P2b.
+ *
+ * Bis dahin mass der Graben seine Tiefe an den ZWEI Segmentenden und nahm die
+ * grössere: über 60 m Haltung eine einzige Sohlbreite, und die Grabensohle
+ * eine Gerade zwischen zwei Punkten. Zwei Meter sind vier Rasterzellen des
+ * Korridors (0,5 m) — feiner als das Gelände, das der Graben schneidet, und
+ * grob genug, dass eine lange Haltung nicht Hunderte Stationen bekommt.
+ */
+export const KANALGRABEN_STATION = 2;
+/** Wie nah ein Rohrende am Schacht liegen muss, um als Anschluss zu zählen (m). */
+export const KANALGRABEN_ANSCHLUSS = 2;
+/**
+ * Soviele Querprofile trägt ein Grabenkörper höchstens (Teil XXI, P6).
+ *
+ * Fabio, 2026-09-17: „Gräben können zig Meter lang werden." Bei festem
+ * Profilabstand hinge die Dreieckszahl an der Länge; hier wächst stattdessen
+ * der Abstand. 400 Profile sind bei 500 m Strang 1,25 m — immer noch feiner,
+ * als das Gelände dort aufgelöst ist.
+ */
+export const KANALGRABEN_PROFILE_MAX = 400;
+
+/**
+ * Eine Polylinie in Stationen zerlegen: jeder Knickpunkt bleibt, dazwischen
+ * höchstens `schritt` Meter. Die Höhe läuft linear im Segment mit.
+ */
+function _stationenEntlang(punkte, schritt) {
+    const aus = [];
+    for (let i = 0; i + 1 < punkte.length; i++) {
+        const a = punkte[i], b = punkte[i + 1];
+        const l = Math.hypot(b.x - a.x, b.z - a.z);
+        aus.push({ x: a.x, y: a.y, z: a.z });
+        if (!(l > 0)) continue;
+        const teile = Math.max(1, Math.ceil(l / Math.max(0.01, schritt)));
+        for (let k = 1; k < teile; k++) {
+            const t = k / teile;
+            aus.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+        }
+    }
+    const letzter = punkte[punkte.length - 1];
+    aus.push({ x: letzter.x, y: letzter.y, z: letzter.z });
+    return aus;
+}
 
 ABLEITUNGEN_ERWEITERT.kanalgraben = {
     id: 'kanalgraben',
@@ -631,7 +769,10 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         { rolle: 'graben', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
           predefinedType: 'TRENCH', name: (q) => `${q} · Graben`,
           // Menge (Stufe 2) — siehe erdbau; die Länge ist die Achslänge der Rohre.
-          menge: { undisturbedVolume: 'aushubRaster', length: 'laenge' } },
+          // `aushubMasse` ist die EINE geltende Zahl (Teil XXI, P6): der
+          // Profilkörper, wo es ihn gibt, sonst das Raster. `aushubRaster` und
+          // `aushubKoerper` stehen als die beiden Wege daneben.
+          menge: { undisturbedVolume: 'aushubMasse', looseVolume: 'aushubLose', length: 'laenge' } },
         { rolle: 'verfuellung', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
           predefinedType: 'BACKFILL', name: (q) => `${q} · Verfüllung`,
           menge: { compactedVolume: 'verfuellung' } },
@@ -665,10 +806,38 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const xs = punkte.map(p => Number(p?.x)).filter(Number.isFinite), zs = punkte.map(p => Number(p?.z)).filter(Number.isFinite);
         if (!xs.length) return {};
         const rand = KANALGRABEN_KORRIDOR_RAND;
-        const grob = Number(parameter?.raster?.cell) || 1;
+        const ur = quellen?.gelaende;
+        const grob = Number(ur?.cell) || Number(parameter?.raster?.cell) || 1;
+        // DIE FEINHEIT NACH DERSELBEN REGEL wie der Erdbau (Teil XXI): bis
+        // hierher nahm der Graben FEST 0,5 m ohne jedes Budget. Bei einem
+        // Strang über hunderte Meter sind das Millionen Zellen — Fabio:
+        // „Gräben können zig Meter lang werden".
+        //
+        // Seine Fläche ist ein STREIFEN (Länge × Korridorbreite), nicht das
+        // Hüllrechteck: ein diagonaler Strang füllt seine Hülle nicht aus.
+        // Seine Kennweite ist die schmalste Grabensohle nach DIN EN 1610
+        // Tabelle 1 (ohne Tiefe — die kennt erst `leite`); schmaler wird der
+        // Graben nie, also darf die Zelle nie gröber werden, als sie auflöst.
+        const w = _kanalgrabenWerte(parameter, _liste(quellen?.rohre ?? quellen?.rohr)[0] ?? null);
+        const wand = wandFuer({ wandform: w.wandform, boden: w.boden, winkelGrad: w.winkelGrad });
+        let laenge = 0, schmalste = Infinity;
+        for (const r of _liste(quellen?.rohre ?? quellen?.rohr)) {
+            const pts = (r?.punkte ?? []).filter(p => [p?.x, p?.z].every(v => Number.isFinite(Number(v))));
+            for (let i = 0; i + 1 < pts.length; i++) laenge += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
+            const dn = w.dnFest || Number(r?.dn) || w.dn;
+            schmalste = Math.min(schmalste, grabenbreite({ dn, wanddickeMm: w.wanddickeMm, tiefe: 0, wand, eigene: w.breite }).sohlbreite);
+        }
+        const streifen = 2 * rand;
+        const flaeche = Math.max(1, laenge * streifen + _liste(quellen?.schaechte).length * streifen * streifen);
+        const { k, cell } = feinheitAus({ grob, flaeche, kennweite: Number.isFinite(schmalste) ? schmalste : null,
+                                          zelle: KANALGRABEN_ZELLE, budget: ERDBAU_ZELLBUDGET });
+        if (k < 2) return {};
         return { gelaendeFein: { gid, form: 'raster', opts: {
-            cell: Math.min(grob, KANALGRABEN_ZELLE),
+            cell,
             bereich: { minX: Math.min(...xs) - rand, maxX: Math.max(...xs) + rand, minZ: Math.min(...zs) - rand, maxZ: Math.max(...zs) + rand },
+            // Auf dem Gitter des groben Rasters (Teil XXI) — Grabenkörper und
+            // Geländeanzeige sollen dieselbe Fläche zeigen, nicht zwei fast gleiche.
+            ...(ur ? { gitter: { x0: ur.x0, z0: ur.z0, cell: ur.cell } } : {}),
         } } };
     },
 
@@ -695,6 +864,8 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const breiten = [];
         const gruende = new Set();
         const rohrKoerper = [];
+        const rohrEnden = [];                            // Anschlusssohlen für die Schachtbaugruben
+        const bezuege = new Set();
         let ueberdeckungMin = Infinity;
         for (const [ri, rohr] of rohre.entries()) {
             const pts = (rohr?.punkte ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }));
@@ -702,30 +873,59 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             if (pts.some(p => !Number.isFinite(p.y))) throw new Error(`kanalgraben: Rohrachse ${ri + 1} ohne Höhe`);
             const dn = w.dnFest || Number(rohr?.dn) || w.dn;
             const r = dn / 2000;
-            let deckungMin = Infinity;
-            for (let i = 0; i + 1 < pts.length; i++) {
-                const a = pts[i], b = pts[i + 1];
-                laenge += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
-                const sohleA = a.y - r - w.bettung, sohleB = b.y - r - w.bettung;
-                // Grabentiefe je Segment: Gelände an beiden Enden gegen die Sohle.
-                let tiefe = 0;
-                for (const [p, so] of [[a, sohleA], [b, sohleB]]) {
-                    const h = hoeheAn(p.x, p.z);
-                    if (Number.isFinite(h)) tiefe = Math.max(tiefe, h - so);
-                }
+            // WO DIE ACHSE LIEGT (Teil XXI, E4): das Formular sagt es, sonst
+            // die Quelle. Vorher rechnete diese Stelle FEST mit der Rohrmitte,
+            // während der Längsschnitt dieselbe Höhe als Sohle las — bei
+            // isyifc-Achsen grub der Graben DN/2 zu tief.
+            const bezug = bezugWaehlen(w.achsbezug, rohr?.achsbezug);
+            const rohrBezug = { achsbezug: bezug, dn };
+            bezuege.add(bezug);
+
+            // DIE STATIONEN: Sohle der Haltung, alle `KANALGRABEN_STATION` m
+            // plus jeder Knickpunkt. Die Grabensohle liegt um die Bettung
+            // darunter, die Tiefe misst sich am Gelände GENAU DORT.
+            const roh = _stationenEntlang(pts, KANALGRABEN_STATION);
+            const stationen = roh.map(s => {
+                const grabensohle = rohrsohle(s.y, rohrBezug) - w.bettung;
+                const h = hoeheAn(s.x, s.z);
+                return { x: s.x, y: grabensohle, z: s.z,
+                         tiefe: Number.isFinite(h) ? Math.max(0, h - grabensohle) : 0 };
+            });
+            // DIE SOHLBREITE JE TEILSTRECKE: DIN EN 1610 Tabelle 2 ist eine
+            // Stufenfunktion der Tiefe — je Teilstrecke die grössere ihrer
+            // beiden Tiefen, nicht eine Breite für die ganze Haltung.
+            for (let i = 0; i + 1 < stationen.length; i++) {
+                const tiefe = Math.max(stationen[i].tiefe, stationen[i + 1].tiefe);
                 tiefeMax = Math.max(tiefeMax, tiefe);
                 const gb = grabenbreite({ dn, wanddickeMm: w.wanddickeMm, tiefe, wand, eigene: w.breite });
+                stationen[i].sohlbreite = gb.sohlbreite;
                 breiten.push(gb.sohlbreite);
                 gruende.add(gb.grund);
-                for (const h of gb.hinweise) warnungen.push(`grabenbreite: ${h}`);
-                ops.push({ art: 'gerinne', parameter: {
-                    achse: [{ x: a.x, z: a.z }, { x: b.x, z: b.z }],
-                    sohlbreite: gb.sohlbreite, boeschung: wand.n,
-                    sohleAnfang: sohleA, sohleEnde: sohleB,
-                } });
+                for (const hinweis of gb.hinweise) warnungen.push(`grabenbreite: ${hinweis}`);
             }
-            // ÜBERDECKUNG je Rohr: Scheitel gegen das Ur-Gelände.
-            const probe = (x, y, z) => { const h = hoeheAn(x, z); if (Number.isFinite(h)) deckungMin = Math.min(deckungMin, h - (y + r)); };
+            stationen[stationen.length - 1].sohlbreite = stationen[stationen.length - 2].sohlbreite;
+            for (let i = 0; i + 1 < pts.length; i++) {
+                laenge += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y, pts[i + 1].z - pts[i].z);
+            }
+            // EINE Operation je Haltung — Stirnseiten damit nur an den echten Enden.
+            ops.push({ art: 'gerinne', parameter: {
+                stationen: stationen.map(s => ({ x: s.x, y: s.y, z: s.z, sohlbreite: s.sohlbreite })),
+                boeschung: wand.n,
+                sohlbreite: Math.max(...stationen.map(s => s.sohlbreite ?? 0)),
+            } });
+            for (const p of [pts[0], pts[pts.length - 1]]) {
+                rohrEnden.push({ x: p.x, z: p.z, sohle: rohrsohle(p.y, rohrBezug) });
+            }
+
+            // ÜBERDECKUNG je Rohr: Rohrscheitel gegen das Gelände VOR DIESEM
+            // GRABEN — also den Stand nach allen Vorgängern. Dieselbe Aussage
+            // steht im Text und in `quelle`; vorher sagten Kommentar
+            // („Ur-Gelände"), Text („Fertiggelände") und Rechnung Verschiedenes.
+            let deckungMin = Infinity;
+            const probe = (x, y, z) => {
+                const h = hoeheAn(x, z);
+                if (Number.isFinite(h)) deckungMin = Math.min(deckungMin, h - rohrscheitel(y, rohrBezug));
+            };
             for (let i = 0; i < pts.length; i++) {
                 probe(pts[i].x, pts[i].y, pts[i].z);
                 if (i + 1 < pts.length) probe((pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2, (pts[i].z + pts[i + 1].z) / 2);
@@ -734,13 +934,16 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             if (Number.isFinite(deckungMin) && deckungMin < MINDEST_UEBERDECKUNG) {
                 befunde.push({ regel: 'ueberdeckung_gering', schwere: 'warnung',
                     globalId: rohrGids[ri] ?? null,
-                    text: `Überdeckung ${deckungMin.toFixed(2)} m unter ${MINDEST_UEBERDECKUNG.toFixed(1)} m (Rohrscheitel gegen das Fertiggelände${rohre.length > 1 ? `, Rohr ${ri + 1} von ${rohre.length}` : ''})`,
-                    wert: `${deckungMin.toFixed(2)} m`, grenze: `mindestens ${MINDEST_UEBERDECKUNG.toFixed(2)} m`, quelle: 'Kanalgraben-Ableitung (Ur-Gelände)' });
+                    text: `Überdeckung ${deckungMin.toFixed(2)} m unter ${MINDEST_UEBERDECKUNG.toFixed(1)} m (Rohrscheitel gegen das Gelände vor diesem Graben${rohre.length > 1 ? `, Rohr ${ri + 1} von ${rohre.length}` : ''})`,
+                    wert: `${deckungMin.toFixed(2)} m`, grenze: `mindestens ${MINDEST_UEBERDECKUNG.toFixed(2)} m`,
+                    quelle: 'Kanalgraben-Ableitung (Gelände vor diesem Graben)' });
             }
-            // DER ROHRKÖRPER — geschlossener Sweep; fällt er aus, gilt die Formel.
+            // DER ROHRKÖRPER — geschlossener Sweep UM DIE ROHRMITTE; fällt er
+            // aus, gilt die Formel.
+            const mitte = pts.map(p => ({ ...p, y: rohrmitte(p.y, rohrBezug) }));
             let seg = 0;
-            for (let i = 0; i + 1 < pts.length; i++) seg += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y, pts[i + 1].z - pts[i].z);
-            const sw = await kernel.op('sweep', { profil: kreisProfil(r, 12), achse: { punkte: pts } });
+            for (let i = 0; i + 1 < mitte.length; i++) seg += Math.hypot(mitte[i + 1].x - mitte[i].x, mitte[i + 1].y - mitte[i].y, mitte[i + 1].z - mitte[i].z);
+            const sw = await kernel.op('sweep', { profil: kreisProfil(r, 12), achse: { punkte: mitte } });
             if (sw.ergebnis?.closed) { rohrVolumen += sw.ergebnis.volumen; rohrKoerper.push(sw.ergebnis); }
             else { rohrVolumen += Math.PI * r * r * seg; warnungen.push(`rohrvolumen_analytisch: Rohr ${ri + 1} nicht geschlossen — π·r²·L`); }
         }
@@ -751,7 +954,20 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const bm = baugrubenmass({ aussenmass: w.schachtMass, wand });
         for (const s of schaechte) {
             if (!Number.isFinite(s?.x) || !Number.isFinite(s?.z) || !Number.isFinite(s?.y)) continue;
-            const sohle = s.y - w.bettung;
+            // DIE BAUGRUBE REICHT BIS UNTER DEN SCHACHT (Teil XXI, P2c).
+            //
+            // Vorher: `s.y − Bettung`, und `s.y` ist die PLATZIERUNG, nicht die
+            // Schachtsohle. Die Grabensohle daneben liegt bei
+            // `Rohrsohle − Bettung` — beides klaffte um den Rohrhalbmesser
+            // auseinander, bei DN 300 fünfzehn Zentimeter, in `b3.test.js`
+            // sogar festgeschrieben. Jetzt zählt der TIEFSTE der drei
+            // belegbaren Punkte: die Unterkante der Hülle, die Platzierung und
+            // die Sohlen der anschliessenden Haltungen.
+            const anschluesse = rohrEnden
+                .filter(e => Math.hypot(e.x - s.x, e.z - s.z) <= KANALGRABEN_ANSCHLUSS)
+                .map(e => e.sohle);
+            const unten = Math.min(Number.isFinite(s.unterkante) ? s.unterkante : s.y, ...anschluesse);
+            const sohle = unten - w.bettung;
             const h = hoeheAn(s.x, s.z);
             if (Number.isFinite(h)) tiefeMax = Math.max(tiefeMax, h - sohle);
             const richtung = baugrubenRichtung(s, rohre);
@@ -765,10 +981,65 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const { raster: neuFein, warnungen: w1 } = formeNach(rechen, ops);
         warnungen.push(...w1);
         const neu = fein ? formeNach(ur, ops).raster : neuFein;
-        const graben = await kernel.op('koerperZwischenRastern', { oben: rechen, unten: neuFein });
         const massen = massenAus(rechen, neuFein) ?? { aushub: 0, auftrag: 0 };
-        _gegenprobe('Graben', graben.ergebnis, massen.aushub, befunde, warnungen);
-        const verfuellung = Math.max(0, massen.aushub - rohrVolumen);
+
+        // ── DER GRABENKÖRPER (Teil XXI, P6) ──────────────────────────────────
+        //
+        // Ein Graben ist ein Trapez aus der Norm, kein Abdruck des Geländes.
+        // Aus Rasterknoten gebaut wackelt seine Sohle um eine Zellweite, und
+        // bei SENKRECHTEN Wänden — `wandform: 'verbau'`, die Vorgabe — ist
+        // auch die Masse unbrauchbar: gemessen +38,6 % gegen die Handrechnung
+        // (`geometrie/ops/Graben.js` nennt die ganze Messreihe). Deshalb aus
+        // QUERPROFILEN, wo es geht.
+        //
+        // Es geht, wenn dieser Vorgang aus GENAU EINEM Graben besteht. Zwei
+        // Haltungen oder eine Schachtbaugrube daneben durchdringen einander;
+        // zwei überlappende Schalen wären keine Menge mehr, und die
+        // 3D-Vereinigung dafür rechnet auf dem Server (G7). Dann bleibt es
+        // beim Rasterkörper — und der sagt es.
+        const gerinneOps = ops.filter(o => o.art === 'gerinne');
+        const profilFaehig = ops.length === 1 && gerinneOps.length === 1;
+        let graben = null, koerperArt = 'raster', koerperGrund = null;
+        if (profilFaehig) {
+            const pk = await kernel.op('grabenkoerper', { raster: rechen }, {
+                stationen: gerinneOps[0].parameter.stationen,
+                boeschung: wand.n,
+                // Ein Strang kann hunderte Meter lang werden (Fabio, 2026-09-17):
+                // die Profilzahl ist gedeckelt, der Schritt wächst mit der Länge.
+                schritt: Math.max(GRABEN_SCHRITT, laenge / KANALGRABEN_PROFILE_MAX),
+                quer: Math.max(rechen.cell, GRABEN_QUER),
+            });
+            if (pk.ergebnis?.closed) { graben = pk; koerperArt = 'profil'; }
+            else {
+                koerperGrund = pk.warnungen.join('; ') || 'kein geschlossener Profilkörper';
+                warnungen.push(`grabenkoerper_raster: ${koerperGrund}`);
+            }
+        } else {
+            koerperGrund = ops.length > 1
+                ? `${gerinneOps.length} Graben und ${ops.length - gerinneOps.length} Baugrube(n) in einem Vorgang — sie durchdringen einander`
+                : 'kein Graben in diesem Vorgang';
+        }
+        if (!graben) graben = await kernel.op('koerperZwischenRastern', { oben: rechen, unten: neuFein });
+
+        // DIE MASSE: der Profilkörper, wenn es ihn gibt — sonst das Raster.
+        // EINE Zahl trägt die Menge (`aushubMasse`), die beiden Wege stehen
+        // daneben, und `massenQuelle` sagt, welcher gezählt hat.
+        const aushubMasse = koerperArt === 'profil' ? graben.ergebnis.volumen : massen.aushub;
+        const abwGraben = koerperArt === 'profil'
+            ? _profilGegenprobe(graben.ergebnis, massen.aushub, wand, befunde)
+            : _gegenprobe('Graben', graben.ergebnis, massen.aushub, befunde, warnungen);
+        if (koerperArt !== 'profil' && !(wand.n > 0) && massen.aushub > GEGENPROBE_MINDEST_M3) {
+            // Kein Profilkörper UND senkrechte Wände: die Masse kommt aus dem
+            // Raster, und das kann eine Sprungfunktion nicht messen. Laut
+            // statt tot (Gesetz 10) — die Grössenordnung steht dabei.
+            const b = breiten.length ? Math.min(...breiten) : 0;
+            befunde.push({ regel: 'masse_senkrecht_raster', schwere: 'warnung',
+                text: `Senkrechte Wände auf ${rechen.cell.toFixed(2)} m Raster: die Aushubmasse kann um rund ${b > 0 ? (100 * rechen.cell / b).toFixed(0) : '50'} % danebenliegen${koerperGrund ? ` (kein Profilkörper: ${koerperGrund})` : ''}`,
+                wert: `${massen.aushub.toFixed(1)} m³ aus dem Raster`,
+                quelle: 'Kanalgraben-Ableitung (Teil XXI, P6)' });
+        }
+        const faktor = auflockerungOder(parameter?.auflockerung, auflockerungFuer(w.boden));
+        const verfuellung = Math.max(0, aushubMasse - rohrVolumen);
 
         // DER VERFÜLLUNGSKÖRPER (G7): Graben minus ALLE Rohre — EINE 3D-Differenz
         // auf dem Server, die Rohre als Liste. Vorher lief je Rohr eine
@@ -785,7 +1056,8 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             warnungen.push('verfuellung_koerper_fehlt: Graben oder Rohrkörper fehlt');
         }
 
-        const bild = await _planbild(kernel, rechen, neuFein);
+        const { kanten, bild, warnungen: w3 } = await _kantenUndBild(kernel, rechen, neuFein, ops);
+        warnungen.push(...w3);
         return {
             teile: {
                 graben: graben.ergebnis ? { form: 'koerper', daten: graben.ergebnis } : null,
@@ -796,8 +1068,20 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                 zellweite: rechen.cell, zellweiteDgm: ur.cell, korridor: !!fein,
                 aushubRaster: massen.aushub, aushubKoerper: graben.ergebnis?.volumen ?? 0,
                 auftragRaster: 0, auftragKoerper: 0,
+                // WELCHE ZAHL GILT (Teil XXI, P6) — und warum diese.
+                aushubMasse, koerperArt, koerperGrund,
+                massenQuelle: koerperArt === 'profil' ? 'Querprofile' : 'Raster',
                 rohrVolumen, verfuellung, verfuellungKoerper: verfuellungKoerper?.volumen ?? null,
+                // Auflockerung (Teil XXI, P4): Vorgabe aus der Bodenklasse, die
+                // der Graben ohnehin führt — im Formular änderbar.
+                auflockerung: faktor,
+                aushubLose: aushubMasse * faktor,
+                gegenprobeAushub: abwGraben,
                 laenge, dn: w.dnFest || (rohre.length === 1 ? (Number(rohre[0]?.dn) || w.dn) : null),
+                // WORAUF SICH DIE HÖHEN BEZIEHEN (E4) — sichtbar, nicht angenommen.
+                achsbezug: bezuege.size === 1 ? [...bezuege][0] : [...bezuege].sort().join('+'),
+                achsbezugWahl: w.achsbezug,
+                stationen: KANALGRABEN_STATION,
                 sohlbreite: breiten.length ? Math.max(...breiten) : null,
                 sohlbreiteMin: breiten.length ? Math.min(...breiten) : null,
                 ueberdeckungMin: Number.isFinite(ueberdeckungMin) ? ueberdeckungMin : null,
@@ -806,8 +1090,9 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                 regel: GRABENREGELN.quelle, gruende: [...gruende],
                 operationen: ops.length,
                 reihe: stapel?.reihe ?? 0,
+                kanten: kantenUebersicht(kanten),
             },
-            befunde, warnungen, bild,
+            befunde, warnungen, bild, kanten,
             ops,
         };
     },
@@ -828,32 +1113,45 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const eigen = roh.map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })).filter(p => [p.x, p.y, p.z].every(Number.isFinite));
         if (eigen.length < 2) return { primitive: [], chips: [{ art: 'vorschau', text: 'Kanalgraben — Achse fehlt' }], hinweise: [] };
         // Die Läufe: das Subjekt, beim Strang die ganze Kette (Anfang → Ende je Haltung).
-        const laeufe = [{ punkte: eigen, dn: w.dnFest || achse?.dn || w.dn }];
+        // DIESELBE STELLE WIE IM LAUF (Teil XXI, E4): was das Formular sagt,
+        // sonst der Bezug der Quelle. Eine Vorschau, die anders rechnet als das
+        // Übernehmen, ist schlimmer als keine.
+        const laeufe = [{ punkte: eigen, dn: w.dnFest || achse?.dn || w.dn, achsbezug: bezugWaehlen(w.achsbezug, achse?.achsbezug) }];
         if (w.umfang === 'strang') {
             for (const k of (subjekt?.strang ?? [])) {
                 if (k?.globalId === subjekt?.globalId || !k?.anfang || !k?.ende) continue;
-                laeufe.push({ punkte: [k.anfang, k.ende].map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })), dn: w.dnFest || k.dn || w.dn });
+                laeufe.push({ punkte: [k.anfang, k.ende].map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) })),
+                              dn: w.dnFest || k.dn || w.dn, achsbezug: bezugWaehlen(w.achsbezug, k.achsbezug ?? achse?.achsbezug) });
             }
         }
         const primitive = [];
         let deckung = Infinity, breiteMax = 0, tiefeMax = 0;
         for (const l of laeufe) {
             const r = l.dn / 2000;
-            const sohle = l.punkte.map(p => ({ x: p.x, y: p.y - r - w.bettung, z: p.z }));
+            const bezug = { achsbezug: l.achsbezug, dn: l.dn };
+            const sohle = l.punkte.map(p => ({ x: p.x, y: rohrsohle(p.y, bezug) - w.bettung, z: p.z }));
             const tiefe = _tiefeUeber(hoeheAn, sohle, 2 * r + w.bettung + 1);
             tiefeMax = Math.max(tiefeMax, tiefe);
             const gb = grabenbreite({ dn: l.dn, wanddickeMm: w.wanddickeMm, tiefe, wand, eigene: w.breite });
             breiteMax = Math.max(breiteMax, gb.sohlbreite);
             primitive.push(..._grabenGeist(sohle, { sohlbreite: gb.sohlbreite, boeschung: wand.n, tiefe }, farbe));
-            for (const p of l.punkte) { const h = hoeheAn?.(p.x, p.z); if (Number.isFinite(h)) deckung = Math.min(deckung, h - (p.y + r)); }
+            for (const p of l.punkte) { const h = hoeheAn?.(p.x, p.z); if (Number.isFinite(h)) deckung = Math.min(deckung, h - rohrscheitel(p.y, bezug)); }
         }
         // Die Schächte am Strang: ein Zylinder je Baugrube.
         const kanten = w.umfang === 'strang' ? [{ anfang: eigen[0], ende: eigen[eigen.length - 1] }, ...(subjekt?.strang ?? [])] : [{ anfang: eigen[0], ende: eigen[eigen.length - 1] }];
         const schaechte = schaechteAnKanten(kanten, subjekt?.schachtKnoten ?? []);
         const bm = baugrubenmass({ aussenmass: w.schachtMass, wand });
+        // Die Anschlusssohlen wie im Lauf — sonst zeigt die Vorschau eine
+        // Baugrube, die flacher endet als die, die entsteht (P2c).
+        const vorschauEnden = laeufe.flatMap(l => {
+            const bezug = { achsbezug: l.achsbezug, dn: l.dn };
+            return [l.punkte[0], l.punkte[l.punkte.length - 1]]
+                .map(q => ({ x: q.x, z: q.z, sohle: rohrsohle(q.y, bezug) }));
+        });
         for (const s of schaechte) {
             const p = s.punkt ?? s;
-            const sohle = p.y - w.bettung;
+            const nah = vorschauEnden.filter(e => Math.hypot(e.x - p.x, e.z - p.z) <= KANALGRABEN_ANSCHLUSS).map(e => e.sohle);
+            const sohle = Math.min(p.y, ...nah) - w.bettung;
             const h = hoeheAn?.(p.x, p.z);
             const oben = Number.isFinite(h) ? h : sohle + 2;
             const richtung = baugrubenRichtung(p, kanten);
@@ -865,6 +1163,10 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             tiefeMax = Math.max(tiefeMax, tiefe);
         }
         const chips = [{ art: 'vorschau', text: `Graben ${WANDFORMEN[wand.wandform]?.titel ?? wand.wandform}${wand.n > 0 ? ` ${wand.winkelGrad}° (auch Stirnseiten)` : ''} · Sohlbreite bis ${breiteMax.toFixed(2)} m (DIN EN 1610)${laeufe.length > 1 ? ` · Strang: ${laeufe.length} Haltungen` : ''}${schaechte.length ? ` · ${schaechte.length} Baugrube${schaechte.length === 1 ? '' : 'n'}` : ''}` }];
+        // WAS HIER ANGENOMMEN WIRD, STEHT DA (E4): die Achshöhe verschiebt den
+        // ganzen Graben um DN/2 — das darf keine unsichtbare Annahme sein.
+        chips.push({ art: 'vorschau',
+                     text: bezugTitel(laeufe[0].achsbezug, { quelle: achse?.quelle, ausQuelle: w.achsbezug === 'quelle' }) });
         for (const b of pruefeGraben({ wand, tiefeMax })) chips.push({ art: 'warnung', text: b.text });
         if (Number.isFinite(deckung)) {
             chips.push({ art: deckung < MINDEST_UEBERDECKUNG ? 'warnung' : 'vorschau',
@@ -890,7 +1192,10 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const wand = WANDFORMEN[w.wandform]?.titel ?? w.wandform;
         const breite = w.breite ? `Sohlbreite ${w.breite.toFixed(2)} m` : 'Sohlbreite nach DIN EN 1610';
         const dn = w.dnFest ? `DN ${w.dnFest}` : 'DN aus Rohr';
-        return `Kanalgraben · ${rolle} · ${dn} · ${umfang} · ${wand} · ${breite}`;
+        // Der Achsbezug gehört in die Beschreibung: er verschiebt jede Höhe des
+        // Grabens um DN/2, und im Verlauf muss man sehen, was galt (E4).
+        const bezug = w.achsbezug === 'quelle' ? 'Achse aus der Quelle' : bezugTitel(w.achsbezug);
+        return `Kanalgraben · ${rolle} · ${dn} · ${umfang} · ${wand} · ${breite} · ${bezug}`;
     },
 };
 
@@ -944,7 +1249,7 @@ const BAUWERKSGRUBE = {
     teile: [
         { rolle: 'grube', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
           predefinedType: 'EXCAVATION', name: (q) => `${q} · Baugrube`,
-          menge: { undisturbedVolume: 'aushubRaster' } },          // Menge (Stufe 2) — siehe erdbau
+          menge: { undisturbedVolume: 'aushubRaster', looseVolume: 'aushubLose' } },   // Menge (Stufe 2) — siehe erdbau
         // kein `dgm`-Teil mehr (Stufe 1) — siehe erdbau; `leite` liefert es weiter.
     ],
     hoehenFelder: ERDBAU_HOEHENFELDER,
@@ -981,7 +1286,8 @@ const BAUWERKSGRUBE = {
 
         const grube = await kernel.op('koerperZwischenRastern', { oben: ur, unten: neu });
         const massen = massenAus(ur, neu) ?? { aushub: 0, auftrag: 0 };
-        _gegenprobe('Baugrube', grube.ergebnis, massen.aushub, befunde, warnungen);
+        const abwGrube = _gegenprobe('Baugrube', grube.ergebnis, massen.aushub, befunde, warnungen);
+        const faktorGrube = auflockerungOder(parameter?.auflockerung, auflockerungFuer(w.boden));
 
         // Die Tiefe: vom höchsten Geländepunkt über der Grube bis zur Sohle.
         const tiefe = _grubenTiefe(ur, aussen, sohle);
@@ -990,7 +1296,8 @@ const BAUWERKSGRUBE = {
             warnungen.push('arbeitsraum_null: ohne Arbeitsraum liegt die Grubenwand am Bauwerk');
         }
 
-        const bild = await _planbild(kernel, ur, neu);
+        const { kanten, bild, warnungen: wK } = await _kantenUndBild(kernel, ur, neu, ops);
+        warnungen.push(...wK);
 
         return {
             teile: {
@@ -1000,6 +1307,9 @@ const BAUWERKSGRUBE = {
             kennzahlen: {
                 aushubRaster: massen.aushub,
                 aushubKoerper: grube.ergebnis?.volumen ?? 0,
+                auflockerung: faktorGrube,
+                aushubLose: massen.aushub * faktorGrube,
+                gegenprobeAushub: abwGrube,
                 grundflaeche: umrissFlaeche(grundriss.ring),
                 grubenflaeche: umrissFlaeche(aussen),
                 arbeitsraum,
@@ -1007,10 +1317,12 @@ const BAUWERKSGRUBE = {
                 wandform: w.wandform,
                 boeschung: w.n,
                 reihe: stapel?.reihe ?? 0,
+                kanten: kantenUebersicht(kanten),
             },
             befunde,
             warnungen,
             bild,
+            kanten,
             ops,
         };
     },
@@ -1150,17 +1462,32 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
         const stand = quellen?.gelaende;
         if (!stand) throw new Error('anzeige: Quellgelände fehlt');
         const ur = stapel?.urRaster ?? stand;
-        const massen = massenAus(ur, stand) ?? { aushub: 0, auftrag: 0 };
+        // GESAMT IST DIE SUMME DER VORGÄNGE (Teil XXI, P1b), nicht eine zweite
+        // Rechnung auf dem groben Raster: jeder Vorgang misst auf seinem feinen
+        // Korridor, und genau seine Zahl steht im Mengenreiter und im IFC.
+        // Aus dem groben Stand kam eine dritte Zahl (gemessen: 0,4 % daneben),
+        // die niemand einlösen konnte. Der Rückfall bleibt für den Fall, dass
+        // ein Vorgang keine Massen melden konnte — dann sagt es die Kennzahl.
+        const grob = massenAus(ur, stand) ?? { aushub: 0, auftrag: 0 };
+        const je = stapel?.massenJeVorgang?.() ?? [];
+        const ausVorgaengen = je.length > 0 && je.every(m => m.gemessen);
+        const massen = ausVorgaengen
+            ? { aushub: je.reduce((s, m) => s + m.aushub, 0), auftrag: je.reduce((s, m) => s + m.auftrag, 0) }
+            : grob;
         // FEINE FLICKEN (Teil XX, 2026-09-11): im 2-m-Raster verschmierte eine
         // Böschungskante über eine Zelle (im Browser 1,3 m zu tief an der
         // Linie). Wo Operationen wirken, wird die Anzeige so fein wie der
         // Korridor der Massen — mit denselben zwei Zahlen.
-        const { flicken, zelle, warnungen } = anzeigeFlicken(ur, stand, stapel?.opsVor ?? [],
-            { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET });
+        // Das Ur im Flicken kommt aus DERSELBEN Quelle wie der Korridor der
+        // Erdkörper (Teil XXI) — sonst zeigen Körper und Gelände zwei fast
+        // gleiche Flächen, und die durchdringen sich sichtbar.
+        const { flicken, zelle, warnungen } = await anzeigeFlicken(ur, stand, stapel?.opsVor ?? [],
+            { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET, feinesUr: stapel?.feinesUr ?? null });
         return {
             teile: { anzeige: { form: 'raster', daten: stand, flicken } },
             kennzahlen: {
                 aushubGesamt: massen.aushub, auftragGesamt: massen.auftrag,
+                gesamtQuelle: ausVorgaengen ? 'vorgaenge' : 'raster',
                 vorgaenge: (stapel?.opsVor ?? []).length ? (parameter?.vorgaenge ?? []).length : 0,
                 operationen: (stapel?.opsVor ?? []).length,
                 zellweite: stand.cell,

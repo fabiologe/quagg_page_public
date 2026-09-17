@@ -39,6 +39,22 @@ export const FAERBE_ROLLEN = Object.freeze(['dimmen', 'kandidat', 'ziel']);
 const FARBEN_VORGABE = Object.freeze({ accent: '#4fc3f7', warn: '#ffb74d', ok: '#66bb6a' });
 
 /**
+ * DIE FARBE EINER ROLLE — als sRGB-Hex, an EINER Stelle.
+ *
+ * Gemessen 2026-09-17 (three r181, ColorManagement an): `new THREE.Color(0.31,
+ * 0.76, 0.97)` im Färbe-Stapel der Engine gilt als LINEAR und erscheint am
+ * Bildschirm als `#97e2fc` — während der Geist derselben Bearbeitung mit
+ * `'#4fc3f7'` gezeichnet wird. Zwei Farben für dieselbe Aussage, nebeneinander
+ * im Bild. Aus Hex gebaut rechnet three sRGB → linear und zeigt, was dasteht;
+ * der Katalog (`Bauteilfarben`) ging diesen Weg immer.
+ */
+export const FAERBE_FARBEN = Object.freeze({
+    dimmen:   '#737373',            // neutrales Grau, damit das Gedimmte zurücktritt
+    kandidat: FARBEN_VORGABE.accent,
+    ziel:     FARBEN_VORGABE.warn,
+});
+
+/**
  * @param {Array<object>|object|null} beschreibungen  Journaleinträge aus `anwenden`
  * @param {object} ctx
  * @param {object}   [ctx.subjekt]        das eingeordnete Bauteil (anker, box, achse, …)

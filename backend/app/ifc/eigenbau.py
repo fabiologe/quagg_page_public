@@ -91,6 +91,44 @@ FACHMODELLE = {
     "cde": ("CDE-Eigenbau", "In der CDE erzeugte Bauteile", "gruppe"),
 }
 ART_TITEL = {"erdbau": "Gelaende formen", "kanalgraben": "Kanalgraben", "bauwerksgrube": "Bauwerksgrube"}
+
+# BOESCHUNGSKANTEN (Teil XX Stufe B) — WIE SIE IM SCHEMA HEISSEN.
+#
+# Fabios Frage (2026-09-17): „ist IfcAnnotation wirklich richtig, oder eher
+# ein Survey-Point, also die Punkte einer Bruchkante als IFC-Element?"
+# Am gepinnten Schema IFC4X3_ADD2 nachgeschlagen, nicht geraten:
+#
+#  1. Ein `IfcSurveyPoint` GIBT ES NICHT. In der ganzen Deklarationsliste des
+#     Schemas kommt „Survey" nur als Aufzaehlungswert und in einem Pset vor —
+#     keine Entitaet.
+#  2. Vermessungsdaten SIND `IfcAnnotation`. Beleg: `Pset_AnnotationSurveyArea`
+#     gilt fuer `IfcAnnotation/SURVEY` und sagt woertlich „...to be assigned to
+#     survey point set or resulting surface patches". Die Entitaet ist also
+#     richtig; offen war nur der PredefinedType.
+#  3. `IfcAnnotation` selbst: „an information element within the geometric
+#     (and spatial) context ... Annotations include additional POINTS, curves,
+#     text, dimensioning" — Punkte und Kurven ausdruecklich eingeschlossen.
+#  4. BREAKLINE gibt es nirgends. Der einzige eigene Bruchkanten-Begriff des
+#     Schemas ist `IfcTriangulatedIrregularNetwork.Flags` („flags for each face
+#     indicating breaklines between faces"). Der braucht die geformte
+#     Gelaendeflaeche IN der Datei — die schreibt die CDE seit Paket v2 bewusst
+#     nicht (sie waere ein zweites TERRAIN am selben Ort).
+#
+# DESHALB: `IfcAnnotation` mit PredefinedType SURVEY — der Wert, unter dem ein
+# Empfaenger Vermessungs- und Gelaendeannotationen mit einem Standardfilter
+# findet —, verfeinert durch `ObjectType` mit dem deutschen Fachbegriff.
+#
+# UND KEINE FALSCHE AUSSAGE: `Pset_AnnotationSurveyArea` (AcquisitionMethod
+# GPS, LASERSCAN, THEODOLITE ...) wird NICHT geschrieben — diese Kanten sind
+# gerechnet, nicht gemessen. Woher sie kommen, steht in `Quagg_CDE`
+# (Ableitung, Rolle, Vorgang) und in der Vorgangsgruppe.
+KANTEN_PREDEFINED = "SURVEY"
+KANTEN_ARTEN = {
+    "oberkante":   ("Boeschungsoberkante", "Boeschungsoberkante"),
+    "fuss":        ("Boeschungsfuss", "Boeschungsfuss"),
+    "sohlkante":   ("Sohlkante", "Sohlkante"),
+    "kronenkante": ("Kronenkante", "Kronenkante"),
+}
 MENGEN_METHODE = ("Quagg CDE: Differenz der Gelaenderaster vor und nach dem Vorgang "
                   "(Mittel der vier Knoten je Zelle); der Koerper ist die Gegenprobe")
 # Vorlagentyp -> (Mengenklasse, Wertattribut)
@@ -354,13 +392,14 @@ def _quellen_json(b: dict) -> str | None:
 
 
 def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str | None = None,
-               bearbeiter: str = "", ablage: str | None = None) -> dict:
+               bearbeiter: str = "", firma: str = "", ablage: str | None = None) -> dict:
     """Das Paket als eigenstaendige IFC4X3_ADD2-Datei schreiben.
 
     Der Einhaengepunkt fuer den Verbundlauf (`cli.py`, Sitzung quagg-page-de).
 
     @param schluessel  macht die abgeleiteten GlobalIds je Satz eindeutig
     @param ablage      wo die Registerdateien liegen — `Location` der Dokumentverweise
+    @param firma       Organisation dessen, der ausgibt (S4 neu); leer: `paket.organisation`, sonst die Vorgabe
     @returns Bericht: {"bauteile": n, "uebersprungen": [...], "warnungen": [...],
              "wirte_offen": n, ...}
     """
@@ -376,6 +415,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     herkunft = paket.get("crsHerkunft") or f"aus der Georeferenz-Erkennung der CDE ({crs})"
     try:
         g = zielgeruest(name, crs=crs, bearbeiter=bearbeiter or paket.get("bearbeiter", ""),
+                        firma=firma or paket.get("organisation") or "",
                         schluessel=satz, crs_herkunft=herkunft)
     except VerbundUnmoeglich as e:                   # unbekanntes System: nennen, nicht raten
         raise PaketFehler(str(e)) from e
@@ -497,6 +537,16 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         produkte.append(el)
         geschrieben.append((el, b))
 
+    # DIE BOESCHUNGSKANTEN (Teil XX Stufe B): keine Bauteile, aber `IfcProduct`
+    # — sie gehen deshalb durch dieselben Listen wie ein Bauteil und landen in
+    # Raumgliederung, Fachmodell- und Vorgangsgruppe.
+    kanten_neu, kanten_weg = _kanten_schreiben(f, besitz, koerper_ctx.ParentContext or koerper_ctx,
+                                               paket, satz, geschrieben)
+    for el, b in kanten_neu:
+        produkte.append(el)
+        geschrieben.append((el, b))
+    uebersprungen.extend(kanten_weg)
+
     # Wirte im selben Paket: jetzt, wo alle Bauteile stehen (der Wirt kann in
     # der Liste nach seinem Aushub kommen).
     fachmodelle, vorgaenge = {}, 0
@@ -527,6 +577,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         # V08 des Prueftors: jedes Bauteil gehoert einer Fachmodell-Gruppe an —
         # Erdbau und Eigenbau getrennt, damit ein Empfaenger den Aushub findet,
         # ohne Rezeptnamen zu kennen.
+        # WEGGELASSEN (S4 neu, K7): was beim Ausgeben abgewaehlt wurde, steht in der
+        # Datei — an jeder Fachmodell-Gruppe, denn es gilt fuer die ganze Ausgabe.
+        ausgelassen = [a for a in paket.get("ausgelassen") or [] if isinstance(a, dict) and a.get("globalId")]
+        weg_vorgaenge = "; ".join(sorted({str(a["vorgang"]) for a in ausgelassen if a.get("vorgang")}))[:250]
         je_fachmodell = {}
         for el, b in geschrieben:
             art = b.get("fachmodell") if b.get("fachmodell") in FACHMODELLE else "cde"
@@ -546,6 +600,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                 "Bauteile": len(glieder),
                 "Erzeugt": paket.get("erzeugt"),
                 "Journalstand": (paket.get("journal") or {}).get("commit"),
+                "Ausgelassen": len(ausgelassen) or None,
+                "AusgelasseneVorgaenge": weg_vorgaenge or None,
             }, schluessel=f"{satz}|{anhang}")
             fachmodelle[name] = len(glieder)
             gruppe_von.update({el.id(): gruppe for el in glieder})
@@ -576,10 +632,98 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "stile": len(stile),
         "mengen": mengen_n,
         "vorgaenge": vorgaenge,
+        "kanten": len(kanten_neu),
         "fachmodelle": fachmodelle,
         "dokumente": len(referenzen),
         "dauer_s": round(time.time() - begonnen, 2),
     }
+
+
+def _kanten_schreiben(f, besitz, kontext, paket: dict, satz: str, geschrieben: list) -> tuple:
+    """Die BOESCHUNGSKANTEN eines Vorgangs als `IfcAnnotation` (Teil XX Stufe B).
+
+    Fabio (2026-09-10): „die Boeschungskanten der Erdbauten leicht
+    hervorheben". Im Raum sind sie Linien, im IFC das, was eine Vermessung
+    absteckt — eine 3D-Kurve je Kante, Mitglied DERSELBEN Vorgangsgruppe wie
+    Aushub und Auftrag.
+
+    KEIN BAUTEIL: eine Kante ist kein `IfcElement`, sondern die Beschreibung
+    einer Grenze. Sie traegt trotzdem Raumgliederung und Fachmodell-Gruppe —
+    V07 und V08 des Prueftors zaehlen `IfcProduct`, und ein Annotation IST
+    eines. Deshalb kommt sie in dieselben Listen wie ein Bauteil zurueck.
+
+    OPTIONAL: ein Paket ohne `kanten` (aelterer Client) schreibt keine — das
+    ist kein Fehler, sondern der Stand von vorher.
+
+    @returns (neue, uebersprungen) — `neue` ist [(Element, Paketeintrag)] wie
+             `geschrieben`, damit Gruppen und Raumgliederung sie mitnehmen.
+    """
+    kanten = paket.get("kanten") or []
+    if not kanten:
+        return [], []
+    # Der Vorgang, zu dem eine Kante gehoert — aus den schon geschriebenen
+    # Bauteilen. Eine Kante ohne Vorgang in DIESER Datei waere eine Waise.
+    vorgang_je = {}
+    for el, b in geschrieben:
+        v = b.get("vorgang") or {}
+        abl = v.get("ableitung")
+        if abl and abl not in vorgang_je:
+            vorgang_je[abl] = (v, b.get("fachmodell"))
+    ctx = f.create_entity("IfcGeometricRepresentationSubContext",
+                          ContextIdentifier="Annotation", ContextType="Model",
+                          ParentContext=kontext, TargetView="MODEL_VIEW")
+    neue, weg, zaehler = [], [], {}
+    for k in kanten:
+        abl, art = k.get("ableitung"), str(k.get("art") or "")
+        punkte = k.get("punkte") or []
+        if art not in KANTEN_ARTEN:
+            weg.append({"grund": f"unbekannte Kantenart {art!r}", "ableitung": abl})
+            continue
+        if abl not in vorgang_je:
+            weg.append({"grund": "Kante ohne Vorgang in dieser Datei", "ableitung": abl})
+            continue
+        if len(punkte) < 2:
+            weg.append({"grund": "Kante mit weniger als zwei Punkten", "ableitung": abl})
+            continue
+        vorgang, fach = vorgang_je[abl]
+        schluessel = (abl, art)
+        zaehler[schluessel] = zaehler.get(schluessel, 0) + 1
+        lauf = zaehler[schluessel]
+        name, objekttyp = KANTEN_ARTEN[art]
+
+        ursprung = [float(v) for v in (k.get("ursprung") or [0.0, 0.0, 0.0])]
+        platz = f.create_entity(
+            "IfcLocalPlacement",
+            RelativePlacement=f.create_entity(
+                "IfcAxis2Placement3D",
+                Location=f.create_entity("IfcCartesianPoint", Coordinates=tuple(ursprung))))
+        koord = [tuple(float(c) for c in p) for p in punkte]
+        # OHNE `Segments`: dann verbindet das Schema die Punkte der Reihe nach
+        # mit Strecken — genau das, was eine Bruchkante ist. Ein geschlossener
+        # Ring bekommt seinen ersten Punkt am Ende noch einmal, statt einen
+        # `IfcLineIndex` zu bauen, den kaum ein Empfaenger liest.
+        if k.get("geschlossen"):
+            koord.append(koord[0])
+        kurve = f.create_entity("IfcIndexedPolyCurve",
+                                Points=f.create_entity("IfcCartesianPointList3D", CoordList=koord))
+        form = f.create_entity("IfcProductDefinitionShape", Representations=[
+            f.create_entity("IfcShapeRepresentation", ContextOfItems=ctx,
+                            RepresentationIdentifier="Annotation", RepresentationType="Curve3D",
+                            Items=[kurve])])
+        cde_id = f"kante|{abl}|{art}|{lauf}"
+        el = f.create_entity("IfcAnnotation",
+                             GlobalId=guids.guid_aus_cde_id(f"{satz}|{cde_id}"), OwnerHistory=besitz,
+                             Name=name, ObjectType=objekttyp, PredefinedType=KANTEN_PREDEFINED,
+                             ObjectPlacement=platz, Representation=form)
+        _merkmale(f, besitz, el, PSET_CDE, {
+            "CdeId": cde_id,
+            "Rolle": art,
+            "Ableitung": abl,
+            "Vorgang": vorgang.get("titel"),
+        }, schluessel=f"{satz}|{cde_id}")
+        neue.append((el, {"fachmodell": fach if fach in FACHMODELLE else "erdbau",
+                          "vorgang": vorgang, "quellen": {}}))
+    return neue, weg
 
 
 def _vorgaenge_gruppieren(f, besitz, geschrieben, satz: str) -> int:

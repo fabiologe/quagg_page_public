@@ -49,7 +49,9 @@ async function paketDerKette() {
     const schritte = [...s].map(([globalId, wert]) => ({ art: 'erzeugt', globalId, modell: 'cde', wert }));
     const g = await autor.eigenbauGeometrien(schritte, { verdeckt: new Set(ae.wirksamerStand('geloescht').keys()) });
     const paket = baueEigenbauPaket({
-        teile: g.bauteile, stand: s, anzeigeformen: g.anzeigeformen,
+        // Die Böschungskanten gehören zum Vertrag (Teil XX Stufe B): der
+        // Schreiber macht daraus `IfcAnnotation` in der Vorgangsgruppe.
+        teile: g.bauteile, kanten: g.kanten, stand: s, anzeigeformen: g.anzeigeformen,
         // UTM32 in der Gegend der BIM26-Lieferungen — das Fenster, das V06b prüft.
         nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y - 50 }),
         crs: 'EPSG:25832', projektname: 'Paketvertrag', schluessel: 'vertrag',

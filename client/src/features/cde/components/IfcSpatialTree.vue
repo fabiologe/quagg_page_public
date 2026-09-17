@@ -54,6 +54,11 @@ const TreeNode = defineComponent({
     // „Vorgang entfernen" (Abnahme 2026-09-12, A6): der Knoten eines Erdbau-
     // Vorgangs im Abschnitt „Eigenbau" bietet es an; ausführen tut das Fenster.
     const entferne = inject('vorgangEntfernen', null);
+    // Das AUGE JE VORGANG (Teil XXI, E3): ein Erdkörper, den ein späterer
+    // Vorgang überformt hat, steht nicht im Raum — hier kommt er zurück.
+    // Anders als das Auge eines Bauteils hängt es nicht an einer localId,
+    // sondern an der Ableitung; die Engine kennt ihre Teile.
+    const vorgangAuge = inject('vorgangAuge', null);
 
     function toggleExpand(e) {
       e.stopPropagation();
@@ -135,9 +140,28 @@ const TreeNode = defineComponent({
             class: 'node-label',
             title: bedienbar()
               ? `${label(node)}${node.aussparung ? ' — Aussparung im Gelände' : ''} — Klick zum Zoomen`
-              : label(node),
+              : node.verdecktVon?.length
+                ? `${label(node)} — überdeckt von ${node.verdecktVon.join(', ')}`
+                : label(node),
             onClick: bedienbar() ? zoomToNode : undefined,
           }, label(node)),
+
+          // „(verdeckt von …)" steht am Knoten, nicht nur im Titel: sonst
+          // sähe man einen Vorgang ohne Körper und wüsste nicht, warum.
+          node.verdecktVon?.length
+            ? h('span', { class: 'node-hinweis' }, `verdeckt von ${node.verdecktVon.join(', ')}`)
+            : null,
+
+          node.vorgang && vorgangAuge
+            ? h('button', {
+                class: ['vis-btn', { hidden: node.sichtbar === false }],
+                title: node.sichtbar === false
+                  ? `„${label(node)}" wieder zeigen`
+                  : `„${label(node)}" ausblenden`,
+                'aria-label': 'Vorgang zeigen oder ausblenden',
+                onClick: (e) => { e.stopPropagation(); vorgangAuge(node, node.sichtbar === false); },
+              }, [h(CdeIcon, { name: node.sichtbar === false ? 'hidden' : 'visible', size: 12 })])
+            : null,
 
           bedienbar()
             ? h('button', {
@@ -295,6 +319,14 @@ const TreeNode = defineComponent({
 .node-row.is-aussparung .node-label { font-style: italic; }
 .node-row.is-verweis .node-label { color: var(--cde-text-dim); }
 .node-row.is-gruppe .node-label { color: var(--cde-text-soft); }
+/* Teil XXI (E3): „verdeckt von …" am Vorgangsknoten — leise, aber lesbar. */
+.node-hinweis {
+  font-size: 0.66rem;
+  color: var(--cde-text-mute);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-style: italic;
+}
 
 .vis-btn {
   display: inline-flex; align-items: center; justify-content: center;

@@ -202,10 +202,34 @@ function _quellenFuersPaket(q, ur) {
 }
 
 /**
+ * Eine BÖSCHUNGSKANTE fürs Paket (Teil XX Stufe B).
+ *
+ * Keine Fläche, keine Dreiecke — eine Polylinie. Sie geht denselben Weg wie
+ * jedes Bauteil: Welt → Landeskoordinaten → eigener Ursprung, damit der
+ * Schreiber mit kleinen Zahlen arbeitet. Im IFC wird daraus ein
+ * `IfcAnnotation` in der Vorgangsgruppe.
+ *
+ * @returns {object|null}  null, wenn weniger als zwei brauchbare Punkte bleiben
+ */
+export function kanteFuersPaket(kante, { nachProjekt } = {}) {
+    const roh = (kante?.punkte ?? []).filter(p => [p?.x, p?.y, p?.z].every(Number.isFinite));
+    if (roh.length < 2) return null;
+    const flach = new Float64Array(roh.length * 3);
+    roh.forEach((p, i) => { flach[i * 3] = p.x; flach[i * 3 + 1] = p.y; flach[i * 3 + 2] = p.z; });
+    const landes = nachLandes(flach, nachProjekt);
+    const punkte = [];
+    for (let i = 0; i < roh.length; i++) punkte.push([landes[i * 3], landes[i * 3 + 1], landes[i * 3 + 2]]);
+    const { ursprung, punkte: lokal } = mitUrsprung(punkte);
+    return { ableitung: kante.ableitung ?? null, art: String(kante.art ?? ''),
+             geschlossen: !!kante.geschlossen, ursprung, punkte: lokal };
+}
+
+/**
  * Das Paket.
  *
  * @param {object} o
  * @param {Array}  o.teile        aus `IfcAutor.eigenbauGeometrien(...).bauteile`
+ * @param {Array}  [o.kanten]     aus `IfcAutor.eigenbauGeometrien(...).kanten` — Böschungskanten je Vorgang
  * @param {Map}    o.stand        wirksamer erzeugt-Stand (gid → Bauplan) — für die Wirtkette
  * @param {Function} o.nachProjekt  Welt → {ost, nord, hoehe}
  * @param {string} o.crs          das WIRKSAME System (bei Widerspruch das erkannte)
@@ -214,7 +238,7 @@ function _quellenFuersPaket(q, ur) {
  * @param {object} o.journal      {commit, sitzungOffen} — welcher Journalstand exportiert wurde
  * @returns {object}  JSON-tauglich
  */
-export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
+export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
                                    projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
                                    anzeigeformen = [], quellDokumente = [], journal = null,
                                    jetzt = new Date(), historie = null } = {}) {
@@ -242,6 +266,9 @@ export function baueEigenbauPaket({ teile = [], stand = new Map(), nachProjekt, 
         journal,
         quellDokumente,
         bauteile,
+        // OPTIONAL (Paket v2): fehlen sie, schreibt der Server nur die Körper.
+        // Ein alter Client ohne Kanten bleibt damit gültig.
+        kanten: kanten.map(k => kanteFuersPaket(k, { nachProjekt })).filter(Boolean),
         uebersprungen,
     };
 }

@@ -88,7 +88,10 @@ export function naechsterSchritt(eingaben, { punkte = 0, zugGeschlossen = false,
         }
         return { art: 'zug', name: zugSchlitz.schlitz, hinweis: zugSchlitz.schlitz === 'umriss'
             ? `${punkte} Punkte — ersten Punkt antippen schliesst den Umriss`
-            : `${punkte} Punkte — Enter oder Doppelklick schliesst ab` };
+            // Gezeichnet wird im Raum, und dort schliesst Enter ab — einen
+            // Doppelklick gibt es seit `c8ce9c4` nur noch im Lageplan, wo er
+            // das Blatt einpasst.
+            : `${punkte} Punkte — Enter schliesst ab` };
     }
     if (!bereit) return { art: 'feld', name: null, hinweis: 'Werte im Formular vervollständigen' };
     return { art: 'bereit', name: null, hinweis: 'Enter übernimmt' };

@@ -107,7 +107,8 @@ const anzeigeform = computed(() => {
 });
 
 /** Die Qto-Felder mit deutschem Namen — was ein Planer liest, nicht was im Schema steht. */
-const MENGEN_TITEL = { undisturbedVolume: 'Aushub (gewachsen)', compactedVolume: 'Auftrag (verdichtet)', length: 'Länge' };
+const MENGEN_TITEL = { undisturbedVolume: 'Aushub (gewachsen)', looseVolume: 'Aushub (lose, abzufahren)',
+                       compactedVolume: 'Auftrag (verdichtet)', length: 'Länge' };
 
 /**
  * Die Mengen eines eigenen Cut/Fill (Teil XX) — `mengenVon` wie der IFC-Export,
@@ -119,11 +120,26 @@ const mengen = computed(() => {
   const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
   if (!plan?.ableitung || !rezeptNach(plan.rezept)?.erdbau) return [];
   const k = api.kennzahlenVon?.(plan.ableitung);
-  return Object.entries(mengenVon(plan, k)).map(([feld, v]) => ({
+  const zeilen = Object.entries(mengenVon(plan, k)).map(([feld, v]) => ({
     feld,
     titel: MENGEN_TITEL[feld] ?? feld,
     wert: feld === 'length' ? `${v.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m` : m3(v),
   }));
+  if (!zeilen.length) return zeilen;
+  // DER FAKTOR, MIT DEM GERECHNET WURDE (Teil XXI, P4): ohne ihn steht die
+  // lose Masse als Zahl da, die niemand nachrechnen kann.
+  if (Number.isFinite(k?.auflockerung) && zeilen.some(z => z.feld === 'looseVolume')) {
+    zeilen.push({ feld: 'auflockerung', titel: 'Auflockerung',
+                  wert: `× ${k.auflockerung.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` });
+  }
+  // DIE GEGENPROBE (Teil XXI, P4): Körper gegen Raster. Sie sprach bisher nur,
+  // wenn sie ausschlug — jetzt sieht man auch, wie gut sie stimmt.
+  const abw = plan.rolle === 'auftrag' ? k?.gegenprobeAuftrag : k?.gegenprobeAushub;
+  if (Number.isFinite(abw)) {
+    zeilen.push({ feld: 'gegenprobe', titel: 'Gegenprobe Körper ↔ Raster',
+                  wert: `${(abw * 100).toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` });
+  }
+  return zeilen;
 });
 
 async function clearSelection() {

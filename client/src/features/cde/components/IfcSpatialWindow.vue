@@ -45,6 +45,14 @@
                     @click.stop="augeUmschalten(baum.modelId)">
               <CdeIcon :name="verborgen.has(baum.modelId) ? 'hidden' : 'visible'" :size="12" />
             </button>
+            <!-- × (S3/K5, H3): im Satz „Aus dem Satz nehmen“, mit Rückfrage; ohne Satz schliessen.
+                 Der Eigenbau hat keins — leer wird er über den Verlauf. -->
+            <button v-if="!baum.eigenbau" class="sw-weg"
+                    :title="cde.aktiverSatz ? `${baum.name} aus dem Satz nehmen` : `${baum.name} schließen`"
+                    :aria-label="cde.aktiverSatz ? 'Aus dem Satz nehmen' : 'Modell schließen'"
+                    @click.stop="api.modellEntfernen?.(baum.modelId)">
+              <CdeIcon name="close" :size="12" />
+            </button>
           </header>
           <template v-if="!zu.has(baum.modelId)">
             <IfcSpatialTree v-if="baum.wurzel" :tree="baum.wurzel" :bare="true" :filter="filterText"
@@ -102,6 +110,18 @@ async function augeUmschalten(modelId) {
   aktiv.value = modelId;
   await api.setzeModellSichtbar?.(modelId, verborgen.value.has(modelId));
 }
+
+/**
+ * DAS AUGE JE VORGANG (Teil XXI, E3) — am Knoten eines Erdbau-Vorgangs.
+ *
+ * Ein Vorgang, den ein späterer wieder überformt hat (Auffüllung über einer
+ * Grube), steht nicht im Raum: sonst lägen zwei Erdkörper und das Netz
+ * übereinander. Über dieses Auge kommt er zurück. Die Regel und der Zustand
+ * leben in der Engine; hier wird nur geschaltet.
+ */
+provide('vorgangAuge', async (knoten, sichtbar) => {
+  await api.setzeVorgangSichtbar?.(knoten.vorgang, sichtbar);
+});
 
 // „Vorgang entfernen" am Knoten eines Erdbau-Vorgangs (A6) — mit Rückfrage.
 provide('vorgangEntfernen', async (knoten) => {
@@ -246,6 +266,18 @@ defineExpose({ expandAll, collapseAll });
 }
 .sw-auge:hover { color: var(--cde-text); background: var(--cde-fill-hover); }
 .sw-auge.aus { color: var(--cde-text-dimmer); }
+.sw-weg {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 0.1rem; cursor: pointer;
+  color: var(--cde-text-dimmer); border-radius: var(--cde-radius-sm);
+  touch-action: manipulation;
+}
+.sw-weg:hover { color: var(--cde-danger); background: var(--cde-fill-hover); }
+/* Auf dem Finger: Auge und × mit unsichtbarer Trefferfläche (T1). */
+@media (pointer: coarse) {
+  .sw-auge, .sw-weg { position: relative; }
+  .sw-auge::after, .sw-weg::after { content: ''; position: absolute; inset: -9px; }
+}
 .sw-leer { padding: 0.4rem 1.4rem; font-size: 0.7rem; color: var(--cde-text-dimmer); }
 
 /* ── Footer ── */

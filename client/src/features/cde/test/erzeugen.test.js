@@ -19,6 +19,7 @@ import {
     LINIEN_BAND_M, REZEPTE, baueAusBauplan, erzeugtEintrag, istKategorie,
     neueGlobalId, pruefeBauplan, punkteAus, rezeptNach, zuruecknahmeEintrag,
 } from '../services/Bauteilrezepte.js';
+import { BEARBEITUNGEN } from '../services/Bearbeitungen.js';
 import { IfcAutor, CDE_MODELL_ID } from '../services/IfcAutor.js';
 import { istDeltaModell } from '../services/DeltaBoxen.js';
 import { standAus, beschreibeWert } from '../stores/useAenderungen.js';
@@ -63,6 +64,24 @@ describe('Der Journaleintrag trägt den BAUPLAN, nicht das Netz', () => {
         const e = erzeugtEintrag({ rezept: 'linie', name: 'Bruchkante 1', parameter: { punkte: LINIE } });
         expect(beschreibeWert('erzeugt', e.nachher)).toBe('Bruchkante 1 · 3 Punkte');
         expect(beschreibeWert('erzeugt', e.nachher)).not.toMatch(/object Object/);
+    });
+});
+
+describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
+    it('kein Werkzeug zu einem Rezept ohne `baue` — „Gelände zeichnen" war ein toter Knopf', () => {
+        const erzeugen = BEARBEITUNGEN.filter(b => b.gruppe === 'erzeugen');
+        expect(erzeugen.map(b => b.id).sort())
+            .toEqual(['flaeche-zeichnen', 'linie-zeichnen', 'rohr-zeichnen', 'schacht-zeichnen']);
+        // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
+        // das aus Punkten baut, und verlangt mindestens zwei Punkte.
+        for (const b of erzeugen) {
+            const r = rezeptNach(b.rezept);
+            expect(typeof r?.baue, b.id).toBe('function');
+            expect(b.mindestPunkte, b.id).toBeGreaterThanOrEqual(2);
+        }
+        // Das Gelände-Rezept bleibt — es baut mit Quellraster (Alt-Journale, Erdbau).
+        expect(typeof REZEPTE.gelaende.baueMit).toBe('function');
+        expect(REZEPTE.gelaende.baue).toBeNull();
     });
 });
 

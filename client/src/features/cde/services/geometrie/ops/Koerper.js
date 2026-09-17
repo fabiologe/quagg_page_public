@@ -26,7 +26,7 @@
  * Alle Flächen zeigen NACH AUSSEN (three: +Y ist oben). Die Wicklungen sind
  * unten je Kante hergeleitet — wer eine ändert, prüft `closed` im Test.
  */
-import { rasterKnoten } from '../../geometry/SurfaceOps.js';
+import { diagonale00_11, rasterKnoten } from '../../geometry/SurfaceOps.js';
 import { meshVolume } from '../../geometry/MeshOps.js';
 import { gleicherBezug } from '../../gelaende/Operationen.js';
 import { rasterResample } from './Raster.js';
@@ -97,12 +97,17 @@ export function koerperZwischenRastern({ oben, unten } = {}, { eps = DUENN } = {
             if (!istDrin(ix, iz)) continue;
             const t00 = ecke(ix, iz, 't'), t10 = ecke(ix + 1, iz, 't');
             const t01 = ecke(ix, iz + 1, 't'), t11 = ecke(ix + 1, iz + 1, 't');
-            // Deckel: Normale +Y  → (00, 11, 10), (00, 01, 11)
-            tris.push(t00, t11, t10, t00, t01, t11);
+            // DIESELBE DIAGONALE WIE DIE ANZEIGE (Teil XXI, 2026-09-17): Deckel
+            // und Boden sind dieselben Flächen, die `dreieckeAusRaster` zeichnet
+            // — wer anders teilt, baut aus einem Rasterstand zwei Flächen, und
+            // die durchdringen sich am Knick (gemessen: 0,20 m am Grubenrand).
+            // Deckel: Normale +Y, Boden: Normale −Y.
+            if (diagonale00_11(oben, ix, iz)) tris.push(t00, t11, t10, t00, t01, t11);
+            else                              tris.push(t00, t01, t10, t01, t11, t10);
             const b00 = ecke(ix, iz, 'b'), b10 = ecke(ix + 1, iz, 'b');
             const b01 = ecke(ix, iz + 1, 'b'), b11 = ecke(ix + 1, iz + 1, 'b');
-            // Boden: Normale −Y → (00, 10, 11), (00, 11, 01)
-            tris.push(b00, b10, b11, b00, b11, b01);
+            if (diagonale00_11(unten, ix, iz)) tris.push(b00, b10, b11, b00, b11, b01);
+            else                               tris.push(b00, b10, b01, b10, b11, b01);
             // Wände nur, wo der Nachbar fehlt. Wicklung je Seite hergeleitet:
             // Süd (z0, Aussen −Z): (bA,tA,bB)(bB,tA,tB)   West (x0, Aussen −X): gespiegelt
             // Nord (z1, Aussen +Z): gespiegelt              Ost  (x1, Aussen +X): direkt

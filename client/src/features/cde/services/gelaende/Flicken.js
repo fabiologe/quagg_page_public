@@ -8,17 +8,23 @@
  * die Knoten.
  *
  * Kur: wo Operationen wirken, ein Flicken in der Auflösung, auf der auch die
- * Massen rechnen (`ERDBAU_ZELLE`). Das Ur-Gelände darin ist die grobe Fläche,
- * fein zerlegt (`flickenRaster` — dieselbe Triangulierung), und darauf werden
- * die Operationen gefaltet. Wo keine wirkt, IST der Flicken das grobe Netz;
- * sein Rand wird zusätzlich auf die grobe Anzeige gezwungen — kein Riss, auch
- * wenn eine Operation ohne Wirkbereich bis dorthin reicht.
+ * Massen rechnen (`ERDBAU_ZELLE`), und darauf werden die Operationen gefaltet.
+ * Sein Rand wird auf die grobe Anzeige gezwungen — kein Riss, auch wenn eine
+ * Operation ohne Wirkbereich bis dorthin reicht.
+ *
+ * WOHER DAS UR IM FLICKEN KOMMT (Teil XXI, 2026-09-17). Bis dahin: die grobe
+ * Fläche, fein zerlegt (`flickenRaster`). Der Erdkörper daneben rechnete aber
+ * auf dem feinen Korridor, und der tastet die GELIEFERTE Fläche ab — zwei
+ * Wege zu derselben Aussage, die sich um Zentimeter durchdrangen (gemessen:
+ * 8,5 cm an einer Gerinnesohle; im Bild das Flimmern zwischen Erdkörper und
+ * Gelände). Jetzt reicht der Stapel dasselbe feine Ur herein (`feinesUr`);
+ * `flickenRaster` bleibt der Rückfall, wenn keine Quelle erreichbar ist.
  *
  * Nichts davon wird gespeichert (Gesetz 5): der Flicken ist gerechnet wie die
  * Anzeige selbst.
  */
 import { flickenRaster, hoeheImRaster, rasterKnoten } from '../geometry/SurfaceOps.js';
-import { formeNach, wirkbereichVon } from './Operationen.js';
+import { feinheitFuer, formeNach, wirkbereichVon } from './Operationen.js';
 
 /** Weltbox → grobe Zellbox (Knotenindizes), nach aussen auf ganze Zellen. */
 function _zellbox(grob, b) {
@@ -64,13 +70,21 @@ function _randAuf(fein, grob) {
  * @param {object} ur     das grobe Ur-Raster (Welt)
  * @param {object} stand  die grobe Anzeige = formeNach(ur, ops)
  * @param {Array}  ops    alle Operationen des Stapels (Welt)
- * @param {object} opt    {zelle, budget} — die Zahlen der Massen (`ERDBAU_ZELLE`, `ERDBAU_ZELLBUDGET`)
- * @returns {{flicken: Array<{box, raster}>, zelle: number|null, warnungen: string[]}}
+ * @param {object} opt    {zelle, budget} — die Zahlen der Massen (`ERDBAU_ZELLE`,
+ *   `ERDBAU_ZELLBUDGET`) — und `feinesUr(bereich, cell) → Promise<raster|null>`:
+ *   das Ur-Gelände aus DERSELBEN Quelle wie der Korridor der Erdkörper.
+ * @returns {Promise<{flicken: Array<{box, raster}>, zelle: number|null, warnungen: string[]}>}
  */
-export function anzeigeFlicken(ur, stand, ops = [], { zelle, budget } = {}) {
+export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feinesUr = null } = {}) {
     const leer = (warnungen = []) => ({ flicken: [], zelle: null, warnungen });
     if (!ur || !stand || !ops?.length || !(zelle > 0) || !(budget > 0)) return leer();
-    let k = Math.ceil(ur.cell / zelle - 1e-9);
+    // DIESELBE FEINHEITSREGEL WIE DER KORRIDOR (Teil XXI): `feinheitFuer`
+    // entscheidet aus Wirkfläche und schmalster Kennweite. Bis hierher zählte
+    // der Flicken grobe Zellen unter den Wirkbereichen und der Korridor
+    // rechnete eine Wurzel aus seiner Hüllfläche — zwei Formeln, und sobald
+    // sie auseinanderliefen, lagen Erdkörper und Anzeige auf zwei Gittern
+    // (gemessen 2026-09-17: 0,689 m Durchdringung an einer offenen Grube).
+    const { k } = feinheitFuer(ur, ops, { zelle, budget });
     if (k < 2) return leer();                        // die Anzeige ist schon so fein
     const boxen = [];
     for (const op of ops) {
@@ -80,16 +94,64 @@ export function anzeigeFlicken(ur, stand, ops = [], { zelle, budget } = {}) {
     }
     const kasten = _verschmolzen(boxen);
     if (!kasten.length) return leer();
-    const zellen = kasten.reduce((s, b) => s + (b.ix1 - b.ix0) * (b.iz1 - b.iz0), 0);
-    k = Math.min(k, Math.floor(Math.sqrt(budget / zellen)));
-    if (k < 2) return leer([`anzeige_flicken_budget: ${zellen} Zellen unter Operationen — die Anzeige bleibt grob`]);
     const flicken = [];
+    const warnungen = [];
     for (const box of kasten) {
-        const fein = flickenRaster(ur, box, k);
+        // Das Ur aus der Quelle — dieselbe Fläche, die der Erdkörper abtastet.
+        // Sie muss auf DEN Knoten liegen, die der Flicken erwartet; tut sie es
+        // nicht (fremdes Gitter), gilt der Rückfall, und das steht als Warnung da.
+        const ausQuelle = feinesUr ? await _ausQuelle(feinesUr, ur, box, k, warnungen) : null;
+        const fein = ausQuelle ?? flickenRaster(ur, box, k);
         // Warnungen der Faltung meldet schon die grobe Anzeige (dieselben Operationen).
         const { raster } = formeNach(fein, ops, { ur: fein });
         _randAuf(raster, stand);
         flicken.push({ box, raster });
     }
-    return { flicken, zelle: ur.cell / k, warnungen: [] };
+    return { flicken, zelle: ur.cell / k, warnungen };
+}
+
+/**
+ * Das feine Ur aus der Quelle für GENAU diese Box — oder null, wenn die Quelle
+ * nichts liefert oder ein anderes Gitter trägt (dann wäre der Flicken
+ * verschoben, und das grobe Netz ist die ehrlichere Grundlage).
+ */
+async function _ausQuelle(feinesUr, grob, box, k, warnungen) {
+    const X = (ix) => rasterKnoten(grob, ix, 0).x;
+    const Z = (iz) => rasterKnoten(grob, 0, iz).z;
+    const cell = grob.cell / k;
+    let r = null;
+    try {
+        r = await feinesUr({ minX: X(box.ix0), maxX: X(box.ix1), minZ: Z(box.iz0), maxZ: Z(box.iz1) }, cell);
+    } catch { r = null; }
+    if (!r) return null;
+    const passt = Math.abs(r.cell - cell) < 1e-9
+        && Math.abs((r.x0 - grob.x0) / grob.cell - Math.round((r.x0 - grob.x0) / grob.cell)) < 1e-6
+        && Math.abs((r.z0 - grob.z0) / grob.cell - Math.round((r.z0 - grob.z0) / grob.cell)) < 1e-6;
+    if (!passt) { warnungen.push('anzeige_flicken_gitter: feines Gelände liegt neben dem Raster — Flicken aus dem groben Netz'); return null; }
+    return _aufBox(r, grob, box, k);
+}
+
+/**
+ * Die Box aus einem grösseren feinen Raster herausschneiden — Knoten für
+ * Knoten, ohne zu interpolieren. Was ausserhalb liegt, bleibt NaN und fällt
+ * beim Zeichnen als Loch auf, statt still falsch zu sein.
+ */
+function _aufBox(quelle, grob, box, k) {
+    const X = (ix) => rasterKnoten(grob, ix, 0).x;
+    const Z = (iz) => rasterKnoten(grob, 0, iz).z;
+    const nx = (box.ix1 - box.ix0) * k + 1, nz = (box.iz1 - box.iz0) * k + 1;
+    const cell = grob.cell / k;
+    const f = { x0: X(box.ix0), z0: Z(box.iz0), maxX: X(box.ix1) + 1e-9, maxZ: Z(box.iz1) + 1e-9,
+                cell, nx, nz, heights: new Float64Array(nx * nz).fill(NaN) };
+    const iVon = Math.round((f.x0 - quelle.x0) / cell), jVon = Math.round((f.z0 - quelle.z0) / cell);
+    for (let i = 0; i < nx; i++) {
+        const qi = iVon + i;
+        if (qi < 0 || qi >= quelle.nx) continue;
+        for (let j = 0; j < nz; j++) {
+            const qj = jVon + j;
+            if (qj < 0 || qj >= quelle.nz) continue;
+            f.heights[i * nz + j] = quelle.heights[qi * quelle.nz + qj];
+        }
+    }
+    return f;
 }

@@ -66,7 +66,7 @@ describe('(a) anwenden — Umfang Strang', () => {
         expect(p.operationen[0].parameter).toMatchObject({ umfang: 'strang', wandform: 'verbau', schachtMass: 1, dn: null });
         expect(s[2].nachher.name).toBe('H-001 · Strang · Graben');
         // Die Beschreibung nennt den Umfang und die Norm.
-        expect(ABLEITUNGEN.kanalgraben.beschreibe(s[2].nachher)).toBe('Kanalgraben · Graben · DN aus Rohr · Strang (2 Haltungen, 3 Schächte) · Senkrecht mit Verbau · Sohlbreite nach DIN EN 1610');
+        expect(ABLEITUNGEN.kanalgraben.beschreibe(s[2].nachher)).toBe('Kanalgraben · Graben · DN aus Rohr · Strang (2 Haltungen, 3 Schächte) · Senkrecht mit Verbau · Sohlbreite nach DIN EN 1610 · Achse aus der Quelle');
     });
     it('„nur diese Haltung": eine Quelle, ihre zwei Schächte', () => {
         const s = nachId('kanalgraben-ableiten').anwenden(ROHR, { gelaende: 'DGM1', umfang: 'haltung', wandform: 'boeschung', boden: 'bindigSteif', winkel: '', breite: '' });
@@ -94,7 +94,10 @@ describe('(b) der Lauf am Strang', () => {
         expect(l.misserfolge).toEqual([]);
         expect(rg.ok && rg.teil.daten.closed).toBe(true);
         const k = a.kennzahlen;
-        expect(k).toMatchObject({ rohre: 2, schaechte: 3, wandform: 'verbau', neigung: 0, operationen: 5, korridor: true, zellweite: 0.5, zellweiteDgm: 0.5 });
+        // KEIN Korridor mehr (Teil XXI): das DGM ist hier schon 0,5 m fein —
+        // genau die Zelle, die der Korridor bringen würde. Vorher lief er
+        // trotzdem und rechnete dasselbe Raster ein zweites Mal.
+        expect(k).toMatchObject({ rohre: 2, schaechte: 3, wandform: 'verbau', neigung: 0, operationen: 5, korridor: false, zellweite: 0.5, zellweiteDgm: 0.5 });
         // Das sichtbare DGM-Teil hat weiter die VOLLE Ausdehnung (80 × 40 m), nicht nur den Korridor.
         expect(rd.teil.daten.x0).toBe(0); expect(rd.teil.daten.maxX).toBe(80); expect(rd.teil.daten.maxZ).toBe(40);
         // Der Korridor: Rohre x 5…65, z 20 → ±12 m Rand.
@@ -106,13 +109,30 @@ describe('(b) der Lauf am Strang', () => {
         expect(k.tiefeMax).toBeGreaterThan(3.4);
         expect(k.regel).toMatch(/DIN EN 1610/);
         expect(k.gruende.some(g => /Baugrube/.test(g))).toBe(true);
-        expect(a.befunde.map(b => b.regel)).toEqual([]);
+        // EIN Befund, und er gehört hierher (Teil XXI, P6): zwei Haltungen und
+        // drei Baugruben in einem Vorgang durchdringen einander, also bleibt es
+        // beim Rasterkörper — und ein SENKRECHTER Graben lässt sich an
+        // Rasterknoten nicht messen (gemessen: bis +39 %). Gesagt wird es.
+        expect(a.befunde.map(b => b.regel)).toEqual(['masse_senkrecht_raster']);
+        expect(a.befunde[0].text).toMatch(/durchdringen einander/);
+        expect(k.koerperArt).toBe('raster');
+        expect(k.aushubMasse).toBe(k.aushubRaster);
         // Auf der Achse bei x=20 (H1): Sohle = 297,25 − 0,15 − 0,1 = 297,0
         expect(rasterAbtasten(rd.teil.daten, 20, 20)).toBeCloseTo(297.0, 2);
         // Die Baugrube an S2 (35/20): ECKIG, 1,0 + 2·0,6 = 2,2 m Kante (halb 1,1); bei (35, 21) UND in der Ecke (36, 21)
-        // liegt sie auf Schachtsohle − Bettung = 296,9 — rund läge die Ecke draussen.
-        expect(rasterAbtasten(rd.teil.daten, 35, 21)).toBeCloseTo(296.9, 2);
-        expect(rasterAbtasten(rd.teil.daten, 36, 21)).toBeCloseTo(296.9, 2);
+        // — rund läge die Ecke draussen.
+        //
+        // IHRE SOHLE SCHLIESST AN DEN GRABEN AN (Teil XXI, P2c). Bis dahin lag
+        // sie auf `Platzierung − Bettung` = 296,9 und damit 15 bis 20 cm ÜBER
+        // der Grabensohle daneben — ein Absatz, den dieser Test festschrieb.
+        // Jetzt zählt der tiefste belegbare Punkt: die Sohlen der
+        // anschliessenden Haltungen (H2, DN 400: 297,0 − 0,20) unter der
+        // Platzierung, minus Bettung → 296,70.
+        expect(rasterAbtasten(rd.teil.daten, 35, 21)).toBeCloseTo(296.7, 2);
+        expect(rasterAbtasten(rd.teil.daten, 36, 21)).toBeCloseTo(296.7, 2);
+        // Und der ABSATZ zur Grabensohle nebenan ist weg (vorher 0,15 m).
+        const absatz = Math.abs(rasterAbtasten(rd.teil.daten, 35, 21) - rasterAbtasten(rd.teil.daten, 35, 20));
+        expect(absatz).toBeLessThanOrEqual(0.02);
         // Neben der Baugrube (35, 22,5) — senkrecht: unberührt vom Schacht, aber im Graben (H2 Sohlbreite 1,1 → nur bis z 20,55)
         expect(rasterAbtasten(rd.teil.daten, 35, 22.5)).toBeCloseTo(300, 6);
         expect(k.ueberdeckungMin).toBeGreaterThan(2);
@@ -128,21 +148,27 @@ describe('(b) der Lauf am Strang', () => {
         const u = a.befunde.filter(b => b.regel === 'ueberdeckung_gering');
         expect(u.map(b => b.globalId)).toEqual(['H1', 'H2']);
         expect(u[0].text).toMatch(/Rohr 1 von 2/);
-        expect(u[0].quelle).toMatch(/Ur-Gelände/);
+        // EINE Aussage (Teil XXI, P2d): gemessen wird gegen den Stand VOR
+        // diesem Graben. Vorher sagten Kommentar („Ur-Gelände"), Text
+        // („Fertiggelände") und Rechnung drei verschiedene Dinge.
+        expect(u[0].quelle).toMatch(/vor diesem Graben/);
+        expect(u[0].text).toMatch(/vor diesem Graben/);
         void flach;
     });
 
     it('senkrecht ohne Verbau in 3 m Tiefe: gebaut, aber mit dem Befund aus DIN 4124 4.2.2', async () => {
         const { a } = await lauf(werte({ wandform: 'senkrecht' }));
-        expect(a.befunde.map(b => b.regel)).toEqual(['graben_senkrecht_ohne_verbau']);
-        expect(a.befunde[0].text).toMatch(/zulässig nur bis 1\.25 m/);
+        expect(a.befunde.map(b => b.regel)).toContain('graben_senkrecht_ohne_verbau');
+        expect(a.befunde.find(b => b.regel === 'graben_senkrecht_ohne_verbau').text).toMatch(/zulässig nur bis 1\.25 m/);
     });
 
     it('abgeböscht 45°: die Baugrube läuft mit 1:1 aus; ein eigener Winkel über der Bodenklasse ist ein Befund', async () => {
         const { rd, a } = await lauf(werte({ wandform: 'boeschung', boden: 'nichtbindig' }));
         expect(a.kennzahlen).toMatchObject({ neigung: 1, winkelGrad: 45 });
-        // 2 m ausserhalb der Kante (geböscht: 1 + 2·0,5 = 2,0 m, halb 1,0) bei S1 (5/20): Sohle 297,4 + 2 = 299,4
-        expect(rasterAbtasten(rd.teil.daten, 5, 23)).toBeCloseTo(299.4, 1);
+        // 2 m ausserhalb der Kante (geböscht: 1 + 2·0,5 = 2,0 m, halb 1,0) bei
+        // S1 (5/20). Die Baugrubensohle folgt seit Teil XXI der Rohrsohle
+        // (297,5 − 0,15 bei DN 300) statt der Platzierung: 297,25 + 2 = 299,25.
+        expect(rasterAbtasten(rd.teil.daten, 5, 23)).toBeCloseTo(299.25, 1);
         const { a: a2 } = await lauf(werte({ wandform: 'boeschung', boden: 'nichtbindig', winkelGrad: 70 }));
         expect(a2.befunde.map(b => b.regel)).toEqual(['boeschung_zu_steil']);
     });
@@ -153,7 +179,7 @@ describe('(b) der Lauf am Strang', () => {
         expect(a.kennzahlen).toMatchObject({ rohre: 1, schaechte: 0, wandform: 'boeschung', sohlbreite: 1.1 });
         expect(a.kennzahlen.winkelGrad).toBeCloseTo(63.4, 1);
         expect(ABLEITUNGEN.kanalgraben.beschreibe({ rolle: 'graben', parameter: { operationen: alt, quellen: { rohr: 'H1' } } }))
-            .toBe('Kanalgraben · Graben · DN 300 · Haltung · Abgeböscht · Sohlbreite 1.10 m');
+            .toBe('Kanalgraben · Graben · DN 300 · Haltung · Abgeböscht · Sohlbreite 1.10 m · Achse aus der Quelle');
     });
 
     it('die Vorschau zeichnet beim Strang jede Haltung und je Schacht einen eckigen Kasten — abgeböscht wachsen Deckel UND Stirnseiten', () => {

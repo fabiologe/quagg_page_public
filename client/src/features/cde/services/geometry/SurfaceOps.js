@@ -142,7 +142,7 @@ function _heightfield(positions, triCount, cellOpt, warnings) {
  *  abgetastet (siehe unten) — wer die Knotenlage reproduzieren will, braucht
  *  die Klemme, nicht nur x0+ix·cell.
  */
-export function heightfieldRaster(positions, triCount, cellOpt = null, warnings = [], { bereich = null } = {}) {
+export function heightfieldRaster(positions, triCount, cellOpt = null, warnings = [], { bereich = null, gitter = null } = {}) {
     const sampler = makeHeightSampler(positions, triCount);
     let b = sampler.bounds;
     if (!b) return null;
@@ -155,6 +155,30 @@ export function heightfieldRaster(positions, triCount, cellOpt = null, warnings 
                     minZ: Math.max(b.minZ, bereich.minZ), maxZ: Math.min(b.maxZ, bereich.maxZ) };
         if (!(c.maxX > c.minX) || !(c.maxZ > c.minZ)) { warnings.push('heightfield_bereich_leer'); return null; }
         b = c;
+    }
+
+    // AUF EIN VORHANDENES GITTER LEGEN (Teil XXI, P1b). Ein Korridor wurde
+    // bisher an seiner eigenen Box aufgehängt; das gröbere Raster daneben hat
+    // seine Knoten woanders. Zwei Flächen, die dasselbe Gelände meinen,
+    // durchdringen sich dann um Zentimeter — im Bild ein Flimmern zwischen
+    // Erdkörper und Geländeanzeige (gemessen 2026-09-17: 8,5 cm an einer
+    // Gerinnesohle). Mit `gitter` beginnt dieses Raster auf einem Knoten des
+    // groben und teilt dessen Zelle ganzzahlig: jeder grobe Knoten ist dann
+    // auch ein feiner, und beide Flächen liegen aufeinander.
+    if (gitter && [gitter.x0, gitter.z0, gitter.cell].every(Number.isFinite) && gitter.cell > 0) {
+        const aufKnoten = (wert, ursprung) => {
+            const k = Math.floor((wert - ursprung) / gitter.cell + 1e-9);
+            let v = ursprung + k * gitter.cell;
+            // Nie AUS dem Netz hinaus — sonst stünden Randknoten ohne Treffer.
+            while (v < wert - 1e-9) v += gitter.cell;
+            return v;
+        };
+        b = { ...b, minX: aufKnoten(b.minX, gitter.x0), minZ: aufKnoten(b.minZ, gitter.z0) };
+        if (!(b.maxX > b.minX) || !(b.maxZ > b.minZ)) { warnings.push('heightfield_bereich_leer'); return null; }
+        // Die Zellweite teilt die grobe ganzzahlig — sonst liegt nur der
+        // Ursprung auf dem Gitter und jeder weitere Knoten daneben.
+        const teile = Math.max(1, Math.round(gitter.cell / (cellOpt ?? gitter.cell)));
+        cellOpt = gitter.cell / teile;
     }
 
     const spanX = Math.max(b.maxX - b.minX, 1e-6);
@@ -202,6 +226,23 @@ export function rasterKnoten(raster, ix, iz) {
  * geringerer Höhendifferenz — vermeidet Grat-Artefakte), 3 gültige Ecken →
  * 1 Dreieck, NaN-Knoten reissen Löcher statt auf Höhe null zu fallen.
  */
+/**
+ * Welche Diagonale teilt diese Zelle? Die mit der KLEINEREN Höhendifferenz —
+ * sie vermeidet Grate. Als eigene Funktion, weil ein zweiter Leser dieselbe
+ * Antwort braucht: `koerperZwischenRastern` legt Deckel und Boden eines
+ * Erdkörpers über dieselben Knoten (Teil XXI). Wählt er anders als die
+ * Anzeige, entstehen aus einem Rasterstand ZWEI Flächen — gemessen
+ * 2026-09-17 am Grubenrand: 0,20 m auseinander, im Bild ein Körper, der aus
+ * dem Gelände ragt.
+ * @returns {boolean} true = 00–11 (sonst 10–01)
+ */
+export function diagonale00_11(raster, ix, iz) {
+    const { nz, heights } = raster;
+    const y00 = heights[ix * nz + iz], y11 = heights[(ix + 1) * nz + iz + 1];
+    const y10 = heights[(ix + 1) * nz + iz], y01 = heights[ix * nz + iz + 1];
+    return Math.abs(y00 - y11) <= Math.abs(y10 - y01);
+}
+
 function _zellDreiecke(raster, ix, iz, X, Z) {
     const { nz, heights } = raster;
     const y00 = heights[ix * nz + iz];
@@ -212,8 +253,7 @@ function _zellDreiecke(raster, ix, iz, X, Z) {
     const p01 = [X(ix), y01, Z(iz + 1)], p11 = [X(ix + 1), y11, Z(iz + 1)];
     const valid = [y00, y10, y01, y11].filter(Number.isFinite).length;
     if (valid === 4) {
-        // Diagonale wählen: 00–11 vs. 10–01
-        return Math.abs(y00 - y11) <= Math.abs(y10 - y01)
+        return diagonale00_11(raster, ix, iz)
             ? [[p00, p10, p11], [p00, p11, p01]]
             : [[p00, p10, p01], [p10, p11, p01]];
     }

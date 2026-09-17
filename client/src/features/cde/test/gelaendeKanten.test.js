@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import {
-    AUSWAHL_FARBE, GelaendeKanten, KANTEN_FARBE, KANTEN_FRAGMENT, KANTEN_VERTEX, PX_AUS, PX_VOLL,
+    AUSWAHL_FARBE, GelaendeKanten, KANTEN_FARBE, KANTEN_FRAGMENT, KANTEN_VERTEX, LIFT_MAX, PX_AUS, PX_VOLL,
     deckungNachPixel, kantenAusNetz, laengenAus, liftFuer, umrissAusNetz,
 } from '../services/GelaendeKanten.js';
 
@@ -43,10 +43,16 @@ describe('Die Kanten eines Dreiecksnetzes', () => {
         expect([k[0], k[2], k[3], k[5]]).toEqual([0, 0, 1, 0]);   // x/z bleiben
     });
 
-    it('der Lift wächst mit der Ausdehnung — mindestens 2 cm', () => {
+    it('der Lift wächst mit der Ausdehnung — mindestens 2 cm, höchstens 3', () => {
         expect(liftFuer(zweiDreiecke)).toBeCloseTo(0.02);
+        const mittel = { positions: Float64Array.from([0, 0, 0, 180, 0, 0, 180, 0, 120]), triCount: 1 };
+        expect(liftFuer(mittel)).toBeCloseTo(1e-4 * Math.hypot(180, 120), 6);
+        // DER DECKEL (Teil XXI): ein 700-m-Gelände bekam 7 cm, und das Netz
+        // schwebte sichtbar über seiner eigenen Fläche.
         const gross = { positions: Float64Array.from([0, 0, 0, 600, 0, 0, 600, 0, 400]), triCount: 1 };
-        expect(liftFuer(gross)).toBeCloseTo(1e-4 * Math.hypot(600, 400), 6);
+        expect(1e-4 * Math.hypot(600, 400)).toBeGreaterThan(LIFT_MAX);   // die alte Regel wollte mehr
+        expect(liftFuer(gross)).toBe(LIFT_MAX);
+        expect(LIFT_MAX).toBe(0.03);
     });
 
     it('je Punkt die Länge seiner Strecke — daraus rechnet der Shader Bildpunkte', () => {
