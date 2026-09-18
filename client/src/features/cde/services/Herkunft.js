@@ -46,6 +46,11 @@ export function herkunftChip(dok) {
     if (!h?.art) return null;
     const quellen = Array.isArray(h.quellen) ? h.quellen : [];
     const satz = h.satz_name ? `Satz „${h.satz_name}“` : '';
+    // S4 neu (K7): was beim Ausgeben weggelassen wurde, und wer ausgab — beides steht im Dokument.
+    const weg = Number(h.eigenbau?.ausgelassen) || 0;
+    const wegText = weg ? `${weg} weggelassen` : '';
+    const wegTitel = weg ? `weggelassen: ${(h.eigenbau?.ausgelassene_vorgaenge ?? []).join(', ') || `${weg} Teile`}` : '';
+    const wer = h.autor ? `ausgegeben von ${h.autor}${h.organisation ? ` (${h.organisation})` : ''}` : '';
     if (h.art === 'erdbau') {
         const erste = quellen[0];
         const aus = erste
@@ -53,9 +58,9 @@ export function herkunftChip(dok) {
             : '';
         return {
             art: 'erdbau',
-            text: ['Erdbau', aus, h.satz_name ? `Satz ${h.satz_name}` : '', _pruefungKurz(h)].filter(Boolean).join(' · '),
+            text: ['Erdbau', aus, h.satz_name ? `Satz ${h.satz_name}` : '', _pruefungKurz(h), wegText].filter(Boolean).join(' · '),
             titel: ['Erdbau-Dokument: Gelände unverändert, Aushub und Auftrag je Vorgang, mit Mengen',
-                    _pruefung(h), h.journal?.sitzungOffen ? 'mit ungesicherten Schritten' : '',
+                    _pruefung(h), wegTitel, wer, h.journal?.sitzungOffen ? 'mit ungesicherten Schritten' : '',
                     ...quellen.map(q => `Quelle ${q.datei ?? q.sha256} Rev. ${q.revision ?? '?'}`)].filter(Boolean).join(' · '),
         };
     }
@@ -63,8 +68,9 @@ export function herkunftChip(dok) {
         const n = quellen.length + (h.eigenbau ? 1 : 0);
         return {
             art: 'verbund',
-            text: `Verbund · ${n} ${n === 1 ? 'Quelle' : 'Quellen'}`,
-            titel: [satz, _pruefung(h), ...(h.weggelassen ?? []).map(w => `${w.datei}: ${w.grund}`)].filter(Boolean).join(' · '),
+            text: [`Verbund · ${n} ${n === 1 ? 'Quelle' : 'Quellen'}`, wegText].filter(Boolean).join(' · '),
+            titel: [satz, _pruefung(h), (h.abgewaehlt ?? []).length ? `abgewählt: ${h.abgewaehlt.join(', ')}` : '',
+                    wegTitel, wer, ...(h.weggelassen ?? []).map(w => `${w.datei}: ${w.grund}`)].filter(Boolean).join(' · '),
         };
     }
     return { art: String(h.art), text: String(h.art), titel: satz };

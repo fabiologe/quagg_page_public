@@ -71,7 +71,7 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
      * Identität (GlobalId/SHA-256) berechnen, Modell laden, Oberfläche
      * auffrischen, Blob in die lokale Ablage legen.
      */
-    async function _ladeBytes(buf, name, { persist = true, inMeter = false } = {}) {
+    async function _ladeBytes(buf, name, { persist = true, inMeter = false, nachspielen = true, hochladenAbwarten = false } = {}) {
         const bytes = new Uint8Array(buf);
         // ERST DER KOPF (2026-09-11): eine PDF mit der Endung .ifc lief bis in
         // den Importer und scheiterte dort mit einer Bibliotheksmeldung.
@@ -96,14 +96,19 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         const model = await engine.value.loadIfc(bytes, name, { inMeter: inMetern, meterBytes, frag });
         if (model?.modelId) _modelIdentity.set(model.modelId, { ...identity, name });
         if (sha && model?.modelId) _abgeleitetesAblegen(sha, model.modelId, name, { inMetern, meterBytes, frag });
-        await onModelLoaded();
-        if (persist) _ablegen(bytes, name, identity);
+        // S3: beim Zeigen eines Satzes spielt der Viewer EINMAL am Ende nach — nicht je Modell.
+        await onModelLoaded({ nachspielen });
+        if (persist) {
+            const abgelegt = _ablegen(bytes, name, identity);
+            // Wer das Modell gleich in einen Satz nimmt, wartet: der Server nimmt nur, was im Register steht.
+            if (hochladenAbwarten) await abgelegt;
+        }
 
         // Bei aktivem Projekt ins Dokumentregister aufnehmen. Mit Server-Backend
         // liest das nur nach — die Datei ist durch `_ablegen` schon hochgeladen
         // und steht im Manifest.
         if (cde.auftrag?.id && identity.sha256) {
-            cde.registerModel({
+            const aufgenommen = cde.registerModel({
                 sha256: identity.sha256,
                 name,
                 size: bytes.byteLength,
@@ -115,11 +120,13 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
                 // aus wie „es passiert gar nichts".
                 ablageHinweis.value = `Nicht ins Projektregister aufgenommen: ${fehlerLesbar(fehler).text}`;
             });
+            if (hochladenAbwarten) await aufgenommen;
         } else if (!cde.auftrag?.id) {
             // Kein Fehler, aber auch kein Erfolg: das Modell ist nur lokal.
             // Ohne diesen Satz sucht der Nutzer den Fehler bei sich.
             ablageHinweis.value = 'Nur im Browser gespeichert — kein Projekt geöffnet.';
         }
+        return identity.sha256 ?? null;
     }
 
     /**
@@ -158,18 +165,32 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         }
     }
 
-    async function onFileUpload(e) {
-        const datei = e.target.files?.[0];
-        if (!datei) return;
-        await _mitSperre('IFC laden', async () => _ladeBytes(await datei.arrayBuffer(), datei.name));
-        e.target.value = '';
-    }
-
-    async function onFileUploadAdd(e) {
-        const datei = e.target.files?.[0];
-        if (!datei) return;
-        await _mitSperre('IFC hinzufügen', async () => _ladeBytes(await datei.arrayBuffer(), datei.name));
-        e.target.value = '';
+    /**
+     * EIN Weg hinein (Fahrplan S3): laden, ins Projekt, in den aktiven Satz.
+     * Vorher gab es „IFC laden" und „Hinzufügen" — zwei Knöpfe für denselben
+     * Weg, und keiner nahm das Modell in den Satz. Hochladen und Registrieren
+     * werden hier ABGEWARTET: der Server nimmt in einen Satz nur, was schon im
+     * Register steht. Eine ältere Revision derselben Linie ersetzt der Store
+     * an ihrer Stelle (K6).
+     * @returns {Promise<{sha: string|null, ersetzt: string[], imSatz: boolean}|null>}
+     */
+    async function modellHinzufuegen(e) {
+        const datei = e?.target?.files?.[0];
+        if (!datei) return null;
+        let ergebnis = null;
+        await _mitSperre('Modell hinzufügen', async () => {
+            const sha = await _ladeBytes(await datei.arrayBuffer(), datei.name, { hochladenAbwarten: true });
+            ergebnis = { sha, ersetzt: [], imSatz: false };
+            if (sha && cde.aktiverSatz) {
+                const r = await cde.nimmInSatzAuf(sha);
+                ergebnis = { sha, ersetzt: r?.ersetzt ?? [], imSatz: true };
+                if (ergebnis.ersetzt.length) {
+                    ablageHinweis.value = `${datei.name} ersetzt ${ergebnis.ersetzt.join(', ')} im Satz „${cde.aktiverSatz.name}“.`;
+                }
+            }
+        });
+        if (e?.target) e.target.value = '';
+        return ergebnis;
     }
 
     // ── Lokale Ablage (IndexedDB bzw. Projektordner via RepoFacade) ──────────
@@ -221,12 +242,12 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
             .sort((a, b) => (b.meta?.savedAt ?? 0) - (a.meta?.savedAt ?? 0));
     }
 
-    async function openRecent(row) {
-        await _mitSperre('Modell aus der Ablage laden', async () => {
+    async function openRecent(row, { nachspielen = true } = {}) {
+        return _mitSperre('Modell aus der Ablage laden', async () => {
             const abgelegt = await repo.getBlob(row.key);
             if (!abgelegt?.blob) throw new Error('Blob nicht gefunden');
             await _ladeBytes(await abgelegt.blob.arrayBuffer(),
-                abgelegt.meta?.name ?? 'model', { persist: false });
+                abgelegt.meta?.name ?? 'model', { persist: false, nachspielen });
             // savedAt auffrischen, damit die Liste nach letzter Nutzung sortiert
             // bleibt — bewusst ohne await, das Modell steht schon.
             repo.setBlob(row.key, abgelegt.blob, { ...abgelegt.meta, savedAt: Date.now() })
@@ -372,9 +393,9 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         return { ok: !!gelungen };
     }
 
-    /** Modell aus dem Dokumentregister öffnen (CdeView ruft per Template-Ref). */
-    async function openBySha(sha256) {
-        await openRecent({ key: `model:${sha256}` });
+    /** Ein Modell des Registers laden — `zeigeSatz` holt so jedes Modell des Satzes. @returns {Promise<boolean>} */
+    async function openBySha(sha256, opts = {}) {
+        return openRecent({ key: `model:${sha256}` }, opts);
     }
 
     /**
@@ -392,7 +413,7 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
         const antwort = await api.get('/projects/file',
             { params: { path: pfad }, responseType: 'arraybuffer' });
         const name = String(pfad).split('/').pop() || 'modell.ifc';
-        await _ladeBytes(antwort.data, name);
+        return _ladeBytes(antwort.data, name);
     }
 
     /** sha256 des zuerst geladenen Modells — für Wasserzeichen und Register. */
@@ -479,7 +500,7 @@ export function useModellAblage({ engine, ifc, cde, onModelLoaded }) {
 
     return {
         loading, recentModels, ablageHinweis,
-        onFileUpload, onFileUploadAdd,
+        modellHinzufuegen,
         /**
          * Bytes laden OHNE Ablage und Upload (`persist: false`) — für Prüfläufe
          * mit Test-Modellen, die nicht in die Akte gehören (Teil XVII). Der

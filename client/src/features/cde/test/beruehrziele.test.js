@@ -24,7 +24,9 @@ const lies = (pfad) => readFileSync(new URL(pfad, wurzel), 'utf8');
 
 /** Der Vertrag: Datei → Selektoren, die im (pointer: coarse)-Block stehen. */
 const VERTRAG = {
-    'components/IfcViewer.vue':     ['.snap-btn', '.mode-btn', '.section-close', '.measure-clear', '.bearb-marke-aus', '.tag-close'],
+    'components/IfcViewer.vue':     ['.snap-btn', '.mode-btn', '.section-close', '.measure-clear', '.bearb-marke-aus'],
+    // H3: das × am Modell sitzt in der Tafel „Modelle“ (vorher `.tag-close` an der Pille).
+    'components/IfcSpatialWindow.vue': ['.sw-auge', '.sw-weg'],
     // Teil XVI: die Modus-Leiste ist die Kontextleiste geworden.
     'components/CdeKontextleiste.vue': ['.modus-fertig', '.kl-zu', '.kl-geste'],
     'components/IfcPlanCanvas.vue': ['.hud-btn'],

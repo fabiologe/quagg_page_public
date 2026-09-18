@@ -76,4 +76,14 @@ describe('AuftragApi — Verbund', () => {
       params: { path: '00_Angebote/42069_BlazeIT/CDE/Verbund_Boden_R01.ifc' }, responseType: 'blob',
     });
   });
+
+  it('S4 neu: die angehakten Modelle als JSON-Liste, Autor und Organisation als Felder — ohne Auswahl kein Feld', async () => {
+    await AuftragApi.verbundStarten(7, 's-abc', { modelle: ['a'.repeat(64)], autor: 'Anna Muster', organisation: 'Büro Muster' });
+    const form = aufrufe[0].body;
+    expect(JSON.parse(form.get('modelle'))).toEqual(['a'.repeat(64)]);
+    expect([form.get('autor'), form.get('organisation')]).toEqual(['Anna Muster', 'Büro Muster']);
+    aufrufe.length = 0;
+    await AuftragApi.verbundStarten(7, 's-abc');
+    expect(['modelle', 'autor', 'organisation'].some(k => aufrufe[0].body.has(k))).toBe(false);
+  });
 });

@@ -1,6 +1,6 @@
 <template>
   <Transition name="slide">
-    <div v-if="storeys.length" class="sn-panel">
+    <div v-if="storeys.length" class="sn-panel" :class="{ eingebettet }">
       <div class="sn-header">
         <span class="sn-title"><CdeIcon name="layers" :size="14" /> Geschosse</span>
         <label class="sn-check" title="Beim Springen zusätzlich einen Schnitt setzen">
@@ -67,6 +67,8 @@ import { sichtbarkeitFuerModus, aenderungen, hoeheText, nachHoehe, storeyKey } f
 
 const props = defineProps({
   storeys: { type: Array, default: () => [] },  // [{modelId, localId, name, elevation, box}]
+  /** H3: in der Tafel „Modelle“ statt schwebend über dem Bild. */
+  eingebettet: { type: Boolean, default: false },
 });
 const emit = defineEmits(['goto', 'set-visible']);
 
@@ -149,6 +151,15 @@ defineExpose({ setModus, modus });
   box-shadow: var(--cde-shadow-sm);
   overflow: hidden;
 }
+
+/* H3: in der Tafel „Modelle“ — kein eigenes Fenster, der Abschnittskopf trägt den Titel. */
+.sn-panel.eingebettet {
+  position: static; width: auto;
+  background: transparent; border: none; border-radius: 0; box-shadow: none;
+}
+.sn-panel.eingebettet .sn-header { background: transparent; border-bottom: none; padding: 0.2rem 0.6rem; }
+.sn-panel.eingebettet .sn-title { visibility: hidden; }
+.sn-panel.eingebettet .sn-body { max-height: none; }
 
 .sn-header {
   display: flex; align-items: center; justify-content: space-between;

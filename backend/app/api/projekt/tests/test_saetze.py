@@ -204,3 +204,30 @@ def test_ein_verbund_gehoert_in_keinen_satz(frische_db, app_conn, projekte_wurze
     assert r.status_code == 201, r.text
     r = c.put(f"{basis}/saetze/{r.json()['id']}", json={"enthaelt": [gelaende["sha256"], kanal1["sha256"]]})
     assert r.status_code == 422 and "Abgabe-Container" in r.json()["detail"], r.text
+
+
+def test_erdbau_dokument_nicht_im_eigenen_satz(frische_db, app_conn, projekte_wurzel):
+    """K3 (Fahrplan „Klare Ablaeufe", S3): ein Erdbau-Dokument gehoert nicht in den Satz, aus dem es kam.
+
+    In jedem ANDEREN Satz ist es ein normales Modell — nur im eigenen stuende es
+    neben dem Bau, aus dem es entstand, und ein Verbund naehme beides.
+    """
+    p, c, basis, _kanal1, _kanal2, gelaende = _projekt_mit_modellen(app_conn)
+    nord = c.post(f"{basis}/saetze", json={"name": "Nord", "enthaelt": [gelaende["sha256"]]}).json()
+    sued = c.post(f"{basis}/saetze", json={"name": "Sued", "enthaelt": [gelaende["sha256"]]}).json()
+    erdbau = c.post(f"{basis}/upload", files={"datei": ("Erdbau_Nord_R01.ifc", b"ISO-10303-21;e", "application/octet-stream")}).json()
+    o = ordner.finde(p["id"])
+    daten = cde.manifest_lesen(o)
+    for d in daten["dokumente"]:
+        if d["sha256"] == erdbau["sha256"]:
+            d["herkunft"] = {"art": "erdbau", "satz_id": nord["id"], "satz_name": "Nord"}
+    cde._manifest_schreiben(o, daten)
+
+    r = c.put(f"{basis}/saetze/{nord['id']}", json={"enthaelt": [gelaende["sha256"], erdbau["sha256"]]})
+    assert r.status_code == 422, r.json()
+    assert "eigenen Satz" in r.json()["detail"]
+
+    r = c.put(f"{basis}/saetze/{sued['id']}", json={"enthaelt": [gelaende["sha256"], erdbau["sha256"]]})
+    assert r.status_code == 200, r.json()
+    assert erdbau["sha256"] in r.json()["enthaelt"]
+

@@ -3,6 +3,7 @@ Uebersetzung. Alle Routen ab WERKSTUDENT (router-weit, fail-closed);
 Rechnungslegung (Geld, Abschlag, Belege, Stunden-/Schlussrechnung) nur ADMIN.
 Registriert in app/main.py unter /FastAPI/projekte; der Client ruft /api/projekte/...
 """
+import json
 
 from datetime import date
 
@@ -752,11 +753,29 @@ def cde_satz_loeschen(projekt_id: int, satz_id: str, nutzer=Depends(_gate)):
 # = "verbund" (Vorgabe) oder "erdbau": dann entsteht Erdbau_<Satz>_R<nn>.ifc aus
 # dem gelieferten Ur-Gelaende und dem Erdbau der CDE (Stufe 3, Aushub-Fachmodell).
 
+def _modellauswahl(roh: str | None) -> list | None:
+    """Die angehakten Modelle (S4 neu): eine JSON-Liste von sha256 — oder keine Auswahl (alle)."""
+    if roh is None or not roh.strip():
+        return None
+    try:
+        liste = json.loads(roh)
+    except ValueError:
+        liste = None
+    if not isinstance(liste, list) or not all(isinstance(x, str) for x in liste):
+        raise ValueError("modelle muss eine JSON-Liste von sha256 sein")
+    return liste
+
+
 @router.post("/{projekt_id}/cde/verbund", status_code=202)
 async def cde_verbund_starten(projekt_id: int, satz_id: str = Form(...),
                               projektname: str | None = Form(default=None),
                               crs: str | None = Form(default=None),
                               modus: str = Form(default="verbund"),
+                              # S4 neu (Ausgeben als Auswahlbaum): die angehakten Modelle des Satzes
+                              # als JSON-Liste der sha256 — und wer die Datei fuer wen ausgibt.
+                              modelle: str | None = Form(default=None),
+                              autor: str | None = Form(default=None),
+                              organisation: str | None = Form(default=None),
                               eigenbau: UploadFile | None = File(default=None),
                               nutzer=Depends(_gate)):
     with db.pool().connection() as conn:
@@ -770,9 +789,14 @@ async def cde_verbund_starten(projekt_id: int, satz_id: str = Form(...),
         except ordner.OrdnerNichtBereit as fehler:
             raise HTTPException(status_code=503, detail=str(fehler))
     try:
+        auswahl = _modellauswahl(modelle)
+    except ValueError as fehler:
+        raise HTTPException(status_code=422, detail=str(fehler))
+    try:
         paket = await eigenbau.read() if eigenbau is not None else None
         return await verbund_lauf.starte(o, satz_id, akteur=nutzer.username,
-                                         projektname=projektname, crs=crs, eigenbau=paket, modus=modus)
+                                         projektname=projektname, crs=crs, eigenbau=paket, modus=modus,
+                                         modelle=auswahl, autor=autor, organisation=organisation)
     except cde.CdeUnbekannt as fehler:
         raise HTTPException(status_code=404, detail=f"unbekannt: {fehler.args[0]}")
     except cde.CdeAbgelehnt as fehler:

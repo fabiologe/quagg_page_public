@@ -44,7 +44,7 @@
         @click="umschalten('satz')"
       >
         <span class="kl-etikett">Satz</span>
-        <strong class="kl-satz-name">{{ cde.aktiverSatz?.name ?? 'ohne Satz' }}</strong>
+        <strong class="kl-satz-name">{{ cde.aktiverSatz?.name ?? '—' }}</strong>
         <CdeIcon name="chevron-down" :size="12" />
       </button>
       <div v-if="offen === 'satz'" class="kl-menue" role="menu" aria-label="Satz">
@@ -60,17 +60,6 @@
           <CdeIcon name="check" :size="13" class="kl-haken" />
           <span>{{ s.name }}</span>
           <small v-if="s.zweck && s.zweck !== 'variante'" class="kl-zweck">{{ s.zweck }}</small>
-        </button>
-        <button
-          class="kl-eintrag"
-          :class="{ an: !cde.aktiverSatzId }"
-          role="menuitemradio"
-          :aria-checked="!cde.aktiverSatzId"
-          title="Ohne Satz gelten die Schritte für das ganze Projekt"
-          @click="waehle(null)"
-        >
-          <CdeIcon name="check" :size="13" class="kl-haken" />
-          <span>ohne Satz</span>
         </button>
         <div class="kl-trenner" role="separator"></div>
         <button class="kl-eintrag" role="menuitem" @click="aktion('satz-neu')">

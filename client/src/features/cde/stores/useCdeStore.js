@@ -31,6 +31,7 @@ import { ref, computed } from 'vue';
 import { useAuthStore } from '@/stores/useAuthStore.js';
 import { pruefeStatuswechsel } from '../services/StatusWorkflow.js';
 import { dokumentAusManifest, fehlerLesbar, repo } from '../services/RepoFacade.js';
+import { gleicheLinie } from '../services/Herkunft.js';
 
 export const ISO_STATUS = Object.freeze(['WIP', 'Shared', 'Published', 'Archived']);
 
@@ -206,6 +207,42 @@ export const useCdeStore = defineStore('cde', () => {
     return satz;
   }
 
+  /**
+   * Ein Modell in den aktiven Satz (Fahrplan S3). Eine ältere Revision
+   * DERSELBEN Linie wird ersetzt — an ihrer Stelle, damit die Reihenfolge und
+   * mit ihr der Weltrahmen des ersten Modells bleibt (K6).
+   * @returns {Promise<{ersetzt: string[]}|null>}
+   */
+  async function nimmInSatzAuf(sha256) {
+    const s = aktiverSatz.value;
+    if (!s || !sha256) return null;
+    if ((s.enthaelt ?? []).includes(sha256)) return { ersetzt: [] };
+    const neu = dokumente.value.find(d => d.sha256 === sha256) ?? null;
+    const ersetzt = [];
+    const enthaelt = [];
+    let platz = -1;
+    for (const x of s.enthaelt ?? []) {
+      const d = dokumente.value.find(dd => dd.sha256 === x);
+      if (neu && d && gleicheLinie(d, neu)) {
+        ersetzt.push(d.name ?? x);
+        if (platz < 0) platz = enthaelt.length;
+        continue;
+      }
+      enthaelt.push(x);
+    }
+    if (platz < 0) enthaelt.push(sha256); else enthaelt.splice(platz, 0, sha256);
+    await satzAendern(s.id, { enthaelt });
+    return { ersetzt };
+  }
+
+  /** × an der Pille (K5): aus dem aktiven Satz nehmen — die Datei bleibt im Projekt. */
+  async function nimmAusSatz(sha256) {
+    const s = aktiverSatz.value;
+    if (!s) return false;
+    await satzAendern(s.id, { enthaelt: (s.enthaelt ?? []).filter(x => x !== sha256) });
+    return true;
+  }
+
   async function satzLoeschen(id) {
     await repo.satzLoeschen(id);
     if (aktiverSatzId.value === id) await setzeSatz(null);
@@ -352,7 +389,7 @@ export const useCdeStore = defineStore('cde', () => {
     ready,
     auftrag, saetze, aktiverSatzId, aktiverSatz, bearbeiter, dokumente,
     satzRepo, uebernehmeRegister, setzeSatz, ladeSaetze,
-    satzAnlegen, satzAendern, satzLoeschen, setBearbeiter,
+    satzAnlegen, satzAendern, satzLoeschen, nimmInSatzAuf, nimmAusSatz, setBearbeiter,
     registerModel, setDokumentStatus, statusGrund, removeDokument,
     // Legacy-Lesepfade für die Migration (Stufe 11.5)
     KEY_PROJECTS_ALT, KEY_ACTIVE_ALT,

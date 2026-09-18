@@ -149,7 +149,8 @@ def _modelldatei(o: ordner.Ordner, d: dict, hindernisse: list) -> dict | None:
 
 
 def auftrag_bauen(o: ordner.Ordner, satz_id: str, *, projektname: str | None = None,
-                  mit_eigenbau: bool = False, modus: str = "verbund", paket: dict | None = None) -> dict:
+                  mit_eigenbau: bool = False, modus: str = "verbund", paket: dict | None = None,
+                  modelle: list | None = None) -> dict:
     """Aus einem Modellsatz den Auftrag fuer den Unterprozess machen.
 
     Abgelehnt wird LAUT und vollstaendig — alle Gruende auf einmal, nicht der
@@ -167,6 +168,11 @@ def auftrag_bauen(o: ordner.Ordner, satz_id: str, *, projektname: str | None = N
     Erdbau-Dokument UND der Live-Stand (der Aushub stuende doppelt), zwei
     Erdbau-Dokumente derselben Quelle, und ein Erdbau-Dokument, das aus einer
     ANDEREN Revision des Gelaendes gebaut wurde, als der Satz fuehrt.
+
+    AUSWAHL (Fahrplan Klare Ablaeufe, S4 neu): `modelle` sind die im Auswahlbaum
+    angehakten Modelle. Nur sie gehen hinein; was abgewaehlt ist, steht unter
+    `abgewaehlt`. `None` heisst: der ganze Satz, wie bisher. Im Erdbau-Modus
+    entscheidet der Erdbau selbst, welche Dokumente er braucht.
     """
     if modus not in MODI:
         raise cde.CdeAbgelehnt(f"modus muss einer von {MODI} sein")
@@ -178,8 +184,19 @@ def auftrag_bauen(o: ordner.Ordner, satz_id: str, *, projektname: str | None = N
     if modus == "erdbau":
         return _auftrag_erdbau(o, satz, bekannt, projektname=projektname, paket=paket)
 
+    enthaelt, abgewaehlt = list(satz.get("enthaelt") or []), []
+    if modelle is not None:
+        gewaehlt = set(modelle)
+        fremd = sorted(gewaehlt - set(enthaelt))
+        if fremd:
+            raise cde.CdeAbgelehnt(f"{len(fremd)} gewaehlte Modelle stehen nicht im Satz {satz.get('name')!r} — "
+                                   "den Dialog neu oeffnen")
+        ist_modell = lambda s: s in bekannt and bekannt[s].get("art") == "modell"   # noqa: E731
+        abgewaehlt = [bekannt[s]["datei"] for s in enthaelt if s not in gewaehlt and ist_modell(s)]
+        enthaelt = [s for s in enthaelt if s in gewaehlt or (s in bekannt and not ist_modell(s))]
+
     quellen, uebergangen, hindernisse, erdbau_doks = [], [], [], []
-    for sha in satz.get("enthaelt") or []:
+    for sha in enthaelt:
         d = bekannt.get(sha)
         if d is None:
             hindernisse.append(f"{sha[:12]}… steht im Satz, aber nicht mehr im Register")
@@ -230,7 +247,8 @@ def auftrag_bauen(o: ordner.Ordner, satz_id: str, *, projektname: str | None = N
     # Nur mit Eigenbau darf der Satz ohne Modell sein: dann ist der Verbund der
     # konforme Export dessen, was die CDE selbst gebaut hat.
     if not quellen and not mit_eigenbau:
-        raise cde.CdeAbgelehnt(f"der Satz {satz.get('name')!r} enthaelt kein IFC-Modell")
+        raise cde.CdeAbgelehnt("kein Modell angehakt — ohne Modell und ohne Eigenbau gibt es nichts auszugeben"
+                               if modelle is not None else f"der Satz {satz.get('name')!r} enthaelt kein IFC-Modell")
 
     return {
         "satz_id": satz_id,
@@ -243,6 +261,7 @@ def auftrag_bauen(o: ordner.Ordner, satz_id: str, *, projektname: str | None = N
         "quellen": quellen,
         "uebergangen": uebergangen,
         "weggelassen": weggelassen,
+        "abgewaehlt": abgewaehlt,
     }
 
 
@@ -304,6 +323,7 @@ def _auftrag_erdbau(o: ordner.Ordner, satz: dict, bekannt: dict, *, projektname:
         "quellen": quellen,
         "uebergangen": [],
         "weggelassen": [],
+        "abgewaehlt": [],
         "erdbau": {"globalIds": globalids,
                    "journal": {"commit": journal.get("commit"), "sitzungOffen": journal.get("sitzungOffen")}},
     }
@@ -352,7 +372,9 @@ def _spur_und_werkzeug() -> None:
 
 async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
                  projektname: str | None = None, crs: str | None = None,
-                 eigenbau: bytes | None = None, modus: str = "verbund") -> dict:
+                 eigenbau: bytes | None = None, modus: str = "verbund",
+                 modelle: list | None = None, autor: str | None = None,
+                 organisation: str | None = None) -> dict:
     """Auftrag annehmen, Laufordner anlegen, Unterprozess starten. Kehrt sofort zurueck.
 
     `crs` ist das Bezugssystem des PROJEKTS, wie die CDE es kennt. Ohne Angabe
@@ -379,8 +401,12 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
             raise cde.CdeAbgelehnt("Eigenbau-Paket muss ein JSON-Objekt sein")
 
     auftrag = auftrag_bauen(o, satz_id, projektname=projektname, mit_eigenbau=eigenbau is not None,
-                            modus=(modus or "verbund").strip().lower(), paket=paket)
+                            modus=(modus or "verbund").strip().lower(), paket=paket, modelle=modelle)
     auftrag["bearbeiter"] = akteur
+    # S4 neu: wer die Datei ausgibt und fuer wen — getrennt vom Akteur, den das Register braucht.
+    for schluessel, wert in (("autor", autor), ("organisation", organisation)):
+        if (wert or "").strip():
+            auftrag[schluessel] = wert.strip()[:200]
     auftrag["crs"] = (crs or "").strip().upper() or None
     # Wo die Registerdateien liegen — `Location` ihrer Dokumentverweise (app/ifc/herkunft.py).
     auftrag["ablage"] = f"{o.phase}/{o.ordnername}/{cde.ORDNER}"
@@ -392,6 +418,11 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
             "aushuebe": sum(1 for b in teile if kategorien.ist_aushub(b.get("klasse"))),
             "vorgaenge": len({(b.get("vorgang") or {}).get("ableitung") for b in teile if b.get("vorgang")}),
         }
+        # Was beim Ausgeben abgewaehlt wurde (S4 neu, K7) — die Spur im Register.
+        aus = [a for a in paket.get("ausgelassen") or [] if isinstance(a, dict)]
+        if aus:
+            auftrag["eigenbau"]["ausgelassen"] = len(aus)
+            auftrag["eigenbau"]["ausgelassene_vorgaenge"] = sorted({str(a["vorgang"]) for a in aus if a.get("vorgang")})
     namen = [q["name"] for q in auftrag["quellen"]] + (["CDE-Eigenbau"] if eigenbau is not None else [])
 
     lauf_id = f"v-{int(time.time()):x}-{secrets.token_hex(3)}"
@@ -405,13 +436,15 @@ async def starte(o: ordner.Ordner, satz_id: str, *, akteur: str,
     _schreibe(laufordner / "status.json", {
         "zustand": "wartet", "akteur": akteur, "satz_id": satz_id, "modus": auftrag["modus"],
         "satz_name": auftrag["satz_name"], "angenommen": cde._jetzt(),
-        "quellen": namen, "weggelassen": auftrag["weggelassen"],
+        "quellen": namen, "weggelassen": auftrag["weggelassen"], "abgewaehlt": auftrag["abgewaehlt"],
     })
     _laufend[lauf_id] = asyncio.create_task(_fahre(o, lauf_id))
     _ordner_der_laeufe[lauf_id] = laufordner
     _aufraeumen(o, behalte=lauf_id)
     return {"lauf_id": lauf_id, "zustand": "wartet", "modus": auftrag["modus"], "quellen": namen,
-            "uebergangen": auftrag["uebergangen"], "weggelassen": auftrag["weggelassen"]}
+            "uebergangen": auftrag["uebergangen"], "weggelassen": auftrag["weggelassen"],
+            # Immer dabei, auch leer: daran erkennt der Client, dass der Server die Auswahl kennt.
+            "abgewaehlt": auftrag["abgewaehlt"]}
 
 
 async def pruefung_starten(o: ordner.Ordner, sha256: str, *, akteur: str) -> dict:
@@ -609,6 +642,10 @@ def _herkunft(auftrag: dict, bericht: dict, lauf_id: str) -> dict:
     }
     if auftrag.get("weggelassen"):
         herkunft["weggelassen"] = auftrag["weggelassen"]
+    # S4 neu: abgewaehlte Modelle, Autor und Organisation der Ausgabe.
+    for schluessel in ("abgewaehlt", "autor", "organisation"):
+        if auftrag.get(schluessel):
+            herkunft[schluessel] = auftrag[schluessel]
     if auftrag.get("erdbau"):
         herkunft["journal"] = auftrag["erdbau"].get("journal")
     return herkunft

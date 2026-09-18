@@ -437,7 +437,12 @@ def _guid(*teile: str) -> str:
     return guids._abgeleitet("verbund", *teile)
 
 
-def schreibe_kopf(f, *, dateiname: str, bearbeiter: str = "", firma: str = "quagg engineering") -> None:
+# Wer die Anwendung entwickelt hat (IfcApplication) — und ohne Angabe auch die
+# Organisation dessen, der ausgibt. Seit S4 neu sind das zwei Rollen.
+ENTWICKLER = "quagg engineering"
+
+
+def schreibe_kopf(f, *, dateiname: str, bearbeiter: str = "", firma: str = ENTWICKLER) -> None:
     """Den STEP-Kopf setzen — vor allem die MVD-Angabe.
 
     ifcopenshell schreibt von sich aus `ViewDefinition [CoordinationView]`.
@@ -468,7 +473,7 @@ def schreibe_kopf(f, *, dateiname: str, bearbeiter: str = "", firma: str = "quag
 
 
 def zielgeruest(projektname: str, *, crs: str | None, zone: str | None = None,
-                bearbeiter: str = "", schluessel: str = "verbund",
+                bearbeiter: str = "", firma: str = "", schluessel: str = "verbund",
                 crs_herkunft: str = "Angabe des Aufrufers"):
     """Das leere, konforme Geruest, in das die Lieferungen hineinwandern.
 
@@ -480,16 +485,24 @@ def zielgeruest(projektname: str, *, crs: str | None, zone: str | None = None,
     Die GlobalIds sind ABGELEITET, nicht gewuerfelt: derselbe Satz ergibt
     morgen dasselbe Geruest, und ein zweiter Verbund ist eine Revision des
     ersten statt eines Fremdlings.
+
+    `bearbeiter` und `firma` (Fahrplan Klare Ablaeufe, S4 neu): wer die Datei
+    ausgibt und fuer welche Organisation — aus dem Ausgeben-Dialog. Ohne Angabe
+    wie bisher: der Anmeldename und quagg engineering.
     """
     f = ifcopenshell.file(schema=ZIELSCHEMA)
-    schreibe_kopf(f, dateiname=f"{projektname}.ifc", bearbeiter=bearbeiter)
+    firma = (firma or "").strip() or ENTWICKLER
+    schreibe_kopf(f, dateiname=f"{projektname}.ifc", bearbeiter=bearbeiter, firma=firma)
 
     person = f.create_entity("IfcPerson", FamilyName=bearbeiter or "CDE")
-    firma = f.create_entity("IfcOrganization", Name="quagg engineering")
-    anwendung = f.create_entity("IfcApplication", ApplicationDeveloper=firma,
+    entwickler = f.create_entity("IfcOrganization", Name=ENTWICKLER)
+    # Wer ausgibt, arbeitet vielleicht fuer ein anderes Buero als das, das die
+    # Anwendung entwickelt hat — zwei Rollen, zwei Organisationen.
+    organisation = entwickler if firma == ENTWICKLER else f.create_entity("IfcOrganization", Name=firma)
+    anwendung = f.create_entity("IfcApplication", ApplicationDeveloper=entwickler,
                                 Version=FASSUNG, ApplicationFullName=f"{WERKZEUG} Verbundexport",
                                 ApplicationIdentifier="quagg-cde")
-    wer = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=firma)
+    wer = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=organisation)
     # `LastModifiedDate` ist bei ChangeAction ADDED PFLICHT — die Where-Rule
     # `IfcOwnerHistory.CorrectChangeAction` verlangt es, und das Prueftor hat
     # genau das beim ersten Lauf beanstandet. Die Datei entsteht in einem Zug,
@@ -1143,7 +1156,7 @@ def _bezug_entscheiden(crs, kandidaten, befunde) -> tuple[str, str, tuple]:
 # ── Der Lauf ────────────────────────────────────────────────────────────────
 
 def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
-                    crs: str | None = None, bearbeiter: str = "",
+                    crs: str | None = None, bearbeiter: str = "", firma: str = "",
                     schluessel: str = "verbund", melde=None, nachbearbeiten=None,
                     ablage: str | None = None) -> dict:
     """Der ganze Weg: normalisieren, Geruest bauen, hineinhaengen, aufraeumen, schreiben.
@@ -1180,7 +1193,7 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         # Vor dem ersten Oeffnen: ein unbekanntes System scheitert nach einer
         # Sekunde, nicht nach zwei Minuten Migration.
         raise VerbundUnmoeglich(_unbekannt(crs))
-    geruest = zielgeruest(projektname, crs=None, bearbeiter=bearbeiter, schluessel=schluessel)
+    geruest = zielgeruest(projektname, crs=None, bearbeiter=bearbeiter, firma=firma, schluessel=schluessel)
     ziel = geruest["datei"]
     bekannt = {i.GlobalId for i in ziel.by_type("IfcRoot")}
     befunde = []

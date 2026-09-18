@@ -182,12 +182,12 @@ describe('die Ladesperre schweigt nicht', () => {
 
     it('der zweite Ladeversuch wird abgewiesen UND gemeldet', async () => {
         const { ablage, geladen, loesen } = bauMitBremse();
-        const ersteLadung = ablage.onFileUpload(datei('Gelaende.ifc'));
+        const ersteLadung = ablage.modellHinzufuegen(datei('Gelaende.ifc'));
         await Promise.resolve();
         expect(ablage.loading.value).toBe(true);
 
         // Der zweite Klick, während die erste Ladung noch läuft.
-        await ablage.onFileUploadAdd(datei('Kanal.ifc'));
+        await ablage.modellHinzufuegen(datei('Kanal.ifc'));
         expect(ablage.ablageHinweis.value).toMatch(/wird gerade ein Modell geladen/i);
         expect(geladen).not.toContain('Kanal.ifc');
 
@@ -199,12 +199,12 @@ describe('die Ladesperre schweigt nicht', () => {
 
     it('nach dem Ende geht der zweite Versuch durch', async () => {
         const { ablage, geladen, loesen } = bauMitBremse();
-        const ersteLadung = ablage.onFileUpload(datei('Gelaende.ifc'));
+        const ersteLadung = ablage.modellHinzufuegen(datei('Gelaende.ifc'));
         await Promise.resolve();
         loesen();
         await ersteLadung;
 
-        await ablage.onFileUploadAdd(datei('Kanal.ifc'));
+        await ablage.modellHinzufuegen(datei('Kanal.ifc'));
         expect(geladen).toEqual(['Gelaende.ifc', 'Kanal.ifc']);
     });
 
@@ -216,7 +216,8 @@ describe('die Ladesperre schweigt nicht', () => {
         const quelle = readFileSync(
             resolve(process.cwd(), 'src/features/cde/components/IfcViewer.vue'), 'utf8');
         const eingaben = quelle.match(/<input type="file"[^>]*>/g) ?? [];
-        expect(eingaben.length).toBeGreaterThanOrEqual(2);
+        // Fahrplan S3: EIN Weg hinein — „Modell hinzufügen“ statt „IFC laden“ und „Hinzufügen“.
+        expect(eingaben).toHaveLength(1);
         for (const e of eingaben) expect(e).toContain(':disabled="ablage.loading.value"');
         expect(quelle).toContain('.action-btn.laedt');
     });

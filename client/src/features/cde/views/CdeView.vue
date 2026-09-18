@@ -22,7 +22,7 @@
       @satz-neu="onNeuerSatz"
       @satz-umbenennen="onSatzUmbenennen"
       @satz-loeschen="onSatzLoeschen"
-      @ausgeben="verbundOeffnen"
+      @ausgeben="ausgebenRef?.oeffnen()"
       @bauformen="oeffneBauformen"
       @hilfe="hilfeUmschalten"
     />
@@ -162,7 +162,7 @@
             <CdeIcon name="chevron-right" :size="13" />
           </button>
         </template>
-        <IfcSpatialWindow v-if="panels.isOpen('struktur')" ref="strukturRef" />
+        <CdeModellTafel v-if="panels.isOpen('struktur')" ref="strukturRef" />
       </CdePanel>
 
       <div class="cde-viewer-host">
@@ -335,7 +335,7 @@
                   <!-- Stufe 6 (Fahrplan Erdbau-Container): neu erzeugen — oder der Schritt davor. -->
                   <button v-if="d.herkunft?.art === 'erdbau' && repo.remote" class="cde-btn sm doc-regen"
                           title="Neu ausgeben — prüft vorher Satz, geladene Revision und Verlauf"
-                          aria-label="Neu ausgeben" :disabled="verbundLaeuft || verbundStartet" @click="erdbauNeu(d)">
+                          aria-label="Neu ausgeben" :disabled="ausgebenRef?.beschaeftigt" @click="erdbauNeu(d)">
                     <CdeIcon name="refresh" :size="11" />
                   </button>
                   <div v-if="regenHinweis?.sha256 === d.sha256" class="doc-regen-hinweis" :class="{ ok: regenHinweis.ok }">
@@ -393,9 +393,6 @@
                 </td>
                 <td class="doc-date">{{ fmtDate(d.addedAt) }}</td>
                 <td class="doc-actions">
-                  <button class="cde-btn sm" @click="openDokument(d)" title="Modell öffnen" aria-label="Modell öffnen">
-                    <CdeIcon name="open" :size="12" />
-                  </button>
                   <button class="cde-btn sm danger" @click="entferneDokument(d)" title="Aus dem Projekt nehmen" aria-label="Aus dem Projekt nehmen">
                     <CdeIcon name="delete" :size="12" />
                   </button>
@@ -491,114 +488,9 @@
       </template>
     </CdeDialog>
 
-    <!-- Verbund (2026-09-10): Modellsatz → EIN geprüftes IFC4X3, im Register und
-         zum Herunterladen. Gerechnet wird auf dem Server (Unterprozess); hier
-         wird angestoßen, abgeholt und der Prüfbericht gezeigt. -->
-    <CdeDialog :offen="verbundOffen" titel="Ausgeben" icon="ausgeben" @close="verbundOffen = false">
-      <template v-if="!verbundLauf">
-        <p class="tm-satz">
-          Aus dem Satz <b>{{ cde.aktiverSatz?.name }}</b> entsteht eine geprüfte
-          IFC4X3-Datei. Nur was die Prüfung besteht, kommt als neues Dokument
-          (WIP) ins Register.
-        </p>
-        <div v-for="d in verbundModelle" :key="d.sha256" class="tm-zeile">
-          <span class="tm-name">{{ d.datei ?? d.name }}</span>
-          <span class="tm-meta">
-            <template v-if="verbundWeggelassen.get(d.sha256)">fällt weg — steckt in {{ verbundWeggelassen.get(d.sha256) }}</template>
-            <template v-else>Rev. {{ d.revision }} · {{ d.status }}{{ d.herkunft?.art === 'erdbau' ? ' · Erdbau' : '' }}</template>
-          </span>
-        </div>
-        <p v-if="!verbundModelle.length" class="tm-satz">Der Satz enthält kein Modell.</p>
-        <p v-for="v in verbundErdbauVeraltet" :key="`alt-${v.erdbau}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> {{ v.erdbau }} wurde aus {{ v.quelle }} gebaut — {{ v.neu }} ist neuer: das Erdbau-Dokument neu ausgeben
-        </p>
-        <!-- Stufe 3: der Erdbau kommt ENTWEDER aus einem Dokument des Satzes ODER
-             live aus der CDE — beides zugleich stellte den Aushub doppelt in den
-             Verbund, und der Server lehnt es ab. -->
-        <label class="tm-zeile" :title="verbundErdbauImSatz.length ? `Der Satz führt ${verbundErdbauImSatz.join(', ')} — der Erdbau kommt aus dem Dokument` : ''">
-          <input type="checkbox" v-model="verbundEigenbau" :disabled="verbundErdbauImSatz.length > 0" />
-          <span class="tm-name">CDE-Eigenbau live mitnehmen</span>
-          <span class="tm-meta">{{ verbundErdbauImSatz.length ? `nicht nötig — ${verbundErdbauImSatz.join(', ')} im Satz` : 'was die CDE selbst erzeugt hat' }}</span>
-        </label>
-        <!-- Fahrplan Erdbau-Container, Stufe 1: tote Quellen und doppelte Anzeigen — BEVOR es läuft. -->
-        <p v-for="t in verbundDiagnose.unloesbar" :key="`tot-${t.globalId}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> {{ t.name || t.globalId }} hängt an {{ t.quelle }}, das im Verlauf nicht mehr steht: ausblenden oder neu ableiten
-        </p>
-        <p v-if="verbundToteGeheilt.length" class="tm-satz">
-          <CdeIcon name="info" :size="12" /> {{ verbundToteGeheilt.length }} Schritte nennen ein zurückgenommenes Gelände — gebaut wird am gelieferten Gelände {{ verbundToteGeheilt[0].ur }}
-        </p>
-        <p v-if="verbundDiagnose.verdraengteAnzeigen.length" class="tm-satz">
-          <CdeIcon name="info" :size="12" /> {{ verbundDiagnose.verdraengteAnzeigen.length }} × dasselbe Gelände doppelt — es wird nur einmal gebaut
-        </p>
-        <p class="tm-satz">
-          <b>Erdbau-Dokument</b>: das gelieferte Gelände unverändert, je Vorgang
-          Aushub und Auftrag mit Mengen, als „Erdbau_{{ cde.aktiverSatz?.name }}_R…“.
-          <b>Verbund</b>: alle Modelle des Satzes in einer Datei.
-        </p>
-      </template>
-      <template v-else>
-        <p class="tm-satz">
-          <CdeIcon :name="verbundSymbol" :size="13" />
-          <b>{{ verbundZustandText }}</b>
-          <template v-if="verbundLaeuft"> — {{ verbundLauf.schritt || 'wartet auf den Server' }}</template>
-        </p>
-        <p v-if="verbundLauf.fehler" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> {{ verbundLauf.fehler }}
-        </p>
-        <div v-if="verbundLauf.dokument" class="tm-zeile">
-          <span class="tm-name">{{ verbundLauf.dokument.datei }}</span>
-          <span class="tm-meta">Rev. {{ verbundLauf.dokument.revision }} · WIP · im Register</span>
-        </div>
-        <p v-if="verbundLauf.bericht?.crs" class="tm-satz">
-          Bezugssystem <b>{{ verbundLauf.bericht.crs }}</b> — {{ verbundLauf.bericht.crs_herkunft }}
-        </p>
-        <p v-for="l in verbundEigenbauLuecken" :key="l.art" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> Eigenbau, nicht im Verbund ({{ l.art }}): {{ l.anzahl }}
-        </p>
-        <p v-for="w in verbundFehlendeWirte" :key="w" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> Aushub ohne sein Gelände ({{ w }}) — das gelieferte Gelände in den Satz aufnehmen
-        </p>
-        <p v-for="w in verbundOhneWirt" :key="`ohne-${w}`" class="tm-meldung">
-          <CdeIcon name="warn" :size="12" /> Aushub {{ w }} nennt kein Gelände — im Verlauf fehlt seine Quelle
-        </p>
-        <p v-for="w in verbundLauf.weggelassen || []" :key="`weg-${w.datei}`" class="tm-satz">
-          <CdeIcon name="info" :size="12" /> {{ w.datei }} — {{ w.grund }}
-        </p>
-        <!-- Stufe 6: der Bericht im Panel — Gruppen nach Stufe, nur Schwere „fehler" sperrt. -->
-        <PruefberichtPanel v-if="verbundLauf.befunde?.length" :befunde="verbundLauf.befunde"
-                           :kopf="verbundLauf.bericht" herunterladbar
-                           @herunterladen="berichtHerunterladen(verbundLauf.lauf_id, verbundLauf.dokument?.datei)" />
-        <template v-for="q in verbundLauf.quellen_bericht || []" :key="q.name">
-          <div class="tm-zeile">
-            <span class="tm-name">{{ q.name }}</span>
-            <span class="tm-meta">{{ q.schema }} · Faktor {{ q.einheit_faktor }} · {{ q.uebernommen }} Bauteile</span>
-          </div>
-          <p v-for="(w, i) in q.warnungen || []" :key="`${q.name}-${i}`" class="tm-meldung">
-            <CdeIcon name="warn" :size="12" /> {{ w }}
-          </p>
-        </template>
-      </template>
-      <p v-if="verbundMeldung" class="tm-meldung">
-        <CdeIcon name="warn" :size="12" /> {{ verbundMeldung }}
-      </p>
-      <template #fuss>
-        <button class="cde-btn ghost" @click="verbundOffen = false">{{ verbundLauf ? 'Schließen' : 'Abbrechen' }}</button>
-        <button v-if="!verbundLauf" class="cde-btn" :disabled="verbundStartet || verbundDiagnose.unloesbar.length > 0"
-                title="Den Eigenbau als geprüftes Erdbau-Dokument ins Register — Erdbau_<Satz>_R<nn>.ifc"
-                @click="verbundStarten('erdbau')">
-          <CdeIcon name="terrain" :size="13" /> Erdbau-Dokument ausgeben
-        </button>
-        <button v-if="!verbundLauf" class="cde-btn primary"
-                :disabled="verbundStartet || (!verbundModelle.length && !verbundEigenbau)
-                           || (verbundEigenbau && !verbundErdbauImSatz.length && verbundDiagnose.unloesbar.length > 0)"
-                @click="verbundStarten('verbund')">
-          {{ verbundStartet ? 'Startet …' : 'Verbund ausgeben' }}
-        </button>
-        <button v-else-if="verbundLauf.dokument" class="cde-btn primary" @click="verbundHerunterladen">
-          <CdeIcon name="download" :size="13" /> Herunterladen
-        </button>
-      </template>
-    </CdeDialog>
+    <!-- Ausgeben (S4 neu, Kassensturz E10): Auswahlbaum, eine Zeile Stand, höchstens
+         ein Satz mit Knöpfen — components/AusgebenDialog.vue. Gerechnet wird auf dem Server. -->
+    <AusgebenDialog ref="ausgebenRef" @laden="ausgebenLaden" @bericht="berichtHerunterladen" />
 
     <!-- Stufe 6: der Prüfbericht eines Registerdokuments. Voll aus dem Laufordner,
          solange er steht; sonst die Kurzform aus dem Register — und das steht dabei. -->
@@ -622,9 +514,10 @@ import CdeDialog from '../components/ui/CdeDialog.vue';
 import CdeKopfleiste from '../components/CdeKopfleiste.vue';
 import CdeReiterleiste from '../components/CdeReiterleiste.vue';
 import PruefberichtPanel from '../components/PruefberichtPanel.vue';
+import AusgebenDialog from '../components/AusgebenDialog.vue';
 import { ampel, istOffen } from '../services/Pruefbericht.js';
 import { REPO_KEY_TRANSMITTALS, UEBERGABEFAEHIG, baueSchein, paketName, protokollEintrag, pruefeAuswahl } from '../services/Transmittal.js';
-import IfcSpatialWindow from '../components/IfcSpatialWindow.vue';
+import CdeModellTafel from '../components/CdeModellTafel.vue';
 import IfcPlanningCockpit from '../components/IfcPlanningCockpit.vue';
 import IfcPlanPanel from '../components/IfcPlanPanel.vue';
 import CdeToolbox from '../components/CdeToolbox.vue';
@@ -645,13 +538,11 @@ import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
 import {
-  fruehereRevisionFehlt, herkunftChip, imErdbauEnthalten, istAbgabeContainer, quellenVeraltet, regenerierbar,
+  fruehereRevisionFehlt, herkunftChip, istAbgabeContainer, quellenVeraltet, regenerierbar,
   teileRegister,
 } from '../services/Herkunft.js';
 import { fehlendeAusJournal } from '../services/GlobalIdAbbildung.js';
-import { aushubFehlt, eigenbauDiagnose } from '../services/EigenbauDiagnose.js';
-import { rezeptNach } from '../services/Bauteilrezepte.js';
-import { verdeckteAus } from '../services/CdeAchsen.js';
+import { bestandAus } from '../services/SatzAnsicht.js';
 import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1034,129 +925,19 @@ async function transmittalErzeugen() {
   }
 }
 
-// ── Verbund (Modellsatz → EIN geprüftes IFC4X3) ─────────────────────────────
-// Gerechnet wird auf dem Server, in einem Unterprozess: nginx bricht nach 60 s
-// ab, der Verbund der Gruppenmodelle braucht samt Prüfung zwei Minuten. Darum
-// anstoßen (202) und alle zwei Sekunden abholen, bis ein Endzustand dasteht.
-// Ins Register kommt nur, was die Prüfung bestanden hat — das entscheidet der
-// Server, nicht dieser Dialog.
-const verbundOffen = ref(false);
-const verbundEigenbau = ref(true);
-const verbundStartet = ref(false);
-const verbundLauf = ref(null);
-const verbundMeldung = ref('');
-// verbund | erdbau (Stufe 3) — derselbe Lauf, eine andere Quellenliste und ein anderer Dateiname.
-const verbundModus = ref('verbund');
-let verbundUhr = null;
-
-const verbundModelle = computed(() => {
-  const satz = cde.aktiverSatz;
-  if (!satz) return [];
-  // Der Server liefert die Dokumente des Satzes aufgelöst mit; fehlen sie,
-  // werden sie aus dem Register nachgeschlagen.
-  const liste = satz.dokumente
-    ?? (satz.enthaelt ?? []).map(sha => cde.dokumente.find(d => d.sha256 === sha)).filter(Boolean);
-  return liste.filter(d => (d.art ?? 'modell') === 'modell');
-});
-const verbundLaeuft = computed(() => ['wartet', 'laeuft'].includes(verbundLauf.value?.zustand));
-const verbundZustandText = computed(() => ({
-  wartet: 'Angenommen', laeuft: 'Rechnet',
-  geprueft: verbundLauf.value?.dokument ? 'Geprüft und im Register' : 'Geprüft — wird eingetragen',
-  abgelehnt: 'Abgelehnt', fehler: 'Fehler', abgebrochen: 'Abgebrochen',
-})[verbundLauf.value?.zustand] ?? verbundLauf.value?.zustand ?? '');
-const verbundSymbol = computed(() => ({
-  geprueft: 'status-ok', abgelehnt: 'status-error', fehler: 'status-error', abgebrochen: 'status-warn',
-})[verbundLauf.value?.zustand] ?? 'busy');
-// Was vom CDE-Eigenbau NICHT in den Verbund kam (misslungen, leer, ausgeblendet).
-// Ein Export, der still weniger enthält als die Ansicht, wäre eine falsche Aussage.
-const verbundEigenbauLuecken = computed(() =>
-  Object.entries(verbundLauf.value?.bericht?.eigenbau?.nicht_im_paket ?? {})
-    .map(([art, liste]) => ({ art, anzahl: Array.isArray(liste) ? liste.length : Number(liste) || 0 }))
-    .filter(l => l.anzahl > 0));
-// Aushübe des Eigenbaus, deren Wirt (das GELIEFERTE Gelände) nicht im Satz liegt.
-// Der Verbund bleibt dann zu Recht rot (IfcRelVoidsElement fehlt, SPF lehnt ab) —
-// aber er soll sagen, WAS fehlt, statt nur, dass etwas fehlt.
-const verbundFehlendeWirte = computed(() =>
-  verbundLauf.value?.bericht?.nachbearbeitung?.wirte?.fehlende_wirte ?? []);
-// Ein eigener Aushub, der GAR KEIN Gelände nennt: dort fehlt nicht ein Dokument
-// im Satz, sondern die Quelle im Journal — ein anderer Satz an den Planer.
-const verbundOhneWirt = computed(() =>
-  verbundLauf.value?.bericht?.nachbearbeitung?.wirte?.ohne_wirtangabe ?? []);
-// Erdbau-Dokumente im Satz, und was in ihnen steckt (Stufe 3) — dieselbe Regel
-// wie der Server: das Gelände darin fällt im Verbund weg.
-const verbundWeggelassen = computed(() => imErdbauEnthalten(verbundModelle.value));
-const verbundErdbauImSatz = computed(() =>
-  verbundModelle.value.filter(d => d.herkunft?.art === 'erdbau').map(d => d.datei ?? d.name));
-// Stufe 4: ein Erdbau-Dokument im Satz, dessen Gelände im Register neuer ist.
-// Führt der Satz die neuere Revision, lehnt der Server ab; sonst warnt der Dialog.
-const verbundErdbauVeraltet = computed(() => verbundModelle.value
-  .filter(d => d.herkunft?.art === 'erdbau')
-  .flatMap(d => quellenVeraltet(d, cde.dokumente).map(v => ({ ...v, erdbau: d.datei ?? d.name }))));
-// TOTE QUELLEN VOR DEM START (Fahrplan Erdbau-Container, Stufe 1): was der
-// Eigenbau nicht bauen könnte, sagt der Dialog, bevor zwei Minuten laufen —
-// der Server lehnt es sonst ab (V10). Gerechnet nur, solange der Dialog offen ist.
-const verbundDiagnose = computed(() => {
-  if (!verbundOffen.value || verbundLauf.value) return { toteQuellen: [], unloesbar: [], verdraengteAnzeigen: [] };
-  return eigenbauDiagnose({
-    stand: aenderungen.wirksamerStand('erzeugt'),
-    historie: aenderungen.historischerStand('erzeugt'),
-    rezeptNach,
-    verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
-  });
-});
-const verbundToteGeheilt = computed(() => verbundDiagnose.value.toteQuellen.filter(t => t.loesbar));
-
-function verbundOeffnen() {
-  // Ein laufender Verbund bleibt stehen: wer den Dialog schließt und wieder
-  // öffnet, sieht den Stand, statt versehentlich einen zweiten zu starten.
-  if (!verbundLaeuft.value) {
-    verbundLauf.value = null;
-    verbundMeldung.value = '';
-    verbundModus.value = 'verbund';
-  }
-  verbundOffen.value = true;
-}
-
-async function verbundStarten(modus = 'verbund') {
-  const satz = cde.aktiverSatz;
-  if (!satz || !cde.auftrag?.id) return;
-  verbundStartet.value = true;
-  verbundMeldung.value = '';
-  verbundModus.value = modus;
-  const erdbau = modus === 'erdbau';
-  let eigenbau = null;
-  // Der Live-Stand: beim Erdbau Pflicht; beim Verbund nur, wenn kein
-  // Erdbau-Dokument im Satz steht (sonst stünde der Aushub doppelt).
-  if (erdbau || (verbundEigenbau.value && !verbundErdbauImSatz.value.length)) {
-    try {
-      eigenbau = (await useViewerApi().eigenbauPaket?.()) ?? null;
-    } catch (fehler) {
-      // Beim Verbund kein Abbruch: ohne Eigenbau bleibt der Verbund der Lieferungen. Gesagt wird es trotzdem.
-      verbundMeldung.value = `CDE-Eigenbau nicht dabei: ${fehler?.message ?? fehler}`;
-    }
-    if (erdbau && !eigenbau) {
-      verbundMeldung.value ||= 'Das Erdbau-Dokument braucht den Eigenbau — erst ein Modell laden.';
-      verbundStartet.value = false;
-      return;
-    }
-  }
-  // Abnahme D4: ohne Aushub gibt es kein Erdbau-Dokument. Der Server lehnte das
-  // bisher erst nach dem Hochladen ab — jetzt sagt EIN Satz vorher, woran es liegt.
-  const fehlt = erdbau ? aushubFehlt(eigenbau, { satz: satz.name }) : null;
-  if (fehlt) {
-    verbundMeldung.value = fehlt;
-    verbundStartet.value = false;
+// ── Ausgeben (S4 neu) ───────────────────────────────────────────────────────
+// Der Dialog lebt in components/AusgebenDialog.vue (Auswahlbaum, Autor, EPSG,
+// Lauf abholen). Hier nur, was die Schale kann: ein fehlendes Modell in den Satz
+// nehmen und zeigen („Laden“) — danach prüft der Dialog neu.
+const ausgebenRef = ref(null);
+async function ausgebenLaden(sha256) {
+  try { await cde.nimmInSatzAuf(sha256); }
+  catch (fehler) {
+    ausgebenRef.value?.melde(fehler?.response?.data?.detail ?? 'Das Modell ließ sich nicht in den Satz aufnehmen.');
     return;
   }
-  try {
-    const angenommen = await AuftragApi.verbundStarten(cde.auftrag.id, satz.id, { eigenbau, modus });
-    verbundLauf.value = { ...angenommen, schritt: '' };
-    verbundAbholen(angenommen.lauf_id);
-  } catch (fehler) {
-    verbundMeldung.value = fehler?.response?.data?.detail || fehler?.message || 'Der Verbund ließ sich nicht starten.';
-  } finally {
-    verbundStartet.value = false;
-  }
+  await satzZeigen();
+  await ausgebenRef.value?.neuPruefen();
 }
 
 /**
@@ -1166,65 +947,33 @@ async function verbundStarten(modus = 'verbund') {
  * Konflikte aus dem Viewer kommen und nicht reaktiv sind.
  */
 const regenHinweis = ref(null);
-async function erdbauNeu(d) {
+async function erdbauNeu(d, nochmal = true) {
   const api = useViewerApi();
   const fehlend = fehlendeAusJournal({ konflikte: api.getKonflikte?.() ?? [],
                                        erzeugtStand: aenderungen.wirksamerStand('erzeugt') }).map(f => f.gid);
   const geladen = (api.geladeneModelle?.() ?? []).map(m => m.sha256).filter(Boolean);
   const r = regenerierbar({ dok: d, alle: cde.dokumente, aktiverSatzId: cde.aktiverSatzId, geladen, fehlend });
   regenHinweis.value = { sha256: d.sha256, text: r.grund, ok: r.ok };
-  if (r.handlung === 'satz') {
-    // Wie der Satzwähler: bei offener Sitzung erst abschließen (U2).
+  if (r.handlung === 'satz' && nochmal) {
+    // Wie der Satzwähler: bei offener Bearbeitung erst sichern (U2).
     if (aenderungen.sitzungSchritte.length) { bearbeitung.commitDialogOffen = true; return; }
-    await cde.setzeSatz(r.ziel);
-    await aenderungen.setzeSatz(cde.aktiverSatzId);
-    regenHinweis.value = { sha256: d.sha256, text: 'Satz aktiviert — noch einmal klicken, wenn die Modelle geladen sind', ok: false };
-    return;
+    // Viewer = Satz (S3): der Satz wird aktiv UND geladen — dann gleich weiter.
+    await satzAktivieren(r.ziel);
+    return erdbauNeu(d, false);
   }
-  if (r.handlung === 'laden') { openDokument({ sha256: r.ziel }); return; }
+  if (r.handlung === 'laden' && nochmal) {
+    // Das fehlende Modell kommt in den Satz — und damit ins Bild.
+    try { await cde.nimmInSatzAuf(r.ziel); }
+    catch (fehler) {
+      regenHinweis.value = { sha256: d.sha256, text: fehler?.response?.data?.detail ?? 'Das Modell liess sich nicht in den Satz aufnehmen.', ok: false };
+      return;
+    }
+    await satzZeigen();
+    return erdbauNeu(d, false);
+  }
   if (r.handlung === 'rebase') { panels.open('verlauf'); return; }
   if (r.ok) {
-    verbundOeffnen();
-    await verbundStarten('erdbau');
-  }
-}
-
-function verbundAbholen(laufId, fehlversuche = 0) {
-  clearTimeout(verbundUhr);
-  verbundUhr = setTimeout(async () => {
-    try {
-      const st = await AuftragApi.verbundStatus(cde.auftrag.id, laufId);
-      verbundLauf.value = st;
-      if (['wartet', 'laeuft'].includes(st.zustand) || (st.zustand === 'geprueft' && !st.dokument)) {
-        verbundAbholen(laufId);
-        return;
-      }
-      if (st.dokument) {
-        // Das neue Dokument soll in der Liste stehen, ohne dass jemand neu lädt.
-        await cde.uebernehmeRegister(await AuftragApi.register(cde.auftrag.id), cde.auftrag.id);
-      }
-    } catch (fehler) {
-      // Ein Aussetzer beim Abholen ist kein Ergebnis — weiterfragen, aber nicht ewig.
-      if (fehlversuche < 5) { verbundAbholen(laufId, fehlversuche + 1); return; }
-      verbundMeldung.value = `Abholen misslang: ${fehler?.response?.data?.detail || fehler?.message || fehler}`;
-    }
-  }, 2000);
-}
-onBeforeUnmount(() => clearTimeout(verbundUhr));
-
-async function verbundHerunterladen() {
-  const d = verbundLauf.value?.dokument;
-  if (!d) return;
-  try {
-    const blob = await AuftragApi.datei(d.pfad);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = d.datei;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-  } catch (fehler) {
-    verbundMeldung.value = `Herunterladen misslang: ${fehler?.message ?? fehler}`;
+    await ausgebenRef.value?.oeffnen({ art: 'erdbau', sofort: true });
   }
 }
 
@@ -1296,7 +1045,12 @@ async function auftragAusOrdner() {
         console.warn('cde: satz-migration', fehler);
     }
 
+    // K1 (Fahrplan S3): immer ein Satz — und der Viewer zeigt genau ihn.
+    await satzSicherstellen();
     await aenderungen.setzeSatz(cde.aktiverSatzId);
+    await satzZeigen();
+    // H3: links steht, was geladen ist — die Tafel „Modelle“ kommt mit dem Projekt.
+    if (!panels.aktivLinks) panels.open('struktur');
     const datei = route.query.datei;
     if (datei) await viewerRef.value?.openFromProjectPath?.(String(datei));
   } catch (fehler) {
@@ -1324,6 +1078,7 @@ onMounted(() => {
   // Ein Deep-Link (`?datei=`) hat Vorrang: dann ist schon eins geladen, und
   // `stelleOffeneWiederHer` tut von sich aus nichts.
   auftragAusOrdner().finally(() => {
+    if (cde.auftrag) return;   // mit Projekt zeigt der Viewer den Satz (S3)
     viewerRef.value?.stelleOffeneWiederHer?.()
       ?.catch?.(fehler => console.warn('cde: wiederherstellen', fehler?.message ?? fehler));
   });
@@ -1405,11 +1160,41 @@ function onClose() {
 }
 
 /**
- * Modellsatz wechseln.
- *
- * Der Wechsel lädt DAS JOURNAL des Satzes nach — danach gilt ein anderer
- * wirksamer Stand. Anschliessend läuft das Nachspielen erneut; genau das ist
- * der Variantenwechsel, und es braucht dafür keinen eigenen Mechanismus.
+ * K1 (Fahrplan S3): man arbeitet immer in einem Satz. Ohne aktiven nimmt die
+ * CDE den Bestand-Satz oder den ersten; ein Projekt ganz ohne Satz bekommt
+ * „Bestand“ mit allen Lieferungen des Registers (je Linie die jüngste).
+ */
+async function satzSicherstellen() {
+  if (!cde.auftrag || cde.aktiverSatz) return;
+  const vorhanden = cde.saetze.find(s => s.zweck === 'bestand') ?? cde.saetze[0] ?? null;
+  if (vorhanden) { await cde.setzeSatz(vorhanden.id); return; }
+  try {
+    await cde.satzAnlegen({ name: 'Bestand', zweck: 'bestand', enthaelt: bestandAus(cde.dokumente).map(d => d.sha256) });
+  } catch (fehler) {
+    console.warn('cde: bestand anlegen', fehler?.message ?? fehler);
+  }
+}
+
+/** Der Viewer zeigt den aktiven Satz (S3) — er lädt, entlädt und spielt einmal nach. */
+async function satzZeigen() {
+  await viewerRef.value?.zeigeSatz?.();
+}
+
+/**
+ * DER EINE WEG, einen Satz zu aktivieren (S3, D1): CDE-Store und Verlauf
+ * zugleich — vorher setzte die Registerübernahme nur den Store —, dann zeigt
+ * der Viewer genau seine Modelle.
+ */
+async function satzAktivieren(id) {
+  await cde.setzeSatz(id || null);
+  await satzSicherstellen();
+  await aenderungen.setzeSatz(cde.aktiverSatzId);
+  await satzZeigen();
+}
+
+/**
+ * Modellsatz wechseln. Der Wechsel lädt den Verlauf des Satzes UND seine
+ * Modelle (Viewer = Satz) und spielt einmal nach.
  */
 async function onSatzWaehlen(id) {
   // U2: Bei OFFENER Bearbeitung ist der Wechsel gesperrt — sonst stapeln sich
@@ -1418,8 +1203,7 @@ async function onSatzWaehlen(id) {
     bearbeitung.commitDialogOffen = true;
     return;
   }
-  await cde.setzeSatz(id || null);
-  await aenderungen.setzeSatz(cde.aktiverSatzId);
+  await satzAktivieren(id);
 }
 
 /** Einen Modellsatz anlegen — er übernimmt die Auswahl des aktuellen. */
@@ -1430,6 +1214,7 @@ async function onNeuerSatz() {
     // Wie `git branch`: der neue Satz startet mit dem, was gerade gilt.
     await cde.satzAnlegen({ name: name.trim(), enthaelt: cde.aktiverSatz?.enthaelt ?? [] });
     await aenderungen.setzeSatz(cde.aktiverSatzId);
+    await satzZeigen();
   } catch (fehler) {
     alert(fehler?.response?.data?.detail || fehler?.message || 'Der Satz konnte nicht angelegt werden.');
   }
@@ -1455,7 +1240,8 @@ async function onSatzLoeschen() {
   if (!s) return;
   if (!confirm(`Satz „${s.name}" löschen?\nDie Modelle bleiben im Projekt — ein Satz ist nur eine Auswahl.`)) return;
   await cde.satzLoeschen(s.id);
-  await aenderungen.setzeSatz(cde.aktiverSatzId);
+  // K1: danach gilt der Bestand-Satz oder der erste — nie „kein Satz“.
+  await satzAktivieren(null);
 }
 
 /** Ein Modell in den aktiven Satz aufnehmen oder herausnehmen. */
@@ -1470,7 +1256,10 @@ async function satzUmschalten(sha256) {
     // Der Server lehnt zwei Revisionen desselben Modells ab. Das ist keine
     // Panne, sondern die Invariante — sie gehört im Klartext gezeigt.
     alert(fehler?.response?.data?.detail || 'Das geht in diesem Satz nicht.');
+    return;
   }
+  // Viewer = Satz (S3): der Haken lädt bzw. entlädt sofort.
+  await satzZeigen();
 }
 
 /** Zu einem anderen Auftrag wechseln — über die URL, nicht im laufenden Betrieb. */
@@ -1482,9 +1271,6 @@ function onAuftragWaehlen(id) {
   window.location.href = `/cde?projekt=${id}`;
 }
 
-function openDokument(d) {
-  viewerRef.value?.openBySha(d.sha256);
-}
 
 function statusTitle(d) {
   const h = d.statusHistorie ?? [];
@@ -1646,7 +1432,7 @@ async function berichtHerunterladen(laufId, datei = '') {
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch (fehler) {
     const text = `Bericht laden misslang: ${fehler?.response?.data?.detail || fehler?.message || fehler}`;
-    if (verbundOffen.value) verbundMeldung.value = text;
+    if (ausgebenRef.value?.istOffen?.()) ausgebenRef.value.melde(text);
     else if (bericht.value) bericht.value = { ...bericht.value, hinweis: text };
     else _statusMeldung(text);
   }

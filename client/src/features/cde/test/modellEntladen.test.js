@@ -29,30 +29,21 @@ import { IfcEngine } from '../services/IfcEngine.js';
 
 const VIEWER = readFileSync(new URL('../components/IfcViewer.vue', import.meta.url), 'utf8');
 
-describe('Der Modell-Chip', () => {
-    it('trägt den Namen in EIGENEM Element — sonst verdrängt er den Knopf', () => {
-        // Seit Stufe 0 (Aushub-Fachmodell) steht im Chip nicht mehr der rohe
-        // Modellname, sondern `modellTagText` — das Eigenbau-Modell heisst
-        // „Eigenbau · n Bauteile". Das EIGENE Element bleibt die Zusage.
-        expect(VIEWER).toMatch(/<span class="model-tag-name">\{\{ modellTagText\(m, eigenbauAnzahl\) \}\}<\/span>/);
-        const block = VIEWER.slice(VIEWER.indexOf('.model-tag-name {'), VIEWER.indexOf('.model-tag-name {') + 200);
-        expect(block).toMatch(/min-width:\s*0/);
-        expect(block).toMatch(/text-overflow:\s*ellipsis/);
+describe('Das × am Modell (H3: in der Tafel „Modelle“, vorher an der Pille)', () => {
+    const FENSTER = readFileSync(new URL('../components/IfcSpatialWindow.vue', import.meta.url), 'utf8');
+
+    it('ist verdrahtet, nennt das Modell beim Namen und heisst im Satz „Aus dem Satz nehmen“', () => {
+        expect(FENSTER).toMatch(/class="sw-weg"[\s\S]{0,400}@click\.stop="api\.modellEntfernen\?\.\(baum\.modelId\)"/);
+        expect(FENSTER).toContain('`${baum.name} aus dem Satz nehmen` : `${baum.name} schließen`');
+        expect(FENSTER).toContain('v-if="!baum.eigenbau" class="sw-weg"');
+        // Der Viewer löst es auf — mit Rückfrage im Satz (K5), ohne Satz entlädt er nur.
+        expect(VIEWER).toContain('modellEntfernen: (modelId) => modellEntfernen(');
     });
 
-    it('der Chip selbst schneidet nichts mehr ab und lässt sich nicht markieren', () => {
-        const ab = VIEWER.indexOf('.model-tag {');
-        const block = VIEWER.slice(ab, VIEWER.indexOf('}', ab)).replace(/\/\*[\s\S]*?\*\//g, '');
-        expect(block).not.toMatch(/overflow:\s*hidden/);
-        expect(block).toMatch(/user-select:\s*none/);
-    });
-
-    it('das X ist verdrahtet, nennt das Modell beim Namen und ist auf dem Finger treffbar', () => {
-        expect(VIEWER).toMatch(/class="tag-close"\s+@click="removeModel\(m\.modelId\)"/);
-        expect(VIEWER).toMatch(/:title="`\$\{m\.name\} schließen`" aria-label="Modell schließen"/);
-        const coarse = VIEWER.slice(VIEWER.indexOf('@media (pointer: coarse)'));
-        expect(coarse).toMatch(/\.tag-close \{ position: relative|\.tag-close \{ position:relative|, \.tag-close \{ position: relative/);
-        expect(coarse).toMatch(/\.tag-close::after/);
+    it('ist auf dem Finger treffbar', () => {
+        const coarse = FENSTER.slice(FENSTER.indexOf('@media (pointer: coarse)'));
+        expect(coarse).toMatch(/\.sw-weg \{ position: relative|, \.sw-weg \{ position: relative/);
+        expect(coarse).toMatch(/\.sw-weg::after/);
     });
 });
 
@@ -80,7 +71,7 @@ describe('Das Entladen zieht den Modellstand nach', () => {
     });
 
     it('EIN Weg für beide: das Laden ruft denselben Nachzug', () => {
-        const laden = VIEWER.slice(VIEWER.indexOf('async function _onModelLoaded()'));
+        const laden = VIEWER.slice(VIEWER.indexOf('async function _onModelLoaded('));
         expect(laden.slice(0, 600)).toContain('_modellmengeNachziehen()');
     });
 

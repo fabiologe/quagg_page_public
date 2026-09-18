@@ -355,19 +355,42 @@ def paketregeln(paket: dict) -> list:
     Projekt 1337 kam ein Verbund, dem zwei Aushuebe fehlten, als „geprueft,
     0 Verstoesse" ins Register. V11 meldet nur: leere Gegenstuecke (ein Gerinne
     hat keinen Auftrag) und Ausgeblendetes gehoeren nicht in die Datei.
+
+    WEGGELASSEN (Fahrplan Klare Ablaeufe, S4 neu): was im Auswahlbaum des
+    Ausgebens abgewaehlt wurde, nennt das Paket unter `ausgelassen`
+    ([{globalId, vorgang, grund}]). Ein bewusst weggelassener Misserfolg sperrt
+    nicht mehr — gesagt wird er trotzdem (V10 zaehlt ihn, V11 nennt ihn, die
+    Datei traegt ihn am Fachmodell). Eine weggelassene Kennung, die doch gebaut
+    ist, gilt als gebaut und wird genannt.
     """
-    fehl = [m for m in paket.get("misserfolge") or [] if isinstance(m, dict)]
+    gebaut_ids = {str(b.get("cdeId")) for b in paket.get("bauteile") or []
+                  if isinstance(b, dict) and b.get("cdeId")}
+    aus = [a for a in paket.get("ausgelassen") or [] if isinstance(a, dict) and a.get("globalId")]
+    doch_gebaut = sorted({str(a["globalId"]) for a in aus} & gebaut_ids)
+    weg = {str(a["globalId"]) for a in aus} - gebaut_ids
+    fehl = [m for m in paket.get("misserfolge") or []
+            if isinstance(m, dict) and str(m.get("globalId")) not in weg]
     leer = [str(x) for x in paket.get("leer") or []]
     verborgen = [str(x) for x in paket.get("verborgen") or []]
     gebaut = len(paket.get("bauteile") or [])
     gruende = sorted({str(m.get("grund") or "ohne Grund")[:160] for m in fehl})
+    dazu = f" · {len(weg)} bewusst weggelassen" if weg else ""
     v10 = _befund("V10", "Eigenbau vollstaendig — jedes Bauteil des Journals ist gebaut", not fehl,
-                  (f"{len(fehl)} von {len(fehl) + gebaut} Bauteilen nicht ableitbar: " + "; ".join(gruende[:3]))
-                  if fehl else f"{gebaut} Bauteile gebaut", len(fehl),
+                  (f"{len(fehl)} von {len(fehl) + gebaut} Bauteilen nicht ableitbar: " + "; ".join(gruende[:3]) + dazu)
+                  if fehl else f"{gebaut} Bauteile gebaut{dazu}", len(fehl),
                   beispiele=[f"{m.get('globalId')} · {m.get('grund') or 'ohne Grund'}" for m in fehl])
-    v11 = _befund("V11", "Eigenbau: Leeres und Ausgeblendetes", True if not (leer or verborgen) else None,
-                  f"{len(leer)} leer (ohne Gegenstueck), {len(verborgen)} ausgeblendet — nicht in der Datei",
-                  len(leer) + len(verborgen), schwere="hinweis", beispiele=leer + verborgen)
+    vorgaenge = sorted({str(a["vorgang"]) for a in aus if str(a["globalId"]) in weg and a.get("vorgang")})
+    nicht_drin = [f"{len(leer)} leer (ohne Gegenstueck)", f"{len(verborgen)} ausgeblendet"]
+    if weg:
+        nicht_drin.append(f"{len(weg)} weggelassen" + (f" ({', '.join(vorgaenge[:5])})" if vorgaenge else ""))
+    sagt = ", ".join(nicht_drin) + " — nicht in der Datei"
+    if doch_gebaut:
+        sagt += f"; {len(doch_gebaut)} als weggelassen genannt, steht aber in der Datei"
+    v11 = _befund("V11", "Eigenbau: Leeres und Ausgeblendetes",
+                  True if not (leer or verborgen or weg or doch_gebaut) else None,
+                  sagt, len(leer) + len(verborgen) + len(weg), schwere="hinweis",
+                  beispiele=leer + verborgen + [f"{g} · weggelassen" for g in sorted(weg)]
+                  + [f"{g} · weggelassen, aber gebaut" for g in doch_gebaut])
     return [v10, v11]
 
 

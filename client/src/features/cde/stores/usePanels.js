@@ -27,7 +27,8 @@ const REPO_KEY = 'panel-state';
  * Tafel überhaupt angeboten wird (H2).
  */
 export const PANEL_DEFS = Object.freeze([
-  { id: 'struktur', titel: 'Bauwerksstruktur',  kurz: 'Struktur', icon: 'tree',    seite: 'left',  breite: 300 },
+  // H3: die linke Tafel ist „Modelle“ — Satz, Laden, Struktur, Kategorien, Geschosse, Lage. Die ID bleibt (gesicherte Zustände).
+  { id: 'struktur', titel: 'Modelle',           kurz: 'Modelle',  icon: 'bim',     seite: 'left',  breite: 320 },
   // Kassensturz H2: Werkzeuge und Merkmale sind EINE Tafel. Beide handeln vom
   // gewählten Bauteil — als zwei Tafeln verdrängten sie sich gegenseitig.
   { id: 'bauteil',  titel: 'Bauteil',                             icon: 'element', seite: 'right', breite: 360 },
@@ -113,6 +114,10 @@ export const usePanels = defineStore('cde-panels', () => {
     _persist();
   }
 
+  /** H3: welcher Abschnitt der Tafel „Modelle“ gezeigt werden soll (kategorien | geschosse | lage). */
+  const abschnitt = ref(null);
+  function zeigeAbschnitt(name) { abschnitt.value = name; open('struktur'); }
+
   /** Gesicherten Zustand laden (alte IDs umgeleitet, unbekannte verworfen). */
   async function laden() {
     const gespeichert = await repo.get(REPO_KEY);
@@ -138,6 +143,7 @@ export const usePanels = defineStore('cde-panels', () => {
   const bereit = laden();
 
   return {
+    abschnitt, zeigeAbschnitt,
     defs, offen, breiten, bereit,
     byId, isOpen, aktivLinks, aktivRechts,
     open, close, toggle, closeSide, setBreite, laden,

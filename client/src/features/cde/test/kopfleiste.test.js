@@ -93,7 +93,8 @@ describe('CdeKopfleiste — die drei Menüs', () => {
 
         await w.find('.kl-satz').trigger('click');
         const eintraege = w.findAll('.kl-menue .kl-eintrag').map(e => e.text());
-        expect(eintraege).toEqual(['Bestand', 'Durchstich Verbund', 'ohne Satz', 'Neuer Satz …', 'Umbenennen …', 'Löschen …']);
+        // K1 (Fahrplan S3): kein „ohne Satz“ mehr — man arbeitet immer in einem Satz.
+        expect(eintraege).toEqual(['Bestand', 'Durchstich Verbund', 'Neuer Satz …', 'Umbenennen …', 'Löschen …']);
 
         // Den aktiven noch einmal zu wählen, meldet nichts.
         await w.findAll('.kl-menue .kl-eintrag')[0].trigger('click');
@@ -114,7 +115,7 @@ describe('CdeKopfleiste — die drei Menüs', () => {
         const cde = mitProjekt();
         cde.aktiverSatzId = null;
         const w = montiert();
-        expect(w.find('.kl-satz').text()).toContain('ohne Satz');
+        expect(w.find('.kl-satz').text()).toContain('—');
         await w.find('.kl-satz').trigger('click');
         const knopf = (t) => w.findAll('.kl-menue .kl-eintrag').find(e => e.text() === t);
         expect(knopf('Umbenennen …').attributes('disabled')).toBeDefined();

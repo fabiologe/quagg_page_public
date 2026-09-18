@@ -154,3 +154,20 @@ describe('Regenerierung: neu erzeugen — oder der Schritt davor (Fahrplan Erdba
             .toMatchObject({ ok: false, handlung: null });
     });
 });
+
+describe('S4 neu: der Chip sagt, was weggelassen wurde und wer ausgab (K7)', () => {
+    it('Erdbau: „· 8 weggelassen“ in der Zeile, die Vorgänge und der Autor im Titel', () => {
+        const c = herkunftChip(erdbau('E.ifc', [GELAENDE], {
+            eigenbau: { ausgelassen: 8, ausgelassene_vorgaenge: ['Kanalgraben Nord'] },
+            autor: 'Anna Muster', organisation: 'Büro Muster' }));
+        expect(c.text).toBe('Erdbau · aus Gelaende · Satz Boden · geprüft · 8 weggelassen');
+        expect(c.titel).toMatch(/weggelassen: Kanalgraben Nord/);
+        expect(c.titel).toMatch(/ausgegeben von Anna Muster \(Büro Muster\)/);
+    });
+
+    it('Verbund: abgewählte Modelle im Titel; ohne Weggelassenes bleibt die Zeile, wie sie war', () => {
+        const c = herkunftChip({ herkunft: { art: 'verbund', quellen: [GELAENDE], abgewaehlt: ['Kanal.ifc'] } });
+        expect(c.text).toBe('Verbund · 1 Quelle');
+        expect(c.titel).toMatch(/abgewählt: Kanal.ifc/);
+    });
+});

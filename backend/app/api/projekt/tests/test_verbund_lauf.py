@@ -425,16 +425,22 @@ def test_erdbau_als_registerdokument_und_im_verbund(frische_db, app_conn, projek
         st2 = erdbau()
         assert (st2["dokument"]["datei"], st2["dokument"]["revision"]) == ("Erdbau_Boden_R02.ifc", 2)
 
+        # K3 (Fahrplan Klare Ablaeufe, S3): in dem Satz, aus dem es ausgegeben wurde, ist
+        # ein Erdbau-Dokument kein Mitglied — in einem ANDEREN Satz ein normales Modell.
         r = c.put(f"/FastAPI/projekte/{p['id']}/cde/saetze/{satz['id']}",
                   json={"enthaelt": [gel["sha256"], st2["dokument"]["sha256"]]})
-        assert r.status_code == 200, r.text
-        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": satz["id"]})
+        assert r.status_code == 422 and "eigenen Satz" in r.json()["detail"], r.text
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/saetze",
+                   json={"name": "Gesamt", "zweck": "variante", "enthaelt": [gel["sha256"], st2["dokument"]["sha256"]]})
+        assert r.status_code == 201, r.text
+        gesamt = r.json()
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": gesamt["id"]})
         assert r.status_code == 202, r.text
         assert r.json()["weggelassen"] == [{"datei": gel["datei"], "grund": "steckt in Erdbau_Boden_R02.ifc"}]
         st3 = _warte(c, p["id"], r.json()["lauf_id"])
         assert st3["zustand"] == "geprueft", st3.get("fehler") or st3.get("offen")
 
-        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": satz["id"]},
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": gesamt["id"]},
                    files={"eigenbau": ("eigenbau.json", roh, "application/json")})
         assert r.status_code == 422 and "zugleich" in r.json()["detail"], r.text
 
@@ -634,3 +640,94 @@ def test_ein_fertiger_lauf_belegt_die_spur_nicht_mehr(tmp_path, monkeypatch):
         schleife.run_until_complete(asyncio.gather(task, return_exceptions=True))
         schleife.close()
 
+
+
+# ── S4 neu: Ausgeben als Auswahlbaum ────────────────────────────────────────
+
+def test_nur_die_angehakten_modelle(frische_db, app_conn, projekte_wurzel):
+    """Der Auswahlbaum: nur die angehakten Modelle gehen hinein, das Abgewaehlte steht dabei."""
+    _p, o = _projekt_mit_manifest(
+        app_conn,
+        [_dok("a" * 64, "Kanal.ifc"), _dok("b" * 64, "Gelaende.ifc"),
+         {**_dok("c" * 64, "Lageplan.pdf"), "art": "plan"}],
+        [{"id": "s-1", "name": "Nord", "enthaelt": ["a" * 64, "b" * 64, "c" * 64]}],
+        dateien=("Kanal.ifc", "Gelaende.ifc", "Lageplan.pdf"))
+    a = verbund_lauf.auftrag_bauen(o, "s-1", modelle=["b" * 64])
+    assert [q["name"] for q in a["quellen"]] == ["Gelaende.ifc"]
+    assert a["abgewaehlt"] == ["Kanal.ifc"] and a["uebergangen"] == ["Lageplan.pdf"]
+    # Ohne Auswahl der ganze Satz — wie bisher.
+    ganz = verbund_lauf.auftrag_bauen(o, "s-1")
+    assert [q["name"] for q in ganz["quellen"]] == ["Kanal.ifc", "Gelaende.ifc"] and ganz["abgewaehlt"] == []
+    with pytest.raises(cde.CdeAbgelehnt, match="nicht im Satz"):
+        verbund_lauf.auftrag_bauen(o, "s-1", modelle=["d" * 64])
+    with pytest.raises(cde.CdeAbgelehnt, match="kein Modell angehakt"):
+        verbund_lauf.auftrag_bauen(o, "s-1", modelle=[])
+    assert verbund_lauf.auftrag_bauen(o, "s-1", modelle=[], mit_eigenbau=True)["quellen"] == []
+
+
+def test_modellauswahl_muss_eine_liste_sein(frische_db, app_conn, projekte_wurzel):
+    p, _o = _projekt_mit_manifest(
+        app_conn, [_dok("a" * 64, "Kanal.ifc")],
+        [{"id": "s-1", "name": "Kanal", "enthaelt": ["a" * 64]}], dateien=("Kanal.ifc",))
+    with TestClient(_app()) as c:
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund", data={"satz_id": "s-1", "modelle": "kein json"})
+    assert r.status_code == 422, r.text
+    assert "JSON-Liste" in r.json()["detail"]
+
+
+@braucht_werkzeug
+def test_autor_und_organisation_reisen_getrennt_vom_akteur(frische_db, app_conn, projekte_wurzel, monkeypatch):
+    """Der Anmeldename bleibt der Akteur (Register); in die Datei kommt, wer im Dialog steht."""
+    _p, o = _projekt_mit_manifest(
+        app_conn, [_dok("a" * 64, "Kanal.ifc"), _dok("b" * 64, "Gelaende.ifc")],
+        [{"id": "s-1", "name": "Nord", "enthaelt": ["a" * 64, "b" * 64]}], dateien=("Kanal.ifc", "Gelaende.ifc"))
+
+    async def _nichts(*_a, **_k):
+        return None
+    monkeypatch.setattr(verbund_lauf, "_fahre", _nichts)
+    antwort = asyncio.run(verbund_lauf.starte(o, "s-1", akteur="fabio", autor=" Anna Muster ",
+                                              organisation="Ingenieurbuero Muster", modelle=["a" * 64]))
+    assert antwort["abgewaehlt"] == ["Gelaende.ifc"]
+    auftrag = json.loads((verbund_lauf._laufordner(o, antwort["lauf_id"]) / "auftrag.json").read_text())
+    assert (auftrag["autor"], auftrag["organisation"], auftrag["bearbeiter"]) == \
+        ("Anna Muster", "Ingenieurbuero Muster", "fabio")
+    assert [q["name"] for q in auftrag["quellen"]] == ["Kanal.ifc"]
+
+
+@braucht_werkzeug
+@braucht_erdkoerper
+def test_weggelassen_kommt_ins_register_mit_autor(frische_db, app_conn, projekte_wurzel):
+    """S4 neu, die Zahl des Fahrplans: derselbe Misserfolg — im Auswahlbaum weggelassen.
+
+    V10 sperrt 1 -> 0, das Erdbau-Dokument kommt ins Register, und es sagt, was
+    fehlt (Quagg_Fachmodell.Ausgelassen, herkunft.eigenbau.ausgelassen) und wer es
+    ausgab (FILE_NAME, IfcOwnerHistory) — Autor und Organisation aus dem Dialog.
+    """
+    p = projekte.anlegen(app_conn, name="Weggelassen", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        gel = _hochladen(c, p["id"], ERDKOERPER)
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/saetze",
+                   json={"name": "Boden", "zweck": "variante", "enthaelt": [gel["sha256"]]})
+        assert r.status_code == 201, r.text
+        paket, _guid = _paket_auf_gelaende(ERDKOERPER, gel)
+        paket["misserfolge"] = [{"globalId": "cde-tot-aushub", "grund": "Rohr fehlt"}]
+        paket["ausgelassen"] = [{"globalId": "cde-tot-aushub", "vorgang": "Kanalgraben Nord",
+                                 "grund": "nicht baubar, weggelassen"}]
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/verbund",
+                   data={"satz_id": r.json()["id"], "modus": "erdbau", "autor": "Anna Muster",
+                         "organisation": "Ingenieurbuero Muster"},
+                   files={"eigenbau": ("eigenbau.json", json.dumps(paket).encode(), "application/json")})
+        assert r.status_code == 202, r.text
+        assert r.json()["abgewaehlt"] == []
+        st = _warte(c, p["id"], r.json()["lauf_id"])
+    assert st["zustand"] == "geprueft", st.get("fehler") or st.get("offen")
+    v10 = next(b for b in st["befunde"] if b["id"] == "V10")
+    assert v10["ok"] is True and "1 bewusst weggelassen" in v10["sagt"], v10["sagt"]
+    o = ordner.finde(p["id"])
+    eintrag = next(d for d in cde.register(o) if d["sha256"] == st["dokument"]["sha256"])
+    h = eintrag["herkunft"]
+    assert (h["eigenbau"]["ausgelassen"], h["eigenbau"]["ausgelassene_vorgaenge"]) == (1, ["Kanalgraben Nord"])
+    assert (h.get("autor"), h.get("organisation")) == ("Anna Muster", "Ingenieurbuero Muster")
+    text = (o.pfad / cde.ORDNER / st["dokument"]["datei"]).read_text(encoding="latin-1")
+    assert re.search(r"FILE_NAME\('[^']*','[^']*',\('Anna Muster'\),\('Ingenieurbuero Muster'\)", text)
+    assert "'Ausgelassen'" in text and "'Kanalgraben Nord'" in text

@@ -27,9 +27,9 @@ describe('aushubFehlt', () => {
             .toBe('Kein Aushub im Satz „Neu“ — im Verlauf dieses Satzes steht kein Aushub.');
     });
 
-    it('die Schale fragt, BEVOR sie hochlädt', () => {
-        const view = readFileSync(join(WURZEL, 'views/CdeView.vue'), 'utf8');
-        const start = view.indexOf('async function verbundStarten');
+    it('der Ausgeben-Dialog fragt, BEVOR er hochlädt (S4 neu: eigene Komponente)', () => {
+        const view = readFileSync(join(WURZEL, 'components/AusgebenDialog.vue'), 'utf8');
+        const start = view.indexOf('async function starten');
         const pruefung = view.indexOf('aushubFehlt(eigenbau', start);
         const upload = view.indexOf('AuftragApi.verbundStarten(', start);
         expect(pruefung).toBeGreaterThan(start);

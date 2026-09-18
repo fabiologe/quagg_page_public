@@ -568,8 +568,8 @@ def _gleiche_linie(a: dict, b: dict) -> bool:
     return _basis(a) == _basis(b) and a.get("art") == b.get("art")
 
 
-def _satz_pruefen(daten: dict, enthaelt: list[str]) -> list[str]:
-    """Die zwei Invarianten. Beim SCHREIBEN geprueft, nicht beim Lesen."""
+def _satz_pruefen(daten: dict, enthaelt: list[str], satz_id: str | None = None) -> list[str]:
+    """Die Invarianten eines Satzes. Beim SCHREIBEN geprueft, nicht beim Lesen."""
     sauber = [s for s in (enthaelt or []) if isinstance(s, str)]
     bekannt = {d["sha256"]: d for d in daten["dokumente"]}
 
@@ -586,6 +586,18 @@ def _satz_pruefen(daten: dict, enthaelt: list[str]) -> list[str]:
     if abgabe:
         raise CdeAbgelehnt(f"{', '.join(abgabe)}: ein Verbund ist ein Abgabe-Container, kein Fachmodell — "
                            "er gehoert in keinen Satz")
+
+    # K3 (Fahrplan „Klare Ablaeufe", S3): ein Erdbau-Dokument ist in dem Satz, aus
+    # dem es ausgegeben wurde, KEIN Mitglied — dort baut der Verlauf den eigenen
+    # Bau, und ein Verbund dieses Satzes naehme ihn sonst doppelt. In jedem
+    # anderen Satz ist es ein normales Fachmodell.
+    if satz_id:
+        eigen = [bekannt[s]["datei"] for s in sauber
+                 if (bekannt[s].get("herkunft") or {}).get("art") == "erdbau"
+                 and (bekannt[s].get("herkunft") or {}).get("satz_id") == satz_id]
+        if eigen:
+            raise CdeAbgelehnt(f"{', '.join(eigen)}: aus diesem Satz ausgegeben — ein Erdbau-Dokument "
+                               "gehoert nicht in den eigenen Satz (in anderen Saetzen ist es ein normales Modell)")
 
     # Zwei Revisionen desselben Fachmodells duerfen nicht gleichzeitig im Satz
     # liegen — sonst stuenden zwei Fassungen nebeneinander im Raum, und keine
@@ -661,7 +673,7 @@ def satz_aendern(conn, o: ordner.Ordner, satz_id: str, *, akteur: str,
                 raise CdeAbgelehnt(f"zweck muss einer von {SATZ_ZWECKE} sein")
             s["zweck"] = zweck
         if enthaelt is not None:
-            s["enthaelt"] = _satz_pruefen(daten, enthaelt)
+            s["enthaelt"] = _satz_pruefen(daten, enthaelt, satz_id=satz_id)
         _manifest_schreiben(o, daten)
         conn.rollback()
         with conn.transaction():

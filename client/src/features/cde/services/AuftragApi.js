@@ -56,12 +56,18 @@ export const AuftragApi = {
      * und ins Register kommt `Erdbau_<Satz>_R<nn>.ifc`. Ohne Paket lehnt der
      * Server ab — ein Erdbau ohne Aushub ist keiner.
      */
-    async verbundStarten(id, satzId, { eigenbau = null, crs = null, projektname = null, modus = null } = {}) {
+    async verbundStarten(id, satzId, { eigenbau = null, crs = null, projektname = null, modus = null,
+                                       modelle = null, autor = null, organisation = null } = {}) {
         const form = new FormData();
         form.append('satz_id', satzId);
         if (modus) form.append('modus', modus);
         if (crs) form.append('crs', crs);
         if (projektname) form.append('projektname', projektname);
+        // S4 neu (Auswahlbaum): nur die angehakten Modelle, als JSON-Liste der
+        // sha256 — ohne Feld der ganze Satz. Autor und Organisation der Datei.
+        if (Array.isArray(modelle)) form.append('modelle', JSON.stringify(modelle));
+        if (autor) form.append('autor', autor);
+        if (organisation) form.append('organisation', organisation);
         if (eigenbau) {
             form.append('eigenbau',
                 new Blob([JSON.stringify(eigenbau)], { type: 'application/json' }), 'eigenbau.json');

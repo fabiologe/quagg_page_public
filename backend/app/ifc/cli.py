@@ -157,6 +157,16 @@ def _dokument_pruefen(ordner: Path, auftrag: dict, bericht_pfad: Path, status: d
     status.update(zustand="geprueft", verstoesse=len(offen), offen=[f"{b['id']} {b['titel']}" for b in offen])
 
 
+def _angabe(auftrag: dict, paket: dict | None, schluessel: str) -> str:
+    """Eine Angabe aus dem Ausgeben-Dialog (Fahrplan Klare Ablaeufe, S4 neu): Autor, Organisation.
+
+    Der neue Server legt sie in den Auftrag; solange er nicht neu gestartet ist,
+    reist sie im Eigenbau-Paket mit. Leer heisst: wie bisher.
+    """
+    wert = auftrag.get(schluessel) or (paket or {}).get(schluessel) or ""
+    return str(wert).strip()[:200]
+
+
 def lauf(ordner: Path) -> int:
     ordner = Path(ordner)
     auftrag = lies_json(ordner / "auftrag.json")
@@ -209,11 +219,12 @@ def lauf(ordner: Path) -> int:
                 eigenbau_bericht = baue_datei(
                     paket, eigen, schluessel=f"{auftrag.get('schluessel') or 'verbund'}/eigenbau",
                     projektname=f"{auftrag.get('satz_name') or 'Satz'} (CDE-Eigenbau)",
-                    ablage=auftrag.get("ablage"))
-                # Was NICHT ins Paket kam (misslungen, leer, ausgeblendet), gehoert in den
+                    ablage=auftrag.get("ablage"),
+                    bearbeiter=_angabe(auftrag, paket, "autor"), firma=_angabe(auftrag, paket, "organisation"))
+                # Was NICHT ins Paket kam (misslungen, leer, ausgeblendet, weggelassen), gehoert in den
                 # Bericht — ein Export, der still weniger enthaelt als die Ansicht, waere
                 # eine falsche Aussage ueber den Stand.
-                nicht_drin = {k: paket.get(k) for k in ("misserfolge", "leer", "verborgen") if paket.get(k)}
+                nicht_drin = {k: paket.get(k) for k in ("misserfolge", "leer", "verborgen", "ausgelassen") if paket.get(k)}
                 if nicht_drin:
                     eigenbau_bericht = {**eigenbau_bericht, "nicht_im_paket": nicht_drin}
                 quellen.append(Quelle(eigen, name="CDE-Eigenbau", sha256=hashlib.sha256(roh).hexdigest()))
@@ -222,7 +233,9 @@ def lauf(ordner: Path) -> int:
                 projektname=auftrag.get("projektname") or "Verbundmodell",
                 crs=auftrag.get("crs"),
                 schluessel=auftrag.get("schluessel") or "verbund",
-                bearbeiter=auftrag.get("bearbeiter") or "", melde=melde,
+                # S4 neu: der Autor aus dem Ausgeben-Dialog; ohne ihn wie bisher der Anmeldename.
+                bearbeiter=_angabe(auftrag, paket, "autor") or auftrag.get("bearbeiter") or "",
+                firma=_angabe(auftrag, paket, "organisation"), melde=melde,
                 nachbearbeiten=nachbearbeiten, ablage=auftrag.get("ablage"))
             if eigenbau_bericht is not None:
                 bericht["eigenbau"] = eigenbau_bericht

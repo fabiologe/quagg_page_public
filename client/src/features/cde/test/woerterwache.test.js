@@ -73,6 +73,8 @@ const TEXTDIENSTE = [
     'services/ImportBefund.js',
     'services/Mengenzeile.js',
     'services/Hoehenbezug.js',
+    // S4 neu: die Sätze des Ausgeben-Dialogs.
+    'services/Ausgabe.js',
     'services/Georeferenz.js',
 ];
 

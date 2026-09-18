@@ -23,7 +23,7 @@ describe('CdeReiterleiste — eine Leiste für alle Tafeln', () => {
 
     it('im 3D: Struktur, dann Bauteil, Verlauf, Mengen, Notizen — ein Strich trennt links von rechts', () => {
         const w = mount(CdeReiterleiste, STUB);
-        expect(namen(w)).toEqual(['Struktur', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen']);
+        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen']);
         expect(w.findAll('.cr-trenner')).toHaveLength(1);
         w.unmount();
     });
@@ -34,7 +34,7 @@ describe('CdeReiterleiste — eine Leiste für alle Tafeln', () => {
         ansicht.setzeStand({ hatModell: true });
         ansicht.setzeModus('lageplan');
         await w.vm.$nextTick();
-        expect(namen(w)).toEqual(['Struktur', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen', 'Plan']);
+        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen', 'Plan']);
         ansicht.setzeModus('3d');
         await w.vm.$nextTick();
         expect(namen(w)).not.toContain('Plan');
@@ -47,10 +47,10 @@ describe('CdeReiterleiste — eine Leiste für alle Tafeln', () => {
         const knopf = (name) => w.findAll('.cr-knopf').find(k => k.text() === name);
 
         await knopf('Bauteil').trigger('click');
-        await knopf('Struktur').trigger('click');
+        await knopf('Modelle').trigger('click');
         expect(p.isOpen('bauteil')).toBe(true);
         expect(p.isOpen('struktur')).toBe(true);
-        expect(knopf('Struktur').attributes('title')).toContain('öffnet links');
+        expect(knopf('Modelle').attributes('title')).toContain('öffnet links');
 
         await knopf('Verlauf').trigger('click');
         expect(p.isOpen('verlauf')).toBe(true);

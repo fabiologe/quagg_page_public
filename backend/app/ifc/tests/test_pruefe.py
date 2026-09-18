@@ -177,3 +177,23 @@ def test_ein_paket_mit_misserfolg_sperrt_ein_leeres_nicht(regelverstoss):
     sauber = {b["id"]: b for b in P.pruefe(regelverstoss, regeln=False, paket={"bauteile": [{}]})["befunde"]}
     assert sauber["V10"]["ok"] is True and sauber["V11"]["ok"] is True
     assert "V10" not in {b["id"] for b in P.pruefe(regelverstoss, regeln=False)["befunde"]}
+
+
+def test_weggelassenes_sperrt_nicht_und_wird_genannt():
+    """Fahrplan Klare Ablaeufe, S4 neu: im Auswahlbaum abgewaehlt heisst weggelassen, nicht vergessen.
+
+    Fabios Lauf: ein Kanalgraben ohne sein Rohrmodell — V10 sperrte die ganze
+    Ausgabe. Weggelassen sperrt er nicht mehr, und V11 nennt ihn. Eine ANDERE
+    Kennung weglassen hilft nicht; eine weggelassene, die doch gebaut ist, wird genannt.
+    """
+    paket = {"bauteile": [{"cdeId": "cde-b"}],
+             "misserfolge": [{"globalId": "cde-a", "grund": "Rohr fehlt"}],
+             "ausgelassen": [{"globalId": "cde-a", "vorgang": "Kanalgraben Nord", "grund": "weggelassen"}]}
+    v10, v11 = P.paketregeln(paket)
+    assert not P.offen(v10) and "1 bewusst weggelassen" in v10["sagt"]
+    assert not P.offen(v11) and v11["zahl"] == 1 and "Kanalgraben Nord" in v11["sagt"]
+    v10, _ = P.paketregeln({**paket, "ausgelassen": [{"globalId": "cde-z", "vorgang": "Anderes"}]})
+    assert P.offen(v10) and v10["zahl"] == 1
+    v10, v11 = P.paketregeln({"bauteile": [{"cdeId": "cde-b"}],
+                              "ausgelassen": [{"globalId": "cde-b", "vorgang": "Graben"}]})
+    assert v10["ok"] is True and "steht aber in der Datei" in v11["sagt"]

@@ -1,5 +1,5 @@
 <template>
-  <div class="layer-panel">
+  <div class="layer-panel" :class="{ eingebettet }">
     <div class="panel-header">
       <span class="panel-title"><CdeIcon name="layers" :size="14" /> Kategorien</span>
       <div class="header-right">
@@ -9,7 +9,7 @@
         <button class="hdr-btn" @click="toggleAll(false)" title="Alle ausblenden" aria-label="Alle ausblenden">
           <CdeIcon name="hidden" :size="13" />
         </button>
-        <button class="hdr-btn close" @click="emit('close')" title="Schließen" aria-label="Schließen">
+        <button v-if="!eingebettet" class="hdr-btn close" @click="emit('close')" title="Schließen" aria-label="Schließen">
           <CdeIcon name="close" :size="13" />
         </button>
       </div>
@@ -84,11 +84,14 @@
 import { computed, ref } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { LAYER_STYLES } from '../services/LayerStyleManager.js';
+import { getEntityInfo } from '../data/entity-schema.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
   hasIfcGrids: { type: Boolean, default: false },
+  /** H3: in der Tafel „Modelle“ statt schwebend über dem Bild. */
+  eingebettet: { type: Boolean, default: false },
 });
 const emit = defineEmits(['toggle', 'close', 'zoom', 'toggle-ifc-grids']);
 
@@ -139,13 +142,13 @@ function toggleAll(visible) {
 }
 
 /** Remove IFC prefix and camelCase the rest. */
+/**
+ * Der Klassenname, wie ihn die Bauwerksstruktur schreibt („IfcEarthworksFill“).
+ * Vorher trennte ein CamelCase-Schnitt vor JEDEM Grossbuchstaben — die Kategorien
+ * kommen aber gross geschrieben an, und aus IFCEARTHWORKSFILL wurde „E A R T H …“.
+ */
 function formatName(raw) {
-  return raw
-    .replace(/^IFC/, '')
-    .replace(/TYPE$/, ' (Typ)')
-    .replace(/([A-Z])/g, ' $1')
-    .trim()
-    .replace(/\s+/g, ' ');
+  return getEntityInfo(String(raw).toUpperCase())?.name ?? String(raw);
 }
 
 /**
@@ -199,6 +202,14 @@ function categoryIcon(name) {
   box-shadow: 0 8px 24px var(--cde-scrim);
   overflow: hidden;
 }
+
+/* H3: in der Tafel „Modelle“ — kein eigenes Fenster mehr, der Abschnittskopf trägt den Titel. */
+.layer-panel.eingebettet {
+  position: static; width: auto; max-height: none;
+  background: transparent; border: none; border-radius: 0; box-shadow: none;
+}
+.layer-panel.eingebettet .panel-header { background: transparent; padding: 0.2rem 0.6rem; }
+.layer-panel.eingebettet .panel-title { visibility: hidden; }
 
 .panel-header {
   display: flex;
