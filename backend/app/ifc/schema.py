@@ -41,6 +41,7 @@ import argparse
 import ast
 import importlib
 import json
+import re
 import sys
 from collections import defaultdict
 from functools import lru_cache
@@ -480,6 +481,27 @@ def qto_vorlage(klasse, snap=None):
     """Die bSI-Mengenvorlage `Qto_<Klasse>BaseQuantities` — oder None."""
     n = name_von(klasse, snap)
     return vorlage(f"Qto_{n[3:]}BaseQuantities", snap) if n else None
+
+
+def typklasse(name, snap=None):
+    """Die TYPKLASSE einer Bauteilklasse (`IfcSign` -> `IfcSignType`) — oder None.
+
+    Gelesen aus der Where-Rule `CorrectTypeAssigned`, nicht aus dem Namen
+    geraten: die Regel sagt, welcher Typ an `IsTypedBy` haengen DARF, und genau
+    das prueft das Tor. Die spezifischste Regel gewinnt (eine Klasse ohne eigene
+    erbt die ihres Obertyps). Klassen ohne diese Regel — Aushub, Auftrag,
+    Annotation — bekommen keinen Typ (Teil XXIII, A9b).
+    """
+    k = name_von(name, snap)
+    if not k:
+        return None
+    gefunden = None
+    for r in where_rules(k, snap=snap):
+        if r["regel"].endswith(".CorrectTypeAssigned"):
+            m = re.search(r"'[a-z0-9_]+\.(ifc\w+)' in typeof", r["quelle"])
+            if m and name_von(m.group(1), snap):
+                gefunden = name_von(m.group(1), snap)      # spaeter = spezifischer (Wurzel -> Blatt)
+    return gefunden
 
 
 def ist_schreibbar(name, snap=None):

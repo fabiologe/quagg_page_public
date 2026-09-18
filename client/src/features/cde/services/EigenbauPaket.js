@@ -142,6 +142,20 @@ export function wirtVon(plan, stand, exportiert, historie = null) {
 }
 
 /**
+ * DER TYP EINES BAUTEILS (Teil XXIII, A9b — Befund B21): die Vorlage, aus der
+ * es entstand (A1: `parameter.vorlage`). Im IFC wird daraus je Vorlage EIN
+ * `Ifc…Type` mit `IfcRelDefinesByType`. Ohne Vorlage kein Typ — und kein
+ * leerer Schlüssel im Paket. Den Namen kennt die Bibliothek; ohne sie steht
+ * die Id (der Schreiber nimmt sie dann als Namen).
+ *
+ * @returns {{id: string, name: string|null}|null}
+ */
+export function typAusVorlage(plan) {
+    const id = plan?.parameter?.vorlage;
+    return id === undefined || id === null || id === '' ? null : { id: String(id), name: null };
+}
+
+/**
  * Ein Bauteil fürs Paket.
  *
  * @param {object} teil  aus `IfcAutor.eigenbauGeometrien`: {globalId, wert,
@@ -149,7 +163,8 @@ export function wirtVon(plan, stand, exportiert, historie = null) {
  *        kennzahlen, mengen, fachmodell, vorgang, schneidetAuffuellung}
  * @returns {object|null}  null, wenn nach dem Verschweissen nichts übrig bleibt
  */
-export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN, historie = null } = {}) {
+export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsatz = BAUTEILFARBEN, historie = null,
+                                         typVon = typAusVorlage } = {}) {
     const plan = teil?.wert ?? {};
     const landes = nachLandes(teil.positionen, nachProjekt);
     const { punkte, dreiecke, entartet } = verschweisse(landes, teil.index ?? null);
@@ -160,6 +175,7 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     const q = plan?.parameter?.quellen ?? {};
     const ur = q.gelaende ? wirtVon(plan, stand, exportiert, historie) : null;
     const aushub = istAushub(klasse);          // Wurzel im Baum (Kategorien.js): Wirt = Ur-Gelände
+    const typ = typVon(plan);
     return {
         cdeId: teil.globalId,
         klasse,
@@ -183,6 +199,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         schneidetAuffuellung: aushub ? (teil.schneidetAuffuellung ?? []) : [],
         aushubAusAuffuellung: aushub ? (teil.kennzahlen?.aushubAusAuffuellung ?? null) : null,
         hinweis: entartet ? `${entartet} entartete Dreiecke beim Verschweissen entfernt` : null,
+        // OPTIONAL (Paket v2, A9b): nur mit Vorlage — ein älterer Schreiber übergeht ihn.
+        ...(typ ? { typ } : {}),
     };
 }
 
@@ -241,13 +259,13 @@ export function kanteFuersPaket(kante, { nachProjekt } = {}) {
 export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
                                    projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
                                    anzeigeformen = [], quellDokumente = [], journal = null,
-                                   jetzt = new Date(), historie = null } = {}) {
+                                   jetzt = new Date(), historie = null, typVon = typAusVorlage } = {}) {
     if (typeof nachProjekt !== 'function') throw new Error('EigenbauPaket: ohne nachProjekt keine Landeskoordinaten');
     const exportiert = new Set(teile.map(t => t.globalId));
     const bauteile = [];
     const uebersprungen = [];
     for (const t of teile) {
-        const b = bauteilFuersPaket(t, { nachProjekt, stand, exportiert, farbsatz, historie });
+        const b = bauteilFuersPaket(t, { nachProjekt, stand, exportiert, farbsatz, historie, typVon });
         if (b) bauteile.push(b);
         else uebersprungen.push({ cdeId: t.globalId, grund: 'nach dem Verschweissen keine Fläche übrig' });
     }

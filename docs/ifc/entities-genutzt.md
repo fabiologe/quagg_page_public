@@ -255,6 +255,7 @@ classDiagram
   IfcObject <|-- IfcGroup
   IfcObjectDefinition <|-- IfcContext
   IfcObjectDefinition <|-- IfcObject
+  IfcObjectDefinition <|-- IfcTypeObject
   IfcPropertyDefinition <|-- IfcPropertySetDefinition
   IfcPropertySetDefinition <|-- IfcPropertySet
   IfcPropertySetDefinition <|-- IfcQuantitySet
@@ -273,6 +274,7 @@ classDiagram
   style IfcProject fill:#dcedc8,stroke:#558b2f
   style IfcPropertySet fill:#dcedc8,stroke:#558b2f
   style IfcRoot fill:#dcedc8,stroke:#558b2f
+  style IfcTypeObject fill:#dcedc8,stroke:#558b2f
 ```
 
 Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
@@ -340,7 +342,9 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcRelAssignsToGroup](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssignsToGroup.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelAssociatesDocument](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssociatesDocument.htm) | Herkunft | nein | IFC4X3_ADD2 |
 | [IfcRelContainedInSpatialStructure](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelContainedInSpatialStructure.htm) | Eigenbau | nein | IFC4X3_ADD2 |
+| [IfcRelDeclares](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelDeclares.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelDefinesByProperties](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelDefinesByProperties.htm) | Eigenbau, Herkunft, Verbund | nein | IFC4X3_ADD2 |
+| [IfcRelDefinesByType](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelDefinesByType.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcRelVoidsElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelVoidsElement.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcRelationship](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelationship.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcRoof](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRoof.htm) | Typprofile | nein | IFC4X3_ADD2 |
@@ -357,6 +361,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcTank](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcTank.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcTendon](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcTendon.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcTransportationDevice](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcTransportationDevice.htm) | Typprofile | ja | IFC4X3_ADD2 |
+| [IfcTypeObject](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcTypeObject.htm) | Verbund | nein | IFC4X3_ADD2 |
 | [IfcValve](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcValve.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcVirtualElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcVirtualElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWall.htm) | Typprofile | nein | IFC4X3_ADD2 |

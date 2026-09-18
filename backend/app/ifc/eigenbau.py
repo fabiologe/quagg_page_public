@@ -506,6 +506,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             "SchneidetAuffuellung": ", ".join(_ifc_id(x) for x in (b.get("schneidetAuffuellung") or []) if x),
             "AushubAusAuffuellung": _volumen(b.get("aushubAusAuffuellung")),
             "Hinweis": b.get("hinweis"),
+            # Die Vorlage (A1/A9b) — auch an Klassen ohne Typobjekt lesbar.
+            "Vorlage": (b.get("typ") or {}).get("id") if isinstance(b.get("typ"), dict) else None,
         }, schluessel=f"{satz}|{cde_id}")
         if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id):
             mengen_n += 1
@@ -536,6 +538,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             je_dokument.setdefault(d["sha256"], []).append(el)
         produkte.append(el)
         geschrieben.append((el, b))
+
+    # DIE TYPEN (Teil XXIII, A9b): je Vorlage EIN Typobjekt, bevor die Kanten
+    # dazukommen — Kanten haben keine Vorlage.
+    typen_n = _typen_schreiben(f, besitz, g["projekt"], geschrieben, satz, warnungen)
 
     # DIE BOESCHUNGSKANTEN (Teil XX Stufe B): keine Bauteile, aber `IfcProduct`
     # — sie gehen deshalb durch dieselben Listen wie ein Bauteil und landen in
@@ -632,11 +638,53 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "stile": len(stile),
         "mengen": mengen_n,
         "vorgaenge": vorgaenge,
+        "typen": typen_n,
         "kanten": len(kanten_neu),
         "fachmodelle": fachmodelle,
         "dokumente": len(referenzen),
         "dauer_s": round(time.time() - begonnen, 2),
     }
+
+
+def _typen_schreiben(f, besitz, projekt, geschrieben: list, satz: str, warnungen: list) -> int:
+    """Je Vorlage EIN `Ifc<Klasse>Type` mit `IfcRelDefinesByType` (Teil XXIII, A9b — Befund B21).
+
+    Die Vorlage kommt als `typ: {id, name}` aus dem Paket (A1: die Instanz
+    behaelt ihre Vorlage). Welche Typklasse, sagt das Schema (`typklasse`, aus
+    `CorrectTypeAssigned`) — nie geraten. Eine Vorlage, deren Bauteile in zwei
+    Klassen stehen, ergibt zwei Typen (die Regel verlangt den Typ DER Klasse).
+    `PredefinedType` ist am Typ Pflicht: der gemeinsame Wert der Bauteile, sonst
+    NOTDEFINED (USERDEFINED verlangte ein `ElementType`, das wir erfinden
+    muessten). Die Typen sind im Projekt erklaert (`IfcRelDeclares`).
+    """
+    je_typ, ohne = {}, set()
+    for el, b in geschrieben:
+        typ = b.get("typ")
+        if not isinstance(typ, dict) or not typ.get("id"):
+            continue
+        tk = S.typklasse(el.is_a())
+        if tk is None:
+            ohne.add(el.is_a())
+            continue
+        e = je_typ.setdefault((tk, str(typ["id"])), {"name": typ.get("name") or str(typ["id"]), "glieder": [], "pt": set()})
+        e["glieder"].append(el)
+        e["pt"].add(getattr(el, "PredefinedType", None))
+    for klasse in sorted(ohne):
+        warnungen.append(f"{klasse} kennt im Schema keinen Typ — die Vorlage steht nur am Merkmal {PSET_CDE}.Vorlage")
+    typen = []
+    for (tk, vid), e in sorted(je_typ.items()):
+        pt = next(iter(e["pt"])) if len(e["pt"]) == 1 else None
+        pt = pt if pt in S.predefined(tk) and pt != "USERDEFINED" else "NOTDEFINED"
+        schluessel = f"{satz}|typ|{tk}|{vid}"
+        typ = f.create_entity(tk, GlobalId=guids.guid_aus_cde_id(schluessel), OwnerHistory=besitz,
+                              Name=S.kurz(e["name"], 250), Tag=S.kurz(vid, 250), PredefinedType=pt)
+        f.create_entity("IfcRelDefinesByType", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|rel"),
+                        OwnerHistory=besitz, RelatedObjects=e["glieder"], RelatingType=typ)
+        typen.append(typ)
+    if typen:
+        f.create_entity("IfcRelDeclares", GlobalId=guids.guid_aus_cde_id(f"{satz}|typen"), OwnerHistory=besitz,
+                        RelatingContext=projekt, RelatedDefinitions=typen)
+    return len(typen)
 
 
 def _kanten_schreiben(f, besitz, kontext, paket: dict, satz: str, geschrieben: list) -> tuple:

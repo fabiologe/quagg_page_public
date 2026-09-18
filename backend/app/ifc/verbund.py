@@ -881,6 +881,23 @@ def _uebernimm(ziel, quelle, geruest: dict, befund: Befund, quell_sha: str, beka
     return bauteile
 
 
+def _typen_erklaeren(ziel, geruest: dict) -> int:
+    """Typobjekte ohne Erklaerung im Projekt dem Verbundprojekt zuordnen (Teil XXIII, A9b).
+
+    `_beruehrt_projekt` laesst jede Beziehung zum Quellprojekt draussen — auch
+    `IfcRelDeclares`, mit dem eine Quelle ihre Typen erklaert. Die Typen selbst
+    kommen ueber `IfcRelDefinesByType` mit und staenden sonst ohne Projekt da.
+    EINE Erklaerung am Verbundprojekt fuer alle; nichts, wenn keine fehlt.
+    """
+    offen = [t for t in ziel.by_type("IfcTypeObject") if not (t.HasContext or ())]
+    if not offen:
+        return 0
+    projekt = geruest["projekt"]
+    ziel.create_entity("IfcRelDeclares", GlobalId=_guid(projekt.GlobalId, "typen"), OwnerHistory=geruest["besitz"],
+                       RelatingContext=projekt, RelatedDefinitions=offen)
+    return len(offen)
+
+
 def _kontexte_vereinen(ziel, geruest: dict) -> dict:
     """Alle mitgekommenen Darstellungskontexte auf UNSEREN umlenken.
 
@@ -1235,6 +1252,9 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         except Exception:                         # noqa: BLE001
             pass
 
+    sag("Typen erklaeren")
+    typen_erklaert = _typen_erklaeren(ziel, geruest)
+
     sag("leere Beziehungen entfernen")
     leere = _leere_beziehungen_entfernen(ziel)
 
@@ -1261,6 +1281,7 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         "einmalige_verschmolzen": verschmolzen,
         "dokumente": len(ziel.by_type("IfcDocumentInformation")),
         "fremde_projekte_entfernt": len(fremde),
+        "typen_erklaert": typen_erklaert,
         "leere_beziehungen_entfernt": leere,
         "huelle": huelle(ziel),
         "dauer_s": round(time.time() - begonnen, 1),

@@ -18,9 +18,15 @@ flowchart LR
   IfcRelContainedInSpatialStructure{{IfcRelContainedInSpatialStructure}}
   IfcRelContainedInSpatialStructure -->|"RelatedElements (Menge)"| IfcProduct
   IfcSpatialElement -->|"RelatingStructure"| IfcRelContainedInSpatialStructure
+  IfcRelDeclares{{IfcRelDeclares}}
+  IfcContext -->|"RelatingContext"| IfcRelDeclares
+  IfcRelDeclares -->|"RelatedDefinitions (Menge)"| IfcDefinitionSelect
   IfcRelDefinesByProperties{{IfcRelDefinesByProperties}}
   IfcRelDefinesByProperties -->|"RelatedObjects (Menge)"| IfcObjectDefinition
   IfcPropertySetDefinitionSelect -->|"RelatingPropertyDefinition"| IfcRelDefinesByProperties
+  IfcRelDefinesByType{{IfcRelDefinesByType}}
+  IfcRelDefinesByType -->|"RelatedObjects (Menge)"| IfcObject
+  IfcTypeObject -->|"RelatingType"| IfcRelDefinesByType
   IfcRelVoidsElement{{IfcRelVoidsElement}}
   IfcElement -->|"RelatingBuildingElement"| IfcRelVoidsElement
   IfcRelVoidsElement -->|"RelatedOpeningElement"| IfcFeatureElementSubtraction

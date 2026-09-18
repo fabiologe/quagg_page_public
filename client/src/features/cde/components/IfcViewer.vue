@@ -511,7 +511,7 @@ import { pruefmassVon, zellweiteVorschlag, grundrissAusMesh } from '../services/
 import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
 import { GRUPPEN, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
-import { ladeVorlagen } from '../services/Bibliothek.js';
+import { ladeVorlagen, vorlagenbezugVon } from '../services/Bibliothek.js';
 
 const emit = defineEmits(['close', 'open-properties', 'model-loaded']);
 const ifc  = useIfcStore();
@@ -2412,6 +2412,15 @@ async function eigenbauPaket() {
   // Welcher Journalstand exportiert wird: der jüngste Commit — und ob noch
   // eine offene Sitzung dazukommt (dann ist der Stand MEHR als der Commit).
   const letzter = [...(aenderungen.commits ?? [])].sort((a, b) => (a.wann ?? 0) - (b.wann ?? 0)).at(-1) ?? null;
+  // DIE TYPEN (A9b): der Name je Vorlage aus der Bibliothek — Projekt schlägt
+  // Büro schlägt eingebaut, dieselbe Liste wie im Zeichnen. Ohne Bibliothek
+  // bleibt die Id; der Bezug geht nie verloren.
+  let vorlagen = [];
+  try { vorlagen = await ladeVorlagen(repo); } catch (fehler) { console.warn('cde: vorlagen fürs Paket', fehler?.message ?? fehler); }
+  const typVon = (plan) => {
+    const b = vorlagenbezugVon(plan, vorlagen);
+    return b ? { id: b.id, name: b.name ?? null } : null;
+  };
   const paket = baueEigenbauPaket({
     teile: gebaut.bauteile,
     // Die Böschungskanten (Teil XX Stufe B) — keine Bauteile, sondern
@@ -2423,6 +2432,7 @@ async function eigenbauPaket() {
     bearbeiter: cde.bearbeiter ?? '',
     anzeigeformen: gebaut.anzeigeformen ?? [],
     journal: { commit: letzter?.id ?? null, sitzungOffen: !!aenderungen.sitzungOffen },
+    typVon,
   });
   paket.quellDokumente = await quellDokumenteFuer(paket.bauteile);
   // Was nicht ins Paket kam, steht darin — nicht still weggelassen.

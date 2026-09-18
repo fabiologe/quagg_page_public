@@ -170,3 +170,19 @@ def test_lesen_importiert_kein_ifcopenshell():
     r = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
+
+
+def test_die_typklasse_steht_in_der_regel_nicht_im_namen():
+    """Teil XXIII A9b: welcher Typ an ein Bauteil darf, sagt `CorrectTypeAssigned`."""
+    assert S.typklasse("IfcSign") == "IfcSignType"
+    assert S.typklasse("IFCDISTRIBUTIONCHAMBERELEMENT") == "IfcDistributionChamberElementType"
+    assert S.typklasse("IfcPipeSegment") == "IfcPipeSegmentType"
+    # geerbt: die Klasse ohne eigene Regel nimmt die ihres Obertyps
+    assert S.typklasse("IfcWallStandardCase") == "IfcWallType"
+    # keine Regel, kein Typ — Aushub, Auftrag, Annotation
+    for k in ("IfcEarthworksCut", "IfcEarthworksFill", "IfcAnnotation", "gibtsnicht"):
+        assert S.typklasse(k) is None, k
+    # und jede genannte Typklasse ist wirklich ein Typobjekt mit PredefinedType
+    for k in ("IfcSign", "IfcDistributionChamberElement", "IfcSlab", "IfcGeographicElement"):
+        t = S.typklasse(k)
+        assert S.ist_untertyp(t, "IfcTypeObject") and "NOTDEFINED" in S.predefined(t), t

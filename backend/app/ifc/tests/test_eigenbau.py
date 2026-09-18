@@ -763,6 +763,72 @@ def test_leitpfosten_aus_der_bibliothek(tmp_path):
 
 
 FIXTURE = Path(__file__).parent / "daten" / "paket_v2.json"
+TYPEN = Path(__file__).parent / "daten" / "paket_typen.json"
+
+
+@pytest.mark.skipif(not TYPEN.is_file(), reason="Fixture fehlt — im Client: PAKET_VERTRAG_SCHREIBEN=1 "
+                    "npx vitest run src/features/cde/test/typobjekte.test.js")
+def test_typen_aus_der_vorlage(tmp_path):
+    """Teil XXIII A9b — die Vorlage wird ein TYP (Befund B21).
+
+    Das Paket stammt aus der echten Kette des Browsers (`typobjekte.test.js`):
+    zwei Schaechte aus der Vorlage „Schacht DN 1000", einer ohne. Erwartet:
+    EIN `IfcDistributionChamberElementType` mit zwei Bauteilen, erklaert im
+    Projekt; der dritte Schacht ohne Typ; das Pruefton sauber — allein und im
+    Verbund, wo die Erklaerung am Verbundprojekt haengen muss.
+    """
+    paket = json.loads(TYPEN.read_text(encoding="utf-8"))
+    ziel = tmp_path / "typen.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="typen")
+    assert (bericht["bauteile"], bericht["typen"], bericht["warnungen"]) == (3, 1, [])
+    f = ifcopenshell.open(ziel)
+    [t] = f.by_type("IfcTypeObject")
+    assert (t.is_a(), t.Name, t.Tag, t.PredefinedType) == (
+        "IfcDistributionChamberElementType", "Schacht DN 1000", "schacht-dn1000", "NOTDEFINED")
+    [rel] = f.by_type("IfcRelDefinesByType")
+    assert rel.RelatingType == t and len(rel.RelatedObjects) == 2
+    assert [r.RelatingContext for r in t.HasContext] == f.by_type("IfcProject")
+    for b in paket["bauteile"]:
+        el = f.by_guid(guids.guid_aus_cde_id(b["cdeId"]))
+        assert bool(el.IsTypedBy) == bool(b.get("typ")), b["cdeId"]
+        assert _pset(el, PSET_CDE).get("Vorlage") == (b.get("typ") or {}).get("id")
+    # Abgeleitete Kennung: derselbe Satz, derselbe Typ — ueber Laeufe stabil.
+    zweit = tmp_path / "typen2.ifc"
+    baue_datei(paket, zweit, schluessel="typen")
+    assert ifcopenshell.open(zweit).by_type("IfcTypeObject")[0].GlobalId == t.GlobalId
+    _sauber(pruefe(ziel))
+
+    # Im Verbund: `_beruehrt_projekt` laesst die Erklaerung am Quellprojekt draussen —
+    # der Typ muss am VERBUNDPROJEKT erklaert sein, nicht heimatlos ankommen.
+    verbund = tmp_path / "verbund.ifc"
+    vb = V.fuehre_zusammen([V.Quelle(ziel, name="CDE-Eigenbau", sha256="e" * 64)], verbund, projektname="Typen")
+    assert vb["typen_erklaert"] == 1
+    g = ifcopenshell.open(verbund)
+    [tv] = g.by_type("IfcTypeObject")
+    assert [r.RelatingContext for r in tv.HasContext] == g.by_type("IfcProject")
+    assert len(tv.Types[0].RelatedObjects) == 2
+    _sauber(pruefe(verbund))
+
+
+def test_eine_klasse_ohne_typ_bekommt_keinen_und_sagt_es(tmp_path):
+    """Ein Aushub kennt im Schema keinen Typ (`CorrectTypeAssigned` fehlt) — nie einen erfinden.
+
+    Die Vorlage an einem Aushub gibt es im Browser nicht (Ableitungen haben
+    keine); dieser Fall ist von Hand gesetzt und prueft nur den Weg des
+    Schreibers: Warnung, Merkmal, kein Typobjekt.
+    """
+    paket = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    cut = next(b for b in paket["bauteile"] if b["klasse"] == "IFCEARTHWORKSCUT")
+    cut["typ"] = {"id": "grube-standard", "name": "Grube"}
+    ziel = tmp_path / "ohne_typ.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="ohne-typ")
+    assert bericht["typen"] == 0
+    assert any(w.startswith("IfcEarthworksCut kennt im Schema keinen Typ") for w in bericht["warnungen"])
+    f = ifcopenshell.open(ziel)
+    assert f.by_type("IfcTypeObject") == [] and f.by_type("IfcRelDeclares") == []
+    assert _pset(f.by_guid(guids.guid_aus_cde_id(cut["cdeId"])), PSET_CDE)["Vorlage"] == "grube-standard"
+
+
 VERTRAG = {"ur": "1Ur0Gelaende0Vertrag00", "rohr": ROHR_GUID, "bauteil": "3Fundament0A0000000001"}
 
 
