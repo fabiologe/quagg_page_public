@@ -171,12 +171,13 @@ const KERNEL_ERLAUBT = {
 const FACHWOERTER_ERLAUBT = {};
 
 /**
- * W5 — Obergrenzen. `anwenden` sinkt mit A6. Die Rezeptfunktionen zählen seit
+ * W5 — Obergrenzen. `anwenden` sank mit A6 von 48 auf 32: 18 Werkzeuge sind
+ * Daten, dazu zwei Fabriken (Setzer, Geländewerkzeug), die je einmal zählen. Die Rezeptfunktionen zählen seit
  * A4 in den QUELLEN des Katalogs (Deklarationen + Code-Rezepte), nicht im
  * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
  * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
  */
-const HOOKS_MAX = { anwenden: 48, rezeptFunktionen: 2 };
+const HOOKS_MAX = { anwenden: 33, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln (neu, geplant)
 
 /**
  * W7 — die Rückführung aus dem Audit „Bearbeitungsstruktur" (2026-09-18).
@@ -194,15 +195,19 @@ const RUECKFUEHRUNG = {
     ],
     /** Muster + Operation + Katalogeintrag gäbe es — trotzdem von Hand geschrieben (A6). */
     handgeschrieben: [
-        'graben-ausheben', 'auffuellen', 'planum-herstellen', 'gerinne-einschneiden', 'boeschung-anschliessen',
-        'sohlhoehen-setzen', 'deckelhoehe-setzen', 'bezugshoehe-setzen',
-        'profilgroesse-setzen', 'profilform-setzen', 'staerke-setzen',
-        'kg-setzen', 'din277-setzen', 'massnahme-setzen', 'umbenennen',
-        'koerper-tauschen', 'loeschen', 'bauform-auslegen',
+        // A6: leer. Die elf Setzer und „Löschen", „Bauform auslegen" sind
+        // Deklarationen (`setzt`), die fünf Geländewerkzeuge entstehen aus ihrer
+        // Operation (`GELAENDE_OPS[art].werkzeug`) — W7 ordnet sie über die
+        // Herkunft ein (`AUS_DATEN`).
     ],
     /** Allgemeine Operation auf Bauform/Eigenschaft — oder aus Muster + Rezept ERZEUGT. */
     sauber: [
         'verschieben', 'drehen', 'kopieren', 'reihe',
+        // A6: Spiegeln — eine allgemeine Lageoperation auf der Punktliste, wie Drehen.
+        'spiegeln',
+        // A6: „Vorlage anwenden" — eine allgemeine Operation der Bibliothek, an
+        // das REZEPT des Bauteils gebunden (Daten), an keinen Namen.
+        'koerper-tauschen',
         'stuetzpunkt-verschieben', 'stuetzpunkt-einfuegen', 'stuetzpunkt-entfernen', 'kante-verschieben',
         'linie-teilen', 'linie-trimmen', 'linie-versetzen',
         'flaeche-teilen', 'flaeche-vereinigen', 'flaeche-versetzen',
@@ -211,12 +216,12 @@ const RUECKFUEHRUNG = {
         // „Schacht"/„Haltung". Die Ids bleiben (sie stehen in `KUREN` und im Verlauf).
         'schacht-verschieben', 'schacht-einfuegen', 'schacht-entfernen', 'haltung-teilen',
         'an-schacht-anschliessen', 'trasse-aendern', 'strang-gefaelle-setzen', 'strang-massnahme',
-        'strang-umbenennen', 'fliessrichtung-setzen', 'linie-umkehren',
+        'strang-umbenennen', 'linie-umkehren',
         // A2: der Eckenzug fragt das Rezept nach `punktlisten` — jedes Rezept, das sie hat.
         'erdbau-stuetzpunkt-verschieben',
     ],
 };
-const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 3, handgeschrieben: 18 };
+const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 3, handgeschrieben: 0 };
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [
@@ -381,17 +386,18 @@ describe('W6 — die Musterschicht ist fachblind', () => {
 
 describe('W7 — jedes Werkzeug lässt sich zurückführen: Muster + Operation + Katalogeintrag', () => {
     const ids = BEARBEITUNGEN.map(b => b.id);
-    // Aus Muster + Katalogeintrag ERZEUGT (`zeichenBearbeitung(rezept)`) — das
-    // Soll, einmal gebaut. Eingeordnet durch die HERKUNFT, nicht durch eine
-    // Namensliste: ein Rezept aus der Bibliothek (A5) bringt sein Werkzeug mit.
-    const AUS_KATALOG = BEARBEITUNGEN
-        .filter(b => b.gruppe === 'erzeugen' && typeof REZEPTE[b.rezept]?.baue === 'function')
-        .map(b => b.id);
+    // AUS DATEN ERZEUGT — das Soll. Eingeordnet durch die HERKUNFT, nicht
+    // durch eine Namensliste: ein Rezept aus der Bibliothek (A5) bringt sein
+    // Werkzeug mit, eine neue Geländeoperation ihres (A6).
+    //   ausRezept   Muster + Rezept (`zeichenBearbeitung`, Setzer eines Rezeptfelds)
+    //   setzt       Muster + allgemeine Operation + Rolle/Merkmal (Setzer-Deklaration)
+    //   operation   Muster + Geländeoperation (`formwerkzeugFuer`)
+    const AUS_DATEN = BEARBEITUNGEN.filter(b => b.ausRezept || b.setzt || b.operation).map(b => b.id);
     const alle = [...RUECKFUEHRUNG.nichtRueckfuehrbar, ...RUECKFUEHRUNG.handgeschrieben,
-                  ...RUECKFUEHRUNG.sauber, ...AUS_KATALOG];
+                  ...RUECKFUEHRUNG.sauber, ...AUS_DATEN];
     merke('W7 Rückführung', { nichtRueckfuehrbar: RUECKFUEHRUNG.nichtRueckfuehrbar.length,
                                handgeschrieben: RUECKFUEHRUNG.handgeschrieben.length,
-                               sauber: RUECKFUEHRUNG.sauber.length + AUS_KATALOG.length, katalog: ids.length });
+                               sauber: RUECKFUEHRUNG.sauber.length, ausDaten: AUS_DATEN.length, katalog: ids.length });
 
     it('ein NEUES Werkzeug muss eingeordnet werden — wer es schreibt, sagt, woraus es besteht', () => {
         expect(ids.filter(id => !alle.includes(id)), 'nicht eingeordnet').toEqual([]);

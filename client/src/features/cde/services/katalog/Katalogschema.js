@@ -45,7 +45,7 @@ const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
     'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung',
 ]);
-const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'vorgabe', 'leerErlaubt', 'optionen']);
+const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar']);
 
 const _einfach = (w) => ['string', 'number', 'boolean'].includes(typeof w);
 const _istObjekt = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
@@ -108,6 +108,8 @@ function _felder(liste, fehler) {
         if (!FELDTYPEN.includes(f.typ)) fehler.push(`Feld „${f.name}": Typ „${f.typ}" gibt es nicht (${FELDTYPEN.join(', ')}).`);
         for (const k of ['min', 'max']) if (f[k] != null && !Number.isFinite(f[k])) fehler.push(`Feld „${f.name}": ${k} ist keine Zahl.`);
         if (f.vorgabe !== undefined && !_einfach(f.vorgabe)) fehler.push(`Feld „${f.name}": Vorgabe ist kein einfacher Wert.`);
+        if (f.setzbar !== undefined && typeof f.setzbar !== 'boolean') fehler.push(`Feld „${f.name}": \`setzbar\` muss wahr oder falsch sein.`);
+        if (f.setzbar && ['name', 'kategorie', 'hoehe'].includes(f.name)) fehler.push(`Feld „${f.name}" ist kein Parameter — dafür gibt es eigene Werkzeuge.`);
         namen.set(f.name, f);
     }
     return namen;

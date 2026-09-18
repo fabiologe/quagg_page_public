@@ -238,6 +238,30 @@ export function drehePunktliste(parameter, grad, zentrum = null) {
     };
 }
 
+/**
+ * Spiegeln (Teil XXIII, A6) — an einer Achse durch den Schwerpunkt, deren
+ * Richtung `grad` in XZ angibt (gemessen wie beim Drehen: 0° = Ost). Die Höhen
+ * bleiben. Ein gespiegelter Umriss läuft andersherum — die Flächen- und
+ * Plattenrechnung normiert die Richtung selbst.
+ */
+export function spiegelePunktliste(parameter, grad, zentrum = null) {
+    const punkte = parameter?.punkte;
+    if (!Array.isArray(punkte) || !Number.isFinite(Number(grad))) return parameter;
+    const c = zentrum ?? schwerpunktXZ(punkte);
+    if (!c) return parameter;
+    const w = (Number(grad) * Math.PI) / 180;
+    const ax = Math.cos(w), az = Math.sin(w);
+    return {
+        ...parameter,
+        punkte: punkte.map(p => {
+            if (!Array.isArray(p) || p.length < 3) return p;
+            const vx = p[0] - c.x, vz = p[2] - c.z;
+            const t = vx * ax + vz * az;                   // Anteil längs der Achse
+            return [c.x + 2 * t * ax - vx, p[1], c.z + 2 * t * az - vz];
+        }),
+    };
+}
+
 /** Gelände: die Operationsliste hebt `verschiebeOperationen` (Operationen.js). */
 function _verschiebeGelaende(parameter, delta) {
     if (!Array.isArray(parameter?.operationen)) return parameter;

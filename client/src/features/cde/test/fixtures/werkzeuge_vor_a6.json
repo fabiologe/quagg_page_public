@@ -1,0 +1,3018 @@
+[
+ {
+  "id": "gerinne-einschneiden",
+  "gruppe": "gelaende",
+  "art": "erzeugt",
+  "eingabe": "zug",
+  "mindestPunkte": 2,
+  "bauform": "hoehenfeld",
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": "gelaende",
+  "felder": [
+   {
+    "name": "sohleAnfang",
+    "titel": "Sohle am Anfang",
+    "einheit": "m NN",
+    "typ": "zahl"
+   },
+   {
+    "name": "sohleEnde",
+    "titel": "Sohle am Ende",
+    "einheit": "m NN",
+    "typ": "zahl",
+    "leerErlaubt": true
+   },
+   {
+    "name": "sohlbreite",
+    "titel": "Sohlbreite",
+    "einheit": "m",
+    "typ": "zahl",
+    "vorgabe": 1
+   },
+   {
+    "name": "boeschung",
+    "titel": "Böschung 1 : n",
+    "typ": "zahl",
+    "vorgabe": 1.5
+   }
+  ],
+  "vorbelegung": {
+   "sohlbreite": 1,
+   "boeschung": 1.5
+  },
+  "nachZug": {
+   "sohleAnfang": 309,
+   "sohleEnde": 308.1
+  },
+  "anwenden": [
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID0",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID1",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID2",
+         "art": "erdbau",
+         "titel": "Urgelände · Gerinne"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID3",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID2",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "TRENCH",
+      "name": "Urgelände · Gerinne · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 1.2,
+          "boeschung": 2,
+          "sohleAnfang": 308.2,
+          "sohleEnde": 307.6
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID4",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID2",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Gerinne · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 1.2,
+          "boeschung": 2,
+          "sohleAnfang": 308.2,
+          "sohleEnde": 307.6
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID5",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID6",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID7",
+         "art": "erdbau",
+         "titel": "Urgelände · Gerinne"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID8",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID7",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "TRENCH",
+      "name": "Urgelände · Gerinne · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 0,
+          "boeschung": 1.5,
+          "sohleAnfang": 308.2,
+          "sohleEnde": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID9",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID7",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Gerinne · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 0,
+          "boeschung": 1.5,
+          "sohleAnfang": 308.2,
+          "sohleEnde": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID10",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID11",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID12",
+         "art": "erdbau",
+         "titel": "Urgelände · Gerinne"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID13",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID12",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "TRENCH",
+      "name": "Urgelände · Gerinne · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 0,
+          "boeschung": 1.5,
+          "sohleAnfang": 0,
+          "sohleEnde": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID14",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID12",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Gerinne · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "gerinne",
+         "parameter": {
+          "achse": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "z": 5
+           }
+          ],
+          "sohlbreite": 0,
+          "boeschung": 1.5,
+          "sohleAnfang": 0,
+          "sohleEnde": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ]
+  ]
+ },
+ {
+  "id": "graben-ausheben",
+  "gruppe": "gelaende",
+  "art": "erzeugt",
+  "eingabe": "umriss",
+  "mindestPunkte": 3,
+  "bauform": "hoehenfeld",
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": "gelaende",
+  "felder": [
+   {
+    "name": "mass",
+    "titel": "Tiefe unter dem Rand",
+    "einheit": "m",
+    "typ": "zahl",
+    "min": 0.05,
+    "max": 60,
+    "vorgabe": 2
+   },
+   {
+    "name": "neigung",
+    "titel": "Böschung 1 : n (leer = senkrecht)",
+    "typ": "zahl",
+    "min": 0.1,
+    "max": 10,
+    "leerErlaubt": true
+   },
+   {
+    "name": "auflockerung",
+    "titel": "Auflockerung (loses Volumen je m³ gewachsen)",
+    "typ": "zahl",
+    "min": 1,
+    "max": 2,
+    "schritt": 0.01,
+    "vorgabe": 1.15
+   }
+  ],
+  "vorbelegung": {
+   "mass": 2,
+   "neigung": 1.5,
+   "auflockerung": 1.15
+  },
+  "nachZug": null,
+  "anwenden": [
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID15",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID16",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID17",
+         "art": "erdbau",
+         "titel": "Urgelände · Ausheben"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID18",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID17",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Ausheben · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "grube",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "sohle": 308.475,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 1.25
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID19",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID17",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Ausheben · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "grube",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "sohle": 308.475,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 1.25
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID20",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID21",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID22",
+         "art": "erdbau",
+         "titel": "Urgelände · Ausheben"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID23",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID22",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Ausheben · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "grube",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "sohle": 307.475,
+          "neigung": null
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID24",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID22",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Ausheben · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "grube",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "sohle": 307.475,
+          "neigung": null
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   null
+  ]
+ },
+ {
+  "id": "auffuellen",
+  "gruppe": "gelaende",
+  "art": "erzeugt",
+  "eingabe": "umriss",
+  "mindestPunkte": 3,
+  "bauform": "hoehenfeld",
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": "gelaende",
+  "felder": [
+   {
+    "name": "ziel",
+    "titel": "Ziel",
+    "typ": "auswahl",
+    "optionen": [
+     {
+      "wert": "hoehe",
+      "titel": "Höhe über dem Rand"
+     },
+     {
+      "wert": "ur",
+      "titel": "bis GOK — auf das gelieferte Gelände"
+     }
+    ]
+   },
+   {
+    "name": "mass",
+    "titel": "Höhe über dem Rand (bei Ziel Höhe)",
+    "einheit": "m",
+    "typ": "zahl",
+    "min": 0.05,
+    "max": 60,
+    "vorgabe": 1
+   },
+   {
+    "name": "neigung",
+    "titel": "Böschung 1 : n (leer = senkrecht)",
+    "typ": "zahl",
+    "min": 0.1,
+    "max": 10,
+    "leerErlaubt": true
+   }
+  ],
+  "vorbelegung": {
+   "ziel": "hoehe",
+   "mass": 1,
+   "neigung": 1.5
+  },
+  "nachZug": null,
+  "anwenden": [
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID25",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID26",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID27",
+         "art": "erdbau",
+         "titel": "Urgelände · Auffüllen"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID28",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID27",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Auffüllen · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "schuettung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "ziel": "hoehe",
+          "hoehe": 311.475,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID29",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID27",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Auffüllen · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "schuettung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "ziel": "hoehe",
+          "hoehe": 311.475,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID30",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID31",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID32",
+         "art": "erdbau",
+         "titel": "Urgelände · Auffüllen bis GOK"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID33",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID32",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Auffüllen bis GOK · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "schuettung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "ziel": "ur"
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID34",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID32",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "BACKFILL",
+      "name": "Urgelände · Auffüllen bis GOK · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "schuettung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "y": 310,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 310.5,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "y": 311,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "y": 310.4,
+            "z": 15
+           }
+          ],
+          "ziel": "ur"
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   null
+  ]
+ },
+ {
+  "id": "boeschung-anschliessen",
+  "gruppe": "gelaende",
+  "art": "erzeugt",
+  "eingabe": "zug",
+  "mindestPunkte": 2,
+  "bauform": "hoehenfeld",
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": "gelaende",
+  "felder": [
+   {
+    "name": "kante",
+    "titel": "Kantenhöhe über Gelände",
+    "einheit": "m",
+    "typ": "zahl",
+    "min": -30,
+    "max": 30,
+    "vorgabe": 1
+   },
+   {
+    "name": "seite",
+    "titel": "Böschung auf der Seite",
+    "typ": "auswahl",
+    "optionen": [
+     {
+      "wert": "rechts",
+      "titel": "rechts der Zeichenrichtung"
+     },
+     {
+      "wert": "links",
+      "titel": "links der Zeichenrichtung"
+     }
+    ]
+   },
+   {
+    "name": "neigung",
+    "titel": "Böschung 1 : n",
+    "typ": "zahl",
+    "min": 0.1,
+    "max": 10,
+    "vorgabe": 1.5
+   }
+  ],
+  "vorbelegung": {
+   "kante": 1,
+   "seite": "rechts",
+   "neigung": 1.5
+  },
+  "nachZug": null,
+  "anwenden": [
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID35",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID36",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID37",
+         "art": "erdbau",
+         "titel": "Urgelände · Böschung"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID38",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID37",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Böschung · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "boeschungLinie",
+         "parameter": {
+          "linie": [
+           {
+            "x": 0,
+            "y": 311,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "y": 310.4,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "y": 310.1,
+            "z": 5
+           }
+          ],
+          "seite": "rechts",
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID39",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID37",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "SLOPEFILL",
+      "name": "Urgelände · Böschung · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "boeschungLinie",
+         "parameter": {
+          "linie": [
+           {
+            "x": 0,
+            "y": 311,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "y": 310.4,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "y": 310.1,
+            "z": 5
+           }
+          ],
+          "seite": "rechts",
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID40",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID41",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID42",
+         "art": "erdbau",
+         "titel": "Urgelände · Böschung"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID43",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID42",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Böschung · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "boeschungLinie",
+         "parameter": {
+          "linie": [
+           {
+            "x": 0,
+            "y": 309.5,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "y": 308.9,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "y": 308.6,
+            "z": 5
+           }
+          ],
+          "seite": "links",
+          "neigung": 2
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID44",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID42",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "SLOPEFILL",
+      "name": "Urgelände · Böschung · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "boeschungLinie",
+         "parameter": {
+          "linie": [
+           {
+            "x": 0,
+            "y": 309.5,
+            "z": 0
+           },
+           {
+            "x": 30,
+            "y": 308.9,
+            "z": 5
+           },
+           {
+            "x": 55,
+            "y": 308.6,
+            "z": 5
+           }
+          ],
+          "seite": "links",
+          "neigung": 2
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   null
+  ]
+ },
+ {
+  "id": "planum-herstellen",
+  "gruppe": "gelaende",
+  "art": "erzeugt",
+  "eingabe": "umriss",
+  "mindestPunkte": 3,
+  "bauform": "hoehenfeld",
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": "gelaende",
+  "felder": [
+   {
+    "name": "hoehe",
+    "titel": "Planumshöhe",
+    "einheit": "m NN",
+    "typ": "zahl"
+   },
+   {
+    "name": "neigung",
+    "titel": "Böschung 1 : n (leer = ohne Anschluss)",
+    "typ": "zahl",
+    "leerErlaubt": true
+   }
+  ],
+  "vorbelegung": {
+   "hoehe": 309.4
+  },
+  "nachZug": {
+   "hoehe": 310.5
+  },
+  "anwenden": [
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID45",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID46",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID47",
+         "art": "erdbau",
+         "titel": "Urgelände · Planum"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID48",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID47",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Planum · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5
+         }
+        },
+        {
+         "art": "boeschung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID49",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID47",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Planum · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5
+         }
+        },
+        {
+         "art": "boeschung",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5,
+          "neigung": 1.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID50",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID51",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID52",
+         "art": "erdbau",
+         "titel": "Urgelände · Planum"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID53",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID52",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Planum · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID54",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID52",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Planum · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 309.5
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ],
+   [
+    {
+     "art": "geloescht",
+     "globalId": "1Ur0Gelaende0Vertrag00",
+     "nachher": true,
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID55",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "anzeige",
+      "rolle": "anzeige",
+      "ableitung": "ID56",
+      "bauform": "hoehenfeld",
+      "kategorie": "IFCGEOGRAPHICELEMENT",
+      "predefinedType": "TERRAIN",
+      "name": "Urgelände (Anzeige)",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [],
+       "vorgaenge": [
+        {
+         "ableitung": "ID57",
+         "art": "erdbau",
+         "titel": "Urgelände · Planum"
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID58",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "aushub",
+      "ableitung": "ID57",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSCUT",
+      "predefinedType": "EXCAVATION",
+      "name": "Urgelände · Planum · Aushub",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    },
+    {
+     "art": "erzeugt",
+     "globalId": "ID59",
+     "modell": "cde",
+     "nachher": {
+      "rezept": "erdbau",
+      "rolle": "auftrag",
+      "ableitung": "ID57",
+      "bauform": "koerper",
+      "kategorie": "IFCEARTHWORKSFILL",
+      "predefinedType": "EMBANKMENT",
+      "name": "Urgelände · Planum · Auftrag",
+      "parameter": {
+       "quellen": {
+        "gelaende": "1Ur0Gelaende0Vertrag00"
+       },
+       "quellBasis": {
+        "gelaende": {
+         "n": 4,
+         "summe": 12.5
+        }
+       },
+       "raster": {
+        "cell": 2
+       },
+       "operationen": [
+        {
+         "art": "planum",
+         "parameter": {
+          "umriss": [
+           {
+            "x": 0,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 0
+           },
+           {
+            "x": 20,
+            "z": 15
+           },
+           {
+            "x": 0,
+            "z": 15
+           }
+          ],
+          "hoehe": 0
+         }
+        }
+       ],
+       "auflockerung": 0
+      }
+     },
+     "modellSha": "sha-ur"
+    }
+   ]
+  ]
+ },
+ {
+  "id": "profilgroesse-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": true,
+  "brauchtRolle": "profilGroesse",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "groesse",
+    "ausTypprofil": "profilGroesse",
+    "rueckfall": {
+     "titel": "Querschnittsgröße",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "groesse": 400
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "profilGroesse": 500
+    }
+   },
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "profilGroesse": "HEB 200"
+    }
+   }
+  ]
+ },
+ {
+  "id": "profilform-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": true,
+  "brauchtRolle": "profilform",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "profilform",
+    "ausTypprofil": "profilform",
+    "rueckfall": {
+     "titel": "Profilform",
+     "typ": "auswahl",
+     "optionen": [
+      {
+       "wert": "kreis",
+       "titel": "Kreis"
+      },
+      {
+       "wert": "trapez",
+       "titel": "Trapez"
+      }
+     ]
+    }
+   }
+  ],
+  "vorbelegung": {
+   "profilform": null
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "profilform": "trapez"
+    }
+   }
+  ]
+ },
+ {
+  "id": "staerke-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": true,
+  "brauchtRolle": "dicke",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "dicke",
+    "ausTypprofil": "dicke",
+    "rueckfall": {
+     "titel": "Stärke",
+     "einheit": "m",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "dicke": null
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "3Fundament0A0000000001",
+    "nachher": {
+     "dicke": 0.35
+    }
+   }
+  ]
+ },
+ {
+  "id": "sohlhoehen-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": [
+   "achse+profil",
+   "linie"
+  ],
+  "mehrfach": false,
+  "nurFestlegung": true,
+  "brauchtRolle": [
+   "sohlhoeheAnfang",
+   "sohlhoeheEnde"
+  ],
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "anfang",
+    "ausTypprofil": "sohlhoeheAnfang",
+    "rueckfall": {
+     "titel": "Sohle Anfang",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   },
+   {
+    "name": "ende",
+    "ausTypprofil": "sohlhoeheEnde",
+    "rueckfall": {
+     "titel": "Sohle Ende",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "anfang": 298.45,
+   "ende": 298.3
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "sohlhoeheAnfang": 298.4,
+     "sohlhoeheEnde": 298.1
+    }
+   },
+   null
+  ]
+ },
+ {
+  "id": "sohlhoehen-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": [
+   "achse+profil",
+   "linie"
+  ],
+  "mehrfach": false,
+  "nurFestlegung": true,
+  "brauchtRolle": [
+   "sohlhoeheAnfang",
+   "sohlhoeheEnde"
+  ],
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "anfang",
+    "ausTypprofil": "sohlhoeheAnfang",
+    "rueckfall": {
+     "titel": "Sohle Anfang",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   },
+   {
+    "name": "ende",
+    "ausTypprofil": "sohlhoeheEnde",
+    "rueckfall": {
+     "titel": "Sohle Ende",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "anfang": 298.5,
+   "ende": 298.3
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "sohlhoeheAnfang": 298.4,
+     "sohlhoeheEnde": 298.1
+    }
+   }
+  ]
+ },
+ {
+  "id": "deckelhoehe-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": true,
+  "brauchtRolle": "deckelhoehe",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "deckel",
+    "ausTypprofil": "deckelhoehe",
+    "rueckfall": {
+     "titel": "Deckelhöhe",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "deckel": 299.2
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "deckelhoehe": 301.2
+    }
+   },
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "deckelhoehe": 0
+    }
+   }
+  ]
+ },
+ {
+  "id": "deckelhoehe-setzen",
+  "gruppe": "parametrik",
+  "art": "parametrik",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": true,
+  "brauchtRolle": "deckelhoehe",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "deckel",
+    "ausTypprofil": "deckelhoehe",
+    "rueckfall": {
+     "titel": "Deckelhöhe",
+     "einheit": "m NN",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "deckel": 301.05
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "parametrik",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "deckelhoehe": 301.2
+    }
+   }
+  ]
+ },
+ {
+  "id": "bezugshoehe-setzen",
+  "gruppe": "lage",
+  "art": "lage",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": [
+   "achse+profil",
+   "koerper"
+  ],
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": "sohlhoehe",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "hoehe",
+    "ausTypprofil": "sohlhoehe",
+    "rueckfall": {
+     "titel": "Bezugshöhe",
+     "einheit": "m",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "hoehe": 298.4
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "lage",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": {
+     "x": 5,
+     "y": -1.5999999999999999,
+     "z": 3
+    }
+   }
+  ]
+ },
+ {
+  "id": "bezugshoehe-setzen",
+  "gruppe": "lage",
+  "art": "lage",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": [
+   "achse+profil",
+   "koerper"
+  ],
+  "mehrfach": false,
+  "nurFestlegung": false,
+  "brauchtRolle": "sohlhoehe",
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "hoehe",
+    "ausTypprofil": "sohlhoehe",
+    "rueckfall": {
+     "titel": "Bezugshöhe",
+     "einheit": "m",
+     "typ": "zahl"
+    }
+   }
+  ],
+  "vorbelegung": {
+   "hoehe": 300
+  },
+  "nachZug": null,
+  "anwenden": [
+   null
+  ]
+ },
+ {
+  "id": "kg-setzen",
+  "gruppe": "merkmale",
+  "art": "kg",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "kg",
+    "rueckfall": {
+     "titel": "Kostengruppe (DIN 276)",
+     "typ": "auswahl",
+     "optionen": [
+      {
+       "wert": "300",
+       "titel": "300 · Bauwerk — Baukonstruktion"
+      },
+      {
+       "wert": "320",
+       "titel": "320 · Gründung, Unterbau"
+      },
+      {
+       "wert": "322",
+       "titel": "322 · Flachgründungen"
+      },
+      {
+       "wert": "323",
+       "titel": "323 · Tiefgründungen"
+      },
+      {
+       "wert": "324",
+       "titel": "324 · Unterböden und Bodenplatten"
+      },
+      {
+       "wert": "330",
+       "titel": "330 · Außenwände, vertikale Baukonstruktionen — außen"
+      },
+      {
+       "wert": "331",
+       "titel": "331 · Tragende Außenwände"
+      },
+      {
+       "wert": "332",
+       "titel": "332 · Nichttragende Außenwände"
+      },
+      {
+       "wert": "333",
+       "titel": "333 · Außenstützen"
+      },
+      {
+       "wert": "334",
+       "titel": "334 · Außentüren und -fenster"
+      },
+      {
+       "wert": "337",
+       "titel": "337 · Elementierte Außenwände (Curtain Wall)"
+      },
+      {
+       "wert": "340",
+       "titel": "340 · Innenwände, vertikale Baukonstruktionen — innen"
+      },
+      {
+       "wert": "341",
+       "titel": "341 · Tragende Innenwände"
+      },
+      {
+       "wert": "342",
+       "titel": "342 · Nichttragende Innenwände"
+      },
+      {
+       "wert": "343",
+       "titel": "343 · Innenstützen"
+      },
+      {
+       "wert": "344",
+       "titel": "344 · Innentüren und -fenster"
+      },
+      {
+       "wert": "350",
+       "titel": "350 · Decken, horizontale Baukonstruktionen"
+      },
+      {
+       "wert": "360",
+       "titel": "360 · Dächer"
+      },
+      {
+       "wert": "370",
+       "titel": "370 · Baukonstruktive Einbauten"
+      },
+      {
+       "wert": "400",
+       "titel": "400 · Bauwerk — Technische Anlagen"
+      },
+      {
+       "wert": "410",
+       "titel": "410 · Abwasser-, Wasser-, Gasanlagen"
+      },
+      {
+       "wert": "411",
+       "titel": "411 · Abwasseranlagen"
+      },
+      {
+       "wert": "412",
+       "titel": "412 · Wasseranlagen"
+      },
+      {
+       "wert": "413",
+       "titel": "413 · Gasanlagen"
+      },
+      {
+       "wert": "420",
+       "titel": "420 · Wärmeversorgungsanlagen"
+      },
+      {
+       "wert": "430",
+       "titel": "430 · Raumlufttechnische Anlagen"
+      },
+      {
+       "wert": "440",
+       "titel": "440 · Elektrische Anlagen"
+      },
+      {
+       "wert": "450",
+       "titel": "450 · Kommunikation, Sicherheit, Information"
+      },
+      {
+       "wert": "460",
+       "titel": "460 · Förderanlagen"
+      },
+      {
+       "wert": "500",
+       "titel": "500 · Außenanlagen und Freiflächen"
+      },
+      {
+       "wert": "510",
+       "titel": "510 · Erdbau"
+      },
+      {
+       "wert": "511",
+       "titel": "511 · Geländebearbeitung (Abtrag/Auftrag)"
+      },
+      {
+       "wert": "512",
+       "titel": "512 · Bodenverbesserung"
+      },
+      {
+       "wert": "520",
+       "titel": "520 · Gründung, Unterbau (Außenanlagen)"
+      },
+      {
+       "wert": "530",
+       "titel": "530 · Oberbau, Deckschichten"
+      },
+      {
+       "wert": "531",
+       "titel": "531 · Wege"
+      },
+      {
+       "wert": "532",
+       "titel": "532 · Straßen"
+      },
+      {
+       "wert": "533",
+       "titel": "533 · Plätze, Höfe"
+      },
+      {
+       "wert": "540",
+       "titel": "540 · Baukonstruktionen in Außenanlagen"
+      },
+      {
+       "wert": "550",
+       "titel": "550 · Technische Anlagen in Außenanlagen"
+      },
+      {
+       "wert": "551",
+       "titel": "551 · Abwasseranlagen (außen)"
+      },
+      {
+       "wert": "552",
+       "titel": "552 · Wasseranlagen (außen)"
+      },
+      {
+       "wert": "560",
+       "titel": "560 · Ausstattung in Außenanlagen"
+      },
+      {
+       "wert": "570",
+       "titel": "570 · Vegetationsflächen"
+      },
+      {
+       "wert": "590",
+       "titel": "590 · Sonstige Außenanlagen"
+      }
+     ],
+     "leerErlaubt": true
+    }
+   }
+  ],
+  "vorbelegung": {
+   "kg": "411"
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "kg",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "412"
+   },
+   {
+    "art": "kg",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": null
+   }
+  ]
+ },
+ {
+  "id": "din277-setzen",
+  "gruppe": "merkmale",
+  "art": "din277",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "din277",
+    "rueckfall": {
+     "titel": "DIN-277-Klasse",
+     "typ": "auswahl",
+     "leerErlaubt": true,
+     "optionen": [
+      {
+       "wert": "NUF1",
+       "titel": "NUF1 — Wohnen und Aufenthalt"
+      },
+      {
+       "wert": "NUF2",
+       "titel": "NUF2 — Büroarbeit"
+      },
+      {
+       "wert": "NUF3",
+       "titel": "NUF3 — Produktion, Hand- und Maschinenarbeit, Experimente"
+      },
+      {
+       "wert": "NUF4",
+       "titel": "NUF4 — Lagern, Verteilen und Verkaufen"
+      },
+      {
+       "wert": "NUF5",
+       "titel": "NUF5 — Bildung, Unterricht und Kultur"
+      },
+      {
+       "wert": "NUF6",
+       "titel": "NUF6 — Heilen und Pflegen"
+      },
+      {
+       "wert": "NUF7",
+       "titel": "NUF7 — Sonstige Nutzungsflächen"
+      },
+      {
+       "wert": "VF",
+       "titel": "VF — Verkehrsflächen"
+      },
+      {
+       "wert": "TF",
+       "titel": "TF — Technische Funktionsflächen"
+      }
+     ]
+    }
+   }
+  ],
+  "vorbelegung": {
+   "din277": null
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "din277",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "NUF 1"
+   },
+   {
+    "art": "din277",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": null
+   }
+  ]
+ },
+ {
+  "id": "massnahme-setzen",
+  "gruppe": "merkmale",
+  "art": "massnahme",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "massnahme",
+    "rueckfall": {
+     "titel": "Sanierung",
+     "typ": "auswahl",
+     "leerErlaubt": true,
+     "optionen": [
+      {
+       "wert": "keine",
+       "titel": "keine Maßnahme"
+      },
+      {
+       "wert": "inspektion",
+       "titel": "Inspektion nötig"
+      },
+      {
+       "wert": "reparatur",
+       "titel": "Reparatur"
+      },
+      {
+       "wert": "renovierung",
+       "titel": "Renovierung (Liner)"
+      },
+      {
+       "wert": "erneuerung",
+       "titel": "Erneuerung"
+      }
+     ]
+    }
+   }
+  ],
+  "vorbelegung": {
+   "massnahme": "renovierung"
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "massnahme",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "erneuerung"
+   },
+   {
+    "art": "massnahme",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": null
+   }
+  ]
+ },
+ {
+  "id": "umbenennen",
+  "gruppe": "merkmale",
+  "art": "bezeichnung",
+  "eingabe": null,
+  "mindestPunkte": null,
+  "bauform": "*",
+  "mehrfach": true,
+  "nurFestlegung": false,
+  "brauchtRolle": null,
+  "hoehenAus": null,
+  "felder": [
+   {
+    "name": "muster",
+    "titel": "Muster",
+    "typ": "text"
+   },
+   {
+    "name": "beginnBei",
+    "titel": "Beginnt bei",
+    "typ": "zahl",
+    "min": 0
+   }
+  ],
+  "vorbelegung": {
+   "muster": "H-001",
+   "beginnBei": 1
+  },
+  "nachZug": null,
+  "anwenden": [
+   {
+    "art": "bezeichnung",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "H-{n:03}"
+   },
+   {
+    "art": "bezeichnung",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "H-{n:03}"
+   },
+   {
+    "art": "bezeichnung",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "H-001-neu"
+   },
+   {
+    "art": "bezeichnung",
+    "globalId": "2Rohr0Haltung000000001",
+    "nachher": "H-001-neu"
+   },
+   null,
+   null
+  ]
+ }
+]

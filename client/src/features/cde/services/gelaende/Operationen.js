@@ -30,6 +30,8 @@
  */
 import { punktInPolygon } from '@/services/tinte/InkGeometry';
 import { rasterKnoten } from '../geometry/SurfaceOps.js';
+import { nnAusWelt } from '../Hoehenbezug.js';
+import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
 
 /** Ein Punkt kommt je nach Quelle als {x,z} oder [x,y,z]. */
 function _xz(p) {
@@ -949,9 +951,71 @@ function _innenNaeherung(c, v, d, hoehe) {
 /** Die Wirkfläche eines Rings: der Umriss, plus der Saum der Böschung. */
 const _RING_UMRISS = Object.freeze({ form: 'ring', punkte: (p) => p.umriss });
 
+// ── Das WERKZEUG einer Operation (Teil XXIII, A6) ───────────────────────────
+//
+// Ein Geländewerkzeug ist Muster (Zug oder Umriss — aus `wirkflaeche.form`) +
+// diese Operation + ihre Felder. `Bearbeitungen.formwerkzeugFuer` baut daraus
+// das Werkzeug; hier steht nur, was die Operation weiss: welche Felder, was
+// vorbelegt ist und wie aus Werten und gezeichnetem Zug ihre Parameter werden
+// (`ausEingabe` → `{ops, titel, auflockerung?}` oder null). Eine neue
+// Operation bekommt ihr Werkzeug ohne Zeile in `Bearbeitungen.js`.
+
+/**
+ * Die Punkte eines Umrisses bzw. einer Kante MIT Höhe in m NN (Teil XX), um
+ * `zusatz` gehoben. Die Höhen kommen aus dem Sampler (`hoehenAus:
+ * 'gelaende'`); fehlt sie an EINEM Punkt (ausserhalb des Geländes), gibt es
+ * keine Rand- oder Kantenhöhe — dann lieber nichts als geraten.
+ */
+export function punkteInNn(zug, versatz, zusatz = 0) {
+    const aus = [];
+    for (const p of zug ?? []) {
+        const y = Number(p?.y);
+        if (!Number.isFinite(y)) return null;
+        aus.push({ x: Number(p.x) || 0, y: Math.round((nnAusWelt(y, versatz) + zusatz) * 1000) / 1000, z: Number(p.z) || 0 });
+    }
+    return aus;
+}
+const _mittelY = (punkte) => punkte.reduce((a, p) => a + p.y, 0) / punkte.length;
+const _neigungOderNull = (w) => { const n = Number(w); return Number.isFinite(n) && n > 0 ? n : null; };
+
 export const GELAENDE_OPS = Object.freeze({
     gerinne: {
         titel: 'Gerinne einschneiden', wende: gerinne,
+        /**
+         * Gerinne einschneiden (Stufe 15) — die erste Geländeoperation. Die
+         * Achse wird gezeichnet, Sohlhöhen sind ABSOLUTE NN-Werte, die
+         * Operation ist schneidend und damit idempotent.
+         */
+        werkzeug: {
+            id: 'gerinne-einschneiden', titel: 'Gerinne einschneiden', icon: 'gerinne', rang: 1,
+            felder: [
+                { name: 'sohleAnfang', titel: 'Sohle am Anfang', einheit: 'm NN', typ: 'zahl' },
+                { name: 'sohleEnde', titel: 'Sohle am Ende', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+                { name: 'sohlbreite', titel: 'Sohlbreite', einheit: 'm', typ: 'zahl', vorgabe: 1 },
+                { name: 'boeschung', titel: 'Böschung 1 : n', typ: 'zahl', vorgabe: 1.5 },
+            ],
+            vorbelegung: () => ({ sohlbreite: 1, boeschung: 1.5 }),
+            // Teil XIV: der Zug liegt AUF dem Gelände — die Sohlen werden daraus
+            // vorbelegt (1 m unter Gelände).
+            nachZug: (zug, { versatz }) => {
+                const a = zug?.[0]?.y, e = zug?.[zug.length - 1]?.y;
+                const nn = (y) => Math.round((nnAusWelt(y, versatz) - 1.0) * 100) / 100;
+                return {
+                    ...(Number.isFinite(a) ? { sohleAnfang: nn(a) } : {}),
+                    ...(Number.isFinite(e) ? { sohleEnde: nn(e) } : {}),
+                };
+            },
+            ausEingabe: (werte, zug) => {
+                if (!Number.isFinite(Number(werte?.sohleAnfang))) return null;
+                return { titel: 'Gerinne', ops: [{ art: 'gerinne', parameter: {
+                    achse: zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 })),
+                    sohlbreite: Number(werte.sohlbreite) || 0,
+                    boeschung: Number(werte.boeschung) || 1.5,
+                    sohleAnfang: Number(werte.sohleAnfang),
+                    sohleEnde: Number.isFinite(Number(werte.sohleEnde)) ? Number(werte.sohleEnde) : Number(werte.sohleAnfang),
+                } }] };
+            },
+        },
         hoehenfelder: ['sohleAnfang', 'sohleEnde'],
         // Teil XXI: ein Gerinne darf seine Sohle stationsweise tragen — auch
         // die Stationen sind Punkte mit Höhe in m NN.
@@ -1000,6 +1064,36 @@ export const GELAENDE_OPS = Object.freeze({
     },
     planum: {
         titel: 'Planum herstellen', wende: planum,
+        /**
+         * Planum herstellen — Umriss zeichnen, Sollhöhe setzen; mit
+         * Böschungsneigung schliesst gleich der Anschluss ans gewachsene
+         * Gelände an (zwei Operationen, EIN Eintrag).
+         */
+        werkzeug: {
+            id: 'planum-herstellen', titel: 'Planum herstellen', icon: 'planum', rang: 5,
+            felder: [
+                { name: 'hoehe', titel: 'Planumshöhe', einheit: 'm NN', typ: 'zahl' },
+                { name: 'neigung', titel: 'Böschung 1 : n (leer = ohne Anschluss)', typ: 'zahl', leerErlaubt: true },
+            ],
+            vorbelegung: (el) => ({ hoehe: el?.bezugshoehe ?? null }),
+            // Das Planum startet auf der MITTLEREN Geländehöhe des Umrisses —
+            // wer tiefer will, tippt es; wer den Wert schon getippt hat, behält ihn.
+            nachZug: (zug, { versatz }) => {
+                const ys = (zug ?? []).map(p => p?.y).filter(Number.isFinite);
+                if (!ys.length) return {};
+                const mittel = ys.reduce((a, b) => a + b, 0) / ys.length;
+                return { hoehe: Math.round(nnAusWelt(mittel, versatz) * 10) / 10 };
+            },
+            ausEingabe: (werte, zug) => {
+                const hoehe = Number(werte?.hoehe);
+                if (!Number.isFinite(hoehe)) return null;
+                const umriss = zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
+                const ops = [{ art: 'planum', parameter: { umriss, hoehe } }];
+                const n = Number(werte?.neigung);
+                if (Number.isFinite(n) && n > 0) ops.push({ art: 'boeschung', parameter: { umriss, hoehe, neigung: n } });
+                return { titel: 'Planum', ops };
+            },
+        },
         hoehenfelder: ['hoehe'],
         wirkbereich: _wbUmrissZuZiel,
         wirkflaeche: _RING_UMRISS,
@@ -1068,6 +1162,36 @@ export const GELAENDE_OPS = Object.freeze({
     // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
     grube: {
         titel: 'Ausheben', wende: grube,
+        /**
+         * AUSHEBEN (E1, Teil XX) — Umriss AUF dem Gelände zeichnen, Tiefe angeben.
+         *
+         * DER UMRISS IST DIE OBERKANTE (Teil XX, Fabio 2026-09-10): man tippt,
+         * was man sieht — die Kante der Grube auf dem Gelände. Die Böschung
+         * fällt nach INNEN bis zur Sohle (mittlere Randhöhe − Tiefe, absolut
+         * gespeichert — die Tiefe ist die Eingabe, nicht der Zielzustand).
+         *
+         * DIE DATEN BLEIBEN. Nichts am gelieferten Gelände wird verändert oder
+         * gelöscht: es wird ausgeblendet, und die Subtraktion entsteht als
+         * EIGENES IFC-Element — `IfcEarthworksCut` (Gesetz 8, ISO 19650).
+         */
+        werkzeug: {
+            id: 'graben-ausheben', titel: 'Ausheben', icon: 'ausheben', rang: 2,
+            felder: [
+                { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
+                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
+                AUFLOCKERUNG_FELD,
+            ],
+            vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: AUFLOCKERUNG.vorgabe }),
+            ausEingabe: (werte, zug, { versatz }) => {
+                const tiefe = Number(werte?.mass);
+                if (!Number.isFinite(tiefe) || tiefe <= 0) return null;
+                const umriss = punkteInNn(zug, versatz);
+                if (!umriss) return null;
+                return { titel: 'Ausheben', auflockerung: auflockerungOder(werte?.auflockerung), ops: [{ art: 'grube', parameter: {
+                    umriss, sohle: Math.round((_mittelY(umriss) - tiefe) * 1000) / 1000, neigung: _neigungOderNull(werte?.neigung),
+                } }] };
+            },
+        },
         hoehenfelder: ['sohle'],
         punktfelder: ['umriss'],
         wirkbereich: _wbUmrissInnen,
@@ -1088,6 +1212,37 @@ export const GELAENDE_OPS = Object.freeze({
     },
     schuettung: {
         titel: 'Auffüllen', wende: schuettung,
+        /**
+         * AUFFÜLLEN (E1, Teil XX) — die umgedrehte Grube. Der Umriss ist der
+         * BÖSCHUNGSFUSS auf dem Gelände; Ziel ist eine Höhe über der mittleren
+         * Randhöhe — oder „bis GOK", das Ur-Gelände (Rückverfüllung). Wer die
+         * KRONE zeichnen will, nimmt „Planum herstellen".
+         */
+        werkzeug: {
+            id: 'auffuellen', titel: 'Auffüllen', icon: 'auffuellen', rang: 3,
+            felder: [
+                { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
+                    { wert: 'hoehe', titel: 'Höhe über dem Rand' },
+                    { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
+                ] },
+                { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
+                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
+            ],
+            vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
+            ausEingabe: (werte, zug, { versatz }) => {
+                const umriss = punkteInNn(zug, versatz);
+                if (!umriss) return null;
+                if (werte?.ziel === 'ur') {
+                    return { titel: 'Auffüllen bis GOK', ops: [{ art: 'schuettung', parameter: { umriss, ziel: 'ur' } }] };
+                }
+                const mass = Number(werte?.mass);
+                if (!Number.isFinite(mass) || mass <= 0) return null;
+                return { titel: 'Auffüllen', ops: [{ art: 'schuettung', parameter: {
+                    umriss, ziel: 'hoehe', hoehe: Math.round((_mittelY(umriss) + mass) * 1000) / 1000,
+                    neigung: _neigungOderNull(werte?.neigung),
+                } }] };
+            },
+        },
         hoehenfelder: ['hoehe'],
         punktfelder: ['umriss'],
         wirkbereich: _wbUmrissInnen,
@@ -1117,6 +1272,33 @@ export const GELAENDE_OPS = Object.freeze({
     },
     boeschungLinie: {
         titel: 'Böschung an Kante', wende: boeschungLinie,
+        /**
+         * BÖSCHUNG AN EINER KANTE (E1, Teil XX) — eine OFFENE Linie mit Höhe je
+         * Knick (Gelände + Kantenhöhe); auf der gewählten Seite läuft die
+         * Böschung 1:n bis zum Gelände — Einschnitt oder Damm ergibt sich.
+         */
+        werkzeug: {
+            id: 'boeschung-anschliessen', titel: 'Böschung an Kante', icon: 'boeschung', rang: 4,
+            felder: [
+                { name: 'kante', titel: 'Kantenhöhe über Gelände', einheit: 'm', typ: 'zahl', min: -30, max: 30, vorgabe: 1 },
+                { name: 'seite', titel: 'Böschung auf der Seite', typ: 'auswahl', optionen: [
+                    { wert: 'rechts', titel: 'rechts der Zeichenrichtung' },
+                    { wert: 'links', titel: 'links der Zeichenrichtung' },
+                ] },
+                { name: 'neigung', titel: 'Böschung 1 : n', typ: 'zahl', min: 0.1, max: 10, vorgabe: 1.5 },
+            ],
+            vorbelegung: () => ({ kante: 1, seite: 'rechts', neigung: 1.5 }),
+            ausEingabe: (werte, zug, { versatz }) => {
+                const neigung = Number(werte?.neigung);
+                if (!(neigung > 0)) return null;
+                const kante = Number(werte?.kante);
+                const linie = punkteInNn(zug, versatz, Number.isFinite(kante) ? kante : 0);
+                if (!linie) return null;
+                return { titel: 'Böschung', ops: [{ art: 'boeschungLinie', parameter: {
+                    linie, seite: werte?.seite === 'links' ? 'links' : 'rechts', neigung,
+                } }] };
+            },
+        },
         hoehenfelder: [],
         punktfelder: ['linie'],
         wirkbereich(raster, p) {

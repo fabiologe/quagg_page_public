@@ -104,6 +104,19 @@ export const AUFLOCKERUNG = Object.freeze({
     max: 2,
 });
 
+/**
+ * Das Formularfeld zum Faktor (Teil XXI, P4) — EIN Ort, weil drei Werkzeuge es
+ * zeigen (Ausheben, Kanalgraben, Bauwerksgrube). Gemessen wird gewachsener
+ * Boden, abgefahren wird loser; der Faktor steht am Vorgang und geht als
+ * `LooseVolume` ins IFC. Erfahrungswerte, keine Norm — darum ein Regler.
+ */
+export const AUFLOCKERUNG_FELD = Object.freeze({
+    name: 'auflockerung',
+    titel: 'Auflockerung (loses Volumen je m³ gewachsen)',
+    typ: 'zahl', min: AUFLOCKERUNG.min, max: AUFLOCKERUNG.max, schritt: 0.01,
+    vorgabe: AUFLOCKERUNG.vorgabe,
+});
+
 /** Der Faktor zu einer Bodenklasse — oder die Vorgabe. */
 export function auflockerungFuer(boden, regeln = AUFLOCKERUNG) {
     const v = regeln.nachBoden?.[String(boden ?? '')];

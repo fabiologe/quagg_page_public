@@ -24,7 +24,8 @@
  *   geschlossen          Umriss (Fläche) oder offener Zug (Linie)
  *   hoehenAus            'gelaende': Punkte ohne getippte Höhe liegen auf dem Gelände
  *   felder               wie im Bearbeitungs-Katalog; `hoehe` ist die Höhe der
- *                        PUNKTE in m NN (das Zeichenwerkzeug liest sie so)
+ *                        PUNKTE in m NN (das Zeichenwerkzeug liest sie so);
+ *                        `setzbar: true` bringt ein Werkzeug „… ändern" mit (A6)
  *   netzrolle            'kante' | 'knoten' — die Rolle im Netz (AE)
  *   geometrie            { art, … } — siehe `GEOMETRIE_ARTEN` in `Rezeptbau.js`
  *   symbol               Plansymbol im Lageplan (`PlanSymbols.js`) statt Linienzug
@@ -78,7 +79,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300 },
+            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300, setzbar: true },
         ],
         // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
         // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
@@ -103,7 +104,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, vorgabe: 1000 },
+            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, vorgabe: 1000, setzbar: true },
         ],
         netzrolle: 'knoten',
         // Im Lageplan ein SYMBOL (A5): Sohle und Deckel liegen im Grundriss
@@ -130,7 +131,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Fusshöhe (leer = auf dem Gelände)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'laenge', titel: 'Höhe des Pfostens', einheit: 'm', typ: 'zahl', min: 0.05, max: 30, vorgabe: 1 },
+            { name: 'laenge', titel: 'Höhe des Pfostens', einheit: 'm', typ: 'zahl', min: 0.05, max: 30, vorgabe: 1, setzbar: true },
             { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, vorgabe: 0.12 },
             { name: 'tiefe', titel: 'Tiefe', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, vorgabe: 0.12 },
         ],
@@ -156,7 +157,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, vorgabe: 0.2 },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, vorgabe: 0.2, setzbar: true },
         ],
         geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
     },

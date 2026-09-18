@@ -65,6 +65,9 @@ export function warumNicht(bearbeitung, { bauform, guete, typprofil, rezept = nu
         return `Dem Bauteil fehlt ${fehlt.map(eigenschaftText).join(' und ')}`
             + (nurMasse ? ' — ein Typprofil würde sie ergänzen' : ' — ein Typprofil oder eine Bauformregel sagt es');
     }
+    if (bearbeitung.nurRezept && rezept?.id !== bearbeitung.nurRezept) {
+        return `Nur für Eigenbau aus dem Rezept „${bearbeitung.nurRezept}"`;
+    }
     const erlaubt = bearbeitung.bauform === '*' ? null
         : (Array.isArray(bearbeitung.bauform) ? bearbeitung.bauform : [bearbeitung.bauform]);
     if (erlaubt && !erlaubt.includes(bauform)) {

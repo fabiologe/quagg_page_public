@@ -31,7 +31,7 @@
  */
 
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
-import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, schwerpunktXZ,
+import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
          modellVon, istAnzeigeform, rezeptFuerNetzrolle } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
@@ -68,28 +68,16 @@ export function eingabeArt(bearbeitung) {
     return art && art in EINGABEN ? art : 'wert';
 }
 
-import { AUFLOCKERUNG, WANDFORMEN, BODENKLASSEN, GRABENREGELN, auflockerungFuer, auflockerungOder, schaechteAnKanten } from './gelaende/Grabenregeln.js';
+import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, WANDFORMEN, BODENKLASSEN, GRABENREGELN, auflockerungFuer, auflockerungOder, schaechteAnKanten } from './gelaende/Grabenregeln.js';
 import { hatInnenring, innenEcken, innenFeld, randFuerInnenecke } from './gelaende/Innenecken.js';
 // Die Bauformen, an denen eine Aussparung fachlich geht — DIE Liste des
 // Rezepts, nicht eine Kopie daneben (Gesetz 7).
 import { achsmassAus } from './geometrie/ops/Raster.js';
 
-/**
- * DER AUFLOCKERUNGSFAKTOR (Teil XXI, P4) — EIN Feld, überall dasselbe.
- *
- * Gemessen wird gewachsener Boden, abgefahren wird loser. Der Faktor steht
- * deshalb am Vorgang und geht als `LooseVolume` ins IFC. Erfahrungswerte,
- * keine Norm (siehe `AUFLOCKERUNG` in Grabenregeln.js) — darum ein Regler.
- */
-const AUFLOCKERUNG_FELD = Object.freeze({
-    name: 'auflockerung',
-    titel: 'Auflockerung (loses Volumen je m³ gewachsen)',
-    typ: 'zahl', min: AUFLOCKERUNG.min, max: AUFLOCKERUNG.max, schritt: 0.01,
-    vorgabe: AUFLOCKERUNG.vorgabe,
-});
 import { ACHSBEZUEGE } from './Achsbezug.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 import { registerStand, registrierte } from './rezept/Register.js';
+import { GELAENDE_OPS } from './gelaende/Operationen.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -315,6 +303,149 @@ function alsRaumpunkte(punkte, hoehe = 0) {
 }
 
 /**
+ * SETZER ALS DATEN (Teil XXIII, A6; Befund B7).
+ *
+ * Ein Werkzeug, das einen Wert ins Journal schreibt, ist Muster (Formular) +
+ * allgemeine Operation + Katalogeintrag (Rolle, Merkmal) — kein eigener Code.
+ * Die Deklaration nennt `setzt: { art, … }`; `werkzeugAusSetzer` macht daraus
+ * `vorbelegung` und `anwenden`. Vier Operationen tragen elf Werkzeuge:
+ *
+ *   mass      Grössen je Rolle als Festlegung (`parametrik`), faltet je Rolle
+ *   merkmal   ein Wert unter seiner Journalart (kg, din277, massnahme, bauform,
+ *             geloescht) — leer heisst zurücknehmen
+ *   benennen  Name nach Muster, bei Mehrfachauswahl durchnummeriert
+ *   hoehe     die Lage um die Differenz der Bezugshöhe verschieben
+ *   parameter ein Parameter eines EIGENEN Bauteils (Rezeptfeld `setzbar`) —
+ *             ein neuer Bauplan unter derselben Kennung
+ */
+const _VORBELEGUNG_WELT = Object.freeze({
+    // Welt-y oder null — umgerechnet in m NN wird beim Vorbelegen.
+    'achse.anfang': (el) => el?.achse?.anfang?.y ?? null,
+    'achse.ende': (el) => el?.achse?.ende?.y ?? null,
+    // Der Deckel ist die Oberkante der Hülle; ohne sie der Anker, ohne ihn 0.
+    'oberkante': (el) => el?.oberkante ?? el?.anker?.y ?? 0,
+});
+
+function _vorbelegtMass(w, el) {
+    const stand = el?.stand?.[w.rolle];
+    let wert = stand ?? null;
+    if (wert == null && w.sonst) {
+        const welt = _VORBELEGUNG_WELT[w.sonst.welt]?.(el) ?? null;
+        wert = welt == null ? (w.sonst.leer ?? null) : nnAusWelt(welt, el?.hoehenversatz ?? 0);
+    }
+    if (wert == null && w.werte) wert = w.werte[0];
+    return w.runden && wert != null ? _rundeM(wert) : wert;
+}
+
+const SETZ_OPERATIONEN = Object.freeze({
+    mass: {
+        vorbelege: (s, el) => Object.fromEntries(s.werte.map(w => [w.feld, _vorbelegtMass(w, el)])),
+        schreibe: (s, el, werte) => {
+            const nachher = {};
+            for (const w of s.werte) {
+                const roh = werte?.[w.feld];
+                if (w.zahl) {
+                    const z = Number(roh);
+                    if (!Number.isFinite(z)) return null;
+                    nachher[w.rolle] = z;
+                } else if (w.werte) {
+                    nachher[w.rolle] = w.werte.includes(roh) ? roh : w.werte[0];
+                } else {
+                    nachher[w.rolle] = roh;
+                }
+            }
+            return { art: 'parametrik', globalId: el.globalId, nachher };
+        },
+    },
+    merkmal: {
+        vorbelege: (s, el) => (s.feld ? { [s.feld]: el?.stand?.[s.standFeld ?? s.feld] ?? null } : {}),
+        schreibe: (s, el, werte) => ({ art: s.journal, globalId: el.globalId,
+                                       nachher: 'wert' in s ? s.wert : (werte?.[s.feld] || null) }),
+    },
+    benennen: {
+        vorbelege: (s, el) => ({ [s.muster]: el?.name ?? '', [s.beginn]: 1 }),
+        schreibe: (s, el, werte, { nummer = 0 } = {}) => {
+            const name = nameAusMuster(werte?.[s.muster], {
+                nummer: (Number(werte?.[s.beginn]) || 0) + nummer, alt: el.name ?? '',
+            });
+            return name ? { art: 'bezeichnung', globalId: el.globalId, nachher: name } : null;
+        },
+    },
+    hoehe: {
+        // ANGEZEIGT UND EINGEGEBEN WIRD IN WIRKLICHEN HÖHEN (m NN), gerechnet
+        // in der Three-Welt (`Hoehenbezug.js`).
+        vorbelege: (s, el) => ({
+            [s.feld]: _rundeM(nnAusWelt(el?.bezugshoehe ?? el?.anker?.y ?? 0, el?.hoehenversatz ?? 0)),
+        }),
+        schreibe: (s, el, werte) => {
+            const anker = el?.anker ?? null;
+            if (!anker) return null;
+            // Der Anker ist die Hüllenmitte, die Bezugshöhe die Unterkante.
+            // Verschoben wird um die DIFFERENZ, nicht auf den Wert — sonst
+            // säße die Mitte auf der Sohle und das Bauteil läge zu hoch.
+            const jetzt = el?.bezugshoehe ?? anker.y;
+            const ziel = weltAusNn(Number(werte?.[s.feld]), el?.hoehenversatz ?? 0);
+            return { art: 'lage', globalId: el.globalId,
+                     nachher: { x: anker.x, y: anker.y + (ziel - jetzt), z: anker.z } };
+        },
+    },
+    parameter: {
+        vorbelege: (s, el) => ({ [s.feld]: el?.stand?.bauplan?.parameter?.[s.feld] ?? null }),
+        schreibe: (s, el, werte) => {
+            const plan = el?.stand?.bauplan;
+            if (!plan || plan.rezept !== s.rezept) return null;
+            const roh = werte?.[s.feld];
+            const wert = s.zahl ? Number(roh) : roh;
+            if (s.zahl && !Number.isFinite(wert)) return null;
+            if (plan.parameter?.[s.feld] === wert) return null;           // nichts zu tun
+            return erzeugtEintrag({
+                rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
+                globalId: el.globalId, parameter: { ...plan.parameter, [s.feld]: wert },
+            });
+        },
+    },
+});
+
+/** Aus einer Setzer-Deklaration wird ein Werkzeug — `vorbelegung` und `anwenden` aus der Operation. */
+function werkzeugAusSetzer(d) {
+    const op = SETZ_OPERATIONEN[d.setzt?.art];
+    if (!op) throw new Error(`Setzer „${d.id}": Operation „${d.setzt?.art}" gibt es nicht`);
+    return {
+        ...d,
+        vorbelegung: (el) => op.vorbelege(d.setzt, el),
+        // OHNE KENNUNG KEIN EINTRAG — eine Regel für alle Setzer (vorher gab
+        // es zwei: fünf lieferten null, sechs einen Eintrag mit leerer
+        // Kennung). Bei Mehrfachauswahl zählt der Store das als übersprungen,
+        // allein nennt er den Grund aus `warumNicht`.
+        anwenden: (el, werte, kontext) => (el?.globalId ? op.schreibe(d.setzt, el, werte, kontext) : null),
+        warumNicht: (el) => (el?.globalId ? null : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.'),
+    };
+}
+
+/**
+ * Die Setzer eines Rezepts: je Feld mit `setzbar: true` eins (A6) — damit
+ * bekommt ein Rezept aus der Bibliothek seine Bearbeitung ohne Code. Nur an
+ * EIGENEN Bauteilen DIESES Rezepts; es entsteht ein neuer Bauplan unter
+ * derselben Kennung, die Geometrie folgt beim Neuaufbau.
+ */
+function setzerFuerRezept(rezept) {
+    return (rezept?.felder ?? []).filter(f => f?.setzbar).map(f => werkzeugAusSetzer({
+        id: `${rezept.id}-${f.name}-setzen`,
+        titel: `${f.titel ?? f.name} ändern`,
+        icon: rezept.icon ?? 'edit',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        nurRezept: rezept.id,
+        ausRezept: rezept.id,
+        art: 'erzeugt',
+        felder: [{ ...f, leerErlaubt: false }],
+        setzt: { art: 'parameter', feld: f.name, zahl: f.typ === 'zahl', rezept: rezept.id },
+    }));
+}
+
+/**
  * Aus einem Rezept wird eine Zeichen-Bearbeitung.
  *
  * ABGELEITET STATT ABGESCHRIEBEN: Jedes Rezept in `REZEPTE` ist genau eine
@@ -331,6 +462,9 @@ function zeichenBearbeitung(rezept) {
     return {
         id: `${rezept.id}-zeichnen`,
         titel: `${rezept.titel} zeichnen`,
+        // Aus Muster + Katalogeintrag ERZEUGT — der Architektur-Wächter (W7)
+        // ordnet es darüber ein, nicht über eine Namensliste.
+        ausRezept: rezept.id,
         icon: rezept.icon,
         gruppe: 'erzeugen',
         bauform: '*',
@@ -429,65 +563,6 @@ function zeichenBearbeitung(rezept) {
  *                 wird bei der nächsten Formung in die Ableitung überführt —
  *                 die Quelle bleibt das ORIGINAL, die alte Liste läuft mit.
  */
-/**
- * Die Punkte eines Umrisses bzw. einer Kante MIT Höhe in m NN (Teil XX), um
- * `zusatz` gehoben. Die Höhen kommen aus dem Sampler (`hoehenAus:
- * 'gelaende'`); fehlt sie an EINEM Punkt (ausserhalb des Geländes), gibt es
- * keine Rand- oder Kantenhöhe — dann lieber nichts als geraten.
- */
-function _mitNn(zug, versatz, zusatz = 0) {
-    const aus = [];
-    for (const p of zug ?? []) {
-        const y = Number(p?.y);
-        if (!Number.isFinite(y)) return null;
-        aus.push({ x: Number(p.x) || 0, y: Math.round((nnAusWelt(y, versatz) + zusatz) * 1000) / 1000, z: Number(p.z) || 0 });
-    }
-    return aus;
-}
-
-const _mittelY = (punkte) => punkte.reduce((a, p) => a + p.y, 0) / punkte.length;
-
-/**
- * AUSHEBEN (Teil XX): der Umriss ist die Böschungsoberkante AUF dem Gelände;
- * die Tiefe zählt gegen die MITTLERE Randhöhe, gespeichert wird die Sohle
- * absolut (Gesetz 4) — die Tiefe ist die Eingabe des Planers, nicht der
- * Zielzustand: eine Grube liegt, wo sie liegt, auch wenn das Gelände daneben
- * später anders aussieht.
- */
-function _grubeSchritte(el, werte, zug) {
-    if (!el?.globalId || zug.length < 3) return null;
-    const tiefe = Number(werte?.mass);
-    if (!Number.isFinite(tiefe) || tiefe <= 0) return null;
-    const umriss = _mitNn(zug, el.hoehenversatz ?? 0);
-    if (!umriss) return null;
-    const n = Number(werte?.neigung);
-    return _gelaendeSchritte(el, [{ art: 'grube', parameter: {
-        umriss,
-        sohle: Math.round((_mittelY(umriss) - tiefe) * 1000) / 1000,
-        neigung: Number.isFinite(n) && n > 0 ? n : null,
-    } }], { titel: 'Ausheben', auflockerung: auflockerungOder(werte?.auflockerung) });
-}
-
-/**
- * AUFFÜLLEN (Teil XX): der Umriss ist der Böschungsfuss AUF dem Gelände; Ziel
- * ist eine Höhe über der mittleren Randhöhe — oder „bis GOK", das Ur-Gelände.
- */
-function _schuettungSchritte(el, werte, zug) {
-    if (!el?.globalId || zug.length < 3) return null;
-    const umriss = _mitNn(zug, el.hoehenversatz ?? 0);
-    if (!umriss) return null;
-    if (werte?.ziel === 'ur') {
-        return _gelaendeSchritte(el, [{ art: 'schuettung', parameter: { umriss, ziel: 'ur' } }], { titel: 'Auffüllen bis GOK' });
-    }
-    const mass = Number(werte?.mass);
-    if (!Number.isFinite(mass) || mass <= 0) return null;
-    const n = Number(werte?.neigung);
-    return _gelaendeSchritte(el, [{ art: 'schuettung', parameter: {
-        umriss, ziel: 'hoehe',
-        hoehe: Math.round((_mittelY(umriss) + mass) * 1000) / 1000,
-        neigung: Number.isFinite(n) && n > 0 ? n : null,
-    } }], { titel: 'Auffüllen' });
-}
 
 /**
  * EIN KNICKPUNKT EINER OPERATION (Teil XXI, P5) — {op, feld, index, punkt}.
@@ -805,6 +880,51 @@ function _bauwerksgrubeSchritte(el, werte) {
     });
 }
 
+/**
+ * Ein GELÄNDEWERKZEUG aus seiner Operation (Teil XXIII, A6).
+ *
+ * Das Muster folgt aus der Wirkfläche der Operation: ein RING wird als Umriss
+ * gezeichnet (≥ 3 Punkte), alles andere als Zug (≥ 2). Felder, Vorbelegung
+ * und die Übersetzung in Operationen stehen am Eintrag (`werkzeug`); hier
+ * bleibt die EINE Operation „Gelände formen" (`_gelaendeSchritte`): jede
+ * Anwendung ein eigener Vorgang im Erdbau-Stapel.
+ */
+export function formwerkzeugFuer(art, op = GELAENDE_OPS[art]) {
+    const w = op?.werkzeug;
+    if (!w) return null;
+    const ring = op.wirkflaeche?.form === 'ring';
+    const mindestPunkte = ring ? 3 : 2;
+    return {
+        id: w.id, titel: w.titel, icon: w.icon,
+        gruppe: 'gelaende', bauform: 'hoehenfeld', art: 'erzeugt',
+        eingabe: ring ? 'umriss' : 'zug', mindestPunkte,
+        operation: art,
+        felder: w.felder,
+        vorbelegung: (el) => w.vorbelegung?.(el) ?? {},
+        // Die Punkte liegen AUF dem Gelände (Teil XIV).
+        hoehenAus: 'gelaende',
+        ...(w.nachZug ? { nachZug: (el, zug) => w.nachZug(zug, { versatz: el?.hoehenversatz ?? 0 }) } : {}),
+        anwenden: (el, werte, { zug = [] } = {}) => {
+            if (!el?.globalId || zug.length < mindestPunkte) return null;
+            const r = w.ausEingabe(werte, zug, { versatz: el.hoehenversatz ?? 0 });
+            return r ? _gelaendeSchritte(el, r.ops, { titel: r.titel, auflockerung: r.auflockerung ?? null }) : null;
+        },
+    };
+}
+
+/** Alle Geländewerkzeuge, in der Reihenfolge ihres `rang`. */
+function formwerkzeuge(ops = GELAENDE_OPS) {
+    return Object.entries(ops)
+        .filter(([, op]) => op?.werkzeug)
+        .sort(([, a], [, b]) => (a.werkzeug.rang ?? 99) - (b.werkzeug.rang ?? 99))
+        .map(([art, op]) => formwerkzeugFuer(art, op));
+}
+
+/** Setzer-Deklarationen werden Werkzeuge; alles andere bleibt, wie es geschrieben ist (A6). */
+function _ausDaten(liste) {
+    return liste.map(b => (b.setzt ? werkzeugAusSetzer(b) : b));
+}
+
 /** Aussparung (G7): Subjekt = Bauwerkskörper, Werkzeug = eigener Körper aus dem Subjekt-Kontext. */
 function _aussparungSchritte(el, werte) {
     if (!el?.globalId) return null;
@@ -825,7 +945,7 @@ function _aussparungSchritte(el, werte) {
     ];
 }
 
-export const BEARBEITUNGEN = Object.freeze([
+export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // NUR REZEPTE, DIE AUS EINEM ZUG BAUEN (2026-09-17). „Gelände zeichnen"
     // stand hier, weil es sich aus dem Rezept-Register von selbst ergab — und
     // war ein toter Knopf: `gelaende` hat `baue: null` (es baut mit
@@ -972,8 +1092,7 @@ export const BEARBEITUNGEN = Object.freeze([
             name: 'kg',
             rueckfall: { titel: 'Kostengruppe (DIN 276)', typ: 'auswahl', optionen: _kgOptionen(), leerErlaubt: true },
         }],
-        vorbelegung: (el) => ({ kg: el?.stand?.kg ?? null }),
-        anwenden: (el, werte) => ({ art: 'kg', globalId: el.globalId, nachher: werte.kg || null }),
+        setzt: { art: 'merkmal', journal: 'kg', feld: 'kg' },
     },
     {
         /**
@@ -1024,20 +1143,7 @@ export const BEARBEITUNGEN = Object.freeze([
         // verschoben; ohne diese Umrechnung stünde im Feld „−17,4" statt
         // „301,0", und wer die echte Sohlhöhe einträgt, verschöbe sein Bauteil
         // um mehrere hundert Meter. Die Umrechnung steht in Hoehenbezug.js.
-        vorbelegung: (el) => ({
-            hoehe: _rundeM(nnAusWelt(el?.bezugshoehe ?? el?.anker?.y ?? 0, el?.hoehenversatz ?? 0)),
-        }),
-        anwenden: (el, werte) => {
-            const anker = el?.anker ?? null;
-            if (!anker) return null;
-            // Der Anker ist die Hüllenmitte, die Bezugshöhe die Unterkante.
-            // Verschoben wird um die DIFFERENZ, nicht auf den Wert — sonst
-            // säße die Mitte auf der Sohle und das Bauteil läge zu hoch.
-            const jetzt = el?.bezugshoehe ?? anker.y;
-            const ziel = weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0);
-            return { art: 'lage', globalId: el.globalId,
-                     nachher: { x: anker.x, y: anker.y + (ziel - jetzt), z: anker.z } };
-        },
+        setzt: { art: 'hoehe', feld: 'hoehe' },
     },
     {
         /**
@@ -1070,13 +1176,9 @@ export const BEARBEITUNGEN = Object.freeze([
             ausTypprofil: 'profilGroesse',
             rueckfall: { titel: 'Querschnittsgröße', typ: 'zahl' },
         }],
-        vorbelegung: (el) => ({ groesse: el?.stand?.profilGroesse ?? null }),
-        anwenden: (el, werte) => ({
-            art: 'parametrik', globalId: el.globalId,
-            // Karte Rolle → Wert: an einem Bauteil gelten mehrere Masse
-            // nebeneinander (siehe `falte` in useAenderungen).
-            nachher: { profilGroesse: werte.groesse },
-        }),
+        // Karte Rolle → Wert: an einem Bauteil gelten mehrere Masse
+        // nebeneinander (siehe `falte` in useAenderungen).
+        setzt: { art: 'mass', werte: [{ feld: 'groesse', rolle: 'profilGroesse' }] },
     },
     {
         /**
@@ -1104,11 +1206,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 { wert: 'kreis', titel: 'Kreis' }, { wert: 'trapez', titel: 'Trapez' },
             ] },
         }],
-        vorbelegung: (el) => ({ profilform: el?.stand?.profilform ?? null }),
-        anwenden: (el, werte) => ({
-            art: 'parametrik', globalId: el.globalId,
-            nachher: { profilform: werte.profilform },
-        }),
+        setzt: { art: 'mass', werte: [{ feld: 'profilform', rolle: 'profilform' }] },
     },
     {
         /**
@@ -1137,11 +1235,7 @@ export const BEARBEITUNGEN = Object.freeze([
             ausTypprofil: 'dicke',
             rueckfall: { titel: 'Stärke', einheit: 'm', typ: 'zahl' },
         }],
-        vorbelegung: (el) => ({ dicke: el?.stand?.dicke ?? null }),
-        anwenden: (el, werte) => ({
-            art: 'parametrik', globalId: el.globalId,
-            nachher: { dicke: werte.dicke },
-        }),
+        setzt: { art: 'mass', werte: [{ feld: 'dicke', rolle: 'dicke' }] },
     },
     {
         /**
@@ -1181,24 +1275,11 @@ export const BEARBEITUNGEN = Object.freeze([
             { name: 'ende', ausTypprofil: 'sohlhoeheEnde',
               rueckfall: { titel: 'Sohle Ende', einheit: 'm NN', typ: 'zahl' } },
         ],
-        vorbelegung: (el) => {
-            // Was GILT: erst die Festlegung, sonst die Achse aus der Datei.
-            const v = el?.hoehenversatz ?? 0;
-            const a = el?.achse ?? null;
-            return {
-                anfang: _rundeM(el?.stand?.sohlhoeheAnfang ?? (a ? nnAusWelt(a.anfang.y, v) : 0)),
-                ende:   _rundeM(el?.stand?.sohlhoeheEnde   ?? (a ? nnAusWelt(a.ende.y, v)   : 0)),
-            };
-        },
-        anwenden: (el, werte) => {
-            const anfang = Number(werte.anfang);
-            const ende = Number(werte.ende);
-            if (!Number.isFinite(anfang) || !Number.isFinite(ende)) return null;
-            return {
-                art: 'parametrik', globalId: el.globalId,
-                nachher: { sohlhoeheAnfang: anfang, sohlhoeheEnde: ende },
-            };
-        },
+        // Was GILT: erst die Festlegung, sonst die Achse aus der Datei (m NN).
+        setzt: { art: 'mass', werte: [
+            { feld: 'anfang', rolle: 'sohlhoeheAnfang', zahl: true, runden: true, sonst: { welt: 'achse.anfang', leer: 0 } },
+            { feld: 'ende', rolle: 'sohlhoeheEnde', zahl: true, runden: true, sonst: { welt: 'achse.ende', leer: 0 } },
+        ] },
     },
     {
         /**
@@ -1292,15 +1373,9 @@ export const BEARBEITUNGEN = Object.freeze([
             name: 'deckel', ausTypprofil: 'deckelhoehe',
             rueckfall: { titel: 'Deckelhöhe', einheit: 'm NN', typ: 'zahl' },
         }],
-        vorbelegung: (el) => ({
-            deckel: _rundeM(el?.stand?.deckelhoehe
-                ?? nnAusWelt(el?.oberkante ?? el?.anker?.y ?? 0, el?.hoehenversatz ?? 0)),
-        }),
-        anwenden: (el, werte) => {
-            const d = Number(werte.deckel);
-            if (!Number.isFinite(d) || !el?.globalId) return null;
-            return { art: 'parametrik', globalId: el.globalId, nachher: { deckelhoehe: d } };
-        },
+        setzt: { art: 'mass', werte: [
+            { feld: 'deckel', rolle: 'deckelhoehe', zahl: true, runden: true, sonst: { welt: 'oberkante' } },
+        ] },
     },
     {
         /**
@@ -1345,14 +1420,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 ],
             },
         }],
-        vorbelegung: (el) => ({ richtung: el?.stand?.fliessrichtung ?? 'wie_geliefert' }),
-        anwenden: (el, werte) => {
-            if (!el?.globalId) return null;
-            return {
-                art: 'parametrik', globalId: el.globalId,
-                nachher: { fliessrichtung: werte.richtung === 'umgekehrt' ? 'umgekehrt' : 'wie_geliefert' },
-            };
-        },
+        setzt: { art: 'mass', werte: [{ feld: 'richtung', rolle: 'fliessrichtung', werte: ['wie_geliefert', 'umgekehrt'] }] },
     },
     {
         /**
@@ -1837,8 +1905,7 @@ export const BEARBEITUNGEN = Object.freeze([
         mindestGuete: 'unbekannt',
         art: 'geloescht',
         felder: [],
-        vorbelegung: () => ({}),
-        anwenden: (el) => (el?.globalId ? { art: 'geloescht', globalId: el.globalId, nachher: true } : null),
+        setzt: { art: 'merkmal', journal: 'geloescht', wert: true },
     },
     {
         /**
@@ -1957,6 +2024,47 @@ export const BEARBEITUNGEN = Object.freeze([
                 name: plan.name ?? '',
                 globalId: el.globalId,
                 parameter: drehePunktliste(plan.parameter, w),
+            });
+        },
+    },
+    {
+        /**
+         * Spiegeln — ein EIGENES Bauteil an einer Achse durch seinen
+         * Schwerpunkt (Teil XXIII, A6; im Tiefbau täglich: die Schachtreihe
+         * auf der anderen Strassenseite). Wahlweise als KOPIE mit neuer
+         * Kennung — dann bleibt das Original stehen. Wie beim Drehen nur
+         * eigenes: ein geliefertes Bauteil hat keinen Bauplan (Gesetz 8).
+         */
+        id: 'spiegeln',
+        titel: 'Spiegeln',
+        icon: 'route',
+        gruppe: 'lage',
+        bauform: ['punkt', 'linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [
+            { name: 'achse', titel: 'Spiegelachse (0° = Ost–West)', einheit: '°', typ: 'zahl', min: -360, max: 360, vorgabe: 0 },
+            { name: 'kopie', titel: 'Ergebnis', typ: 'auswahl', optionen: [
+                { wert: 'nein', titel: 'Bauteil spiegeln' },
+                { wert: 'ja', titel: 'gespiegelte Kopie, Original bleibt' },
+            ] },
+        ],
+        vorbelegung: () => ({ achse: 0, kopie: 'nein' }),
+        anwenden: (el, werte) => {
+            const plan = el?.stand?.bauplan;
+            const punkte = plan?.parameter?.punkte;
+            const w = Number(werte.achse);
+            if (!plan?.rezept || !el?.globalId || !Array.isArray(punkte) || !Number.isFinite(w)) return null;
+            // Ein Punkt (Pfosten) gespiegelt am eigenen Schwerpunkt bleibt, wo er ist.
+            if (punkte.length < 2) return null;
+            const kopie = werte.kopie === 'ja';
+            return erzeugtEintrag({
+                rezept: plan.rezept,
+                kategorie: plan.kategorie,
+                name: kopie && plan.name ? `${plan.name} (gespiegelt)` : (plan.name ?? ''),
+                globalId: kopie ? null : el.globalId,
+                parameter: spiegelePunktliste(plan.parameter, w),
             });
         },
     },
@@ -2591,16 +2699,7 @@ export const BEARBEITUNGEN = Object.freeze([
             { name: 'muster', titel: 'Muster', typ: 'text' },
             { name: 'beginnBei', titel: 'Beginnt bei', typ: 'zahl', min: 0 },
         ],
-        vorbelegung: (el) => ({ muster: el?.name ?? '', beginnBei: 1 }),
-        anwenden: (el, werte, { nummer = 0 } = {}) => {
-            if (!el?.globalId) return null;
-            const name = nameAusMuster(werte.muster, {
-                nummer: (Number(werte.beginnBei) || 0) + nummer,
-                alt: el.name ?? '',
-            });
-            if (!name) return null;
-            return { art: 'bezeichnung', globalId: el.globalId, nachher: name };
-        },
+        setzt: { art: 'benennen', muster: 'muster', beginn: 'beginnBei' },
     },
     {
         /**
@@ -2665,10 +2764,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 optionen: MASSNAHMEN.map(m => ({ wert: m.wert, titel: m.titel })),
             },
         }],
-        vorbelegung: (el) => ({ massnahme: el?.stand?.massnahme ?? null }),
-        anwenden: (el, werte) => (el?.globalId
-            ? { art: 'massnahme', globalId: el.globalId, nachher: werte.massnahme || null }
-            : null),
+        setzt: { art: 'merkmal', journal: 'massnahme', feld: 'massnahme' },
     },
     {
         /**
@@ -2778,207 +2874,9 @@ export const BEARBEITUNGEN = Object.freeze([
             ];
         },
     },
-    {
-        /**
-         * Gerinne einschneiden (Stufe 15) — die erste Geländeoperation.
-         *
-         * Subjekt ist das GELÄNDE (Bauform hoehenfeld), die Achse wird im
-         * Lageplan gezeichnet (eingabe 'zug' — dieselbe Maschinerie wie
-         * „Trasse ändern"). Sohlhöhen sind ABSOLUTE NN-Werte, die Operation
-         * ist schneidend und damit idempotent; gerechnet wird sie nie hier,
-         * sondern beim Neuaufbau aus dem Journal (services/gelaende/).
-         */
-        id: 'gerinne-einschneiden',
-        titel: 'Gerinne einschneiden',
-        icon: 'gerinne',
-        gruppe: 'gelaende',
-        bauform: 'hoehenfeld',
-        art: 'erzeugt',
-        eingabe: 'zug',
-        mindestPunkte: 2,
-        felder: [
-            { name: 'sohleAnfang', titel: 'Sohle am Anfang', einheit: 'm NN', typ: 'zahl' },
-            { name: 'sohleEnde', titel: 'Sohle am Ende', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
-            { name: 'sohlbreite', titel: 'Sohlbreite', einheit: 'm', typ: 'zahl', vorgabe: 1 },
-            { name: 'boeschung', titel: 'Böschung 1 : n', typ: 'zahl', vorgabe: 1.5 },
-        ],
-        vorbelegung: () => ({ sohlbreite: 1, boeschung: 1.5 }),
-        // Teil XIV: der Zug liegt AUF dem Gelände — die Höhen kommen aus dem
-        // Sampler, und die Sohlen werden daraus vorbelegt (1 m unter Gelände).
-        hoehenAus: 'gelaende',
-        nachZug: (el, zug) => {
-            const v = el?.hoehenversatz ?? 0;
-            const a = zug?.[0]?.y, e = zug?.[zug.length - 1]?.y;
-            const nn = (y) => Math.round((nnAusWelt(y, v) - 1.0) * 100) / 100;
-            return {
-                ...(Number.isFinite(a) ? { sohleAnfang: nn(a) } : {}),
-                ...(Number.isFinite(e) ? { sohleEnde: nn(e) } : {}),
-            };
-        },
-        anwenden: (el, werte, { zug = [] } = {}) => {
-            if (!el?.globalId || zug.length < 2) return null;
-            if (!Number.isFinite(Number(werte?.sohleAnfang))) return null;
-            return _gelaendeSchritte(el, [{
-                art: 'gerinne',
-                parameter: {
-                    achse: zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 })),
-                    sohlbreite: Number(werte.sohlbreite) || 0,
-                    boeschung: Number(werte.boeschung) || 1.5,
-                    sohleAnfang: Number(werte.sohleAnfang),
-                    sohleEnde: Number.isFinite(Number(werte.sohleEnde))
-                        ? Number(werte.sohleEnde) : Number(werte.sohleAnfang),
-                },
-            }], { titel: 'Gerinne' });
-        },
-    },
-    {
-        /**
-         * AUSHEBEN (E1, Teil XX) — Umriss AUF dem Gelände zeichnen, Tiefe angeben.
-         *
-         * DER UMRISS IST DIE OBERKANTE (Teil XX, Fabio 2026-09-10): man tippt,
-         * was man sieht — die Kante der Grube auf dem Gelände. Die Böschung
-         * fällt nach INNEN bis zur Sohle (mittlere Randhöhe − Tiefe, absolut
-         * gespeichert). Bis hierher war der Umriss die Sohle, und die
-         * gezeichneten Ecken lagen nach dem Übernehmen zwei Meter tiefer.
-         *
-         * DIE DATEN BLEIBEN. Nichts am gelieferten Gelände wird verändert oder
-         * gelöscht: es wird ausgeblendet (und ist jederzeit wieder
-         * einzublenden), und die Subtraktion entsteht als EIGENES IFC-Element
-         * — `IfcEarthworksCut`, der Körper zwischen altem und neuem Gelände.
-         * Das gelieferte Modell des Planers bleibt Bit für Bit, wie es kam
-         * (Gesetz 8, ISO 19650).
-         */
-        id: 'graben-ausheben',
-        titel: 'Ausheben',
-        icon: 'ausheben',
-        gruppe: 'gelaende',
-        bauform: 'hoehenfeld',
-        art: 'erzeugt',
-        eingabe: 'umriss',
-        mindestPunkte: 3,
-        felder: [
-            { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
-            { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
-            AUFLOCKERUNG_FELD,
-        ],
-        vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: AUFLOCKERUNG.vorgabe }),
-        hoehenAus: 'gelaende',
-        anwenden: (el, werte, { zug = [] } = {}) => _grubeSchritte(el, werte, zug),
-    },
-    {
-        /**
-         * AUFFÜLLEN (E1, Teil XX) — die umgedrehte Grube.
-         *
-         * Der Umriss ist der BÖSCHUNGSFUSS auf dem Gelände; die Böschung steigt
-         * nach innen bis zur Zielhöhe (mittlere Randhöhe + Höhe) — oder es wird
-         * „bis GOK" verfüllt: auf das Ur-Gelände, nur auffüllen (Rückverfüllung
-         * einer Grube oder eines Grabens). Wer die KRONE zeichnen und die
-         * Böschung nach aussen laufen lassen will, nimmt „Planum herstellen".
-         * Ergebnis ist der `IfcEarthworksFill` (EMBANKMENT, bis GOK BACKFILL).
-         */
-        id: 'auffuellen',
-        titel: 'Auffüllen',
-        icon: 'auffuellen',
-        gruppe: 'gelaende',
-        bauform: 'hoehenfeld',
-        art: 'erzeugt',
-        eingabe: 'umriss',
-        mindestPunkte: 3,
-        felder: [
-            { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
-                { wert: 'hoehe', titel: 'Höhe über dem Rand' },
-                { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
-            ] },
-            { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
-            { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
-        ],
-        vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
-        hoehenAus: 'gelaende',
-        anwenden: (el, werte, { zug = [] } = {}) => _schuettungSchritte(el, werte, zug),
-    },
-    {
-        /**
-         * BÖSCHUNG AN EINER KANTE (E1, Teil XX) — eine OFFENE Linie.
-         *
-         * Fabio (2026-09-10): „eigentlich dasselbe wie Auffüllen?" — als Umriss
-         * war sie das. Jetzt zeichnet man die Böschungskante als Linie (eine
-         * Strassen-, eine Plateaukante); jeder Knick trägt seine Höhe
-         * (Gelände + Kantenhöhe, später per Griff ziehbar), und auf der
-         * gewählten Seite läuft die Böschung 1:n bis zum Gelände — Einschnitt
-         * oder Damm ergibt sich. Die andere Seite bleibt, wie sie ist.
-         */
-        id: 'boeschung-anschliessen',
-        titel: 'Böschung an Kante',
-        icon: 'boeschung',
-        gruppe: 'gelaende',
-        bauform: 'hoehenfeld',
-        art: 'erzeugt',
-        eingabe: 'zug',
-        mindestPunkte: 2,
-        felder: [
-            { name: 'kante', titel: 'Kantenhöhe über Gelände', einheit: 'm', typ: 'zahl', min: -30, max: 30, vorgabe: 1 },
-            { name: 'seite', titel: 'Böschung auf der Seite', typ: 'auswahl', optionen: [
-                { wert: 'rechts', titel: 'rechts der Zeichenrichtung' },
-                { wert: 'links', titel: 'links der Zeichenrichtung' },
-            ] },
-            { name: 'neigung', titel: 'Böschung 1 : n', typ: 'zahl', min: 0.1, max: 10, vorgabe: 1.5 },
-        ],
-        vorbelegung: () => ({ kante: 1, seite: 'rechts', neigung: 1.5 }),
-        hoehenAus: 'gelaende',
-        anwenden: (el, werte, { zug = [] } = {}) => {
-            if (!el?.globalId || zug.length < 2) return null;
-            const neigung = Number(werte?.neigung);
-            if (!(neigung > 0)) return null;
-            const kante = Number(werte?.kante);
-            const linie = _mitNn(zug, el.hoehenversatz ?? 0, Number.isFinite(kante) ? kante : 0);
-            if (!linie) return null;
-            return _gelaendeSchritte(el, [{ art: 'boeschungLinie', parameter: {
-                linie, seite: werte?.seite === 'links' ? 'links' : 'rechts', neigung,
-            } }], { titel: 'Böschung' });
-        },
-    },
-    {
-        /**
-         * Planum herstellen — Umriss zeichnen, Sollhöhe setzen; mit
-         * Böschungsneigung schliesst gleich der Anschluss ans gewachsene
-         * Gelände an (zwei Operationen, EIN Eintrag).
-         */
-        id: 'planum-herstellen',
-        titel: 'Planum herstellen',
-        icon: 'planum',
-        gruppe: 'gelaende',
-        bauform: 'hoehenfeld',
-        art: 'erzeugt',
-        eingabe: 'umriss',
-        mindestPunkte: 3,
-        felder: [
-            { name: 'hoehe', titel: 'Planumshöhe', einheit: 'm NN', typ: 'zahl' },
-            { name: 'neigung', titel: 'Böschung 1 : n (leer = ohne Anschluss)', typ: 'zahl', leerErlaubt: true },
-        ],
-        vorbelegung: (el) => ({ hoehe: el?.bezugshoehe ?? null }),
-        hoehenAus: 'gelaende',
-        // Das Planum startet auf der MITTLEREN Geländehöhe des Umrisses —
-        // wer tiefer will, tippt es; wer den Wert schon getippt hat, behält ihn.
-        nachZug: (el, zug) => {
-            const v = el?.hoehenversatz ?? 0;
-            const ys = (zug ?? []).map(p => p?.y).filter(Number.isFinite);
-            if (!ys.length) return {};
-            const mittel = ys.reduce((a, b) => a + b, 0) / ys.length;
-            return { hoehe: Math.round(nnAusWelt(mittel, v) * 10) / 10 };
-        },
-        anwenden: (el, werte, { zug = [] } = {}) => {
-            if (!el?.globalId || zug.length < 3) return null;
-            const hoehe = Number(werte?.hoehe);
-            if (!Number.isFinite(hoehe)) return null;
-            const umriss = zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
-            const ops = [{ art: 'planum', parameter: { umriss, hoehe } }];
-            const n = Number(werte?.neigung);
-            if (Number.isFinite(n) && n > 0) {
-                ops.push({ art: 'boeschung', parameter: { umriss, hoehe, neigung: n } });
-            }
-            return _gelaendeSchritte(el, ops, { titel: 'Planum' });
-        },
-    },
+    // Die GELÄNDEWERKZEUGE entstehen aus ihrer Operation (Teil XXIII, A6):
+    // Muster (Zug oder Umriss) + `GELAENDE_OPS[art]` + dessen Felder.
+    ...formwerkzeuge(),
     {
         id: 'din277-setzen',
         mehrfach: true,
@@ -2995,8 +2893,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 optionen: Object.values(DIN277_CLASSES).map(k => ({ wert: k.code, titel: `${k.code} — ${k.label}` })),
             },
         }],
-        vorbelegung: (el) => ({ din277: el?.stand?.din277 ?? null }),
-        anwenden: (el, werte) => ({ art: 'din277', globalId: el.globalId, nachher: werte.din277 || null }),
+        setzt: { art: 'merkmal', journal: 'din277', feld: 'din277' },
     },
     {
         /**
@@ -3048,10 +2945,12 @@ export const BEARBEITUNGEN = Object.freeze([
                     .map(([wert, b]) => ({ wert, titel: `${b.titel} — ${b.beschreibung}` })),
             },
         }],
-        vorbelegung: (el) => ({ bauform: el?.stand?.bauformAusnahme ?? null }),
-        anwenden: (el, werte) => ({ art: 'bauform', globalId: el.globalId, nachher: werte.bauform || null }),
+        setzt: { art: 'merkmal', journal: 'bauform', feld: 'bauform', standFeld: 'bauformAusnahme' },
     },
-]);
+    // Die Setzer der Rezepte (A6): je Feld mit `setzbar` eins — Muster
+    // Formular, Operation „Parameter", Katalogeintrag das Rezept.
+    ...Object.values(REZEPTE).flatMap(setzerFuerRezept),
+]));
 
 // ── Auswahl ─────────────────────────────────────────────────────────────────
 
@@ -3071,7 +2970,10 @@ export function werkzeugKatalog() {
         const zusatz = registrierte().filter(r => typeof r.baue === 'function').map(zeichenBearbeitung);
         let hinter = -1;
         BEARBEITUNGEN.forEach((b, k) => { if (b.gruppe === 'erzeugen') hinter = k; });
-        _katalog = { stand, liste: Object.freeze([...BEARBEITUNGEN.slice(0, hinter + 1), ...zusatz, ...BEARBEITUNGEN.slice(hinter + 1)]) };
+        // Und ihre Setzer (A6) — hinten, bei den übrigen.
+        const setzer = registrierte().flatMap(setzerFuerRezept);
+        _katalog = { stand, liste: Object.freeze([...BEARBEITUNGEN.slice(0, hinter + 1), ...zusatz,
+                                                  ...BEARBEITUNGEN.slice(hinter + 1), ...setzer]) };
     }
     return _katalog.liste;
 }
@@ -3114,6 +3016,8 @@ export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(
     return katalog.filter((b) => {
         // Teil XVI: manche Werkzeuge gibt es nur an EIGENEN Bauteilen (Bauplan).
         if (b.nurEigene && !eigenes) return false;
+        // Der Setzer eines Rezeptfelds (A6) gilt nur für Bauteile DIESES Rezepts.
+        if (b.nurRezept && rezept?.id !== b.nurRezept) return false;
         // DIE ROLLE IST DER ZWEITE FILTER — und der eigentlich skalierbare.
         //
         // `bauform` fragt: welche FORM hat das Bauteil? Davon gibt es acht.
