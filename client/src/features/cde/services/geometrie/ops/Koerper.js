@@ -26,10 +26,9 @@
  * Alle Flächen zeigen NACH AUSSEN (three: +Y ist oben). Die Wicklungen sind
  * unten je Kante hergeleitet — wer eine ändert, prüft `closed` im Test.
  */
-import { diagonale00_11, rasterKnoten } from '../../geometry/SurfaceOps.js';
-import { meshVolume } from '../../geometry/MeshOps.js';
-import { gleicherBezug } from '../../gelaende/Operationen.js';
-import { rasterResample } from './Raster.js';
+import { diagonale00_11, rasterKnoten } from '../SurfaceOps.js';
+import { meshVolume } from '../MeshOps.js';
+import { gleicherBezug, rasterResample } from './Raster.js';
 
 /** Mindestdicke am Rand — über der 1-mm-Quantisierung von `meshVolume`. */
 export const DUENN = 0.005;

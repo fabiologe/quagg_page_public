@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { koerperZwischenRastern, DUENN } from '../services/geometrie/ops/Koerper.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
 import { gerinne, planum, massenAus } from '../services/gelaende/Operationen.js';
-import { meshVolume } from '../services/geometry/MeshOps.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 
 /** Welliges, geneigtes Gelände 40 × 40 m als Dreiecke — kein Sonderfall. */
 function gelaende() {

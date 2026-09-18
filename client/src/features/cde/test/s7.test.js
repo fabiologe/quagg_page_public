@@ -62,13 +62,16 @@ describe('Das Fachmodell sieht die Lage (setzeJournalStand({lagen}))', () => {
         expect(e.achsenVon('m1').get(7).anfang).toEqual({ x: 0, y: 5, z: 0 });
     });
     it('leseAchsen legt die ROHEN Achsen ab und leitet die wirksamen daraus ab (Textwächter)', () => {
-        const src = lies('services/IfcEngine.js');
-        const ab = src.indexOf('async leseAchsen()');
-        const rumpf = src.slice(ab, src.indexOf('\n    }\n', ab));
-        expect(rumpf).toContain('this._achsenRoh.set(api.fragmentModelId, karte)');
-        expect(rumpf).toContain('this._knotenRoh.set(api.fragmentModelId, knoten)');
-        expect(rumpf).toContain('this._lagenAnwenden()');
-        expect(rumpf).not.toMatch(/this\._achsen\.set\(/);
+        // Seit Teil XXIII A8 im IFC-Leser (`ifcleser/Achsen.js`, Engine-Diät B13).
+        const src = lies('services/ifcleser/Achsen.js');
+        const ab = src.indexOf('export async function leseAchsen(engine)');
+        const rumpf = src.slice(ab, src.indexOf('\n}\n', ab));
+        expect(rumpf).toContain('engine._achsenRoh.set(api.fragmentModelId, karte)');
+        expect(rumpf).toContain('engine._knotenRoh.set(api.fragmentModelId, knoten)');
+        expect(rumpf).toContain('engine._lagenAnwenden()');
+        expect(rumpf).not.toMatch(/engine\._achsen\.set\(/);
+        // Die Engine leitet weiter.
+        expect(lies('services/IfcEngine.js')).toMatch(/leseAchsen\(\.\.\.a\) \{ return _ausgelagert_leseAchsen\(this, \.\.\.a\); \}/);
     });
     it('der Viewer reicht die Lagen als Δ gegen den eingefrorenen Lieferstand (Textwächter)', () => {
         const v = lies('components/IfcViewer.vue');

@@ -36,7 +36,7 @@
  */
 
 import { formeNach, verschiebeOperationen } from './gelaende/Operationen.js';
-import { dreieckeAusRaster, dreieckeMitFlicken } from './geometry/SurfaceOps.js';
+import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
@@ -44,13 +44,15 @@ import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
 import { registriertNach } from './rezept/Register.js';
 import { symbolNach } from './PlanSymbols.js';
 import { LINIEN_BAND_M, dreiecksGeometrie, punkteAus, rohrKoerper } from './rezept/Geometriebau.js';
-import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
+import { versetztePunkte, ringFlaeche } from './geometrie/hilfen.js';
 // Default-Import: der benannte lief im Dev-Server und brach im vite build
 // (CJS-Interop) — derselbe Weg wie in IfcShapeOutlines.
 import polygonClipping from 'polygon-clipping';
-import { erdbauStapelVon, quellenVon, urGelaendeVon } from './ableitung/Bezuege.js';
+import { abhaengige, erdbauStapelVon, quellenVon, urGelaendeVon } from './ableitung/Bezuege.js';
 
-export { quellenVon };
+// Die Beziehungen zwischen Teilen sind Schnittstelle des Katalogs — die Oberfläche
+// fragt hier, nicht in `ableitung/` (Teil XXIII A8, Wächter W1b).
+export { abhaengige, quellenVon };
 // Die Geometrie-Bausteine leben seit A4 in `rezept/Geometriebau.js` — die
 // Schnittstelle dieses Moduls bleibt (Leitplanke 3).
 export { LINIEN_BAND_M, punkteAus, rohrKoerper };

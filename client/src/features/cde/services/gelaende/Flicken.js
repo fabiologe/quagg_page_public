@@ -23,7 +23,7 @@
  * Nichts davon wird gespeichert (Gesetz 5): der Flicken ist gerechnet wie die
  * Anzeige selbst.
  */
-import { flickenRaster, hoeheImRaster, rasterKnoten } from '../geometry/SurfaceOps.js';
+import { flickenRaster, hoeheImRaster, rasterKnoten } from '../geometrie/SurfaceOps.js';
 import { feinheitFuer, formeNach, wirkbereichVon } from './Operationen.js';
 
 /** Weltbox → grobe Zellbox (Knotenindizes), nach aussen auf ganze Zellen. */

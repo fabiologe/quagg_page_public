@@ -3,7 +3,7 @@
 // (das IfcCivilElement-Beispiel) liefert nach der Ableitung Böschungsschraffur.
 
 import { describe, expect, it } from 'vitest'
-import { deriveSurface } from '../services/geometry/SurfaceOps'
+import { deriveSurface } from '../services/geometrie/SurfaceOps'
 import { makeHeightSampler } from '../services/TerrainMesh'
 import { computeSlopeHatch } from '../services/SlopeHatch'
 import { computeContourLines } from '../services/ContourLines'

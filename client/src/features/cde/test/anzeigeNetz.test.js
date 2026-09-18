@@ -13,8 +13,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import { heightfieldRaster, hoeheImRaster } from '../services/geometry/SurfaceOps.js';
-import { makeHeightSampler } from '../services/geometry/HeightSampler.js';
+import { heightfieldRaster, hoeheImRaster } from '../services/geometrie/SurfaceOps.js';
+import { makeHeightSampler } from '../services/geometrie/HeightSampler.js';
 import { formeNach, wirkbereichVon } from '../services/gelaende/Operationen.js';
 import { anzeigeFlicken } from '../services/gelaende/Flicken.js';
 import { anzeigeNetz } from '../services/gelaende/Anzeigenetz.js';

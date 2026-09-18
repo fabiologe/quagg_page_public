@@ -19,8 +19,8 @@ import { neuerAbleitungslauf } from '../services/ableitung/Ableitungslauf.js';
 import { ableitungsSchritte, geometrieAusTeil, rezeptNach } from '../services/Bauteilrezepte.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
-import { makeHeightSampler } from '../services/geometry/HeightSampler.js';
-import { dreieckeAusRaster, dreieckeMitFlicken } from '../services/geometry/SurfaceOps.js';
+import { makeHeightSampler } from '../services/geometrie/HeightSampler.js';
+import { dreieckeAusRaster, dreieckeMitFlicken } from '../services/geometrie/SurfaceOps.js';
 
 /** Ein welliges Gelände als TIN — die Quelle, aus der jedes Raster abgetastet wird. */
 function gelaende() {

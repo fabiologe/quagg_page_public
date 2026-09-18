@@ -11,7 +11,7 @@ import {
     bauformAusNetz, bauformAusSignatur, ebenheit, formsignatur, EBEN, FLACH, LANG, LIEGEND,
 } from '../services/bauform/Formsignatur.js';
 import { box, toPositions } from './fixtures/solidFixtures.js';
-import { meshVolume } from '../services/geometry/MeshOps.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 
 /** Geschlossener Quader x × y (Höhe) × z — über die Fixture, in three-Konvention. */
 function quader(x, y, z) {

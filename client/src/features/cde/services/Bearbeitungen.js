@@ -72,7 +72,7 @@ import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, WANDFORMEN, BODENKLASSEN, GRABENREGELN
 import { hatInnenring, innenEcken, innenFeld, randFuerInnenecke } from './gelaende/Innenecken.js';
 // Die Bauformen, an denen eine Aussparung fachlich geht — DIE Liste des
 // Rezepts, nicht eine Kopie daneben (Gesetz 7).
-import { achsmassAus } from './geometrie/ops/Raster.js';
+import { achsmassAus } from './geometrie/hilfen.js';
 
 import { ACHSBEZUEGE } from './Achsbezug.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';

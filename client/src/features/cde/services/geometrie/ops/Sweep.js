@@ -27,7 +27,7 @@
  * Rein: importiert nur MeshOps (Attest) und earcut.
  */
 import earcut from 'earcut';
-import { meshVolume } from '../../geometry/MeshOps.js';
+import { meshVolume } from '../MeshOps.js';
 
 /** Ab diesem Knickwinkel (Grad) überschneiden sich die Ringe eines Sweeps wahrscheinlich. */
 export const KNICK_WARNUNG_GRAD = 60;

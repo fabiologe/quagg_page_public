@@ -20,7 +20,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { REZEPTE, REZEPT_QUELLEN, baueAusBauplan, istSchreibbar, rezeptNach } from '../services/Bauteilrezepte.js';
 import { EINGEBAUTE_REZEPTE } from '../services/rezept/Eingebaut.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN, rezeptAusDeklaration } from '../services/rezept/Rezeptbau.js';
-import { meshVolume } from '../services/geometry/MeshOps.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 import { ausGruppe, nachId } from '../services/Bearbeitungen.js';

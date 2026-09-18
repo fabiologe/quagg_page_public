@@ -11,7 +11,7 @@
 import { AXIS_CATEGORIES_DEFAULT, polylineLength, polylineGefaellePromille } from './AxisAnnotations.js';
 import { makeHeightSampler } from './TerrainMesh.js';
 import { GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
-import { createGeometryResolver } from './geometry/GeometryResolver.js';
+import { createGeometryResolver } from './ifcleser/GeometryResolver.js';
 import { hoehenversatzAus } from './Koordinaten.js';
 import { buildLaengsschnitt } from './Laengsschnitt.js';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';

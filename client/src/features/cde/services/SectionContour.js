@@ -17,7 +17,7 @@ import * as THREE from 'three';
 // Die Verkettung wohnt seit 2026-09-07 in geometry/Verkettung.js — ohne three,
 // damit der Kernel-Worker (MeshOps → chainSegmentsToPolygons) nicht die
 // ganze Bibliothek lädt. Hier weiter exportiert für die Aufrufer.
-export { chainSegmentsToPolygons, chainSegmentsToPolylines } from './geometry/Verkettung.js';
+export { chainSegmentsToPolygons, chainSegmentsToPolylines } from './geometrie/Verkettung.js';
 
 /**
  * Intersect a single triangle (3 world-space vertices) with a THREE.Plane.

@@ -7,7 +7,7 @@ import { DEFAULT_LINE_STYLES }         from './DefaultLineStyles.js';
 import { simplifyOutlines }            from './PolygonSimplify.js';
 import { styleToLegacy }               from './VectorStyleEngine.js';
 import { GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
-import { createGeometryResolver }      from './geometry/GeometryResolver.js';
+import { createGeometryResolver }      from './ifcleser/GeometryResolver.js';
 import { computeSlopeHatch }           from './SlopeHatch.js';
 import { computeContourLines }         from './ContourLines.js';
 import { extractAxisPolylines, formatGefaelle, AXIS_CATEGORIES_DEFAULT } from './AxisAnnotations.js';

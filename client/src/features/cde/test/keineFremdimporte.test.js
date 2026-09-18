@@ -62,12 +62,13 @@ describe('Die CDE bleibt für sich', () => {
         expect(befunde).toEqual([]);
     });
 
-    it('der Geometrie-Kernel importiert nur nach unten: eigene Ops, geometry/, gelaende/, tinte/, npm', () => {
+    it('der Geometrie-Kernel importiert nur nach unten: eigene Dateien, gelaende/, tinte/, npm', () => {
         // Teil XIV, G1: `services/geometrie/` ist die reine Rechenschicht —
         // kein Journal, keine Engine, kein three, kein Vue. Dieselben Dateien
         // laufen im Worker und in vitest ohne jsdom. Erlaubt sind die
-        // Leseschicht (`geometry/`), die Raster-Ops (`gelaende/Operationen.js`,
-        // Kernel-Material aus der Zeit vor dem Kernel) und die neutrale Schicht.
+        // Raster-Ops (`gelaende/Operationen.js`, Kernel-Material aus der Zeit
+        // vor dem Kernel) und die neutrale Schicht. Seit Teil XXIII A8 gibt es
+        // `geometry/` nicht mehr: SurfaceOps, MeshOps & Co. SIND der Kern.
         const kernel = join(WURZEL, 'services/geometrie');
         const befunde = [];
         for (const datei of quellDateien(kernel)) {
@@ -77,7 +78,6 @@ describe('Die CDE bleibt für sich', () => {
                 const ziel = relativ ? resolve(dirname(datei), pfad) : null;
                 const erlaubt = pfad.startsWith('@/services/tinte/')
                     || (relativ && (ziel.startsWith(kernel)
-                        || ziel.startsWith(join(WURZEL, 'services/geometry'))
                         || ziel.startsWith(join(WURZEL, 'services/gelaende'))))
                     || (!relativ && !pfad.startsWith('@/') && !pfad.startsWith('three'));
                 if (!erlaubt) befunde.push(`${datei.replace(WURZEL, '')} → ${pfad}`);

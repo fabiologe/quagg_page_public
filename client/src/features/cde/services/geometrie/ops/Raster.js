@@ -14,8 +14,19 @@
  *
  * Rein: kein Vue, kein three, kein DOM — läuft im Worker und in vitest.
  */
-import { heightfieldRaster, rasterKnoten } from '../../geometry/SurfaceOps.js';
-import { gleicherBezug } from '../../gelaende/Operationen.js';
+import { heightfieldRaster, rasterKnoten } from '../SurfaceOps.js';
+
+/**
+ * Gleicher Rasterbezug? Ein Delta/Vergleich über fremde Raster ist Unsinn.
+ * (Teil XXIII A8: aus der Geländeschicht in den Kern gezogen — Befund B9.)
+ */
+export function gleicherBezug(a, b) {
+    return !!a && !!b
+        && a.nx === b.nx && a.nz === b.nz
+        && Math.abs(a.cell - b.cell) < 1e-9
+        && Math.abs(a.x0 - b.x0) < 1e-9
+        && Math.abs(a.z0 - b.z0) < 1e-9;
+}
 
 /**
  * Dreiecke → Raster mit VORGEGEBENER Zellweite.

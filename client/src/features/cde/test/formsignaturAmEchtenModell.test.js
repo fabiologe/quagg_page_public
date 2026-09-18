@@ -27,7 +27,7 @@ import { bestimme } from '../services/bauform/Bauformen.js';
 import { bauformAusNetz, FLACH } from '../services/bauform/Formsignatur.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 import { passende } from '../services/Bearbeitungen.js';
-import { meshVolume } from '../services/geometry/MeshOps.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const wurzel = path.resolve(hier, '../../../../');

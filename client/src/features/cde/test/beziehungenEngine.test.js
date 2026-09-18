@@ -148,10 +148,11 @@ describe('engine.beziehungen()', () => {
 
 describe('Die Leser', () => {
     it('kollisionenPruefen holt seine Kandidaten aus dem Index — die eigene Hüllenschleife ist weg', () => {
-        const code = lies('services/IfcEngine.js');
-        const start = code.indexOf('async kollisionenPruefen(');
-        const rumpf = code.slice(start, code.indexOf('ableitungsBilder()', start));
-        expect(rumpf).toContain('await this.beziehungen()');
+        // Seit Teil XXIII A8 lebt der Lauf in `engine/Beziehungslauf.js` (Engine-Diät, B13).
+        const code = lies('services/engine/Beziehungslauf.js');
+        const start = code.indexOf('export async function kollisionenPruefen(');
+        const rumpf = code.slice(start, code.indexOf('\n}\n', start));
+        expect(rumpf).toContain('await engine.beziehungen()');
         expect(rumpf).toContain("paare('schnitt')");
         expect(rumpf).toContain("paare('enthalten')");
         expect(rumpf).not.toMatch(/ueberlappt|groupData\.get\(\)/);
@@ -186,12 +187,13 @@ describe('Die Leser', () => {
         expect(code).not.toMatch(/baueBeziehungen|anschluesseVon/);
     });
 
-    it('die Engine ist der EINZIGE Aufrufer von baueBeziehungen ausserhalb der Tests', () => {
+    it('der Beziehungslauf der Engine ist der EINZIGE Aufrufer von baueBeziehungen ausserhalb der Tests', () => {
         const { readdirSync, statSync } = require('node:fs');
         const dateien = [];
         const lauf = (dir) => { for (const n of readdirSync(dir)) { const q = dir + '/' + n; if (statSync(q).isDirectory()) { if (n !== 'test' && n !== 'node_modules') lauf(q); } else if (/\.(vue|js)$/.test(n)) dateien.push(q); } };
         lauf(WURZEL.replace(/\/$/, ''));
         const aufrufer = dateien.filter(d => !d.endsWith('services/Beziehungen.js') && readFileSync(d, 'utf8').includes('baueBeziehungen('));
-        expect(aufrufer.map(d => d.replace(WURZEL, ''))).toEqual(['services/IfcEngine.js']);
+        // Seit A8 in `engine/Beziehungslauf.js` — die Engine ruft ihn über ihre Weiterleitung.
+        expect(aufrufer.map(d => d.replace(WURZEL, ''))).toEqual(['services/engine/Beziehungslauf.js']);
     });
 });

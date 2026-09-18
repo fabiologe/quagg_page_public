@@ -1,8 +1,6 @@
 import * as OBC from '@thatopen/components';
-import { heightfieldRaster } from './geometry/SurfaceOps.js';
-import { grundrissAusMesh, umrissFlaeche } from './geometrie/ops/Umriss.js';
+import { pruefmassVon, achsmassAus } from './geometrie/hilfen.js';
 import { setzeBeleuchtung } from './IfcBeleuchtung.js';
-import { formeNach, massenAus } from './gelaende/Operationen.js';
 import { BAUTEILFARBEN, eigeneFarbe, faerbePlan, farbeFuer, materialWerte } from './Bauteilfarben.js';
 import { FAERBE_FARBEN } from './Vorschau.js';
 import { karteMitEngine } from './GlobalIdKarte.js';
@@ -20,7 +18,7 @@ import { FANG_RADIUS_PX } from './Fangpunkte.js';
 import { IfcGridAxes } from './IfcGridAxes.js';
 import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
-import { createGeometryResolver } from './geometry/GeometryResolver.js';
+import { createGeometryResolver } from './ifcleser/GeometryResolver.js';
 import { IfcAutor, CDE_MODELL_ID } from './IfcAutor.js';
 import { DURCHTIPP_PX, rangiereTreffer, waehleKandidat } from './Auswahlrang.js';
 import { erzeugeKernel } from './geometrie/Kernel.js';
@@ -28,37 +26,26 @@ import { erzeugeWorkerBackend } from './geometrie/KernelWorker.js';
 import { erzeugeServerBackend } from './geometrie/KernelServer.js';
 import backendApi from '@/services/api';
 import { gelaendeElemente, GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
-import { rezeptNach as _rezeptNach } from './Bauteilrezepte.js';
-import { aushubMasseVon } from './ableitung/Ableitungen.js';
 import { bauformAusNetz } from './bauform/Formsignatur.js';
 import { achsGuete } from './bauform/Bauformen.js';
-import { pruefmassVon, zellweiteVorschlag, achsmassAus } from './geometrie/ops/Raster.js';
-import { meshVolume } from './geometry/MeshOps.js';
 import { makeHeightSampler } from './TerrainMesh.js';
 import { GelaendeKanten } from './GelaendeKanten.js';
 import { ErdbauUmrisse } from './ErdbauUmrisse.js';
-import { achsbezugVon } from './Achsbezug.js';
-import { collectElementTriangles } from './geometry/MeshAcquire.js';
 import { IfcQuelle } from './IfcQuelle.js';
 import { importBefund, zaehltAlsBauteil } from './ImportBefund.js';
 import { inMeterUmrechnen } from './Einheiten.js';
 import { erzeugeEinheitenWorker } from './EinheitenWorker.js';
-import { extractAxisPolylines } from './AxisAnnotations.js';
-import { befundeFuer, befundeFuerNetz, befundeAusBeziehungen } from './Befunde.js';
-import { aufgeloestesRegelwerk } from './regeln/Regelwerk.js';
-import { baueNetz, strangAb } from './Netztopologie.js';
-import { baueBeziehungen } from './Beziehungen.js';
+import { strangAb } from './Netztopologie.js';
 
-/**
- * Wie viele Bauteile die Höhenmessung auswertet.
- *
- * Gesucht ist EINE Verschiebung des ganzen Modells, kein Wert je Bauteil —
- * mehr Bauteile machen die Antwort nicht genauer, nur das Laden langsamer.
- * Gemessen: 12 Bauteile kosten 15 ms.
- */
-const STICHPROBE = 24;
 import { leseGeoreferenz } from './Georeferenz.js';
-import { netzrollenWurzeln } from './bauform/Typprofile.js';
+import { erdmassen as _ausgelagert_erdmassen } from './Erdmassen.js';
+import { _quellFormVon as _ausgelagert__quellFormVon, _achseAlsLinie as _ausgelagert__achseAlsLinie, gelaendeKandidaten as _ausgelagert_gelaendeKandidaten, erdbauKandidaten as _ausgelagert_erdbauKandidaten, koerperKandidaten as _ausgelagert_koerperKandidaten } from './engine/Quellformen.js';
+import { netzVon as _ausgelagert_netzVon, anschluesseVon as _ausgelagert_anschluesseVon, anschluesseFuer as _ausgelagert_anschluesseFuer, schachtPunkteVon as _ausgelagert_schachtPunkteVon, knotenGriffe as _ausgelagert_knotenGriffe } from './engine/Netzabfragen.js';
+import { beziehungen as _ausgelagert_beziehungen, _beziehungsObjekte as _ausgelagert__beziehungsObjekte, _beziehungenDirtyAus as _ausgelagert__beziehungenDirtyAus, kollisionenPruefen as _ausgelagert_kollisionenPruefen } from './engine/Beziehungslauf.js';
+import { pruefeAlles as _ausgelagert_pruefeAlles } from './engine/Pruefliste.js';
+import { leseAchsen as _ausgelagert_leseAchsen } from './ifcleser/Achsen.js';
+import { buildSearchIndex as _ausgelagert_buildSearchIndex } from './ifcleser/Suchindex.js';
+import { _hoehenversatzMessen as _ausgelagert__hoehenversatzMessen } from './ifcleser/Hoehenversatz.js';
 
 
 /**
@@ -246,33 +233,7 @@ export function ladeversatzAus({ baseCoordinates = null, position = null } = {})
     return { x: 0 - (p.x ?? 0), y: 0 - (p.y ?? 0), z: 0 - (p.z ?? 0), quelle: 'position' };
 }
 
-/**
- * Die Füllungsspalten des Mengen-Reiters — aus dem REZEPT (Teil XXIII, A3).
- *
- * Der Teil, der eine verdichtete Menge trägt (`menge.compactedVolume`), ist
- * die Füllung des Vorgangs. Heisst er `verfuellung`, füllt er einen Graben
- * wieder (Graben − Rohr), sonst ist er ein Auftrag. Ohne solchen Teil (die
- * Baugrube) bleiben beide Spalten leer. Bis A3 stand hier, WELCHE Rezepte
- * welche Spalte füllen — beim Namen.
- */
-function _fuellungsspalten(rz, k) {
-    const teil = (rz?.teile ?? []).find(t => t?.menge?.compactedVolume);
-    if (!teil) return { auftrag: null, verfuellung: null };
-    const wert = k?.[teil.menge.compactedVolume] ?? null;
-    return teil.rolle === 'verfuellung' ? { auftrag: null, verfuellung: wert } : { auftrag: wert, verfuellung: null };
-}
 
-/**
- * Alle Elemente eines Modells, deren Familie im Katalog diese Netzrolle trägt
- * (Teil XXIII, AE) — je Wurzel mit Untertypen, ohne Doppelte.
- */
-function _idsDerNetzrolle(quelle, rolle) {
-    const ids = new Set();
-    for (const w of netzrollenWurzeln(rolle)) {
-        try { for (const id of quelle.ids(w, { untertypen: true }) ?? []) ids.add(id); } catch { /* Familie im Modell unbekannt */ }
-    }
-    return [...ids];
-}
 
 export class IfcEngine {
     constructor() {
@@ -1503,33 +1464,8 @@ export class IfcEngine {
     // fremder Aushubkörper. Fabios Regel: was der Planer selbst gefärbt hat,
     // wird nicht stillschweigend übermalt — dann wird gefragt.
 
-    /**
-     * Gelieferte Bauteile, für die der Farbkatalog etwas zu sagen hat.
-     * @returns {Promise<Array<{modelId, localId, kategorie}>>}
-     */
-    async erdbauKandidaten({ deckel = 400 } = {}) {
-        const aus = [];
-        let gruppen = [];
-        try { gruppen = await this.getCategoryGroups(); } catch { return aus; }
-        for (const g of gruppen ?? []) {
-            const kategorie = String(g?.name ?? '').toUpperCase();
-            if (!farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN)) continue;
-            let map;
-            try { map = await g.groupData.get(); } catch { continue; }
-            if (!map) continue;
-            const paare = map instanceof Map ? [...map.entries()] : Object.entries(map);
-            for (const [modelId, roh] of paare) {
-                // Das CDE-Modell nicht: dort sitzt die Farbe schon im Material.
-                if (basisModelId(modelId) === CDE_MODELL_ID) continue;
-                const ids = Array.isArray(roh) ? roh : (roh instanceof Set ? [...roh] : []);
-                for (const localId of ids) {
-                    if (aus.length >= deckel) return aus;
-                    aus.push({ modelId, localId: Number(localId), kategorie });
-                }
-            }
-        }
-        return aus;
-    }
+    /** → `engine/Quellformen.js` (Teil XXIII, A8: Engine-Diät). */
+    erdbauKandidaten(...a) { return _ausgelagert_erdbauKandidaten(this, ...a); }
 
     /**
      * Welche dieser Bauteile bringen eine EIGENE Farbe mit?
@@ -2211,131 +2147,8 @@ export class IfcEngine {
         return this._coordOffsets.get(modelId) ?? null;
     }
 
-    /**
-     * Alle Ladeversätze — als {x, y, z}, DIESELBE Form wie
-     * `getCoordOffsetForModel`.
-     *
-     * Vorher stand hier `off.toArray()`, also `[x, y, z]`. Jeder Verbraucher
-     * greift aber mit `.x`/`.y`/`.z` zu, und ein Array liefert darauf
-     * `undefined` — ohne zu werfen. Zwei Accessoren, zwei Formen, kein Hinweis.
-     *
-     * Was daraus in Produktion wurde:
-     *   DxfExporter          alle Koordinaten NaN (der Rückfall `?? {x:0,z:0}`
-     *                        griff nicht — ein Array ist truthy)
-     *   LaengsschnittBuilder heightOffsetY immer 0; die Achse ist „m NN"
-     *                        beschriftet und zeigt Welt-Y
-     *   UtmGrid              Gitterkreuze beschriften Weltkoordinaten als E/N
-     *   AxisAnnotations      Achs-Polylinien NaN
-     *
-     * Die Tests konnten es nicht sehen, weil sie `{x, z}`-Objekte übergeben —
-     * die Form, die die Engine gar nicht lieferte. Sie prüften eine
-     * Schnittstelle, die es nicht gab. Der Guard in `koordinatenForm.test.js`
-     * geht deshalb von der ECHTEN Ausgabe aus.
-     */
-    /**
-     * Den HÖHENVERSATZ messen, statt ihn aus `object.position` zu erraten.
-     *
-     * DER BEFUND: `-model.object.position` liefert x und z richtig, y aber 0 —
-     * obwohl die Geometrie in der Höhe sehr wohl verschoben ist. Zwei
-     * Mechanismen wirken übereinander: `COORDINATE_TO_ORIGIN` (web-ifc) backt
-     * eine Höhenverschiebung in die Scheitelpunkte, `autoCoordinate`
-     * (fragments) setzt die Objektlage aus der MapConversion — und deren
-     * `OrthogonalHeight` ist in beiden ISYBAU-Dateien 0. Nur der zweite
-     * landet in `object.position`.
-     *
-     * Sichtbar wurde es als „E und N stimmen, H ist noch die Three-Koordinate".
-     *
-     * Statt nachzubauen, was die Bibliothek tut — das wäre eine Annahme über
-     * fremden Code —, wird DIESELBE Platzierung zweimal geholt: aus der Datei
-     * und aus den Fragmenten. Die Differenz IST der Versatz. Der Median macht
-     * es unempfindlich gegen einzelne Ausreisser, und die Streuung sagt, ob
-     * man dem Ergebnis trauen darf.
-     */
-    /**
-     * Den Höhenversatz eines Modells bestimmen — HÜLLE gegen HÜLLE.
-     *
-     * Der erste Anlauf verglich die IFC-Platzierung mit `model.getPositions()`
-     * und scheiterte, weil das zwei VERSCHIEDENE Punkte sind: `getPositions`
-     * liefert die Mitte eines Bauteils, die Platzierung einen Bezugspunkt des
-     * Autors. Am echten Netz sitzt der bei Schächten auf der Unterkante, bei
-     * Haltungen am oberen Ende — die Differenz streute dadurch um 10,2 m, und
-     * die Messung hat (richtig) nichts gesetzt.
-     *
-     * Eine Hülle beschreibt auf beiden Seiten DENSELBEN Körper. Damit gilt
-     * für eine reine Verschiebung:
-     *
-     *     Versatz = DateiUnterkante − WeltUnterkante
-     *             = DateiOberkante  − WeltOberkante
-     *
-     * Dass beide dasselbe ergeben, ist keine Nebensache, sondern der BEWEIS,
-     * dass überhaupt nur verschoben und nicht skaliert wurde. Stimmen sie
-     * nicht überein, wird nichts gesetzt und der Befund gemeldet — eine
-     * erfundene Höhe wäre schlimmer als gar keine.
-     */
-    async _hoehenversatzMessen(model, quelle, modelOff) {
-        const merke = (b) => { this._hoehenBefund.set(model.modelId, b); return b; };
-        // Was die Bibliothek sagt (`baseCoordinates`, seit 2026-09-08) — die
-        // Messung bleibt das Mass, die Bibliothek ist die Gegenprobe.
-        const ausBibliothek = Number.isFinite(modelOff?.y) ? modelOff.y : null;
-        if (!quelle?.lebt?.()) return merke({ art: 'ohne-quelle', text: 'keine IFC-Quelle' });
-        try {
-            // Eine Stichprobe genügt: gesucht ist EINE Verschiebung, nicht ein
-            // Wert je Bauteil. Die Geometrie auszuwerten kostet, deshalb wenige.
-            const stichprobe = quelle.ids('IFCELEMENT', { untertypen: true }).slice(0, STICHPROBE);
-            if (!stichprobe.length) return merke({ art: 'keine-bauteile', text: 'keine Bauteile in der Datei' });
-
-            const datei = quelle.hoehenHuellen(stichprobe);
-            // NUR die Bauteile, für die BEIDE Seiten etwas liefern — sonst
-            // deckten die zwei Hüllen verschiedene Körper ab und die Differenz
-            // wäre die Auswahl, nicht der Versatz.
-            const ids = stichprobe.filter(id => datei.has(id));
-            if (ids.length < 2) return merke({ art: 'keine-geometrie', text: 'Geometrie in der Datei nicht auswertbar' });
-
-            const welt = await model.getMergedBox(ids);
-            if (!welt || welt.isEmpty?.() || !Number.isFinite(welt.min?.y)) {
-                return merke({ art: 'keine-weltlage', text: 'Weltlage nicht lesbar' });
-            }
-
-            let dMin = Infinity, dMax = -Infinity;
-            for (const id of ids) {
-                const h = datei.get(id);
-                if (h.min < dMin) dMin = h.min;
-                if (h.max > dMax) dMax = h.max;
-            }
-
-            const vonUnten = dMin - welt.min.y;
-            const vonOben  = dMax - welt.max.y;
-            const abweichung = Math.abs(vonUnten - vonOben);
-            if (abweichung > 0.01) {
-                return merke({
-                    art: 'uneinheitlich', spanne: abweichung, unten: vonUnten, oben: vonOben,
-                    text: `Unter- und Oberkante ergeben ${vonUnten.toFixed(2)} m bzw. `
-                        + `${vonOben.toFixed(2)} m — das ist keine reine Verschiebung, nicht gesetzt`,
-                });
-            }
-
-            const versatz = (vonUnten + vonOben) / 2;
-            if (ausBibliothek !== null && Math.abs(versatz - ausBibliothek) > 0.01) {
-                console.warn(`cde: Höhenversatz gemessen ${versatz.toFixed(3)} m, Bibliothek sagt `
-                    + `${ausBibliothek.toFixed(3)} m — die Messung gilt`);
-            }
-            modelOff.y = versatz;
-            this._coordOffsets.set(model.modelId, modelOff);
-            if (this._coordOffsets.size === 1) this._coordinationOffset.copy(modelOff);
-            // Beide Räume mitgeben. Zeigt die Koordinatenleiste eine Höhe, die
-            // in KEINEN von beiden passt, liegt der Fehler nicht am Versatz —
-            // und das sieht man dann sofort, statt es zu erraten.
-            return merke({
-                art: 'gemessen', wert: versatz, spanne: abweichung, n: ids.length,
-                datei: { min: dMin, max: dMax },
-                welt:  { min: welt.min.y, max: welt.max.y },
-                text: `über ${ids.length} Bauteile, Unter- und Oberkante stimmen auf `
-                    + `${(abweichung * 1000).toFixed(1)} mm überein`,
-            });
-        } catch (fehler) {
-            return merke({ art: 'fehler', text: String(fehler?.message ?? fehler) });
-        }
-    }
+    /** → `ifcleser/Hoehenversatz.js` (Teil XXIII, A8: Engine-Diät). */
+    _hoehenversatzMessen(...a) { return _ausgelagert__hoehenversatzMessen(this, ...a); }
 
     /** Wie der Höhenversatz zustande kam — für die Anzeige. */
     hoehenBefund(modelId) {
@@ -2544,48 +2357,8 @@ export class IfcEngine {
             return '';
         }
     }
-    /**
-     * Der Elementindex — Grundlage für die Elementsuche (Strg+K/Strg+F) und
-     * für das Panel „Bauformen zuordnen".
-     *
-     * ÜBER `IfcQuelle`, nicht über `ifcLoader.webIfc`. Der alte Weg lieferte in
-     * Produktion immer `[]` (siehe den Grabstein in IfcItemData.js) — das
-     * Zuordnungs-Panel, also der Normalweg zum Erklären eines unbekannten
-     * Exporteurs, war dadurch schlicht funktionslos.
-     *
-     * Und statt einer Liste von 30 verdrahteten Kategorien: alle Nachfahren
-     * von `IfcProduct` über das 4.3-Wörterbuch. Genau darauf kam es an —
-     * `IFCCIVILELEMENT` und die Erdbau-Typen standen in der alten Liste nicht,
-     * also waren ausgerechnet die Bauteile unsichtbar, für die man die
-     * Zuordnung braucht.
-     *
-     * Mitgelesen werden die Felder, auf die eine Bauformregel matchen kann:
-     * ein `IfcEarthworksFill` ohne Namen ist über `PredefinedType` oder
-     * `ObjectType` sehr wohl ansprechbar.
-     */
-    async buildSearchIndex() {
-        const out = [];
-        for (const [modelId, quelle] of this._quellen ?? new Map()) {
-            if (!quelle?.lebt()) continue;
-            // Auch das PROJEKT (Abnahme 2026-09-12, A7): es ist kein IfcProduct,
-            // und die Wurzel jeder Bauwerksstruktur hiess deshalb „Element".
-            for (const localId of [...quelle.ids('IFCPRODUCT', { untertypen: true }), ...quelle.ids('IFCPROJECT')]) {
-                const z = quelle.zeile(localId);
-                if (!z) continue;
-                out.push({
-                    name: z.Name?.value ?? '',
-                    globalId: z.GlobalId?.value ?? '',
-                    category: quelle.kategorieVon(z),
-                    predefinedType: z.PredefinedType?.value ?? '',
-                    objectType: z.ObjectType?.value ?? '',
-                    description: z.Description?.value ?? '',
-                    localId,
-                    modelId,
-                });
-            }
-        }
-        return out;
-    }
+    /** → `ifcleser/Suchindex.js` (Teil XXIII, A8: Engine-Diät). */
+    buildSearchIndex(...a) { return _ausgelagert_buildSearchIndex(this, ...a); }
 
 
 
@@ -2658,33 +2431,8 @@ export class IfcEngine {
 
     // ── Der Beziehungsindex (Teil XVII, B1) ─────────────────────────────────
 
-    /**
-     * Was sich gegenüber dem vorigen Journalstand bewegt hat: GlobalIds mit
-     * geänderter Lage, neu verdeckt oder wieder sichtbar, und ALLE eigenen
-     * Bauteile (nach einem Neuaufbau tragen sie neue localIds — die Hüllen
-     * werden ohnehin frisch geholt, und es sind wenige). Ändert sich die
-     * Geländemenge, gilt jede Auflage neu → `true` = ganz neu.
-     */
-    _beziehungenDirtyAus({ lagen, verdeckt, kanten = [], knoten = [], koerper = [], gelaende = [] }) {
-        if (!this._beziehungen) return true;
-        const altGelaende = this._cdeGelaende ?? new Set();
-        if (altGelaende.size !== gelaende.length || gelaende.some(g => !altGelaende.has(g))) return true;
-        const dirty = new Set();
-        const altLagen = this._lagen ?? new Map();
-        const gleich = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && a.z === b.z;
-        for (const [gid, d] of lagen) if (!gleich(altLagen.get(gid), d)) dirty.add(gid);
-        for (const gid of altLagen.keys()) if (!lagen.has(gid)) dirty.add(gid);
-        const altVerdeckt = this._verdeckt ?? new Set();
-        for (const gid of verdeckt) if (!altVerdeckt.has(gid)) dirty.add(gid);
-        for (const gid of altVerdeckt) if (!verdeckt.has(gid)) dirty.add(gid);
-        for (const k of kanten) dirty.add(k.globalId);
-        for (const k of knoten) dirty.add(k.globalId);
-        for (const gid of koerper) dirty.add(gid);
-        for (const gid of this._cdeKanten?.keys() ?? []) dirty.add(gid);
-        for (const gid of this._cdeKnoten?.keys() ?? []) dirty.add(gid);
-        for (const gid of this._cdeKoerper ?? []) dirty.add(gid);
-        return dirty;
-    }
+    /** → `engine/Beziehungslauf.js` (Teil XXIII, A8: Engine-Diät). */
+    _beziehungenDirtyAus(...a) { return _ausgelagert__beziehungenDirtyAus(this, ...a); }
 
     /** Den Index (teilweise) entwerten. `true` = ganz neu, Set = nur diese GlobalIds. */
     _beziehungenVerwerfen(dirty = true) {
@@ -2701,126 +2449,11 @@ export class IfcEngine {
         this._beziehungenNr = (this._beziehungenNr ?? 0) + 1;
     }
 
-    /**
-     * Die Objekte des Index: alles Gelieferte mit Geometrie, Achse oder
-     * Knoten (ohne Gelände, ohne Verdecktes — Gelände ist die Seite der
-     * `auflage`, nicht ihr Partner), dazu die eigenen Rohre, Schächte und
-     * Körper. Hüllen aus `boxenVon` (Delta-bewusst), einmal je Modell und
-     * danach nur für Bewegtes. Dazu die GRUPPEN aus den Merkmalen
-     * (Kanalart) — das einzige Gruppenmerkmal, das in den echten Dateien steht.
-     */
-    async _beziehungsObjekte(dirty = null) {
-        const verdeckt = this._verdeckt ?? new Set();
-        let gelaendeOrte = new Set();
-        try { gelaendeOrte = new Set((await this._gelaendeOrteHolen()).map(o => `${o.modelId}|${o.localId}`)); } catch { /* ohne Gelände keine Auflage */ }
-        const objekte = [];
-        const gruppen = new Map();
-        for (const [modelId, quelle] of this._quellen ?? new Map()) {
-            if (!quelle?.lebt?.()) continue;
-            let eintrag = this._huellen.get(modelId);
-            if (!eintrag) {
-                eintrag = { ids: quelle.ids('IFCPRODUCT', { untertypen: true }), boxen: new Map() };
-                this._huellen.set(modelId, eintrag);
-                const boxen = await this.autor?.boxenVon?.(modelId, eintrag.ids) ?? new Map();
-                for (const id of eintrag.ids) eintrag.boxen.set(id, boxen.get(id) ?? null);
-            } else if (dirty instanceof Set && dirty.size) {
-                const frisch = eintrag.ids.filter(id => { const g = quelle.zeile(id)?.GlobalId?.value; return g && dirty.has(g); });
-                if (frisch.length) {
-                    const boxen = await this.autor?.boxenVon?.(modelId, frisch) ?? new Map();
-                    for (const id of frisch) eintrag.boxen.set(id, boxen.get(id) ?? null);
-                }
-            }
-            const achsen = this._achsen?.get(modelId) ?? new Map();
-            const knoten = this._knoten?.get(modelId) ?? new Map();
-            const merkmale = this._merkmale?.get(modelId) ?? null;
-            for (const localId of eintrag.ids) {
-                const z = quelle.zeile(localId);
-                const gid = z?.GlobalId?.value ?? null;
-                if (!gid || verdeckt.has(gid) || gelaendeOrte.has(`${modelId}|${localId}`)) continue;
-                const huelle = eintrag.boxen.get(localId) ?? null;
-                const a = achsen.get(localId) ?? null;
-                const k = knoten.get(localId) ?? null;
-                if (!huelle && !a && !k) continue;
-                objekte.push({
-                    globalId: gid, name: z.Name?.value ?? '', kategorie: quelle.kategorieVon(z) ?? '',
-                    herkunft: 'geliefert', huelle,
-                    achse: a ? { punkte: a.polyline, dn: a.dn } : null,
-                    knoten: k ? k.punkt : null,
-                    ort: { modelId, localId },
-                });
-                const kanalart = merkmale?.get(localId)?.Kanalart;
-                if (kanalart) gruppen.set(gid, [String(kanalart)]);
-            }
-        }
-        // Eigene Bauteile — Hüllen immer frisch (nach jedem Neuaufbau neue localIds).
-        const cdeGids = new Set([
-            ...(this._cdeKanten?.keys() ?? []), ...(this._cdeKnoten?.keys() ?? []), ...(this._cdeKoerper ?? []),
-        ].filter(g => !verdeckt.has(g) && !this._cdeGelaende?.has(g)));
-        if (cdeGids.size) {
-            let karte = new Map();
-            try { ({ karte } = await karteMitEngine(this, [...cdeGids])); } catch { karte = new Map(); }
-            const orte = [...karte].filter(([, t]) => t.modelId === CDE_MODELL_ID);
-            let boxen = new Map();
-            if (orte.length) {
-                try { boxen = await this.autor.boxenVon(CDE_MODELL_ID, orte.map(([, t]) => t.localId)); } catch { boxen = new Map(); }
-            }
-            for (const gid of cdeGids) {
-                const t = karte.get(gid) ?? null;
-                const k = this._cdeKanten?.get(gid) ?? null;
-                const sK = this._cdeKnoten?.get(gid) ?? null;
-                const huelle = t ? (boxen.get(t.localId) ?? null) : null;
-                if (!huelle && !k && !sK) continue;
-                objekte.push({
-                    globalId: gid, name: this._cdeNameVon?.(gid) ?? k?.name ?? sK?.name ?? '',
-                    kategorie: k?.kategorie ?? (sK ? 'IFCDISTRIBUTIONCHAMBERELEMENT' : 'IFCEARTHWORKSCUT'),
-                    herkunft: 'cde', huelle,
-                    achse: k ? { punkte: k.punkte ?? [k.anfang, k.ende], dn: k.dn } : null,
-                    knoten: sK ? sK.punkt : null,
-                    ort: t ? { modelId: CDE_MODELL_ID, localId: t.localId } : null,
-                });
-            }
-        }
-        return { objekte, gruppen };
-    }
+    /** → `engine/Beziehungslauf.js` (Teil XXIII, A8: Engine-Diät). */
+    _beziehungsObjekte(...a) { return _ausgelagert__beziehungsObjekte(this, ...a); }
 
-    /**
-     * DER Beziehungsindex — gecacht bis zum nächsten Journalstand oder
-     * Modellwechsel, dann nur für Berührtes neu (Dirty-Menge aus
-     * `setzeJournalStand`). Nichts wartet auf den Server: die Güte `koerper`
-     * setzt allein `kollisionenPruefen` auf die Kandidaten dieses Index.
-     * @returns {Promise<object|null>}  der Index (`von`, `partner`, `paare`, `verbund`)
-     */
-    async beziehungen({ regelwerk = null } = {}) {
-        if (this._beziehungen && !this._beziehungenDirty) return this._beziehungen;
-        if (!this._beziehungenLauf) {
-            const nr = this._beziehungenNr ?? 0;
-            this._beziehungenLauf = (async () => {
-                const dirty = this._beziehungenDirty instanceof Set ? this._beziehungenDirty : null;
-                const vorher = dirty ? this._beziehungen : null;
-                const { objekte, gruppen } = await this._beziehungsObjekte(dirty);
-                let hoeheAn = null;
-                try {
-                    const sampler = await this.gelaendeSampler();
-                    if (sampler) hoeheAn = (x, z) => sampler.sample(x, z);
-                } catch { hoeheAn = null; }
-                const gelaendeGid = [...(this._cdeGelaende ?? [])].find(g => !(this._verdeckt?.has(g))) ?? null;
-                const idx = baueBeziehungen({
-                    objekte, gruppen,
-                    gelaende: hoeheAn ? { globalId: gelaendeGid ?? undefined, name: gelaendeGid ? (this._cdeNameVon?.(gelaendeGid) || 'DGM') : 'Gelände', hoeheAn } : null,
-                    ableitungen: this._cdeAbleitungen ?? [],
-                    // Das GELTENDE Regelwerk (AR): Büro/Projekt überschreiben je Wert.
-                    regeln: regelwerk ?? aufgeloestesRegelwerk(),
-                    vorher, dirty,
-                });
-                // Überholt? Dann ist inzwischen ein neuer Stand da — nicht zurückschreiben.
-                if (nr !== (this._beziehungenNr ?? 0)) return this._beziehungen ?? idx;
-                this._beziehungen = idx;
-                this._beziehungenDirty = null;
-                return idx;
-            })().finally(() => { this._beziehungenLauf = null; });
-        }
-        return this._beziehungenLauf;
-    }
+    /** → `engine/Beziehungslauf.js` (Teil XXIII, A8: Engine-Diät). */
+    beziehungen(...a) { return _ausgelagert_beziehungen(this, ...a); }
 
     /** Die Beziehungen EINES Bauteils aus dem zuletzt gebauten Index — synchron, für Subjekt und HUD. */
     beziehungenVon(globalId) {
@@ -3228,104 +2861,16 @@ export class IfcEngine {
         return this._cdeNamen?.get(globalId) ?? null;
     }
 
-    /** Die eigenen Körper (Aushub, Graben, Rohr, Schacht …) mit Namen — als Werkzeug einer Aussparung (G7). */
-    koerperKandidaten() {
-        const verdeckt = this._verdeckt ?? new Set();
-        return [...(this._cdeKoerper ?? [])]
-            .filter(g => !verdeckt.has(g))
-            .map(globalId => ({ globalId, name: this._cdeNameVon(globalId) ?? '', herkunft: 'cde' }));
-    }
+    /** → `engine/Quellformen.js` (Teil XXIII, A8: Engine-Diät). */
+    koerperKandidaten(...a) { return _ausgelagert_koerperKandidaten(this, ...a); }
 
     /** Kann der Kernel diese Operation — und wenn nicht, warum? (Server-Ops erst nach bereit().) */
     kernelKann(name) {
         return this.autor?._kernel?.kann?.(name) ?? { ok: false, grund: 'kein Kernel' };
     }
 
-    /**
-     * KOLLISIONEN (G7): eigene Körper (Aushub, Graben, Rohr, Schacht) gegen
-     * das gelieferte Modell — paarweiser Schnitt auf dem Server, Kandidaten
-     * aus dem Beziehungsindex (Teil XVII: `schnitt`/`enthalten` in Hüllen-Güte). Das Ergebnis ist ABGELEITET und liegt
-     * nur im Speicher; `setzeJournalStand` verwirft es. Gelände zählt nicht
-     * als Partner (ein Graben schneidet sein Gelände absichtlich).
-     * @returns {Promise<{ok: boolean, grund?: string, paare: Array, geprueft: number}>}
-     */
-    async kollisionenPruefen({ maxPaare = 200 } = {}) {
-        const kernel = this.autor?._kernel;
-        await kernel?.bereit?.();
-        const frei = kernel?.kann?.('kollisionen') ?? { ok: false, grund: 'kein Kernel' };
-        if (!frei.ok) return { ok: false, grund: frei.grund, paare: [], geprueft: 0 };
-        const verdeckt = this._verdeckt ?? new Set();
-        const eigene = new Set([...(this._cdeKoerper ?? [])].filter(g => !verdeckt.has(g)));
-        if (!eigene.size) return { ok: true, grund: 'keine eigenen Körper', paare: [], geprueft: 0 };
-
-        // DIE KANDIDATEN KOMMEN AUS DEM BEZIEHUNGSINDEX (Teil XVII): `schnitt`
-        // und `enthalten` in Hüllen-Güte, hier auf eigen ∩ geliefert gefiltert.
-        // Vorher stand hier eine eigene Hüllenschleife über alle Kategorien —
-        // die vierte Kandidatensuche des Features. Gelände ist im Index kein
-        // Partner (ein Graben schneidet sein Gelände absichtlich); der Cut
-        // bleibt draussen, er ist ein VOID, kein Bauteil.
-        const idx = await this.beziehungen();
-        const kandidaten = [];        // {eigen: gid, modelId, localId, kategorie}
-        const gesehen = new Set();
-        for (const r of [...(idx?.paare('schnitt') ?? []), ...(idx?.paare('enthalten') ?? [])]) {
-            const x = idx.objekt(r.a), y = idx.objekt(r.b);
-            if (!x || !y) continue;
-            const eigen = eigene.has(x.globalId) ? x : (eigene.has(y.globalId) ? y : null);
-            const partner = eigen === x ? y : x;
-            if (!eigen || partner.herkunft !== 'geliefert' || !partner.ort) continue;   // eigen∩eigen zählt nicht
-            if (partner.kategorie === 'IFCEARTHWORKSCUT') continue;
-            const schluessel = `${eigen.globalId}|${partner.ort.modelId}|${partner.ort.localId}`;
-            if (gesehen.has(schluessel)) continue;
-            gesehen.add(schluessel);
-            kandidaten.push({ eigen: eigen.globalId, modelId: partner.ort.modelId, localId: partner.ort.localId, kategorie: partner.kategorie });
-        }
-        if (!kandidaten.length) { this._kollisionen = []; return { ok: true, paare: [], geprueft: 0 }; }
-        if (kandidaten.length > maxPaare) {
-            return { ok: false, grund: `${kandidaten.length} Kandidatenpaare — über ${maxPaare}; Auswahl einschränken`, paare: [], geprueft: 0 };
-        }
-
-        // Netze holen — je Bauteil einmal — und in EINEM Aufruf schneiden.
-        const resolver = this.makeGeometryResolver();
-        const netze = new Map();      // schlüssel → {index, gid?, modelId, localId, name}
-        const koerper = [];
-        const holeNetz = async (schluessel, ort, meta) => {
-            if (netze.has(schluessel)) return netze.get(schluessel).index;
-            const res = await resolver?.forElements([ort])?.getForm('mesh');
-            const d = res?.data;
-            if (!d?.positions?.length) return -1;
-            const positions = d.positions instanceof Float64Array ? d.positions : Float64Array.from(d.positions);
-            koerper.push({ positions, triCount: d.triCount, closed: true, volumen: 0, warnungen: [] });
-            const eintrag = { index: koerper.length - 1, ...meta };
-            netze.set(schluessel, eintrag);
-            return eintrag.index;
-        };
-        const paareIdx = [];
-        for (const k of kandidaten) {
-            const t = idx.objekt(k.eigen)?.ort ?? null;
-            if (!t) continue;
-            const ia = await holeNetz(`cde|${k.eigen}`, { modelId: CDE_MODELL_ID, localId: t.localId }, { gid: k.eigen });
-            const zeile = this.quelleVon(k.modelId)?.zeile(k.localId) ?? null;
-            const ib = await holeNetz(`${k.modelId}|${k.localId}`, { modelId: k.modelId, localId: k.localId },
-                { gid: zeile?.GlobalId?.value ?? null, name: zeile?.Name?.value ?? '', kategorie: k.kategorie, modelId: k.modelId, localId: k.localId });
-            if (ia >= 0 && ib >= 0) paareIdx.push([ia, ib]);
-        }
-        const r = await kernel.op('kollisionen', { koerper });
-        if (!r.ergebnis) return { ok: false, grund: r.warnungen.join('; ') || 'Server ohne Antwort', paare: [], geprueft: paareIdx.length };
-        const byIndex = new Map([...netze.values()].map(e => [e.index, e]));
-        const gewollt = new Set(paareIdx.map(([a, b]) => `${Math.min(a, b)}|${Math.max(a, b)}`));
-        const paare = [];
-        for (const pr of r.ergebnis) {
-            if (!gewollt.has(`${Math.min(pr.a, pr.b)}|${Math.max(pr.a, pr.b)}`)) continue;   // eigen∩eigen zählt nicht
-            const ea = byIndex.get(pr.a), eb = byIndex.get(pr.b);
-            const eigen = ea?.modelId ? eb : ea;
-            const partner = ea?.modelId ? ea : eb;
-            paare.push({ eigen: eigen?.gid ?? null, partner: partner?.gid ?? null, partnerName: partner?.name ?? '',
-                         partnerKategorie: partner?.kategorie ?? '', modelId: partner?.modelId, localId: partner?.localId,
-                         volumen: pr.volumen });
-        }
-        this._kollisionen = paare;
-        return { ok: true, paare, geprueft: paareIdx.length, warnungen: r.warnungen };
-    }
+    /** → `engine/Beziehungslauf.js` (Teil XXIII, A8: Engine-Diät). */
+    kollisionenPruefen(...a) { return _ausgelagert_kollisionenPruefen(this, ...a); }
 
     /**
      * Die Planbilder der Ableitungen (G5): Böschungsoberkanten aus dem
@@ -3402,332 +2947,17 @@ export class IfcEngine {
         this._hoehenversatz = Number.isFinite(v) ? v : 0;
     }
 
-    async leseAchsen() {
-        // ROH = wie geliefert. `_achsen`/`_knoten` sind die WIRKSAMEN Sichten
-        // (mit den `lage`-Verschiebungen des Journals, siehe `_lagenAnwenden`).
-        this._achsenRoh = new Map();
-        this._knotenRoh = new Map();
-        this._merkmale = new Map();
-        let n = 0;
-        for (const api of this.getWebIfcAPIs()) {
-            // In WELTKOORDINATEN, nicht roh: alles andere in der CDE rechnet
-            // in der Three-Welt, und die Umrechnung nach m NN steht an genau
-            // einer Stelle (`Hoehenbezug`). Zwei Höhenwege wären zwei
-            // Wahrheiten — davon hatte dieses Feature genug.
-            const off = this._coordOffsets.get(api.fragmentModelId) ?? null;
-            let achsen = [];
-            try {
-                // Welche Familien KANTEN im Netz sind, sagt der Katalog (`netzrolle`
-                // am Typprofil, Teil XXIII AE) — nicht eine Liste hier.
-                achsen = extractAxisPolylines(api.quelle, { coordOffset: off, categories: netzrollenWurzeln('kante') });
-            } catch (fehler) {
-                console.warn('cde: achsen lesen', fehler?.message ?? fehler);
-                continue;
-            }
-            const karte = new Map();
-            for (const a of achsen) {
-                const p = a.polyline;
-                // GlobalId und Name GLEICH MIT ans Achsenband (Stufe 17.3):
-                // vorher schlug jeder Konsument (Strang, Anschlüsse, Mengen,
-                // Prüfliste) einzeln bei der Quelle nach — und der
-                // Verdeckt-Filter unten wäre ohne die Kennung gar nicht
-                // möglich.
-                const zeile = api.quelle.zeile(a.expressId) ?? null;
-                karte.set(a.expressId, {
-                    globalId: zeile?.GlobalId?.value ?? null,
-                    name: zeile?.Name?.value ?? '',
-                    kategorie: a.category,
-                    // Anfang und Ende GETRENNT — das ist der ganze Zweck.
-                    // Die Hülle kennt nur eine Bounding-Box und weiß nicht,
-                    // welches Ende oben liegt; damit ist kein Gefälle
-                    // bearbeitbar.
-                    anfang: p[0],
-                    ende: p[p.length - 1],
-                    polyline: p,
-                    laenge: a.laenge,
-                    gefaelle: a.gefaelle,
-                    dn: a.dn,
-                    quelle: a.quelle,
-                });
-            }
-            this._achsenRoh.set(api.fragmentModelId, karte);
-            n += karte.size;
+    /** → `ifcleser/Achsen.js` (Teil XXIII, A8: Engine-Diät). */
+    leseAchsen(...a) { return _ausgelagert_leseAchsen(this, ...a); }
 
-            // DIE KNOTEN gleich mit: die Schächte, an denen die Haltungen
-            // hängen. Ohne sie gibt es keine Topologie — und ohne Topologie
-            // keinen einzigen Netz-Befund. Gelesen wird nur die PLATZIERUNG,
-            // keine Geometrie; das kostet nichts.
-            const knoten = new Map();
-            // Welche Familien KNOTEN sind, sagt ebenso der Katalog.
-            for (const [id, punkt] of api.quelle.platzierungen(_idsDerNetzrolle(api.quelle, 'knoten'))) {
-                const kZeile = api.quelle.zeile(id) ?? null;
-                knoten.set(id, {
-                    punkt: off
-                        ? { x: punkt.x - off.x, y: punkt.y - (off.y ?? 0), z: punkt.z - off.z }
-                        : punkt,
-                    globalId: kZeile?.GlobalId?.value ?? null,
-                    name: kZeile?.Name?.value ?? '',
-                });
-            }
-            this._knotenRoh.set(api.fragmentModelId, knoten);
+    /** → `engine/Pruefliste.js` (Teil XXIII, A8: Engine-Diät). */
+    pruefeAlles(...a) { return _ausgelagert_pruefeAlles(this, ...a); }
 
-            // Die Merkmale gleich mit — ein Durchlauf über die Beziehungen.
-            // Material, Baujahr und Kanalart stehen in Fabios Dateien an jedem
-            // Bauteil und wurden bisher nirgends gelesen.
-            this._merkmale.set(api.fragmentModelId, api.quelle.merkmale());
-        }
-        this._lagenAnwenden();
-        return n;
-    }
+    /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
+    netzVon(...a) { return _ausgelagert_netzVon(this, ...a); }
 
-    /**
-     * Das ganze Modell prüfen — die Prüfliste (Stufe 14.4).
-     *
-     * Läuft über die Achsen, die seit dem Laden bereitstehen; es wird nichts
-     * nachgelesen. Rein beratend: kein Befund hält je etwas auf.
-     *
-     * @param {object} opts
-     * @param {(kategorie:string) => object|null} [opts.typprofilFuer]
-     * @param {object} [opts.regelwerk]
-     * @returns {Array<{modelId, localId, globalId, kategorie, name, befunde}>}
-     */
-    pruefeAlles({ typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk = aufgeloestesRegelwerk() } = {}) {
-        const out = [];
-        for (const [modelId, achsen] of (this._achsen ?? new Map())) {
-            const quelle = this.quelleVon(modelId);
-            // Netz-Befunde zuerst: sie betreffen auch Bauteile OHNE Achse
-            // (einen Schacht ohne Anschluss etwa), die die Schleife darunter
-            // gar nicht besucht.
-            const netzBefunde = befundeFuerNetz(this.netzVon(modelId), regelwerk);
-            for (const [localId, achse] of achsen) {
-                // Verdeckte prüfen nicht mit — ein unsichtbares Bauteil mit
-                // sichtbaren Befunden wäre eine Liste, der niemand traut.
-                if (achse.globalId && this._verdeckt?.has(achse.globalId)) {
-                    netzBefunde.delete(localId);
-                    continue;
-                }
-                const zeile = quelle?.zeile(localId) ?? null;
-                const kategorie = achse.kategorie
-                    ?? (zeile?.constructor?.name ?? '').toUpperCase()
-                    ?? '';
-                const globalId = achse.globalId ?? String(localId);
-                const befunde = befundeFuer({
-                    globalId,
-                    kategorie,
-                    beschreibung: zeile?.Description?.value ?? null,
-                    achse,
-                    umgekehrt: umgekehrtFuer(globalId),
-                    typprofil: typprofilFuer(kategorie),
-                }, regelwerk).concat(netzBefunde.get(localId) ?? []);
-                netzBefunde.delete(localId);
-                if (!befunde.length) continue;
-                out.push({
-                    modelId, localId,
-                    globalId: zeile?.GlobalId?.value ?? null,
-                    kategorie,
-                    name: zeile?.Name?.value ?? '',
-                    befunde,
-                });
-            }
-
-            // Die CDE-KANTEN durch dieselben Regeln — ein selbst gebautes
-            // Rohr mit Gegengefälle verdient denselben Befund wie ein
-            // geliefertes (Stufe 17.3).
-            for (const [gid, k] of this._cdeKanten ?? new Map()) {
-                if (this._verdeckt?.has(gid)) continue;
-                const kantenId = `cde:${gid}`;
-                const befunde = befundeFuer({
-                    globalId: gid,
-                    kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
-                    achse: k,
-                    umgekehrt: umgekehrtFuer(gid),
-                    typprofil: typprofilFuer(k.kategorie ?? 'IFCPIPESEGMENT'),
-                }, regelwerk).concat(netzBefunde.get(kantenId) ?? []);
-                netzBefunde.delete(kantenId);
-                if (!befunde.length) continue;
-                out.push({
-                    modelId, localId: kantenId,
-                    globalId: gid, kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
-                    name: k.name ?? '', befunde,
-                });
-            }
-
-            // Was übrig bleibt, sind Bauteile ohne Achse — die Schächte
-            // (gelieferte über die Quelle, selbst gesetzte über den Stand)
-            // und die CDE-Kanten, deren Befunde die Schleife oben nicht sah.
-            for (const [localId, befunde] of netzBefunde) {
-                if (typeof localId === 'string' && localId.startsWith('cde:')) {
-                    const gid = localId.slice(4);
-                    const meta = this._cdeKnoten?.get(gid) ?? this._cdeKanten?.get(gid) ?? null;
-                    out.push({
-                        modelId, localId,
-                        globalId: gid,
-                        kategorie: meta?.kategorie ?? 'IFCDISTRIBUTIONCHAMBERELEMENT',
-                        name: meta?.name ?? '',
-                        befunde,
-                    });
-                    continue;
-                }
-                const zeile = quelle?.zeile(localId) ?? null;
-                const knotenMeta = this._knoten?.get(modelId)?.get(localId) ?? null;
-                if (knotenMeta?.globalId && this._verdeckt?.has(knotenMeta.globalId)) continue;
-                out.push({
-                    modelId, localId,
-                    globalId: zeile?.GlobalId?.value ?? null,
-                    kategorie: (zeile?.constructor?.name ?? '').toUpperCase(),
-                    name: zeile?.Name?.value ?? '',
-                    befunde,
-                });
-            }
-        }
-
-        // Das Schwerste zuerst — eine Liste, die man von oben abarbeitet.
-        // Die Befunde der ABLEITUNGEN (Teil XIV): die Gegenprobe Körper gegen
-        // Raster steht an ihrem DGM-Teil — abgeleitet im letzten Aufbau, nie
-        // gespeichert. Ohne Aufbau gibt es keine, und das ist richtig so.
-        const zeilenJeGid = new Map(out.filter(z => z.globalId).map(z => [z.globalId, z]));
-        for (const [ableitungId, a] of this.autor?.ableitungen ?? new Map()) {
-            if (!a?.befunde?.length) continue;
-            // Ein Befund, der ein BAUTEIL nennt (die Überdeckung je Rohr), steht an
-            // dessen Zeile — vorher hingen acht Rohr-Befunde an einem DGM-Teil.
-            const amDgm = [];
-            for (const b of a.befunde) {
-                const z = b?.globalId ? zeilenJeGid.get(b.globalId) : null;
-                if (z) { z.befunde.push(b); continue; }
-                if (b?.globalId && this._beziehungen?.objekt?.(b.globalId)) {
-                    const o = this._beziehungen.objekt(b.globalId);
-                    const neu = { modelId: o.ort?.modelId ?? CDE_MODELL_ID, localId: o.ort?.localId ?? `cde:${b.globalId}`,
-                                  globalId: b.globalId, kategorie: o.kategorie ?? '', name: o.name ?? '', befunde: [b] };
-                    out.push(neu); zeilenJeGid.set(b.globalId, neu);
-                    continue;
-                }
-                amDgm.push(b);
-            }
-            if (!amDgm.length) continue;
-            const gid = a.teile?.dgm ?? Object.values(a.teile ?? {})[0] ?? ableitungId;
-            out.push({
-                modelId: CDE_MODELL_ID, localId: `cde:${gid}`, globalId: gid,
-                kategorie: 'IFCGEOGRAPHICELEMENT', name: `Ableitung ${a.rezept ?? ''}`.trim(),
-                befunde: amDgm,
-            });
-        }
-        // AUS DEM BEZIEHUNGSINDEX (Teil XVII, B4): Überdeckung, Kreuzungs- und
-        // Parallelabstand, Durchdringung, Schacht auf der Haltung — für alle
-        // Bauteile, die der Index kennt, an ihre Zeile gehängt (oder als neue).
-        // Abgeleitet aus dem letzten Aufbau; ohne Index gibt es keine.
-        const idx = this._beziehungen ?? null;
-        if (idx) {
-            const zeilen = new Map(out.filter(z => z.globalId).map(z => [z.globalId, z]));
-            for (const [gid, befunde] of befundeAusBeziehungen(idx, regelwerk)) {
-                if (!befunde.length || this._verdeckt?.has(gid)) continue;
-                const z = zeilen.get(gid);
-                if (z) { z.befunde.push(...befunde); continue; }
-                const o = idx.objekt(gid);
-                if (!o) continue;
-                const neu = {
-                    modelId: o.ort?.modelId ?? CDE_MODELL_ID,
-                    localId: o.ort?.localId ?? `cde:${gid}`,
-                    globalId: gid, kategorie: o.kategorie ?? '', name: o.name ?? '', befunde,
-                };
-                out.push(neu);
-                zeilen.set(gid, neu);
-            }
-        }
-        // KOLLISIONEN (G7): das Ergebnis der letzten Serverprüfung — am eigenen
-        // Körper, mit dem gelieferten Partner beim Namen.
-        const kollisionen = new Map();
-        for (const k of this._kollisionen ?? []) {
-            if (!k.eigen) continue;
-            if (!kollisionen.has(k.eigen)) kollisionen.set(k.eigen, []);
-            kollisionen.get(k.eigen).push({
-                regel: 'kollision', schwere: 'warnung',
-                text: `Kollision mit ${k.partnerName || k.partnerKategorie?.replace(/^IFC/, '') || k.partner || 'Bauteil'} — ${k.volumen.toFixed(2)} m³ Überschneidung`,
-                wert: k.volumen, quelle: 'Server-Kernel',
-            });
-        }
-        for (const [gid, befunde] of kollisionen) {
-            out.push({ modelId: CDE_MODELL_ID, localId: `cde:${gid}`, globalId: gid,
-                       kategorie: 'IFCEARTHWORKSCUT', name: this._cdeNameVon?.(gid) ?? 'eigener Körper', befunde });
-        }
-        return out.sort((a, b) =>
-            (b.befunde.some(x => x.schwere === 'warnung') ? 1 : 0)
-            - (a.befunde.some(x => x.schwere === 'warnung') ? 1 : 0)
-            || b.befunde.length - a.befunde.length);
-    }
-
-    /**
-     * Das Netz eines Modells — wer hängt an wem (Stufe 14.5).
-     *
-     * Aus der XY-Koinzidenz, nicht aus erklärten IFC-Beziehungen: die gibt es
-     * in den echten Dateien nicht (null Ports, null Connects). Gebaut wird auf
-     * Anfrage, nicht beim Laden — es ist eine Auskunft, kein Zustand.
-     */
-    netzVon(modelId, { toleranz } = {}) {
-        const achsen = this.achsenVon(modelId);
-        const knoten = this._knoten?.get(modelId) ?? new Map();
-        const verdeckt = this._verdeckt ?? new Set();
-
-        const kanten = [];
-        for (const [id, a] of achsen) {
-            // Verdeckte bleiben draussen: ein ausgeblendetes Bauteil, das
-            // weiter verkettet und Befunde trägt, ist ein Geist im Netz.
-            if (a.globalId && verdeckt.has(a.globalId)) continue;
-            kanten.push({ id, anfang: a.anfang, ende: a.ende, dn: a.dn, laenge: a.laenge });
-        }
-        for (const [gid, k] of this._cdeKanten ?? new Map()) {
-            if (verdeckt.has(gid)) continue;
-            kanten.push({ id: `cde:${gid}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge });
-        }
-
-        const knotenListe = [];
-        for (const [id, k] of knoten) {
-            if (k.globalId && verdeckt.has(k.globalId)) continue;
-            knotenListe.push({ id, punkt: k.punkt });
-        }
-        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
-            if (verdeckt.has(gid)) continue;
-            knotenListe.push({ id: `cde:${gid}`, punkt: k.punkt });
-        }
-
-        return baueNetz({ kanten, knoten: knotenListe, toleranz });
-    }
-
-    /**
-     * Der Strang ab diesem Bauteil — die Kette stromab (Stufe 14.6).
-     *
-     * Angereichert um GlobalId und Achse, damit der Katalog rein bleiben kann:
-     * `anwenden(el, werte)` bekommt die fertige Kette am Bauteil und muss
-     * weder Netz noch Engine kennen. Dasselbe Vorgehen wie bei `achse`.
-     *
-     * Die Kette endet am Abzweig — welche Haltung dort gemeint ist, kann nur
-     * ein Mensch entscheiden (siehe `strangAb` in Netztopologie.js).
-     */
-    /**
-     * Alle Schachtknoten eines Modells: GlobalId → Punkt (+Name).
-     *
-     * ZWEI Verbraucher, EIN Mass (Stufe 16): das Anschliessen (nächster
-     * Schacht zum Tipp) und das Nachführen beim Nachspielen (hat der Planer
-     * den Schacht bewegt?). `zielBasis` am Journaleintrag und der
-     * eingefrorene Vergleichswert kommen BEIDE hier heraus — zwei
-     * verschiedene Masse (Knoten vs. Hüllen-Anker) hätten still „bewegt"
-     * gemeldet, wo nur zweierlei gemessen wurde.
-     */
-    schachtPunkteVon(modelId) {
-        const knoten = this._knoten?.get(modelId) ?? new Map();
-        const verdeckt = this._verdeckt ?? new Set();
-        const karte = new Map();
-        for (const [, k] of knoten) {
-            if (!k.globalId || verdeckt.has(k.globalId)) continue;
-            karte.set(k.globalId, { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z, name: k.name ?? '' });
-        }
-        // Selbst gesetzte Schächte sind Anschluss- und Bezugsziele wie
-        // gelieferte — dasselbe Mass, dieselbe Karte.
-        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
-            if (verdeckt.has(gid)) continue;
-            karte.set(gid, { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z, name: k.name ?? '' });
-        }
-        return karte;
-    }
+    /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
+    schachtPunkteVon(...a) { return _ausgelagert_schachtPunkteVon(this, ...a); }
 
     strangVon(modelId, localId) {
         const netz = this.netzVon(modelId);
@@ -3748,73 +2978,11 @@ export class IfcEngine {
         }).filter(k => k.globalId && k.anfang && k.ende);
     }
 
-    /**
-     * Die Anschlüsse eines Bauwerks — welche Haltung mit welchem Ende (14.8).
-     *
-     * Gebraucht fürs Schachtverschieben: die angeschlossenen Haltungen können
-     * sich NICHT starr mitbewegen, denn nur EIN Ende wandert; das andere bleibt
-     * am Nachbarschacht. Das ist eine Formänderung, und darum muss der Aufrufer
-     * wissen, welches Ende gemeint ist.
-     *
-     * Wie überall in dieser Ecke aus der XY-Koinzidenz — es gibt in den echten
-     * Dateien keine erklärten Anschlüsse.
-     */
-    anschluesseVon(modelId, localId) {
-        const netz = this.netzVon(modelId);
-        const knoten = netz.knoten.get(localId);
-        if (!knoten) return [];
-        const eintrag = (kantenId, ende) => {
-            const a = this.achseVon(modelId, kantenId);
-            return a?.globalId ? {
-                localId: kantenId,
-                globalId: a.globalId,
-                name: a.name ?? '',
-                kategorie: a.kategorie ?? 'IFCPIPESEGMENT',
-                // `ende` sagt, welches Ende an DIESEM Bauwerk hängt.
-                ende,
-                anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
-            } : null;
-        };
-        return [
-            ...knoten.kantenAb.map(id => eintrag(id, 'anfang')),
-            ...knoten.kantenAn.map(id => eintrag(id, 'ende')),
-        ].filter(Boolean);
-    }
+    /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
+    anschluesseVon(...a) { return _ausgelagert_anschluesseVon(this, ...a); }
 
-    /**
-     * Alle Schacht-Griffe für den Lageplan (G1) — über ALLE Modelle.
-     *
-     * Dieselben Knoten wie `schachtPunkteVon`, aber mit Modell- und
-     * Herkunftskennung: Gelieferte Schächte bekommen einen Griff
-     * (verschieben = Forderung an den Planer), CDE-eigene NICHT — deren Ort
-     * lebt im `erzeugt`-Bauplan, und eine `lage` darauf würde vom Fachmodell
-     * nie gelesen (17.3: Kanten und Knoten kommen aus den Bauplan-Parametern).
-     * Sie hier trotzdem anzubieten hieße, einen Griff zu zeigen, der nichts
-     * bewegt.
-     */
-    knotenGriffe() {
-        const verdeckt = this._verdeckt ?? new Set();
-        const out = [];
-        for (const [modelId, knoten] of this._knoten ?? new Map()) {
-            for (const [localId, k] of knoten) {
-                if (!k.globalId || verdeckt.has(k.globalId)) continue;
-                out.push({
-                    globalId: k.globalId, name: k.name ?? '', modelId, localId,
-                    punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z },
-                    herkunft: 'geliefert',
-                });
-            }
-        }
-        for (const [gid, k] of this._cdeKnoten ?? new Map()) {
-            if (verdeckt.has(gid)) continue;
-            out.push({
-                globalId: gid, name: k.name ?? '', modelId: null, localId: null,
-                punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z },
-                herkunft: 'cde',
-            });
-        }
-        return out;
-    }
+    /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
+    knotenGriffe(...a) { return _ausgelagert_knotenGriffe(this, ...a); }
 
     /** Wo ein GELIEFERTER Schacht wohnt — Modell und localId zur GlobalId. */
     schachtOrt(globalId) {
@@ -3826,33 +2994,8 @@ export class IfcEngine {
         return null;
     }
 
-    /**
-     * Die Anschlüsse eines Schachts, nach ENDEN sortiert (G1): `nah` ist das
-     * Ende an DIESEM Schacht (es wandert mit), `fern` das andere (es bleibt).
-     * Genau die Form, die die Fanglinien und die Anschluss-Vorschau brauchen —
-     * `anschluesseVon` liefert dieselben Daten, aber der Aufrufer müsste die
-     * Enden selbst auseinanderhalten, und das ist die Sorte Zuordnung, die
-     * irgendwann EIN Aufrufer falsch macht.
-     */
-    /**
-     * Die Anschlüsse eines Bauwerks über seine GLOBALID — geliefert oder
-     * selbst gesetzt (Teil XVII, B2). Ein CDE-Schacht wohnt im Netz unter
-     * `cde:<gid>`; `anschluesseVon` verlangte bisher den Ort eines
-     * gelieferten Knotens, und ein eigener Schacht bekam so nie den
-     * Mitführen-Regler. EIN Weg: dasselbe Netz, derselbe Eintrag.
-     */
-    anschluesseFuer(globalId) {
-        if (!globalId) return [];
-        const ort = this.schachtOrt(globalId);
-        if (ort) return this.anschluesseVon(ort.modelId, ort.localId);
-        if (this._cdeKnoten?.has(globalId) && !this._verdeckt?.has(globalId)) {
-            // Das Netz eines beliebigen Modells führt die CDE-Knoten mit; ohne
-            // geliefertes Modell reicht das leere Achsenband.
-            const modelId = [...(this._achsen?.keys() ?? [])][0] ?? CDE_MODELL_ID;
-            return this.anschluesseVon(modelId, `cde:${globalId}`);
-        }
-        return [];
-    }
+    /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
+    anschluesseFuer(...a) { return _ausgelagert_anschluesseFuer(this, ...a); }
 
     /**
      * Mehrere Orte zugleich auswählen — für „Verbundenes wählen" (B2), über
@@ -3909,63 +3052,8 @@ export class IfcEngine {
     }
     elementDatenVon(modelId, localId) { return this._elementDaten(modelId, localId); }
 
-    /**
-     * Was für einen Mengenauszug gebraucht wird — je Bauteil eine Zeile.
-     *
-     * GlobalId, Länge, Nennweite und die Merkmale, alles aus dem, was seit dem
-     * Laden bereitsteht. Gerechnet wird hier nichts: das tut `Sanierung.js`,
-     * und zwar rein, damit es sich prüfen lässt.
-     */
-    /**
-     * Das Höhenraster eines GELIEFERTEN Bauteils — für das Gelände-Rezept
-     * und den Erdmassen-Auszug. Über den Resolver (dieselbe Ableitung wie
-     * die Analyse), nie aus dem Journal (Stufe 15).
-     */
-    async _quellFormVon(globalId, form = 'raster', { cell = null, bereich = null, gitter = null } = {}) {
-        // Die ACHSE eines gelieferten Rohrs (G6) steht seit dem Laden im
-        // Achsenband — mit DN, in Welt. Kein Resolver, kein Netz.
-        if (form === 'linie') return this._achseAlsLinie(globalId);
-        // Der KNOTEN eines Schachts (B3) — wirksam, aus dem Fachmodell, kein Netz.
-        if (form === 'knoten') return this._knotenMitUnterkante(globalId);
-        // `karteMitEngine` liefert den UMSCHLAG {karte, fehlend} — hier stand
-        // `karte.get(…)` auf dem Umschlag, und damit warf jeder Gelände-
-        // Neuaufbau nach F5 und jeder Erdmassen-Auszug (Teil XIV, Stufe 0;
-        // der Test gelaendeFormen prüfte nur mit Attrappe an dieser Stelle
-        // vorbei — quellrasterVerdrahtung.test.js ruft den echten Körper).
-        const { karte } = await karteMitEngine(this, [globalId]);
-        const treffer = karte.get(globalId);
-        if (!treffer) return null;
-        const res = await this.makeGeometryResolver()
-            ?.forElements([treffer])?.getForm('mesh');
-        const d = res?.data;
-        if (!d?.positions?.length) return null;
-        if (form === 'mesh') return { positions: d.positions, triCount: d.triCount };
-        if (form === 'umriss') {
-            // DER GRUNDRISS eines Bauteils (E1b): die umschliessende Form im
-            // Lageplan, samt Unter- und Oberkante. Daran richtet sich eine
-            // Bauwerksgrube aus — Sohle auf der Gründungstiefe, Arbeitsraum
-            // nach aussen. Ein grosses Netz wird abgetastet: für die Hülle
-            // braucht es nicht jede Ecke.
-            const schritt = d.triCount > 20000 ? Math.ceil(d.triCount / 20000) : 1;
-            const { ergebnis, warnungen } = grundrissAusMesh({ mesh: { positions: d.positions, triCount: d.triCount } }, { schritt });
-            if (!ergebnis) return null;
-            return { ...ergebnis, warnungen };
-        }
-        if (form === 'koerper') {
-            // Ein gelieferter Körper mit Attest — die Aussparung (G7) braucht
-            // ihn geschlossen; `closed` sagt ehrlich, ob er es ist.
-            const positions = d.positions instanceof Float64Array ? d.positions : Float64Array.from(d.positions);
-            const att = meshVolume(positions, d.triCount);
-            return { positions, triCount: d.triCount, closed: !!att.closed, volumen: Math.abs(att.volume ?? 0), warnungen: att.warnings ?? [] };
-        }
-        // `cell` MUSS von aussen kommen, sobald zwei Raster verglichen werden:
-        // die Automatik rechnet die Zellweite aus der Dreieckszahl der
-        // jeweiligen Quelle, und zwei Quellen ergäben zwei Bezüge.
-        // `gitter` legt einen Korridor auf die Knoten des groben Rasters —
-        // sonst zeigen Erdkörper und Geländeanzeige zwei fast gleiche Flächen
-        // (Teil XXI).
-        return heightfieldRaster(d.positions, d.triCount, cell ?? null, [], { bereich, gitter });
-    }
+    /** → `engine/Quellformen.js` (Teil XXIII, A8: Engine-Diät). */
+    _quellFormVon(...a) { return _ausgelagert__quellFormVon(this, ...a); }
 
     /**
      * Die Kernel-Form `knoten` samt UNTERKANTE (Teil XXI, P2c).
@@ -4005,68 +3093,11 @@ export class IfcEngine {
         return eigen?.punkt ? { x: eigen.punkt.x, y: eigen.punkt.y, z: eigen.punkt.z, name: eigen.name ?? '' } : null;
     }
 
-    /** Kernel-Form `linie` einer gelieferten Achse: {punkte:[{x,y,z}], dn} oder null. */
-    _achseAlsLinie(globalId) {
-        for (const karte of (this._achsen ?? new Map()).values()) {
-            for (const a of karte.values()) {
-                if (a.globalId !== globalId) continue;
-                const punkte = (a.polyline ?? []).map(p => ({ x: p.x, y: p.y, z: p.z }));
-                // DER ACHSBEZUG WANDERT MIT (Teil XXI, E4): ob diese Höhe die
-                // Sohle oder die Rohrmitte meint, weiss nur, WOHER die Achse
-                // kommt. Ohne die Angabe raten Graben und Längsschnitt jeder
-                // für sich — und unterschiedlich (siehe Achsbezug.js).
-                return punkte.length >= 2
-                    ? { punkte, dn: a.dn ?? null, achsbezug: achsbezugVon(a.quelle), quelle: a.quelle ?? null }
-                    : null;
-            }
-        }
-        return null;
-    }
+    /** → `engine/Quellformen.js` (Teil XXIII, A8: Engine-Diät). */
+    _achseAlsLinie(...a) { return _ausgelagert__achseAlsLinie(this, ...a); }
 
-    /**
-     * Welche Gelände kommen als QUELLE einer Ableitung in Frage (G6)? Das
-     * sind dieselben Elemente, die der Sampler nimmt — gelieferte
-     * Terrain-Kategorien ohne Verdecktes plus die eigenen DGM-Teile — hier
-     * mit Kennung, Herkunft, Prüfmass und Zellweite, damit `anwenden`
-     * synchron bleibt und nichts nachrechnen muss.
-     * @returns {Promise<Array<{globalId, name, herkunft, modelId, localId, pruefmass, cell}>>}
-     */
-    async gelaendeKandidaten() {
-        const verdeckt = this._verdeckt ?? new Set();
-        // DIESELBE Memo wie der Sampler: was hier zur Auswahl steht, muss
-        // exakt das sein, woraus danach gerechnet wird. Zwei Läufe derselben
-        // Frage können auseinanderlaufen — und seit die Antwort von einer
-        // Auslegung abhängt, wäre das schwer zu bemerken.
-        const elemente = await this._gelaendeOrteHolen();
-        const cdeIds = [...(this._cdeGelaende ?? [])].filter(g => !verdeckt.has(g));
-        const { karte: cdeKarte } = cdeIds.length ? await karteMitEngine(this, cdeIds) : { karte: new Map() };
-        const cdeOrte = new Map([...cdeKarte].map(([gid, t]) => [`${t.modelId}|${t.localId}`, gid]));
-        const out = [];
-        for (const e of elemente) {
-            let globalId = cdeOrte.get(`${e.modelId}|${e.localId}`) ?? null;
-            const herkunft = globalId ? 'cde' : 'geliefert';
-            let name = '';
-            if (!globalId) {
-                const zeile = this.quelleVon(e.modelId)?.zeile(e.localId) ?? null;
-                globalId = zeile?.GlobalId?.value ?? null;
-                name = zeile?.Name?.value ?? '';
-            }
-            if (!globalId) continue;
-            let pruefmass = null;
-            let cell = null;
-            try {
-                const res = await this.makeGeometryResolver()
-                    ?.forElements([{ modelId: e.modelId, localId: e.localId }])?.getForm('mesh');
-                const d = res?.data;
-                if (d?.positions?.length) {
-                    pruefmass = pruefmassVon({ positions: d.positions, triCount: d.triCount });
-                    cell = zellweiteVorschlag(pruefmass);
-                }
-            } catch { /* ohne Prüfmass, aber mit Kennung — der Quellen-Arm urteilt dann nicht */ }
-            out.push({ globalId, name, herkunft, modelId: e.modelId, localId: e.localId, pruefmass, cell });
-        }
-        return out;
-    }
+    /** → `engine/Quellformen.js` (Teil XXIII, A8: Engine-Diät). */
+    gelaendeKandidaten(...a) { return _ausgelagert_gelaendeKandidaten(this, ...a); }
 
     /** Rückwärtsverträglich — der Aufrufer im Autor nennt es weiter so. */
     _quellrasterVon(globalId, opts = {}) {
@@ -4090,86 +3121,8 @@ export class IfcEngine {
         return l ? achsmassAus(l) : null;
     }
 
-    /**
-     * Erdmassen je geformtem Gelände (Stufe 15): Ausgangsraster gegen das
-     * nach der Operationsliste geformte — Aushub und Auftrag getrennt.
-     * Nichts wird gespeichert; jede Zeile entsteht aus Journal + Ableitung.
-     */
-    async erdmassen(bauplaene = []) {
-        const zeilen = [];
-        const gesehen = new Set();
-        for (const b of bauplaene) {
-            const rz = _rezeptNach(b?.rezept);
-            // DIE ANZEIGE (Stufe 1): je Ur-Gelände eine Zeile GESAMT — das
-            // Ur gegen das Gelände nach allen Vorgängen. Sie muss die Summe
-            // der Vorgangszeilen sein; ist sie es nicht, ist etwas falsch.
-            if (rz?.summe) {
-                if (!b.ableitung || gesehen.has(b.ableitung)) continue;
-                gesehen.add(b.ableitung);
-                const k = this.autor?.ableitungen?.get(b.ableitung)?.kennzahlen ?? null;
-                const name = (rz.quellnameAus?.(b) ?? String(b.name ?? '')) + ' · Gesamt';
-                if (!k) { zeilen.push({ name, art: 'anzeige', gesamt: true, aushub: null, auftrag: null, grund: 'noch nicht aufgebaut' }); continue; }
-                zeilen.push({ name, ableitung: b.ableitung, art: 'anzeige', gesamt: true,
-                              aushub: k.aushubGesamt ?? null, auftrag: k.auftragGesamt ?? null,
-                              vorgaenge: (b.parameter?.vorgaenge ?? []).length, befunde: [] });
-                continue;
-            }
-            // Teil XIV: eine Ableitung trägt ihre Massen als KENNZAHLEN des
-            // letzten Aufbaus — Körper UND Raster, die Gegenprobe steht daneben.
-            // Die Teile teilen sich eine Ableitung: je Ableitung eine Zeile.
-            if (rz?.erdbau) {
-                if (!b.ableitung || gesehen.has(b.ableitung)) continue;
-                gesehen.add(b.ableitung);
-                const a = this.autor?.ableitungen?.get(b.ableitung) ?? null;
-                const k = a?.kennzahlen;
-                const anhang = rz.mengenzeile ? ` · ${rz.mengenzeile}` : '';
-                const name = String(b.name ?? '')
-                    .replace(/ · (Aushub|Auftrag|Graben|Verfüllung|Baugrube)$/, '')
-                    .replace(/ \((geformt|mit Graben|mit Baugrube)\)$/, '')
-                    + anhang;
-                if (!k) {
-                    zeilen.push({ name, aushub: null, auftrag: null, grund: 'noch nicht aufgebaut' });
-                    continue;
-                }
-                zeilen.push({
-                    name, ableitung: b.ableitung, art: b.rezept, reihe: k.reihe ?? null,
-                    // Die GELTENDE Masse (Teil XXI, P6) — dieselbe Zahl wie in
-                    // der Meldung, im Eigenschaftsfenster und in der IFC-Qto.
-                    aushub: aushubMasseVon(k),
-                    massenQuelle: k.massenQuelle ?? null,
-                    // Beim Kanalgraben ist der „Auftrag" die VERFÜLLUNG (Graben − Rohr).
-                    // Was der Vorgang AUFFÜLLT, sagt sein Rezept: der Teil, der eine
-                    // verdichtete Menge trägt — beim Graben die Verfüllung, sonst der
-                    // Auftrag. Eine Baugrube hat keinen.
-                    ..._fuellungsspalten(rz, k),
-                    rohrVolumen: k.rohrVolumen ?? null,
-                    aushubKoerper: k.aushubKoerper ?? null, auftragKoerper: k.auftragKoerper ?? null,
-                    // Teil XXI (P4): die LOSE Masse (die abgefahren wird), der
-                    // Faktor, mit dem sie entstand, und die Gegenprobe als Zahl
-                    // — sie sprach bisher nur, wenn sie ausschlug.
-                    aushubLose: k.aushubLose ?? null, auflockerung: k.auflockerung ?? null,
-                    gegenprobeAushub: k.gegenprobeAushub ?? null, gegenprobeAuftrag: k.gegenprobeAuftrag ?? null,
-                    befunde: a.befunde ?? [],
-                });
-                continue;
-            }
-            // Altbestand vor Teil XIV: das Rezept, das sein Quellraster braucht.
-            if (rz?.braucht !== 'quellraster') continue;
-            const quelle = b.parameter?.quelle;
-            const raster = quelle
-                ? await this._quellrasterVon(quelle, { cell: b.parameter?.raster?.cell ?? null })
-                : null;
-            if (!raster) {
-                zeilen.push({ name: b.name || quelle || '—', aushub: null, auftrag: null,
-                              grund: 'Quellraster nicht ableitbar' });
-                continue;
-            }
-            const { raster: geformt } = formeNach(raster, b.parameter?.operationen ?? []);
-            const m = massenAus(raster, geformt);
-            zeilen.push({ name: b.name || quelle, aushub: m?.aushub ?? null, auftrag: m?.auftrag ?? null });
-        }
-        return zeilen;
-    }
+    /** → `Erdmassen.js` (Teil XXIII, A8: Engine-Diät). */
+    erdmassen(...a) { return _ausgelagert_erdmassen(this, ...a); }
 
     mengenGrundlage() {
         const out = [];

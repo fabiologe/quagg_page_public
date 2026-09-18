@@ -17,7 +17,7 @@
  * sonst erzeugt die Unterseite gespiegelte Phantom-Böschungen.
  */
 
-import { collectElementTriangles } from './geometry/MeshAcquire.js';
+import { collectElementTriangles } from './ifcleser/MeshAcquire.js';
 
 /**
  * HIER STAND EINE ZWEITE KATEGORIENLISTE (bis 2026-09-03).
@@ -38,7 +38,7 @@ export { GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
 // Der Sampler wohnt seit 2026-09-07 in geometry/HeightSampler.js — leicht,
 // damit der Kernel-Worker ihn ohne three/web-ifc bekommt. Hier weiter
 // exportiert, damit die Aufrufer unberührt bleiben.
-export { makeHeightSampler } from './geometry/HeightSampler.js';
+export { makeHeightSampler } from './geometrie/HeightSampler.js';
 
 
 /**

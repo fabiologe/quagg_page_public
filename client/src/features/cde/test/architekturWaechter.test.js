@@ -117,23 +117,17 @@ function regel(name, gefunden, erlaubt) {
 
 /** W1 — Importe NACH OBEN. Ziel: leer (A8). */
 const AUFWAERTS_ERLAUBT = {
-    // Der Kern kennt die Geländeschicht (`gleicherBezug`) — Audit B9.
-    'services/geometrie/ops/Koerper.js': 1,
-    'services/geometrie/ops/Raster.js': 1,
-    // Der Geometrie-Leser kennt IFC-Kategorien, Rohrsemantik und die
-    // IFC-Datenkonfiguration — er IST der IFC-Leser und zieht in A8 aus dem
-    // Kern aus (B11).
-    'services/geometry/GeometryResolver.js': 3,
+    // A8: leer. `gleicherBezug` lebt im Kern (B9); der Geometrie-Leser ist als
+    // IFC-Leser nach `services/ifcleser/` gezogen (B11) und importiert von dort
+    // nach unten; `geometry/` ist in `geometrie/` aufgegangen — ein Kern, ein Ordner.
 };
 
 /** W1b — Anzeige/Oberfläche → `gelaende/` und `ableitung/`. Ziel: nur der Autor (A8). */
 const DURCHGRIFF_ERLAUBT = {
-    'components/IfcAenderungenTab.vue': 1,
-    'components/IfcViewer.vue': 1,
     // BLEIBT: der Autor ist der Wirt des Ableitungslaufs — er baut aus dem Journal.
     'services/IfcAutor.js': 2,
-    // `formeNach`/`massenAus` und `aushubMasseVon`: Massen rechnet nicht der Renderer (B13).
-    'services/IfcEngine.js': 2,
+    // A8: die Engine rechnet keine Massen mehr (`Erdmassen.js`, B13), Viewer und
+    // Änderungen-Reiter fragen die Beziehungen über den Katalog. 6 → 2.
 };
 
 /** W1c — `ERDBAU_PUNKTHOEHEN`, `KOERPERHAFT` ausserhalb der Katalogschicht. 7 → 0 mit A2 (Punktlisten fragt man das Rezept). */
@@ -153,18 +147,10 @@ const REZEPTNAMEN_ERLAUBT = {};
  */
 const NETZREZEPT_SCHREIBER_ERLAUBT = {};      // AE: 6 → 0 — `rezeptFuerNetzrolle` fragt den Katalog
 
-/** W4 — `geometrie/ops` am Kernel-Vertrag vorbei. Ziel: nur das Hilfen-Fass (A8). */
+/** W4 — `geometrie/ops` am Kernel-Vertrag vorbei. Seit A8 leer: von aussen nur das Hilfen-Fass. */
 const KERNEL_ERLAUBT = {
-    'components/IfcViewer.vue': 2,
-    'services/Bauteilrezepte.js': 1,
-    'services/Bearbeitungen.js': 1,
-    'services/GlobalIdAbbildung.js': 1,
-    'services/IfcEngine.js': 2,
-    'services/Nachspielen.js': 1,
-    'services/ableitung/Ableitungen.js': 5,
-    // A4: der Sweep-Import ist mit den Geometrie-Bausteinen aus `Bauteilrezepte`
-    // hierher UMGEZOGEN (dort 2 → 1) — die Summe bleibt 14.
-    'services/rezept/Geometriebau.js': 1,
+    // A8: leer. Von aussen nur noch das Hilfen-Fass (`geometrie/hilfen.js`) —
+    // Formen laufen über `kernel.op` (B12, B18). 14 → 0.
 };
 
 /** W6 — Codezeilen mit Fachwort in der Musterschicht. 21 → 0 mit A3: Griffart und Fang heissen „knoten". */
@@ -237,7 +223,7 @@ const LOSE_REGELN = [
 // werden nicht geprüft — eine Zuordnung ist ein bewusster Schritt, kein Raten.
 const SCHICHTEN = [
     { id: 'L0', titel: 'Kern — Knoten, Verbindungen, Flächen, Körper',
-      passt: p => p.startsWith('services/geometrie/') || p.startsWith('services/geometry/') },
+      passt: p => p.startsWith('services/geometrie/') },
     { id: 'L1', titel: 'Fachregeln und Eigenschaftsarten',
       passt: p => /^services\/(gelaende|bauform|eigenschaften|regeln)\//.test(p)
           || ['services/Achsbezug.js', 'services/Hoehenbezug.js', 'services/Kategorien.js'].includes(p) },
@@ -249,8 +235,8 @@ const SCHICHTEN = [
     { id: 'L3', titel: 'Journal und Werkzeuge',
       passt: p => p.startsWith('stores/')
           || /^services\/(Bearbeitungen|Griffe|Eingaben|Nachspielen|Journal\w+|Vorschau)\.js$/.test(p) },
-    { id: 'L4', titel: 'Anzeige',
-      passt: p => /^services\/(Ifc\w+|GelaendeKanten|ErdbauUmrisse)\.js$/.test(p) },
+    { id: 'L4', titel: 'Anzeige und IFC-Leser',
+      passt: p => /^services\/(Ifc\w+|GelaendeKanten|ErdbauUmrisse)\.js$/.test(p) || p.startsWith('services/ifcleser/') },
     { id: 'L5', titel: 'Oberfläche',
       passt: p => /^(composables|components|views)\//.test(p) },
 ];

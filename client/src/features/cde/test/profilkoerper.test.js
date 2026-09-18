@@ -1,5 +1,5 @@
 /**
- * Der Grabenkörper aus Querprofilen (Teil XXI, P6).
+ * Der Profilkörper aus Querprofilen (Teil XXI, P6; seit Teil XXIII A8 ohne „Graben" im Kern).
  *
  * Gemessen wird gegen ZWEI unabhängige Wahrheiten, nie gegen sich selbst:
  *   1. die Handrechnung (ebenes Gelände, gerade Achse — Trapezformel),
@@ -11,7 +11,10 @@
  * nachweislich das Raster (siehe unten).
  */
 import { describe, expect, it } from 'vitest';
-import { GRABEN_KEIL, grabenkoerper } from '../services/geometrie/ops/Graben.js';
+import { PROFIL_KEIL, profilkoerper } from '../services/geometrie/ops/Profilkoerper.js';
+
+/** Stationen eines Grabens als Bahn des Kerns — wie die Kanalgraben-Ableitung übersetzt. */
+const alsBahn = (stationen) => stationen.map(s => ({ x: s.x, y: s.y, z: s.z, breite: s.sohlbreite }));
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
 import { formeNach, massenAus } from '../services/gelaende/Operationen.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
@@ -38,8 +41,8 @@ function rastermasse(hf, stationen, n, cell) {
     return massenAus(g, formeNach(g, op).raster).aushub;
 }
 const koerper = (hf, stationen, n, opts = {}) =>
-    grabenkoerper({ raster: raster(hf, opts.cell ?? 0.5) },
-                  { stationen, boeschung: n, schritt: 0.25, quer: 0.25, ...opts });
+    profilkoerper({ raster: raster(hf, opts.cell ?? 0.5) },
+                  { bahn: alsBahn(stationen), neigung: n, schritt: 0.25, quer: 0.25, ...opts });
 
 describe('Der Körper ist geschlossen und trägt ein Volumen', () => {
     it('ein Trapezgraben schliesst — Deckel, Sohle, zwei Wände, zwei Stirnseiten', () => {
@@ -51,13 +54,13 @@ describe('Der Körper ist geschlossen und trägt ein Volumen', () => {
     });
 
     it('ohne Stationen, ohne Tiefe, ohne Raster: ein NEIN mit Grund, kein Wurf', () => {
-        expect(grabenkoerper({ raster: raster(EBEN, 1) }, { stationen: [] }).ergebnis).toBeNull();
+        expect(profilkoerper({ raster: raster(EBEN, 1) }, { bahn: [] }).ergebnis).toBeNull();
         const ueber = [{ x: 15, y: 301, z: 30, sohlbreite: 1 }, { x: 45, y: 301, z: 30, sohlbreite: 1 }];
-        const r = grabenkoerper({ raster: raster(EBEN, 1) }, { stationen: ueber, boeschung: 1 });
+        const r = profilkoerper({ raster: raster(EBEN, 1) }, { bahn: alsBahn(ueber), neigung: 1 });
         expect(r.ergebnis).toBeNull();
         expect(r.warnungen.join(' ')).toMatch(/ohne_tiefe/);
         // Vertragsbruch dagegen wirft: das Raster ist Pflicht.
-        expect(() => grabenkoerper({}, { stationen: GERADE })).toThrow();
+        expect(() => profilkoerper({}, { bahn: alsBahn(GERADE) })).toThrow();
     });
 });
 
@@ -87,9 +90,9 @@ describe('Gegen die HANDRECHNUNG — ebenes Gelände, gerade Achse', () => {
     }
 
     it('der Keil am Rampenende kostet weniger als 0,01 m³', () => {
-        expect(GRABEN_KEIL).toBeLessThanOrEqual(0.05);
-        const fein = grabenkoerper({ raster: raster(EBEN, 0.5) },
-            { stationen: GERADE, boeschung: 1, schritt: 0.1, quer: 0.1 });
+        expect(PROFIL_KEIL).toBeLessThanOrEqual(0.05);
+        const fein = profilkoerper({ raster: raster(EBEN, 0.5) },
+            { bahn: alsBahn(GERADE), neigung: 1, schritt: 0.1, quer: 0.1 });
         expect(Math.abs(fein.ergebnis.volumen - koerper(EBEN, GERADE, 1).ergebnis.volumen)).toBeLessThan(0.2);
     });
 });
@@ -154,15 +157,15 @@ describe('Wo das RASTER es nicht kann: senkrechte Wände', () => {
 describe('Der Kernel kennt die Operation', () => {
     it('sie rechnet im Client und liefert einen Körper', async () => {
         const kernel = erzeugeKernel();
-        expect(kernel.kann('grabenkoerper')).toEqual({ ok: true });
-        const r = await kernel.op('grabenkoerper', { raster: raster(EBEN, 0.5) },
-            { stationen: GERADE, boeschung: 0, schritt: 0.5, quer: 0.5 });
+        expect(kernel.kann('profilkoerper')).toEqual({ ok: true });
+        const r = await kernel.op('profilkoerper', { raster: raster(EBEN, 0.5) },
+            { bahn: alsBahn(GERADE), neigung: 0, schritt: 0.5, quer: 0.5 });
         expect(r.ergebnis.closed).toBe(true);
         expect(r.ergebnis.volumen).toBeCloseTo(90, 2);
     });
 
-    it('`stationen` ist Pflicht — der Vertrag hält', async () => {
+    it('`bahn` ist Pflicht — der Vertrag hält', async () => {
         const kernel = erzeugeKernel();
-        await expect(kernel.op('grabenkoerper', { raster: raster(EBEN, 1) }, {})).rejects.toThrow();
+        await expect(kernel.op('profilkoerper', { raster: raster(EBEN, 1) }, {})).rejects.toThrow();
     });
 });

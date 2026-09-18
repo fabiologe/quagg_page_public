@@ -17,8 +17,8 @@
 
 import * as THREE from 'three';
 import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
-import { collectElementTriangles } from './geometry/MeshAcquire.js';
-import { meshVolume } from './geometry/MeshOps.js';
+import { collectElementTriangles } from './ifcleser/MeshAcquire.js';
+import { meshVolume } from './geometrie/MeshOps.js';
 
 // Sprint G: Budget für den Mesh-Volumen-Pfad — oberhalb wird auf BBox
 // zurückgefallen, statt den Main-Thread minutenlang zu blockieren.

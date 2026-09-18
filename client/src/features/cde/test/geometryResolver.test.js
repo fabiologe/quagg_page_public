@@ -2,7 +2,7 @@
 // Provenienz-Durchreichung, Größen-Kaskaden.
 
 import { describe, expect, it, vi } from 'vitest'
-import { createGeometryResolver } from '../services/geometry/GeometryResolver'
+import { createGeometryResolver } from '../services/ifcleser/GeometryResolver'
 import { toPositions, box, tube } from './fixtures/solidFixtures'
 
 // ── Stubs ───────────────────────────────────────────────────────────────────

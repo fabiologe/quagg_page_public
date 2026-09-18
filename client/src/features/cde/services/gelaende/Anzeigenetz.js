@@ -36,8 +36,8 @@
  * Rein: kein three, kein Engine-Zugriff. Nichts davon wird gespeichert
  * (Gesetz 5) — die Anzeige ist gerechnet wie bisher.
  */
-import { makeHeightSampler } from '../geometry/HeightSampler.js';
-import { hoeheImRaster, rasterKnoten, zellDreiecke } from '../geometry/SurfaceOps.js';
+import { makeHeightSampler } from '../geometrie/HeightSampler.js';
+import { hoeheImRaster, rasterKnoten, zellDreiecke } from '../geometrie/SurfaceOps.js';
 
 /** Ab welchem Höhenunterschied (m) ein Knoten als verändert gilt. */
 export const ANZEIGE_EPS = 1e-3;

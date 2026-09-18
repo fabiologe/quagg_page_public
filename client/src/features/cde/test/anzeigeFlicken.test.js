@@ -10,8 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     dreieckeAusRaster, dreieckeMitFlicken, flickenRaster, hoeheImRaster, rasterKnoten,
-} from '../services/geometry/SurfaceOps.js';
-import { makeHeightSampler } from '../services/geometry/HeightSampler.js';
+} from '../services/geometrie/SurfaceOps.js';
+import { makeHeightSampler } from '../services/geometrie/HeightSampler.js';
 import { formeNach } from '../services/gelaende/Operationen.js';
 import { anzeigeFlicken } from '../services/gelaende/Flicken.js';
 import { ERDBAU_ZELLBUDGET, ERDBAU_ZELLE } from '../services/ableitung/Ableitungen.js';
@@ -20,7 +20,7 @@ import { ableitungsSchritte, geometrieAusTeil, rezeptNach } from '../services/Ba
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
 import { umrissAusNetz } from '../services/GelaendeKanten.js';
-import { wicklungVon } from '../services/geometry/SurfaceOps.js';
+import { wicklungVon } from '../services/geometrie/SurfaceOps.js';
 
 const OPT = { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET };
 const welle = (x, z) => 10 + 0.3 * Math.sin(x / 7) + 0.2 * Math.cos(z / 5) + 0.02 * x;

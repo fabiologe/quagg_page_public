@@ -8,7 +8,7 @@ import {
     gerinne, planum, boeschung, formeNach, gleicherBezug, massenAus, GELAENDE_OPS,
 } from '../services/gelaende/Operationen.js';
 import { dreieckeAusRaster, heightfieldRaster, rasterKnoten }
-    from '../services/geometry/SurfaceOps.js';
+    from '../services/geometrie/SurfaceOps.js';
 
 /** Ebenes Raster auf Höhe 10: 21×21 Knoten, Zelle 1 m, x/z 0…20. */
 function ebene(hoehe = 10) {

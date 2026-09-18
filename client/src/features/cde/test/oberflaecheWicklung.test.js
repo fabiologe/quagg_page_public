@@ -7,8 +7,8 @@
  * Autor die Anzeige) wickelt jede Zelle nach unten.
  */
 import { describe, expect, it } from 'vitest';
-import { deriveSurface, dreieckeAusRaster, wicklungVon } from '../services/geometry/SurfaceOps.js';
-import { makeHeightSampler } from '../services/geometry/HeightSampler.js';
+import { deriveSurface, dreieckeAusRaster, wicklungVon } from '../services/geometrie/SurfaceOps.js';
+import { makeHeightSampler } from '../services/geometrie/HeightSampler.js';
 
 /** Ein kleines geneigtes Raster als Dreiecksnetz — genau so baut der Autor die Anzeige. */
 function anzeigeNetz() {

@@ -274,7 +274,7 @@ import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { repo } from '../services/RepoFacade.js';
 import { flacheAusNutzlast, vergleicheStaende } from '../services/Standvergleich.js';
-import { abhaengige } from '../services/ableitung/Bezuege.js';
+import { abhaengige } from '../services/Bauteilrezepte.js';
 
 const emit = defineEmits(['geaendert']);
 

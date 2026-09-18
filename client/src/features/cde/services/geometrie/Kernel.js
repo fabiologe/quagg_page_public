@@ -23,8 +23,8 @@
 import { pruefeForm } from './Formen.js';
 import { rasterAusMesh, rasterResample, rasterDifferenz } from './ops/Raster.js';
 import { koerperZwischenRastern } from './ops/Koerper.js';
-import { grabenkoerper } from './ops/Graben.js';
-import { drape, offset, isolinie } from './ops/Linien.js';
+import { profilkoerper } from './ops/Profilkoerper.js';
+import { isolinie } from './ops/Linien.js';
 import { sweep, extrudiere } from './ops/Sweep.js';
 
 export const OPS = Object.freeze({
@@ -32,10 +32,10 @@ export const OPS = Object.freeze({
     rasterResample:         { eingaben: { raster: 'raster' },                 ausgabe: 'raster',  ort: 'client', kosten: 'klein',  pflicht: ['bezug'] },
     rasterDifferenz:        { eingaben: { a: 'raster', b: 'raster' },         ausgabe: 'raster',  ort: 'client', kosten: 'klein' },
     koerperZwischenRastern: { eingaben: { oben: 'raster', unten: 'raster' },  ausgabe: 'koerper', ort: 'client', kosten: 'mittel' },
-    grabenkoerper:          { eingaben: { raster: 'raster' },                 ausgabe: 'koerper', ort: 'client', kosten: 'mittel', pflicht: ['stationen'] },
+    profilkoerper:          { eingaben: { raster: 'raster' },                 ausgabe: 'koerper', ort: 'client', kosten: 'mittel', pflicht: ['bahn'] },
     isolinie:               { eingaben: { raster: 'raster' },                 ausgabe: 'linien',  ort: 'client', kosten: 'mittel' },
-    drape:                  { eingaben: { linie: 'linie', raster: 'raster' }, ausgabe: 'linie',   ort: 'client', kosten: 'klein' },
-    offset:                 { eingaben: { linie: 'linie' },                   ausgabe: 'umriss',  ort: 'client', kosten: 'klein',  pflicht: ['abstand'] },
+    // `drape` und `offset` sind gebaut (`ops/Linien.js`), aber ohne Aufrufer —
+    // sie kommen zurück in diese Liste, sobald einer sie braucht (Teil XXIII, A8).
     extrudiere:             { eingaben: { umriss: 'umriss' },                 ausgabe: 'koerper', ort: 'client', kosten: 'klein',  pflicht: ['von', 'bis'] },
     sweep:                  { eingaben: { profil: 'profil', achse: 'linie' }, ausgabe: 'koerper', ort: 'client', kosten: 'klein' },
     cdt:                    { eingaben: { punkte: 'punkte', bruchkanten: 'linien' }, ausgabe: 'mesh', ort: 'client', kosten: 'gross', stufe: 'G8' },
@@ -48,8 +48,8 @@ export const OPS = Object.freeze({
 
 /** Was im Client heute WIRKLICH rechnet. Neue Ops hier anmelden — sonst nirgends. */
 const CLIENT_OPS = Object.freeze({
-    rasterAusMesh, rasterResample, rasterDifferenz, koerperZwischenRastern, grabenkoerper,
-    drape, offset, isolinie,
+    rasterAusMesh, rasterResample, rasterDifferenz, koerperZwischenRastern, profilkoerper,
+    isolinie,
     sweep, extrudiere,
 });
 

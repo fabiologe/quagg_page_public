@@ -15,7 +15,7 @@ import { ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { innenEcken, randFuerInnenecke } from '../services/gelaende/Innenecken.js';
 import { grube, schuettung } from '../services/gelaende/Operationen.js';
-import { hoeheImRaster } from '../services/geometry/SurfaceOps.js';
+import { hoeheImRaster } from '../services/geometrie/SurfaceOps.js';
 import { eckFanglinien, fange, kantenAnEcke } from '../services/Fanglinien.js';
 import { griffeFuer, griffZuWerten, hatErdbauEcken } from '../services/Griffe.js';
 import { nachId } from '../services/Bearbeitungen.js';

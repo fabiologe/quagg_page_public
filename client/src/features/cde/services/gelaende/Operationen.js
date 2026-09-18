@@ -29,7 +29,8 @@
  * Reines Modul: kein Vue, kein three, kein WebGL.
  */
 import { punktInPolygon } from '@/services/tinte/InkGeometry';
-import { rasterKnoten } from '../geometry/SurfaceOps.js';
+import { rasterKnoten } from '../geometrie/SurfaceOps.js';
+import { gleicherBezug } from '../geometrie/hilfen.js';
 import { nnAusWelt } from '../Hoehenbezug.js';
 import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
 import { regeltabelle } from '../regeln/Regelwerk.js';
@@ -182,14 +183,9 @@ function _anLinie(px, pz, linie) {
     };
 }
 
-/** Gleicher Rasterbezug? Ein Delta/Vergleich über fremde Raster ist Unsinn. */
-export function gleicherBezug(a, b) {
-    return !!a && !!b
-        && a.nx === b.nx && a.nz === b.nz
-        && Math.abs(a.cell - b.cell) < 1e-9
-        && Math.abs(a.x0 - b.x0) < 1e-9
-        && Math.abs(a.z0 - b.z0) < 1e-9;
-}
+// `gleicherBezug` lebt seit Teil XXIII A8 im Kern (`geometrie/ops/Raster.js`) —
+// Kern und Geländeschicht fragen dieselbe Funktion, der Kern importiert nicht nach oben.
+export { gleicherBezug };
 
 /** Neues Raster mit kopierten Höhen — die Eingabe bleibt unangetastet. */
 function _kopie(raster) {

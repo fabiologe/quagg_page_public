@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { collectElementTriangles, _modellRahmen } from '../services/geometry/MeshAcquire.js';
+import { collectElementTriangles, _modellRahmen } from '../services/ifcleser/MeshAcquire.js';
 
 function modell({ position = null, transform = null } = {}) {
     const object = new THREE.Object3D();

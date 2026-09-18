@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   meshVolume, principalDirection, skeletonAxis,
   profileAtStation, meshAreas, simplifyPolyline3d,
-} from '../services/geometry/MeshOps'
+} from '../services/geometrie/MeshOps'
 import { toPositions, box, boxWithHole, tube, erdkoerper, profileArea } from './fixtures/solidFixtures'
 
 describe('meshVolume', () => {

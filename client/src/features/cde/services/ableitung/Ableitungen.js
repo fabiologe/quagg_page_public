@@ -31,11 +31,11 @@ import { innenEcken } from '../gelaende/Innenecken.js';
 import { AUFLOCKERUNG, GRABENREGELN, auflockerungFuer, auflockerungOder, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
 import { regelquelle, regeltabelle, regelwert } from '../regeln/Regelwerk.js';
-import { rasterAbtasten } from '../geometrie/ops/Raster.js';
-import { GRABEN_QUER, GRABEN_SCHRITT } from '../geometrie/ops/Graben.js';
-import { kreisProfil, trapezProfil, sweep, extrudiere } from '../geometrie/ops/Sweep.js';
-import { versetztePunkte, ringFlaeche } from '../geometrie/ops/Linien.js';
-import { umrissFlaeche } from '../geometrie/ops/Umriss.js';
+// Aus dem Kern nur das Hilfen-Fass (Teil XXIII, A8) — Formen laufen über `kernel.op`.
+import {
+    rasterAbtasten, PROFIL_QUER, PROFIL_SCHRITT, kreisProfil, trapezProfil, sweep, extrudiere,
+    versetztePunkte, ringFlaeche, umrissFlaeche,
+} from '../geometrie/hilfen.js';
 import { stationenEntlang } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
 import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
@@ -900,7 +900,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         // Aus Rasterknoten gebaut wackelt seine Sohle um eine Zellweite, und
         // bei SENKRECHTEN Wänden — `wandform: 'verbau'`, die Vorgabe — ist
         // auch die Masse unbrauchbar: gemessen +38,6 % gegen die Handrechnung
-        // (`geometrie/ops/Graben.js` nennt die ganze Messreihe). Deshalb aus
+        // (`geometrie/ops/Profilkoerper.js` nennt die ganze Messreihe). Deshalb aus
         // QUERPROFILEN, wo es geht.
         //
         // Es geht, wenn dieser Vorgang aus GENAU EINEM Graben besteht. Zwei
@@ -912,13 +912,15 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         const profilFaehig = ops.length === 1 && gerinneOps.length === 1;
         let graben = null, koerperArt = 'raster', koerperGrund = null;
         if (profilFaehig) {
-            const pk = await kernel.op('grabenkoerper', { raster: rechen }, {
-                stationen: gerinneOps[0].parameter.stationen,
-                boeschung: wand.n,
+            const pk = await kernel.op('profilkoerper', { raster: rechen }, {
+                // Der Kern kennt eine BAHN, keinen Graben (Teil XXIII, A8): die
+                // Stationen des Grabens werden hier übersetzt.
+                bahn: gerinneOps[0].parameter.stationen.map(s => ({ x: s.x, y: s.y, z: s.z, breite: s.sohlbreite })),
+                neigung: wand.n,
                 // Ein Strang kann hunderte Meter lang werden (Fabio, 2026-09-17):
                 // die Profilzahl ist gedeckelt, der Schritt wächst mit der Länge.
-                schritt: Math.max(GRABEN_SCHRITT, laenge / KANALGRABEN_PROFILE_MAX),
-                quer: Math.max(rechen.cell, GRABEN_QUER),
+                schritt: Math.max(PROFIL_SCHRITT, laenge / KANALGRABEN_PROFILE_MAX),
+                quer: Math.max(rechen.cell, PROFIL_QUER),
             });
             if (pk.ergebnis?.closed) { graben = pk; koerperArt = 'profil'; }
             else {

@@ -14,7 +14,7 @@
  * kennt: aus sich selbst — die Anzeige trägt den Namen des Ur-Geländes, jede
  * Ableitung dessen Prüfmass (`quellBasis.gelaende`). Mehr wird nicht geraten.
  */
-import { pruefmassGleich } from './geometrie/ops/Raster.js';
+import { pruefmassGleich } from './geometrie/hilfen.js';
 import { rezeptNach } from './Bauteilrezepte.js';
 
 /**

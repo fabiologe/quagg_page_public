@@ -1,4 +1,9 @@
 /**
+ * PROFILKÖRPER (Teil XXIII, A8, Befund B10) — ein Trapez entlang einer Bahn,
+ * vom Höhenfeld gedeckelt. Gebaut für den Kanalgraben (Teil XXI, P6); der Kern
+ * kennt seitdem keinen „Graben" mehr: die Ableitung übersetzt ihre Stationen
+ * in eine Bahn `{x, y (Unterkante), z, breite}`.
+ *
  * Der Grabenkörper — das Trapez, nicht die Treppe (Teil XXI, P6).
  *
  * `koerperZwischenRastern` baut den Aushub aus zwei Rastern. Für eine Grube
@@ -39,16 +44,16 @@
  * Alle Flächen zeigen nach AUSSEN. Die Wicklung ist unten hergeleitet; wer
  * eine ändert, prüft `closed` im Test.
  */
-import { meshVolume } from '../../geometry/MeshOps.js';
+import { meshVolume } from '../MeshOps.js';
 import { rasterAbtasten } from './Raster.js';
 import { ortBei } from '../Stationierung.js';
 
 /** Stationsabstand des Körpers (m) — feiner als die Stationen der Haltung. */
-export const GRABEN_SCHRITT = 0.5;
+export const PROFIL_SCHRITT = 0.5;
 /** Abstand der Deckelpunkte quer zur Achse (m). */
-export const GRABEN_QUER = 0.5;
+export const PROFIL_QUER = 0.5;
 /** Wieviele Stützpunkte eine Wand höchstens trägt (gleiche Zahl je Profil). */
-export const GRABEN_KETTE_MAX = 12;
+export const PROFIL_KETTE_MAX = 12;
 /**
  * Mit dieser Resttiefe streicht der Graben hinter seinem Ende aus (m).
  *
@@ -60,9 +65,9 @@ export const GRABEN_KETTE_MAX = 12;
  * welligem Gelände). Die fehlende Masse der letzten fünf Zentimeter liegt
  * unter 0,01 m³.
  */
-export const GRABEN_KEIL = 0.05;
+export const PROFIL_KEIL = 0.05;
 /** Ab hier gilt ein Profil als vorhanden — dieselbe Schwelle wie `DUENN`. */
-export const GRABEN_DUENN = 0.005;
+export const PROFIL_DUENN = 0.005;
 /**
  * Näher als das dürfen zwei Profile nicht stehen (m).
  *
@@ -72,7 +77,7 @@ export const GRABEN_DUENN = 0.005;
  * Kante dazwischen zählt viermal: „nicht mannigfaltig", Volumen unbrauchbar.
  * Gemessen am geneigten Gelände: 312 solche Kanten, 3 % Massenfehler.
  */
-export const GRABEN_MIN_ABSTAND = 0.01;
+export const PROFIL_MIN_ABSTAND = 0.01;
 
 const EPS = 1e-9;
 
@@ -86,14 +91,14 @@ function _einheit(dx, dz) {
  * Die Stationen prüfen und ihre Weglängen aufsummieren.
  * @returns {{st: Array, kum: number[], laenge: number}|null}
  */
-function _bahn(stationen) {
-    if (!Array.isArray(stationen) || stationen.length < 2) return null;
+function _bahnAus(bahn) {
+    if (!Array.isArray(bahn) || bahn.length < 2) return null;
     const st = [];
-    for (const s of stationen) {
+    for (const s of bahn) {
         const x = Number(s?.x), y = Number(s?.y), z = Number(s?.z);
-        const b = Number(s?.sohlbreite);
+        const b = Number(s?.breite);
         if (![x, y, z].every(Number.isFinite)) return null;
-        st.push({ x, y, z, sohlbreite: Number.isFinite(b) && b >= 0 ? b : 0 });
+        st.push({ x, y, z, breite: Number.isFinite(b) && b >= 0 ? b : 0 });
     }
     const kum = [0];
     for (let i = 0; i + 1 < st.length; i++) {
@@ -123,7 +128,7 @@ function _ortBei(bahn, d) {
         // Stufenfunktion (DIN EN 1610 Tab. 2), genau wie im Raster-Zweig. Auf
         // einer Knickstation ist i die Teilstrecke, die dort endet; hinter dem
         // Ende die letzte.
-        b2: st[o.i].sohlbreite / 2,
+        b2: st[o.i].breite / 2,
     };
 }
 
@@ -178,25 +183,25 @@ function _wandOben({ hoehe, p, qx, qz, seite, ziel, n, schritt, grenze }) {
 function _rampenEnde({ hoehe, x, z, ux, uz, sohle, n, schritt, grenze }) {
     if (!(n > 0)) return 0;
     let eVor = 0, dVor = (hoehe(x, z) || 0) - sohle;
-    if (!(dVor > GRABEN_KEIL)) return 0;
+    if (!(dVor > PROFIL_KEIL)) return 0;
     for (let e = schritt; ; e += schritt) {
         const ee = Math.min(e, grenze);
         const h = hoehe(x + ux * ee, z + uz * ee);
         const d = (Number.isFinite(h) ? h : -Infinity) - (sohle + ee / n);
-        if (d <= GRABEN_KEIL) {
-            return dVor - d > EPS ? eVor + (ee - eVor) * (dVor - GRABEN_KEIL) / (dVor - d) : eVor;
+        if (d <= PROFIL_KEIL) {
+            return dVor - d > EPS ? eVor + (ee - eVor) * (dVor - PROFIL_KEIL) / (dVor - d) : eVor;
         }
         if (ee >= grenze) return grenze;
         eVor = ee; dVor = d;
     }
 }
 
-/** Weglängen zusammenlegen, die dichter als `GRABEN_MIN_ABSTAND` liegen. */
+/** Weglängen zusammenlegen, die dichter als `PROFIL_MIN_ABSTAND` liegen. */
 function _wegeSieben(roh) {
     const aus = [];
     for (const w of [...roh].sort((a, b) => a.d - b.d)) {
         const l = aus[aus.length - 1];
-        if (l && w.d - l.d < GRABEN_MIN_ABSTAND) {
+        if (l && w.d - l.d < PROFIL_MIN_ABSTAND) {
             if (w.fest && !l.fest) aus[aus.length - 1] = w;   // die Station gewinnt: sie trägt die Breitenstufe
             continue;
         }
@@ -210,20 +215,20 @@ function _wegeSieben(roh) {
  *
  * @param {{raster: raster}} eingaben          Gelände VOR dem Graben (der Deckel)
  * @param {object} parameter
- * @param {Array<{x,y,z,sohlbreite}>} parameter.stationen  Sohlpunkte in Welt
- * @param {number} [parameter.boeschung]       Wandneigung 1 : n (0 = senkrecht)
+ * @param {Array<{x,y,z,breite}>} parameter.bahn  Unterkante (Mitte) und Unterbreite je Punkt, in Welt
+ * @param {number} [parameter.neigung]         Wandneigung 1 : n (0 = senkrecht)
  * @param {number} [parameter.schritt]         Profilabstand längs (m)
  * @param {number} [parameter.quer]            Punktabstand des Deckels (m)
  * @returns {{ergebnis: koerper|null, warnungen: string[]}}
  */
-export function grabenkoerper({ raster } = {}, { stationen, boeschung = 1.5, schritt = GRABEN_SCHRITT, quer = GRABEN_QUER } = {}) {
-    if (!raster?.heights) throw new Error('grabenkoerper: `raster` ist Pflicht');
+export function profilkoerper({ raster } = {}, { bahn: bahnEin, neigung = 1.5, schritt = PROFIL_SCHRITT, quer = PROFIL_QUER } = {}) {
+    if (!raster?.heights) throw new Error('profilkoerper: `raster` ist Pflicht');
     const warnungen = [];
-    const bahn = _bahn(stationen);
-    if (!bahn) return { ergebnis: null, warnungen: ['grabenkoerper_ohne_stationen'] };
-    const n = Math.max(0, Number(boeschung) || 0);
-    const dl = Math.max(0.05, Number(schritt) || GRABEN_SCHRITT);
-    const dq = Math.max(0.05, Number(quer) || GRABEN_QUER);
+    const bahn = _bahnAus(bahnEin);
+    if (!bahn) return { ergebnis: null, warnungen: ['profilkoerper_ohne_bahn'] };
+    const n = Math.max(0, Number(neigung) || 0);
+    const dl = Math.max(0.05, Number(schritt) || PROFIL_SCHRITT);
+    const dq = Math.max(0.05, Number(quer) || PROFIL_QUER);
     const hoehe = (x, z) => rasterAbtasten(raster, x, z);
 
     // ── Die Weglängen: jede Station, dazwischen alle `dl` — und die Rampen an
@@ -233,7 +238,7 @@ export function grabenkoerper({ raster } = {}, { stationen, boeschung = 1.5, sch
         const h = hoehe(s.x, s.z);
         if (Number.isFinite(h)) tiefeMax = Math.max(tiefeMax, h - s.y);
     }
-    if (!(tiefeMax > GRABEN_DUENN)) return { ergebnis: null, warnungen: ['grabenkoerper_ohne_tiefe: Sohle liegt über dem Gelände'] };
+    if (!(tiefeMax > PROFIL_DUENN)) return { ergebnis: null, warnungen: ['profilkoerper_ohne_tiefe: Sohle liegt über dem Gelände'] };
     const grenze = n > 0 ? tiefeMax * n + 2 * dq : 0;    // so weit greift eine Böschung höchstens
 
     // Die Rampen: ihre Länge steht im GELÄNDE, nicht in der Schrittweite. Wer
@@ -277,10 +282,10 @@ export function grabenkoerper({ raster } = {}, { stationen, boeschung = 1.5, sch
     // Körper, und zwei Körper sind keine Menge mehr. Dann lieber ehrlich nichts.
     const erste = roh.findIndex(p => p);
     const letzte = roh.length - 1 - [...roh].reverse().findIndex(p => p);
-    if (erste < 0) return { ergebnis: null, warnungen: ['grabenkoerper_leer: kein Profil mit Tiefe'] };
+    if (erste < 0) return { ergebnis: null, warnungen: ['profilkoerper_leer: kein Profil mit Tiefe'] };
     const profile = roh.slice(erste, letzte + 1);
-    if (profile.some(p => !p)) return { ergebnis: null, warnungen: ['grabenkoerper_unterbrochen: das Gelände steigt zwischendurch unter die Sohle'] };
-    if (profile.length < 2) return { ergebnis: null, warnungen: ['grabenkoerper_zu_kurz'] };
+    if (profile.some(p => !p)) return { ergebnis: null, warnungen: ['profilkoerper_unterbrochen: das Gelände steigt zwischendurch unter die Sohle'] };
+    if (profile.length < 2) return { ergebnis: null, warnungen: ['profilkoerper_zu_kurz'] };
 
     // ── Zweiter Durchgang: die Ringe. GLEICH VIELE Punkte je Profil — nur so
     //    passen sie zu einem Streifen zusammen.
@@ -290,7 +295,7 @@ export function grabenkoerper({ raster } = {}, { stationen, boeschung = 1.5, sch
     //    dann die Wände bis zur Böschungsoberkante. Innerhalb des Grabens ist
     //    die Wand in `o` linear — die Stützpunkte liegen also EXAKT darauf,
     //    und genau das ist der Gewinn gegenüber dem Raster. ─────────────────
-    const K = n > 0 ? Math.max(1, Math.min(GRABEN_KETTE_MAX, Math.ceil(Math.max(...profile.map(p => Math.max(p.aR, p.aL))) / dq))) : 0;
+    const K = n > 0 ? Math.max(1, Math.min(PROFIL_KETTE_MAX, Math.ceil(Math.max(...profile.map(p => Math.max(p.aR, p.aL))) / dq))) : 0;
     const J = Math.max(0, Math.ceil(Math.max(...profile.map(p => 2 * p.b2)) / dq) - 1);
     const P = 2 * K + J + 2;
     const ringe = profile.map(p => {
@@ -306,7 +311,7 @@ export function grabenkoerper({ raster } = {}, { stationen, boeschung = 1.5, sch
         // `meshVolume` fände sie viermal („nicht mannigfaltig").
         for (let i = os.length - 1; i >= 0; i--) {
             const h = hoehe(p.x + p.q.x * os[i], p.z + p.q.z * os[i]);
-            ring.push(pkt(os[i], Math.max(Number.isFinite(h) ? h : unten[i], unten[i] + GRABEN_DUENN)));
+            ring.push(pkt(os[i], Math.max(Number.isFinite(h) ? h : unten[i], unten[i] + PROFIL_DUENN)));
         }
         return ring;
     });

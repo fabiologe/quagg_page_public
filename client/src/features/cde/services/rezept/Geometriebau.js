@@ -8,7 +8,7 @@
  * (`geometrie.art`), nicht diese Datei.
  */
 import * as THREE from 'three';
-import { sweep, kreisProfil, rechteckProfil, platte } from '../geometrie/ops/Sweep.js';
+import { sweep, kreisProfil, rechteckProfil, platte } from '../geometrie/hilfen.js';
 
 /**
  * Anzeigebreite einer Linie in Metern.

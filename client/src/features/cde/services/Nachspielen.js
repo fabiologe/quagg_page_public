@@ -34,7 +34,7 @@
  */
 
 import { AENDERUNGS_ARTEN, standMitEintragEbenen, vergleicheMitModell } from '../stores/useAenderungen.js';
-import { pruefmassGleich } from './geometrie/ops/Raster.js';
+import { pruefmassGleich } from './geometrie/hilfen.js';
 import { istEigen } from './Bauteilrezepte.js';
 
 /**

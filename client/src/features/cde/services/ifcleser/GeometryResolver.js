@@ -27,8 +27,8 @@
  */
 
 import { collectElementTriangles } from './MeshAcquire.js';
-import { meshVolume, skeletonAxis, meshAreas, principalDirection, profileAtStation } from './MeshOps.js';
-import { deriveSurface } from './SurfaceOps.js';
+import { meshVolume, skeletonAxis, meshAreas, principalDirection, profileAtStation } from '../geometrie/MeshOps.js';
+import { deriveSurface } from '../geometrie/SurfaceOps.js';
 import { extractAxisPolylines, polylineLength } from '../AxisAnnotations.js';
 import { collectQto, pickQtoValue, LENGTH_KEYS } from '../QuantitySummary.js';
 import { FRAGMENTS_DATA_CONFIG } from '../IfcDataConfig.js';
