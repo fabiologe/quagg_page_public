@@ -510,7 +510,7 @@ import { profilFuer } from '../services/bauform/Typprofile.js';
 import { pruefmassVon, zellweiteVorschlag } from '../services/geometrie/ops/Raster.js';
 import { grundrissAusMesh } from '../services/geometrie/ops/Umriss.js';
 import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
-import { BEARBEITUNGEN, GRUPPEN } from '../services/Bearbeitungen.js';
+import { GRUPPEN, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen } from '../services/Bibliothek.js';
 
@@ -2169,17 +2169,6 @@ onMounted(async () => {
     { id: 'lvl.bis', titel: 'Geschosse: bis zum gewählten', icon: 'layers', gruppe: 'Geschosse',
       verfuegbar: () => storeyList.value.length > 0, run: () => storeyNavRef.value?.setModus('bis') },
 
-    // Stufe 9.0: der DRITTE Verbraucher des Bearbeitungs-Katalogs. Dieselbe
-    // Liste wie im Kontextmenü — `verfuegbar` spiegelt die Bauform-Prüfung,
-    // damit die Palette nichts anbietet, was das Menü verschweigt.
-    ...BEARBEITUNGEN.map(b => ({
-      id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
-      gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
-      // Kassensturz E4: ein Werkzeug wählen schaltet die Bearbeitung ein —
-      // angeboten wird, was zum Bauteil passt, auch wenn der Modus noch aus ist.
-      verfuegbar: () => bearbeitung.moeglich.some(m => m.id === b.id),
-      run: () => werkzeugStarten(b.id),
-    })),
     { id: 'bearb.modus', titel: 'Bearbeiten ein-/ausschalten', icon: 'edit',
       gruppe: 'Bearbeiten', key: 'E', run: () => bearbeitenUmschalten() },
   ]);
@@ -2191,13 +2180,33 @@ onMounted(async () => {
   // Bearbeitung die Vorbelegung — eine Büroregel, die einen Proxy zum
   // Höhenfeld erklärt, käme nie an. Der Ladevorgang selbst wird davon nicht
   // aufgehalten (kein `await` an einer sichtbaren Stelle).
+  // Stufe 9.0: der DRITTE Verbraucher des Bearbeitungs-Katalogs — eigener
+  // Bereich, damit er nach dem Katalogladen NEU gemeldet werden kann: ein
+  // Rezept aus der Bibliothek bringt sein Zeichenwerkzeug mit (Teil XXIII, A5).
+  werkzeugBefehleMelden();
   bearbeitung.ladeProfile(repo)
-    .then(() => entwerteNach(['bauform']))
+    .then(() => { werkzeugBefehleMelden(); entwerteNach(['bauform']); })
     .catch(e => console.warn('cde: typprofile', e?.message ?? e));
 });
 
+/**
+ * Dieselbe Liste wie im Kontextmenü — `verfuegbar` spiegelt die Bauform-
+ * Prüfung, damit die Palette nichts anbietet, was das Menü verschweigt.
+ */
+function werkzeugBefehleMelden() {
+  cmds.register('viewer-werkzeuge', werkzeugKatalog().map(b => ({
+    id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
+    gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
+    // Kassensturz E4: ein Werkzeug wählen schaltet die Bearbeitung ein —
+    // angeboten wird, was zum Bauteil passt, auch wenn der Modus noch aus ist.
+    verfuegbar: () => bearbeitung.moeglich.some(m => m.id === b.id),
+    run: () => werkzeugStarten(b.id),
+  })));
+}
+
 onBeforeUnmount(() => {
   cmds.unregister('viewer');
+  cmds.unregister('viewer-werkzeuge');
   document.removeEventListener('keydown', onKeyDown);
   _selection?.detach();
   _selection = null;

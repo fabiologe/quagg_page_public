@@ -602,7 +602,7 @@ export function profilHerkunft(kategorie, satz = EINGEBAUTE_PROFILE) {
  * Kategorie: eine Kategorie, die der Büro-Satz nicht nennt, kommt weiter aus
  * dem eingebauten.
  */
-export async function ladeSatz(repo) {
+export async function ladeSatz(repo, { pruefe = null, befunde = null } = {}) {
     if (!repo?.mitVorrang) return { ...EINGEBAUTE_PROFILE };
     let eigene = null;
     try {
@@ -615,6 +615,14 @@ export async function ladeSatz(repo) {
     const satz = { ...EINGEBAUTE_PROFILE };
     for (const [kategorie, profil] of Object.entries(eigene)) {
         if (!profil || typeof profil !== 'object') continue;
+        // GEPRÜFT (Teil XXIII, A5): die Prüfung reicht der Katalog herein —
+        // diese Schicht importiert die Katalogschicht nicht (Wächter W1). Ein
+        // ungültiges Profil bleibt draussen und wird gemeldet; das eingebaute
+        // derselben Kategorie gilt weiter.
+        if (pruefe) {
+            const r = pruefe({ kategorie, ...profil });
+            if (!r.ok) { befunde?.push({ art: 'typprofil', id: kategorie, ebene: null, fehler: r.fehler }); continue; }
+        }
         satz[String(kategorie).toUpperCase().trim()] = profil;
     }
     return satz;

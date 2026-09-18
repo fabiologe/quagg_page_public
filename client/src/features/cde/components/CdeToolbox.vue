@@ -69,6 +69,20 @@
             </div>
           </div>
         </template>
+        <!-- KATALOG (Teil XXIII, A5): was aus Büro oder Projekt NICHT gilt, weil
+             es die Prüfung nicht besteht — sonst wirkte es still als
+             „Werkzeug erscheint nie". -->
+        <template v-if="bearbeitung.katalogBefunde.length">
+          <h4 class="tb-kopf">Katalog</h4>
+          <p class="tb-warum">Diese Einträge gelten nicht — sie sind fehlerhaft:</p>
+          <ul class="tb-katalog">
+            <li v-for="(b, i) in bearbeitung.katalogBefunde" :key="`${b.art}|${b.id}|${i}`">
+              <strong>{{ KATALOG_ART[b.art] ?? b.art }} „{{ b.id ?? '?' }}"</strong>
+              <span class="tb-katalog-ebene">{{ KATALOG_EBENE[b.ebene] ?? 'Büro oder Projekt' }}</span>
+              — {{ b.fehler.join(' ') }}
+            </li>
+          </ul>
+        </template>
       </template>
     </template>
 
@@ -322,7 +336,13 @@ const bearbeitung = useBearbeitung();
 const ifc = useIfcStore();
 const api = useViewerApi();
 
-const zeichenWerkzeuge = ausGruppe('erzeugen');
+// Der Katalog lebt: ein Rezept aus der Bibliothek bringt sein Zeichenwerkzeug
+// mit (Teil XXIII, A5). `katalogStand` wandert mit jeder Registrierung.
+const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, ausGruppe('erzeugen')));
+
+/** Was beim Katalogladen abgewiesen wurde — gemeldet, nicht still verworfen (A5, S8). */
+const KATALOG_ART = Object.freeze({ rezept: 'Rezept', typprofil: 'Typprofil', bauformregel: 'Bauformregel', vorlage: 'Vorlage' });
+const KATALOG_EBENE = Object.freeze({ buero: 'Büro', projekt: 'Projekt' });
 
 const QUELLE_TEXT = Object.freeze({
   bauplan:    'dem eigenen Rezept',
@@ -503,6 +523,8 @@ async function vorlagenLaden() {
 // Die Bibliothek hängt am Repo — das Backend steht erst nach der Auftragswahl fest.
 onMounted(vorlagenLaden);
 watch(() => cde.auftrag?.id, vorlagenLaden);
+// Eine Vorlage kann ein Rezept der Bibliothek nennen — gültig erst, wenn es registriert ist.
+watch(() => bearbeitung.katalogStand, vorlagenLaden);
 function vorlageZeichnen(v) { return zeichnen(`${v.rezept}-zeichnen`, { vorlage: v }); }
 
 /**
@@ -662,6 +684,11 @@ async function vorlageEntfernen(v) {
   letter-spacing: 0.06em; color: var(--cde-text-dim);
 }
 .tb-warum { margin: 0; font-size: 0.68rem; color: var(--cde-text-dim); }
+.tb-katalog {
+  margin: 0; padding-left: 1rem; font-size: 0.68rem; color: var(--cde-warn-soft);
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.tb-katalog-ebene { color: var(--cde-text-dim); }
 .tb-vorlage { display: flex; align-items: center; gap: 0.2rem; }
 .tb-vorlage > .tb-btn { flex: 1; min-width: 0; }
 .tb-vorlage-weg {

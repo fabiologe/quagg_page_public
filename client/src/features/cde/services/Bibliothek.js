@@ -21,6 +21,7 @@
  * eingebauten).
  */
 import { rezeptNach } from './Bauteilrezepte.js';
+import { pruefeEintrag } from './katalog/Katalogschema.js';
 
 export const REPO_KEY = 'bauteil-vorlagen';
 
@@ -36,21 +37,13 @@ export const EINGEBAUTE_VORLAGEN = Object.freeze([
       vorgaben: { kategorie: 'IFCALIGNMENT' } },
 ]);
 
-/** Nur DATEN dürfen hinein — und das Rezept muss es wirklich geben. */
+/**
+ * Nur DATEN dürfen hinein — und das Rezept muss es wirklich geben. Seit A5
+ * prüft das EINE Katalogschema; hier bleibt die alte Antwortform `{ok, grund}`.
+ */
 export function pruefeVorlage(vorlage) {
-    if (!vorlage || typeof vorlage !== 'object') return { ok: false, grund: 'keine Vorlage' };
-    if (!String(vorlage.name ?? '').trim()) return { ok: false, grund: 'Der Name fehlt.' };
-    if (!rezeptNach(vorlage.rezept)) return { ok: false, grund: `Unbekanntes Rezept „${vorlage.rezept}".` };
-    const vorgaben = vorlage.vorgaben ?? {};
-    if (typeof vorgaben !== 'object' || Array.isArray(vorgaben)) {
-        return { ok: false, grund: 'Vorgaben müssen ein Objekt sein.' };
-    }
-    for (const [feld, wert] of Object.entries(vorgaben)) {
-        if (!['string', 'number', 'boolean'].includes(typeof wert)) {
-            return { ok: false, grund: `Vorgabe „${feld}" ist kein einfacher Wert.` };
-        }
-    }
-    return { ok: true, grund: null };
+    const { ok, fehler } = pruefeEintrag('vorlage', vorlage);
+    return { ok, grund: ok ? null : fehler[0] };
 }
 
 function _gueltige(liste) {
@@ -156,3 +149,60 @@ function _gleicherWert(a, b) {
     return String(a ?? '') === String(b ?? '');
 }
 
+
+// ── Rezepte aus der Bibliothek (Teil XXIII, A5) ─────────────────────────────
+//
+// Die zweite Eintragsart: ein REZEPT als Deklaration (dieselbe Form wie die
+// eingebauten in `rezept/Eingebaut.js`). EIGENER Schlüssel, nicht in der
+// Vorlagenliste: ein älterer Tab, der eine Vorlage sichert, filtert seine
+// Liste mit `pruefeVorlage` und schreibt sie ZURÜCK — ein Rezept darin
+// fiele dabei still heraus (Leitplanke 4 des Umbaus).
+
+export const REZEPTE_KEY = 'bauteil-rezepte';
+
+/**
+ * Alle Rezept-Deklarationen, VEREINIGT je Id: Projekt schlägt Büro. Was die
+ * Prüfung nicht besteht, steht in `befunde` (mit Ebene und Grund) und fehlt
+ * in `eintraege` — nie halb aktiv.
+ * @returns {Promise<{eintraege: object[], befunde: {art, id, ebene, fehler}[]}>}
+ */
+export async function ladeRezepte(repo) {
+    const lies = async (quelle) => {
+        try { return await quelle?.get?.(REZEPTE_KEY) ?? null; }
+        catch (fehler) { console.warn('cde: bibliotheksrezepte laden', fehler?.message ?? fehler); return null; }
+    };
+    const [projekt, buero] = await Promise.all([lies(repo), lies(repo?.buero)]);
+    const karte = new Map();
+    const befunde = [];
+    for (const [ebene, liste] of [['buero', buero], ['projekt', projekt]]) {
+        for (const d of Array.isArray(liste) ? liste : []) {
+            const { ok, fehler } = pruefeEintrag('rezept', d);
+            if (!ok) { befunde.push({ art: 'rezept', id: d?.id ?? null, ebene, fehler }); continue; }
+            karte.set(d.id, { ...d, herkunft: ebene });
+        }
+    }
+    return { eintraege: [...karte.values()], befunde };
+}
+
+/** Eine Rezept-Deklaration sichern — Projekt oder Büro. Nie werfen. */
+export async function speichereRezept(repo, deklaration, { ebene = 'projekt' } = {}) {
+    const { herkunft, ...d } = deklaration ?? {};
+    const { ok, fehler } = pruefeEintrag('rezept', d);
+    if (!ok) return { ok: false, grund: fehler.join(' ') };
+    const ziel = ebene === 'buero' ? repo?.buero : repo;
+    if (!ziel) return { ok: false, grund: 'Die Büroablage ist hier nicht verbunden.' };
+    const bisher = (await ziel.get(REZEPTE_KEY)) ?? [];
+    const neu = [...(Array.isArray(bisher) ? bisher : []).filter(x => x?.id !== d.id), d];
+    const geschrieben = await ziel.set(REZEPTE_KEY, JSON.parse(JSON.stringify(neu)));
+    return geschrieben === false ? { ok: false, grund: 'Sichern fehlgeschlagen.' } : { ok: true, grund: null, id: d.id };
+}
+
+/** Eine Rezept-Deklaration entfernen. Bauteile im Journal bleiben — sie melden dann „Rezept fehlt". */
+export async function loescheRezept(repo, id, { ebene = 'projekt' } = {}) {
+    const ziel = ebene === 'buero' ? repo?.buero : repo;
+    if (!ziel) return false;
+    const bisher = (await ziel.get(REZEPTE_KEY)) ?? [];
+    if (!Array.isArray(bisher) || !bisher.some(x => x?.id === id)) return false;
+    await ziel.set(REZEPTE_KEY, JSON.parse(JSON.stringify(bisher.filter(x => x?.id !== id))));
+    return true;
+}

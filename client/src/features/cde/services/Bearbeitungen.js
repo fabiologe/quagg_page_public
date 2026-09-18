@@ -89,6 +89,7 @@ const AUFLOCKERUNG_FELD = Object.freeze({
 });
 import { ACHSBEZUEGE } from './Achsbezug.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
+import { registerStand, registrierte } from './rezept/Register.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -218,6 +219,21 @@ function _anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }) {
         }));
     }
     return eintraege;
+}
+
+/**
+ * Die Parameter eines ersetzten Netzteils (Teil XXIII, A5).
+ *
+ * Ein EIGENES Bauteil, das sein Rezept behält (dieselbe Rolle im Netz),
+ * behält auch seine Parameter — Profil, Vorlagenbezug (A1) —, nur die Punkte
+ * sind neu. Bis hierher stand fest `{ punkte, dn }`: ein Rechteckkanal aus der
+ * Bibliothek verlor beim Teilen Breite und Höhe, ein Rohr aus einer Vorlage
+ * seinen Bezug. Ein GELIEFERTES Bauteil hat keine Parameter — es bekommt,
+ * was die Achse weiss.
+ */
+function _netzParameter(bauplan, rolle, punkte, dn) {
+    const behaelt = !!bauplan?.rezept && rezeptNach(bauplan.rezept)?.netzrolle === rolle;
+    return behaelt ? { ...bauplan.parameter, punkte } : { punkte, dn: dn ?? 300 };
 }
 
 function _alsTripel(p) {
@@ -1237,7 +1253,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: { punkte: [punkt(von), punkt(bis)], dn: a.dn ?? 300 },
+                parameter: _netzParameter(el?.stand?.bauplan, 'kante', [punkt(von), punkt(bis)], a.dn),
             });
 
             // Reihenfolge mit Absicht: erst das Alte weg, dann das Neue. Beim
@@ -1495,7 +1511,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: { punkte: [_alsTripel(von), _alsTripel(bis)], dn: a.dn ?? 300 },
+                parameter: _netzParameter(el?.stand?.bauplan, 'kante', [_alsTripel(von), _alsTripel(bis)], a.dn),
             });
 
             return [
@@ -2757,7 +2773,7 @@ export const BEARBEITUNGEN = Object.freeze([
                     rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                     kategorie: el.category ?? 'IFCPIPESEGMENT',
                     name: el.name ?? '',
-                    parameter: { punkte, dn: a.dn ?? 300 },
+                    parameter: _netzParameter(el?.stand?.bauplan, 'kante', punkte, a.dn),
                 }),
             ];
         },
@@ -3040,6 +3056,41 @@ export const BEARBEITUNGEN = Object.freeze([
 // ── Auswahl ─────────────────────────────────────────────────────────────────
 
 /**
+ * DER Werkzeugkatalog — die eingebauten Werkzeuge und je Rezept aus der
+ * Bibliothek ein Zeichenwerkzeug (Teil XXIII, A5).
+ *
+ * `BEARBEITUNGEN` bleibt die eingebaute Liste (Wächter, Tests); gefragt wird
+ * hier. Die Zeichenwerkzeuge der Bibliothek stehen hinter den eingebauten —
+ * aus demselben Muster (`zeichenBearbeitung`), also ohne eine Zeile Code je
+ * Rezept. Neu gebaut, sobald das Rezept-Register wandert.
+ */
+let _katalog = { stand: -1, liste: BEARBEITUNGEN };
+export function werkzeugKatalog() {
+    const stand = registerStand();
+    if (_katalog.stand !== stand) {
+        const zusatz = registrierte().filter(r => typeof r.baue === 'function').map(zeichenBearbeitung);
+        let hinter = -1;
+        BEARBEITUNGEN.forEach((b, k) => { if (b.gruppe === 'erzeugen') hinter = k; });
+        _katalog = { stand, liste: Object.freeze([...BEARBEITUNGEN.slice(0, hinter + 1), ...zusatz, ...BEARBEITUNGEN.slice(hinter + 1)]) };
+    }
+    return _katalog.liste;
+}
+
+/**
+ * Die Typprofil-Rollen, nach denen die Werkzeuge fragen (`brauchtRolle`,
+ * `braucht: ['mass:…']`, Felder `ausTypprofil`). Das Katalogschema prüft ein
+ * Büro-Typprofil dagegen: eine Rolle, die keiner kennt, ist ein Tippfehler.
+ */
+export function werkzeugRollen(katalog = werkzeugKatalog()) {
+    const r = new Set();
+    for (const b of katalog) {
+        for (const a of verlangtVon(b)) if (a.startsWith('mass:')) r.add(a.slice(5));
+        for (const f of b.felder ?? []) if (f?.ausTypprofil) r.add(f.ausTypprofil);
+    }
+    return r;
+}
+
+/**
  * Welche Bearbeitungen passen zu diesem Bauteil?
  *
  * Gefiltert wird über BAUFORM und GÜTE — nie über den Kategorienamen. Die
@@ -3053,7 +3104,7 @@ export const BEARBEITUNGEN = Object.freeze([
  * @param {string} [opts.gruppe]   nur diese Gruppe
  * @param {Array}  [opts.katalog]  für Tests
  */
-export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, typprofil = null, eigenes = false,
+export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(), typprofil = null, eigenes = false,
                                       rezept = null, regel = null } = {}) {
     const bauform = einordnung?.bauform ?? null;
     const guete = einordnung?.guete ?? 'unbekannt';
@@ -3111,12 +3162,12 @@ export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, t
 }
 
 /** Bearbeitungen einer Gruppe, unabhängig von einer Auswahl (Werkzeugleiste). */
-export function ausGruppe(gruppe, katalog = BEARBEITUNGEN) {
+export function ausGruppe(gruppe, katalog = werkzeugKatalog()) {
     return katalog.filter(b => b.gruppe === gruppe);
 }
 
 /** Eine Bearbeitung nach Id. */
-export function nachId(id, katalog = BEARBEITUNGEN) {
+export function nachId(id, katalog = werkzeugKatalog()) {
     return katalog.find(b => b.id === id) ?? null;
 }
 

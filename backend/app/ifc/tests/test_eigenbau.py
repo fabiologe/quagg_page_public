@@ -739,6 +739,29 @@ def test_im_verbund_holt_der_vorgang_seine_haltung(tmp_path):
 
 # ── 5. Der Vertrag mit dem Browser ──────────────────────────────────────────
 
+LEITPFOSTEN = Path(__file__).parent / "daten" / "paket_leitpfosten.json"
+
+
+def test_leitpfosten_aus_der_bibliothek(tmp_path):
+    """Teil XXIII A5 — ein Bauteil, das KEINE Datei kennt.
+
+    Das Rezept „leitpfosten" steht nur als JSON im Projekt-Repo; das Paket
+    stammt aus der ECHTEN Kette des Browsers (Registrieren, ein Tipp, Reihe
+    alle 50 m, Journal, Autor — `rezeptAusBibliothek.test.js`). Der Schreiber
+    kennt das Rezept nicht und muss es nicht kennen: er schreibt nach Klasse.
+    """
+    paket = json.loads(LEITPFOSTEN.read_text(encoding="utf-8"))
+    ziel = tmp_path / "leitpfosten.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="leitpfosten")
+    assert bericht["bauteile"] == 4
+    f = ifcopenshell.open(ziel)
+    schilder = f.by_type("IfcSign")
+    assert len(schilder) == 4
+    assert all(s.Representation is not None for s in schilder)
+    assert all(s.PredefinedType == "NOTDEFINED" for s in schilder)
+    _sauber(pruefe(ziel))
+
+
 FIXTURE = Path(__file__).parent / "daten" / "paket_v2.json"
 VERTRAG = {"ur": "1Ur0Gelaende0Vertrag00", "rohr": ROHR_GUID, "bauteil": "3Fundament0A0000000001"}
 

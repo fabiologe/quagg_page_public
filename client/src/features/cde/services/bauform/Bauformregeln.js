@@ -95,11 +95,21 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
  * Dieselbe Vorrangregel wie bei Plankopf, Linienstilen und Typprofilen — wer
  * sie an einer Stelle kennt, kennt sie überall.
  */
-export async function ladeRegeln(repo) {
+export async function ladeRegeln(repo, { pruefe = null, befunde = null } = {}) {
     if (!repo?.mitVorrang) return [...MITGELIEFERTE_REGELN];
     try {
         const eigene = await repo.mitVorrang(REPO_KEY, null);
-        if (Array.isArray(eigene)) return eigene;
+        // GEPRÜFT (Teil XXIII, A5): wie bei den Typprofilen reicht der
+        // Katalog die Prüfung herein. Eine ungültige Regel gilt nicht — die
+        // übrigen schon.
+        if (Array.isArray(eigene)) {
+            if (!pruefe) return eigene;
+            return eigene.filter((r) => {
+                const p = pruefe(r);
+                if (!p.ok) befunde?.push({ art: 'bauformregel', id: r?.id ?? r?.name ?? null, ebene: null, fehler: p.fehler });
+                return p.ok;
+            });
+        }
     } catch (fehler) {
         console.warn('cde: bauformregeln laden', fehler?.message ?? fehler);
     }

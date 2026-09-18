@@ -37,7 +37,7 @@
 
 import { BAUFORMEN } from './bauform/Bauformen.js';
 import { imWoerterbuch, profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
-import { BEARBEITUNGEN, GRUPPEN, felderFuer, passende } from './Bearbeitungen.js';
+import { GRUPPEN, felderFuer, passende, werkzeugKatalog } from './Bearbeitungen.js';
 import { eigenschaftText, eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 
 /** Warum eine Bearbeitung angeboten wird — der Text neben der Gruppe. */
@@ -103,7 +103,7 @@ function _herkunft(b) {
  * @param {Array} [opts.katalog]    für Tests
  * @returns {object} siehe unten — bewusst flach und ohne Vue-Bezug
  */
-export function herleite({ el, einordnung, profilSatz, kontext = null, katalog = BEARBEITUNGEN } = {}) {
+export function herleite({ el, einordnung, profilSatz, kontext = null, katalog = werkzeugKatalog() } = {}) {
     const kategorie = String(el?.category ?? el?.type ?? '').toUpperCase().trim();
     const kette = vererbungskette(kategorie);
     const { profil, ausTyp, ueberVererbung } = profilHerkunft(kategorie, profilSatz);

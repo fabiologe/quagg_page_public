@@ -41,6 +41,7 @@ import { ENTITY_META } from '../data/entity-schema.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
 import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
+import { registriertNach } from './rezept/Register.js';
 import { LINIEN_BAND_M, dreiecksGeometrie, punkteAus, rohrKoerper } from './rezept/Geometriebau.js';
 import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
 // Default-Import: der benannte lief im Dev-Server und brach im vite build
@@ -312,10 +313,15 @@ export function rezeptFuerNetzrolle(rolle, bauplan = null) {
     return Object.values(REZEPTE).find(r => r.netzrolle === rolle)?.id ?? null;
 }
 
-/** Ein Rezept nach Id. Nie `undefined` durchreichen — `null` ist die Antwort. */
+/**
+ * Ein Rezept nach Id. Nie `undefined` durchreichen — `null` ist die Antwort.
+ *
+ * Eingebaut zuerst, dann die Bibliothek (A5) — eine Bibliothek kann ein
+ * eingebautes Rezept nicht überschreiben.
+ */
 export function rezeptNach(id) {
     const k = String(id ?? '');
-    return REZEPTE[k] ?? ABLEITUNGEN[k] ?? null;
+    return REZEPTE[k] ?? registriertNach(k) ?? ABLEITUNGEN[k] ?? null;
 }
 
 /** Eine Ableitung rechnet aus anderen Objekten (`leite`); ein Rezept baut aus Parametern (`baue`). */
@@ -521,7 +527,9 @@ export function geometrieAusTeil(teil, { absenkung = 0 } = {}) {
 export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
     const fehler = [];
     const r = rezeptNach(rezept);
-    if (!r) return [`Rezept „${rezept}" gibt es nicht`];
+    // Ein Rezept aus einer BIBLIOTHEK, die hier nicht geladen ist (A5): das
+    // Bauteil wird übersprungen und gemeldet, nie gelöscht.
+    if (!r) return [`Rezept „${rezept}" gibt es nicht — stammt es aus einer Bibliothek, die hier nicht geladen ist?`];
 
     const punkte = punkteAus(parameter);
     if (punkte.length < r.mindestPunkte) {

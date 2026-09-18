@@ -18,12 +18,14 @@ import { ref, computed } from 'vue';
 
 import { bestimme } from '../services/bauform/Bauformen.js';
 import {
-    MITGELIEFERTE_REGELN, REPO_KEY as REGEL_KEY, bauformAusRegel, ladeRegeln,
+    MITGELIEFERTE_REGELN, REPO_KEY as REGEL_KEY, bauformAusRegel,
     alleVorschlaege, regelAus,
 } from '../services/bauform/Bauformregeln.js';
 import { repo } from '../services/RepoFacade.js';
-import { EINGEBAUTE_PROFILE, ladeSatz, profilFuer } from '../services/bauform/Typprofile.js';
-import { GRUPPEN, felderFuer, nachId, passende, pruefe } from '../services/Bearbeitungen.js';
+import { EINGEBAUTE_PROFILE, profilFuer } from '../services/bauform/Typprofile.js';
+import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugRollen } from '../services/Bearbeitungen.js';
+import { ladeKatalog } from '../services/katalog/Katalog.js';
+import { eingebauteRollen } from '../services/katalog/Katalogschema.js';
 import { useAenderungen } from './useAenderungen.js';
 import { rezeptNach, teileVon, vorgangEntfernenSchritte } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
@@ -71,6 +73,10 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * Gelände.
      */
     const regeln = ref([...MITGELIEFERTE_REGELN]);
+    /** Was beim Katalogladen abgewiesen wurde: `{art, id, ebene, fehler[]}` (A5). */
+    const katalogBefunde = ref([]);
+    /** Der Stand des Rezept-Registers — wandert mit jeder Registrierung (A5). */
+    const katalogStand = ref(0);
     /** Id der scharfen Bearbeitung, oder null. */
     const scharfId = ref(null);
     /** Formularwerte der scharfen Bearbeitung. */
@@ -175,8 +181,19 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const moeglich = computed(() => (einordnung.value ? passende(einordnung.value, passendeKontext.value) : []));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
+    /**
+     * DER KATALOG, GEPRÜFT (Teil XXIII, A5): Typprofile, Bauformregeln und die
+     * Rezepte der Bibliothek in einem Zug. Was die Prüfung nicht besteht,
+     * steht in `katalogBefunde` und ist nicht aktiv. `katalogStand` wandert
+     * mit jeder Registrierung — wer eine Werkzeugliste zeigt, liest ihn mit.
+     */
     async function ladeProfile(quelle = repo) {
-        [profilSatz.value, regeln.value] = await Promise.all([ladeSatz(quelle), ladeRegeln(quelle)]);
+        const rollen = new Set([...eingebauteRollen(), ...werkzeugRollen(BEARBEITUNGEN)]);
+        const k = await ladeKatalog(quelle, { rollen });
+        profilSatz.value = k.profilSatz;
+        regeln.value = k.regeln;
+        katalogBefunde.value = k.befunde;
+        katalogStand.value = k.stand;
     }
 
     // ── Zuordnen: was bedeuten die Namen dieses Exporteurs? ────────────────
@@ -777,7 +794,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
 
     return {
         entferneVorgang,
-        einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
+        einordnung, bauteil, bauteile, profilSatz, regeln, katalogBefunde, katalogStand, scharfId, werte, laeuft, letzterGrund,
         typprofil, passendeKontext, scharf, felder, fehler, bereit, moeglich, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
