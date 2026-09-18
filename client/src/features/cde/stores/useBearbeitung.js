@@ -490,6 +490,21 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         werte.value = { ...werte.value, [name]: wert };
     }
 
+    /**
+     * Ein Werkzeug aus einer VORLAGE vorbelegen (Teil XXIII, A1): ihre
+     * Vorgaben als Werte — und ihre Id, damit das Bauteil weiss, woher es
+     * stammt. Der Viewer ruft genau das beim „Aus Vorlage zeichnen"; der Test
+     * auch — so prüft er die Naht, nicht eine nachgebaute Eingabe.
+     */
+    function vorbelegeAusVorlage(vorlage) {
+        if (!vorlage?.id) return false;
+        for (const [feld, wert] of Object.entries(vorlage.vorgaben ?? {})) {
+            if (feld !== 'vorlage') setzeWert(feld, wert);
+        }
+        setzeWert('vorlage', vorlage.id);
+        return true;
+    }
+
     function abbrechen() {
         const war = scharfId.value;
         scharfId.value = null;
@@ -754,7 +769,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
-        ladeProfile, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, abbrechen, ausfuehren,
+        ladeProfile, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
     };
 });

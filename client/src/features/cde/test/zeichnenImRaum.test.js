@@ -82,7 +82,11 @@ describe('Erzeugen in der Tafel „Bauteil“', () => {
         expect(vorlage).toBeTruthy();
         await vorlage.trigger('click');
         if (istZug(nachId('schacht-zeichnen'))) {
-            expect(api.zeichnenStarten).toHaveBeenCalledWith('schacht-zeichnen', { vorgaben: { dn: 1000 } });
+            // Die GANZE Vorlage reist mit, nicht nur ihre Vorgaben (Teil XXIII,
+            // A1) — sonst kennt das gezeichnete Bauteil seine Herkunft nicht.
+            expect(api.zeichnenStarten).toHaveBeenCalledWith('schacht-zeichnen', {
+                vorlage: expect.objectContaining({ id: 'v1', vorgaben: expect.objectContaining({ dn: 1000 }) }),
+            });
         } else {
             expect(api.werkzeugStarten).toHaveBeenCalledWith('schacht-zeichnen', {});
         }

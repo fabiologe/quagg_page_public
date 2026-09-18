@@ -102,3 +102,57 @@ export async function loescheVorlage(repo, id, { ebene = 'projekt' } = {}) {
     await ziel.set(REPO_KEY, JSON.parse(JSON.stringify(bisher.filter(v => v.id !== id))));
     return true;
 }
+
+/**
+ * WOHER EIN BAUTEIL STAMMT — und wie weit es davon abweicht (Teil XXIII, A1).
+ *
+ * Bis hierher wurden die Vorgaben einer Vorlage in die Parameter KOPIERT, und
+ * damit war die Herkunft weg: niemand wusste danach, dass dieser Schacht ein
+ * „Schacht DN 1000" war, keine geänderte Vorlage liess sich nachziehen, keine
+ * Abweichung zeigen. Das war der einzige Befund des Architektur-Audits ohne
+ * Rückweg — jede so entstandene Instanz blieb für immer vorlagenlos.
+ *
+ * Jetzt trägt die Instanz `parameter.vorlage` (die Id). Sie darf frei von der
+ * Vorlage abweichen, der Bezug bleibt — dasselbe Muster wie die eigene
+ * Sohlbreite neben der Norm (`Grabenregeln.grabenbreite`, `eigene`).
+ *
+ * Verglichen werden nur Felder, die das Rezept kennt: eine Vorgabe, die kein
+ * Rezeptfeld ist, landet beim Zeichnen gar nicht im Bauplan und wäre sonst
+ * eine Abweichung, die es nicht gibt. Die Kategorie zählt mit — sie ist der
+ * IFC-Typ, den eine Vorlage festlegen darf.
+ *
+ * @param {object|null} bauplan     `{rezept, kategorie, parameter}`
+ * @param {Array} vorlagen          aus `ladeVorlagen`
+ * @returns {null | {id, name, herkunft, fehlt, abweichend: Array<{feld, soll, ist}>}}
+ *          null = das Bauteil stammt aus keiner Vorlage
+ */
+export function vorlagenbezugVon(bauplan, vorlagen = []) {
+    const id = bauplan?.parameter?.vorlage;
+    if (id === undefined || id === null || id === '') return null;
+    const v = (vorlagen ?? []).find(x => x?.id === id && x?.rezept === bauplan.rezept);
+    if (!v) return { id: String(id), name: null, herkunft: null, fehlt: true, abweichend: [] };
+    const felder = new Set((rezeptNach(bauplan.rezept)?.felder ?? []).map(f => f.name));
+    const abweichend = [];
+    for (const [feld, soll] of Object.entries(v.vorgaben ?? {})) {
+        if (feld === 'name' || feld === 'vorlage') continue;
+        if (feld === 'kategorie') {
+            const ist = String(bauplan.kategorie ?? '').toUpperCase();
+            if (String(soll).toUpperCase() !== ist) abweichend.push({ feld, soll: String(soll).toUpperCase(), ist });
+            continue;
+        }
+        if (felder.size && !felder.has(feld)) continue;
+        const ist = bauplan.parameter?.[feld];
+        if (!_gleicherWert(ist, soll)) abweichend.push({ feld, soll, ist: ist ?? null });
+    }
+    return { id: v.id, name: v.name, herkunft: v.herkunft ?? null, fehlt: false, abweichend };
+}
+
+/** „1000" und 1000 sind dasselbe Mass — das Formular liefert mal Text, mal Zahl. */
+function _gleicherWert(a, b) {
+    const na = Number(a), nb = Number(b);
+    if (a !== '' && b !== '' && a !== null && b !== null && Number.isFinite(na) && Number.isFinite(nb)) {
+        return Math.abs(na - nb) < 1e-9;
+    }
+    return String(a ?? '') === String(b ?? '');
+}
+

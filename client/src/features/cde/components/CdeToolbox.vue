@@ -479,11 +479,11 @@ function auslegen() { return werkzeug('bauform-auslegen', { bauform: herleitung.
 
 // ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────
 /** Ein Zeichenwerkzeug starten — über den Motor im Raum; Vorlagen belegen vor. */
-function zeichnen(id, vorgaben = null) {
+function zeichnen(id, { vorlage = null } = {}) {
   rueckmeldung.value = '';
   const b = nachId(id);
   if (!b || !['zug', 'umriss'].includes(eingabeArt(b))) return werkzeug(id);
-  const ok = api.zeichnenStarten?.(id, vorgaben ? { vorgaben } : {});
+  const ok = api.zeichnenStarten?.(id, vorlage ? { vorlage } : {});
   if (ok === false) rueckmeldung.value = bearbeitung.letzterGrund || 'Zeichnen liess sich gerade nicht starten.';
   return ok;
 }
@@ -499,7 +499,7 @@ async function vorlagenLaden() {
 // Die Bibliothek hängt am Repo — das Backend steht erst nach der Auftragswahl fest.
 onMounted(vorlagenLaden);
 watch(() => cde.auftrag?.id, vorlagenLaden);
-function vorlageZeichnen(v) { return zeichnen(`${v.rezept}-zeichnen`, v.vorgaben ?? {}); }
+function vorlageZeichnen(v) { return zeichnen(`${v.rezept}-zeichnen`, { vorlage: v }); }
 
 /**
  * Die WERTE des scharfen Zeichenwerkzeugs als Vorlage sichern. Bezeichnung
@@ -513,7 +513,9 @@ async function vorlageSichern() {
   if (!name?.trim()) return;
   const vorgaben = {};
   for (const [feld, wert] of Object.entries(bearbeitung.werte ?? {})) {
-    if (feld === 'name' || feld === 'hoehe') continue;
+    // `vorlage` ist die HERKUNFT des gerade Gezeichneten (A1), keine Vorgabe —
+    // eine neue Vorlage darf nicht auf die alte zeigen.
+    if (feld === 'name' || feld === 'hoehe' || feld === 'vorlage') continue;
     if (['string', 'number', 'boolean'].includes(typeof wert) && wert !== '') vorgaben[feld] = wert;
   }
   const ebene = repo.buero && confirm('Für ALLE Projekte sichern (Büro-Ebene)?\n„Abbrechen" sichert nur in diesem Projekt.')

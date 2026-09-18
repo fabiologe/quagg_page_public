@@ -369,6 +369,10 @@ function zeichenBearbeitung(rezept) {
                 ...Object.fromEntries(rezept.felder
                     .filter(f => !['name', 'kategorie', 'hoehe'].includes(f.name))
                     .map(f => [f.name, werte[f.name]])),
+                // WOHER ES STAMMT (Teil XXIII, A1): aus einer Vorlage gezeichnet
+                // trägt das Bauteil deren Id. Kein Formularfeld — der Bezug
+                // entsteht beim Start aus der Bibliothek (`vorbelegeAusVorlage`).
+                ...(werte.vorlage ? { vorlage: String(werte.vorlage) } : {}),
             },
         }),
     };
@@ -2283,10 +2287,15 @@ export const BEARBEITUNGEN = Object.freeze([
             if (!plan?.rezept || !el?.globalId) return null;
             const vorlage = (el.vorlagen ?? []).find(v => v.id === werte?.vorlage && v.rezept === plan.rezept);
             if (!vorlage) return null;
-            const { kategorie, name: _n, ...vorgaben } = vorlage.vorgaben ?? {};
-            const parameter = { ...plan.parameter, ...vorgaben };
+            const { kategorie, name: _n, vorlage: _v, ...vorgaben } = vorlage.vorgaben ?? {};
+            // Die Vorgaben wandern in den Bauplan — UND die Id der Vorlage
+            // (Teil XXIII, A1). Vorher war die Herkunft nach dem Tausch weg.
+            const parameter = { ...plan.parameter, ...vorgaben, vorlage: vorlage.id };
             const neueKategorie = (kategorie ?? plan.kategorie ?? '').toUpperCase() || plan.kategorie;
-            const gleich = Object.keys(vorgaben).every(k => plan.parameter?.[k] === vorgaben[k]) && neueKategorie === plan.kategorie;
+            // Nichts zu tun erst, wenn auch der BEZUG schon stimmt: ein Bauteil,
+            // das zufällig die Masse einer Vorlage hat, bekommt ihre Herkunft.
+            const gleich = Object.keys(vorgaben).every(k => plan.parameter?.[k] === vorgaben[k])
+                && neueKategorie === plan.kategorie && plan.parameter?.vorlage === vorlage.id;
             if (gleich) return null;
             return erzeugtEintrag({
                 rezept: plan.rezept, kategorie: neueKategorie, name: plan.name ?? '',

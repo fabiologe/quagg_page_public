@@ -1398,13 +1398,16 @@ function werkzeugStarten(id, opts = {}) {
  * mit Draufsicht, damit die Punkte dort landen, wo man hinsieht; Vorlagen
  * belegen die Felder vor.
  */
-function zeichnenStarten(id, { vorgaben = null } = {}) {
+function zeichnenStarten(id, { vorgaben = null, vorlage = null } = {}) {
   if (!bearbeitenEin()) return false;
   if (!eingabe.starte(id)) {
     if (eingabe.grund.value) melde(eingabe.grund.value);
     return false;
   }
-  for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
+  // Aus einer Vorlage: ihre Vorgaben UND ihre Id (Teil XXIII, A1) — über den
+  // EINEN Weg im Store, den auch der Test geht.
+  if (vorlage) bearbeitung.vorbelegeAusVorlage(vorlage);
+  else for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
   if (bearbeitung.scharf?.gruppe === 'erzeugen') engine.value?.viewTop?.();
   return true;
 }

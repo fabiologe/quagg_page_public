@@ -200,8 +200,17 @@ describe('Tauschen aus der Bibliothek (9.8)', () => {
         const el = SCHACHT(1000);
         const e = b('koerper-tauschen').anwenden(el, { vorlage: 'schacht-dn1200' });
         expect(e).toMatchObject({ art: 'erzeugt', globalId: 'cde1', nachher: { rezept: 'schacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', name: 'S1' } });
-        expect(e.nachher.parameter).toEqual({ punkte: [[0, 0, 0], [0, 3, 0]], dn: 1200 });
-        expect(b('koerper-tauschen').anwenden(el, { vorlage: 'schacht-dn1000' })).toBeNull();
+        // Seit Teil XXIII A1 wandert die HERKUNFT mit — vorher war sie nach dem Tausch weg.
+        expect(e.nachher.parameter).toEqual({ punkte: [[0, 0, 0], [0, 3, 0]], dn: 1200, vorlage: 'schacht-dn1200' });
         expect(b('koerper-tauschen').anwenden(el, { vorlage: 'rohr-dn500' })).toBeNull();   // anderes Rezept
+    });
+    it('dieselbe Vorlage nochmal → null; dieselben Masse OHNE Herkunft → die Herkunft wird nachgetragen', () => {
+        // „Nochmal" heisst: Masse UND Bezug stimmen schon.
+        const schon = SCHACHT(1000);
+        schon.stand.bauplan.parameter.vorlage = 'schacht-dn1000';
+        expect(b('koerper-tauschen').anwenden(schon, { vorlage: 'schacht-dn1000' })).toBeNull();
+        // Vorher galt „gleiche Masse → nichts zu tun", und der Bezug entstand nie.
+        const e = b('koerper-tauschen').anwenden(SCHACHT(1000), { vorlage: 'schacht-dn1000' });
+        expect(e.nachher.parameter).toMatchObject({ dn: 1000, vorlage: 'schacht-dn1000' });
     });
 });

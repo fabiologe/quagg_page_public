@@ -42,6 +42,23 @@
             </span>
           </div>
 
+          <!-- Woher das Bauteil stammt (Teil XXIII, A1): aus einer Vorlage der
+               Bibliothek — und wie weit es inzwischen von ihr abweicht. Es
+               darf abweichen; der Bezug bleibt. -->
+          <div v-if="vorlagenbezug" class="vorlage-hinweis"
+               :class="{ 'vorlage-hinweis--fehlt': vorlagenbezug.fehlt }">
+            <CdeIcon name="copy" :size="12" />
+            <span :title="vorlagenbezugTitel">
+              <template v-if="vorlagenbezug.fehlt">
+                Aus Vorlage <b>{{ vorlagenbezug.id }}</b> — diese Vorlage gibt es nicht mehr.
+              </template>
+              <template v-else>
+                Aus Vorlage <b>{{ vorlagenbezug.name }}</b><template v-if="vorlagenbezug.abweichend.length">
+                  · {{ vorlagenbezug.abweichend.length === 1 ? '1 Abweichung' : `${vorlagenbezug.abweichend.length} Abweichungen` }}</template>
+              </template>
+            </span>
+          </div>
+
           <!-- Mengen eines EIGENEN Cut/Fill (Teil XX, Fabio: „es fehlen die
                Volumen in m³"): dieselben Zahlen, die ins IFC gehen
                (Qto_Earthworks…) und im Mengen-Reiter stehen — aus dem
@@ -79,6 +96,7 @@ import { useViewerApi } from '../composables/viewerApi.js';
 import { istAnzeigeform, mengenVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { CDE_MODELL_ID } from '../services/IfcAutor.js';
 import { m3 } from '../services/Mengenzeile.js';
+import { vorlagenbezugVon } from '../services/Bibliothek.js';
 
 /** In der Tafel „Bauteil“ (Kassensturz H2) steht die Komponente im Fluss, nicht als eigene Tafel. */
 defineProps({ eingebettet: { type: Boolean, default: false } });
@@ -104,6 +122,27 @@ const anzeigeform = computed(() => {
   const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
   if (!istAnzeigeform(plan)) return null;
   return { quelle: plan.parameter?.quellen?.gelaende ?? plan.parameter?.quelle ?? '—' };
+});
+
+/**
+ * Woher ein eigenes Bauteil stammt (Teil XXIII, A1). Die Vorlagen liegen schon
+ * am eingeordneten Subjekt (`IfcViewer` lädt sie für jedes eigene Bauteil) —
+ * kein zweites Laden. Fehlt die Liste noch, steht nur die Id da, kein Urteil:
+ * „gibt es nicht mehr" wäre sonst eine Behauptung ohne Grundlage.
+ */
+const vorlagenbezug = computed(() => {
+  const gid = ifc.selectedElement?.globalId;
+  const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
+  if (!plan?.parameter?.vorlage) return null;
+  const vorlagen = bearbeitung.bauteil?.globalId === gid ? bearbeitung.bauteil?.vorlagen : null;
+  if (!Array.isArray(vorlagen)) return { id: String(plan.parameter.vorlage), name: String(plan.parameter.vorlage), fehlt: false, abweichend: [] };
+  return vorlagenbezugVon(plan, vorlagen);
+});
+
+const vorlagenbezugTitel = computed(() => {
+  const b = vorlagenbezug.value;
+  if (!b?.abweichend?.length) return b?.fehlt ? 'Das Bauteil behält seine Werte; nur der Bezug zeigt ins Leere.' : 'Entspricht der Vorlage.';
+  return b.abweichend.map(a => `${a.feld}: Vorlage ${a.soll}, hier ${a.ist ?? '—'}`).join('\n');
 });
 
 /** Die Qto-Felder mit deutschem Namen — was ein Planer liest, nicht was im Schema steht. */
@@ -263,6 +302,17 @@ async function copyAsBridge() {
   flex-direction: column;
 }
 
+.vorlage-hinweis {
+  display: flex; gap: 0.4rem; align-items: flex-start;
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--cde-line);
+  color: var(--cde-text-dim);
+  font-size: 0.78rem; line-height: 1.35;
+}
+.vorlage-hinweis b { color: var(--cde-text); font-weight: 600; }
+.vorlage-hinweis--fehlt { background: var(--cde-hinweis); color: var(--cde-hinweis-text); border-color: transparent; }
 .anzeigeform-hinweis {
   display: flex; gap: 0.4rem; align-items: flex-start;
   margin: 0.5rem 0.75rem 0;
