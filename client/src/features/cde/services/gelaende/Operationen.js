@@ -631,83 +631,23 @@ function _tiefsteIn(raster, h) {
 
 /**
  * Der Wirkbereich EINER Operation, in Weltkoordinaten.
+ *
+ * Wie weit eine Operation reicht, weiss die Operation selbst (Teil XXIII, A2):
+ * ihr Eintrag in `GELAENDE_OPS` liefert Hülle und Saum, hier kommt nur der
+ * Mindestrand dazu. Bis dahin stand an dieser Stelle eine Kette `art ===
+ * 'gerinne' … else if …` — und dieselbe Kette noch fünfmal woanders.
+ *
+ * @param {object} [o.ops]  die Registry (Vorgabe `GELAENDE_OPS`) — ein Test
+ *                          kann eine eigene hereinreichen
  * @returns {{minX,maxX,minZ,maxZ}|null}  null = nicht eingrenzbar (alles)
  */
-export function wirkbereichVon(raster, art, parameter = {}) {
-    const p = parameter ?? {};
-    let huelle = null;
-    let rand = RAND_MINDEST_M;
-
-    if (art === 'gerinne') {
-        // MIT STATIONEN (Teil XXI): die Achse sind die Stationen, die Breite
-        // die GRÖSSTE und die Sohle die TIEFSTE — der Bereich muss alles
-        // fassen, was die Operation berührt, sonst rechnet sie ausserhalb
-        // ihres Korridors ins Leere.
-        const st = Array.isArray(p.stationen) && p.stationen.length >= 2 ? p.stationen : null;
-        huelle = _huelleXZ(st ?? p.achse);
-        if (!huelle) return null;
-        const neigung = Math.max(0, Number(p.boeschung) || 0);
-        const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [];
-        const breite = Math.max(0, breiten.length ? Math.max(...breiten) : (Number(p.sohlbreite) || 0)) / 2;
-        const oben = _hoechsteIn(raster, huelle);
-        const sohle = st
-            ? Math.min(...st.map(s => Number(s?.y)).filter(Number.isFinite))
-            : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
-        const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
-        rand += breite + tiefe * neigung;
-    } else if (art === 'planum' || art === 'boeschung') {
-        huelle = _huelleXZ(p.umriss);
-        if (!huelle) return null;
-        const neigung = Math.max(0, Number(p.neigung) || 0);
-        const oben = _hoechsteIn(raster, huelle);
-        const unten = _tiefsteIn(raster, huelle);
-        const ziel = Number(p.hoehe);
-        // Nach OBEN (Einschnitt) wie nach UNTEN (Damm) — bis Teil XX zählte
-        // nur der höchste Punkt, und ein Damm lief über den Bereich hinaus.
-        const spanne = Number.isFinite(ziel)
-            ? Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0, Number.isFinite(unten) ? Math.abs(ziel - unten) : 0)
-            : 0;
-        // Ein Planum ohne Böschung endet am Umriss; mit Böschung läuft es aus.
-        rand += (art === 'boeschung' || neigung > 0) ? spanne * neigung : 0;
-    } else if (art === 'grube' || art === 'schuettung') {
-        // Nach INNEN: nichts ragt über den Umriss hinaus.
-        huelle = _huelleXZ(p.umriss);
-        if (!huelle) return null;
-    } else if (art === 'boeschungLinie') {
-        huelle = _huelleXZ(p.linie);
-        if (!huelle) return null;
-        const neigung = Math.max(0.1, Number(p.neigung) || 0);
-        const umher = { minX: huelle.minX - RAND_MINDEST_M, maxX: huelle.maxX + RAND_MINDEST_M,
-                        minZ: huelle.minZ - RAND_MINDEST_M, maxZ: huelle.maxZ + RAND_MINDEST_M };
-        const oben = _hoechsteIn(raster, umher), unten = _tiefsteIn(raster, umher);
-        const ys = (p.linie ?? []).map(q => (Array.isArray(q) ? q[1] : q?.y)).filter(Number.isFinite);
-        const kMin = ys.length ? Math.min(...ys) : null, kMax = ys.length ? Math.max(...ys) : null;
-        const spanne = Number.isFinite(kMin)
-            ? Math.max(0, Number.isFinite(oben) ? oben - kMin : 0, Number.isFinite(unten) ? kMax - unten : 0)
-            : 0;
-        rand += spanne * neigung;
-    } else if (art === 'baugrube') {
-        const m = p.mitte ? _xz(p.mitte) : null;
-        if (!m || !Number.isFinite(m.x)) return null;
-        const halb = Math.max(
-            Number(p.radius) || 0,
-            (Number(p.laenge) || 0) / 2,
-            (Number(p.breite) || 0) / 2,
-        );
-        // Gedreht: die Diagonale ist die sichere Schranke.
-        const d = halb * Math.SQRT2;
-        huelle = { minX: m.x - d, maxX: m.x + d, minZ: m.z - d, maxZ: m.z + d };
-        const neigung = Math.max(0, Number(p.neigung) || 0);
-        const oben = _hoechsteIn(raster, huelle);
-        const sohle = Number(p.sohle);
-        const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
-        rand += tiefe * neigung;
-    } else {
-        return null;
-    }
+export function wirkbereichVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
+    const w = ops[art]?.wirkbereich?.(raster, parameter ?? {});
+    if (!w?.huelle) return null;
+    const rand = RAND_MINDEST_M + Math.max(0, w.saum ?? 0);
     return {
-        minX: huelle.minX - rand, maxX: huelle.maxX + rand,
-        minZ: huelle.minZ - rand, maxZ: huelle.maxZ + rand,
+        minX: w.huelle.minX - rand, maxX: w.huelle.maxX + rand,
+        minZ: w.huelle.minZ - rand, maxZ: w.huelle.maxZ + rand,
     };
 }
 
@@ -738,12 +678,6 @@ export function wirkbereichVon(raster, art, parameter = {}) {
 /** So viele Zellen müssen quer über die schmalste Form liegen. */
 export const ZELLEN_JE_KENNWEITE = 3;
 
-/** Die Punkte einer Achse oder Stationsliste, als {x,z}. */
-function _achsPunkte(p) {
-    const st = Array.isArray(p?.stationen) && p.stationen.length >= 2 ? p.stationen : null;
-    const roh = st ?? (Array.isArray(p?.achse) ? p.achse : (Array.isArray(p?.linie) ? p.linie : null));
-    return roh ? roh.map(_xz).filter(q => Number.isFinite(q.x) && Number.isFinite(q.z)) : null;
-}
 const _laengeVon = (pts) => {
     let l = 0;
     for (let i = 0; i + 1 < (pts?.length ?? 0); i++) l += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
@@ -766,13 +700,22 @@ function _ringMass(punkte) {
  * Hüllrechteck. Ohne Angabe: die Fläche des Wirkbereichs (dieselbe Schranke
  * wie bisher).
  */
-export function wirkflaecheVon(raster, art, parameter = {}) {
+export function wirkflaecheVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
     const p = parameter ?? {};
-    const box = wirkbereichVon(raster, art, p);
+    const box = wirkbereichVon(raster, art, p, { ops });
+    // Welche FORM die Fläche hat UND wo ihre Punkte stehen, sagt der Eintrag:
+    // ein Streifen um eine Achse oder ein Ring mit Saum. Die beiden Formeln
+    // bleiben hier — sie sind Geometrie, keine Eigenschaft einer Operation.
+    // (Bis A2 las die Streifenformel die Achse fest aus `stationen`/`achse`/
+    // `linie` und die Ringformel aus `umriss` — eine neue Operation mit
+    // anderem Feldnamen fiele still aufs Hüllrechteck zurück.)
+    const wf = ops[art]?.wirkflaeche ?? null;
+    const form = wf?.form ?? null;
+    const roh = typeof wf?.punkte === 'function' ? wf.punkte(p) : null;
     const ausBox = box ? Math.max(0, (box.maxX - box.minX) * (box.maxZ - box.minZ)) : null;
     const eng = (wert) => (ausBox == null ? wert : Math.min(ausBox, wert));
-    if (art === 'gerinne' || art === 'boeschungLinie') {
-        const pts = _achsPunkte(p);
+    if (form === 'streifen') {
+        const pts = Array.isArray(roh) ? roh.map(_xz).filter(q => Number.isFinite(q.x) && Number.isFinite(q.z)) : null;
         const h = _huelleXZ(pts);
         if (!pts || pts.length < 2 || !box || !h) return ausBox;
         // DER SAUM, den der Wirkbereich um die Achse legt — er ist die halbe
@@ -786,13 +729,13 @@ export function wirkflaecheVon(raster, art, parameter = {}) {
         const laenge = _laengeVon(pts);
         return eng(laenge * 2 * saum + Math.PI * saum * saum);   // Streifen plus die zwei Enden
     }
-    if (['grube', 'schuettung', 'planum', 'boeschung'].includes(art)) {
-        const m = _ringMass(p.umriss);
+    if (form === 'ring') {
+        const m = _ringMass(roh);
         if (!m || !box) return ausBox;
         // Der Ring selbst plus der Saum, den die Böschung nach aussen wirft.
         // Wie breit der Saum ist, sagt der Wirkbereich: er ist genau um ihn
         // grösser als die Hülle des Rings.
-        const h = _huelleXZ(p.umriss);
+        const h = _huelleXZ(roh);
         const saum = h ? Math.max(0, (box.maxX - box.minX) - (h.maxX - h.minX)) / 2 : RAND_MINDEST_M;
         return eng(m.flaeche + m.umfang * Math.max(RAND_MINDEST_M, saum));
     }
@@ -803,41 +746,12 @@ export function wirkflaecheVon(raster, art, parameter = {}) {
  * Das SCHMALSTE, was diese Operation auflösen muss (m) — oder null, wenn sie
  * keine feine Form hat (dann entscheidet allein die Fläche).
  */
-export function kennweiteVon(raster, art, parameter = {}) {
+export function kennweiteVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
     const p = parameter ?? {};
-    const masse = [];
-    const nimm = (v) => { const z = Number(v); if (Number.isFinite(z) && z > 0) masse.push(z); };
     const neigung = Math.max(0, Number(p.boeschung ?? p.neigung) || 0);
-    const box = wirkbereichVon(raster, art, p);
-    const huelleVon = (liste) => _huelleXZ(liste);
-
-    if (art === 'gerinne') {
-        const st = Array.isArray(p.stationen) && p.stationen.length >= 2 ? p.stationen : null;
-        const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [Number(p.sohlbreite)];
-        const schmalste = breiten.filter(b => b > 0);
-        if (schmalste.length) nimm(Math.min(...schmalste));
-        const h = huelleVon(st ?? p.achse);
-        const oben = h ? _hoechsteIn(raster, h) : null;
-        const sohle = st ? Math.min(...st.map(s => Number(s?.y)).filter(Number.isFinite))
-                         : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde));
-        if (Number.isFinite(oben) && Number.isFinite(sohle) && neigung > 0) nimm((oben - sohle) * neigung);
-    } else if (art === 'grube' || art === 'schuettung' || art === 'planum' || art === 'boeschung') {
-        const h = huelleVon(p.umriss);
-        const oben = h ? _hoechsteIn(raster, h) : null;
-        const unten = h ? _tiefsteIn(raster, h) : null;
-        const ziel = Number(p.sohle ?? p.hoehe);
-        if (neigung > 0 && Number.isFinite(ziel)) {
-            const spanne = Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0,
-                                    Number.isFinite(unten) ? Math.abs(ziel - unten) : 0);
-            nimm(spanne * neigung);
-        }
-    } else if (art === 'boeschungLinie') {
-        if (box && neigung > 0) nimm(Math.min(box.maxX - box.minX, box.maxZ - box.minZ) / 2);
-    } else if (art === 'baugrube') {
-        nimm(Number(p.laenge)); nimm(Number(p.breite)); nimm(2 * (Number(p.radius) || 0));
-        const oben = box ? _hoechsteIn(raster, box) : null;
-        if (Number.isFinite(oben) && Number.isFinite(Number(p.sohle)) && neigung > 0) nimm((oben - Number(p.sohle)) * neigung);
-    }
+    const box = wirkbereichVon(raster, art, p, { ops });
+    const masse = (ops[art]?.kennweiten?.(raster, p, { box, neigung }) ?? [])
+        .map(Number).filter(z => Number.isFinite(z) && z > 0);
     return masse.length ? Math.min(...masse) : null;
 }
 
@@ -932,16 +846,349 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
     return false;
 }
 
+// ═══ DIE REGISTRY — alles, was eine Geländeoperation ausmacht (Teil XXIII, A2) ═══
+//
+// Bis hierher wusste ein Eintrag nur `titel` und `wende`. Alles andere stand
+// in sechs Verzweigungen über `art`, verteilt auf vier Dateien: Wirkbereich,
+// Wirkfläche und Kennweite hier, Vorschau und IFC-Typ in den Ableitungen, die
+// ebenen Kennhöhen bei den Böschungskanten, der innere Ring bei den
+// Innenecken. Eine neue Operation hiess: sieben Stellen finden. Gezählt am
+// 2026-09-18: 38 Verzweigungen auf Op-Namen (Architektur-Wächter, W2).
+//
+// Jetzt steht alles am Eintrag. Die Leser fragen den Eintrag, nie den Namen:
+//
+//   wende(raster, p, {bereich, ur})   die Operation selbst
+//   wirkbereich(raster, p)            → {huelle, saum}: wie weit sie reicht
+//   wirkflaeche                       {form: 'streifen'|'ring', punkte(p)} — Form und Lage der berührten Fläche
+//   kennweiten(raster, p, {box, neigung}) → Kandidaten fürs schmalste Mass
+//   hoehenfelder / punktfelder        welche Parameter m NN tragen (einzeln / je Punkt)
+//   kennhoehen(p)                     → [{art, hoehe}]: ebene Kanten, die sie herstellt
+//   innen                             {feld, titel, richtung, gilt(p)}: ihr innerer Ring
+//   cutTyp / fillTyp(p)               der IFC-PredefinedType, den sie beisteuert
+//   profilfaehig                      ob ein Profilkörper sie exakt nachbauen kann
+//   vorschau(op, c)                   ihr Geist vor dem Übernehmen (Hilfen in `c`)
+//
+// Die Vorschau bekommt ihre Zeichenhilfen HEREINGEREICHT (`c.hilfen`): sie
+// wohnen in den Ableitungen, und ein Import von dort wäre ein Griff nach oben.
+
+/** Die Hülle eines Umrisses mit dem Saum, den eine Böschung zur Zielhöhe wirft. */
+function _wbUmrissZuZiel(raster, p) {
+    const huelle = _huelleXZ(p.umriss);
+    if (!huelle) return null;
+    const neigung = Math.max(0, Number(p.neigung) || 0);
+    const oben = _hoechsteIn(raster, huelle);
+    const unten = _tiefsteIn(raster, huelle);
+    const ziel = Number(p.hoehe);
+    // Nach OBEN (Einschnitt) wie nach UNTEN (Damm) — bis Teil XX zählte
+    // nur der höchste Punkt, und ein Damm lief über den Bereich hinaus.
+    const spanne = Number.isFinite(ziel)
+        ? Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0, Number.isFinite(unten) ? Math.abs(ziel - unten) : 0)
+        : 0;
+    // Ohne Böschung endet die Fläche am Umriss (Saum null); mit Böschung läuft sie aus.
+    return { huelle, saum: spanne * neigung };
+}
+
+/** Nach INNEN: nichts ragt über den Umriss hinaus. */
+function _wbUmrissInnen(raster, p) {
+    const huelle = _huelleXZ(p.umriss);
+    return huelle ? { huelle, saum: 0 } : null;
+}
+
+/** Stationen, wenn es sie gibt (Teil XXI) — sonst null. */
+const _stationenVon = (p) => (Array.isArray(p.stationen) && p.stationen.length >= 2 ? p.stationen : null);
+/** Die tiefste Sohle eines Gerinnes: über die Stationen oder die beiden Enden. */
+const _gerinneSohle = (p, st) => (st
+    ? Math.min(...st.map(s => Number(s?.y)).filter(Number.isFinite))
+    : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde)));
+
+/** Die Kennweite einer Umriss-Operation: wie weit ihre Böschung höchstens ausläuft. */
+function _kwUmriss(raster, p, { neigung }) {
+    const h = _huelleXZ(p.umriss);
+    const oben = h ? _hoechsteIn(raster, h) : null;
+    const unten = h ? _tiefsteIn(raster, h) : null;
+    const ziel = Number(p.sohle ?? p.hoehe);
+    if (!(neigung > 0) || !Number.isFinite(ziel)) return [];
+    return [Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0,
+                     Number.isFinite(unten) ? Math.abs(ziel - unten) : 0) * neigung];
+}
+
+/**
+ * Die Vorschau eines Rings (Grube, Schüttung): der gezeichnete Rand liegt AUF
+ * dem Gelände (Punkthöhen), der innere Ring auf Sohle bzw. Zielhöhe.
+ * @returns {null|{ring, randMittel, n, innenGrat(hoehe)}}
+ */
+function _ringVorschau(op, c) {
+    const q = op.parameter ?? {};
+    const ring = (q.umriss ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
+    if (ring.length < 3) return null;
+    const randMittel = ring.reduce((a, p) => a + p.y, 0) / ring.length;
+    const n = Number(q.neigung) > 0 ? Number(q.neigung) : 0;
+    c.primitive.push({ art: 'umriss', ring, farbe: c.farbe });
+    // Der INNERE Ring Ecke für Ecke (Teil XXII, `Innenecken`): dieselbe
+    // Regel wie die Rechnung, und genau dort sitzen die Griffe von „Ecken
+    // ziehen". Je Ecke die Gratlinie von oben nach innen — sie zeigt, welche
+    // Ecken zusammengehören.
+    const innenGrat = (hoehe) => {
+        const ecken = c.hilfen.innenEcken(op);
+        if (!ecken || ecken.some(e => !e)) return null;
+        c.primitive.push({ art: 'umriss', ring: ecken.map(e => ({ x: e.x, y: hoehe, z: e.z })), farbe: c.farbe });
+        ecken.forEach((e, k) => c.primitive.push({ art: 'linie', gestrichelt: true, farbe: c.farbe,
+            punkte: [{ x: ring[k].x, y: ring[k].y, z: ring[k].z }, { x: e.x, y: hoehe, z: e.z }] }));
+        return ecken;
+    };
+    return { ring, randMittel, n, innenGrat };
+}
+
+/** Ohne Ecken-Grat: der eingerückte Ring als Näherung — kippt er, entfällt er. */
+function _innenNaeherung(c, v, d, hoehe) {
+    const innen = v.n ? c.hilfen.innenring(v.ring, Math.max(0, d) * v.n) : v.ring;
+    if (innen) c.primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe: c.farbe });
+}
+
+/** Die Wirkfläche eines Rings: der Umriss, plus der Saum der Böschung. */
+const _RING_UMRISS = Object.freeze({ form: 'ring', punkte: (p) => p.umriss });
+
 export const GELAENDE_OPS = Object.freeze({
-    gerinne:   { titel: 'Gerinne einschneiden', wende: gerinne },
-    planum:    { titel: 'Planum herstellen',    wende: planum },
-    boeschung: { titel: 'Böschung anschliessen', wende: boeschung },
-    baugrube:  { titel: 'Baugrube ausheben',    wende: baugrube },
+    gerinne: {
+        titel: 'Gerinne einschneiden', wende: gerinne,
+        hoehenfelder: ['sohleAnfang', 'sohleEnde'],
+        // Teil XXI: ein Gerinne darf seine Sohle stationsweise tragen — auch
+        // die Stationen sind Punkte mit Höhe in m NN.
+        punktfelder: ['stationen'],
+        wirkbereich(raster, p) {
+            // MIT STATIONEN (Teil XXI): die Achse sind die Stationen, die Breite
+            // die GRÖSSTE und die Sohle die TIEFSTE — der Bereich muss alles
+            // fassen, was die Operation berührt, sonst rechnet sie ausserhalb
+            // ihres Korridors ins Leere.
+            const st = _stationenVon(p);
+            const huelle = _huelleXZ(st ?? p.achse);
+            if (!huelle) return null;
+            const neigung = Math.max(0, Number(p.boeschung) || 0);
+            const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [];
+            const breite = Math.max(0, breiten.length ? Math.max(...breiten) : (Number(p.sohlbreite) || 0)) / 2;
+            const oben = _hoechsteIn(raster, huelle);
+            const sohle = _gerinneSohle(p, st);
+            const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
+            return { huelle, saum: breite + tiefe * neigung };
+        },
+        wirkflaeche: { form: 'streifen', punkte: (p) => _stationenVon(p) ?? p.achse },
+        kennweiten(raster, p, { neigung }) {
+            const st = _stationenVon(p);
+            const breiten = st ? st.map(s => Number(s?.sohlbreite)).filter(Number.isFinite) : [Number(p.sohlbreite)];
+            const schmalste = breiten.filter(b => b > 0);
+            const aus = schmalste.length ? [Math.min(...schmalste)] : [];
+            const h = _huelleXZ(st ?? p.achse);
+            const oben = h ? _hoechsteIn(raster, h) : null;
+            const sohle = _gerinneSohle(p, st);
+            if (Number.isFinite(oben) && Number.isFinite(sohle) && neigung > 0) aus.push((oben - sohle) * neigung);
+            return aus;
+        },
+        kennhoehen: () => [],                    // keine ebene Fläche
+        // Ein reines Gerinne ist ein Graben (TRENCH).
+        cutTyp: 'TRENCH',
+        // Ein Graben ist ein Trapez aus der Norm: der Profilkörper baut ihn exakt (Teil XXI, P6).
+        profilfaehig: true,
+        vorschau(op, c) {
+            const q = op.parameter ?? {};
+            const pts = c.hilfen.sohlPunkte(q.achse, Number(q.sohleAnfang), Number(q.sohleEnde));
+            if (pts.length < 2 || !Number.isFinite(pts[0].y)) return;
+            const tiefe = c.hilfen.tiefeUeber(c.hoeheAn, pts);
+            c.primitive.push(...c.hilfen.grabenGeist(pts, { sohlbreite: Number(q.sohlbreite) || 1, boeschung: Number(q.boeschung) || 1.5, tiefe }, c.farbe));
+            c.chips.push({ art: 'vorschau', text: `Gerinne · Sohle ${(pts[0].y + c.hoehenversatz).toFixed(2)} → ${(pts[pts.length - 1].y + c.hoehenversatz).toFixed(2)} m NN · bis ${tiefe.toFixed(1)} m tief` });
+        },
+    },
+    planum: {
+        titel: 'Planum herstellen', wende: planum,
+        hoehenfelder: ['hoehe'],
+        wirkbereich: _wbUmrissZuZiel,
+        wirkflaeche: _RING_UMRISS,
+        kennweiten: _kwUmriss,
+        // Ein Planum kann beides sein — es schneidet und schüttet; welche Kante
+        // entsteht, entscheidet die Maske der Böschungskanten.
+        kennhoehen: (p) => [{ art: 'sohlkante', hoehe: p.hoehe }, { art: 'kronenkante', hoehe: p.hoehe }],
+        cutTyp: 'EXCAVATION',
+        vorschau(op, c) {
+            const q = op.parameter ?? {};
+            const ring = (q.umriss ?? []).map(p => ({ x: Number(p.x), z: Number(p.z) })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
+            const hoehe = Number(q.hoehe);
+            if (ring.length < 3 || !Number.isFinite(hoehe)) return;
+            // Die Platte reicht von der Sollhöhe bis zum höchsten Geländepunkt des Umrisses.
+            let oben = hoehe;
+            for (const p of ring) { const h = c.hoeheAn?.(p.x, p.z); if (Number.isFinite(h)) oben = Math.max(oben, h); }
+            if (oben - hoehe < 0.05) oben = hoehe + 0.5;
+            const ex = c.hilfen.extrudiere({ umriss: { ring, loecher: [] } }, { von: hoehe, bis: oben });
+            if (ex.ergebnis) c.primitive.push({ art: 'geist', positions: ex.ergebnis.positions, triCount: ex.ergebnis.triCount, farbe: c.farbe, opacity: 0.3 });
+            c.primitive.push({ art: 'umriss', ring: ring.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe: c.farbe });
+            c.chips.push({ art: 'vorschau', text: `Planum ${(hoehe + c.hoehenversatz).toFixed(2)} m NN` });
+        },
+    },
+    boeschung: {
+        titel: 'Böschung anschliessen', wende: boeschung,
+        hoehenfelder: ['hoehe'],
+        wirkbereich: _wbUmrissZuZiel,
+        wirkflaeche: _RING_UMRISS,
+        kennweiten: _kwUmriss,
+        kennhoehen: () => [],
+        cutTyp: 'EXCAVATION',
+        vorschau(op, c) {
+            c.chips.push({ art: 'vorschau', text: `Böschung 1 : ${Number(op.parameter?.neigung) || 1.5} — Anschluss nach Übernehmen` });
+        },
+    },
+    baugrube: {
+        titel: 'Baugrube ausheben', wende: baugrube,
+        hoehenfelder: ['sohle'],
+        wirkbereich(raster, p) {
+            const m = p.mitte ? _xz(p.mitte) : null;
+            if (!m || !Number.isFinite(m.x)) return null;
+            const halb = Math.max(
+                Number(p.radius) || 0,
+                (Number(p.laenge) || 0) / 2,
+                (Number(p.breite) || 0) / 2,
+            );
+            // Gedreht: die Diagonale ist die sichere Schranke.
+            const d = halb * Math.SQRT2;
+            const huelle = { minX: m.x - d, maxX: m.x + d, minZ: m.z - d, maxZ: m.z + d };
+            const neigung = Math.max(0, Number(p.neigung) || 0);
+            const oben = _hoechsteIn(raster, huelle);
+            const sohle = Number(p.sohle);
+            const tiefe = (Number.isFinite(oben) && Number.isFinite(sohle)) ? Math.max(0, oben - sohle) : 0;
+            return { huelle, saum: tiefe * neigung };
+        },
+        wirkflaeche: null,
+        kennweiten(raster, p, { box, neigung }) {
+            const aus = [Number(p.laenge), Number(p.breite), 2 * (Number(p.radius) || 0)];
+            const oben = box ? _hoechsteIn(raster, box) : null;
+            if (Number.isFinite(oben) && Number.isFinite(Number(p.sohle)) && neigung > 0) aus.push((oben - Number(p.sohle)) * neigung);
+            return aus;
+        },
+        kennhoehen: (p) => [{ art: 'sohlkante', hoehe: p.sohle }],
+        cutTyp: 'EXCAVATION',
+    },
     // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
-    grube:          { titel: 'Ausheben',            wende: grube },
-    schuettung:     { titel: 'Auffüllen',           wende: schuettung },
-    boeschungLinie: { titel: 'Böschung an Kante',   wende: boeschungLinie },
+    grube: {
+        titel: 'Ausheben', wende: grube,
+        hoehenfelder: ['sohle'],
+        punktfelder: ['umriss'],
+        wirkbereich: _wbUmrissInnen,
+        wirkflaeche: _RING_UMRISS,
+        kennweiten: _kwUmriss,
+        kennhoehen: (p) => [{ art: 'sohlkante', hoehe: p.sohle }],
+        // Der innere Ring ist die Sohlkante: jeder Randpunkt fällt mit 1:n auf die Sohle.
+        innen: { feld: 'sohle', titel: 'Sohle', richtung: 1, gilt: (p) => Number.isFinite(Number(p.sohle)) },
+        cutTyp: 'EXCAVATION',
+        vorschau(op, c) {
+            const v = _ringVorschau(op, c);
+            if (!v) return;
+            const sohle = Number(op.parameter?.sohle);
+            if (!Number.isFinite(sohle)) return;
+            if (!v.innenGrat(sohle)) _innenNaeherung(c, v, v.randMittel - sohle, sohle);
+            c.chips.push({ art: 'vorschau', text: `Ausheben · Sohle ${(sohle + c.hoehenversatz).toFixed(2)} m NN · ${(v.randMittel - sohle).toFixed(2)} m unter dem Rand · ${v.n ? `Böschung 1 : ${v.n}` : 'senkrecht'}` });
+        },
+    },
+    schuettung: {
+        titel: 'Auffüllen', wende: schuettung,
+        hoehenfelder: ['hoehe'],
+        punktfelder: ['umriss'],
+        wirkbereich: _wbUmrissInnen,
+        wirkflaeche: _RING_UMRISS,
+        kennweiten: _kwUmriss,
+        // „bis GOK" hat keine ebene Krone — sein Deckel ist das Ur-Gelände.
+        kennhoehen: (p) => (p.ziel !== 'ur' ? [{ art: 'kronenkante', hoehe: p.hoehe }] : []),
+        // Der innere Ring ist die Krone — nur bei einer Zielhöhe, nicht „bis GOK".
+        innen: { feld: 'hoehe', titel: 'Krone', richtung: -1,
+                 gilt: (p) => (p.ziel ?? 'hoehe') === 'hoehe' && Number.isFinite(Number(p.hoehe)) },
+        cutTyp: 'EXCAVATION',
+        // Eine Rückverfüllung bis GOK ist BACKFILL.
+        fillTyp: (p) => (p?.ziel === 'ur' ? 'BACKFILL' : null),
+        vorschau(op, c) {
+            const v = _ringVorschau(op, c);
+            if (!v) return;
+            const q = op.parameter ?? {};
+            if (q.ziel === 'ur') {
+                c.chips.push({ art: 'vorschau', text: 'Auffüllen bis GOK — auf das Ur-Gelände, nur auffüllen' });
+                return;
+            }
+            const hoehe = Number(q.hoehe);
+            if (!Number.isFinite(hoehe)) return;
+            if (!v.innenGrat(hoehe)) _innenNaeherung(c, v, hoehe - v.randMittel, hoehe);
+            c.chips.push({ art: 'vorschau', text: `Auffüllen · ${(hoehe + c.hoehenversatz).toFixed(2)} m NN · ${(hoehe - v.randMittel).toFixed(2)} m über dem Rand · ${v.n ? `Böschung 1 : ${v.n}` : 'senkrecht'}` });
+        },
+    },
+    boeschungLinie: {
+        titel: 'Böschung an Kante', wende: boeschungLinie,
+        hoehenfelder: [],
+        punktfelder: ['linie'],
+        wirkbereich(raster, p) {
+            const huelle = _huelleXZ(p.linie);
+            if (!huelle) return null;
+            const neigung = Math.max(0.1, Number(p.neigung) || 0);
+            const umher = { minX: huelle.minX - RAND_MINDEST_M, maxX: huelle.maxX + RAND_MINDEST_M,
+                            minZ: huelle.minZ - RAND_MINDEST_M, maxZ: huelle.maxZ + RAND_MINDEST_M };
+            const oben = _hoechsteIn(raster, umher), unten = _tiefsteIn(raster, umher);
+            const ys = (p.linie ?? []).map(q => (Array.isArray(q) ? q[1] : q?.y)).filter(Number.isFinite);
+            const kMin = ys.length ? Math.min(...ys) : null, kMax = ys.length ? Math.max(...ys) : null;
+            const spanne = Number.isFinite(kMin)
+                ? Math.max(0, Number.isFinite(oben) ? oben - kMin : 0, Number.isFinite(unten) ? kMax - unten : 0)
+                : 0;
+            return { huelle, saum: spanne * neigung };
+        },
+        wirkflaeche: { form: 'streifen', punkte: (p) => p.linie },
+        kennweiten: (raster, p, { box, neigung }) => (box && neigung > 0
+            ? [Math.min(box.maxX - box.minX, box.maxZ - box.minZ) / 2] : []),
+        kennhoehen: () => [],
+        cutTyp: 'EXCAVATION',
+        // Eine Böschung an einer Kante ist SLOPEFILL („side slope fill").
+        fillTyp: () => 'SLOPEFILL',
+        vorschau(op, c) {
+            const q = op.parameter ?? {};
+            const pts = (q.linie ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
+                .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
+            if (pts.length < 2) return;
+            const n = Number(q.neigung) || 1.5;
+            c.primitive.push({ art: 'linie', punkte: pts, farbe: c.farbe });
+            // Die SEITE sichtbar: eine gestrichelte Parallele zwei Meter daneben.
+            c.primitive.push({ art: 'linie', punkte: c.hilfen.parallele(pts, q.seite === 'links' ? 2 : -2), farbe: c.farbe, gestrichelt: true });
+            c.chips.push({ art: 'vorschau', text: `Böschung 1 : ${n} · ${q.seite === 'links' ? 'links' : 'rechts'} der Zeichenrichtung` });
+        },
+    },
 });
+
+/** Rangfolge der Füllungstypen: eine Rückverfüllung schlägt eine Kantenböschung. */
+export const FILL_RANG = Object.freeze(['BACKFILL', 'SLOPEFILL']);
+
+/**
+ * Der IFC-PredefinedType eines Aushubs aus seinen Operationen: nur Gräben →
+ * TRENCH, sonst EXCAVATION. Die Operation sagt, was sie beisteuert (`cutTyp`).
+ */
+export function cutTypAus(operationen = [], { ops = GELAENDE_OPS } = {}) {
+    return (operationen ?? []).every(op => ops[op?.art]?.cutTyp === 'TRENCH') ? 'TRENCH' : 'EXCAVATION';
+}
+
+/** Der IFC-PredefinedType einer Füllung: der höchste Rang, den eine Operation nennt, sonst EMBANKMENT. */
+export function fillTypAus(operationen = [], { ops = GELAENDE_OPS } = {}) {
+    const typen = new Set((operationen ?? []).map(op => ops[op?.art]?.fillTyp?.(op?.parameter ?? {})).filter(Boolean));
+    return FILL_RANG.find(t => typen.has(t)) ?? 'EMBANKMENT';
+}
+
+/**
+ * Die PUNKTLISTEN einer Operationsliste — je Operation und Feld, in Reihenfolge.
+ *
+ * Wer Ecken zeigt (Griffe) oder zieht (Werkzeug), fragt hier — nicht eine
+ * Tabelle, die er dafür kennen müsste. Welche Felder einer Operation
+ * Punktlisten mit Höhe sind, weiss ihr Eintrag (`punktfelder`).
+ * @returns {Array<{op: number, feld: string, punkte: Array}>}
+ */
+export function punktlistenVon(operationen = [], { ops = GELAENDE_OPS } = {}) {
+    const aus = [];
+    (operationen ?? []).forEach((op, j) => {
+        for (const feld of ops[op?.art]?.punktfelder ?? []) {
+            const punkte = op?.parameter?.[feld];
+            if (Array.isArray(punkte)) aus.push({ op: j, feld, punkte });
+        }
+    });
+    return aus;
+}
 
 /**
  * Eine Operationsliste (Journalstand) auf das gelieferte Raster anwenden —

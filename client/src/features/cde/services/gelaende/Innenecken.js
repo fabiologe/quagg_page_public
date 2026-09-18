@@ -20,19 +20,23 @@
  * Rein, in den Koordinaten der Operation (Welt-x/z, Höhen in m NN).
  */
 
-/** Welche Operationen einen inneren Ring haben, und wie weit er innen liegt. */
+import { GELAENDE_OPS } from './Operationen.js';
+
+/**
+ * Welche Operationen einen inneren Ring haben, und wie weit er innen liegt.
+ *
+ * Das sagt der Eintrag der Operation (`innen`, Teil XXIII A2): welches Feld
+ * die Höhe des Rings trägt, wie er heisst, in welche Richtung die Böschung
+ * läuft (`richtung` +1: der Rand liegt ÜBER dem Ring — Grube; −1: darunter —
+ * Schüttung) und ob der Ring gerade gilt („bis GOK" hat keine Krone).
+ */
 function _abstand(op) {
     const p = op?.parameter ?? {};
+    const innen = GELAENDE_OPS[op?.art]?.innen;
+    if (!innen || !innen.gilt(p)) return null;
     const n = Number(p.neigung) > 0 ? Number(p.neigung) : 0;
-    if (op?.art === 'grube' && Number.isFinite(Number(p.sohle))) {
-        const sohle = Number(p.sohle);
-        return { hoehe: sohle, d: (h) => Math.max(0, (h - sohle) * n) };
-    }
-    if (op?.art === 'schuettung' && (p.ziel ?? 'hoehe') === 'hoehe' && Number.isFinite(Number(p.hoehe))) {
-        const ziel = Number(p.hoehe);
-        return { hoehe: ziel, d: (h) => Math.max(0, (ziel - h) * n) };
-    }
-    return null;
+    const ziel = Number(p[innen.feld]);
+    return { hoehe: ziel, d: (h) => Math.max(0, innen.richtung * (h - ziel) * n) };
 }
 
 /** Hat diese Operation einen inneren Ring (Sohle bzw. Krone)? */
@@ -42,7 +46,12 @@ export function hatInnenring(op) {
 
 /** Wie der innere Ring heisst — für Griffe und Hinweise. */
 export function innenringName(op) {
-    return op?.art === 'schuettung' ? 'Krone' : 'Sohle';
+    return GELAENDE_OPS[op?.art]?.innen?.titel ?? 'Sohle';
+}
+
+/** Welches Feld die Höhe des inneren Rings trägt (Sohle der Grube, Zielhöhe der Schüttung). */
+export function innenFeld(op) {
+    return GELAENDE_OPS[op?.art]?.innen?.feld ?? null;
 }
 
 function _flaeche(ring) {

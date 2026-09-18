@@ -40,22 +40,13 @@
 
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { achsenErlaubt } from './Achszug.js';
-import { ERDBAU_PUNKTHOEHEN } from './ableitung/Ableitungen.js';
+import { rezeptNach } from './Bauteilrezepte.js';
 import { innenEcken, innenringName } from './gelaende/Innenecken.js';
 
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
 
 const LAGE_REZEPTE = new Set(['linie', 'rohr', 'schacht', 'flaeche']);
-/**
- * Welche Rezepte ihre Ecken in OPERATIONEN tragen statt in `parameter.punkte`
- * (Teil XXI, P5) — und in welchen Feldern.
- *
- * Die Felder stehen NICHT hier: `ERDBAU_PUNKTHOEHEN` sagt schon, welche
- * Op-Parameter Punktlisten mit Höhe sind, und dieselbe Tabelle rechnet sie an
- * der NN-Grenze um. Eine zweite Liste liefe beim ersten neuen Werkzeug weg.
- */
-const erdbauRezepte = new Set(['erdbau', 'kanalgraben', 'bauwerksgrube']);
 /** Welche Rezepte einen geschlossenen Ring beschreiben (die letzte Kante zählt mit). */
 const RING_REZEPTE = new Set(['flaeche']);
 /** Ein Bauteil mit weniger Punkten als hier lässt sich nicht mehr sinnvoll drehen. */
@@ -67,9 +58,17 @@ const DREH_MINDEST_PUNKTE = 2;
  * Bauwerksgrube folgen ihrer Haltung bzw. ihrem Bauwerk und haben keine.
  */
 export function hatErdbauEcken(bauplan) {
-    if (!bauplan || !erdbauRezepte.has(bauplan.rezept)) return false;
-    return (bauplan.parameter?.operationen ?? []).some(op => (ERDBAU_PUNKTHOEHEN[op?.art] ?? [])
-        .some(f => Array.isArray(op?.parameter?.[f]) && op.parameter[f].length >= 2));
+    return _punktlisten(bauplan).some(l => l.punkte.length >= 2);
+}
+
+/**
+ * Die Ecken eines Vorgangs, die in seinen OPERATIONEN stehen (Teil XXI, P5):
+ * das Rezept sagt es (`punktlisten`, Teil XXIII A2). Kanalgraben und
+ * Bauwerksgrube haben keine — sie folgen ihrer Haltung bzw. ihrem Bauwerk.
+ */
+function _punktlisten(bauplan) {
+    if (!bauplan) return [];
+    return rezeptNach(bauplan.rezept)?.punktlisten?.(bauplan.parameter) ?? [];
 }
 
 /**
@@ -222,7 +221,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     // Jeder dieser Griffe trägt `ecken: true` — gezeigt werden sie nur, wenn
     // „Ecken ziehen" für dieses Bauteil läuft (`bearbeitung.eckenFuer`), und
     // `ring` (seine Nachbarn in Zeichenreihenfolge) für die Führungslinien.
-    if (eigen && bauplan && Array.isArray(bauplan.parameter?.operationen) && erdbauRezepte.has(bauplan.rezept)) {
+    if (eigen && bauplan && typeof rezeptNach(bauplan.rezept)?.punktlisten === 'function') {
+        const listen = _punktlisten(bauplan);
         const gid = subjekt.globalId;
         const versatz = subjekt.hoehenversatz ?? 0;
         const FELDER = ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'];
@@ -236,9 +236,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                        zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 } });
         };
         bauplan.parameter.operationen.forEach((op, j) => {
-            for (const feld of (ERDBAU_PUNKTHOEHEN[op?.art] ?? [])) {
-                const liste = op?.parameter?.[feld];
-                if (!Array.isArray(liste) || liste.length < 2) continue;
+            for (const { feld, punkte: liste } of listen.filter(l => l.op === j)) {
+                if (liste.length < 2) continue;
                 const geschlossen = feld === 'umriss';
                 const ring = liste.map(p => ({ x: Number(p?.x), z: Number(p?.z) }));
                 liste.forEach((p, k) => {

@@ -24,7 +24,7 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { feinheitAus, feinheitFuer, formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { GELAENDE_OPS, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
 import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
 import { innenEcken } from '../gelaende/Innenecken.js';
@@ -40,31 +40,23 @@ import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten
 
 /** Welche Op-Parameter Höhen in m NN sind — und deshalb an der Grenze in Welt-Y wandern. */
 export const ERDBAU_HOEHENFELDER = Object.freeze({
-    gerinne:   ['sohleAnfang', 'sohleEnde'],
-    planum:    ['hoehe'],
-    boeschung: ['hoehe'],
-    baugrube:  ['sohle'],
-    // Die Bauwerksgrube trägt ihre Sohle in m NN (leer = Unterkante des Bauteils).
+    // Die Felder jeder Geländeoperation stehen an ihrem Eintrag (Teil XXIII,
+    // A2) — diese Tabelle ist nur noch eine SICHT darauf, für die Leser, die
+    // eine Tabelle erwarten (`hoehenFelder` am Rezept).
+    ...Object.fromEntries(Object.entries(GELAENDE_OPS).map(([art, e]) => [art, e.hoehenfelder ?? []])),
+    // Die Bauwerksgrube trägt ihre Sohle in m NN (leer = Unterkante des
+    // Bauteils). Sie ist KEINE Geländeoperation, sondern der Parameterhalter
+    // ihres Rezepts im Verlauf — `leite` macht Planum und Böschung daraus.
     bauwerksgrube: ['sohle'],
-    // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
-    grube:          ['sohle'],
-    schuettung:     ['hoehe'],
-    boeschungLinie: [],
 });
 
 /**
- * Welche Op-Parameter PUNKTLISTEN mit Höhe je Punkt sind (Teil XX) — Rand
- * und Kante tragen ihre Höhe in m NN wie jede Sohle, und wandern an
- * derselben Grenze nach Welt-Y.
+ * Welche Op-Parameter PUNKTLISTEN mit Höhe je Punkt sind (Teil XX) — eine
+ * Sicht auf `punktfelder` der Registry. Wer Punktlisten LESEN will, fragt
+ * `punktlistenVon` bzw. das Rezept (`punktlisten`), nicht diese Tabelle.
  */
-export const ERDBAU_PUNKTHOEHEN = Object.freeze({
-    grube:          ['umriss'],
-    schuettung:     ['umriss'],
-    boeschungLinie: ['linie'],
-    // Teil XXI: ein Gerinne darf seine Sohle stationsweise tragen — auch die
-    // Stationen sind Punkte mit Höhe in m NN.
-    gerinne:        ['stationen'],
-});
+export const ERDBAU_PUNKTHOEHEN = Object.freeze(Object.fromEntries(
+    Object.entries(GELAENDE_OPS).filter(([, e]) => e.punktfelder?.length).map(([art, e]) => [art, e.punktfelder])));
 
 /** Gegenprobe Körper ↔ Raster: darüber ist etwas faul. */
 export const GEGENPROBE_TOLERANZ = 0.02;
@@ -301,6 +293,15 @@ function _sohlPunkte(achse, sohleAnfang, sohleEnde) {
     return pts.map((p, i) => ({ x: p.x, y: sohleAnfang + (e - sohleAnfang) * (st[i] / l), z: p.z }));
 }
 
+/**
+ * Die Zeichenhilfen der Vorschau — sie gehören hierher (Geister, eingerückte
+ * Ringe), die Operationen bekommen sie hereingereicht.
+ */
+const VORSCHAU_HILFEN = Object.freeze({
+    sohlPunkte: _sohlPunkte, tiefeUeber: _tiefeUeber, grabenGeist: _grabenGeist,
+    innenring: _innenring, parallele: _parallele, extrudiere, innenEcken,
+});
+
 const ABLEITUNGEN_ERWEITERT = {
     /**
      * Gelände formen — Gerinne, Planum, Böschung als Operationsliste auf EINEM
@@ -326,9 +327,9 @@ const ABLEITUNGEN_ERWEITERT = {
             {
                 rolle: 'aushub', kategorie: 'IFCEARTHWORKSCUT', bauform: 'koerper', form: 'koerper',
                 // Ein reines Gerinne ist ein Graben (TRENCH); sobald ein Planum
-                // dabei ist, ist es ein Aushub (EXCAVATION).
-                predefinedType: (parameter) => ((parameter?.operationen ?? []).every(op => op.art === 'gerinne')
-                    ? 'TRENCH' : 'EXCAVATION'),
+                // dabei ist, ist es ein Aushub (EXCAVATION). Was eine Operation
+                // beisteuert, sagt ihr Eintrag (`cutTyp`).
+                predefinedType: (parameter) => cutTypAus(parameter?.operationen),
                 name: (q) => `${q} · Aushub`,
                 // DIE MENGE fürs IFC (Stufe 2): welche Kennzahl welcher Qto-Wert
                 // ist. Es ist die Rasterzahl — dieselbe, die der Mengenreiter
@@ -345,12 +346,7 @@ const ABLEITUNGEN_ERWEITERT = {
                 rolle: 'auftrag', kategorie: 'IFCEARTHWORKSFILL', bauform: 'koerper', form: 'koerper',
                 // Teil XX: eine Rückverfüllung bis GOK ist BACKFILL, eine Böschung
                 // an einer Kante SLOPEFILL („side slope fill"), sonst ein Damm.
-                predefinedType: (parameter) => {
-                    const ops = parameter?.operationen ?? [];
-                    if (ops.some(op => op.art === 'schuettung' && op.parameter?.ziel === 'ur')) return 'BACKFILL';
-                    if (ops.some(op => op.art === 'boeschungLinie')) return 'SLOPEFILL';
-                    return 'EMBANKMENT';
-                },
+                predefinedType: (parameter) => fillTypAus(parameter?.operationen),
                 name: (q) => `${q} · Auftrag`,
                 // Eingebaut ist ein Auftrag verdichtet — sein Raum IST das CompactedVolume.
                 menge: { compactedVolume: 'auftragRaster' },
@@ -377,7 +373,7 @@ const ABLEITUNGEN_ERWEITERT = {
             const ur = quellen?.gelaende;
             if (!gid || !ur) return {};
             // JEDER VORGANG BEKOMMT IHN (Teil XXI, 2026-09-17). Bis dahin nur
-            // die schmalen (`_zuFeinFuerZelle`: Gerinne, Baugrube) — „zwei
+            // die schmalen (Gerinne, Baugrube; die Schranke dafür fiel in Teil XXIII) — „zwei
             // Sekunden für die dritte Nachkommastelle sind ein schlechtes
             // Geschäft". Das galt, solange nur die MASSE daran hing. Seit die
             // Anzeige ihre Flicken fein zeichnet, hängt auch das BILD daran:
@@ -484,84 +480,15 @@ const ABLEITUNGEN_ERWEITERT = {
          * Tabelle nach Welt wie in `leite`.
          */
         vorschau(parameter, { hoeheAn = null, hoehenversatz = 0, farben = {} } = {}) {
-            const farbe = farben.warn ?? '#ffb74d';
-            const primitive = [];
-            const chips = [];
-            for (const op of _opsInWelt(parameter?.operationen ?? [], hoehenversatz)) {
-                const q = op.parameter ?? {};
-                if (op.art === 'gerinne') {
-                    const pts = _sohlPunkte(q.achse, Number(q.sohleAnfang), Number(q.sohleEnde));
-                    if (pts.length < 2 || !Number.isFinite(pts[0].y)) continue;
-                    const tiefe = _tiefeUeber(hoeheAn, pts);
-                    primitive.push(..._grabenGeist(pts, { sohlbreite: Number(q.sohlbreite) || 1, boeschung: Number(q.boeschung) || 1.5, tiefe }, farbe));
-                    chips.push({ art: 'vorschau', text: `Gerinne · Sohle ${(pts[0].y + hoehenversatz).toFixed(2)} → ${(pts[pts.length - 1].y + hoehenversatz).toFixed(2)} m NN · bis ${tiefe.toFixed(1)} m tief` });
-                } else if (op.art === 'planum') {
-                    const ring = (q.umriss ?? []).map(p => ({ x: Number(p.x), z: Number(p.z) })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
-                    const hoehe = Number(q.hoehe);
-                    if (ring.length < 3 || !Number.isFinite(hoehe)) continue;
-                    // Die Platte reicht von der Sollhöhe bis zum höchsten Geländepunkt des Umrisses.
-                    let oben = hoehe;
-                    for (const p of ring) { const h = hoeheAn?.(p.x, p.z); if (Number.isFinite(h)) oben = Math.max(oben, h); }
-                    if (oben - hoehe < 0.05) oben = hoehe + 0.5;
-                    const ex = extrudiere({ umriss: { ring, loecher: [] } }, { von: hoehe, bis: oben });
-                    if (ex.ergebnis) primitive.push({ art: 'geist', positions: ex.ergebnis.positions, triCount: ex.ergebnis.triCount, farbe, opacity: 0.3 });
-                    primitive.push({ art: 'umriss', ring: ring.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe });
-                    chips.push({ art: 'vorschau', text: `Planum ${(hoehe + hoehenversatz).toFixed(2)} m NN` });
-                } else if (op.art === 'boeschung') {
-                    chips.push({ art: 'vorschau', text: `Böschung 1 : ${Number(q.neigung) || 1.5} — Anschluss nach Übernehmen` });
-                } else if (op.art === 'grube' || op.art === 'schuettung') {
-                    // Teil XX: der gezeichnete Rand liegt AUF dem Gelände (Punkthöhen),
-                    // der innere Ring auf Sohle bzw. Zielhöhe.
-                    const ring = (q.umriss ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
-                        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
-                    if (ring.length < 3) continue;
-                    const randMittel = ring.reduce((a, p) => a + p.y, 0) / ring.length;
-                    const n = Number(q.neigung) > 0 ? Number(q.neigung) : 0;
-                    primitive.push({ art: 'umriss', ring, farbe });
-                    // Der INNERE Ring Ecke für Ecke (Teil XXII, `Innenecken`): dieselbe
-                    // Regel wie die Rechnung, und genau dort sitzen die Griffe
-                    // von „Ecken ziehen". Je Ecke die Gratlinie von oben nach
-                    // innen — sie zeigt, welche Ecken zusammengehören.
-                    const innenGrat = (hoehe) => {
-                        const ecken = innenEcken(op);
-                        if (!ecken || ecken.some(e => !e)) return null;
-                        primitive.push({ art: 'umriss', ring: ecken.map(e => ({ x: e.x, y: hoehe, z: e.z })), farbe });
-                        ecken.forEach((e, k) => primitive.push({ art: 'linie', gestrichelt: true, farbe,
-                            punkte: [{ x: ring[k].x, y: ring[k].y, z: ring[k].z }, { x: e.x, y: hoehe, z: e.z }] }));
-                        return ecken;
-                    };
-                    if (op.art === 'grube') {
-                        const sohle = Number(q.sohle);
-                        if (!Number.isFinite(sohle)) continue;
-                        if (!innenGrat(sohle)) {
-                            const innen = n ? _innenring(ring, Math.max(0, randMittel - sohle) * n) : ring;
-                            if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: sohle, z: p.z })), farbe });
-                        }
-                        chips.push({ art: 'vorschau', text: `Ausheben · Sohle ${(sohle + hoehenversatz).toFixed(2)} m NN · ${(randMittel - sohle).toFixed(2)} m unter dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
-                    } else if (q.ziel === 'ur') {
-                        chips.push({ art: 'vorschau', text: 'Auffüllen bis GOK — auf das Ur-Gelände, nur auffüllen' });
-                    } else {
-                        const hoehe = Number(q.hoehe);
-                        if (!Number.isFinite(hoehe)) continue;
-                        if (!innenGrat(hoehe)) {
-                            const innen = n ? _innenring(ring, Math.max(0, hoehe - randMittel) * n) : ring;
-                            if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe });
-                        }
-                        chips.push({ art: 'vorschau', text: `Auffüllen · ${(hoehe + hoehenversatz).toFixed(2)} m NN · ${(hoehe - randMittel).toFixed(2)} m über dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
-                    }
-                } else if (op.art === 'boeschungLinie') {
-                    const pts = (q.linie ?? []).map(p => ({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }))
-                        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
-                    if (pts.length < 2) continue;
-                    const n = Number(q.neigung) || 1.5;
-                    primitive.push({ art: 'linie', punkte: pts, farbe });
-                    // Die SEITE sichtbar: eine gestrichelte Parallele zwei Meter daneben.
-                    primitive.push({ art: 'linie', punkte: _parallele(pts, q.seite === 'links' ? 2 : -2), farbe, gestrichelt: true });
-                    chips.push({ art: 'vorschau', text: `Böschung 1 : ${n} · ${q.seite === 'links' ? 'links' : 'rechts'} der Zeichenrichtung` });
-                }
-            }
-            return { primitive, chips, hinweise: [] };
+            // Je Operation IHR Geist — gezeichnet von ihrem Eintrag in der
+            // Registry (Teil XXIII, A2); die Zeichenhilfen reichen wir hinein.
+            const c = { hoeheAn, hoehenversatz, farbe: farben.warn ?? '#ffb74d', primitive: [], chips: [], hilfen: VORSCHAU_HILFEN };
+            for (const op of _opsInWelt(parameter?.operationen ?? [], hoehenversatz)) GELAENDE_OPS[op.art]?.vorschau?.(op, c);
+            return { primitive: c.primitive, chips: c.chips, hinweise: [] };
         },
+
+        /** Die Ecken dieses Vorgangs — wer sie zeigt oder zieht, fragt HIER (Teil XXIII, A2). */
+        punktlisten: (parameter) => punktlistenVon(parameter?.operationen),
 
         verschiebe: (parameter, delta) => ({
             ...parameter,
@@ -646,31 +573,6 @@ function _kanalgrabenWerte(parameter, rohr) {
 /** Eine Quelle oder eine Liste davon — als Liste. */
 const _liste = (q) => (q == null ? [] : (Array.isArray(q) ? q : [q]));
 /** Feinste Zellweite des Graben-Korridors (m) und sein Rand um Rohre und Schächte (m). */
-/**
- * Ist eine der Operationen SCHMALER als zwei Zellen? Dann wird sie auf dem
- * groben Raster nicht mehr richtig getroffen, und der feine Korridor lohnt.
- * Dieselbe Frage, die `gerinne` schon als Warnung stellt — hier als
- * Entscheidung, damit Warnung und Kur dieselbe Grösse messen.
- */
-function _zuFeinFuerZelle(raster, operationen) {
-    const cell = Number(raster?.cell) || 0;
-    if (!cell) return false;
-    for (const op of operationen ?? []) {
-        const p = op?.parameter ?? {};
-        let mass = Infinity;
-        if (op.art === 'gerinne') mass = Number(p.sohlbreite) || 0;
-        else if (op.art === 'baugrube') {
-            mass = Math.min(
-                Number(p.laenge) || Infinity,
-                Number(p.breite) || Infinity,
-                (Number(p.radius) || Infinity) * 2,
-            );
-        } else continue;                       // Planum/Böschung sind flächig
-        if (mass > 0 && mass < cell * 2) return true;
-    }
-    return false;
-}
-
 /**
  * Die gemeinsame Ausdehnung aller Operationen einer Formung, plus Rand.
  *
@@ -1015,7 +917,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         // zwei überlappende Schalen wären keine Menge mehr, und die
         // 3D-Vereinigung dafür rechnet auf dem Server (G7). Dann bleibt es
         // beim Rasterkörper — und der sagt es.
-        const gerinneOps = ops.filter(o => o.art === 'gerinne');
+        const gerinneOps = ops.filter(o => GELAENDE_OPS[o.art]?.profilfaehig);
         const profilFaehig = ops.length === 1 && gerinneOps.length === 1;
         let graben = null, koerperArt = 'raster', koerperGrund = null;
         if (profilFaehig) {

@@ -35,6 +35,8 @@
  * Massen, und beim nächsten Lauf wieder.
  */
 
+import { GELAENDE_OPS } from './Operationen.js';
+
 /**
  * Die vier Arten — Daten für Raum und Oberfläche.
  *
@@ -103,19 +105,9 @@ export function kennhoehen(ops = []) {
         aus.push({ art, hoehe });
     };
     for (const op of ops ?? []) {
-        const p = op?.parameter ?? {};
-        switch (op?.art) {
-            case 'grube': case 'baugrube': case 'bauwerksgrube':
-                merke('sohlkante', _zahl(p.sohle)); break;
-            case 'planum':
-                merke('sohlkante', _zahl(p.hoehe));
-                merke('kronenkante', _zahl(p.hoehe)); break;
-            case 'schuettung':
-                // „bis GOK" hat keine ebene Krone — sein Deckel ist das Ur-Gelände.
-                if (p.ziel !== 'ur') merke('kronenkante', _zahl(p.hoehe));
-                break;
-            default: break;                    // gerinne, boeschung, boeschungLinie: keine ebene Fläche
-        }
+        // Welche ebene Kante eine Operation herstellt, weiss ihr Eintrag
+        // (Teil XXIII, A2) — Gerinne und Böschungen stellen keine her.
+        for (const k of GELAENDE_OPS[op?.art]?.kennhoehen?.(op?.parameter ?? {}) ?? []) merke(k.art, _zahl(k.hoehe));
     }
     return aus;
 }

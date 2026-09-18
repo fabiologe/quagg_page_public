@@ -69,10 +69,9 @@ export function eingabeArt(bearbeitung) {
 }
 
 import { AUFLOCKERUNG, WANDFORMEN, BODENKLASSEN, GRABENREGELN, auflockerungFuer, auflockerungOder, schaechteAnKanten } from './gelaende/Grabenregeln.js';
-import { hatInnenring, innenEcken, randFuerInnenecke } from './gelaende/Innenecken.js';
+import { hatInnenring, innenEcken, innenFeld, randFuerInnenecke } from './gelaende/Innenecken.js';
 // Die Bauformen, an denen eine Aussparung fachlich geht — DIE Liste des
 // Rezepts, nicht eine Kopie daneben (Gesetz 7).
-import { ERDBAU_PUNKTHOEHEN, KOERPERHAFT } from './ableitung/Ableitungen.js';
 import { achsmassAus } from './geometrie/ops/Raster.js';
 
 /**
@@ -469,27 +468,21 @@ function _schuettungSchritte(el, werte, zug) {
 /**
  * EIN KNICKPUNKT EINER OPERATION (Teil XXI, P5) — {op, feld, index, punkt}.
  *
- * Welche Op-Felder Punktlisten sind, sagt `ERDBAU_PUNKTHOEHEN` (dieselbe
- * Tabelle, die sie an der NN-Grenze umrechnet). Ohne Angabe: der erste
- * gefundene Punkt — das ist die Vorbelegung des Formulars.
+ * Welche Ecken ein Vorgang hat, fragt das Werkzeug das REZEPT
+ * (`punktlisten`, Teil XXIII A2) — nicht eine Tabelle, die es dafür kennen
+ * müsste. Ohne Angabe: der erste gefundene Punkt — das ist die Vorbelegung
+ * des Formulars.
  */
 function _erdbauPunkt(bauplan, op = null, feld = null, index = 0) {
-    const ops = bauplan?.parameter?.operationen;
-    if (!Array.isArray(ops)) return null;
-    for (let j = 0; j < ops.length; j++) {
-        if (op != null && j !== Number(op)) continue;
-        // Je Art ihre Punktfelder — dieselbe Tabelle, die `_opsInWelt` die
-        // Höhen umrechnen lässt. Ein fremdes Feld an einer Operation trüge
-        // sonst einen Griff, den die Rechnung nie liest.
-        for (const f of (ERDBAU_PUNKTHOEHEN[ops[j]?.art] ?? [])) {
-            if (feld && f !== feld) continue;
-            const liste = ops[j]?.parameter?.[f];
-            if (!Array.isArray(liste) || !liste.length) continue;
-            const k = Number(index) || 0;
-            const punkt = liste[k];
-            if (!punkt || ![punkt.x, punkt.y, punkt.z].every(v => Number.isFinite(Number(v)))) continue;
-            return { op: j, feld: f, index: k, punkt, liste };
-        }
+    const listen = rezeptNach(bauplan?.rezept)?.punktlisten?.(bauplan?.parameter) ?? [];
+    for (const l of listen) {
+        if (op != null && l.op !== Number(op)) continue;
+        if (feld && l.feld !== feld) continue;
+        if (!l.punkte.length) continue;
+        const k = Number(index) || 0;
+        const punkt = l.punkte[k];
+        if (!punkt || ![punkt.x, punkt.y, punkt.z].every(v => Number.isFinite(Number(v)))) continue;
+        return { op: l.op, feld: l.feld, index: k, punkt, liste: l.punkte };
     }
     return null;
 }
@@ -515,7 +508,7 @@ function _erdbauStuetzpunktSchritte(el, werte) {
         // Lage wird zur äusseren Ecke zurückgerechnet (Neigung bleibt).
         const op = plan.parameter.operationen[treffer.op];
         if (!hatInnenring(op)) return null;
-        const hoehenFeld = op.art === 'grube' ? 'sohle' : 'hoehe';
+        const hoehenFeld = innenFeld(op);
         const mitHoehe = { ...op, parameter: { ...op.parameter, [hoehenFeld]: hoehe } };
         // Nur die Höhe gezogen (die Lage ist die der Ecke vorher): der Rand
         // bleibt auf dem Gelände, die Sohle (Krone) wandert — so erwartet man
@@ -820,12 +813,13 @@ export const BEARBEITUNGEN = Object.freeze([
         titel: 'Aussparung ableiten',
         icon: 'schnitt',
         gruppe: 'gelaende',
-        // SO WEIT WIE DAS REZEPT (2026-09-17): `aussparung` verlangt in beiden
-        // Schlitzen `KOERPERHAFT` — Körper, Fläche+Dicke, Achse+Profil —, weil
-        // die Aussparung in einer WAND der Regelfall schlechthin ist und eine
-        // Rohrdurchführung das kanonische Werkzeug. Der Katalog liess nur
-        // `koerper` zu; am Wand-Bauteil erschien das Werkzeug deshalb nie.
-        bauform: KOERPERHAFT,
+        // SO WEIT WIE DAS REZEPT (2026-09-17): `aussparung` verlangt am Bauwerk
+        // Körper, Fläche+Dicke, Achse+Profil, weil die Aussparung in einer
+        // WAND der Regelfall schlechthin ist und eine Rohrdurchführung das
+        // kanonische Werkzeug. Der Katalog liess nur `koerper` zu; am
+        // Wand-Bauteil erschien das Werkzeug deshalb nie. Gelesen wird die
+        // Deklaration des Rezepts (`braucht.bauwerk`), nicht eine Kopie davon.
+        bauform: rezeptNach('aussparung').braucht.bauwerk,
         mindestGuete: 'unbekannt',
         art: 'erzeugt',
         felder: [
@@ -1688,7 +1682,7 @@ export const BEARBEITUNGEN = Object.freeze([
          * `ableitung_uneinheitlich`).
          *
          * DIE HÖHE BLEIBT IN NN: die Punktlisten der Operationen tragen sie so
-         * (`ERDBAU_PUNKTHOEHEN`), und `_opsInWelt` rechnet sie an genau einer
+         * (`punktfelder` ihres Registry-Eintrags), und `_opsInWelt` rechnet sie an genau einer
          * Grenze um. Wer hier Welt-Y schriebe, verschöbe den Punkt um den
          * Höhenversatz.
          */

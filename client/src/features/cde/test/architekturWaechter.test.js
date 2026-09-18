@@ -136,20 +136,11 @@ const DURCHGRIFF_ERLAUBT = {
     'services/IfcEngine.js': 2,
 };
 
-/** W1c — `ERDBAU_PUNKTHOEHEN`, `KOERPERHAFT` ausserhalb der Katalogschicht. Ziel: 0 (A2). */
-const INTERNA_ERLAUBT = {
-    'services/Bearbeitungen.js': 4,
-    'services/Griffe.js': 3,
-};
+/** W1c — `ERDBAU_PUNKTHOEHEN`, `KOERPERHAFT` ausserhalb der Katalogschicht. 7 → 0 mit A2 (Punktlisten fragt man das Rezept). */
+const INTERNA_ERLAUBT = {};
 
-/** W2 — Op-Namen in Verzweigungen. Ziel: 0 (A2) — auch in `Operationen.js` selbst. */
-const OPNAMEN_ERLAUBT = {
-    'services/Bearbeitungen.js': 1,
-    'services/ableitung/Ableitungen.js': 13,      // Vorschau, PredefinedType, Profilfähigkeit
-    'services/gelaende/Boeschungskanten.js': 4,   // `kennhoehen`
-    'services/gelaende/Innenecken.js': 3,         // Teil XXII, Sohl-/Kronenecken
-    'services/gelaende/Operationen.js': 17,       // `wirkbereichVon`, `wirkflaecheVon`, `kennweiteVon`
-};
+/** W2 — Op-Namen in Verzweigungen. 38 → 0 mit A2: alles steht am Eintrag der Registry. */
+const OPNAMEN_ERLAUBT = {};
 
 /** W3 — Rezeptnamen ausserhalb des Katalogs. Ziel: die Altbestands-Stellen (A3). */
 const REZEPTNAMEN_ERLAUBT = {
@@ -158,7 +149,7 @@ const REZEPTNAMEN_ERLAUBT = {
     'components/IfcVolumeTab.vue': 2,
     'services/Bearbeitungen.js': 2,
     'services/GlobalIdAbbildung.js': 1,
-    'services/Griffe.js': 3,
+    'services/Griffe.js': 2,            // A2: `erdbauRezepte` fiel (Punktlisten kennt das Rezept)
     'services/IfcAutor.js': 1,
     'services/IfcEngine.js': 4,
     'services/LaengsschnittSicht.js': 1,
