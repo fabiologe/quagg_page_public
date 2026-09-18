@@ -15,6 +15,8 @@ import {
 import { offset, versetztePunkte, ringFlaeche } from '../services/geometrie/ops/Linien.js';
 import { eingabenFuer } from '../services/Eingaben.js';
 import { EINGEBAUTE_VORLAGEN } from '../services/Bibliothek.js';
+import { profilFuer } from '../services/bauform/Typprofile.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 
 const b = (id) => nachId(id);
 const EIGEN = (rezept, punkte, extra = {}) => ({
@@ -95,11 +97,18 @@ describe('Linie — teilen, trimmen, versetzen, umkehren (nur eigen)', () => {
         const eigen = passende({ bauform: 'linie', guete: 'gemessen' }, { eigenes: true }).map(x => x.id);
         expect(eigen).toEqual(expect.arrayContaining(['linie-teilen', 'linie-trimmen', 'linie-versetzen', 'linie-umkehren']));
         expect(eigen).not.toContain('haltung-teilen');
-        const geliefert = passende({ bauform: 'linie', guete: 'gemessen' }).map(x => x.id);
+        // Geliefert und eine KANTE im Netz (Typprofil der Fliessabschnitte) —
+        // mit dem Kontext, den der Store wirklich mitgibt (`passendeKontext`).
+        const kante = { typprofil: profilFuer('IFCPIPESEGMENT') };
+        const geliefert = passende({ bauform: 'linie', guete: 'gemessen' }, kante).map(x => x.id);
         expect(geliefert).toContain('haltung-teilen');
         expect(geliefert).not.toContain('linie-teilen');
+        // Seit AE (Teil XXIII): eine gelieferte Linie OHNE Rolle im Netz — eine
+        // Trasse, ein Träger — bekommt kein „Haltung teilen" mehr; es machte
+        // aus ihr Rohre.
+        expect(passende({ bauform: 'linie', guete: 'gemessen' }).map(x => x.id)).not.toContain('haltung-teilen');
         // am eigenen ROHR bleibt „Haltung teilen" (es hat eine Achse und wird richtig geteilt)
-        expect(passende({ bauform: 'achse+profil', guete: 'gemessen' }, { eigenes: true }).map(x => x.id)).toContain('haltung-teilen');
+        expect(passende({ bauform: 'achse+profil', guete: 'gemessen' }, { eigenes: true, rezept: rezeptNach('rohr') }).map(x => x.id)).toContain('haltung-teilen');
     });
     it('teilen: verborgen + zwei Teile mit Rezept und Parametern, ein Vorgang', () => {
         const liste = b('linie-teilen').anwenden(EIGEN('linie', L, { stand: { bauplan: { rezept: 'linie', kategorie: 'IFCALIGNMENT', name: 'T', parameter: { punkte: L, hoehe: 3 } } } }), { station: 2 });

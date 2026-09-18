@@ -41,6 +41,7 @@
  */
 import { meshVolume } from '../../geometry/MeshOps.js';
 import { rasterAbtasten } from './Raster.js';
+import { ortBei } from '../Stationierung.js';
 
 /** Stationsabstand des Körpers (m) — feiner als die Stationen der Haltung. */
 export const GRABEN_SCHRITT = 0.5;
@@ -106,34 +107,23 @@ function _bahn(stationen) {
 /**
  * Ein Ort auf der Bahn bei Weglänge `d` — auch VOR dem Anfang und HINTER dem
  * Ende (dann steigt die Sohle mit 1 : n, wie `gerinne` es tut).
+ *
+ * Lage und Richtung rechnet die EINE Stationierung (`geometrie/Stationierung.js`,
+ * Teil XXIII AE); hier bleibt nur, was der Profilkörper dazu weiss.
  */
 function _ortBei(bahn, d) {
     const { st, kum, laenge } = bahn;
-    if (d < 0) {
-        const u = _einheit(st[1].x - st[0].x, st[1].z - st[0].z);
-        const e = -d;
-        return { x: st[0].x - u.x * e, z: st[0].z - u.z * e, u,
-                 sohleRoh: st[0].y, e, b2: st[0].sohlbreite / 2 };
-    }
-    if (d > laenge) {
-        const m = st.length - 1;
-        const u = _einheit(st[m].x - st[m - 1].x, st[m].z - st[m - 1].z);
-        const e = d - laenge;
-        return { x: st[m].x + u.x * e, z: st[m].z + u.z * e, u,
-                 sohleRoh: st[m].y, e, b2: st[m - 1].sohlbreite / 2 };
-    }
-    let i = 0;
-    while (i + 2 < kum.length && kum[i + 1] < d) i++;
-    const t = (d - kum[i]) / (kum[i + 1] - kum[i]);
-    const u = _einheit(st[i + 1].x - st[i].x, st[i + 1].z - st[i].z);
+    const o = ortBei({ punkte: st, kum, laenge }, d, { ausserhalb: 'verlaengern' });
     return {
-        x: st[i].x + (st[i + 1].x - st[i].x) * t,
-        z: st[i].z + (st[i + 1].z - st[i].z) * t,
-        u, e: 0,
-        sohleRoh: st[i].y + (st[i + 1].y - st[i].y) * t,
-        // Die Breite gehört der Teilstrecke, die dort BEGINNT — Stufenfunktion
-        // (DIN EN 1610 Tab. 2), genau wie im Raster-Zweig.
-        b2: st[i].sohlbreite / 2,
+        x: o.x, z: o.z,
+        u: (o.richtung.x || o.richtung.z) ? o.richtung : null,
+        e: o.ueber,
+        sohleRoh: o.y,
+        // Die Breite gehört der Teilstrecke i, die bei st[i] beginnt —
+        // Stufenfunktion (DIN EN 1610 Tab. 2), genau wie im Raster-Zweig. Auf
+        // einer Knickstation ist i die Teilstrecke, die dort endet; hinter dem
+        // Ende die letzte.
+        b2: st[o.i].sohlbreite / 2,
     };
 }
 

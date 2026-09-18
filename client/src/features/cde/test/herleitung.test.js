@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { herleite, warumNicht } from '../services/Herleitung.js';
 import { EINGEBAUTE_PROFILE } from '../services/bauform/Typprofile.js';
 import { nachId } from '../services/Bearbeitungen.js';
+import { verlangtVon } from '../services/eigenschaften/Eigenschaftsarten.js';
 
 function h(kategorie, einordnung, el = {}) {
     return herleite({
@@ -134,11 +135,14 @@ describe('Drei Herkünfte, drei Fragen — mehr gibt es nicht', () => {
         // tragen `brauchtRolle` nicht mehr — geprüft wird deshalb gegen den
         // Katalog. Genau das ist die Zusage: die Gruppierung folgt dem, was im
         // Katalog steht, nicht einer zweiten Liste daneben.
+        // Seit AE (Teil XXIII) heisst „rolle": das Werkzeug verlangt eine
+        // EIGENSCHAFT — eine Grösse des Typprofils, eine Achse oder eine Rolle
+        // im Netz. `verlangtVon` liest beides, `braucht` und `brauchtRolle`.
         expect(nach.immer.length).toBeGreaterThan(0);
-        for (const e of nach.immer) expect(nachId(e.id).brauchtRolle, e.id).toBeFalsy();
+        for (const e of nach.immer) expect(verlangtVon(nachId(e.id)), e.id).toEqual([]);
 
         expect(nach.rolle.length).toBeGreaterThan(0);
-        for (const e of nach.rolle) expect(nachId(e.id).brauchtRolle, e.id).toBeTruthy();
+        for (const e of nach.rolle) expect(verlangtVon(nachId(e.id)).length, e.id).toBeGreaterThan(0);
 
         // Zwei Anker, damit die Prüfung nicht ins Leere laufen kann.
         expect(nach.immer.map(e => e.id)).toContain('kg-setzen');

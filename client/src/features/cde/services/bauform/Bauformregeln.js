@@ -51,6 +51,9 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
         condition: { category: 'IFCBUILDINGELEMENTPROXY', propertyName: 'Name',
                      operator: 'equals', value: 'Haltung' },
         bauform: 'achse+profil',
+        // Eine Haltung IST eine Kante im Netz (Teil XXIII, AE) — der Proxy
+        // bekommt die Rolle aus dieser Regel, nicht aus seiner Klasse.
+        netzrolle: 'kante',
     },
     {
         /**
@@ -82,6 +85,7 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
         condition: { category: 'IFCBUILDINGELEMENTPROXY', propertyName: 'Name',
                      operator: 'equals', value: 'Schacht' },
         bauform: 'koerper',
+        netzrolle: 'knoten',
     },
 ]);
 

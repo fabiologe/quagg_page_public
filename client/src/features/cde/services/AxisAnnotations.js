@@ -40,6 +40,13 @@
 
 import * as THREE from 'three';
 
+/**
+ * Rückfall für Leser, die den Katalog nicht fragen (Längsschnitt-Builder,
+ * PDF-Export). Die WAHRHEIT steht im Katalog — `netzrollenWurzeln('kante')`,
+ * die Engine fragt dort (Teil XXIII, AE). Diese Liste bleibt nur, weil dieses
+ * Modul auf dem Weg des Geometrie-Lesers liegt und das Wörterbuch nicht
+ * nachziehen soll; `eigenschaftsarten.test.js` hält beide deckungsgleich.
+ */
 export const AXIS_CATEGORIES_DEFAULT = ['IFCPIPESEGMENT', 'IFCFLOWSEGMENT'];
 
 /**

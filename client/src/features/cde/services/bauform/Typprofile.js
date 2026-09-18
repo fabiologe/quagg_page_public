@@ -42,6 +42,10 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCFLOWSEGMENT: {
         bauform: 'achse+profil',
         warum: 'Abschnitt ist definitionsgemäss ein Lauf; deckt Rohr, Kanal, Kabel, Förderer',
+        // DIE ROLLE IM NETZ (Teil XXIII, AE): eine Kante. Welche Familien Knoten
+        // und Kanten sind, stand bis hierher fest in der Engine
+        // (`IFCDISTRIBUTIONCHAMBERELEMENT`, `AXIS_CATEGORIES_DEFAULT`).
+        netzrolle: 'kante',
         felder: {
             profilGroesse: { label: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 4000 },
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
@@ -79,6 +83,8 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCPIPESEGMENT: {
         bauform: 'achse+profil',
         warum: 'CULVERT FLEXIBLESEGMENT GUTTER RIGIDSEGMENT SPOOL — alles Läufe',
+        // Das genauere Profil gewinnt — also muss es die Rolle selbst nennen.
+        netzrolle: 'kante',
         felder: {
             profilGroesse: {
                 label: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000,
@@ -268,6 +274,7 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
     IFCDISTRIBUTIONCHAMBERELEMENT: {
         bauform: 'koerper',
         warum: 'Schacht, Kammer, Absetzbecken — ein platziertes Volumen',
+        netzrolle: 'knoten',
         felder: {
             sohlhoehe: { label: 'Sohlhöhe', einheit: 'm NN', typ: 'zahl' },
             // Die zweite Höhe am Schacht. Sohle und Deckel zusammen ergeben
@@ -537,6 +544,24 @@ export function vererbungskette(kategorie) {
  *
  * Kein Treffer → `null`; dann übernimmt die Bauform-Ableitung (Bauformen.js).
  */
+/**
+ * Die Familien, die im Netz eine ROLLE spielen (Teil XXIII, AE) — Untertyp vor
+ * Obertyp, damit eine Achse unter ihrem GENAUEREN Namen gezählt wird (die
+ * Leser dedupen nach Id und behalten den ersten).
+ *
+ * Gelesen von der Engine, wenn sie Knoten und Kanten eines Modells sammelt:
+ * wer ein Büro-Typprofil mit `netzrolle` anlegt, bringt damit eine neue
+ * Familie ins Netz — ohne Programmfassung.
+ * @param {'knoten'|'kante'} rolle
+ * @returns {string[]}
+ */
+export function netzrollenWurzeln(rolle, satz = EINGEBAUTE_PROFILE) {
+    return Object.entries(satz ?? {})
+        .filter(([, p]) => p?.netzrolle === rolle)
+        .map(([k]) => k)
+        .sort((a, b) => vererbungskette(b).length - vererbungskette(a).length || a.localeCompare(b));
+}
+
 export function profilFuer(kategorie, satz = EINGEBAUTE_PROFILE) {
     return profilHerkunft(kategorie, satz).profil;
 }

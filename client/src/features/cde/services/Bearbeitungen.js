@@ -33,7 +33,7 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform } from './Bauteilrezepte.js';
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -88,6 +88,7 @@ const AUFLOCKERUNG_FELD = Object.freeze({
     vorgabe: AUFLOCKERUNG.vorgabe,
 });
 import { ACHSBEZUEGE } from './Achsbezug.js';
+import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -210,7 +211,7 @@ function _anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }) {
             : [_alsTripel(bleibt), _alsTripel(neu)];
         eintraege.push({ art: 'geloescht', globalId: k.globalId, nachher: true });
         eintraege.push(erzeugtEintrag({
-            rezept: 'rohr',
+            rezept: rezeptFuerNetzrolle('kante'),
             kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
             name: k.name ?? '',
             parameter: { punkte, dn: k.dn ?? 300 },
@@ -1201,6 +1202,10 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'section',
         gruppe: 'lage',
         bauform: ['achse+profil', 'linie'],
+        // WAS DAS WERKZEUG BRAUCHT (Teil XXIII, AE): eine Achse, die eine KANTE im
+        // Netz ist. Vorher genügte die Bauform — und Träger, Pfähle, Trassen
+        // bekamen „Haltung teilen", das daraus Rohre machte.
+        braucht: ['achse', 'netzrolle:kante'],
         mindestGuete: 'gemessen',
         // Eine EIGENE Linie hat keine Achse und würde hier zu zwei Rohren —
         // sie hat ihr eigenes Werkzeug (`linie-teilen`, S9). Das eigene Rohr
@@ -1222,7 +1227,7 @@ export const BEARBEITUNGEN = Object.freeze([
             const punkt = _alsTripel;
             const name = el?.name ?? '';
             const stueck = (von, bis, zusatz) => erzeugtEintrag({
-                rezept: 'rohr',
+                rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
                 parameter: { punkte: [punkt(von), punkt(bis)], dn: a.dn ?? 300 },
@@ -1300,6 +1305,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'pointer',
         gruppe: 'lage',
         bauform: ['achse+profil', 'linie'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:kante'],
         brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
         mindestGuete: 'gemessen',
         art: 'parametrik',
@@ -1346,6 +1354,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'laengsschnitt',
         gruppe: 'parametrik',
         bauform: ['achse+profil'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:kante'],
         brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
         mindestGuete: 'gemessen',
         art: 'parametrik',
@@ -1421,6 +1432,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'add',
         gruppe: 'lage',
         bauform: ['achse+profil'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['achse', 'netzrolle:kante'],
         brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
         mindestGuete: 'gemessen',
         art: 'erzeugt',
@@ -1471,7 +1485,7 @@ export const BEARBEITUNGEN = Object.freeze([
 
             const name = el?.name ?? '';
             const stueck = (von, bis, zusatz) => erzeugtEintrag({
-                rezept: 'rohr',
+                rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
                 parameter: { punkte: [_alsTripel(von), _alsTripel(bis)], dn: a.dn ?? 300 },
@@ -1480,7 +1494,7 @@ export const BEARBEITUNGEN = Object.freeze([
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
                 erzeugtEintrag({
-                    rezept: 'schacht',
+                    rezept: rezeptFuerNetzrolle('knoten'),
                     kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT',
                     name: name ? `${name} (Schacht)` : '',
                     parameter: {
@@ -1529,6 +1543,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'pointer',
         gruppe: 'lage',
         bauform: ['koerper'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:knoten'],
         brauchtRolle: 'deckelhoehe',
         mindestGuete: 'unbekannt',
         art: 'lage',
@@ -2393,6 +2410,10 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'haltung',
         gruppe: 'lage',
         bauform: ['achse+profil'],
+        // WAS DAS WERKZEUG BRAUCHT (Teil XXIII, AE): eine Achse, die eine KANTE im
+        // Netz ist. Vorher genügte die Bauform — und Träger, Pfähle, Trassen
+        // bekamen „Haltung teilen", das daraus Rohre machte.
+        braucht: ['achse', 'netzrolle:kante'],
         mindestGuete: 'unbekannt',
         art: 'lage',
         eingabe: 'zug',
@@ -2466,6 +2487,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'delete',
         gruppe: 'lage',
         bauform: ['koerper'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:knoten'],
         brauchtRolle: 'deckelhoehe',
         mindestGuete: 'unbekannt',
         art: 'erzeugt',
@@ -2509,7 +2533,7 @@ export const BEARBEITUNGEN = Object.freeze([
                 { art: 'geloescht', globalId: zu.globalId, nachher: true },
                 { art: 'geloescht', globalId: ab.globalId, nachher: true },
                 erzeugtEintrag({
-                    rezept: 'rohr',
+                    rezept: rezeptFuerNetzrolle('kante'),
                     kategorie: zu.kategorie ?? 'IFCPIPESEGMENT',
                     name: zu.name || ab.name || '',
                     parameter: { punkte, dn },
@@ -2568,6 +2592,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'info',
         gruppe: 'merkmale',
         bauform: ['achse+profil'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:kante'],
         brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
         mindestGuete: 'gemessen',
         art: 'bezeichnung',
@@ -2633,6 +2660,9 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'quality',
         gruppe: 'merkmale',
         bauform: ['achse+profil'],
+        // Die Rolle im Netz, ausdrücklich (AE) — die Grössen darunter bleiben,
+        // wo das Werkzeug sie liest oder schreibt.
+        braucht: ['netzrolle:kante'],
         brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
         mindestGuete: 'gemessen',
         art: 'massnahme',
@@ -2676,6 +2706,10 @@ export const BEARBEITUNGEN = Object.freeze([
         icon: 'trasse',
         gruppe: 'lage',
         bauform: ['achse+profil', 'linie'],
+        // WAS DAS WERKZEUG BRAUCHT (Teil XXIII, AE): eine Achse, die eine KANTE im
+        // Netz ist. Vorher genügte die Bauform — und Träger, Pfähle, Trassen
+        // bekamen „Haltung teilen", das daraus Rohre machte.
+        braucht: ['achse', 'netzrolle:kante'],
         mindestGuete: 'gemessen',
         art: 'erzeugt',
         eingabe: 'zug',
@@ -2713,7 +2747,7 @@ export const BEARBEITUNGEN = Object.freeze([
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
                 erzeugtEintrag({
-                    rezept: 'rohr',
+                    rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                     kategorie: el.category ?? 'IFCPIPESEGMENT',
                     name: el.name ?? '',
                     parameter: { punkte, dn: a.dn ?? 300 },
@@ -3012,9 +3046,13 @@ export const BEARBEITUNGEN = Object.freeze([
  * @param {string} [opts.gruppe]   nur diese Gruppe
  * @param {Array}  [opts.katalog]  für Tests
  */
-export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, typprofil = null, eigenes = false } = {}) {
+export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, typprofil = null, eigenes = false,
+                                      rezept = null, regel = null } = {}) {
     const bauform = einordnung?.bauform ?? null;
     const guete = einordnung?.guete ?? 'unbekannt';
+    // WAS DAS BAUTEIL HAT (Teil XXIII, AE) — einmal je Aufruf, aus dem Katalog:
+    // Rezept (eigen), Bauformregel (Proxy), Typprofil (Familie).
+    const eigenschaften = eigenschaftenVon({ bauform, typprofil, rezept, regel });
     return katalog.filter((b) => {
         // Teil XVI: manche Werkzeuge gibt es nur an EIGENEN Bauteilen (Bauplan).
         if (b.nurEigene && !eigenes) return false;
@@ -3032,12 +3070,13 @@ export function passende(einordnung, { gruppe = null, katalog = BEARBEITUNGEN, t
         // über ihm im Vererbungsbaum die Rolle nennt. Ohne Auslieferung.
         // `brauchtRolle` darf MEHRERE Rollen nennen — dann müssen alle da
         // sein. „Sohlhöhen festlegen" braucht Anfang UND Ende; eine davon
-        // allein ergibt kein Gefälle. Dieselbe Erweiterung wie bei `bauform`,
-        // die auch als Liste geschrieben werden darf.
-        if (b.brauchtRolle) {
-            const noetig = Array.isArray(b.brauchtRolle) ? b.brauchtRolle : [b.brauchtRolle];
-            if (!noetig.every(r => typprofil?.felder?.[r])) return false;
-        }
+        // allein ergibt kein Gefälle.
+        //
+        // SEIT AE (Teil XXIII) ist die Rolle EINE Eigenschaftsart unter
+        // mehreren: `braucht: ['netzrolle:kante', 'achse']` fragt genauso, was
+        // das Bauteil HAT — und `brauchtRolle` ist die Kurzform für `mass:…`.
+        // Ein Weg, eine Prüfung (`verlangtVon`, `fehlendeEigenschaften`).
+        if (fehlendeEigenschaften(eigenschaften, verlangtVon(b)).length) return false;
         if (gruppe && b.gruppe !== gruppe) return false;
         // ERZEUGEN HAT KEIN SUBJEKT. Die Trennlinie ist nicht der Elementtyp,
         // sondern die Frage „woran hängt die Operation?" — Bearbeiten immer an

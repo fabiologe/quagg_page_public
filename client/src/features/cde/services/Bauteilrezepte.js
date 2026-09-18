@@ -628,6 +628,24 @@ export const REZEPTE = Object.freeze({
     },
 });
 
+/**
+ * Das Rezept für ein Netzelement dieser Rolle (Teil XXIII, AE).
+ *
+ * Wer eine GELIEFERTE Kante teilt, verschiebt oder zusammenlegt, ersetzt sie
+ * durch eigene Bauteile — aus WELCHEM Rezept, sagt der Katalog: das erste mit
+ * dieser Netzrolle. Bis hierher stand `rezept: 'rohr'` bzw. `'schacht'` in
+ * sechs Werkzeugen (Architektur-Wächter W3b).
+ *
+ * Wer ein EIGENES Bauteil teilt, behält dessen Rezept — sonst würde aus einem
+ * Kanal der Bibliothek beim Teilen ein Rohr.
+ * @param {'kante'|'knoten'} rolle
+ * @param {object|null} [bauplan]  der Bauplan des Bauteils, das ersetzt wird
+ */
+export function rezeptFuerNetzrolle(rolle, bauplan = null) {
+    if (bauplan?.rezept && rezeptNach(bauplan.rezept)?.netzrolle === rolle) return bauplan.rezept;
+    return Object.values(REZEPTE).find(r => r.netzrolle === rolle)?.id ?? null;
+}
+
 /** Ein Rezept nach Id. Nie `undefined` durchreichen — `null` ist die Antwort. */
 export function rezeptNach(id) {
     const k = String(id ?? '');

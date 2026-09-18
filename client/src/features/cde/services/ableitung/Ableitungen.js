@@ -35,6 +35,7 @@ import { GRABEN_QUER, GRABEN_SCHRITT } from '../geometrie/ops/Graben.js';
 import { kreisProfil, trapezProfil, sweep, extrudiere } from '../geometrie/ops/Sweep.js';
 import { versetztePunkte, ringFlaeche } from '../geometrie/ops/Linien.js';
 import { umrissFlaeche } from '../geometrie/ops/Umriss.js';
+import { stationenEntlang } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
 import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
 
@@ -649,28 +650,6 @@ export const KANALGRABEN_ANSCHLUSS = 2;
  */
 export const KANALGRABEN_PROFILE_MAX = 400;
 
-/**
- * Eine Polylinie in Stationen zerlegen: jeder Knickpunkt bleibt, dazwischen
- * höchstens `schritt` Meter. Die Höhe läuft linear im Segment mit.
- */
-function _stationenEntlang(punkte, schritt) {
-    const aus = [];
-    for (let i = 0; i + 1 < punkte.length; i++) {
-        const a = punkte[i], b = punkte[i + 1];
-        const l = Math.hypot(b.x - a.x, b.z - a.z);
-        aus.push({ x: a.x, y: a.y, z: a.z });
-        if (!(l > 0)) continue;
-        const teile = Math.max(1, Math.ceil(l / Math.max(0.01, schritt)));
-        for (let k = 1; k < teile; k++) {
-            const t = k / teile;
-            aus.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
-        }
-    }
-    const letzter = punkte[punkte.length - 1];
-    aus.push({ x: letzter.x, y: letzter.y, z: letzter.z });
-    return aus;
-}
-
 ABLEITUNGEN_ERWEITERT.kanalgraben = {
     id: 'kanalgraben',
     titel: 'Kanalgraben',
@@ -812,7 +791,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             // DIE STATIONEN: Sohle der Haltung, alle `KANALGRABEN_STATION` m
             // plus jeder Knickpunkt. Die Grabensohle liegt um die Bettung
             // darunter, die Tiefe misst sich am Gelände GENAU DORT.
-            const roh = _stationenEntlang(pts, KANALGRABEN_STATION);
+            const roh = stationenEntlang(pts, KANALGRABEN_STATION);
             const stationen = roh.map(s => {
                 const grabensohle = rohrsohle(s.y, rohrBezug) - w.bettung;
                 const h = hoeheAn(s.x, s.z);

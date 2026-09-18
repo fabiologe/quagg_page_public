@@ -57,6 +57,7 @@ import { baueBeziehungen } from './Beziehungen.js';
  */
 const STICHPROBE = 24;
 import { leseGeoreferenz } from './Georeferenz.js';
+import { netzrollenWurzeln } from './bauform/Typprofile.js';
 
 
 /**
@@ -258,6 +259,18 @@ function _fuellungsspalten(rz, k) {
     if (!teil) return { auftrag: null, verfuellung: null };
     const wert = k?.[teil.menge.compactedVolume] ?? null;
     return teil.rolle === 'verfuellung' ? { auftrag: null, verfuellung: wert } : { auftrag: wert, verfuellung: null };
+}
+
+/**
+ * Alle Elemente eines Modells, deren Familie im Katalog diese Netzrolle trägt
+ * (Teil XXIII, AE) — je Wurzel mit Untertypen, ohne Doppelte.
+ */
+function _idsDerNetzrolle(quelle, rolle) {
+    const ids = new Set();
+    for (const w of netzrollenWurzeln(rolle)) {
+        try { for (const id of quelle.ids(w, { untertypen: true }) ?? []) ids.add(id); } catch { /* Familie im Modell unbekannt */ }
+    }
+    return [...ids];
 }
 
 export class IfcEngine {
@@ -3402,7 +3415,9 @@ export class IfcEngine {
             const off = this._coordOffsets.get(api.fragmentModelId) ?? null;
             let achsen = [];
             try {
-                achsen = extractAxisPolylines(api.quelle, { coordOffset: off });
+                // Welche Familien KANTEN im Netz sind, sagt der Katalog (`netzrolle`
+                // am Typprofil, Teil XXIII AE) — nicht eine Liste hier.
+                achsen = extractAxisPolylines(api.quelle, { coordOffset: off, categories: netzrollenWurzeln('kante') });
             } catch (fehler) {
                 console.warn('cde: achsen lesen', fehler?.message ?? fehler);
                 continue;
@@ -3441,8 +3456,8 @@ export class IfcEngine {
             // keinen einzigen Netz-Befund. Gelesen wird nur die PLATZIERUNG,
             // keine Geometrie; das kostet nichts.
             const knoten = new Map();
-            for (const [id, punkt] of api.quelle.platzierungen(
-                api.quelle.ids('IFCDISTRIBUTIONCHAMBERELEMENT', { untertypen: true }))) {
+            // Welche Familien KNOTEN sind, sagt ebenso der Katalog.
+            for (const [id, punkt] of api.quelle.platzierungen(_idsDerNetzrolle(api.quelle, 'knoten'))) {
                 const kZeile = api.quelle.zeile(id) ?? null;
                 knoten.set(id, {
                     punkt: off

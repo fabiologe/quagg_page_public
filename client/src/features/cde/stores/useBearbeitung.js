@@ -155,11 +155,24 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * und `starte` fragt dieselbe Liste — nicht eine zweite mit denselben
      * Argumenten, die beim nächsten Argument wieder auseinanderläuft.
      */
-    const moeglich = computed(() => (einordnung.value
+    /**
+     * WAS DAS BAUTEIL HAT — die Fragen, die `passende` stellt, EINMAL
+     * zusammengestellt (Teil XXIII, AE): das Typprofil der Familie, ob es
+     * eigen ist, das Rezept eines eigenen Bauteils, die Bauformregel eines
+     * Proxys. Store UND Toolbox (`herleite`) nehmen diesen Kontext — zwei
+     * Wege mit je eigenen Argumenten liefen schon einmal auseinander.
+     */
+    const regelTreffer = computed(() => (bauteil.value
+        ? (bauformAusRegel(regeln.value, _regelKontext(bauteil.value))?.regel ?? null) : null));
+    const passendeKontext = computed(() => ({
+        typprofil: typprofil.value,
         // `eigenes`: ein Bauplan im Stand heisst „von hier" — nur dort gibt es
         // Werkzeuge wie „Stützpunkt verschieben" (Teil XVI, S4).
-        ? passende(einordnung.value, { typprofil: typprofil.value, eigenes: !!bauteil.value?.stand?.bauplan })
-        : []));
+        eigenes: !!bauteil.value?.stand?.bauplan,
+        rezept: rezeptNach(bauteil.value?.stand?.bauplan?.rezept),
+        regel: regelTreffer.value,
+    }));
+    const moeglich = computed(() => (einordnung.value ? passende(einordnung.value, passendeKontext.value) : []));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
     async function ladeProfile(quelle = repo) {
@@ -765,7 +778,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     return {
         entferneVorgang,
         einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
-        typprofil, scharf, felder, fehler, bereit, moeglich, befunde,
+        typprofil, passendeKontext, scharf, felder, fehler, bereit, moeglich, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,

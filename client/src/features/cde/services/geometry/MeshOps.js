@@ -316,7 +316,9 @@ export function profileAtStation(positions, triCount, axisPolyline, s) {
     if (!axisPolyline || axisPolyline.length < 2) return null;
     const warnings = [];
 
-    // Punkt + Tangente an Station s (2D-Bogenlänge wie Laengsschnitt.pointAt)
+    // Punkt + Tangente an Station s — Bogenlänge im RAUM, anders als die
+    // Stationierung (Draufsicht, `geometrie/Stationierung.js`): ein senkrechtes
+    // Fallrohr hat in der Draufsicht keine Länge, hier schon.
     let acc = 0, px = axisPolyline[0].x, py = axisPolyline[0].y, pz = axisPolyline[0].z;
     let tx = 1, ty = 0, tz = 0;
     for (let i = 0; i + 1 < axisPolyline.length; i++) {

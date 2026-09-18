@@ -17,6 +17,7 @@
  * liest weiter Sohlhöhen und bleibt unberührt.
  */
 import { rohrsohle } from './Achsbezug.js';
+import { ortBei, stationiere } from './geometrie/Stationierung.js';
 
 /** Endpunkt-Kettung der Haltungen zum längsten Strang. */
 export function buildStrang(axisItems, opts = {}) {
@@ -130,43 +131,26 @@ function _len2d(pl) {
 function _firstY(item) { return item.polyline[0].y ?? 0; }
 function _lastY(item)  { return item.polyline[item.polyline.length - 1].y ?? 0; }
 
-/** Lage + Richtung an Station s (für Querprofile). */
-export function pointAt(strang, s) {
-    const pts = strang.points;
-    if (!pts.length) return null;
-    if (s <= pts[0].s) return _dirAt(pts, 0);
-    for (let i = 0; i + 1 < pts.length; i++) {
-        if (s <= pts[i + 1].s) {
-            const t = (s - pts[i].s) / Math.max(1e-9, pts[i + 1].s - pts[i].s);
-            const base = _dirAt(pts, i);
-            return {
-                x: pts[i].x + (pts[i + 1].x - pts[i].x) * t,
-                z: pts[i].z + (pts[i + 1].z - pts[i].z) * t,
-                dirX: base.dirX, dirZ: base.dirZ,
-            };
-        }
-    }
-    return _dirAt(pts, pts.length - 2);
+/**
+ * Die Stationierung des Strangs — seine Stationen, wie `buildStrang` sie
+ * zählt (die Schachtlücke zwischen zwei Haltungen zählt mit). Gerechnet wird
+ * in `geometrie/Stationierung.js`, der EINEN Stelle (Teil XXIII, AE).
+ */
+function _stationierung(strang) {
+    return stationiere(strang.points, { kum: strang.points.map(p => p.s) });
 }
 
-function _dirAt(pts, i) {
-    const a = pts[Math.max(0, i)], b = pts[Math.min(pts.length - 1, i + 1)];
-    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
-    return { x: a.x, z: a.z, dirX: (b.x - a.x) / len, dirZ: (b.z - a.z) / len };
+/** Lage + Richtung an Station s (für Querprofile). */
+export function pointAt(strang, s) {
+    if (!strang.points.length) return null;
+    const o = ortBei(_stationierung(strang), s);
+    return { x: o.x, z: o.z, dirX: o.richtung.x, dirZ: o.richtung.z };
 }
 
 /** Sohlhöhe (Achshöhe) an Station s — linear entlang der Strang-Punkte. */
 export function sohleAt(strang, s) {
-    const pts = strang.points;
-    if (!pts.length) return null;
-    if (s <= pts[0].s) return pts[0].y;
-    for (let i = 0; i + 1 < pts.length; i++) {
-        if (s <= pts[i + 1].s) {
-            const t = (s - pts[i].s) / Math.max(1e-9, pts[i + 1].s - pts[i].s);
-            return pts[i].y + (pts[i + 1].y - pts[i].y) * t;
-        }
-    }
-    return pts[pts.length - 1].y;
+    if (!strang.points.length) return null;
+    return ortBei(_stationierung(strang), s).y;
 }
 
 /** Geländeprofil entlang des Strangs (Sampler aus TerrainMesh). */

@@ -151,9 +151,7 @@ const REZEPTNAMEN_ERLAUBT = {};
  * WELCHES Rezept eine Kante oder ein Knoten bekommt, beantwortet AE
  * (Eigenschaftsart Netzrolle → Katalogrezept). Ziel: 0 (AE).
  */
-const NETZREZEPT_SCHREIBER_ERLAUBT = {
-    'services/Bearbeitungen.js': 6,     // Kante verschieben/teilen, Knoten einfügen/entfernen, Trasse
-};
+const NETZREZEPT_SCHREIBER_ERLAUBT = {};      // AE: 6 → 0 — `rezeptFuerNetzrolle` fragt den Katalog
 
 /** W4 — `geometrie/ops` am Kernel-Vertrag vorbei. Ziel: nur das Hilfen-Fass (A8). */
 const KERNEL_ERLAUBT = {
@@ -178,15 +176,13 @@ const HOOKS_MAX = { anwenden: 48, rezeptFunktionen: 17 };
  * bis dahin steht die Einordnung hier.
  */
 const RUECKFUEHRUNG = {
-    /** Eigener Algorithmus, an einen Bauteilnamen gebunden — oder bewusst Code (Ableitungen, E1). */
+    /**
+     * Bewusst ein Werkzeug je Bauteil: die ABLEITUNGEN bleiben Code (Entscheidung
+     * E1) — ihr Werkzeug ist ihr Rezept. (AE: 16 → 3; die Netzwerkzeuge hängen
+     * seit AE an Eigenschaften, der Eckenzug seit A2 an `punktlisten`.)
+     */
     nichtRueckfuehrbar: [
-        // Netzwerkzeuge: wären „Knoten/Kante …", sobald Netzrolle eine Eigenschaft ist (AE).
-        'an-schacht-anschliessen', 'schacht-verschieben', 'schacht-einfuegen', 'schacht-entfernen',
-        'haltung-teilen', 'trasse-aendern', 'strang-gefaelle-setzen', 'strang-massnahme', 'strang-umbenennen',
-        'fliessrichtung-setzen', 'linie-umkehren',
-        // Ableitungen und ihr Eckenzug — bleiben Code (Entscheidung E1).
         'kanalgraben-ableiten', 'bauwerksgrube-ableiten', 'aussparung-ableiten',
-        'erdbau-stuetzpunkt-verschieben', 'bauform-auslegen',
     ],
     /** Muster + Operation + Katalogeintrag gäbe es — trotzdem von Hand geschrieben (A6). */
     handgeschrieben: [
@@ -194,7 +190,7 @@ const RUECKFUEHRUNG = {
         'sohlhoehen-setzen', 'deckelhoehe-setzen', 'bezugshoehe-setzen',
         'profilgroesse-setzen', 'profilform-setzen', 'staerke-setzen',
         'kg-setzen', 'din277-setzen', 'massnahme-setzen', 'umbenennen',
-        'koerper-tauschen', 'loeschen',
+        'koerper-tauschen', 'loeschen', 'bauform-auslegen',
     ],
     /** Allgemeine Operation auf Bauform/Eigenschaft — oder aus Muster + Rezept ERZEUGT. */
     sauber: [
@@ -204,9 +200,16 @@ const RUECKFUEHRUNG = {
         'flaeche-teilen', 'flaeche-vereinigen', 'flaeche-versetzen',
         // `zeichenBearbeitung(rezept)` — das Soll, einmal schon gebaut:
         'linie-zeichnen', 'flaeche-zeichnen', 'rohr-zeichnen', 'schacht-zeichnen',
+        // AE: Operationen auf KNOTEN und KANTE — gebunden an `netzrolle`, nicht an
+        // „Schacht"/„Haltung". Die Ids bleiben (sie stehen in `KUREN` und im Verlauf).
+        'schacht-verschieben', 'schacht-einfuegen', 'schacht-entfernen', 'haltung-teilen',
+        'an-schacht-anschliessen', 'trasse-aendern', 'strang-gefaelle-setzen', 'strang-massnahme',
+        'strang-umbenennen', 'fliessrichtung-setzen', 'linie-umkehren',
+        // A2: der Eckenzug fragt das Rezept nach `punktlisten` — jedes Rezept, das sie hat.
+        'erdbau-stuetzpunkt-verschieben',
     ],
 };
-const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 16, handgeschrieben: 17 };
+const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 3, handgeschrieben: 18 };
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [
@@ -230,7 +233,9 @@ const SCHICHTEN = [
       passt: p => p.startsWith('services/geometrie/') || p.startsWith('services/geometry/') },
     { id: 'L1', titel: 'Fachregeln und Eigenschaftsarten',
       passt: p => /^services\/(gelaende|bauform|eigenschaften)\//.test(p)
-          || ['services/Achsbezug.js', 'services/Hoehenbezug.js', 'services/Kategorien.js', 'services/Stationierung.js'].includes(p) },
+          || ['services/Achsbezug.js', 'services/Hoehenbezug.js', 'services/Kategorien.js'].includes(p) },
+    // Die Stationierung ist Geometrie und lebt im Kern (`geometrie/Stationierung.js`, AE):
+    // der Profilkörper braucht sie, und der Kern importiert nicht nach oben.
     { id: 'L2', titel: 'Katalog — Rezepte, Ableitungen, Bibliothek, Regelwerk',
       passt: p => /^services\/(ableitung|rezept|katalog)\//.test(p)
           || ['services/Bauteilrezepte.js', 'services/Bibliothek.js'].includes(p) },

@@ -38,12 +38,13 @@
 import { BAUFORMEN } from './bauform/Bauformen.js';
 import { imWoerterbuch, profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
 import { BEARBEITUNGEN, GRUPPEN, felderFuer, passende } from './Bearbeitungen.js';
+import { eigenschaftText, eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 
 /** Warum eine Bearbeitung angeboten wird — der Text neben der Gruppe. */
 export const HERKUNFT_TEXT = Object.freeze({
     immer:     'Gilt für jedes Bauteil — Merkmale brauchen keine Geometrie.',
     bauform:   'Weil das Bauteil diese FORM hat.',
-    rolle:     'Weil das Typprofil diese Größe kennt.',
+    rolle:     'Weil das Bauteil es hat — eine Größe, eine Achse oder eine Rolle im Netz; der Katalog sagt es (Typprofil, Rezept, Bauformregel).',
 });
 
 /**
@@ -53,9 +54,16 @@ export const HERKUNFT_TEXT = Object.freeze({
  * schlechteste Rückmeldung ist: der Nutzer weiß nicht, ob das Werkzeug fehlt,
  * ob sein Modell zu schlecht ist oder ob er etwas falsch macht.
  */
-export function warumNicht(bearbeitung, { bauform, guete, typprofil }) {
-    if (bearbeitung.brauchtRolle && !typprofil?.felder?.[bearbeitung.brauchtRolle]) {
-        return `Der Typ kennt keine „${bearbeitung.brauchtRolle}" — ein Typprofil würde sie ergänzen`;
+export function warumNicht(bearbeitung, { bauform, guete, typprofil, rezept = null, regel = null }) {
+    // WAS FEHLT (AE): dieselbe Prüfung wie in `passende`. Vorher stand hier
+    // nur die EINZELNE Rolle — bei einer Liste (`['sohlhoeheAnfang',
+    // 'sohlhoeheEnde']`) wurde nach dem Schlüssel „sohlhoeheAnfang,sohlhoeheEnde"
+    // gesucht und immer der falsche Grund genannt.
+    const fehlt = fehlendeEigenschaften(eigenschaftenVon({ bauform, typprofil, rezept, regel }), verlangtVon(bearbeitung));
+    if (fehlt.length) {
+        const nurMasse = fehlt.every(a => a.startsWith('mass:'));
+        return `Dem Bauteil fehlt ${fehlt.map(eigenschaftText).join(' und ')}`
+            + (nurMasse ? ' — ein Typprofil würde sie ergänzen' : ' — ein Typprofil oder eine Bauformregel sagt es');
     }
     const erlaubt = bearbeitung.bauform === '*' ? null
         : (Array.isArray(bearbeitung.bauform) ? bearbeitung.bauform : [bearbeitung.bauform]);
@@ -79,7 +87,8 @@ function _guetegenuegt(ist, mindestens) {
 
 /** Woraus wird diese Bearbeitung angeboten? */
 function _herkunft(b) {
-    if (b.brauchtRolle) return 'rolle';
+    // Seit AE: alles, was eine EIGENSCHAFT verlangt (auch Netzrolle, Achse).
+    if (verlangtVon(b).length) return 'rolle';
     if (b.bauform !== '*') return 'bauform';
     return 'immer';
 }
@@ -94,14 +103,17 @@ function _herkunft(b) {
  * @param {Array} [opts.katalog]    für Tests
  * @returns {object} siehe unten — bewusst flach und ohne Vue-Bezug
  */
-export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN } = {}) {
+export function herleite({ el, einordnung, profilSatz, kontext = null, katalog = BEARBEITUNGEN } = {}) {
     const kategorie = String(el?.category ?? el?.type ?? '').toUpperCase().trim();
     const kette = vererbungskette(kategorie);
     const { profil, ausTyp, ueberVererbung } = profilHerkunft(kategorie, profilSatz);
 
     const bauform = einordnung?.bauform ?? null;
     const guete = einordnung?.guete ?? 'unbekannt';
-    const moeglich = passende(einordnung, { typprofil: profil, katalog });
+    // DERSELBE Kontext wie im Store (`passendeKontext`, AE) — Rezept und
+    // Bauformregel gehören zu dem, was das Bauteil HAT.
+    const ctx = { eigenes: kontext?.eigenes ?? false, rezept: kontext?.rezept ?? null, regel: kontext?.regel ?? null };
+    const moeglich = passende(einordnung, { typprofil: profil, katalog, ...ctx });
 
     // Gruppiert nach HERKUNFT, nicht nach Werkzeugart: die Frage lautet
     // „warum steht das hier?", und darauf antwortet die Herkunft.
@@ -109,7 +121,7 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
         art,
         titel: art === 'immer' ? 'Immer möglich'
              : art === 'bauform' ? `Weil ${bauform ?? '—'}`
-             : 'Weil der Typ die Größe kennt',
+             : 'Weil das Bauteil es hat',
         warum: HERKUNFT_TEXT[art],
         eintraege: moeglich
             .filter(b => _herkunft(b) === art)
@@ -131,7 +143,7 @@ export function herleite({ el, einordnung, profilSatz, katalog = BEARBEITUNGEN }
     const gesperrt = katalog
         .filter(b => !angeboten.has(b.id) && GRUPPEN[b.gruppe]?.einstieg !== 'werkzeug')
         .map(b => ({ id: b.id, titel: b.titel, icon: b.icon,
-                     warum: warumNicht(b, { bauform, guete, typprofil: profil }) }));
+                     warum: warumNicht(b, { bauform, guete, typprofil: profil, ...ctx }) }));
 
     return {
         kategorie: kategorie || null,

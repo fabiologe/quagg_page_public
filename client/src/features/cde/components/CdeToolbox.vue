@@ -295,7 +295,7 @@
  *
  *   Immer möglich                  → `bauform: '*'` — Merkmale, ohne Geometrie
  *   Weil <Bauform>                 → die FORM erlaubt es (acht Formen, fest)
- *   Weil der Typ die Größe kennt   → das TYPPROFIL nennt die Rolle (Daten)
+ *   Weil das Bauteil es hat        → Typprofil, Rezept oder Regel nennen die Eigenschaft (Daten)
  *
  * Die Rechnung selbst steht in `services/Herleitung.js` und ist rein — diese
  * Datei zeigt sie nur an. Das ist Absicht: die Antwort auf „woher weiß das
@@ -420,6 +420,9 @@ const herleitung = computed(() => herleite({
   el: bearbeitung.bauteil,
   einordnung: bearbeitung.einordnung,
   profilSatz: bearbeitung.profilSatz,
+  // Derselbe Kontext wie `bearbeitung.moeglich` — sonst zeigte die Toolbox
+  // einen Knopf, den der Store dann ablehnt (AE).
+  kontext: bearbeitung.passendeKontext,
 }));
 
 /**
