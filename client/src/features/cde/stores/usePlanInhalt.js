@@ -20,7 +20,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { repo } from '../services/RepoFacade.js';
-import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
+import { symbolNach } from '../services/PlanSymbols.js';
 
 const REPO_KEY = 'plan-inhalte';
 
@@ -71,7 +71,7 @@ export const usePlanInhalt = defineStore('cde-planinhalt', () => {
      * @param {string} symbol Name aus PLAN_SYMBOL_NAMES
      */
     function addSymbol(punkt, symbol, { groesse = SYMBOL_GROESSE_MM } = {}) {
-        if (!punkt || !PLAN_SYMBOL_NAMES.includes(symbol)) return null;
+        if (!punkt || !symbolNach(symbol)) return null;
         const eintrag = { id: _id(), art: 'symbol', x: punkt.x, z: punkt.z, symbol, groesse, winkel: 0 };
         inhalte.value.push(eintrag);
         _sichern();

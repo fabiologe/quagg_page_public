@@ -22,10 +22,11 @@ import {
     alleVorschlaege, regelAus,
 } from '../services/bauform/Bauformregeln.js';
 import { repo } from '../services/RepoFacade.js';
-import { EINGEBAUTE_PROFILE, profilFuer } from '../services/bauform/Typprofile.js';
+import { EINGEBAUTE_PROFILE, REPO_KEY as TYP_KEY, profilFuer } from '../services/bauform/Typprofile.js';
+import { entwurfFuer, profilAusEntwurf } from '../services/bauform/Typprofilentwurf.js';
 import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugRollen } from '../services/Bearbeitungen.js';
 import { ladeKatalog } from '../services/katalog/Katalog.js';
-import { eingebauteRollen } from '../services/katalog/Katalogschema.js';
+import { eingebauteRollen, pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { useAenderungen } from './useAenderungen.js';
 import { rezeptNach, teileVon, vorgangEntfernenSchritte } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
@@ -187,6 +188,31 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * steht in `katalogBefunde` und ist nicht aktiv. `katalogStand` wandert
      * mit jeder Registrierung — wer eine Werkzeugliste zeigt, liest ihn mit.
      */
+    /**
+     * Einen Typprofil-ENTWURF bestätigen (A5, S6) — erst damit wirkt er.
+     *
+     * Gespeichert wird auf der Ebene, auf der die Typprofile heute gelten: hat
+     * das Projekt eigene, dort (sie verdecken die des Büros ganz —
+     * `mitVorrang`), sonst im Büro. Vorher geprüft wie beim Laden; danach
+     * neu geladen, damit Werkzeuge und Toolbox es sofort sehen.
+     */
+    async function entwurfUebernehmen(kategorie, ziel = repo) {
+        const e = entwurfFuer(kategorie, profilSatz.value);
+        if (!e) return { ok: false, grund: 'Kein Entwurf für diese Klasse.' };
+        const profil = profilAusEntwurf(e, profilSatz.value);
+        const rollen = new Set([...eingebauteRollen(), ...werkzeugRollen(BEARBEITUNGEN)]);
+        const p = pruefeEintrag('typprofil', { kategorie: e.kategorie, ...profil }, { rollen });
+        if (!p.ok) return { ok: false, grund: p.fehler.join(' ') };
+        const imProjekt = !!(await ziel.get?.(TYP_KEY));
+        const ebene = imProjekt ? ziel : ziel.buero;
+        if (!ebene) return { ok: false, grund: 'Die Büroablage ist hier nicht verbunden.' };
+        const bisher = (await ebene.get(TYP_KEY)) ?? {};
+        const geschrieben = await ebene.set(TYP_KEY, JSON.parse(JSON.stringify({ ...bisher, [e.kategorie]: profil })));
+        if (geschrieben === false) return { ok: false, grund: 'Sichern fehlgeschlagen.' };
+        await ladeProfile(ziel);
+        return { ok: true, grund: null, ebene: imProjekt ? 'projekt' : 'buero' };
+    }
+
     async function ladeProfile(quelle = repo) {
         const rollen = new Set([...eingebauteRollen(), ...werkzeugRollen(BEARBEITUNGEN)]);
         const k = await ladeKatalog(quelle, { rollen });
@@ -799,7 +825,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
-        ladeProfile, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
+        ladeProfile, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
     };
 });

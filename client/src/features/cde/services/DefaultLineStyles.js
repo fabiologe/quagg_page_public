@@ -12,6 +12,8 @@
  *   enabled:      true  (false = skip element entirely)
  */
 
+import { PLAN_SYMBOL_NAMES } from './PlanSymbols.js';
+
 export const DASH_PATTERNS = {
     solid:    [],
     dashed:   [3, 2],
@@ -93,8 +95,11 @@ export const DEFAULT_LINE_STYLES = {
     default:              mk('#646464', 0.18, 'solid'),
 };
 
-/** Auswahlliste für den Stil-Editor (T1: Punktsymbole). */
-export const SYMBOL_OPTIONS = ['none', 'schacht', 'pumpe', 'einlauf', 'hydrant', 'armatur'];
+/**
+ * Auswahlliste für den Stil-Editor (T1: Punktsymbole) — aus dem Symbolkatalog
+ * abgeleitet, nicht daneben aufgezählt (Teil XXIII, A5).
+ */
+export const SYMBOL_OPTIONS = ['none', ...PLAN_SYMBOL_NAMES];
 
 /** Produce a deep clone of the defaults — used as initial state in the store. */
 export function cloneDefaults() {

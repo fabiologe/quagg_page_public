@@ -1,5 +1,6 @@
 /**
- * Den Katalog laden — Typprofile, Bauformregeln, Rezepte der Bibliothek —,
+ * Den Katalog laden — Typprofile, Bauformregeln, Rezepte und Plansymbole
+ * der Bibliothek —,
  * GEPRÜFT, an einer Stelle (Teil XXIII, A5).
  *
  * Vorrang wie überall: Projekt schlägt Büro schlägt eingebaut. Was die
@@ -8,7 +9,8 @@
  */
 import { ladeSatz } from '../bauform/Typprofile.js';
 import { ladeRegeln } from '../bauform/Bauformregeln.js';
-import { ladeRezepte } from '../Bibliothek.js';
+import { ladeRezepte, ladeSymbole } from '../Bibliothek.js';
+import { registriereSymbole } from '../PlanSymbols.js';
 import { eingebauteRollen, pruefeEintrag } from './Katalogschema.js';
 import { rezeptAusDeklaration } from '../rezept/Rezeptbau.js';
 import { registerStand, setzeRegistrierte } from '../rezept/Register.js';
@@ -38,12 +40,15 @@ export function registriereRezepte(deklarationen) {
 export async function ladeKatalog(repo, { rollen = null } = {}) {
     const befunde = [];
     const bekannt = rollen ?? eingebauteRollen();
+    // Symbole ZUERST: ein Rezept der Bibliothek darf ein Symbol der Bibliothek nennen.
+    const symbole = await ladeSymbole(repo);
+    registriereSymbole(symbole.eintraege);
     const [profilSatz, regeln, rezepte] = await Promise.all([
         ladeSatz(repo, { pruefe: (p) => pruefeEintrag('typprofil', p, { rollen: bekannt }), befunde }),
         ladeRegeln(repo, { pruefe: (r) => pruefeEintrag('bauformregel', r), befunde }),
         ladeRezepte(repo),
     ]);
     const reg = registriereRezepte(rezepte.eintraege);
-    befunde.push(...rezepte.befunde, ...reg.befunde);
+    befunde.push(...symbole.befunde, ...rezepte.befunde, ...reg.befunde);
     return { profilSatz, regeln, rezepte: reg.aktiv, befunde, stand: reg.stand };
 }

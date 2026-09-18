@@ -9,7 +9,8 @@
  * wird GEMELDET und NICHT aktiv — nie halb.
  *
  * Eintragsarten: vorlage · rezept (Deklaration, A4) · typprofil ·
- * bauformregel. Das Regelwerk (AR) kommt dazu, wenn es Daten wird.
+ * bauformregel · symbol (Plansymbol). Das Regelwerk (AR) kommt dazu, wenn es
+ * Daten wird.
  *
  * NUR DATEN: eine Deklaration darf keinen Code-Schlüssel tragen (`baue`,
  * `leite` …) — dieselbe Landmine wie bei der Vorlage. Aus einem Repo kommt
@@ -23,8 +24,9 @@ import { EINGEBAUTE_PROFILE } from '../bauform/Typprofile.js';
 import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN } from '../rezept/Rezeptbau.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
+import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 
-export const EINTRAGSARTEN = Object.freeze(['vorlage', 'rezept', 'typprofil', 'bauformregel']);
+export const EINTRAGSARTEN = Object.freeze(['vorlage', 'rezept', 'typprofil', 'bauformregel', 'symbol']);
 
 const FELDTYPEN = Object.freeze(['text', 'zahl', 'auswahl']);
 const NETZROLLEN = EIGENSCHAFTSARTEN.netzrolle.werte;
@@ -134,6 +136,7 @@ function _rezept(d, fehler) {
     if (d.hoehenAus !== undefined && d.hoehenAus !== 'gelaende') fehler.push(`\`hoehenAus\` „${d.hoehenAus}" gibt es nicht.`);
     if (d.netzrolle !== undefined && !NETZROLLEN.includes(d.netzrolle)) fehler.push(`Netzrolle „${d.netzrolle}" gibt es nicht (${NETZROLLEN.join(', ')}).`);
     for (const k of ['icon', 'symbol', 'beschreibung']) if (d[k] !== undefined && typeof d[k] !== 'string') fehler.push(`\`${k}\` muss ein Text sein.`);
+    if (typeof d.symbol === 'string' && !symbolNach(d.symbol)) fehler.push(`Plansymbol „${d.symbol}" gibt es nicht.`);
     const felder = _felder(d.felder, fehler);
 
     const g = d.geometrie;
@@ -210,9 +213,33 @@ function _bauformregel(r, fehler) {
     if (r.status != null && !['bestaetigt', 'verworfen'].includes(r.status)) fehler.push(`Status „${r.status}" gibt es nicht.`);
 }
 
+const _zahl = (v, lo = -2, hi = 2) => Number.isFinite(v) && v >= lo && v <= hi;
+const _uv = (p) => Array.isArray(p) && p.length === 2 && p.every(v => _zahl(v));
+
+function _symbol(sym, fehler) {
+    if (!_istObjekt(sym)) { fehler.push('kein Symbol'); return; }
+    for (const k of Object.keys(sym)) if (!['id', 'titel', 'kurz', 'formen'].includes(k)) fehler.push(`Unbekannter Schlüssel „${k}".`);
+    const id = String(sym.id ?? '');
+    if (!/^[a-z][a-z0-9-]{1,40}$/.test(id)) fehler.push(`Id „${id}": nur Kleinbuchstaben, Ziffern und Bindestrich.`);
+    else if (EINGEBAUTE_SYMBOLE.some(e => e.id === id)) fehler.push(`Id „${id}" ist eingebaut.`);
+    if (!String(sym.titel ?? '').trim()) fehler.push('Der Titel fehlt.');
+    if (sym.kurz !== undefined && !(typeof sym.kurz === 'string' && sym.kurz.length <= 2)) fehler.push('`kurz` ist höchstens zwei Zeichen.');
+    if (!Array.isArray(sym.formen) || !sym.formen.length) { fehler.push('Ein Symbol braucht Formen.'); return; }
+    sym.formen.forEach((f, i) => {
+        const wo = `Form ${i + 1}`;
+        if (!_istObjekt(f) || !SYMBOL_FORMEN.includes(f.art)) { fehler.push(`${wo}: Art „${f?.art}" gibt es nicht (${SYMBOL_FORMEN.join(', ')}).`); return; }
+        if (f.gefuellt !== undefined && typeof f.gefuellt !== 'boolean') fehler.push(`${wo}: \`gefuellt\` muss wahr oder falsch sein.`);
+        const gut = f.art === 'kreis' ? (f.r === undefined || _zahl(f.r, 0.01, 2))
+            : f.art === 'linie' ? _uv(f.von) && _uv(f.bis)
+            : f.art === 'dreieck' ? Array.isArray(f.punkte) && f.punkte.length === 3 && f.punkte.every(_uv)
+            : _zahl(f.x) && _zahl(f.y) && _zahl(f.b, 0.01, 4) && _zahl(f.h, 0.01, 4);
+        if (!gut) fehler.push(`${wo} (${f.art}): Masse fehlen oder liegen ausserhalb des Einheitskreises.`);
+    });
+}
+
 /**
  * Einen Katalogeintrag prüfen.
- * @param {'vorlage'|'rezept'|'typprofil'|'bauformregel'} art
+ * @param {'vorlage'|'rezept'|'typprofil'|'bauformregel'|'symbol'} art
  * @param {object} eintrag   beim Typprofil mit `kategorie`
  * @param {{rollen?: Set<string>}} [opt]  bekannte Rollen (Typprofil) — Vorgabe: die der eingebauten Profile
  * @returns {{ ok: boolean, fehler: string[] }}
@@ -223,6 +250,7 @@ export function pruefeEintrag(art, eintrag, { rollen = null } = {}) {
     else if (art === 'rezept') _rezept(eintrag, fehler);
     else if (art === 'typprofil') _typprofil(eintrag, fehler, { rollen: rollen ?? eingebauteRollen() });
     else if (art === 'bauformregel') _bauformregel(eintrag, fehler);
+    else if (art === 'symbol') _symbol(eintrag, fehler);
     else fehler.push(`Eintragsart „${art}" gibt es nicht.`);
     return { ok: fehler.length === 0, fehler };
 }

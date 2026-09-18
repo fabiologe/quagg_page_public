@@ -167,17 +167,27 @@ export const REZEPTE_KEY = 'bauteil-rezepte';
  * @returns {Promise<{eintraege: object[], befunde: {art, id, ebene, fehler}[]}>}
  */
 export async function ladeRezepte(repo) {
+    return _ladeEintraege(repo, REZEPTE_KEY, 'rezept');
+}
+
+/** Plansymbole aus der Bibliothek (A5) — dieselbe Form wie `EINGEBAUTE_SYMBOLE`. */
+export const SYMBOLE_KEY = 'plansymbole';
+export async function ladeSymbole(repo) {
+    return _ladeEintraege(repo, SYMBOLE_KEY, 'symbol');
+}
+
+async function _ladeEintraege(repo, schluessel, art) {
     const lies = async (quelle) => {
-        try { return await quelle?.get?.(REZEPTE_KEY) ?? null; }
-        catch (fehler) { console.warn('cde: bibliotheksrezepte laden', fehler?.message ?? fehler); return null; }
+        try { return await quelle?.get?.(schluessel) ?? null; }
+        catch (fehler) { console.warn(`cde: bibliothek ${art} laden`, fehler?.message ?? fehler); return null; }
     };
     const [projekt, buero] = await Promise.all([lies(repo), lies(repo?.buero)]);
     const karte = new Map();
     const befunde = [];
     for (const [ebene, liste] of [['buero', buero], ['projekt', projekt]]) {
         for (const d of Array.isArray(liste) ? liste : []) {
-            const { ok, fehler } = pruefeEintrag('rezept', d);
-            if (!ok) { befunde.push({ art: 'rezept', id: d?.id ?? null, ebene, fehler }); continue; }
+            const { ok, fehler } = pruefeEintrag(art, d);
+            if (!ok) { befunde.push({ art, id: d?.id ?? null, ebene, fehler }); continue; }
             karte.set(d.id, { ...d, herkunft: ebene });
         }
     }

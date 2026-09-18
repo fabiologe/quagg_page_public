@@ -1310,7 +1310,7 @@ function _anyOverlap(bb, list) {
  * Bauherrn ein Modell und weiss nicht mehr, welcher Teil geliefert war.
  * (Die vollständige Herkunftsanzeige ist Stufe 9.6; das hier ist ihr Anfang.)
  *
- * @param {Array<{punkte, geschlossen, name}>} erzeugte  Punkte in Welt-XZ
+ * @param {Array<{punkte, geschlossen, name, symbol?}>} erzeugte  Punkte in Welt-XZ
  */
 function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
     doc.setLineDashPattern([], 0);
@@ -1319,6 +1319,23 @@ function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
     for (const e of erzeugte) {
         const papier = (e?.punkte ?? [])
             .map(p => [toX(p[0] ?? p.x), toY(p[2] ?? p.z)]);
+        // MIT SYMBOL (Teil XXIII, A5): das Rezept sagt, dass es im Plan ein
+        // Zeichen ist, kein Zug — am Schwerpunkt der Punkte, papierfest 3 mm,
+        // im Ton des Eigenen.
+        if (e.symbol && papier.length) {
+            const px = papier.reduce((a, q) => a + q[0], 0) / papier.length;
+            const py = papier.reduce((a, q) => a + q[1], 0) / papier.length;
+            if (!_inBounds(px, py, M, dw, dh)) continue;
+            drawPlanSymbol(doc, e.symbol, px, py, 3, { r: 21, g: 101, b: 192 });
+            doc.setLineWidth(0.45);
+            if (e.name) {
+                doc.setFontSize(7);
+                doc.setTextColor(21, 101, 192);
+                doc.text(String(e.name), px + 2, py - 1.2);
+                doc.setTextColor(0, 0, 0);
+            }
+            continue;
+        }
         if (papier.length < 2) continue;
         if (!papier.some(([px, py]) => _inBounds(px, py, M, dw, dh))) continue;
 

@@ -42,6 +42,7 @@ import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
 import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
 import { registriertNach } from './rezept/Register.js';
+import { symbolNach } from './PlanSymbols.js';
 import { LINIEN_BAND_M, dreiecksGeometrie, punkteAus, rohrKoerper } from './rezept/Geometriebau.js';
 import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
 // Default-Import: der benannte lief im Dev-Server und brach im vite build
@@ -322,6 +323,22 @@ export function rezeptFuerNetzrolle(rolle, bauplan = null) {
 export function rezeptNach(id) {
     const k = String(id ?? '');
     return REZEPTE[k] ?? registriertNach(k) ?? ABLEITUNGEN[k] ?? null;
+}
+
+/**
+ * Wie ein erzeugtes Bauteil im LAGEPLAN erscheint — oder null (Teil XXIII, A5).
+ *
+ * Ein Zug aus seinen Punkten; nennt das Rezept ein Plansymbol, ein Symbol am
+ * Ort — dann genügt ein Punkt (Pfosten), und zwei übereinander (Schacht) sind
+ * kein unsichtbarer Nullstrich mehr. Der Lageplan zeichnet direkt aus dem
+ * Journal; diese Regel steht hier, damit Canvas und Test dieselbe fragen.
+ */
+export function planbildVon(bauplan) {
+    const punkte = bauplan?.parameter?.punkte;
+    const rezept = rezeptNach(bauplan?.rezept);
+    const symbol = rezept?.symbol && symbolNach(rezept.symbol) ? rezept.symbol : null;
+    if (!Array.isArray(punkte) || punkte.length < (symbol ? 1 : 2)) return null;
+    return { punkte, name: bauplan.name, geschlossen: !!rezept?.geschlossen, symbol };
 }
 
 /** Eine Ableitung rechnet aus anderen Objekten (`leite`); ein Rezept baut aus Parametern (`baue`). */

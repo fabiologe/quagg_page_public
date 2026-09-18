@@ -27,6 +27,7 @@
  *                        PUNKTE in m NN (das Zeichenwerkzeug liest sie so)
  *   netzrolle            'kante' | 'knoten' — die Rolle im Netz (AE)
  *   geometrie            { art, … } — siehe `GEOMETRIE_ARTEN` in `Rezeptbau.js`
+ *   symbol               Plansymbol im Lageplan (`PlanSymbols.js`) statt Linienzug
  */
 
 /** Felder, die jedes gezeichnete Bauteil hat. */
@@ -105,6 +106,9 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, vorgabe: 1000 },
         ],
         netzrolle: 'knoten',
+        // Im Lageplan ein SYMBOL (A5): Sohle und Deckel liegen im Grundriss
+        // übereinander — als Linienzug war ein eigener Schacht unsichtbar.
+        symbol: 'schacht',
         geometrie: { art: 'sweep', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 16 } },
     },
     {
@@ -131,6 +135,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'tiefe', titel: 'Tiefe', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, vorgabe: 0.12 },
         ],
         hoehenAus: 'gelaende',
+        symbol: 'pfosten',
         geometrie: { art: 'stab', laenge: 'laenge',
                      profil: { art: 'rechteck', breite: 'breite', tiefe: 'tiefe', einheit: 'm' } },
     },

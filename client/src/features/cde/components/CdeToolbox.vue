@@ -258,6 +258,22 @@
             <span class="tb-dim">kennt {{ herleitung.rollen.join(', ') }}</span>
           </dd>
           <dd v-else class="tb-dim">keins — es gelten nur die allgemeinen Bearbeitungen</dd>
+          <!-- ENTWURF aus den bSI-Vorlagen (Teil XXIII, A5, S6): Rollen, die das
+               geltende Profil nicht kennt. Wirkt erst nach dem Übernehmen. -->
+          <dd v-if="entwurf" class="tb-entwurf">
+            <span class="tb-dim">Entwurf aus den bSI-Vorlagen:</span>
+            <span v-for="(f, rolle) in entwurf.felder" :key="rolle" class="tb-entwurf-feld" :title="f.quelle">
+              {{ f.label }} <code>{{ f.quelle }}</code>
+            </span>
+            <button
+              class="tb-kur tb-bestaetigen"
+              type="button"
+              :disabled="entwurfLaeuft"
+              :title="`Als Typprofil für ${entwurf.kategorie} übernehmen — ab dann fragen die Werkzeuge danach`"
+              @click="entwurfUebernehmen"
+            ><CdeIcon name="check" :size="11" /> Übernehmen</button>
+            <span v-if="entwurfMeldung" class="tb-dim">{{ entwurfMeldung }}</span>
+          </dd>
 
           <dt>Vererbung</dt>
           <dd v-if="!herleitung.imWoerterbuch" class="tb-dim">
@@ -324,6 +340,7 @@ import { useViewerApi } from '../composables/viewerApi.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
+import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
@@ -435,6 +452,22 @@ const mehrfach = computed(() => {
 });
 
 /** Nordrichtung in Grad — die Umrechnung gehört nicht in die Vorlage. */
+
+/** Der Typprofil-Entwurf für die Klasse des gewählten Bauteils — oder null (A5, S6). */
+const entwurf = computed(() => (bearbeitung.bauteil
+  ? entwurfFuer(herleitung.value.kategorie ?? bearbeitung.bauteil.category, bearbeitung.profilSatz) : null));
+const entwurfLaeuft = ref(false);
+const entwurfMeldung = ref('');
+async function entwurfUebernehmen() {
+  if (!entwurf.value) return;
+  entwurfLaeuft.value = true;
+  try {
+    const r = await bearbeitung.entwurfUebernehmen(entwurf.value.kategorie);
+    entwurfMeldung.value = r.ok ? `übernommen (${r.ebene === 'projekt' ? 'Projekt' : 'Büro'})` : r.grund;
+  } finally {
+    entwurfLaeuft.value = false;
+  }
+}
 
 const herleitung = computed(() => herleite({
   el: bearbeitung.bauteil,
@@ -689,6 +722,8 @@ async function vorlageEntfernen(v) {
   display: flex; flex-direction: column; gap: 0.2rem;
 }
 .tb-katalog-ebene { color: var(--cde-text-dim); }
+.tb-entwurf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.tb-entwurf-feld { font-size: 0.68rem; color: var(--cde-text); }
 .tb-vorlage { display: flex; align-items: center; gap: 0.2rem; }
 .tb-vorlage > .tb-btn { flex: 1; min-width: 0; }
 .tb-vorlage-weg {

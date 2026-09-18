@@ -98,6 +98,14 @@
       <div v-if="!bauformVorschlaege.length" class="cde-empty">
         Kein Modell geladen.
       </div>
+      <!-- UNBESTÄTIGT (Teil XXIII, A5, Befund S7): Gruppen ohne Regel gelten
+           nur, weil die Geometrie es misst. Das ist ein Zustand des Katalogs,
+           kein Detail je Bauteil — er steht hier gezählt, und ein Klick macht
+           die Messung zur Regel. Ein Nein ist eine andere Bauform in der Liste. -->
+      <p v-if="unbestaetigt.length" class="cde-hint">
+        {{ unbestaetigt.length }} {{ unbestaetigt.length === 1 ? 'Gruppe gilt' : 'Gruppen gelten' }} nur nach der Messung —
+        unbestätigt. „Übernehmen" macht die Messung zur Regel; eine andere Bauform wählen heisst Nein.
+      </p>
       <table v-else class="cde-doc-table">
         <thead>
           <tr><th>Kategorie</th><th>Wert</th><th>Anzahl</th><th title="Was die Geometrie an einem Beispiel misst">Gemessen</th><th>Bauform</th></tr>
@@ -121,6 +129,13 @@
               </template>
               <span v-else-if="v.geometrie === null" class="bf-dim">—</span>
               <span v-else class="bf-dim">…</span>
+              <button
+                v-if="istUnbestaetigt(v)"
+                class="bf-uebernehmen"
+                type="button"
+                :title="`Als Regel übernehmen: ${BAUFORMEN[v.geometrie.bauform]?.titel ?? v.geometrie.bauform}`"
+                @click="setzeBauform(v, v.geometrie.bauform)"
+              >Übernehmen</button>
             </td>
             <td>
               <select
@@ -243,12 +258,12 @@
                 <CdeIcon name="text" :size="13" /> Beschriftung setzen
               </button>
               <button
-                v-for="sym in PLAN_SYMBOL_NAMES"
-                :key="sym"
+                v-for="sym in planSymbolListe"
+                :key="sym.id"
                 class="pp-zeile"
-                :class="{ aktiv: planModus === sym }"
-                @click="planModusSetzen(sym); planPopover = null"
-              ><span class="plan-wz-sym">{{ SYMBOL_KURZ[sym] ?? '?' }}</span> {{ SYMBOL_TITEL[sym] ?? sym }}</button>
+                :class="{ aktiv: planModus === sym.id }"
+                @click="planModusSetzen(sym.id); planPopover = null"
+              ><span class="plan-wz-sym">{{ sym.kurz ?? '?' }}</span> {{ sym.titel ?? sym.id }}</button>
               <button
                 v-if="planInhalt.anzahl"
                 class="pp-zeile"
@@ -534,7 +549,7 @@ import { useAuthStore } from '@/stores/useAuthStore.js';
 import { usePlan } from '../stores/usePlan.js';
 import { usePlanInhalt } from '../stores/usePlanInhalt.js';
 import { useRotstift, STIFT_FARBEN } from '../stores/useRotstift.js';
-import { PLAN_SYMBOL_NAMES } from '../services/PlanSymbols.js';
+import { planSymbole } from '../services/PlanSymbols.js';
 import { repo, RemoteBackend, BueroBackend } from '../services/RepoFacade.js';
 import { AuftragApi } from '../services/AuftragApi.js';
 import {
@@ -547,7 +562,7 @@ import { berichtText, migriere } from '../services/SatzMigration.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
-import { MERKMALSFELDER, abdeckung } from '../services/bauform/Bauformregeln.js';
+import { MERKMALSFELDER, abdeckung, istUnbestaetigt } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -647,6 +662,9 @@ async function messeVorschlaege(zeilen) {
     }
   }
 }
+
+// Unbestätigt = keine Regel, nur die Messung (S7) — die Regel steht bei den Bauformregeln.
+const unbestaetigt = computed(() => bauformVorschlaege.value.filter(istUnbestaetigt));
 
 /** Vorschläge und Abdeckung neu berechnen — nach jeder Zuordnung. */
 function frischeVorschlaege() {
@@ -785,13 +803,10 @@ const planSchriftfeld = computed(() => ({
 // Kurzzeichen statt Icons: für Schacht, Pumpe, Einlauf, Hydrant und Armatur
 // gibt es keine lucide-Entsprechung, und ein erfundenes Icon wäre schlechter
 // als das Kürzel, das auch auf dem Blatt steht.
-const SYMBOL_KURZ = {
-  schacht: 'S', pumpe: 'P', einlauf: 'E', hydrant: 'H', armatur: 'A',
-};
-const SYMBOL_TITEL = {
-  schacht: 'Schacht', pumpe: 'Pumpe', einlauf: 'Straßeneinlauf',
-  hydrant: 'Hydrant', armatur: 'Armatur',
-};
+// Titel und Kürzel stehen am Symbol (Teil XXIII, A5) — eine Tabelle hier
+// daneben lief beim ersten neuen Symbol auseinander. Der Katalogstand macht
+// Symbole aus der Bibliothek sichtbar, sobald sie registriert sind.
+const planSymbolListe = computed(() => (void bearbeitung.katalogStand, planSymbole()));
 
 // ── Rotstift (Stufe 7) ─────────────────────────────────────────────────────
 /**
@@ -1759,6 +1774,13 @@ function fmtDate(ts) {
 .bf-kategorie td { border-bottom: 1px solid var(--cde-tint); }
 .bf-messung { white-space: nowrap; }
 .bf-dim { color: var(--cde-text-dimmer); margin-left: 0.3rem; font-size: 0.7rem; }
+.bf-uebernehmen {
+  margin-left: 0.4rem; padding: 0.1rem 0.4rem;
+  background: none; border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  color: var(--cde-text); font-size: var(--cde-font-xs); cursor: pointer;
+  touch-action: manipulation;
+}
+.bf-uebernehmen:hover { border-color: var(--cde-accent); }
 .bf-guete--gemessen   { color: var(--cde-success-strong); }
 .bf-guete--geschaetzt { color: var(--cde-warn); }
 .bf-guete--unbekannt  { color: var(--cde-danger); }

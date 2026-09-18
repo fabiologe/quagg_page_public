@@ -88,7 +88,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { CDE_MODELL_ID } from '../services/IfcAutor.js';
-import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { planbildVon } from '../services/Bauteilrezepte.js';
 import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
@@ -130,11 +130,14 @@ const cde = useCdeStore();
  * gebaut hat (oder gar nicht bauen kann).
  */
 const erzeugtePunkte = computed(() => {
+  // Ein Rezept aus der Bibliothek wird erst NACH dem Laden registriert — der
+  // Katalogstand lässt die Liste dann neu rechnen (Teil XXIII, A5).
+  void bearbeitung.katalogStand;
   const out = [];
   for (const [, bauplan] of aenderungen.wirksamerStand('erzeugt')) {
-    const punkte = bauplan?.parameter?.punkte;
-    if (!Array.isArray(punkte) || punkte.length < 2) continue;
-    out.push({ punkte, name: bauplan.name, geschlossen: !!rezeptNach(bauplan.rezept)?.geschlossen });
+    // Zug oder Symbol — die Regel steht im Katalog (`planbildVon`).
+    const bild = planbildVon(bauplan);
+    if (bild) out.push(bild);
   }
   return out;
 });

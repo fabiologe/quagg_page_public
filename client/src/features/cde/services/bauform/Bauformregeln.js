@@ -342,3 +342,17 @@ export function regelAus({ category, name, bauform, art = 'genau',
         bauform,
     };
 }
+
+/**
+ * UNBESTÄTIGT (Teil XXIII, A5, Befund S7): eine Namensgruppe ohne Regel, die
+ * nur gilt, weil die Geometrie an einem Beispiel eine bekannte Bauform misst.
+ * Ein Zustand des Katalogs, nicht des einzelnen Bauteils — das Bauformen-
+ * Panel zählt ihn, und „Übernehmen" macht die Messung zur Regel. Eine Messung
+ * „netz" oder mit Güte „unbekannt" ist kein Vorschlag.
+ *
+ * @param {{bauform?: string|null, geometrie?: {bauform, guete}|null}} vorschlag  Zeile aus `vorschlaege()`
+ */
+export function istUnbestaetigt(vorschlag) {
+    const b = vorschlag?.geometrie?.bauform;
+    return !vorschlag?.bauform && !!b && b !== 'netz' && istBauform(b) && vorschlag.geometrie.guete !== 'unbekannt';
+}
