@@ -45,6 +45,7 @@ import { inMeterUmrechnen } from './Einheiten.js';
 import { erzeugeEinheitenWorker } from './EinheitenWorker.js';
 import { extractAxisPolylines } from './AxisAnnotations.js';
 import { befundeFuer, befundeFuerNetz, befundeAusBeziehungen } from './Befunde.js';
+import { aufgeloestesRegelwerk } from './regeln/Regelwerk.js';
 import { baueNetz, strangAb } from './Netztopologie.js';
 import { baueBeziehungen } from './Beziehungen.js';
 
@@ -2807,7 +2808,8 @@ export class IfcEngine {
                     objekte, gruppen,
                     gelaende: hoeheAn ? { globalId: gelaendeGid ?? undefined, name: gelaendeGid ? (this._cdeNameVon?.(gelaendeGid) || 'DGM') : 'Gelände', hoeheAn } : null,
                     ableitungen: this._cdeAbleitungen ?? [],
-                    regeln: regelwerk ?? undefined,
+                    // Das GELTENDE Regelwerk (AR): Büro/Projekt überschreiben je Wert.
+                    regeln: regelwerk ?? aufgeloestesRegelwerk(),
                     vorher, dirty,
                 });
                 // Überholt? Dann ist inzwischen ein neuer Stand da — nicht zurückschreiben.
@@ -3489,7 +3491,7 @@ export class IfcEngine {
      * @param {object} [opts.regelwerk]
      * @returns {Array<{modelId, localId, globalId, kategorie, name, befunde}>}
      */
-    pruefeAlles({ typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk } = {}) {
+    pruefeAlles({ typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk = aufgeloestesRegelwerk() } = {}) {
         const out = [];
         for (const [modelId, achsen] of (this._achsen ?? new Map())) {
             const quelle = this.quelleVon(modelId);

@@ -30,6 +30,7 @@ import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
 import { innenEcken } from '../gelaende/Innenecken.js';
 import { AUFLOCKERUNG, GRABENREGELN, auflockerungFuer, auflockerungOder, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
+import { regelquelle, regeltabelle, regelwert } from '../regeln/Regelwerk.js';
 import { rasterAbtasten } from '../geometrie/ops/Raster.js';
 import { GRABEN_QUER, GRABEN_SCHRITT } from '../geometrie/ops/Graben.js';
 import { kreisProfil, trapezProfil, sweep, extrudiere } from '../geometrie/ops/Sweep.js';
@@ -63,8 +64,6 @@ export const ERDBAU_PUNKTHOEHEN = Object.freeze(Object.fromEntries(
 export const GEGENPROBE_TOLERANZ = 0.02;
 /** Ab dieser Höhendifferenz gilt eine Zelle als geformt: dort liegt die Planlinie. */
 export const BILD_SCHWELLE = 0.01;
-/** Rohrscheitel gegen Ur-Gelände (m) — darunter meldet der Kanalgraben einen Befund (DIN EN 1610: Regelfall ≥ 0,8 m). */
-export const MINDEST_UEBERDECKUNG = 0.8;
 /** Vorgaben des Grabenprofils, wenn das Formular nichts sagt. */
 export const KANALGRABEN_VORGABEN = Object.freeze({ arbeitsraum: 0.4, bettung: 0.15, boeschung: 0.5 });
 
@@ -431,7 +430,7 @@ const ABLEITUNGEN_ERWEITERT = {
                 rechenAlt = fein; rechenNeu = feinNeu;
             }
 
-            const faktor = auflockerungOder(parameter?.auflockerung, AUFLOCKERUNG.vorgabe);
+            const faktor = auflockerungOder(parameter?.auflockerung, regeltabelle('auflockerung', AUFLOCKERUNG).vorgabe);
             const aushub = await kernel.op('koerperZwischenRastern', { oben: rechenAlt, unten: rechenNeu });
             const auftrag = await kernel.op('koerperZwischenRastern', { oben: rechenNeu, unten: rechenAlt });
             const massen = massenAus(rechenAlt, rechenNeu) ?? { aushub: 0, auftrag: 0 };
@@ -569,7 +568,7 @@ function _kanalgrabenWerte(parameter, rohr) {
         winkelGrad,
         wanddickeMm: Math.max(0, zahl(g.wanddickeMm, 0)),
         breite: breite != null && breite > 0 ? breite : null,
-        bettung: Math.max(0, zahl(g.bettung, GRABENREGELN.bettung.ueblich)),
+        bettung: Math.max(0, zahl(g.bettung, regeltabelle('grabenregeln', GRABENREGELN).bettung.ueblich)),
         schachtMass: Math.max(0.3, zahl(g.schachtMass ?? g.schachtDm, 1.0)),
     };
 }
@@ -638,8 +637,6 @@ export const KANALGRABEN_KORRIDOR_RAND = 12;
  * grob genug, dass eine lange Haltung nicht Hunderte Stationen bekommt.
  */
 export const KANALGRABEN_STATION = 2;
-/** Wie nah ein Rohrende am Schacht liegen muss, um als Anschluss zu zählen (m). */
-export const KANALGRABEN_ANSCHLUSS = 2;
 /**
  * Soviele Querprofile trägt ein Grabenkörper höchstens (Teil XXI, P6).
  *
@@ -838,12 +835,15 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                 if (i + 1 < pts.length) probe((pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2, (pts[i].z + pts[i + 1].z) / 2);
             }
             if (Number.isFinite(deckungMin)) ueberdeckungMin = Math.min(ueberdeckungMin, deckungMin);
-            if (Number.isFinite(deckungMin) && deckungMin < MINDEST_UEBERDECKUNG) {
+            // DIE MINDESTÜBERDECKUNG aus dem Regelwerk (AR) — dieselbe, die der
+            // Beziehungsindex prüft; bis hierher stand sie hier ein zweites Mal.
+            const mindestUeberdeckung = regelwert('ueberdeckungMindestM');
+            if (Number.isFinite(deckungMin) && deckungMin < mindestUeberdeckung) {
                 befunde.push({ regel: 'ueberdeckung_gering', schwere: 'warnung',
                     globalId: rohrGids[ri] ?? null,
-                    text: `Überdeckung ${deckungMin.toFixed(2)} m unter ${MINDEST_UEBERDECKUNG.toFixed(1)} m (Rohrscheitel gegen das Gelände vor diesem Graben${rohre.length > 1 ? `, Rohr ${ri + 1} von ${rohre.length}` : ''})`,
-                    wert: `${deckungMin.toFixed(2)} m`, grenze: `mindestens ${MINDEST_UEBERDECKUNG.toFixed(2)} m`,
-                    quelle: 'Kanalgraben-Ableitung (Gelände vor diesem Graben)' });
+                    text: `Überdeckung ${deckungMin.toFixed(2)} m unter ${mindestUeberdeckung.toFixed(1)} m (Rohrscheitel gegen das Gelände vor diesem Graben${rohre.length > 1 ? `, Rohr ${ri + 1} von ${rohre.length}` : ''})`,
+                    wert: `${deckungMin.toFixed(2)} m`, grenze: `mindestens ${mindestUeberdeckung.toFixed(2)} m`,
+                    quelle: `${regelquelle('ueberdeckungMindestM')} · Gelände vor diesem Graben` });
             }
             // DER ROHRKÖRPER — geschlossener Sweep UM DIE ROHRMITTE; fällt er
             // aus, gilt die Formel.
@@ -871,7 +871,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             // belegbaren Punkte: die Unterkante der Hülle, die Platzierung und
             // die Sohlen der anschliessenden Haltungen.
             const anschluesse = rohrEnden
-                .filter(e => Math.hypot(e.x - s.x, e.z - s.z) <= KANALGRABEN_ANSCHLUSS)
+                .filter(e => Math.hypot(e.x - s.x, e.z - s.z) <= regelwert('kanalgrabenAnschlussM'))
                 .map(e => e.sohle);
             const unten = Math.min(Number.isFinite(s.unterkante) ? s.unterkante : s.y, ...anschluesse);
             const sohle = unten - w.bettung;
@@ -1057,7 +1057,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         });
         for (const s of schaechte) {
             const p = s.punkt ?? s;
-            const nah = vorschauEnden.filter(e => Math.hypot(e.x - p.x, e.z - p.z) <= KANALGRABEN_ANSCHLUSS).map(e => e.sohle);
+            const nah = vorschauEnden.filter(e => Math.hypot(e.x - p.x, e.z - p.z) <= regelwert('kanalgrabenAnschlussM')).map(e => e.sohle);
             const sohle = Math.min(p.y, ...nah) - w.bettung;
             const h = hoeheAn?.(p.x, p.z);
             const oben = Number.isFinite(h) ? h : sohle + 2;
@@ -1076,8 +1076,9 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                      text: bezugTitel(laeufe[0].achsbezug, { quelle: achse?.quelle, ausQuelle: w.achsbezug === 'quelle' }) });
         for (const b of pruefeGraben({ wand, tiefeMax })) chips.push({ art: 'warnung', text: b.text });
         if (Number.isFinite(deckung)) {
-            chips.push({ art: deckung < MINDEST_UEBERDECKUNG ? 'warnung' : 'vorschau',
-                         text: `Überdeckung ≥ ${deckung.toFixed(2)} m${deckung < MINDEST_UEBERDECKUNG ? ` — unter ${MINDEST_UEBERDECKUNG} m` : ''}` });
+            const mindestUeberdeckung = regelwert('ueberdeckungMindestM');
+            chips.push({ art: deckung < mindestUeberdeckung ? 'warnung' : 'vorschau',
+                         text: `Überdeckung ≥ ${deckung.toFixed(2)} m${deckung < mindestUeberdeckung ? ` — unter ${mindestUeberdeckung} m` : ''}` });
         }
         return { primitive, chips, hinweise: [] };
     },

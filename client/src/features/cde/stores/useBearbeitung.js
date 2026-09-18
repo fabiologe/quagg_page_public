@@ -136,14 +136,15 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * halten nichts auf: `bereit` fragt sie nicht, `ausfuehren` prüft sie
      * nicht. Sie beraten (Fabios Entscheidung).
      */
-    const befunde = computed(() => befundeFuer({
+    // Das Regelwerk kommt mit dem Katalog (AR) — ein Nachladen rechnet die Befunde neu.
+    const befunde = computed(() => (void katalogStand.value, befundeFuer({
         globalId: bauteil.value?.globalId,
         kategorie: bauteil.value?.category ?? bauteil.value?.type,
         beschreibung: bauteil.value?.description ?? null,
         achse: bauteil.value?.achse ?? null,
         umgekehrt: bauteil.value?.stand?.fliessrichtung === 'umgekehrt',
         typprofil: typprofil.value,
-    }));
+    })));
     const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);

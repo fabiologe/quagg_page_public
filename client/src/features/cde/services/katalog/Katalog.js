@@ -1,6 +1,6 @@
 /**
- * Den Katalog laden — Typprofile, Bauformregeln, Rezepte und Plansymbole
- * der Bibliothek —,
+ * Den Katalog laden — Typprofile, Bauformregeln, Rezepte, Plansymbole und
+ * Regelwerk der Bibliothek —,
  * GEPRÜFT, an einer Stelle (Teil XXIII, A5).
  *
  * Vorrang wie überall: Projekt schlägt Büro schlägt eingebaut. Was die
@@ -9,9 +9,10 @@
  */
 import { ladeSatz } from '../bauform/Typprofile.js';
 import { ladeRegeln } from '../bauform/Bauformregeln.js';
-import { ladeRezepte, ladeSymbole } from '../Bibliothek.js';
+import { ladeRegelwerk, ladeRezepte, ladeSymbole } from '../Bibliothek.js';
+import { setzeRegelwerk } from '../regeln/Regelwerk.js';
 import { registriereSymbole } from '../PlanSymbols.js';
-import { eingebauteRollen, pruefeEintrag } from './Katalogschema.js';
+import { eingebauteRollen, pruefeEintrag, tabelleAusJson } from './Katalogschema.js';
 import { rezeptAusDeklaration } from '../rezept/Rezeptbau.js';
 import { registerStand, setzeRegistrierte } from '../rezept/Register.js';
 
@@ -40,15 +41,20 @@ export function registriereRezepte(deklarationen) {
 export async function ladeKatalog(repo, { rollen = null } = {}) {
     const befunde = [];
     const bekannt = rollen ?? eingebauteRollen();
-    // Symbole ZUERST: ein Rezept der Bibliothek darf ein Symbol der Bibliothek nennen.
-    const symbole = await ladeSymbole(repo);
-    registriereSymbole(symbole.eintraege);
-    const [profilSatz, regeln, rezepte] = await Promise.all([
+    // EIN Zug, parallel — wer den Katalog anfragt, wartet einmal, nicht fünfmal.
+    const [symbole, regelwerk, profilSatz, regeln, rezepte] = await Promise.all([
+        ladeSymbole(repo),
+        ladeRegelwerk(repo),
         ladeSatz(repo, { pruefe: (p) => pruefeEintrag('typprofil', p, { rollen: bekannt }), befunde }),
         ladeRegeln(repo, { pruefe: (r) => pruefeEintrag('bauformregel', r), befunde }),
-        ladeRezepte(repo),
+        ladeRezepte(repo, { pruefen: false }),
     ]);
+    // Symbole VOR den Rezepten: ein Rezept der Bibliothek darf ein Symbol der
+    // Bibliothek nennen — geprüft wird es beim Registrieren.
+    registriereSymbole(symbole.eintraege);
+    // Das Regelwerk (AR): Grenzwerte und Tabellen, Projekt schlägt Büro je Id.
+    setzeRegelwerk(regelwerk.eintraege.map(e => ({ ...e, wert: tabelleAusJson(e.id, e.wert) })));
     const reg = registriereRezepte(rezepte.eintraege);
-    befunde.push(...symbole.befunde, ...rezepte.befunde, ...reg.befunde);
+    befunde.push(...symbole.befunde, ...regelwerk.befunde, ...reg.befunde);
     return { profilSatz, regeln, rezepte: reg.aktiv, befunde, stand: reg.stand };
 }

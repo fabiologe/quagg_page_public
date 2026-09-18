@@ -225,15 +225,10 @@ const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 3, handgeschrieben: 0 };
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [
-    { name: 'MINDEST_UEBERDECKUNG', datei: 'services/ableitung/Ableitungen.js',
-      muster: /export const MINDEST_UEBERDECKUNG\s*=/, quelle: 'DIN EN 1610, Regelfall ≥ 0,8 m' },
-    { name: 'KANALGRABEN_ANSCHLUSS', datei: 'services/ableitung/Ableitungen.js',
-      muster: /export const KANALGRABEN_ANSCHLUSS\s*=/, quelle: 'Setzung des Hauses' },
-    { name: 'FANG_KNOTEN_M', datei: 'composables/useEingabe.js',
-      muster: /const FANG_KNOTEN_M\s*=/, quelle: 'Setzung des Hauses — und in Schicht 1 (A3: umbenannt, zieht mit AR ins Regelwerk)' },
-    { name: 'mindestGefaelle (1:DN)', datei: 'services/Befunde.js',
-      muster: /1000\s*\/\s*dn/, quelle: 'Faustregel; die Norm nennt der Code nicht' },
-];
+    // AR: leer. Mindestüberdeckung, Anschlussweite, Knotenfang und die 1:DN-
+    // Formel stehen im Regelwerk (`regeln/Regelwerk.js`) — je Wert mit
+    // Eigenschaft, Art und Quelle, von Büro und Projekt überschreibbar.
+]
 
 // ═══ Die Schichtkarte ═══════════════════════════════════════════════════════
 //
@@ -244,7 +239,7 @@ const SCHICHTEN = [
     { id: 'L0', titel: 'Kern — Knoten, Verbindungen, Flächen, Körper',
       passt: p => p.startsWith('services/geometrie/') || p.startsWith('services/geometry/') },
     { id: 'L1', titel: 'Fachregeln und Eigenschaftsarten',
-      passt: p => /^services\/(gelaende|bauform|eigenschaften)\//.test(p)
+      passt: p => /^services\/(gelaende|bauform|eigenschaften|regeln)\//.test(p)
           || ['services/Achsbezug.js', 'services/Hoehenbezug.js', 'services/Kategorien.js'].includes(p) },
     // Die Stationierung ist Geometrie und lebt im Kern (`geometrie/Stationierung.js`, AE):
     // der Profilkörper braucht sie, und der Kern importiert nicht nach oben.

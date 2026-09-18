@@ -10,7 +10,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { nachId, passende, felderFuer } from '../services/Bearbeitungen.js';
-import { ABLEITUNGEN, MINDEST_UEBERDECKUNG } from '../services/ableitung/Ableitungen.js';
+import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
+import { regelwert } from '../services/regeln/Regelwerk.js';
+// Die Mindestüberdeckung steht seit AR im Regelwerk — eine Stelle für Graben und Befunde.
+const MINDEST_UEBERDECKUNG = regelwert('ueberdeckungMindestM');
 import { neuerAbleitungslauf } from '../services/ableitung/Ableitungslauf.js';
 import { ableitungsSchritte, erzeugtEintrag, rezeptNach } from '../services/Bauteilrezepte.js';
 import { rezepteOhneDeklaration } from '../services/JournalVersatz.js';

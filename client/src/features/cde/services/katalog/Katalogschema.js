@@ -9,8 +9,8 @@
  * wird GEMELDET und NICHT aktiv — nie halb.
  *
  * Eintragsarten: vorlage · rezept (Deklaration, A4) · typprofil ·
- * bauformregel · symbol (Plansymbol). Das Regelwerk (AR) kommt dazu, wenn es
- * Daten wird.
+ * bauformregel · symbol (Plansymbol) · regel (Regelwerk, AR: nur bekannte
+ * Werte, Tabellen in der Form der eingebauten).
  *
  * NUR DATEN: eine Deklaration darf keinen Code-Schlüssel tragen (`baue`,
  * `leite` …) — dieselbe Landmine wie bei der Vorlage. Aus einem Repo kommt
@@ -25,8 +25,10 @@ import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN } from '../rezept/Rezeptbau.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
+import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
+import { AUFLOCKERUNG, GRABENREGELN } from '../gelaende/Grabenregeln.js';
 
-export const EINTRAGSARTEN = Object.freeze(['vorlage', 'rezept', 'typprofil', 'bauformregel', 'symbol']);
+export const EINTRAGSARTEN = Object.freeze(['vorlage', 'rezept', 'typprofil', 'bauformregel', 'symbol', 'regel']);
 
 const FELDTYPEN = Object.freeze(['text', 'zahl', 'auswahl']);
 const NETZROLLEN = EIGENSCHAFTSARTEN.netzrolle.werte;
@@ -239,9 +241,76 @@ function _symbol(sym, fehler) {
     });
 }
 
+/** Die eingebauten Tabellen des Regelwerks — gegen ihre FORM wird eine Überschreibung geprüft. */
+const _TABELLEN = Object.freeze({ grabenregeln: GRABENREGELN, auflockerung: AUFLOCKERUNG });
+
+/** Hat `neu` dieselbe Form wie `vorbild` (Schlüssel, Typen; Zahlen endlich)? Gibt die erste Abweichung. */
+function _formGleich(vorbild, neu, pfad = '') {
+    // Ein OFFENES Ende (`Infinity`, „bis DN ∞") schreibt JSON als `null` — beides gilt.
+    if (vorbild === Infinity) return (neu === null || neu === Infinity || Number.isFinite(neu)) ? null : `${pfad}: keine Zahl`;
+    if (typeof vorbild === 'number') return Number.isFinite(neu) ? null : `${pfad || 'Wert'}: keine Zahl`;
+    if (typeof vorbild === 'string') return typeof neu === 'string' ? null : `${pfad}: kein Text`;
+    if (typeof vorbild === 'boolean') return typeof neu === 'boolean' ? null : `${pfad}: nicht wahr/falsch`;
+    if (vorbild === null) return null;
+    if (Array.isArray(vorbild)) {
+        if (!Array.isArray(neu) || !neu.length) return `${pfad}: keine Liste`;
+        for (let i = 0; i < neu.length; i++) {
+            const f = _formGleich(vorbild[Math.min(i, vorbild.length - 1)], neu[i], `${pfad}[${i}]`);
+            if (f) return f;
+        }
+        return null;
+    }
+    if (!_istObjekt(neu)) return `${pfad}: kein Objekt`;
+    for (const k of Object.keys(vorbild)) {
+        if (!(k in neu)) return `${pfad ? pfad + '.' : ''}${k}: fehlt`;
+        const f = _formGleich(vorbild[k], neu[k], `${pfad ? pfad + '.' : ''}${k}`);
+        if (f) return f;
+    }
+    for (const k of Object.keys(neu)) if (!(k in vorbild)) return `${pfad ? pfad + '.' : ''}${k}: unbekannt`;
+    return null;
+}
+
+/**
+ * Eine geprüfte Tabelle aus JSON in die Form der eingebauten bringen: wo die
+ * eingebaute ein offenes Ende (`Infinity`) hat, wird `null` wieder `Infinity`
+ * — sonst fände „bis DN ∞" nie eine Zeile.
+ */
+export function tabelleAusJson(id, wert) {
+    const vorbild = _TABELLEN[id];
+    const zurueck = (v, w) => {
+        if (v === Infinity) return w === null ? Infinity : w;
+        if (Array.isArray(v) && Array.isArray(w)) return w.map((x, i) => zurueck(v[Math.min(i, v.length - 1)], x));
+        if (_istObjekt(v) && _istObjekt(w)) return Object.fromEntries(Object.entries(w).map(([k, x]) => [k, zurueck(v[k], x)]));
+        return w;
+    };
+    return vorbild ? zurueck(vorbild, wert) : wert;
+}
+
+function _regel(r, fehler) {
+    if (!_istObjekt(r)) { fehler.push('keine Regel'); return; }
+    for (const k of Object.keys(r)) if (!['id', 'wert', 'quelle'].includes(k)) fehler.push(`Unbekannter Schlüssel „${k}".`);
+    if (REGELTABELLEN.includes(r.id)) {
+        const f = _formGleich(_TABELLEN[r.id], r.wert);
+        if (f) fehler.push(`Tabelle „${r.id}" hat nicht die Form der eingebauten: ${f}.`);
+        return;
+    }
+    const e = eingebauteRegel(r.id);
+    if (!e) { fehler.push(`Regel „${r.id}" gibt es nicht — das Regelwerk überschreibt nur bekannte Werte.`); return; }
+    if (Array.isArray(e.wert)) {
+        if (!Array.isArray(r.wert) || !r.wert.length || !r.wert.every(v => Number.isFinite(v) && v > 0)) {
+            fehler.push(`„${r.id}": eine Liste positiver Zahlen (${e.einheit}).`);
+        }
+    } else if (r.wert === null) {
+        if (!e.formel) fehler.push(`„${r.id}": ohne Formel braucht es einen Wert.`);
+    } else if (!(Number.isFinite(r.wert) && r.wert >= 0)) {
+        fehler.push(`„${r.id}": eine Zahl ≥ 0 in ${e.einheit}.`);
+    }
+    if (r.quelle !== undefined && typeof r.quelle !== 'string') fehler.push('`quelle` muss ein Text sein.');
+}
+
 /**
  * Einen Katalogeintrag prüfen.
- * @param {'vorlage'|'rezept'|'typprofil'|'bauformregel'|'symbol'} art
+ * @param {'vorlage'|'rezept'|'typprofil'|'bauformregel'|'symbol'|'regel'} art
  * @param {object} eintrag   beim Typprofil mit `kategorie`
  * @param {{rollen?: Set<string>}} [opt]  bekannte Rollen (Typprofil) — Vorgabe: die der eingebauten Profile
  * @returns {{ ok: boolean, fehler: string[] }}
@@ -253,6 +322,7 @@ export function pruefeEintrag(art, eintrag, { rollen = null } = {}) {
     else if (art === 'typprofil') _typprofil(eintrag, fehler, { rollen: rollen ?? eingebauteRollen() });
     else if (art === 'bauformregel') _bauformregel(eintrag, fehler);
     else if (art === 'symbol') _symbol(eintrag, fehler);
+    else if (art === 'regel') _regel(eintrag, fehler);
     else fehler.push(`Eintragsart „${art}" gibt es nicht.`);
     return { ok: fehler.length === 0, fehler };
 }

@@ -26,9 +26,11 @@ import { nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { pruefeBauplan } from '../services/Bauteilrezepte.js';
 import { eingabenFuer, enterRegel, naechsterSchritt, schliesstUmriss } from '../services/Eingaben.js';
 import { stationAuf } from '../services/Fangpunkte.js';
+import { regelwert } from '../services/regeln/Regelwerk.js';
 
-/** Fang auf Schachtmitten beim Zug (Anschliessen): derselbe Radius wie in `anwenden`. */
-const FANG_KNOTEN_M = 10;
+// Der Fangradius auf Knoten beim Zug (Anschliessen) steht im REGELWERK
+// (`fangKnotenM`, Teil XXIII AR) — derselbe, den „An Schacht anschliessen"
+// in `anwenden` prüft; ein Büro kann ihn ändern.
 
 export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
                              getHoehenversatz, getHoeheAn = null, bereiteHoehenVor = null } = {}) {
@@ -171,7 +173,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         let bester = null;
         for (const k of knoten) {
             const d = Math.hypot(k.punkt.x - p.x, k.punkt.z - p.z);
-            if (d <= FANG_KNOTEN_M && (!bester || d < bester.d)) bester = { d, k };
+            if (d <= regelwert('fangKnotenM') && (!bester || d < bester.d)) bester = { d, k };
         }
         return bester ? { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, fang: bester.k.name || 'Knoten' } : p;
     }

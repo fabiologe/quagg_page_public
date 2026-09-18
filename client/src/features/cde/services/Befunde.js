@@ -35,34 +35,16 @@
  * Reines Modul: kein Vue, kein three, kein WebGL, keine Engine.
  */
 
-/** Die Vorgabe-Grenzwerte. Auf der Büro-Ebene überschreibbar. */
-export const REGELWERK = Object.freeze({
-    /** ‰; `null` heisst „1:DN rechnen" (DN 300 ⇒ 3,3 ‰). */
-    gefaelleMindestPromille: null,
-    /** ‰; darüber wird die Sohle ausgespült. */
-    gefaelleHoechstPromille: 100,
-    /** m; kürzere Stücke sind meist Reste eines Exports. */
-    laengeMindestM: 0.5,
-    /** m; darüber fehlt üblicherweise ein Schacht. */
-    laengeHoechstM: 100,
-    /** m; wie weit ein Rohrende von einem Bauwerk entfernt sein darf. */
-    netzToleranzM: 0.001,
-    /** m; zwei topologisch fremde Hüllen näher als das sind „nah" (Beziehungsindex, Teil XVII). */
-    naeheSchwelleM: 0.5,
-    /** m; ein Punktobjekt so nah an einer Achse gilt als „an der Achse" (Station). */
-    stationAbstandM: 0.5,
-    /** m; Rohrscheitel unter Gelände — darunter ist die Überdeckung gering (Faustregel, frostfrei/Verkehrslast). */
-    ueberdeckungMindestM: 0.8,
-    /** m; lichter Abstand zweier Läufe an einer Kreuzung (Faustregel; Sparten nach DVGW/Netzbetreiber). */
-    kreuzungMindestabstandM: 0.2,
-    /** m; lichter Abstand zweier parallel laufender Leitungen (Faustregel; Sparten nach DVGW/Netzbetreiber). */
-    mindestabstandParallelM: 0.4,
-    /** Nennweiten, die üblicherweise vorkommen. */
-    dnReihe: Object.freeze([
-        100, 125, 150, 200, 250, 300, 350, 400, 500, 600,
-        700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000,
-    ]),
-});
+import { aufgeloestesRegelwerk, eingebautesRegelwerk, mindestGefaelleAus, regelquelle } from './regeln/Regelwerk.js';
+
+/**
+ * Die Vorgabe-Grenzwerte — seit Teil XXIII (AR) aus dem REGELWERK-Katalog
+ * (`regeln/Regelwerk.js`, je Wert mit Eigenschaft, Art und Quelle). Hier der
+ * EINGEBAUTE Satz als flaches Objekt; was gilt (mit Büro/Projekt), gibt
+ * `aufgeloestesRegelwerk()` — das nehmen die Funktionen unten, wenn niemand
+ * ein Regelwerk hereinreicht.
+ */
+export const REGELWERK = eingebautesRegelwerk();
 
 export const SCHWEREN = Object.freeze(['hinweis', 'warnung']);
 
@@ -107,11 +89,23 @@ export const KUREN = Object.freeze({
     schacht_auf_haltung: { bearbeitung: 'haltung-teilen' },
 });
 
+/**
+ * Welcher Grenzwert des Regelwerks hinter einer Befundregel steht (AR) — ohne
+ * eigene Quelle nennt der Befund dann DIESEN Eintrag: Normwert, Faustregel
+ * oder Büro-/Projekt-Regelwerk.
+ */
+const GRENZE_JE_REGEL = Object.freeze({
+    gefaelle_zu_flach: 'gefaelleMindestPromille', gefaelle_zu_steil: 'gefaelleHoechstPromille',
+    laenge_zu_kurz: 'laengeMindestM', laenge_zu_lang: 'laengeHoechstM', dn_nicht_normreihe: 'dnReihe',
+    ueberdeckung_gering: 'ueberdeckungMindestM', kreuzung_abstand: 'kreuzungMindestabstandM',
+    mindestabstand: 'mindestabstandParallelM',
+});
+
 /** Ein Befund — immer dieselbe Form, damit die Anzeige nichts wissen muss. */
 function befund(regel, schwere, text, { wert, grenze, quelle } = {}) {
     return {
         regel, schwere, text, wert: wert ?? null, grenze: grenze ?? null,
-        quelle: quelle ?? 'Büro-Regelwerk (Vorgabe)',
+        quelle: quelle ?? (GRENZE_JE_REGEL[regel] ? regelquelle(GRENZE_JE_REGEL[regel]) : 'Büro-Regelwerk (Vorgabe)'),
         kur: KUREN[regel] ?? null,
     };
 }
@@ -119,11 +113,9 @@ function befund(regel, schwere, text, { wert, grenze, quelle } = {}) {
 const _m = (v) => `${Number(v).toFixed(2)} m`;
 const _p = (v) => `${Number(v).toFixed(1)} ‰`;
 
-/** Das Mindestgefälle für diese Nennweite — die Faustregel 1:DN. */
-export function mindestGefaelle(dnMm, regelwerk = REGELWERK) {
-    if (regelwerk.gefaelleMindestPromille != null) return regelwerk.gefaelleMindestPromille;
-    const dn = Number(dnMm);
-    return Number.isFinite(dn) && dn > 0 ? 1000 / dn : null;
+/** Das Mindestgefälle für diese Nennweite — fester Wert, sonst die benannte Formel 1:DN (Regelwerk). */
+export function mindestGefaelle(dnMm, regelwerk = aufgeloestesRegelwerk()) {
+    return mindestGefaelleAus(dnMm, regelwerk.gefaelleMindestPromille);
 }
 
 /**
@@ -138,7 +130,7 @@ export function mindestGefaelle(dnMm, regelwerk = REGELWERK) {
  * @param {object} [regelwerk]
  * @returns {Array<{regel, schwere, text, wert, grenze, quelle}>}
  */
-export function befundeFuer(pruefling, regelwerk = REGELWERK) {
+export function befundeFuer(pruefling, regelwerk = aufgeloestesRegelwerk()) {
     const out = [];
     if (!pruefling) return out;
     // DIE FESTGELEGTE RICHTUNG GILT. Wer die Fliessrichtung korrigiert hat,
@@ -176,7 +168,7 @@ export function befundeFuer(pruefling, regelwerk = REGELWERK) {
                     'Flacher als das Mindestgefälle — die Sohle reinigt sich nicht selbst.',
                     { wert: _p(promille), grenze: `mindestens ${_p(mind)}`,
                       quelle: regelwerk.gefaelleMindestPromille == null
-                        ? 'Faustregel 1:DN' : 'Büro-Regelwerk' }));
+                        ? 'Faustregel 1:DN' : regelquelle('gefaelleMindestPromille') }));
             }
             if (promille > regelwerk.gefaelleHoechstPromille) {
                 out.push(befund('gefaelle_zu_steil', 'hinweis',
@@ -276,7 +268,7 @@ export function schwersteSchwere(befunde) {
  * @param {object} netz aus `baueNetz`
  * @returns {Map<string, Array>} Bauteil-Id → Befunde
  */
-export function befundeFuerNetz(netz, regelwerk = REGELWERK) {
+export function befundeFuerNetz(netz, regelwerk = aufgeloestesRegelwerk()) {
     const out = new Map();
     if (!netz) return out;
     const anhaengen = (id, b) => {
@@ -351,7 +343,7 @@ export function befundeFuerNetz(netz, regelwerk = REGELWERK) {
  * @param {object} [regelwerk]
  * @returns {Map<string, Array>} GlobalId → Befunde
  */
-export function befundeAusBeziehungen(index, regelwerk = REGELWERK) {
+export function befundeAusBeziehungen(index, regelwerk = aufgeloestesRegelwerk()) {
     const je = new Map();
     const add = (gid, b) => { if (!gid) return; if (!je.has(gid)) je.set(gid, []); je.get(gid).push(b); };
     const rel = index?.relationen ?? [];

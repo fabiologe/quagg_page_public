@@ -166,8 +166,8 @@ export const REZEPTE_KEY = 'bauteil-rezepte';
  * in `eintraege` — nie halb aktiv.
  * @returns {Promise<{eintraege: object[], befunde: {art, id, ebene, fehler}[]}>}
  */
-export async function ladeRezepte(repo) {
-    return _ladeEintraege(repo, REZEPTE_KEY, 'rezept');
+export async function ladeRezepte(repo, { pruefen = true } = {}) {
+    return _ladeEintraege(repo, REZEPTE_KEY, 'rezept', { pruefen });
 }
 
 /** Plansymbole aus der Bibliothek (A5) — dieselbe Form wie `EINGEBAUTE_SYMBOLE`. */
@@ -176,7 +176,16 @@ export async function ladeSymbole(repo) {
     return _ladeEintraege(repo, SYMBOLE_KEY, 'symbol');
 }
 
-async function _ladeEintraege(repo, schluessel, art) {
+/**
+ * Das Regelwerk des Büros bzw. Projekts (AR) — je Wert ein Eintrag
+ * `{id, wert, quelle?}`, Projekt schlägt Büro je Id; geprüft wie alles.
+ */
+export const REGELWERK_KEY = 'regelwerk';
+export async function ladeRegelwerk(repo) {
+    return _ladeEintraege(repo, REGELWERK_KEY, 'regel');
+}
+
+async function _ladeEintraege(repo, schluessel, art, { pruefen = true } = {}) {
     const lies = async (quelle) => {
         try { return await quelle?.get?.(schluessel) ?? null; }
         catch (fehler) { console.warn(`cde: bibliothek ${art} laden`, fehler?.message ?? fehler); return null; }
@@ -186,8 +195,12 @@ async function _ladeEintraege(repo, schluessel, art) {
     const befunde = [];
     for (const [ebene, liste] of [['buero', buero], ['projekt', projekt]]) {
         for (const d of Array.isArray(liste) ? liste : []) {
-            const { ok, fehler } = pruefeEintrag(art, d);
-            if (!ok) { befunde.push({ art, id: d?.id ?? null, ebene, fehler }); continue; }
+            // Ungeprüft nur für den Katalog-Lader: er prüft beim Registrieren,
+            // NACH den Symbolen, die ein Rezept nennen darf.
+            if (pruefen) {
+                const { ok, fehler } = pruefeEintrag(art, d);
+                if (!ok) { befunde.push({ art, id: d?.id ?? null, ebene, fehler }); continue; }
+            } else if (!d?.id) continue;
             karte.set(d.id, { ...d, herkunft: ebene });
         }
     }

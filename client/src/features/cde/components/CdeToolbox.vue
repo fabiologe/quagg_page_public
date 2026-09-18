@@ -358,7 +358,8 @@ const api = useViewerApi();
 const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, ausGruppe('erzeugen')));
 
 /** Was beim Katalogladen abgewiesen wurde — gemeldet, nicht still verworfen (A5, S8). */
-const KATALOG_ART = Object.freeze({ rezept: 'Rezept', typprofil: 'Typprofil', bauformregel: 'Bauformregel', vorlage: 'Vorlage' });
+const KATALOG_ART = Object.freeze({ rezept: 'Rezept', typprofil: 'Typprofil', bauformregel: 'Bauformregel', vorlage: 'Vorlage',
+                                   symbol: 'Plansymbol', regel: 'Regelwerk' });
 const KATALOG_EBENE = Object.freeze({ buero: 'Büro', projekt: 'Projekt' });
 
 const QUELLE_TEXT = Object.freeze({

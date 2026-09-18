@@ -39,6 +39,8 @@
  * Reines Modul: kein Vue, kein three, keine Engine.
  */
 
+import { regeltabelle } from '../regeln/Regelwerk.js';
+
 export const GRABENREGELN = Object.freeze({
     quelle: 'DIN EN 1610:2015-12 Tab. 1/2, 7.2 · DIN 4124:2012-01 4.2',
     /** Tabelle 1: Zuschlag x (m) zum Aussendurchmesser OD, je Spalte. */
@@ -118,7 +120,7 @@ export const AUFLOCKERUNG_FELD = Object.freeze({
 });
 
 /** Der Faktor zu einer Bodenklasse — oder die Vorgabe. */
-export function auflockerungFuer(boden, regeln = AUFLOCKERUNG) {
+export function auflockerungFuer(boden, regeln = regeltabelle('auflockerung', AUFLOCKERUNG)) {
     const v = regeln.nachBoden?.[String(boden ?? '')];
     return Number.isFinite(v) ? v : regeln.vorgabe;
 }
@@ -126,7 +128,8 @@ export function auflockerungFuer(boden, regeln = AUFLOCKERUNG) {
 /** Ein gültiger Faktor, oder null (dann gilt die Vorgabe des Rezepts). */
 export function auflockerungOder(wert, vorgabe = null) {
     const z = Number(wert);
-    return Number.isFinite(z) && z >= AUFLOCKERUNG.min && z <= AUFLOCKERUNG.max ? z : vorgabe;
+    const t = regeltabelle('auflockerung', AUFLOCKERUNG);
+    return Number.isFinite(z) && z >= t.min && z <= t.max ? z : vorgabe;
 }
 
 const fin = (v) => Number.isFinite(v);
@@ -141,7 +144,7 @@ const rund = (v) => Math.round(v * 1000) / 1000;
  * @param {number|null} [opts.winkelGrad]  ausdrücklicher Böschungswinkel (überstimmt die Bodenklasse)
  * @param {object} [opts.regeln]
  */
-export function wandFuer({ wandform = 'verbau', boden = 'nichtbindig', winkelGrad = null, regeln = GRABENREGELN } = {}) {
+export function wandFuer({ wandform = 'verbau', boden = 'nichtbindig', winkelGrad = null, regeln = regeltabelle('grabenregeln', GRABENREGELN) } = {}) {
     if (wandform !== 'boeschung') {
         return { wandform, n: 0, winkelGrad: 90, grund: wandform === 'verbau' ? 'senkrecht, verbaut' : 'senkrecht, ohne Verbau' };
     }
@@ -168,7 +171,7 @@ export function wandFuer({ wandform = 'verbau', boden = 'nichtbindig', winkelGra
  * @param {number|null} [opts.eigene] eigene Sohlbreite (m) — überstimmt die Norm, wird gemeldet
  * @returns {{sohlbreite:number, od:number, ausDn:number, ausTiefe:number, spalte:string, grund:string, hinweise:string[]}}
  */
-export function grabenbreite({ dn, wanddickeMm = 0, tiefe = 0, wand = null, eigene = null, regeln = GRABENREGELN } = {}) {
+export function grabenbreite({ dn, wanddickeMm = 0, tiefe = 0, wand = null, eigene = null, regeln = regeltabelle('grabenregeln', GRABENREGELN) } = {}) {
     const hinweise = [];
     const d = fin(dn) && dn > 0 ? dn : 0;
     const od = rund(d / 1000 + 2 * (fin(wanddickeMm) ? wanddickeMm : 0) / 1000);
@@ -203,7 +206,7 @@ export function grabenbreite({ dn, wanddickeMm = 0, tiefe = 0, wand = null, eige
  * verbaut), ausgerichtet entlang der anschliessenden Haltung. Das Aussenmass
  * ist der Schachtdurchmesser oder die Kantenlänge eines eckigen Schachts.
  */
-export function baugrubenmass({ aussenmass = 1.0, aussenDm, wand = null, regeln = GRABENREGELN } = {}) {
+export function baugrubenmass({ aussenmass = 1.0, aussenDm, wand = null, regeln = regeltabelle('grabenregeln', GRABENREGELN) } = {}) {
     const w = wand ?? wandFuer({ wandform: 'verbau' });
     const arbeitsraum = w.wandform === 'boeschung'
         ? (regeln.arbeitsraumBaugrube?.geboescht ?? 0.5)
@@ -252,7 +255,7 @@ export function baugrubenRichtung(knoten, kanten, tol = 0.001) {
  * @param {number} opts.tiefeMax      grösste Grabentiefe (m)
  * @returns {Array<{regel:string, schwere:string, text:string}>}
  */
-export function pruefeGraben({ wand, tiefeMax = 0, regeln = GRABENREGELN } = {}) {
+export function pruefeGraben({ wand, tiefeMax = 0, regeln = regeltabelle('grabenregeln', GRABENREGELN) } = {}) {
     const befunde = [];
     if (!wand) return befunde;
     const grenze = regeln.senkrechtOhneVerbauBisM ?? 1.25;

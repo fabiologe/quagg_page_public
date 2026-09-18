@@ -32,6 +32,7 @@ import { punktInPolygon } from '@/services/tinte/InkGeometry';
 import { rasterKnoten } from '../geometry/SurfaceOps.js';
 import { nnAusWelt } from '../Hoehenbezug.js';
 import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
+import { regeltabelle } from '../regeln/Regelwerk.js';
 
 /** Ein Punkt kommt je nach Quelle als {x,z} oder [x,y,z]. */
 function _xz(p) {
@@ -1181,7 +1182,7 @@ export const GELAENDE_OPS = Object.freeze({
                 { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
                 AUFLOCKERUNG_FELD,
             ],
-            vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: AUFLOCKERUNG.vorgabe }),
+            vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: regeltabelle('auflockerung', AUFLOCKERUNG).vorgabe }),
             ausEingabe: (werte, zug, { versatz }) => {
                 const tiefe = Number(werte?.mass);
                 if (!Number.isFinite(tiefe) || tiefe <= 0) return null;

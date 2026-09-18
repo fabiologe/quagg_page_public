@@ -78,6 +78,7 @@ import { ACHSBEZUEGE } from './Achsbezug.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
+import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -841,7 +842,7 @@ function _kanalgrabenSchritte(el, werte) {
                 winkelGrad: zahlOderNull(werte?.winkel),
                 wanddickeMm: zahlOderNull(werte?.wanddicke) ?? 0,
                 breite: zahlOderNull(werte?.breite),
-                bettung: zahlOderNull(werte?.bettung) ?? GRABENREGELN.bettung.ueblich,
+                bettung: zahlOderNull(werte?.bettung) ?? regeltabelle('grabenregeln', GRABENREGELN).bettung.ueblich,
                 schachtMass: zahlOderNull(werte?.schachtMass) ?? 1.0,
                 dn: zahlOderNull(werte?.dn),
             } }],
@@ -1072,7 +1073,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             gelaende: _vorbelegtesGelaende(el),
             auflockerung: auflockerungFuer('nichtbindig'),
             umfang: 'haltung', achsbezug: 'quelle', wandform: 'verbau', boden: 'nichtbindig', winkel: null, breite: null,
-            wanddicke: 0, bettung: GRABENREGELN.bettung.ueblich, schachtMass: 1.0,
+            wanddicke: 0, bettung: regeltabelle('grabenregeln', GRABENREGELN).bettung.ueblich, schachtMass: 1.0,
             // Der DN ist ein sichtbarer Regler: vorbelegt aus der Festlegung
             // (parametrik), sonst aus der Achse — nie still geraten.
             dn: el?.stand?.profilGroesse ?? el?.achse?.dn ?? null,
@@ -2570,7 +2571,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             }
             // Fangradius 10 m: ein Tipp ins Leere soll nicht den 300 m
             // entfernten Schacht erwischen.
-            if (!ziel || dTipp > 10) return null;
+            if (!ziel || dTipp > regelwert('fangKnotenM')) return null;
 
             const abstand = (p, q) => Math.hypot(p.x - q.x, p.z - q.z);
             const dA = abstand(a.anfang, ziel.punkt);
