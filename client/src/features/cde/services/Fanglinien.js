@@ -99,6 +99,70 @@ export function fanglinienFuer({ ausgang, anschluesse = [], nachbarn = [] } = {}
 }
 
 /**
+ * DIE FÜHRUNGSLINIEN EINER ECKE (Teil XXII, Fabio 2026-09-18: „diese
+ * brauchen dann Führungslinien"). Eine Ecke eines Umrisses — Grube,
+ * Schüttung, Böschungslinie — zieht man nach den Nachbarn:
+ *
+ *   kante          die anliegende Kante in ihrer bisherigen Richtung (die
+ *                  Ecke gleitet, die Kante dreht sich nicht)
+ *   flucht         die Nachbarkante verlängert (Nachbarecke fällt weg — ein
+ *                  gerader Rand)
+ *   rechtwinklig   senkrecht auf der Nachbarkante durch die Nachbarecke
+ *                  (ein rechter Winkel dort)
+ *   achse          Ost- und Nordflucht der Nachbarecke
+ *
+ * Aus zwei Linien wird ein Eckfang (`fange`) — ein Rechteck zieht man so auf
+ * den Zentimeter. Welt-Lage wie beim Schacht in Ost/Nord (ost = x,
+ * nord = −z; der Ladeversatz spielt für Richtungen keine Rolle).
+ *
+ * @param {Array<{x:number, z:number}>} ring  alle Ecken in Zeichenreihenfolge
+ * @param {number} i                          die gezogene
+ * @returns {Array} Linien für `fange`
+ */
+export function eckFanglinien(ring = [], i = 0, { geschlossen = true } = {}) {
+    const m = ring.length;
+    if (m < 2 || !ring[i]) return [];
+    const on = (p) => ({ ost: p.x, nord: -p.z });
+    const nachbar = (k) => (geschlossen ? ring[(k + m) % m] : ring[k]) ?? null;
+    const nr = (k) => ((k % m) + m) % m + 1;
+    const P = on(ring[i]);
+    const linien = [];
+    for (const s of [-1, 1]) {
+        const a = nachbar(i + s);
+        if (!a || (geschlossen && m < 3 && s === 1)) continue;
+        const A = on(a);
+        const r = _norm(P.ost - A.ost, P.nord - A.nord);
+        if (r) linien.push({ art: 'kante', name: `Kante ${nr(i + s)}–${nr(i)}`, punkt: A, richtung: r });
+        const b = nachbar(i + 2 * s);
+        if (b && b !== ring[i]) {
+            const B = on(b);
+            const q = _norm(A.ost - B.ost, A.nord - B.nord);
+            if (q) {
+                linien.push({ art: 'flucht', name: `Flucht ${nr(i + 2 * s)}–${nr(i + s)}`, punkt: A, richtung: q });
+                linien.push({ art: 'rechtwinklig', name: `rechter Winkel an ${nr(i + s)}`, punkt: A, richtung: { ost: -q.nord, nord: q.ost } });
+            }
+        }
+        linien.push({ art: 'achse', name: `Ecke ${nr(i + s)} Ost`, punkt: A, richtung: { ost: 1, nord: 0 } });
+        linien.push({ art: 'achse', name: `Ecke ${nr(i + s)} Nord`, punkt: A, richtung: { ost: 0, nord: 1 } });
+    }
+    return linien;
+}
+
+/** Die Längen (m, Grundriss) der Kanten an Ecke i, wenn sie bei `pos` liegt — für die Pille. */
+export function kantenAnEcke(ring = [], i = 0, pos = null, { geschlossen = true } = {}) {
+    const m = ring.length;
+    if (!pos || m < 2) return [];
+    const aus = [];
+    for (const s of [-1, 1]) {
+        const k = i + s;
+        const a = geschlossen ? ring[(k + m) % m] : ring[k];
+        if (!a || (geschlossen && m < 3 && s === 1)) continue;
+        aus.push(Math.hypot(pos.x - a.x, pos.z - a.z));
+    }
+    return aus;
+}
+
+/**
  * Einen Kandidatenpunkt fangen.
  *
  * Reihenfolge der Stärke: Schnitt zweier Linien (Eckfang) > eine Linie

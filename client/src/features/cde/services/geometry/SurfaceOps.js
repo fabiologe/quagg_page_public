@@ -264,6 +264,18 @@ function _zellDreiecke(raster, ix, iz, X, Z) {
     return [];
 }
 
+/**
+ * Die Dreiecke EINER Zelle nach der Regel der Anzeige — für Leser, die nur
+ * einen Teil der Zellen zeichnen (die Geländeanzeige mit Aussparung, Teil
+ * XXII). Dieselbe Diagonale wie `dreieckeAusRaster`, sonst stünden Anzeige
+ * und Erdkörper wieder auf zwei Flächen.
+ */
+export function zellDreiecke(raster, ix, iz) {
+    const X = (i) => rasterKnoten(raster, i, 0).x;
+    const Z = (j) => rasterKnoten(raster, 0, j).z;
+    return _zellDreiecke(raster, ix, iz, X, Z);
+}
+
 /** Raster → Dreiecke (siehe `_zellDreiecke`). */
 export function dreieckeAusRaster(raster) {
     const { nx, nz } = raster;

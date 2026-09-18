@@ -69,6 +69,7 @@ export function eingabeArt(bearbeitung) {
 }
 
 import { AUFLOCKERUNG, WANDFORMEN, BODENKLASSEN, GRABENREGELN, auflockerungFuer, auflockerungOder, schaechteAnKanten } from './gelaende/Grabenregeln.js';
+import { hatInnenring, innenEcken, randFuerInnenecke } from './gelaende/Innenecken.js';
 // Die Bauformen, an denen eine Aussparung fachlich geht — DIE Liste des
 // Rezepts, nicht eine Kopie daneben (Gesetz 7).
 import { ERDBAU_PUNKTHOEHEN, KOERPERHAFT } from './ableitung/Ableitungen.js';
@@ -502,18 +503,50 @@ function _erdbauStuetzpunktSchritte(el, werte) {
     const ost = Number(werte?.ost), nord = Number(werte?.nord), hoehe = Number(werte?.hoehe);
     if (![ost, nord, hoehe].every(Number.isFinite)) return null;
     const v = el.versatz ?? { x: 0, y: 0, z: 0 };
-    // Die Höhe bleibt in NN — die Op-Punktlisten tragen sie so.
-    const neu = { ...treffer.punkt, x: ost - v.x, y: hoehe, z: -nord - v.z };
-    const alt = treffer.punkt;
-    if (Math.abs(alt.x - neu.x) < 1e-4 && Math.abs(alt.y - neu.y) < 1e-4 && Math.abs(alt.z - neu.z) < 1e-4) return null;
-    const operationen = plan.parameter.operationen.map((op, j) => (j !== treffer.op ? op : {
-        ...op,
-        parameter: { ...op.parameter,
-                     [treffer.feld]: treffer.liste.map((p, k) => (k === treffer.index ? neu : p)) },
-    }));
+    let operationen;
+    if (werte?.bezug === 'innen') {
+        // EINE INNERE ECKE (Teil XXII): Sohle einer Grube, Krone einer
+        // Schüttung. Gespeichert wird weiter nur der äussere Umriss — die
+        // Höhe des Griffs ist die neue Sohle (Krone) des ganzen Körpers, die
+        // Lage wird zur äusseren Ecke zurückgerechnet (Neigung bleibt).
+        const op = plan.parameter.operationen[treffer.op];
+        if (!hatInnenring(op)) return null;
+        const hoehenFeld = op.art === 'grube' ? 'sohle' : 'hoehe';
+        const mitHoehe = { ...op, parameter: { ...op.parameter, [hoehenFeld]: hoehe } };
+        // Nur die Höhe gezogen (die Lage ist die der Ecke vorher): der Rand
+        // bleibt auf dem Gelände, die Sohle (Krone) wandert — so erwartet man
+        // es von „tiefer ausheben". Sonst: der Rand folgt der Ecke.
+        const ziel = { x: ost - v.x, z: -nord - v.z };
+        const vorher = innenEcken(op)?.[treffer.index] ?? null;
+        const nurHoehe = vorher && Math.hypot(vorher.x - ziel.x, vorher.z - ziel.z) < 2e-3;   // Griffwerte sind auf mm gerundet
+        const rand = nurHoehe ? { x: treffer.punkt.x, z: treffer.punkt.z } : randFuerInnenecke(mitHoehe, treffer.index, ziel);
+        if (!rand) return null;
+        const alt = treffer.punkt;
+        const hoeheGleich = Math.abs(Number(op.parameter[hoehenFeld]) - hoehe) < 1e-4;
+        if (hoeheGleich && Math.abs(alt.x - rand.x) < 1e-4 && Math.abs(alt.z - rand.z) < 1e-4) return null;
+        operationen = plan.parameter.operationen.map((o, j) => (j !== treffer.op ? o : {
+            ...mitHoehe,
+            parameter: { ...mitHoehe.parameter,
+                         umriss: treffer.liste.map((p, k) => (k === treffer.index ? { ...p, x: rand.x, z: rand.z } : p)) },
+        }));
+    } else {
+        // Die Höhe bleibt in NN — die Op-Punktlisten tragen sie so.
+        const neu = { ...treffer.punkt, x: ost - v.x, y: hoehe, z: -nord - v.z };
+        const alt = treffer.punkt;
+        if (Math.abs(alt.x - neu.x) < 1e-4 && Math.abs(alt.y - neu.y) < 1e-4 && Math.abs(alt.z - neu.z) < 1e-4) return null;
+        operationen = plan.parameter.operationen.map((op, j) => (j !== treffer.op ? op : {
+            ...op,
+            parameter: { ...op.parameter,
+                         [treffer.feld]: treffer.liste.map((p, k) => (k === treffer.index ? neu : p)) },
+        }));
+    }
     // Die TEILE des Vorgangs: ohne sie bekämen Aushub und Auftrag neue
-    // Kennungen, und im Raum stünde der Vorgang doppelt.
-    const teile = el.vorgangTeile ?? null;
+    // Kennungen, und im Raum stünde der Vorgang doppelt. Sie kommen aus
+    // `el.stand.teile` — der Store legt sie beim Einordnen an
+    // (`useBearbeitung._standVon`). Bis 2026-09-18 stand hier ein eigenes
+    // `vorgangTeile`, das der Viewer nie füllen konnte (er fragte nach
+    // `stand`, bevor es den gab): je Zug bekam der Auftrag eine neue Kennung.
+    const teile = _teileObjekt(el.stand?.teile);
     return _anModell(ableitungsSchritte({
         rezept: plan.rezept,
         quellen: plan.parameter.quellen ?? {},
@@ -524,6 +557,12 @@ function _erdbauStuetzpunktSchritte(el, werte) {
         name: _vorgangsStamm(plan.name),
         bestehend: { ableitung: plan.ableitung, teile: teile ?? { [plan.rolle]: { globalId: el.globalId, bauplan: plan } } },
     }), el.modellSha);
+}
+
+/** `stand.teile` (Map Rolle → {globalId, bauplan}) als Objekt für `ableitungsSchritte({bestehend})`, oder null. */
+function _teileObjekt(teile) {
+    if (teile instanceof Map) return teile.size ? Object.fromEntries(teile) : null;
+    return teile && typeof teile === 'object' && Object.keys(teile).length ? teile : null;
 }
 
 /** Der Name eines Vorgangs ohne den Teil-Anhang — `ableitungsSchritte` hängt ihn neu an. */

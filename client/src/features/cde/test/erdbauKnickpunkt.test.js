@@ -30,14 +30,21 @@ const SUBJEKT = () => ({
     globalId: 'cde-aushub', modelId: 'cde-eigenbau', localId: 7, name: BAUPLAN.name,
     hoehenversatz: VERSATZ, versatz: { x: 0, y: 0, z: 0 },
     anker: { x: 20, y: 300, z: 20 }, lageUmkehrbar: false,
-    stand: { bauplan: BAUPLAN },
-    vorgangTeile: {
-        aushub:  { globalId: 'cde-aushub',  bauplan: BAUPLAN },
-        auftrag: { globalId: 'cde-auftrag', bauplan: { ...BAUPLAN, rolle: 'auftrag', name: 'Ur · Ausheben · Auftrag' } },
+    // In der Form, die der Store beim Einordnen anlegt (`_standVon`: `teile`
+    // als Map) — den echten Weg dorthin prüft `erdbauKennungen.test.js`.
+    stand: {
+        bauplan: BAUPLAN,
+        teile: new Map([
+            ['aushub',  { globalId: 'cde-aushub',  bauplan: BAUPLAN }],
+            ['auftrag', { globalId: 'cde-auftrag', bauplan: { ...BAUPLAN, rolle: 'auftrag', name: 'Ur · Ausheben · Auftrag' } }],
+        ]),
     },
 });
 
-const griffe = () => griffeFuer({ subjekt: SUBJEKT(), subjektHerkunft: 'cde', bauform: 'koerper' });
+// Nur die ÄUSSEREN Ecken (die gespeicherten) — die inneren (Sohle, Krone)
+// kamen mit Teil XXII dazu und stehen in `eckenZiehen.test.js`.
+const aussen = (x) => x.key.startsWith('erdbau-stuetz');
+const griffe = () => griffeFuer({ subjekt: SUBJEKT(), subjektHerkunft: 'cde', bauform: 'koerper' }).filter(aussen);
 
 describe('Die Griffe sitzen auf den Ecken der OPERATION', () => {
     it('je Ecke ein Zug- und ein Höhengriff — vier Ecken, acht Griffe', () => {
@@ -151,13 +158,13 @@ describe('Vom Griff bis ins Journal — der zweite Vorgang beweist es', () => {
         const ops = [BAUPLAN.parameter.operationen[0],
                      { art: 'boeschungLinie', parameter: { linie: KANTE, seite: 'links', neigung: 1.5 } }];
         s.stand.bauplan = { ...BAUPLAN, parameter: { ...BAUPLAN.parameter, operationen: ops } };
-        s.vorgangTeile = { aushub: { globalId: 'cde-aushub', bauplan: s.stand.bauplan } };
+        s.stand.teile = new Map([['aushub', { globalId: 'cde-aushub', bauplan: s.stand.bauplan }]]);
         return s;
     };
 
     it('die Linie bekommt ihre eigenen Griffe — Feld und Operation stehen dran', () => {
         const g = griffeFuer({ subjekt: ZWEI(), subjektHerkunft: 'cde', bauform: 'koerper' })
-            .filter(x => x.achsen === 'XZ' && x.werkzeug === 'erdbau-stuetzpunkt-verschieben');
+            .filter(x => aussen(x) && x.achsen === 'XZ' && x.werkzeug === 'erdbau-stuetzpunkt-verschieben');
         expect(g).toHaveLength(6);                       // 4 Umriss + 2 Linie
         expect(g[5].werte).toEqual({ op: 1, feld: 'linie', index: 1 });
     });
@@ -184,7 +191,7 @@ describe('Vom Griff bis ins Journal — der zweite Vorgang beweist es', () => {
         s.stand.bauplan = { ...BAUPLAN, parameter: { ...BAUPLAN.parameter,
             operationen: [{ art: 'grube', parameter: { umriss: RING, stationen: KANTE, sohle: 597 } }] } };
         const g = griffeFuer({ subjekt: s, subjektHerkunft: 'cde', bauform: 'koerper' })
-            .filter(x => x.achsen === 'XZ' && x.werkzeug === 'erdbau-stuetzpunkt-verschieben');
+            .filter(x => aussen(x) && x.achsen === 'XZ' && x.werkzeug === 'erdbau-stuetzpunkt-verschieben');
         expect(g).toHaveLength(4);
         expect(g.every(x => x.werte.feld === 'umriss')).toBe(true);
     });

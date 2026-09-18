@@ -26,6 +26,8 @@
  */
 import { feinheitAus, feinheitFuer, formeNach, massenAus, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
+import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
+import { innenEcken } from '../gelaende/Innenecken.js';
 import { AUFLOCKERUNG, GRABENREGELN, auflockerungFuer, auflockerungOder, wandFuer, grabenbreite, baugrubenmass, rechteckUmriss, baugrubenRichtung, pruefeGraben, schaechteAnKanten, WANDFORMEN } from '../gelaende/Grabenregeln.js';
 import { weltAusNn } from '../Hoehenbezug.js';
 import { rasterAbtasten } from '../geometrie/ops/Raster.js';
@@ -516,19 +518,35 @@ const ABLEITUNGEN_ERWEITERT = {
                     const randMittel = ring.reduce((a, p) => a + p.y, 0) / ring.length;
                     const n = Number(q.neigung) > 0 ? Number(q.neigung) : 0;
                     primitive.push({ art: 'umriss', ring, farbe });
+                    // Der INNERE Ring Ecke für Ecke (Teil XXII, `Innenecken`): dieselbe
+                    // Regel wie die Rechnung, und genau dort sitzen die Griffe
+                    // von „Ecken ziehen". Je Ecke die Gratlinie von oben nach
+                    // innen — sie zeigt, welche Ecken zusammengehören.
+                    const innenGrat = (hoehe) => {
+                        const ecken = innenEcken(op);
+                        if (!ecken || ecken.some(e => !e)) return null;
+                        primitive.push({ art: 'umriss', ring: ecken.map(e => ({ x: e.x, y: hoehe, z: e.z })), farbe });
+                        ecken.forEach((e, k) => primitive.push({ art: 'linie', gestrichelt: true, farbe,
+                            punkte: [{ x: ring[k].x, y: ring[k].y, z: ring[k].z }, { x: e.x, y: hoehe, z: e.z }] }));
+                        return ecken;
+                    };
                     if (op.art === 'grube') {
                         const sohle = Number(q.sohle);
                         if (!Number.isFinite(sohle)) continue;
-                        const innen = n ? _innenring(ring, Math.max(0, randMittel - sohle) * n) : ring;
-                        if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: sohle, z: p.z })), farbe });
+                        if (!innenGrat(sohle)) {
+                            const innen = n ? _innenring(ring, Math.max(0, randMittel - sohle) * n) : ring;
+                            if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: sohle, z: p.z })), farbe });
+                        }
                         chips.push({ art: 'vorschau', text: `Ausheben · Sohle ${(sohle + hoehenversatz).toFixed(2)} m NN · ${(randMittel - sohle).toFixed(2)} m unter dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
                     } else if (q.ziel === 'ur') {
                         chips.push({ art: 'vorschau', text: 'Auffüllen bis GOK — auf das Ur-Gelände, nur auffüllen' });
                     } else {
                         const hoehe = Number(q.hoehe);
                         if (!Number.isFinite(hoehe)) continue;
-                        const innen = n ? _innenring(ring, Math.max(0, hoehe - randMittel) * n) : ring;
-                        if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe });
+                        if (!innenGrat(hoehe)) {
+                            const innen = n ? _innenring(ring, Math.max(0, hoehe - randMittel) * n) : ring;
+                            if (innen) primitive.push({ art: 'umriss', ring: innen.map(p => ({ x: p.x, y: hoehe, z: p.z })), farbe });
+                        }
                         chips.push({ art: 'vorschau', text: `Auffüllen · ${(hoehe + hoehenversatz).toFixed(2)} m NN · ${(hoehe - randMittel).toFixed(2)} m über dem Rand · ${n ? `Böschung 1 : ${n}` : 'senkrecht'}` });
                     }
                 } else if (op.art === 'boeschungLinie') {
@@ -1481,17 +1499,52 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
         // Das Ur im Flicken kommt aus DERSELBEN Quelle wie der Korridor der
         // Erdkörper (Teil XXI) — sonst zeigen Körper und Gelände zwei fast
         // gleiche Flächen, und die durchdringen sich sichtbar.
-        const { flicken, zelle, warnungen } = await anzeigeFlicken(ur, stand, stapel?.opsVor ?? [],
-            { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET, feinesUr: stapel?.feinesUr ?? null });
+        //
+        // DIE LIEFERUNG, WO NICHTS GEÄNDERT IST (Teil XXII, Fabio 2026-09-18:
+        // „das Gelände verschiebt sich an Stellen, wo keine Editierung
+        // stattfindet"). Die Anzeige war überall ein Raster und schnitt die
+        // Knicke der Lieferung ab — bis 48 cm fern jeder Bearbeitung. Jetzt
+        // zeigt sie das gelieferte Netz und nur in den veränderten Zellen das
+        // geformte Raster (`Anzeigenetz`). Das Raster bleibt der Rückfall:
+        // ohne Netz (eigenes Raster-Gelände), bei zu grossem Netz, oder wenn
+        // ein Flicken sein Ur nicht aus der Lieferung bekam (dann passte die
+        // Naht nicht).
+        const ops = stapel?.opsVor ?? [];
+        let urNetz = null;
+        try { urNetz = (await stapel?.urNetz?.()) ?? null; } catch { urNetz = null; }
+        const netzTaugt = urNetz?.triCount > 0 && urNetz.triCount <= ANZEIGE_URNETZ_MAX;
+        const flickenOpt = { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET, feinesUr: stapel?.feinesUr ?? null };
+        let { flicken, zelle, warnungen } = await anzeigeFlicken(ur, stand, ops,
+            netzTaugt ? { ...flickenOpt, randAufGrob: false, rand: 1 } : flickenOpt);
+        let netz = null;
+        if (urNetz?.triCount > ANZEIGE_URNETZ_MAX) {
+            warnungen.push(`anzeige_raster: das Gelände hat ${urNetz.triCount} Dreiecke — angezeigt als Raster (Grenze ${ANZEIGE_URNETZ_MAX})`);
+        } else if (netzTaugt && flicken.some(f => !f.urAusQuelle)) {
+            // Die Naht passt nur an ein Ur aus der Lieferung. Ohne: das Bild
+            // wie bisher — Flicken mit Rand auf dem groben Raster.
+            ({ flicken, zelle, warnungen } = await anzeigeFlicken(ur, stand, ops, flickenOpt));
+            warnungen.push('anzeige_raster: das feine Gelände kam nicht aus der Lieferung — angezeigt als Raster');
+        } else if (netzTaugt) {
+            netz = anzeigeNetz({
+                urNetz,
+                flaechen: flicken.length ? flicken.map(f => ({ raster: f.raster, ur: f.ur })) : [{ raster: stand, ur }],
+            });
+        }
+        const teil = netz
+            ? { form: 'raster', daten: stand, anzeigeNetz: netz }
+            : { form: 'raster', daten: stand, flicken };
         return {
-            teile: { anzeige: { form: 'raster', daten: stand, flicken } },
+            teile: { anzeige: teil },
             kennzahlen: {
                 aushubGesamt: massen.aushub, auftragGesamt: massen.auftrag,
                 gesamtQuelle: ausVorgaengen ? 'vorgaenge' : 'raster',
-                vorgaenge: (stapel?.opsVor ?? []).length ? (parameter?.vorgaenge ?? []).length : 0,
-                operationen: (stapel?.opsVor ?? []).length,
+                vorgaenge: ops.length ? (parameter?.vorgaenge ?? []).length : 0,
+                operationen: ops.length,
                 zellweite: stand.cell,
                 flicken: flicken.length, flickenZelle: zelle,
+                // Was im Raum steht: die Lieferung mit Aussparung oder ein Raster.
+                anzeigeArt: netz ? 'netz' : 'raster',
+                ...(netz ? { anzeigeNetz: netz.kennzahlen } : {}),
             },
             befunde: [], warnungen, bild: [], ops: [],
         };

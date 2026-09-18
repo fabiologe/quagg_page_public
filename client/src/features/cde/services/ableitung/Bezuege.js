@@ -230,8 +230,18 @@ export function erdbauStapelVon(stand, urGid, { rezeptNach = null, historie = nu
         const { ur, tiefe } = _kette(stand, q, rezeptNach, historie);
         if (ur !== urGid) continue;
         if (plan.rolle === 'dgm') out.altDgm.push(gid);
-        if (!gefunden.has(plan.ableitung)) {
+        // Der Platz im Stapel kommt vom ERSTEN Teil (wann der Vorgang entstand),
+        // der Bauplan vom JÜNGSTEN (Teil XXII, B1): ein Eckenzug vergab bis
+        // 2026-09-18 dem Auftrag je Zug eine neue Kennung, und „der erste
+        // gewinnt" rechnete dann je nach Journal-Reihenfolge den alten Umriss.
+        // Dieselbe Regel wie `teileVon` und `ueberholteTeile`: der zuletzt
+        // aufgetretene Teil gilt.
+        const g = gefunden.get(plan.ableitung);
+        if (!g) {
             gefunden.set(plan.ableitung, { ableitung: plan.ableitung, art: plan.rezept, titel: vorgangstitel(plan, rz), bauplan: plan, tiefe, reihe: gefunden.size });
+        } else {
+            g.bauplan = plan;
+            g.titel = vorgangstitel(plan, rz);
         }
     }
     if (!out.anzeige && ueberKette) out.anzeige = ueberKette;
@@ -244,6 +254,38 @@ export function erdbauStapelVon(stand, urGid, { rezeptNach = null, historie = nu
     const rest = [...gefunden.values()].filter(g => !drin(g.ableitung))
         .sort((a, b) => (a.tiefe - b.tiefe) || (a.reihe - b.reihe));
     for (const { tiefe, reihe, ...g } of rest) out.vorgaenge.push(g);
+    return out;
+}
+
+/**
+ * ÜBERHOLTE TEILE (Teil XXII, B1): mehrere Kennungen mit derselben Rolle in
+ * derselben Ableitung.
+ *
+ * Bis 2026-09-18 bekam beim Eckenzug nur das GEWÄHLTE Teil seine Kennung
+ * zurück; das Geschwister (der Auftrag einer Grube) entstand je Zug neu. In
+ * Fabios Journal stehen so drei Auftrag-Teile eines Vorgangs, der älteste mit
+ * dem alten Umriss. Gebaut hätte jeder einen Körper — im Raum und im IFC.
+ *
+ * Es gilt der zuletzt aufgetretene (dieselbe Regel wie `teileVon`): ein
+ * Zug hängt die neue Kennung HINTEN an, und das gewählte Teil (vorn,
+ * überschrieben) trägt ohnehin schon den jüngsten Wert. Die übrigen werden
+ * nicht gebaut und genannt — gelöscht wird nichts, das Journal bleibt, wie es
+ * ist.
+ *
+ * @returns {Map<string, string>} Kennung des überholten Teils → Kennung des geltenden
+ */
+export function ueberholteTeile(stand) {
+    const schluessel = (plan) => (plan?.ableitung && plan?.rolle ? `${plan.ableitung}|${plan.rolle}` : null);
+    const geltend = new Map();
+    for (const [gid, plan] of stand ?? []) {
+        const s = schluessel(plan);
+        if (s) geltend.set(s, gid);
+    }
+    const out = new Map();
+    for (const [gid, plan] of stand ?? []) {
+        const s = schluessel(plan);
+        if (s && geltend.get(s) !== gid) out.set(gid, geltend.get(s));
+    }
     return out;
 }
 

@@ -114,6 +114,24 @@
         <p v-if="sperrgrund" class="tb-sperre">
           <CdeIcon name="warn" :size="12" /> {{ sperrgrund }}
         </p>
+        <!-- ECKEN ZIEHEN (Teil XXII, Fabio 2026-09-18: „nur in der Bearbeitung,
+             nur als Knopf, dann an allen Ecken"): ohne diesen Knopf trägt ein
+             Erdkörper keine Griffe. -->
+        <section v-if="eckenMoeglich" class="tb-gruppe">
+          <h4 class="tb-kopf" title="Oberkante, Sohle bzw. Fuss und Krone — jede Ecke mit Führungslinien">Ecken</h4>
+          <div class="tb-liste">
+            <button v-if="!eckenAktiv" class="tb-btn" :disabled="!!sperrgrund" :title="sperrgrund || 'Griffe an allen Ecken dieses Körpers'"
+                    @click="eckenZiehen">
+              <CdeIcon name="pointer" :size="13" /> <span>Ecken ziehen</span>
+            </button>
+            <button v-else class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.eckenBeenden()">
+              <CdeIcon name="check" :size="13" /> <span>Fertig</span>
+            </button>
+          </div>
+          <p v-if="eckenAktiv" class="tb-warum">
+            Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper.
+          </p>
+        </section>
         <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
           <h4 class="tb-kopf" :title="g.warum">{{ g.titel }}</h4>
           <div class="tb-liste">
@@ -296,6 +314,7 @@ import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { hatHoehenbezug, nnAusWelt } from '../services/Hoehenbezug.js';
 import { formatGefaelle } from '../services/AxisAnnotations.js';
+import { hatErdbauEcken } from '../services/Griffe.js';
 import IfcSemanticWindow from './IfcSemanticWindow.vue';
 
 const bearbeitung = useBearbeitung();
@@ -447,6 +466,15 @@ function werkzeug(id, vorschlag = null) {
   return vorschlag ? bearbeitung.starteMitVorschlag(id, vorschlag) : bearbeitung.starte(id);
 }
 function kur(befund) { return werkzeug(befund.kur.bearbeitung, befund.kur.werte ?? {}); }
+
+/** „Ecken ziehen" (Teil XXII): nur an Erdkörpern mit Ecken, nur über diesen Knopf. */
+const eckenMoeglich = computed(() => hatErdbauEcken(bearbeitung.bauteil?.stand?.bauplan));
+const eckenAktiv = computed(() => !!bearbeitung.eckenFuer && bearbeitung.eckenFuer === bearbeitung.bauteil?.globalId);
+function eckenZiehen() {
+  rueckmeldung.value = '';
+  const ok = api.eckenZiehen?.() ?? bearbeitung.eckenStarten(bearbeitung.bauteil?.globalId);
+  if (!ok) rueckmeldung.value = bearbeitung.letzterGrund || 'Ecken ziehen liess sich gerade nicht starten.';
+}
 function auslegen() { return werkzeug('bauform-auslegen', { bauform: herleitung.value.bauform }); }
 
 // ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────

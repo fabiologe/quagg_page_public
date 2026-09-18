@@ -350,7 +350,7 @@
           <button
             v-if="anyHidden"
             class="show-all-btn"
-            :class="{ hochgerueckt: messen.aktiv.value || annotationActive || !!bearbeitung.scharf }"
+            :class="{ hochgerueckt: messen.aktiv.value || annotationActive || !!bearbeitung.scharf || !!bearbeitung.eckenFuer }"
             title="Alle wieder einblenden"
             @click="onShowAll"
           >
@@ -365,12 +365,12 @@
              gerade". Auf dem Tablet gibt es weder Hover noch Esc. -->
         <Transition name="fade">
           <CdeKontextleiste
-            v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung"
+            v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung || bearbeitung.eckenFuer"
             :tipp="tippWerkzeug"
             :chips="vorschau.stand.value?.chips ?? []"
             :rueckmeldung="rueckmeldung"
             :motor="eingabe"
-            @fertig="messen.aktiv.value ? messen.beenden() : annotationen.umschalten()"
+            @fertig="messen.aktiv.value ? messen.beenden() : annotationActive ? annotationen.umschalten() : bearbeitung.eckenBeenden()"
             @uebernehmen="uebernehmen"
             @geste="(feld) => eingabe.starteGeste(feld)"
             @geste-ab="eingabe.brichGesteAb()"
@@ -492,7 +492,8 @@ import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
-import { erdbauStandVon, istAnzeigeform, teileVon } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform } from '../services/Bauteilrezepte.js';
+import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
@@ -931,6 +932,11 @@ function uebernehmen() {
 const tippWerkzeug = computed(() => {
   if (messen.aktiv.value) return { icon: 'measure', hinweis: messen.hinweis.value ?? 'Ersten Punkt antippen', titel: 'Messen beenden [M]' };
   if (annotationActive.value) return { icon: 'issues', hinweis: 'Ort für die Notiz antippen', titel: 'Notiz-Modus beenden' };
+  // „Ecken ziehen" (Teil XXII) — auch während eines Zugs: der kurz scharfe
+  // Knickpunkt-Griff soll kein Formular aufklappen.
+  if (bearbeitung.eckenFuer) {
+    return { icon: 'pointer', hinweis: 'Ecken ziehen — jede Ecke im Bild; die Linien fangen. Höhe am kleinen Griff daneben.', titel: 'Ecken ziehen beenden' };
+  }
   return null;
 });
 
@@ -1238,18 +1244,6 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId,
                                                                { historie: aenderungen.historischerStand('erzeugt') }) };
     }
-    // DIE TEILE SEINES EIGENEN VORGANGS (Teil XXI, P5): wer einen Knickpunkt
-    // zieht, schreibt die volle Operationsliste zurück — und dafür müssen die
-    // GlobalIds von Aushub UND Auftrag stehen bleiben. `erdbau.letzter` hilft
-    // nur beim jüngsten Vorgang; gezogen wird an dem, der gewählt ist.
-    {
-      const abl = angereichert.stand?.bauplan?.ableitung;
-      if (abl && !angereichert.vorgangTeile) {
-        const teile = teileVon(aenderungen.wirksamerStand('erzeugt'), abl);
-        if (teile.size) angereichert = { ...angereichert, vorgangTeile: Object.fromEntries(teile) };
-      }
-    }
-
     // DAS MODELL, AN DEM DIE BEARBEITUNG HÄNGT (Stufe 4, Lücke L6): der Commit
     // nannte bisher das ZUERST geladene Modell — ein Gerinne auf dem
     // Testgelände trug die sha des Kanalnetzes. Jetzt: die eigene Datei eines
@@ -1758,6 +1752,8 @@ provideViewerApi({
   },
   /** Kassensturz E4: Tafel „Bauteil“, Pille und Merkmale starten über den Viewer. */
   werkzeugStarten: (id, opts) => werkzeugStarten(id, opts),
+  /** Teil XXII: „Ecken ziehen" — die Eckgriffe des gewählten Erdkörpers, bis Fertig. */
+  eckenZiehen: () => bearbeitung.eckenStarten(bearbeitung.bauteil?.globalId ?? null, { einschalten: bearbeitenEin }),
   /** E8: Zeichnen startet im Raum — die Tafel „Bauteil“ ist sein Einstieg. */
   zeichnenStarten: (id, opts) => zeichnenStarten(id, opts),
   /** H3: die Tafel „Modelle“ — der eine Weg hinein, das × am Modell, die Ladeanzeige, die Teleport-Ziele. */
@@ -2076,6 +2072,14 @@ onMounted(async () => {
   _selection.onPick(result => {
     ifc.setElement(result);
     panels.open('bauteil');
+    // MEHRERE UNTER DEM ZEIGER (Teil XXII): gewählt ist das Bauteil vor dem
+    // Erdkörper vor dem Gelände — der Hinweis sagt, was der nächste Tipp an
+    // derselben Stelle wählt.
+    const a = result?.auswahl;
+    if (a?.von > 1 && !bearbeitung.scharf) {
+      const name = (i) => AUSWAHL_ARTNAME[a.arten[i]] ?? 'Bauteil';
+      _melderueck(`${name(a.nr - 1)} gewählt (${a.nr} von ${a.von}) — an derselben Stelle nochmal tippen: ${name(a.nr % a.von)}`, null);
+    }
     // Stufe 9.0: einordnen, damit das Kontextmenü weiß, was hier möglich ist.
     // Der Resolver wird JE AUSWAHL gebaut — er cached je Modell, und ein über
     // den Modellwechsel hinweg behaltener liefert Geometrie des alten Modells.
@@ -2697,6 +2701,9 @@ function onKeyDown(e) {
   // pointercancel — sonst schaltet `slotAus` nur das Werkzeug ab, der Zug
   // schriebe beim Loslassen trotzdem (Headless 2026-09-08).
   if (e.key === 'Escape' && _selection?.ziehtGerade?.()) { _selection.zugAbbrechen(); return; }
+  // „Ecken ziehen" ist kein Slot-Werkzeug (jeder Zug belegt den Slot kurz
+  // selbst) — Esc beendet es trotzdem, sobald kein Werkzeug läuft.
+  if (e.key === 'Escape' && bearbeitung.eckenFuer && !bearbeitung.werkzeug) { bearbeitung.eckenBeenden(); return; }
   if (e.key === 'Escape' && bearbeitung.werkzeug) {
     if (bearbeitung.werkzeug === 'schnitt') { schnitt.leisteAusblenden(); return; }
     // Stufenweise, wie im Lageplan: erst die Geste, dann das Werkzeug.

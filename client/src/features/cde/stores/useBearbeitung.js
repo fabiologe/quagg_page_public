@@ -265,6 +265,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      */
     async function einordne(el, resolver, { weitere = [] } = {}) {
         abbrechen();
+        // Dasselbe Bauteil neu eingeordnet (nach jedem Eckenzug) behält „Ecken
+        // ziehen"; ein anderes oder keins beendet es.
+        if (eckenFuer.value && eckenFuer.value !== el?.globalId) eckenFuer.value = null;
         bauteil.value = el ? { ...el, stand: _standVon(el.globalId) } : null;
         bauteile.value = el
             ? [bauteil.value, ...weitere.map(w => ({ ...w, stand: _standVon(w.globalId) }))]
@@ -376,9 +379,34 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const neu = !!an;
         if (neu === modusAn.value) return neu;
         modusAn.value = neu;
-        if (!neu) abbrechen();
+        if (!neu) { abbrechen(); eckenFuer.value = null; }
         return neu;
     }
+
+    /**
+     * „ECKEN ZIEHEN" (Teil XXII, Fabio 2026-09-18: „das Ziehen von Ecken
+     * sollte nur in der Bearbeitung — auch nur als Knopf — gehen, und dann an
+     * allen Ecken eines Körpers").
+     *
+     * Bis hierher standen die Eckgriffe eines Erdkörpers da, sobald er im
+     * Modus E gewählt war — ein Klick mit einem Zucken zog eine Ecke. Jetzt
+     * zeigt sie nur dieser Zustand, und nur für DIESES Bauteil. Er ist kein
+     * scharfes Werkzeug: jeder Zug läuft wie bisher über „Knickpunkt
+     * verschieben" (starten, ausführen, abbrechen), und der Modus überlebt
+     * das — bis Fertig, Esc, eine andere Auswahl oder Bearbeiten aus.
+     */
+    const eckenFuer = ref(null);
+    function eckenStarten(globalId = bauteil.value?.globalId ?? null, { einschalten = null } = {}) {
+        if (!globalId) return false;
+        if (!modusAn.value && !einschalten?.()) {
+            letzterGrund.value = 'Bearbeiten lässt sich gerade nicht einschalten.';
+            return false;
+        }
+        if (scharfId.value) abbrechen();
+        eckenFuer.value = globalId;
+        return true;
+    }
+    function eckenBeenden() { eckenFuer.value = null; }
     function modusUm() { return modusSetzen(!modusAn.value); }
 
     /**
@@ -724,6 +752,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         einordnung, bauteil, bauteile, profilSatz, regeln, scharfId, werte, laeuft, letzterGrund,
         typprofil, scharf, felder, fehler, bereit, moeglich, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
+        eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
         ladeProfile, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, abbrechen, ausfuehren,
         vorschlaege, ordneZu,

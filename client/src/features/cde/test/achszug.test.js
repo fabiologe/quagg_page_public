@@ -392,7 +392,8 @@ describe('Verklebung (Textwächter)', () => {
         const g = lies('composables/useGriffe.js');
         expect(g).toMatch(/const bereit = computed\(\(\) => !!bearbeitung\?\.modusAn\)/);
         // Mit scharfem Werkzeug bleiben GENAU die Griffe, die es bedienen — am gewählten Bauteil.
-        expect(g).toMatch(/alle\.filter\(g => g\.werkzeug === scharf && \(!gid \|\| g\.globalId === gid\)\)/);
+        // Seit Teil XXII vorher gesiebt (`sichtbar`: Eckgriffe nur mit „Ecken ziehen").
+        expect(g).toMatch(/sichtbar\.filter\(g => g\.werkzeug === scharf && \(!gid \|\| g\.globalId === gid\)\)/);
         expect(g).toMatch(/if \(zug\.value\) return;\s*\/\/ mitten im Zug nicht umbauen/);
     });
     it('Schacht verschieben und Verschieben teilen sich die Anschluss-Logik', () => {

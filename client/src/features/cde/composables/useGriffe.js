@@ -30,9 +30,13 @@
 
 import { computed, ref, watch } from 'vue';
 import { begrenze, griffZuWerten, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
-import { fanglinienFuer, fange } from '../services/Fanglinien.js';
+import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { ACHSEN, RASTER_M, achsPassung, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, waehleAchse, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
+
+/** Formt dieses Rezept das Gelände (ein Erdkörper)? */
+const erdbauRezept = (id) => !!(id && rezeptNach(id)?.erdbau);
 
 /** Länge der Führungslinien beim Achszug (m je Seite). */
 const ACHSLINIE_M = 120;
@@ -108,9 +112,20 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // gewählten Bauteil (ein Bild, eine Kugel; 27 Schachtkugeln wären wieder
         // das Durcheinander).
         const gid = bearbeitung?.bauteil?.globalId ?? null;
+        // ECKEN NUR AUF KNOPFDRUCK (Teil XXII, Fabio 2026-09-18): die Eckgriffe
+        // eines Erdkörpers stehen nur, solange „Ecken ziehen" für GENAU dieses
+        // Bauteil läuft — dann aber alle, und nichts anderes daneben. Und ein
+        // Erdkörper hat keinen Bauteil-Griff am Klickpunkt: ein Zucken beim
+        // Wählen verschob sonst den ganzen Vorgang (Verschieben bleibt als
+        // Werkzeug in der Tafel).
+        const ecken = bearbeitung?.eckenFuer ?? null;
+        const erdkoerper = erdbauRezept(subjekt?.stand?.bauplan?.rezept);
+        const sichtbar = ecken
+            ? alle.filter(g => g.ecken && g.globalId === ecken)
+            : alle.filter(g => !g.ecken && !(erdkoerper && g.art === 'bauteil' && g.globalId === subjekt?.globalId));
         griffe.value = scharf
-            ? alle.filter(g => g.werkzeug === scharf && (!gid || g.globalId === gid))
-            : alle;
+            ? sichtbar.filter(g => g.werkzeug === scharf && (!gid || g.globalId === gid))
+            : sichtbar;
         const f = (farben ?? tokenFarben)();
         e.zeigeGriffe?.(griffe.value, { radius: 'auto', farbe: f.accent, farbeForderung: f.warn,
                                         farbeEntfernen: f.danger, farbeEinfuegen: f.ok });
@@ -132,7 +147,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // Tipp-Griffe am Stand von vorher stehen (der Journal-Zähler feuert zu
     // früh: da ist das frische Subjekt noch nicht da).
     watch(() => [bearbeitung?.modusAn, bearbeitung?.scharfId, getSubjekt?.()?.globalId, getBauform?.(), aenderungen?.anzahl,
-                 getSubjekt?.()?.stand?.bauplan], () => neuBauen());
+                 getSubjekt?.()?.stand?.bauplan, bearbeitung?.eckenFuer], () => neuBauen());
 
     // ── Greifen ────────────────────────────────────────────────────────────
 
@@ -237,6 +252,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             const nachbarn = griffe.value.filter(x => x.art === 'schacht' && x.globalId !== g.globalId)
                 .map(x => ({ globalId: x.globalId, name: x.name, ...zuProjekt(x.pos) }));
             linien = fanglinienFuer({ ausgang: zuProjekt(g.pos), anschluesse, nachbarn });
+        } else if (g.ecken && g.achsen === 'XZ' && Array.isArray(g.ring)) {
+            // FÜHRUNGSLINIEN EINER ECKE (Teil XXII): in Welt (Ost = x,
+            // Nord = −z, ohne Ladeversatz) — gefangen wird wie am Schacht.
+            versatz = { x: 0, y: 0, z: 0 };
+            linien = eckFanglinien(g.ring, g.index, { geschlossen: g.geschlossen });
         }
         zug.value = { griff: g, achsen, ebene, start, pos: { ...g.pos }, bewegt: false, linien, aktiv: [], versatz, fang: null,
                       schirm, startPx, meterJePixel,
@@ -301,7 +321,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         let pos = { x: z.griff.pos.x + d.x, y: z.griff.pos.y + d.y, z: z.griff.pos.z + d.z };
         z.aktiv = [];
         z.fang = null;
-        if (z.griff.art === 'schacht' && z.linien.length) {
+        if (z.linien.length && (z.griff.art === 'schacht' || z.griff.ecken)) {
             // Fanglinien schlagen das Raster (wie im Plan) — das Raster ist die schwächste Stufe.
             const v = z.versatz;
             const r = fange({ punkt: { ost: pos.x + v.x, nord: -(pos.z + v.z) }, linien: z.linien, radius: FANG_RADIUS_M, raster: 0,
@@ -327,6 +347,17 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         e.zeigeZugbild?.({ pos: z.pos, boden: Number.isFinite(boden) ? boden : null, farbe: f.accent });
         // Die aktiven Fanglinien als lange gestrichelte Züge auf Griffhöhe.
         const linien = [];
+        if (z.versatz && z.griff.ecken) {
+            // Die anliegenden Kanten in ihrer Richtung — blass, immer: wohin
+            // die Ecke gleitet, ohne dass eine Kante sich dreht (Teil XXII).
+            for (const l of z.linien) {
+                if (l.art !== 'kante' || z.aktiv.includes(l)) continue;
+                const W = 60;
+                linien.push({ art: 'linie', gestrichelt: true, farbe: f.accent,
+                              punkte: [{ x: l.punkt.ost - l.richtung.ost * W, y: z.pos.y, z: -(l.punkt.nord - l.richtung.nord * W) },
+                                       { x: l.punkt.ost + l.richtung.ost * W, y: z.pos.y, z: -(l.punkt.nord + l.richtung.nord * W) }] });
+            }
+        }
         if (z.versatz) {
             const v = z.versatz;
             for (const l of z.aktiv) {
@@ -348,6 +379,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         else if (z.achsen === 'Y') teile.push(zugText(d, 'hoehe', { felder: ['hoehe'] }));
         else teile.push(zugText(d, null, { felder: ['ost', 'nord'] }));
         if (z.fang) teile.push(`→ ${z.fang}`);
+        // Die beiden Kanten an der gezogenen Ecke — die Masse, nach denen man zieht.
+        if (z.griff.ecken && z.achsen === 'XZ') {
+            const k = kantenAnEcke(z.griff.ring, z.griff.index, z.pos, { geschlossen: z.griff.geschlossen });
+            if (k.length) teile.push(k.map(m => `${m.toFixed(2).replace('.', ',')} m`).join(' | '));
+        }
         if (z.griff.forderung) teile.push('Forderung');
         pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: teile.join(' · ') } : null;
     }

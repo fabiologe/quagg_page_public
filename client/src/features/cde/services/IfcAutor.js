@@ -45,7 +45,7 @@ import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
 import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
-import { verdraengteAnzeigen } from './ableitung/Bezuege.js';
+import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
@@ -746,6 +746,10 @@ export class IfcAutor {
                 // Ein Raster ist eine OFFENE Fläche; ein Körper sagt es selbst
                 // (das meshVolume-Attest aus dem Kernel), statt dass wir raten.
                 geschlossen: r.teil?.form === 'raster' ? false : (r.teil?.daten?.closed ?? null),
+                // Die KANTEN der Geländeanzeige (Teil XXII): die der Lieferung
+                // und des Rasters — nicht die Schnittlinien, an denen die
+                // Anzeige die Lieferung zuschneidet.
+                kanten: r.teil?.anzeigeNetz?.kanten ?? null,
             };
         }
         const gebaut = rezept?.braucht === 'quellraster'
@@ -786,10 +790,14 @@ export class IfcAutor {
      */
     async eigenbauGeometrien(schritte, { verdeckt = new Set(), historie = null } = {}) {
         const lauf = this._neuerLauf(schritte, historie);
-        const bauteile = [], misserfolge = [], leer = [], verborgen = [], anzeigeformen = [];
+        const bauteile = [], misserfolge = [], leer = [], verborgen = [], anzeigeformen = [], ueberholt = [];
         const titel = vorgangstitelAus(schritte);
+        // Ein überholtes Teil (Teil XXII, B1) wäre ein zweiter IfcEarthworksFill
+        // desselben Vorgangs mit altem Umriss — nicht ins Paket.
+        const ueberholtVon = ueberholteTeile(new Map((schritte ?? []).map(s => [s.globalId, s.wert])));
         for (const schritt of schritte ?? []) {
             if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
+            if (ueberholtVon.has(schritt.globalId)) { ueberholt.push(schritt.globalId); continue; }
             if (istAnzeigeform(schritt.wert)) { anzeigeformen.push(schritt.globalId); continue; }
             const g = await this._baueSchritt(lauf, schritt);
             if (g.leer) { leer.push(schritt.globalId); continue; }
@@ -846,7 +854,7 @@ export class IfcAutor {
                 kanten.push({ ableitung: id, art: k.art, geschlossen: !!k.geschlossen, punkte: k.punkte });
             }
         }
-        return { bauteile, kanten, misserfolge, leer, verborgen, anzeigeformen };
+        return { bauteile, kanten, misserfolge, leer, verborgen, anzeigeformen, ueberholt };
     }
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
@@ -858,8 +866,8 @@ export class IfcAutor {
         const misserfolge = [];
         await this.verwirfEigenesModell(modelId);
         if (!schritte?.length) {
-            this.ableitungen = new Map(); this.leer = new Set(); this.erdkoerper = new Map();
-            return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [] };
+            this.ableitungen = new Map(); this.leer = new Set(); this.erdkoerper = new Map(); this.anzeigeKanten = new Map();
+            return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [], ueberholt: [] };
         }
 
         const angelegt = await this.eigenesModell(modelId);
@@ -878,10 +886,16 @@ export class IfcAutor {
         // neben der wirksamen im Raum. Sie wird nicht gebaut — und genannt.
         const verdraengtVon = verdraengteAnzeigen(new Map(schritte.map(s => [s.globalId, s.wert])), { rezeptNach, historie });
         const verdraengt = [];
+        // ÜBERHOLTE TEILE (Teil XXII, B1): mehrere Kennungen derselben Rolle
+        // einer Ableitung — Altlast des Eckenzugs vor dem 2026-09-18. Jede
+        // hätte einen Körper bekommen, gestapelt im Raum. Es gilt die jüngste.
+        const ueberholtVon = ueberholteTeile(new Map(schritte.map(s => [s.globalId, s.wert])));
+        const ueberholt = [];
         const zuErzeugen = [];
 
         for (const schritt of schritte) {
             if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
+            if (ueberholtVon.has(schritt.globalId)) { ueberholt.push(schritt.globalId); continue; }
             // VERBORGEN, nicht gebaut (G6): ein eigenes DGM, das Quelle eines
             // Kanalgrabens wurde, bleibt im Stand — der Lauf löst seine Form
             // auf, sobald der Graben sie braucht —, kommt aber nicht in den
@@ -899,7 +913,7 @@ export class IfcAutor {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
-            zuErzeugen.push({ schritt, bauteil: {
+            zuErzeugen.push({ schritt, kanten: gebaut.kanten ?? null, bauteil: {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
                 predefinedType: gebaut.predefinedType ?? null,
                 // Die im Journal vergebene Kennung mitgeben — dann findet auch
@@ -908,12 +922,20 @@ export class IfcAutor {
                 globalId: schritt.globalId,
             } });
         }
+        if (ueberholt.length) {
+            console.info(`[CDE] ${ueberholt.length} überholte Teile nicht gebaut (ältere Kennung derselben Rolle): ${ueberholt.join(', ')}`);
+        }
         // Alle Teile in EINEM Auftrag — ein Delta statt eines je Teil (`erzeugeAlle`).
         const ergebnisse = await this.erzeugeAlle(modelId, zuErzeugen.map(z => z.bauteil));
+        // localId → Kanten der Geländeanzeige; `GelaendeKanten` zeichnet sie
+        // statt der Dreiecksränder (Teil XXII).
+        this.anzeigeKanten = new Map();
         ergebnisse.forEach((r, i) => {
-            const { schritt } = zuErzeugen[i];
-            if (r.ok) karte.set(schritt.globalId, r.localId);
-            else misserfolge.push({ ...schritt, grund: r.grund });
+            const { schritt, kanten } = zuErzeugen[i];
+            if (r.ok) {
+                karte.set(schritt.globalId, r.localId);
+                if (kanten?.length) this.anzeigeKanten.set(r.localId, kanten);
+            } else misserfolge.push({ ...schritt, grund: r.grund });
         });
         this.ableitungen = lauf.ableitungen;
         // Leer ist kein Fehlschlag (der Auftrag eines reinen Aushubs) — die Struktur
@@ -935,7 +957,7 @@ export class IfcAutor {
             });
         }
         await this._neuZeichnen();
-        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt };
+        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt, ueberholt };
     }
 
     /**

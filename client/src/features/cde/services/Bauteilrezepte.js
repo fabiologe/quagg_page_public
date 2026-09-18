@@ -798,6 +798,9 @@ export function geometrieAusTeil(teil, { absenkung = 0 } = {}) {
         return dreiecksGeometrie(absenkung ? _abgesenkt(positions, absenkung) : positions);
     };
     if (teil.form === 'raster') {
+        // Die Geländeanzeige als Lieferung mit Aussparung (Teil XXII) — das
+        // Raster steht daneben für Leser, die ein Raster brauchen.
+        if (teil.anzeigeNetz?.triCount) return fertig(teil.anzeigeNetz.positions, teil.anzeigeNetz.triCount);
         // Feine Flicken (Teil XX): die Anzeige wird dort fein, wo Operationen wirken.
         const { positions, triCount } = teil.flicken?.length
             ? dreieckeMitFlicken(teil.daten, teil.flicken)

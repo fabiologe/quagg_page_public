@@ -41,6 +41,7 @@
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { achsenErlaubt } from './Achszug.js';
 import { ERDBAU_PUNKTHOEHEN } from './ableitung/Ableitungen.js';
+import { innenEcken, innenringName } from './gelaende/Innenecken.js';
 
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
@@ -59,6 +60,17 @@ const erdbauRezepte = new Set(['erdbau', 'kanalgraben', 'bauwerksgrube']);
 const RING_REZEPTE = new Set(['flaeche']);
 /** Ein Bauteil mit weniger Punkten als hier lässt sich nicht mehr sinnvoll drehen. */
 const DREH_MINDEST_PUNKTE = 2;
+
+/**
+ * Hat dieser Bauplan Ecken, die „Ecken ziehen" zeigen kann (Teil XXII)? Ein
+ * Erdbau-Vorgang mit mindestens einer Punktliste; Kanalgraben und
+ * Bauwerksgrube folgen ihrer Haltung bzw. ihrem Bauwerk und haben keine.
+ */
+export function hatErdbauEcken(bauplan) {
+    if (!bauplan || !erdbauRezepte.has(bauplan.rezept)) return false;
+    return (bauplan.parameter?.operationen ?? []).some(op => (ERDBAU_PUNKTHOEHEN[op?.art] ?? [])
+        .some(f => Array.isArray(op?.parameter?.[f]) && op.parameter[f].length >= 2));
+}
 
 /**
  * @param {object} q
@@ -199,35 +211,53 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     // (`umriss`, `linie`, `stationen`), und ihre Höhen stehen dort in m NN.
     // Deshalb ein eigener Zweig: derselbe Griff, dieselben Achsen, dasselbe
     // Muster mit Höhengriff daneben — nur eine andere Fundstelle.
+    //
+    // ALLE ECKEN (Teil XXII, Fabio 2026-09-18: „dann an allen Ecken eines
+    // Körpers"): auch die inneren — die Sohlkante einer Grube, die Krone einer
+    // Schüttung. Sie stehen nicht im Journal, sie FOLGEN aus Umriss, Neigung
+    // und Sohle (`Innenecken.js`); ein Zug an ihnen verschiebt die äussere
+    // Ecke so, dass die innere am Ziel liegt, und ihr Höhengriff setzt die
+    // Sohle (Krone) für den ganzen Körper.
+    //
+    // Jeder dieser Griffe trägt `ecken: true` — gezeigt werden sie nur, wenn
+    // „Ecken ziehen" für dieses Bauteil läuft (`bearbeitung.eckenFuer`), und
+    // `ring` (seine Nachbarn in Zeichenreihenfolge) für die Führungslinien.
     if (eigen && bauplan && Array.isArray(bauplan.parameter?.operationen) && erdbauRezepte.has(bauplan.rezept)) {
         const gid = subjekt.globalId;
         const versatz = subjekt.hoehenversatz ?? 0;
+        const FELDER = ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'];
+        const eckpaar = ({ key, pos, werte, index, op, feld, ring, geschlossen, titel }) => {
+            const basis = { globalId: gid, name: subjekt.name ?? '', herkunft: 'cde', art: 'stuetzpunkt', index, op, feld,
+                            werkzeug: 'erdbau-stuetzpunkt-verschieben', felder: FELDER, werte, ecken: true, ring, geschlossen, titel };
+            aus.push({ ...basis, key, pos, achsen: 'XZ', alternativ: 'Y' });
+            // Der Höhengriff — der Ersatz für die Shift-Taste, die es
+            // auf dem Tablet nicht gibt (Tablet-Regel, siehe Kopf).
+            aus.push({ ...basis, key: key.replace(/^erdbau-(stuetz|innen):/, 'erdbau-$1-hoch:'), pos, achsen: 'Y', rolle: 'hoehe',
+                       zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 } });
+        };
         bauplan.parameter.operationen.forEach((op, j) => {
             for (const feld of (ERDBAU_PUNKTHOEHEN[op?.art] ?? [])) {
                 const liste = op?.parameter?.[feld];
                 if (!Array.isArray(liste) || liste.length < 2) continue;
+                const geschlossen = feld === 'umriss';
+                const ring = liste.map(p => ({ x: Number(p?.x), z: Number(p?.z) }));
                 liste.forEach((p, k) => {
                     const x = Number(p?.x), z = Number(p?.z), nn = Number(p?.y);
                     if (![x, z, nn].every(Number.isFinite)) return;
-                    const pos = { x, y: weltAusNn(nn, versatz), z };
-                    const key = `erdbau-stuetz:${gid}:${j}:${feld}:${k}`;
-                    const werte = { op: j, feld, index: k };
-                    aus.push({
-                        key, globalId: gid, name: subjekt.name ?? '',
-                        herkunft: 'cde', art: 'stuetzpunkt', index: k, op: j, feld,
-                        pos, achsen: 'XZ', alternativ: 'Y',
-                        werkzeug: 'erdbau-stuetzpunkt-verschieben',
-                        felder: ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'], werte,
-                    });
-                    // Der Höhengriff — der Ersatz für die Shift-Taste, die es
-                    // auf dem Tablet nicht gibt (Tablet-Regel, siehe Kopf).
-                    aus.push({
-                        key: `erdbau-stuetz-hoch:${gid}:${j}:${feld}:${k}`, globalId: gid, name: subjekt.name ?? '',
-                        herkunft: 'cde', art: 'stuetzpunkt', index: k, op: j, feld,
-                        pos, achsen: 'Y', rolle: 'hoehe', zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 },
-                        werkzeug: 'erdbau-stuetzpunkt-verschieben',
-                        felder: ['op', 'feld', 'index', 'ost', 'nord', 'hoehe'], werte,
-                    });
+                    eckpaar({ key: `erdbau-stuetz:${gid}:${j}:${feld}:${k}`, pos: { x, y: weltAusNn(nn, versatz), z },
+                              werte: { op: j, feld, index: k }, index: k, op: j, feld, ring, geschlossen,
+                              titel: `Ecke ${k + 1}` });
+                });
+            }
+            // Die inneren Ecken: Sohle (Grube) bzw. Krone (Schüttung bis Höhe).
+            const innen = innenEcken(op);
+            if (innen && innen.every(Boolean)) {
+                const ring = innen.map(e => ({ x: e.x, z: e.z }));
+                const name = innenringName(op);
+                innen.forEach((e, k) => {
+                    eckpaar({ key: `erdbau-innen:${gid}:${j}:umriss:${k}`, pos: { x: e.x, y: weltAusNn(e.y, versatz), z: e.z },
+                              werte: { op: j, feld: 'umriss', index: k, bezug: 'innen' }, index: k, op: j, feld: 'umriss',
+                              ring, geschlossen: true, titel: `${name} ${k + 1}` });
                 });
             }
         });

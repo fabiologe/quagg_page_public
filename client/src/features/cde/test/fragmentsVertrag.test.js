@@ -212,7 +212,9 @@ describe('Zeiger, Fang und Rahmen (Teil XVI, S1) — was die Engine am Modell ru
     // `probeTreffer` raycastet wahlweise gegen EIN Modell, `_bibliotheksFang`
     // fragt `raycastWithSnapping`, `rechteckAuswahl` `rectangleRaycast` — alle
     // drei am `FragmentsModel`, nicht am OBC-Manager (der kennt nur `raycast`).
-    for (const m of ['raycast', 'raycastWithSnapping', 'rectangleRaycast']) {
+    // `raycastAll` (Teil XXII): die Auswahl braucht JEDEN Treffer des
+    // Mittelstrahls — der Erdkörper liegt 2 cm unter der deckenden Anzeige.
+    for (const m of ['raycast', 'raycastWithSnapping', 'rectangleRaycast', 'raycastAll']) {
         it(`FragmentsModel.${m}`, () => expect(fuehrt(MODELL, m)).toBe(true));
     }
 

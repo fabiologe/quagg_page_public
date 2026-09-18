@@ -88,6 +88,16 @@ export function kantenAusNetz({ positions, triCount } = {}, { lift = 0 } = {}) {
     return aus;
 }
 
+/** Fertige Strecken (6 Werte je Strecke), um `lift` nach oben versetzt — als Float32. */
+export function gehobeneStrecken(strecken, lift = 0) {
+    const n = Math.floor((strecken?.length ?? 0) / 6) * 6;
+    const aus = new Float32Array(n);
+    for (let i = 0; i < n; i += 3) {
+        aus[i] = strecken[i]; aus[i + 1] = strecken[i + 1] + lift; aus[i + 2] = strecken[i + 2];
+    }
+    return aus;
+}
+
 /** Je Punkt die Länge SEINER Strecke (m) — der Shader rechnet sie in Bildpunkte um. */
 export function laengenAus(kanten) {
     const n = Math.floor((kanten?.length ?? 0) / 6);
@@ -309,7 +319,10 @@ export class GelaendeKanten {
                 continue;
             }
             const lift = liftFuer(netz);
-            const strecken = kantenAusNetz(netz, { lift });
+            // Bringt das Netz seine Kanten mit (die Geländeanzeige der CDE,
+            // Teil XXII), gelten die — sonst zeigte das Netz die Schnittlinien,
+            // an denen die Anzeige die Lieferung zuschneidet.
+            const strecken = netz.strecken?.length ? gehobeneStrecken(netz.strecken, lift) : kantenAusNetz(netz, { lift });
             const geo = new THREE.BufferGeometry();
             geo.setAttribute('position', new THREE.BufferAttribute(strecken, 3));
             geo.setAttribute('laenge', new THREE.BufferAttribute(laengenAus(strecken), 1));

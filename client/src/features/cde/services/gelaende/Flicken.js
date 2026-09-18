@@ -36,6 +36,12 @@ function _zellbox(grob, b) {
     return (ix1 > ix0 && iz1 > iz0) ? { ix0, ix1, iz0, iz1 } : null;
 }
 
+/** Eine Zellbox um `n` grobe Zellen weiter — innerhalb des Rasters. */
+function _geweitet(z, grob, n) {
+    return { ix0: Math.max(0, z.ix0 - n), ix1: Math.min(grob.nx - 1, z.ix1 + n),
+             iz0: Math.max(0, z.iz0 - n), iz1: Math.min(grob.nz - 1, z.iz1 + n) };
+}
+
 const _beruehren = (a, b) => a.ix0 <= b.ix1 && b.ix0 <= a.ix1 && a.iz0 <= b.iz1 && b.iz0 <= a.iz1;
 
 /** Boxen, die sich berühren oder überlappen, verschmelzen — ein Flicken je Gebiet. */
@@ -73,9 +79,13 @@ function _randAuf(fein, grob) {
  * @param {object} opt    {zelle, budget} — die Zahlen der Massen (`ERDBAU_ZELLE`,
  *   `ERDBAU_ZELLBUDGET`) — und `feinesUr(bereich, cell) → Promise<raster|null>`:
  *   das Ur-Gelände aus DERSELBEN Quelle wie der Korridor der Erdkörper.
- * @returns {Promise<{flicken: Array<{box, raster}>, zelle: number|null, warnungen: string[]}>}
+ *   `randAufGrob` (Vorgabe true): den Flickenrand auf die grobe Anzeige
+ *   zwingen — nur, wenn die grobe Anzeige daneben liegt. `rand`: die Kästen
+ *   um so viele grobe Zellen weiten (die Aussparung der Netzanzeige weitet
+ *   um eine Zelle und darf dabei nicht aus dem Flicken fallen).
+ * @returns {Promise<{flicken: Array<{box, raster, ur, urAusQuelle}>, zelle: number|null, warnungen: string[]}>}
  */
-export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feinesUr = null } = {}) {
+export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feinesUr = null, randAufGrob = true, rand = 0 } = {}) {
     const leer = (warnungen = []) => ({ flicken: [], zelle: null, warnungen });
     if (!ur || !stand || !ops?.length || !(zelle > 0) || !(budget > 0)) return leer();
     // DIESELBE FEINHEITSREGEL WIE DER KORRIDOR (Teil XXI): `feinheitFuer`
@@ -90,7 +100,7 @@ export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feine
     for (const op of ops) {
         const b = wirkbereichVon(ur, op?.art, op?.parameter ?? {});
         const z = b ? _zellbox(ur, b) : null;
-        if (z) boxen.push(z);
+        if (z) boxen.push(rand > 0 ? _geweitet(z, ur, rand) : z);
     }
     const kasten = _verschmolzen(boxen);
     if (!kasten.length) return leer();
@@ -104,8 +114,15 @@ export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feine
         const fein = ausQuelle ?? flickenRaster(ur, box, k);
         // Warnungen der Faltung meldet schon die grobe Anzeige (dieselben Operationen).
         const { raster } = formeNach(fein, ops, { ur: fein });
-        _randAuf(raster, stand);
-        flicken.push({ box, raster });
+        // Der Rand gehört der groben Anzeige — aber nur, wenn die daneben
+        // liegt. Zeigt die Anzeige die LIEFERUNG (Teil XXII, `Anzeigenetz`),
+        // wäre der gezwungene Rand ein Absatz von bis zu 13 cm mitten im
+        // unberührten Gelände (gemessen am Testgelände R02).
+        if (randAufGrob) _randAuf(raster, stand);
+        // `ur` und `urAusQuelle`: die Aussparung vergleicht geformt gegen Ur
+        // auf DEMSELBEN Gitter, und die Naht zur Lieferung passt nur, wenn
+        // dieses Ur aus der Lieferung abgetastet ist.
+        flicken.push({ box, raster, ur: fein, urAusQuelle: !!ausQuelle });
     }
     return { flicken, zelle: ur.cell / k, warnungen };
 }

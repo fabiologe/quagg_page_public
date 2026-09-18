@@ -22,6 +22,7 @@ import { IfcSection } from './IfcSection.js';
 import { IfcStoreys } from './IfcStoreys.js';
 import { createGeometryResolver } from './geometry/GeometryResolver.js';
 import { IfcAutor, CDE_MODELL_ID } from './IfcAutor.js';
+import { DURCHTIPP_PX, rangiereTreffer, waehleKandidat } from './Auswahlrang.js';
 import { erzeugeKernel } from './geometrie/Kernel.js';
 import { erzeugeWorkerBackend } from './geometrie/KernelWorker.js';
 import { erzeugeServerBackend } from './geometrie/KernelServer.js';
@@ -1105,33 +1106,26 @@ export class IfcEngine {
     async pickElement(clientX, clientY, { orbit = true } = {}) {
         const world = this._getWorld();
         if (!world) return null;
-
         const fragments = this.components.get(OBC.FragmentsManager);
-        const canvas    = world.renderer.three.domElement;
 
-        const results = await Promise.all(
-            PICK_OFFSETS.map(([dx, dy]) => fragments.raycast({
-                camera: world.camera.three,
-                mouse:  new THREE.Vector2(clientX + dx, clientY + dy),
-                dom:    canvas,
-            }))
-        );
-
-        // Ein verborgenes Modell wird nicht getroffen (Abnahme 2026-09-12): es
-        // ist nur aus der Szene genommen, der Worker kennt es weiter.
-        const best = results
-            .filter(r => r && this.modellSichtbar(r.fragments?.modelId))
-            .reduce((min, r) => (!min || r.distance < min.distance) ? r : min, null);
-
-        if (!best) return null;
+        // WAS DER KLICK MEINT (Teil XXII): alle Kandidaten, nach Art und Nähe
+        // geordnet — Bauteil vor Erdkörper vor Gelände (`Auswahlrang.js`).
+        const kandidaten = await this._pickKandidaten(clientX, clientY);
+        if (!kandidaten.length) { this._letzterPick = null; return null; }
+        // NOCHMAL AN DERSELBEN STELLE → der nächste Kandidat. Ohne Taste, damit
+        // es auch der Finger kann (Tablet-Rezept, Regel 2).
+        const l = this._letzterPick;
+        const wiederholt = !!l && Math.hypot(clientX - l.x, clientY - l.y) <= DURCHTIPP_PX;
+        const { kandidat: best, nr } = waehleKandidat(kandidaten, { gewaehlt: this._selectedKey, wiederholt });
+        this._letzterPick = { x: clientX, y: clientY };
+        const auswahl = { nr, von: kandidaten.length, arten: kandidaten.map(k => k.art) };
 
         const { localId } = best;
-        // Ein Treffer auf dem Delta-Modell (verschobenes Bauteil) gehört der Basis.
-        const fmodel = this._basisModell(best.fragments);
-        const key   = `${fmodel.modelId}:${localId}`;
+        const fmodel = best.fmodel;
+        const key   = best.key;
         const point = best.point ? { x: best.point.x, y: best.point.y, z: best.point.z } : null;
         if (this._selectedKey && this._selectedKey === key) {
-            return { gleich: true, key, modelId: fmodel.modelId, localId, point };
+            return { gleich: true, key, modelId: fmodel.modelId, localId, point, auswahl };
         }
 
         if (this._selectedItems) {
@@ -1167,7 +1161,60 @@ export class IfcEngine {
             modelId: fmodel.modelId,
             localId,
             point,
+            auswahl,
         };
+    }
+
+    /**
+     * Alle Treffer eines Klicks, geordnet (Teil XXII). Der MITTELSTRAHL nimmt
+     * jeden Treffer je Modell (`raycastAll`) — nur so findet er den Erdkörper
+     * zwei Zentimeter unter der deckenden Geländeanzeige; die Randstrahlen
+     * bleiben beim nächsten (sie sind für dünne Bauteile da).
+     * @returns {Promise<Array>} Kandidaten mit key, fmodel, localId, point, distance, art
+     */
+    async _pickKandidaten(clientX, clientY) {
+        const world = this._getWorld();
+        const fragments = this.components.get(OBC.FragmentsManager);
+        const canvas = world.renderer.three.domElement;
+        const strahl = (dx, dy) => ({ camera: world.camera.three, mouse: new THREE.Vector2(clientX + dx, clientY + dy), dom: canvas });
+        const [mitte, ...rand] = await Promise.all([
+            (async () => {
+                const aus = [];
+                for (const model of fragments.list?.values?.() ?? []) {
+                    let r = null;
+                    try { r = typeof model.raycastAll === 'function' ? await model.raycastAll(strahl(0, 0)) : null; }
+                    catch { r = null; }
+                    // `raycastAll` trägt das Modell nicht immer am Treffer — hier schon.
+                    for (const t of r ?? []) aus.push({ ...t, fragments: t.fragments ?? model });
+                }
+                // Ohne `raycastAll` (ältere Bibliothek, Attrappe): der nächste Treffer.
+                if (!aus.length) {
+                    const t = await fragments.raycast(strahl(0, 0));
+                    if (t) aus.push(t);
+                }
+                return aus;
+            })(),
+            ...PICK_OFFSETS.slice(1).map(([dx, dy]) => fragments.raycast(strahl(dx, dy))),
+        ]);
+        // Ein verborgenes Modell wird nicht getroffen (Abnahme 2026-09-12): es
+        // ist nur aus der Szene genommen, der Worker kennt es weiter.
+        const treffer = [...mitte.map(t => [t, 0]), ...rand.map((t, i) => [t, i + 1])]
+            .filter(([t]) => t && this.modellSichtbar(t.fragments?.modelId))
+            .map(([t, i]) => {
+                // Ein Treffer auf dem Delta-Modell (verschobenes Bauteil) gehört der Basis.
+                const fmodel = this._basisModell(t.fragments);
+                return { key: `${fmodel.modelId}:${t.localId}`, fmodel, localId: t.localId,
+                         point: t.point ?? null, distance: t.distance, strahl: i };
+            });
+        if (!treffer.length) return [];
+        const gelaende = new Set();
+        try {
+            for (const o of (await this._gelaendeOrteHolen()) ?? []) gelaende.add(`${basisModelId(o.modelId)}:${o.localId}`);
+        } catch { /* ohne Geländeliste: alles ist Bauteil — wie vorher */ }
+        const erdkoerper = new Set([...(this.autor?.erdkoerper?.values?.() ?? [])]
+            .filter(k => k?.localId != null).map(k => `${CDE_MODELL_ID}:${k.localId}`));
+        return rangiereTreffer(treffer, (t) => (gelaende.has(t.key) ? 'gelaende'
+            : erdkoerper.has(t.key) ? 'erdkoerper' : 'bauteil'));
     }
 
     async clearSelection() {
@@ -2951,7 +2998,13 @@ export class IfcEngine {
             try { d = (await this.makeGeometryResolver()?.forElements([o])?.getForm('mesh'))?.data ?? null; } catch { d = null; }
             if ((this._gelaendeGeneration ?? 0) !== generation) return false;
             if (d?.positions?.length && d.triCount > 0) {
-                netze.set(`${basisModelId(o.modelId)}|${o.localId}`, { positions: d.positions, triCount: d.triCount });
+                // Die Geländeanzeige der CDE bringt ihre Kanten mit (Teil XXII):
+                // die der Lieferung und des geformten Rasters, nicht die
+                // Schnittlinien, an denen sie die Lieferung zuschneidet.
+                const strecken = basisModelId(o.modelId) === CDE_MODELL_ID
+                    ? (this.autor?.anzeigeKanten?.get(o.localId) ?? null) : null;
+                netze.set(`${basisModelId(o.modelId)}|${o.localId}`,
+                          { positions: d.positions, triCount: d.triCount, ...(strecken ? { strecken } : {}) });
             }
         }
         if ((this._gelaendeGeneration ?? 0) !== generation) return false;

@@ -312,6 +312,15 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                         cell, bereich, gitter: { x0: urRaster.x0, z0: urRaster.z0, cell: urRaster.cell },
                     }),
                     /**
+                     * DIE LIEFERUNG SELBST (Teil XXII): die Anzeige zeigt sie
+                     * Dreieck für Dreieck, wo kein Vorgang etwas ändert — das
+                     * Raster schnitt dort ihre Knicke ab (bis 48 cm, gemessen
+                     * am Testgelände R02). Dieselbe Quelle wie das Raster; ein
+                     * eigenes Raster-Gelände liefert kein Netz, dann bleibt
+                     * die Anzeige ein Raster.
+                     */
+                    urNetz: () => formVon(urGid, 'mesh'),
+                    /**
                      * DIE MASSEN JE VORGANG — für die Gesamtmasse der Anzeige
                      * (Teil XXI, P1b).
                      *
