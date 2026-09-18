@@ -53,7 +53,8 @@ describe('Ein EIGENER Schacht liefert einen Knoten — vorher gar keinen', () =>
     it('sein tiefster Punkt ist seine Sohle, und die steht als Unterkante da', () => {
         // Zwei Punkte: Sohle und Deckel — in beliebiger Reihenfolge gezeichnet.
         const k = REZEPTE.schacht.formAus({ punkte: [[5, 102, 7], [5, 98.5, 7]], dn: 1000, name: 'S9' }, 'knoten');
-        expect(k).toEqual({ x: 5, y: 98.5, z: 7, unterkante: 98.5, name: 'S9' });
+        // Seit A9 sagt die Form auch, was y ist, und wo der Deckel liegt.
+        expect(k).toEqual({ x: 5, y: 98.5, z: 7, unterkante: 98.5, oberkante: 102, hoehenbezug: 'sohle', name: 'S9' });
     });
 
     it('vor Teil XXI fiel ein eigener Schacht im Strang still aus — jetzt nicht mehr', () => {

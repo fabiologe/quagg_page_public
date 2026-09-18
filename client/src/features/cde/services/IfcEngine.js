@@ -3069,14 +3069,20 @@ export class IfcEngine {
      * es dann WEISS (`unterkante` fehlt) statt zu raten.
      */
     async _knotenMitUnterkante(globalId) {
-        const k = this._knotenAlsPunkt(globalId);
-        if (!k) return null;
+        const punkt = this._knotenAlsPunkt(globalId);
+        if (!punkt) return null;
+        // WAS y IST (A9): bei einem gelieferten Schacht die PLATZIERUNG — wo
+        // der Hersteller den Ursprung setzt (Sohle, Deckel, Mitte), sagt die
+        // Datei nicht. Die Sohle belegt erst die Hülle.
+        const k = { ...punkt, hoehenbezug: 'platzierung' };
         try {
             const { karte } = await karteMitEngine(this, [globalId]);
             const ort = karte.get(globalId);
             if (ort) {
                 const h = (await this.autor.huellenVon(ort.modelId, [ort.localId]))?.get(ort.localId);
-                if (Number.isFinite(h?.unterkante)) return { ...k, unterkante: h.unterkante };
+                if (Number.isFinite(h?.unterkante)) {
+                    return { ...k, unterkante: h.unterkante, ...(Number.isFinite(h?.oberkante) ? { oberkante: h.oberkante } : {}) };
+                }
             }
         } catch { /* ohne Hülle gilt die Platzierung */ }
         return k;

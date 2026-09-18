@@ -122,3 +122,22 @@ export function bezugTitel(bezug, { quelle = null, ausQuelle = false } = {}) {
     const woher = { axisRep: 'Achs-Repräsentation', extrusion: 'Extrusion', mesh: 'Netz', bauplan: 'Bauplan' }[String(quelle ?? '')] ?? null;
     return `Achse = ${ACHSBEZUEGE[b].titel}${ausQuelle && woher ? ` (${woher})` : ''}`;
 }
+
+/**
+ * DIE SOHLE EINES KNOTENS (Teil XXIII, A9 — Befund B19).
+ *
+ * Ein Knoten sagt seit A9, was sein y ist (`hoehenbezug`): ein eigener
+ * Schacht steht mit y AUF seiner Sohle, ein gelieferter mit y auf seiner
+ * PLATZIERUNG — wo der Hersteller den Ursprung setzt, sagt die Datei nicht.
+ * Belegt ist die Sohle durch die Unterkante der Hülle oder durch
+ * `hoehenbezug: 'sohle'`. Sonst bleibt die Platzierung der Rückfall, und
+ * `belegt: false` sagt es dem Leser, statt dass er es erraten muss.
+ *
+ * @param {{y: number, unterkante?: number, hoehenbezug?: string}} knoten
+ * @returns {{y: number, belegt: boolean}}
+ */
+export function knotensohle(knoten) {
+    if (Number.isFinite(knoten?.unterkante)) return { y: knoten.unterkante, belegt: true };
+    const y = _hoehe(knoten?.y);
+    return { y, belegt: knoten?.hoehenbezug === 'sohle' && Number.isFinite(y) };
+}

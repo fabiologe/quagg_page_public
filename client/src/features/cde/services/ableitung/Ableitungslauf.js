@@ -31,6 +31,18 @@
  */
 import { formeNach, zellenIntegral } from '../gelaende/Operationen.js';
 import { erdbauStapelVon, urGelaendeVon } from './Bezuege.js';
+import { mitStand } from '../geometrie/Formen.js';
+
+/**
+ * Die Mengenart zu einer Mengen-Deklaration (`teil.menge`, IFC-Qto-Namen):
+ * die ERSTE Volumenangabe entscheidet — ein Aushub misst gewachsen (und
+ * nennt lose daneben), eine Füllung verdichtet.
+ */
+const MENGENART_JE_MENGE = [['undisturbedVolume', 'gewachsen'], ['compactedVolume', 'verdichtet'], ['looseVolume', 'lose']];
+export function mengenartVon(teilDeklaration) {
+    const menge = teilDeklaration?.menge ?? {};
+    return MENGENART_JE_MENGE.find(([feld]) => menge[feld])?.[1] ?? null;
+}
 
 /** Ab welchem Anteil der Wirkfläche ein späterer Vorgang einen älteren verdeckt (E3). */
 export const VERDECKT_AB = 0.5;
@@ -290,13 +302,17 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 const urRaster = quellen.gelaende;
                 // Fürs Nachrechnen der Verdeckungen (`verdeckungen`) nach dem Aufbau.
                 urRasterJeUr.set(urGid, urRaster);
-                quellen.gelaende = _gefaltet(urRaster, urGid, listen, listen.length);
+                // WELCHER STAND (A9): das Raster sagt, ob es das Gelände VOR
+                // diesem Vorgang ist oder — für die Anzeige — nach allen. Eine
+                // flache Kopie: die Präfix-Caches hängen am Original.
+                quellen.gelaende = mitStand(_gefaltet(urRaster, urGid, listen, listen.length),
+                                            rezept.id === 'anzeige' ? 'anzeige' : 'vorher');
                 stapel = {
-                    ur: urGid, urRaster, ableitung: id, opsVor: vor,
+                    ur: urGid, urRaster: mitStand(urRaster, 'ur'), ableitung: id, opsVor: vor,
                     reihe: Math.max(0, stapelVon(urGid).indexOf(id)),
                     // Dieselbe Faltung für ein anderes Raster derselben Quelle —
                     // der feine Korridor braucht die Vorgänger genauso (eigener Präfix-Cache).
-                    vorherVon: (r) => (r ? _gefaltet(r, urGid, listen, listen.length) : r),
+                    vorherVon: (r) => (r ? mitStand(_gefaltet(r, urGid, listen, listen.length), 'vorher') : r),
                     /**
                      * DAS UR-GELÄNDE FEIN, AUS DERSELBEN QUELLE (Teil XXI).
                      *
@@ -508,8 +524,8 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 return { ok: true, leer: true, kennzahlen: erg.kennzahlen ?? {} };
             }
             eintrag.teile[bauplan.rolle] = globalId;
-            teilForm.set(globalId, teil);
-            return { ok: true, teil, kennzahlen: erg.kennzahlen ?? {}, befunde: erg.befunde ?? [], warnungen: erg.warnungen ?? [] };
+            teilForm.set(globalId, _mitMengenart(teil, bauplan));
+            return { ok: true, teil: teilForm.get(globalId), kennzahlen: erg.kennzahlen ?? {}, befunde: erg.befunde ?? [], warnungen: erg.warnungen ?? [] };
         } catch (fehler) {
             const grund = fehler?.message ?? String(fehler);
             misserfolge.push({ globalId, grund });
@@ -517,6 +533,19 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         } finally {
             inArbeit.delete(globalId);
         }
+    }
+
+    /**
+     * WAS DER KÖRPER MISST (A9): ein Erdkörper sagt, ob sein Volumen
+     * gewachsen, lose oder verdichtet ist, und welche Rolle er spielt. Die
+     * Aussage kommt aus der Mengen-Deklaration des Teils (`menge`), an EINER
+     * Stelle — nicht aus dem Rezeptnamen.
+     */
+    function _mitMengenart(teil, bauplan) {
+        if (teil?.form !== 'koerper' || !teil.daten) return teil;
+        const dekl = rezeptNach(bauplan.rezept)?.teile?.find?.(t => t.rolle === bauplan.rolle);
+        const mengenart = mengenartVon(dekl);
+        return { ...teil, daten: { ...teil.daten, rolle: bauplan.rolle, ...(mengenart ? { mengenart } : {}) } };
     }
 
     return { baue, formVon, ableitungen, misserfolge, stapelVon, urGidVon, opsVor, verdeckungen };

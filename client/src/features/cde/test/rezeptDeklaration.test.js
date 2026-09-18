@@ -43,7 +43,10 @@ function ausgabe(rz, p) {
     const k = rz.formAus?.(p, 'koerper');
     if (k) r.koerper = { tri: k.triCount, vol: k.volumen, closed: k.closed, mv: meshVolume(k.positions, k.triCount).volume };
     const l = rz.formAus?.(p, 'linie'); if (l) r.linie = l;
-    const kn = rz.formAus?.(p, 'knoten'); if (kn) r.knoten = kn;
+    // Die Bedeutungsfelder aus A9 (`hoehenbezug`, `oberkante`) sind NEU — der
+    // Goldstandard hält die ZAHLEN von vor A4; die Felder prüft formsemantik.test.js.
+    const kn = rz.formAus?.(p, 'knoten');
+    if (kn) { const { hoehenbezug, oberkante, ...alt } = kn; r.knoten = alt; }
     r.fachmodell = rz.fachmodell('G1', { name: 'N', parameter: p });
     r.verschoben = rz.verschiebe(p, { x: 1, y: 2, z: 3 });
     return JSON.parse(JSON.stringify(r));

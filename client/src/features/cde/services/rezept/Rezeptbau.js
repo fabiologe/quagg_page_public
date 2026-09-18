@@ -92,11 +92,22 @@ function _formAus(geo, vorgabe) {
                          achsbezug: 'mitte', quelle: 'bauplan' };
             }
             // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster
-            // Punkt IST seine Sohle.
+            // Punkt IST seine Sohle — und die Form SAGT es (A9), statt dass
+            // der Leser es aus `unterkante === y` erraten muss.
             if (form === 'knoten') {
-                const tief = punkte.map(punktXYZ).reduce((a, p) => (p.y <= a.y ? p : a));
-                return { x: tief.x, y: tief.y, z: tief.z, unterkante: tief.y, name: String(parameter?.name ?? '') };
+                const xyz = punkte.map(punktXYZ);
+                const tief = xyz.reduce((a, p) => (p.y <= a.y ? p : a));
+                const hoch = xyz.reduce((a, p) => (p.y >= a.y ? p : a));
+                return { x: tief.x, y: tief.y, z: tief.z, unterkante: tief.y, oberkante: hoch.y,
+                         hoehenbezug: 'sohle', name: String(parameter?.name ?? '') };
             }
+        }
+        // DIE PLATTE ALS FORM (A9): Umriss, Dicke, Richtung — was ein Leser
+        // braucht, der nicht Dreiecke zählen will (Aussparung, Mengen).
+        if (form === 'platte' && geo.art === 'platte') {
+            const umriss = punkteAus(parameter).map(punktXYZ);
+            const dicke = massAus(parameter, geo.dicke, { rueckfall: vorgabe(geo.dicke) });
+            return umriss.length >= 3 && dicke > 0 ? { umriss, dicke, richtung: geo.richtung ?? 'unten' } : null;
         }
         if (form === 'koerper' || form === 'mesh') return _koerper(geo, parameter, vorgabe);
         return null;

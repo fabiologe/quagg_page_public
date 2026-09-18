@@ -37,7 +37,7 @@ import {
     versetztePunkte, ringFlaeche, umrissFlaeche,
 } from '../geometrie/hilfen.js';
 import { stationenEntlang } from '../geometrie/Stationierung.js';
-import { bezugTitel, bezugWaehlen, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
+import { bezugTitel, bezugWaehlen, knotensohle, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
 import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
 
 /** Welche Op-Parameter Höhen in m NN sind — und deshalb an der Grenze in Welt-Y wandern. */
@@ -450,7 +450,7 @@ const ABLEITUNGEN_ERWEITERT = {
                 teile: {
                     aushub:  aushub.ergebnis  ? { form: 'koerper', daten: aushub.ergebnis }  : null,
                     auftrag: auftrag.ergebnis ? { form: 'koerper', daten: auftrag.ergebnis } : null,
-                    dgm:     { form: 'raster', daten: neu },
+                    dgm:     { form: 'raster', daten: { ...neu, stand: 'nachher' } },
                 },
                 kennzahlen: {
                     aushubRaster: massen.aushub,
@@ -877,7 +877,16 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             const anschluesse = rohrEnden
                 .filter(e => Math.hypot(e.x - s.x, e.z - s.z) <= regelwert('kanalgrabenAnschlussM'))
                 .map(e => e.sohle);
-            const unten = Math.min(Number.isFinite(s.unterkante) ? s.unterkante : s.y, ...anschluesse);
+            // WAS y DES KNOTENS IST, SAGT SEIT A9 DIE FORM (`knotensohle`).
+            // Ohne Beleg (gelieferter Schacht ohne Hülle) zählt die Platzierung
+            // weiter mit — aber nicht mehr stumm.
+            const ks = knotensohle(s);
+            if (!ks.belegt && !anschluesse.length) {
+                befunde.push({ regel: 'schachtsohle_unbelegt', schwere: 'hinweis',
+                    text: `Schacht${s.name ? ` ${s.name}` : ''}: Sohle nicht belegt — die Baugrube rechnet mit der Platzierung`,
+                    quelle: 'Form knoten (hoehenbezug)' });
+            }
+            const unten = Math.min(ks.y, ...anschluesse);
             const sohle = unten - w.bettung;
             const h = hoeheAn(s.x, s.z);
             if (Number.isFinite(h)) tiefeMax = Math.max(tiefeMax, h - sohle);
@@ -975,7 +984,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             teile: {
                 graben: graben.ergebnis ? { form: 'koerper', daten: graben.ergebnis } : null,
                 verfuellung: verfuellungKoerper ? { form: 'koerper', daten: verfuellungKoerper } : null,
-                dgm: { form: 'raster', daten: neu },
+                dgm: { form: 'raster', daten: { ...neu, stand: 'nachher' } },
             },
             kennzahlen: {
                 zellweite: rechen.cell, zellweiteDgm: ur.cell, korridor: !!fein,
@@ -1221,7 +1230,7 @@ const BAUWERKSGRUBE = {
         return {
             teile: {
                 grube: grube.ergebnis ? { form: 'koerper', daten: grube.ergebnis } : null,
-                dgm: { form: 'raster', daten: neu },
+                dgm: { form: 'raster', daten: { ...neu, stand: 'nachher' } },
             },
             kennzahlen: {
                 aushubRaster: massen.aushub,

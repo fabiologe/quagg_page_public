@@ -55,7 +55,8 @@ export function kreisProfil(r, seiten = 12) {
         const w = (k / seiten) * Math.PI * 2;
         punkte.push({ u: Math.cos(w) * r, v: Math.sin(w) * r });
     }
-    return { punkte };
+    // Was die Zahlen bedeuten (A9): ein Kreis mit diesem Nennmass (mm).
+    return { punkte, art: 'kreis', nennmass: Math.round(r * 2000) };
 }
 
 /**
@@ -64,14 +65,14 @@ export function kreisProfil(r, seiten = 12) {
  */
 export function rechteckProfil(breite, hoehe) {
     const b2 = breite / 2, h2 = hoehe / 2;
-    return { punkte: [{ u: -b2, v: -h2 }, { u: b2, v: -h2 }, { u: b2, v: h2 }, { u: -b2, v: h2 }] };
+    return { punkte: [{ u: -b2, v: -h2 }, { u: b2, v: -h2 }, { u: b2, v: h2 }, { u: -b2, v: h2 }], art: 'rechteck' };
 }
 
 /** Trapezprofil: Sohle unten (v = 0), Böschung 1:n nach oben; gegen den Uhrzeigersinn. */
 export function trapezProfil({ sohlbreite = 1, hoehe = 1, boeschung = 1 } = {}) {
     const b2 = sohlbreite / 2;
     const o2 = b2 + hoehe * Math.max(0, boeschung);
-    return { punkte: [{ u: -b2, v: 0 }, { u: b2, v: 0 }, { u: o2, v: hoehe }, { u: -o2, v: hoehe }] };
+    return { punkte: [{ u: -b2, v: 0 }, { u: b2, v: 0 }, { u: o2, v: hoehe }, { u: -o2, v: hoehe }], art: 'trapez' };
 }
 
 /** Signierte Fläche eines 2D-Rings ([{a, b}] mit Schlüsselnamen ka/kb). */
