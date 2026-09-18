@@ -40,7 +40,7 @@ const KNOTEN = [
 const ROHR = {
     modelId: 'm1', localId: 3, globalId: 'H1', name: 'H-001', hoehenversatz: 300,
     achse: { dn: 300, anfang: H1.anfang, ende: H1.ende, polyline: [H1.anfang, H1.ende], laenge: H1.laenge },
-    strang: [H1, H2], schachtKnoten: KNOTEN,
+    strang: [H1, H2], knotenImNetz: KNOTEN,
     quellmass: { pruefmass: { triCount: 48, spanX: 30, spanY: 0.6, spanZ: 0.3 } },
     gelaendeQuellen: [{ globalId: 'DGM1', name: 'Urgelände', herkunft: 'geliefert', pruefmass: { triCount: 6400 }, cell: 0.5 }],
 };

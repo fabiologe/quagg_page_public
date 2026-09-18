@@ -18,7 +18,7 @@ const ROHR = {
     name: 'H1', anker: { x: 25, y: 9.5, z: 0 },
     achse: { anfang: { x: 0, y: 10, z: 0 }, ende: { x: 50, y: 9, z: 0 },
              laenge: 50, dn: 300, quelle: 'extrusion' },
-    schachtKnoten: [
+    knotenImNetz: [
         { globalId: 'S9', punkt: { x: 60, y: 8, z: 0 }, name: 'S9' },
         { globalId: 'S1', punkt: { x: -50, y: 11, z: 0 }, name: 'S1' },
     ],
@@ -45,10 +45,10 @@ describe('Das Werkzeug', () => {
     it('sitzt das FERNE Ende schon auf einem Schacht, wird abgelehnt — starr risse es ab', () => {
         const angeschlossen = {
             ...ROHR,
-            schachtKnoten: [...ROHR.schachtKnoten,
+            knotenImNetz: [...ROHR.knotenImNetz,
                 { globalId: 'S0', punkt: { x: 0, y: 10, z: 0 }, name: 'S0' }],
         };
-        expect(angeschlossen.schachtKnoten.some(k => k.punkt.x === 0)).toBe(true);
+        expect(angeschlossen.knotenImNetz.some(k => k.punkt.x === 0)).toBe(true);
         expect(b.anwenden(angeschlossen, {}, { zug: [{ x: 58, z: 1 }] })).toBeNull();
     });
 

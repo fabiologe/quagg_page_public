@@ -155,7 +155,7 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
         const ae = useAenderungen();
         const netz = { positions: new Float64Array(9), triCount: 1 };
         const e = {
-            schachtGriffe: () => [], schachtAnschluesse: () => [],
+            knotenGriffe: () => [], schachtAnschluesse: () => [],
             zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'bauteil:R1'), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
             zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
@@ -167,7 +167,7 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
         const g = useGriffe({
             engine: ref(e), bearbeitung: b, aenderungen: ae,
             getSubjekt: () => b.bauteil, getTypprofil: () => b.typprofil, getBauform: () => b.einordnung?.bauform ?? null,
-            getVersatz: () => ROHR.versatz, getHoehenversatz: () => 300, holeSchachtSubjekt: async () => null,
+            getVersatz: () => ROHR.versatz, getHoehenversatz: () => 300, holeKnotenSubjekt: async () => null,
             lieferstandVon: () => ({ x: 2, y: 3, z: 1 }), nachBauen: vi.fn(async () => ({ angewandt: true })),
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
@@ -188,6 +188,26 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
         expect(t.b.werte.ost).toBe(1012);
         await t.g.zugEnde({ abbruch: true });
         expect(t.e.geistLeeren).toHaveBeenCalled();
+    });
+    it('auch der KNOTEN-Griff stellt das Geistnetz auf — die Musterschicht kennt nur „Knoten"', async () => {
+        // A3 (Teil XXIII) benannte die Griffart von „schacht" in „knoten" um.
+        // Die Liste der Geist-Arten stand dabei noch auf „schacht": der Zug an
+        // einem Schacht hätte STILL keinen Geist mehr gezeigt, und kein Test
+        // merkte es — gefunden hat es der Architektur-Wächter (W6). Dieser
+        // Fall schliesst die Lücke.
+        const t = baue();
+        t.e.knotenGriffe = () => [{ globalId: 'S1', name: 'S1', modelId: 'm1', localId: 9,
+                                    punkt: { x: 20, y: 0, z: 20 }, herkunft: 'geliefert' }];
+        t.e.griffUnter = vi.fn(() => 'knoten:S1');
+        await t.b.einordne(null, null);
+        t.g.neuBauen?.();
+        await nextTick();
+        expect(t.g.griffe.value.some(g => g.key === 'knoten:S1' && g.art === 'knoten')).toBe(true);
+        t.g.greifen({ x: 200, y: 200, typ: 'mouse' });
+        t.g.zugStart({ x: 200, y: 200, px: { x: 200, y: 200 }, typ: 'mouse' });
+        await t.g.zug.value?.geist;
+        expect(t.e.geistLaden).toHaveBeenCalledWith('m1', 9);
+        await t.g.zugEnde({ abbruch: true });
     });
     it('Alt lässt das Raster frei', async () => {
         const t = baue();

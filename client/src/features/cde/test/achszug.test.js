@@ -227,7 +227,7 @@ describe('useGriffe am echten Store — der Achszug', () => {
         const b = useBearbeitung();
         const ae = useAenderungen();
         const e = {
-            schachtGriffe: () => [],
+            knotenGriffe: () => [],
             schachtAnschluesse: () => [],
             zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => `bauteil:${subjekt.globalId}`), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
             zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
@@ -243,7 +243,7 @@ describe('useGriffe am echten Store — der Achszug', () => {
             engine: ref(e), bearbeitung: b, aenderungen: ae,
             getSubjekt: () => b.bauteil, getTypprofil: () => b.typprofil, getBauform: () => b.einordnung?.bauform ?? null,
             getVersatz: () => subjekt.versatz, getHoehenversatz: () => subjekt.hoehenversatz,
-            holeSchachtSubjekt: async () => null,
+            holeKnotenSubjekt: async () => null,
             lieferstandVon: () => ({ x: 2, y: 3, z: 1 }),
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),

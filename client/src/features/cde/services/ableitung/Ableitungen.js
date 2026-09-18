@@ -316,6 +316,9 @@ const ABLEITUNGEN_ERWEITERT = {
         // Ein ERDBAU-VORGANG (Stufe 1): fusst auf dem Ur-Gelände, meldet seine
         // Operationen als `ops`, wird im Stapel über die Vorgänger gefaltet.
         erdbau: true,
+        // Kein Griff am Klickpunkt (Teil XXII): ein Zucken beim Wählen verschöbe den
+        // ganzen Vorgang. Die Griffe fragen DAS, nicht „ist das ein Erdbau?" (A3).
+        bauteilGriff: false,
         bauform: 'hoehenfeld',
         kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
         mindestPunkte: 0,
@@ -675,6 +678,9 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
     mengenzeile: 'Kanalgraben',
     icon: 'gerinne',
     erdbau: true,
+    // Kein Griff am Klickpunkt (Teil XXII): ein Zucken beim Wählen verschöbe den
+    // ganzen Vorgang. Die Griffe fragen DAS, nicht „ist das ein Erdbau?" (A3).
+    bauteilGriff: false,
     bauform: 'koerper',
     kategorieVorgabe: 'IFCEARTHWORKSCUT',
     mindestPunkte: 0,
@@ -1061,7 +1067,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         }
         // Die Schächte am Strang: ein Zylinder je Baugrube.
         const kanten = w.umfang === 'strang' ? [{ anfang: eigen[0], ende: eigen[eigen.length - 1] }, ...(subjekt?.strang ?? [])] : [{ anfang: eigen[0], ende: eigen[eigen.length - 1] }];
-        const schaechte = schaechteAnKanten(kanten, subjekt?.schachtKnoten ?? []);
+        const schaechte = schaechteAnKanten(kanten, subjekt?.knotenImNetz ?? []);
         const bm = baugrubenmass({ aussenmass: w.schachtMass, wand });
         // Die Anschlusssohlen wie im Lauf — sonst zeigt die Vorschau eine
         // Baugrube, die flacher endet als die, die entsteht (P2c).
@@ -1163,6 +1169,9 @@ const BAUWERKSGRUBE = {
     mengenzeile: 'Baugrube',
     icon: 'ausheben',
     erdbau: true,
+    // Kein Griff am Klickpunkt (Teil XXII): ein Zucken beim Wählen verschöbe den
+    // ganzen Vorgang. Die Griffe fragen DAS, nicht „ist das ein Erdbau?" (A3).
+    bauteilGriff: false,
     bauform: 'koerper',
     kategorieVorgabe: 'IFCEARTHWORKSCUT',
     mindestPunkte: 0,

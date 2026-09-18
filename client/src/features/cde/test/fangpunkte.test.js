@@ -14,24 +14,24 @@ const projiziere = (p) => ({ x: p.x * 10, y: p.z * 10 });
 describe('fangkandidaten', () => {
     it('nimmt Schächte, Achs-ENDEN und Stützpunkte — Zwischenpunkte einer Achse nicht', () => {
         const k = fangkandidaten({
-            schaechte: [{ x: 0, y: 0, z: 0, name: 'S1' }],
+            knoten: [{ x: 0, y: 0, z: 0, name: 'S1' }],
             achsen: [{ name: 'H1', punkte: [{ x: 0, y: 0, z: 0 }, { x: 5, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }] }],
             stuetzpunkte: [{ x: 3, y: 1, z: 3 }],
         });
-        expect(k.map(x => x.art)).toEqual(['schacht', 'achsende', 'achsende', 'stuetzpunkt']);
+        expect(k.map(x => x.art)).toEqual(['knoten', 'achsende', 'achsende', 'stuetzpunkt']);
         expect(k[1].name).toBe('H1 · Anfang');
         expect(k[2].punkt).toEqual({ x: 10, y: 0, z: 0 });
     });
 
     it('überspringt Kandidaten ohne endliche Koordinaten statt NaN zu fangen', () => {
-        const k = fangkandidaten({ schaechte: [{ x: NaN, y: 0, z: 0 }, { x: 1, y: 2, z: 3 }] });
+        const k = fangkandidaten({ knoten: [{ x: NaN, y: 0, z: 0 }, { x: 1, y: 2, z: 3 }] });
         expect(k).toHaveLength(1);
     });
 });
 
 describe('fangePunkt', () => {
     const kandidaten = fangkandidaten({
-        schaechte: [{ x: 10, y: 0, z: 10, name: 'S7' }],
+        knoten: [{ x: 10, y: 0, z: 10, name: 'S7' }],
         achsen: [{ name: 'H2', punkte: [{ x: 10.5, y: 0, z: 10 }, { x: 40, y: 0, z: 10 }] }],
     });
 
@@ -44,11 +44,11 @@ describe('fangePunkt', () => {
 
     it('bei gleichem Abstand gewinnt der fachlich stärkere (Schacht vor Achsende)', () => {
         const zwei = fangkandidaten({
-            schaechte: [{ x: 0, y: 0, z: 0, name: 'S' }],
+            knoten: [{ x: 0, y: 0, z: 0, name: 'S' }],
             achsen: [{ punkte: [{ x: 0, y: 5, z: 0 }, { x: 9, y: 0, z: 0 }] }],   // Anfang liegt in XZ genau auf S
         });
         const r = fangePunkt({ punkt: { x: 0.3, y: 0, z: 0 }, kandidaten: zwei, projiziere });
-        expect(r.fang.art).toBe('schacht');
+        expect(r.fang.art).toBe('knoten');
     });
 
     it('lässt den Punkt in Ruhe, wenn nichts im Radius liegt', () => {
@@ -63,7 +63,7 @@ describe('fangePunkt', () => {
         // bei 100 px je Meter sind es 100 px → frei.
         const nah = fangePunkt({ punkt: { x: 11, y: 0, z: 10 }, kandidaten, projiziere: (p) => ({ x: p.x, y: p.z }) });
         const fern = fangePunkt({ punkt: { x: 11, y: 0, z: 10 }, kandidaten, projiziere: (p) => ({ x: p.x * 100, y: p.z * 100 }) });
-        expect(nah.fang?.art).toBe('schacht');
+        expect(nah.fang?.art).toBe('knoten');
         expect(fern.fang).toBeNull();
         expect(FANG_RADIUS_PX).toBeGreaterThan(8);
     });

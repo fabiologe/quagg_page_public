@@ -27,23 +27,23 @@ export const FANG_RADIUS_PX = 14;
  * Rangfolge bei gleichem Abstand: ein Schacht ist der fachlich stärkere
  * Fang als ein Achsende, das wiederum stärker als ein Stützpunkt.
  */
-const RANG = { schacht: 0, achsende: 1, stuetzpunkt: 2, ecke: 3, kante: 4 };
+const RANG = { knoten: 0, achsende: 1, stuetzpunkt: 2, ecke: 3, kante: 4 };
 
 /**
  * Kandidaten sammeln.
  *
  * @param {object}   q
- * @param {Array<{x,y,z,name?,globalId?}>} q.schaechte  Schachtmitten (Welt)
+ * @param {Array<{x,y,z,name?,globalId?}>} q.knoten  Netzknoten (Welt) — die Musterschicht kennt keinen Schacht
  * @param {Array<{punkte:Array<{x,y,z}>,name?,globalId?}>} q.achsen  Achsen —
  *        ihre ENDEN werden Kandidaten, die Stützpunkte dazwischen nicht
  * @param {Array<{x,y,z,name?}>} q.stuetzpunkte  eigene Stützpunkte (Welt)
- * @returns {Array<{punkt:{x,y,z}, art:'schacht'|'achsende'|'stuetzpunkt', name:string, globalId?:string}>}
+ * @returns {Array<{punkt:{x,y,z}, art:'knoten'|'achsende'|'stuetzpunkt', name:string, globalId?:string}>}
  */
-export function fangkandidaten({ schaechte = [], achsen = [], stuetzpunkte = [] } = {}) {
+export function fangkandidaten({ knoten = [], achsen = [], stuetzpunkte = [] } = {}) {
     const aus = [];
-    for (const s of schaechte) {
+    for (const s of knoten) {
         if (!_endlich(s)) continue;
-        aus.push({ punkt: { x: s.x, y: s.y, z: s.z }, art: 'schacht', name: s.name ?? 'Schacht', globalId: s.globalId ?? null });
+        aus.push({ punkt: { x: s.x, y: s.y, z: s.z }, art: 'knoten', name: s.name ?? 'Knoten', globalId: s.globalId ?? null });
     }
     for (const a of achsen) {
         const p = a?.punkte ?? [];

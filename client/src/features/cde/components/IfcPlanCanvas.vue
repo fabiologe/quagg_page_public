@@ -513,10 +513,10 @@ function griffeLaden() {
   // kennt nur den Lieferort) — `griffeFuer` bedient Plan und Raum. Der Plan
   // zeichnet davon die XZ-Schachtgriffe.
   griffe.value = griffeFuer({
-    schaechte: api.getSchachtGriffe?.() ?? [],
+    schaechte: api.getKnotenGriffe?.() ?? [],
     lageStand: new Map(aenderungen.wirksamerStand('lage')),
   })
-    .filter(g => g.art === 'schacht')
+    .filter(g => g.art === 'knoten')
     .map(g => ({ globalId: g.globalId, name: g.name, modelId: g.modelId, x: g.pos.x, z: g.pos.z }));
 }
 

@@ -28,7 +28,7 @@ import { eingabenFuer, enterRegel, naechsterSchritt, schliesstUmriss } from '../
 import { stationAuf } from '../services/Fangpunkte.js';
 
 /** Fang auf Schachtmitten beim Zug (Anschliessen): derselbe Radius wie in `anwenden`. */
-const FANG_SCHACHT_M = 10;
+const FANG_KNOTEN_M = 10;
 
 export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
                              getHoehenversatz, getHoeheAn = null, bereiteHoehenVor = null } = {}) {
@@ -166,14 +166,14 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
 
     /** Fang auf Schachtmitten, wenn der Schlitz es verlangt (Anschliessen). */
     function _gefangen(p) {
-        if (zugSchlitz.value?.fang !== 'schacht') return p;
-        const knoten = bearbeitung?.bauteil?.schachtKnoten ?? [];
+        if (zugSchlitz.value?.fang !== 'knoten') return p;
+        const knoten = bearbeitung?.bauteil?.knotenImNetz ?? [];
         let bester = null;
         for (const k of knoten) {
             const d = Math.hypot(k.punkt.x - p.x, k.punkt.z - p.z);
-            if (d <= FANG_SCHACHT_M && (!bester || d < bester.d)) bester = { d, k };
+            if (d <= FANG_KNOTEN_M && (!bester || d < bester.d)) bester = { d, k };
         }
-        return bester ? { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, fang: bester.k.name || 'Schacht' } : p;
+        return bester ? { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, fang: bester.k.name || 'Knoten' } : p;
     }
 
     /**

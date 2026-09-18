@@ -166,12 +166,8 @@ const KERNEL_ERLAUBT = {
     'services/ableitung/Ableitungen.js': 5,
 };
 
-/** W6 — Codezeilen mit Fachwort in der Musterschicht. Ziel: 0 (A3, AE). */
-const FACHWOERTER_ERLAUBT = {
-    'composables/useEingabe.js': 5,     // `FANG_SCHACHT_M`, `fang: 'schacht'`, `schachtKnoten`
-    'composables/useGriffe.js': 14,     // `g.art === 'schacht'`, `holeSchachtAnschluesse`
-    'services/Fangpunkte.js': 2,
-};
+/** W6 — Codezeilen mit Fachwort in der Musterschicht. 21 → 0 mit A3: Griffart und Fang heissen „knoten". */
+const FACHWOERTER_ERLAUBT = {};
 
 /** W5 — Obergrenzen. `anwenden` sinkt mit A6, die Rezeptfunktionen mit A4. */
 const HOOKS_MAX = { anwenden: 48, rezeptFunktionen: 17 };
@@ -218,8 +214,8 @@ const LOSE_REGELN = [
       muster: /export const MINDEST_UEBERDECKUNG\s*=/, quelle: 'DIN EN 1610, Regelfall ≥ 0,8 m' },
     { name: 'KANALGRABEN_ANSCHLUSS', datei: 'services/ableitung/Ableitungen.js',
       muster: /export const KANALGRABEN_ANSCHLUSS\s*=/, quelle: 'Setzung des Hauses' },
-    { name: 'FANG_SCHACHT_M', datei: 'composables/useEingabe.js',
-      muster: /const FANG_SCHACHT_M\s*=/, quelle: 'Setzung des Hauses — und in Schicht 1' },
+    { name: 'FANG_KNOTEN_M', datei: 'composables/useEingabe.js',
+      muster: /const FANG_KNOTEN_M\s*=/, quelle: 'Setzung des Hauses — und in Schicht 1 (A3: umbenannt, zieht mit AR ins Regelwerk)' },
     { name: 'mindestGefaelle (1:DN)', datei: 'services/Befunde.js',
       muster: /1000\s*\/\s*dn/, quelle: 'Faustregel; die Norm nennt der Code nicht' },
 ];

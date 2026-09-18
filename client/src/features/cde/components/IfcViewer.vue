@@ -911,8 +911,8 @@ const griffe = useGriffe({
   getVersatz: (modelId) => engine.value?.getCoordOffsetForModel?.(modelId) ?? null,
   getHoehenversatz: () => _hoehenversatzAusBezug(),
   getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
-  holeSchachtSubjekt: (gid) => schachtSubjekt(gid),
-  holeSchachtAnschluesse: (gid) => engine.value?.schachtAnschluesse?.(gid) ?? [],
+  holeKnotenSubjekt: (gid) => schachtSubjekt(gid),
+  holeKnotenAnschluesse: (gid) => engine.value?.schachtAnschluesse?.(gid) ?? [],
   lieferstandVon: (gid) => nachspielen.lieferstandVon(gid),
   nachBauen: (eintraege) => wendeEintragAn(eintraege),
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
@@ -1172,7 +1172,7 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
         // Die SCHACHTKNOTEN des Modells (Stufe 16): „An Schacht
         // anschliessen" wählt daraus den nächsten zum Tipp. Am Bauteil,
         // damit der Katalog rein bleibt — dieselbe Regel wie beim Strang.
-        schachtKnoten: [...(engine.value?.schachtPunkteVon?.(result.modelId) ?? new Map())]
+        knotenImNetz: [...(engine.value?.schachtPunkteVon?.(result.modelId) ?? new Map())]
           .map(([globalId, pk]) => ({ globalId, punkt: { x: pk.x, y: pk.y, z: pk.z }, name: pk.name ?? '' })),
       };
     } else {
@@ -1695,7 +1695,7 @@ provideViewerApi({
   /** Laute, nicht blockierende Meldungen des Nachspielens (quelle_geaendert, Teil XIV). */
   getHinweise:          () => nachspielen.hinweise.value,
   // ── Schacht-Griffe im Lageplan (G1) ──────────────────────────────────────
-  getSchachtGriffe:     () => engine.value?.schachtGriffe?.() ?? [],
+  getKnotenGriffe:     () => engine.value?.knotenGriffe?.() ?? [],
   getSchachtAnschluesse: (globalId) => engine.value?.schachtAnschluesse?.(globalId) ?? [],
   /**
    * Das SUBJEKT für `schacht-verschieben`, ohne die Auswahl zu ändern.

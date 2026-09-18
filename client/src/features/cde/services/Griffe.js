@@ -70,7 +70,7 @@ function _punktlisten(bauplan) {
 
 /**
  * @param {object} q
- * @param {Array}  [q.schaechte]     `engine.schachtGriffe()` — {globalId, name, modelId, localId, punkt, herkunft}
+ * @param {Array}  [q.schaechte]     `engine.knotenGriffe()` — {globalId, name, modelId, localId, punkt, herkunft}
  * @param {Map}    [q.lageStand]     `aenderungen.wirksamerStand('lage')` — Anker je GlobalId
  * @param {object} [q.subjekt]       das eingeordnete Bauteil (anker, achse, oberkante, bezugshoehe, stand, …)
  * @param {object} [q.typprofil]     das Typprofil des Subjekts — sagt, welche ROLLEN es kennt
@@ -89,8 +89,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         const l = lageStand?.get?.(s.globalId);
         const p = (Number.isFinite(l?.x) && Number.isFinite(l?.z)) ? { x: l.x, y: Number.isFinite(l.y) ? l.y : s.punkt.y, z: l.z } : s.punkt;
         aus.push({
-            key: `schacht:${s.globalId}`, globalId: s.globalId, name: s.name ?? '', herkunft: 'geliefert',
-            art: 'schacht', pos: { x: p.x, y: p.y, z: p.z }, achsen: 'XZ',
+            key: `knoten:${s.globalId}`, globalId: s.globalId, name: s.name ?? '', herkunft: 'geliefert',
+            art: 'knoten', pos: { x: p.x, y: p.y, z: p.z }, achsen: 'XZ',
             werkzeug: 'schacht-verschieben', felder: ['ost', 'nord'],
             modelId: s.modelId ?? null, localId: s.localId ?? null,
         });
@@ -309,7 +309,7 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
     const r3 = (v) => Math.round(v * 1000) / 1000;
     const v = versatz ?? { x: 0, y: 0, z: 0 };
     switch (griff?.art) {
-        case 'schacht':
+        case 'knoten':
             // ost = welt.x + versatz.x, nord = −(welt.z + versatz.z) — wie im Plan.
             return { ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)) };
         case 'sohle':

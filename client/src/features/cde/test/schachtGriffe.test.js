@@ -4,7 +4,7 @@
  *
  * Drei Sorgen, drei Prüfungen:
  *
- *  1. Die ENGINE-Auskünfte (`schachtGriffe`, `schachtAnschluesse`) — geprüft
+ *  1. Die ENGINE-Auskünfte (`knotenGriffe`, `schachtAnschluesse`) — geprüft
  *     gegen die echten Methodenkörper über `prototype.call` (die Lehre aus
  *     17.3: Attrappen einer Methode, die es so nicht gibt, lügen grün).
  *     Die Landmine dabei: `nah`/`fern` NIE nach Index, immer nach dem Ende,
@@ -45,9 +45,9 @@ function fakeEngine() {
     };
 }
 
-describe('IfcEngine.schachtGriffe (echter Methodenkörper)', () => {
+describe('IfcEngine.knotenGriffe (echter Methodenkörper)', () => {
     it('liefert gelieferte UND eigene Knoten, mit Herkunft — Verdecktes und Namenloses nicht', () => {
-        const griffe = IfcEngine.prototype.schachtGriffe.call(fakeEngine());
+        const griffe = IfcEngine.prototype.knotenGriffe.call(fakeEngine());
         const je = new Map(griffe.map(g => [g.globalId, g]));
         expect(je.size).toBe(3);
         expect(je.get('S1')).toMatchObject({ herkunft: 'geliefert', modelId: 'm1', localId: 11, name: 'S 1' });

@@ -35,8 +35,8 @@ import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { ACHSEN, RASTER_M, achsPassung, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, waehleAchse, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
 
-/** Formt dieses Rezept das Gelände (ein Erdkörper)? */
-const erdbauRezept = (id) => !!(id && rezeptNach(id)?.erdbau);
+/** Hat dieses Rezept einen Griff am Klickpunkt? Das Rezept sagt es (`bauteilGriff`, A3). */
+const ohneBauteilGriff = (id) => !!(id && rezeptNach(id)?.bauteilGriff === false);
 
 /** Länge der Führungslinien beim Achszug (m je Seite). */
 const ACHSLINIE_M = 120;
@@ -58,8 +58,8 @@ const WINKEL_RASTER_GRAD = 5;
  * @param {(modelId) => {x,y,z}|null} opt.getVersatz   Ladeversatz je Modell
  * @param {() => number} opt.getHoehenversatz
  * @param {(x, z) => number|null|undefined} [opt.getHoeheAn]
- * @param {(globalId) => Promise<object|null>} opt.holeSchachtSubjekt
- * @param {(globalId) => Array} [opt.holeSchachtAnschluesse]
+ * @param {(globalId) => Promise<object|null>} opt.holeKnotenSubjekt
+ * @param {(globalId) => Array} [opt.holeKnotenAnschluesse]
  * @param {(globalId) => object|undefined} [opt.lieferstandVon]
  * @param {(eintraege) => Promise} opt.nachBauen
  * @param {() => string} [opt.getModellSha]
@@ -68,7 +68,7 @@ const WINKEL_RASTER_GRAD = 5;
  * @param {() => ({accent, warn, ok})} [opt.farben]
  */
 export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTypprofil, getBauform = null, getVersatz, getHoehenversatz,
-                            getHoeheAn = null, holeSchachtSubjekt, holeSchachtAnschluesse = null, lieferstandVon = null,
+                            getHoeheAn = null, holeKnotenSubjekt, holeKnotenAnschluesse = null, lieferstandVon = null,
                             nachBauen, getModellSha = null, getWer = null, melde = null, farben = null } = {}) {
     /** Die Griffe, wie zuletzt gebaut. */
     const griffe = ref([]);
@@ -99,7 +99,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         if (zug.value) return;                  // mitten im Zug nicht umbauen
         if (!bereit.value) { griffe.value = []; e.zeigeGriffe?.([]); return; }
         const subjekt = getSubjekt?.() ?? null;
-        const schaechte = e.schachtGriffe?.() ?? [];
+        const schaechte = e.knotenGriffe?.() ?? [];
         const lageStand = aenderungen?.wirksamerStand?.('lage') ?? null;
         // EIGEN heisst „das Journal führt einen Bauplan dazu" — nicht „der
         // Modellname lautet so". Der Modellname trügt (Delta-Modell des
@@ -119,10 +119,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Wählen verschob sonst den ganzen Vorgang (Verschieben bleibt als
         // Werkzeug in der Tafel).
         const ecken = bearbeitung?.eckenFuer ?? null;
-        const erdkoerper = erdbauRezept(subjekt?.stand?.bauplan?.rezept);
+        const ohneGriff = ohneBauteilGriff(subjekt?.stand?.bauplan?.rezept);
         const sichtbar = ecken
             ? alle.filter(g => g.ecken && g.globalId === ecken)
-            : alle.filter(g => !g.ecken && !(erdkoerper && g.art === 'bauteil' && g.globalId === subjekt?.globalId));
+            : alle.filter(g => !g.ecken && !(ohneGriff && g.art === 'bauteil' && g.globalId === subjekt?.globalId));
         griffe.value = scharf
             ? sichtbar.filter(g => g.werkzeug === scharf && (!gid || g.globalId === gid))
             : sichtbar;
@@ -170,12 +170,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
      *
      * SYNCHRON, wo es geht — der Zeiger-Stapel meldet den Zugbeginn und gleich
      * darauf Bewegungen. Nur ein FREMDER Schacht braucht sein Subjekt aus der
-     * Engine (`holeSchachtSubjekt`, asynchron): dann läuft der Zug schon, und
+     * Engine (`holeKnotenSubjekt`, asynchron): dann läuft der Zug schon, und
      * die Felder folgen, sobald das Werkzeug scharf ist (`laed`).
      * @returns {{subjekt: object|null, warScharf: boolean, werteVorher: object, laed?: Promise<object|null>}|null}
      */
     function _werkzeugFuer(g) {
-        const warScharf = bearbeitung?.scharfId === g.werkzeug && (g.art !== 'schacht' || bearbeitung?.bauteil?.globalId === g.globalId);
+        const warScharf = bearbeitung?.scharfId === g.werkzeug && (g.art !== 'knoten' || bearbeitung?.bauteil?.globalId === g.globalId);
         const werteVorher = { ...(bearbeitung?.werte ?? {}) };
         if (warScharf) return { subjekt: bearbeitung.bauteil, warScharf, werteVorher };
         const scharfSchalten = (subjekt) => {
@@ -186,11 +186,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             }
             return subjekt;
         };
-        if (g.art !== 'schacht') {
+        if (g.art !== 'knoten') {
             const subjekt = scharfSchalten(getSubjekt?.() ?? null);
             return subjekt ? { subjekt, warScharf: false, werteVorher } : null;
         }
-        const laed = Promise.resolve(holeSchachtSubjekt?.(g.globalId)).then(scharfSchalten).catch(() => null);
+        const laed = Promise.resolve(holeKnotenSubjekt?.(g.globalId)).then(scharfSchalten).catch(() => null);
         return { subjekt: null, warScharf: false, werteVorher, laed };
     }
 
@@ -245,11 +245,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Fanglinien EINMAL beim Aufnehmen — in Ost/Nord, wie im Plan.
         let linien = [];
         let versatz = null;
-        if (g.art === 'schacht') {
+        if (g.art === 'knoten') {
             versatz = getVersatz?.(g.modelId) ?? { x: 0, y: 0, z: 0 };
             const zuProjekt = (p) => ({ ost: p.x + versatz.x, nord: -(p.z + versatz.z) });
-            const anschluesse = (holeSchachtAnschluesse?.(g.globalId) ?? []).map(a => ({ globalId: a.globalId, name: a.name, fern: zuProjekt(a.fern) }));
-            const nachbarn = griffe.value.filter(x => x.art === 'schacht' && x.globalId !== g.globalId)
+            const anschluesse = (holeKnotenAnschluesse?.(g.globalId) ?? []).map(a => ({ globalId: a.globalId, name: a.name, fern: zuProjekt(a.fern) }));
+            const nachbarn = griffe.value.filter(x => x.art === 'knoten' && x.globalId !== g.globalId)
                 .map(x => ({ globalId: x.globalId, name: x.name, ...zuProjekt(x.pos) }));
             linien = fanglinienFuer({ ausgang: zuProjekt(g.pos), anschluesse, nachbarn });
         } else if (g.ecken && g.achsen === 'XZ' && Array.isArray(g.ring)) {
@@ -271,9 +271,9 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // ── Geistnetz (S7): das Bauteil folgt dem Zug, das Modell bleibt bis zum Loslassen ──
     //
     // Nur für Griffe, die das Bauteil als GANZES verschieben (lage): Bauteil-,
-    // Schacht- und Bezugshöhen-Griff. Sohlgriffe sind Forderungen (nichts
+    // Knoten- und Bezugshöhen-Griff. Sohlgriffe sind Forderungen (nichts
     // bewegt sich), Stützpunkte bauen die Vorschau aus dem Bauplan neu.
-    const GEIST_ARTEN = new Set(['bauteil', 'schacht', 'bezugshoehe']);
+    const GEIST_ARTEN = new Set(['bauteil', 'knoten', 'bezugshoehe']);
 
     function _geistAufstellen(z) {
         const e = engine.value;
@@ -321,7 +321,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         let pos = { x: z.griff.pos.x + d.x, y: z.griff.pos.y + d.y, z: z.griff.pos.z + d.z };
         z.aktiv = [];
         z.fang = null;
-        if (z.linien.length && (z.griff.art === 'schacht' || z.griff.ecken)) {
+        if (z.linien.length && (z.griff.art === 'knoten' || z.griff.ecken)) {
             // Fanglinien schlagen das Raster (wie im Plan) — das Raster ist die schwächste Stufe.
             const v = z.versatz;
             const r = fange({ punkt: { ost: pos.x + v.x, nord: -(pos.z + v.z) }, linien: z.linien, radius: FANG_RADIUS_M, raster: 0,
@@ -532,8 +532,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
 
     async function ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null } = {}) {
         try {
-            const subjekt = gegeben ?? (griff.art === 'schacht'
-                ? await holeSchachtSubjekt?.(griff.globalId)
+            const subjekt = gegeben ?? (griff.art === 'knoten'
+                ? await holeKnotenSubjekt?.(griff.globalId)
                 : getSubjekt?.());
             if (!subjekt) { melde?.('Das Bauteil liess sich nicht einordnen.'); return null; }
             // Der Zug hat das Werkzeug schon scharf (mit den Werten des Nutzers);

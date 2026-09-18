@@ -3775,7 +3775,7 @@ export class IfcEngine {
      * Sie hier trotzdem anzubieten hieße, einen Griff zu zeigen, der nichts
      * bewegt.
      */
-    schachtGriffe() {
+    knotenGriffe() {
         const verdeckt = this._verdeckt ?? new Set();
         const out = [];
         for (const [modelId, knoten] of this._knoten ?? new Map()) {

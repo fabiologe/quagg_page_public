@@ -727,7 +727,7 @@ function _kanalgrabenSchritte(el, werte) {
         for (const k of el.strang ?? []) if (k?.globalId && k.globalId !== el.globalId && k.anfang && k.ende) kanten.push(k);
     }
     const rohre = kanten.map(k => k.globalId);
-    const schaechte = schaechteAnKanten(kanten, el.schachtKnoten ?? []).map(s => s.globalId).filter(Boolean);
+    const schaechte = schaechteAnKanten(kanten, el.knotenImNetz ?? []).map(s => s.globalId).filter(Boolean);
     const name = el.name || el.achse?.name || 'Haltung';
     const zahlOderNull = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
     return _erdbauVorgang(quelle, {
@@ -2400,12 +2400,12 @@ export const BEARBEITUNGEN = Object.freeze([
         // Teil XVI: GENAU ein Punkt, und der fängt auf Schachtmitten — der
         // Motor liefert dann den exakten Knoten, und der 10-m-Fang unten
         // sieht dTipp = 0. `anwenden` bleibt unverändert.
-        eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 }, fang: 'schacht' }],
+        eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 }, fang: 'knoten' }],
         felder: [],
         vorbelegung: () => ({}),
         anwenden: (el, _werte, { zug = [] } = {}) => {
             const a = el?.achse;
-            const knoten = el?.schachtKnoten ?? [];
+            const knoten = el?.knotenImNetz ?? [];
             if (!el?.globalId || !el?.anker || !a?.anfang || !a?.ende) return null;
             if (!zug.length || !knoten.length) return null;
 

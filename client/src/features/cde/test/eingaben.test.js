@@ -27,7 +27,7 @@ describe('eingabenFuer', () => {
 
     it('An Schacht anschliessen: genau EIN Punkt, gefangen auf Schächte', () => {
         const z = eingabenFuer(nachId('an-schacht-anschliessen')).schlitze.find(s => s.schlitz === 'zug');
-        expect(z).toEqual({ schlitz: 'zug', anzahl: { min: 1, max: 1 }, fang: 'schacht' });
+        expect(z).toEqual({ schlitz: 'zug', anzahl: { min: 1, max: 1 }, fang: 'knoten' });
     });
 
     it('die Station ist ein FELD mit der Geste „punkt auf der Achse"', () => {

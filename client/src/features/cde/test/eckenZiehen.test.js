@@ -144,7 +144,7 @@ describe('Knopfpflicht: ohne „Ecken ziehen" trägt ein Erdkörper keine Griffe
         const b = useBearbeitung();
         const ae = useAenderungen();
         await ae.eintragen({ art: 'erzeugt', globalId: 'cde-aushub', nachher: PLAN, modell: 'cde' });
-        const e = { schachtGriffe: () => [{ globalId: 'S1', name: 'S1', herkunft: 'geliefert', punkt: { x: 50, y: 0, z: 50 }, modelId: 'm1', localId: 3 }],
+        const e = { knotenGriffe: () => [{ globalId: 'S1', name: 'S1', herkunft: 'geliefert', punkt: { x: 50, y: 0, z: 50 }, modelId: 'm1', localId: 3 }],
                     zeigeGriffe: vi.fn(), griffUnter: vi.fn(), griffHervorheben: vi.fn() };
         const resolver = { forElements: () => ({ async getForm(form) { return { form, data: null, perElement: [], warnings: [] }; } }) };
         await b.einordne({ globalId: 'cde-aushub', modelId: 'cde-eigenbau', localId: 7, hoehenversatz: 0, versatz: { x: 0, y: 0, z: 0 },

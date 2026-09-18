@@ -49,7 +49,7 @@ describe('R1 — der Finger kann nicht schweben, also öffnet ein TIPP die Grupp
         const ae = useAenderungen();
         const subjekt = EIGEN();
         const e = {
-            schachtGriffe: () => [],
+            knotenGriffe: () => [],
             zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'stuetz:cde1:0'), griffHervorheben: vi.fn(),
             griffVersetzen: vi.fn(), zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             geistLeeren: vi.fn(), blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
@@ -60,7 +60,7 @@ describe('R1 — der Finger kann nicht schweben, also öffnet ein TIPP die Grupp
             engine: ref(e), bearbeitung, aenderungen: ae,
             getSubjekt: () => subjekt, getTypprofil: () => null, getBauform: () => 'flaeche',
             getVersatz: () => ({ x: 0, y: 0, z: 0 }), getHoehenversatz: () => 0,
-            holeSchachtSubjekt: async () => null, nachBauen,
+            holeKnotenSubjekt: async () => null, nachBauen,
             getModellSha: () => 'sha1', getWer: () => 'Fabio', melde: vi.fn(),
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });

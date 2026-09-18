@@ -35,7 +35,7 @@ describe('griffeFuer', () => {
         const lageStand = new Map([['S2', { x: 12, y: 3, z: -6 }]]);
         const g = griffeFuer({ schaechte: SCHAECHTE, lageStand });
         expect(g.map(x => x.globalId)).toEqual(['S1', 'S2']);
-        expect(g[1]).toMatchObject({ art: 'schacht', achsen: 'XZ', werkzeug: 'schacht-verschieben', felder: ['ost', 'nord'], pos: { x: 12, z: -6 } });
+        expect(g[1]).toMatchObject({ art: 'knoten', achsen: 'XZ', werkzeug: 'schacht-verschieben', felder: ['ost', 'nord'], pos: { x: 12, z: -6 } });
     });
 
     it('geliefertes Rohr mit Sohl-Rollen: je Ende ein Y-Griff für sohlhoehen-setzen (Forderung)', () => {
@@ -79,7 +79,7 @@ describe('griffeFuer', () => {
 
 describe('griffZuWerten, ziehebene, schnitt', () => {
     it('ein Schachtgriff liefert Ost/Nord über den Ladeversatz — wie im Plan', () => {
-        const g = { art: 'schacht' };
+        const g = { art: 'knoten' };
         expect(griffZuWerten(g, { x: 10, y: 3, z: -5 }, { versatz: { x: 1000, y: 0, z: 2000 } })).toEqual({ ost: 1010, nord: -1995 });
     });
     it('Sohle/Deckel/Bezugshöhe liefern m NN; ein Stützpunkt Index + Ort', () => {
@@ -140,9 +140,9 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
         const b = useBearbeitung();
         const ae = useAenderungen();
         const e = {
-            schachtGriffe: () => SCHAECHTE,
+            knotenGriffe: () => SCHAECHTE,
             schachtAnschluesse: () => [],
-            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'schacht:S1'), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
+            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'knoten:S1'), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
             zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             blickrichtung: () => ({ x: 0, y: -0.7, z: -0.7 }),
             // Ein senkrechter Strahl von oben auf die XZ-Ebene: Ziel = (x, ·, z) aus den Client-Koordinaten (1 px = 1 m).
@@ -154,7 +154,7 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
             engine: ref(e), bearbeitung: b, aenderungen: ae,
             getSubjekt: () => b.bauteil, getTypprofil: () => b.typprofil,
             getVersatz: () => ({ x: 1000, y: 0, z: 2000 }), getHoehenversatz: () => 0,
-            holeSchachtSubjekt: async (gid) => ({ globalId: gid, modelId: 'm1', localId: 11, anker: { x: 0, y: 3, z: 0 },
+            holeKnotenSubjekt: async (gid) => ({ globalId: gid, modelId: 'm1', localId: 11, anker: { x: 0, y: 3, z: 0 },
                 lage: { ost: 1000, nord: -2000 }, versatz: { x: 1000, y: 0, z: 2000 }, lageUmkehrbar: true, anschluesse: [] }),
             lieferstandVon: () => ({ x: 0, y: 3, z: 0 }),
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
@@ -167,7 +167,7 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
         const t = baue();
         t.g.neuBauen();
         expect(t.e.zeigeGriffe).toHaveBeenCalled();
-        expect(t.g.griffe.value.map(x => x.key)).toEqual(['schacht:S1', 'schacht:S2']);
+        expect(t.g.griffe.value.map(x => x.key)).toEqual(['knoten:S1', 'knoten:S2']);
     });
 
     it('Maus greift sofort, Finger wartet; ohne Griff unter dem Zeiger nichts', () => {
@@ -186,7 +186,7 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
         t.g.zugStart({ x: 0, y: 0, px: { x: 0, y: 0 }, typ: 'mouse' });
         expect(t.g.zug.value.achsen).toBe('XZ');
         t.g.zugBewegt({ x: 4, y: 3, px: { x: 4, y: 3 }, typ: 'mouse' });     // Strahl von (4, ·, 3)
-        expect(t.e.griffVersetzen).toHaveBeenCalledWith('schacht:S1', expect.objectContaining({ x: 4, z: 3 }));
+        expect(t.e.griffVersetzen).toHaveBeenCalledWith('knoten:S1', expect.objectContaining({ x: 4, z: 3 }));
         expect(t.g.pille.value.text).toBe('Ost +4.00 · Nord −3.00 m');       // S7: beide Werte statt der Strecke
         await t.g.zugEnde({ abbruch: false });
         expect(t.nachBauen).toHaveBeenCalledTimes(1);

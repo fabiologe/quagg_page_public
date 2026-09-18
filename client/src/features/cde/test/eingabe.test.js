@@ -24,7 +24,7 @@ const ROHR = {
     anker: { x: 10, y: 300, z: 0 }, bezugshoehe: 299.85, oberkante: 300.15, hoehenversatz: 0,
     achse: { anfang: { x: 0, y: 300, z: 0 }, ende: { x: 20, y: 299.8, z: 0 }, laenge: 20, dn: 300,
              polyline: [{ x: 0, y: 300, z: 0 }, { x: 20, y: 299.8, z: 0 }] },
-    schachtKnoten: [{ globalId: 'S9', punkt: { x: 60, y: 8, z: 0 }, name: 'S9' }],
+    knotenImNetz: [{ globalId: 'S9', punkt: { x: 60, y: 8, z: 0 }, name: 'S9' }],
     gelaendeQuellen: [{ globalId: 'DGM', name: 'Gelände', cell: 1 }, { globalId: 'DGM2', name: 'Gelände 2', cell: 1 }],
 };
 

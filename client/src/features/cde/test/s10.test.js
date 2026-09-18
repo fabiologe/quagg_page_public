@@ -190,7 +190,7 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
         const ae = useAenderungen();
         const subjekt = EIGEN('flaeche', punkte);
         const e = {
-            schachtGriffe: () => [],
+            knotenGriffe: () => [],
             zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'stuetz-weg:cde1:1'), griffHervorheben: vi.fn(),
             griffVersetzen: vi.fn(), zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             geistLeeren: vi.fn(), blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
@@ -202,7 +202,7 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
             engine: ref(e), bearbeitung, aenderungen: ae,
             getSubjekt: () => subjekt, getTypprofil: () => null, getBauform: () => 'flaeche',
             getVersatz: () => ({ x: 0, y: 0, z: 0 }), getHoehenversatz: () => 0,
-            holeSchachtSubjekt: async () => null,
+            holeKnotenSubjekt: async () => null,
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
