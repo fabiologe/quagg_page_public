@@ -1266,7 +1266,7 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     if (result.globalId && erzeugtStand.get(result.globalId)) {
       const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
       const eigeneFlaechen = [...erzeugtStand]
-        .filter(([gid, plan]) => plan?.rezept === 'flaeche' && !verdeckt.has(gid) && Array.isArray(plan?.parameter?.punkte))
+        .filter(([gid, plan]) => _rezeptNachFuerMengen(plan?.rezept)?.bauform === 'flaeche' && !verdeckt.has(gid) && Array.isArray(plan?.parameter?.punkte))
         .map(([gid, plan]) => ({ globalId: gid, name: plan.name || '', punkte: plan.parameter.punkte }));
       if (eigeneFlaechen.length) angereichert = { ...angereichert, eigeneFlaechen };
       // DIE BIBLIOTHEK (9.8) für „Tauschen": Vorlagen sind Daten je Rezept —

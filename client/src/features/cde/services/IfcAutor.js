@@ -117,7 +117,7 @@ export const CDE_MODELL_ID = 'cde-eigenbau';
 export function vorgangstitelAus(schritte) {
     const out = new Map();
     for (const s of schritte ?? []) {
-        if (s?.wert?.rezept !== 'anzeige') continue;
+        if (!istAnzeigeform(s?.wert)) continue;
         for (const v of s.wert.parameter?.vorgaenge ?? []) {
             if (v?.ableitung && v?.titel && !out.has(v.ableitung)) out.set(v.ableitung, v.titel);
         }

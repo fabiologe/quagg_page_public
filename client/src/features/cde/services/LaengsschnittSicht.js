@@ -1,4 +1,4 @@
-import { erzeugtEintrag } from './Bauteilrezepte.js';
+import { erzeugtEintrag, rezeptNach } from './Bauteilrezepte.js';
 
 /**
  * LaengsschnittSicht — der Strang als Stationierung, fertig für die Ansicht
@@ -215,11 +215,14 @@ export function cdeZugEintraege(enden, hNeuNN, { bauplanVon, hoehenversatz = 0 }
     const out = [];
     for (const { globalId, ende } of enden ?? []) {
         const plan = bauplanVon?.(globalId);
-        if (plan?.rezept !== 'rohr') continue;
+        // Eine KANTE im Netz (Teil XXIII, A3) — nicht „ein Rohr": ein
+        // Rechteckkanal aus der Bibliothek gehört genauso in den Längsschnitt.
+        if (rezeptNach(plan?.rezept)?.netzrolle !== 'kante') continue;
         const punkte = neuePunkteFuerZug(plan.parameter?.punkte, ende, hNeuNN - hoehenversatz);
         if (!punkte) continue;
         out.push(erzeugtEintrag({
-            rezept: 'rohr',
+            // Das Rezept des Plans BLEIBT — sonst würde aus einem Kanal ein Rohr.
+            rezept: plan.rezept,
             kategorie: plan.kategorie,
             name: plan.name ?? '',
             globalId,

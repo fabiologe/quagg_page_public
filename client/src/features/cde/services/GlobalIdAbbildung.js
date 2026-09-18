@@ -15,6 +15,7 @@
  * Ableitung dessen Prüfmass (`quellBasis.gelaende`). Mehr wird nicht geraten.
  */
 import { pruefmassGleich } from './geometrie/ops/Raster.js';
+import { rezeptNach } from './Bauteilrezepte.js';
 
 /**
  * Die Kennungen, die das Journal nennt und das geladene Modell nicht kennt —
@@ -38,7 +39,9 @@ export function fehlendeAusJournal({ konflikte = [], erzeugtStand = new Map() } 
         if (!f) continue;                                   // nur, was ohnehin fehlt
         f.kategorie ??= 'IFCGEOGRAPHICELEMENT';
         f.pruefmass ??= plan.parameter?.quellBasis?.gelaende ?? null;
-        if (plan.rezept === 'anzeige' && plan.name) f.name ??= String(plan.name).replace(/ \(Anzeige\)$/, '');
+        // Den Quellnamen kennt das Rezept, das ihn um sein Suffix erweitert hat.
+        const quellname = rezeptNach(plan.rezept)?.quellnameAus?.(plan);
+        if (quellname) f.name ??= quellname;
     }
     return [...je.values()].map(f => ({ ...f, arten: [...f.arten] }));
 }

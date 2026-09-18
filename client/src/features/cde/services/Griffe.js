@@ -46,9 +46,6 @@ import { innenEcken, innenringName } from './gelaende/Innenecken.js';
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
 
-const LAGE_REZEPTE = new Set(['linie', 'rohr', 'schacht', 'flaeche']);
-/** Welche Rezepte einen geschlossenen Ring beschreiben (die letzte Kante zählt mit). */
-const RING_REZEPTE = new Set(['flaeche']);
 /** Ein Bauteil mit weniger Punkten als hier lässt sich nicht mehr sinnvoll drehen. */
 const DREH_MINDEST_PUNKTE = 2;
 
@@ -127,10 +124,13 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     // Ein BAUPLAN heisst „hier entstanden" — verlässlicher als jede
     // Herkunftsangabe des Aufrufers (der Modellname trügt, siehe Delta-Modell).
     const eigen = subjektHerkunft === 'cde' || !!bauplan;
-    if (eigen && bauplan && LAGE_REZEPTE.has(bauplan.rezept)) {
+    // Die Ecken stehen in `parameter.punkte` — das sagt das Rezept (`punkteIn`,
+    // Teil XXIII A3); ob die letzte Kante mitzählt, sagt `geschlossen`.
+    const rezept = bauplan ? rezeptNach(bauplan.rezept) : null;
+    if (eigen && bauplan && rezept?.punkteIn === 'parameter') {
         const punkte = (Array.isArray(bauplan.parameter?.punkte) ? bauplan.parameter.punkte : [])
             .map(p => (Array.isArray(p) && p.length >= 3 && p.every(Number.isFinite) ? p : null));
-        const ring = RING_REZEPTE.has(bauplan.rezept);
+        const ring = !!rezept.geschlossen;
         const gid = subjekt.globalId;
         const mindest = ring ? 3 : 2;
         const gueltige = punkte.filter(Boolean).length;

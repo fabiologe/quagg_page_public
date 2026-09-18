@@ -55,7 +55,7 @@
                 :title="sperrgrund || `${v.name} — ${VORLAGE_HERKUNFT[v.herkunft] ?? 'Vorlage'}`"
                 @click="vorlageZeichnen(v)"
               >
-                <CdeIcon :name="v.rezept === 'schacht' ? 'schacht' : v.rezept === 'rohr' ? 'laengsschnitt' : 'route'" :size="13" />
+                <CdeIcon :name="rezeptNach(v.rezept)?.icon ?? 'route'" :size="13" />
                 <span>{{ v.name }}</span>
               </button>
               <button
@@ -312,6 +312,7 @@ import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { hatHoehenbezug, nnAusWelt } from '../services/Hoehenbezug.js';
 import { formatGefaelle } from '../services/AxisAnnotations.js';
 import { hatErdbauEcken } from '../services/Griffe.js';

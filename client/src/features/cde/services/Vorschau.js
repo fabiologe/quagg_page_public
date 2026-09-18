@@ -29,6 +29,7 @@
 
 import { ableitungNach } from './ableitung/Ableitungen.js';
 import { weltAusNn } from './Hoehenbezug.js';
+import { istAnzeigeform } from './Bauteilrezepte.js';
 
 /** Ein Frame — mehr darf eine Vorschau je Änderung nicht kosten. */
 export const VORSCHAU_BUDGET_MS = 16;
@@ -83,7 +84,7 @@ export function vorschauFuer(beschreibungen, ctx = {}) {
     // durch (Overlay mit `depthTest: false`).
     const erzeugte = liste.filter(e => e.art === 'erzeugt');
     const ersetzt = new Set(erzeugte.map(e => e.nachher?.parameter?.quellen?.gelaende).filter(Boolean));
-    const unterAnzeige = erzeugte.some(e => e.nachher?.rezept === 'anzeige');
+    const unterAnzeige = erzeugte.some(e => istAnzeigeform(e.nachher));
 
     for (const e of liste) {
         switch (e.art) {

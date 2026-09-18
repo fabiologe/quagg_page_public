@@ -657,12 +657,14 @@ function _erdbauVorgang(quelle, { rezept, quellen, quellBasis, operationen, name
 function _gelaendeSchritte(el, neueOps, { titel = null, auflockerung = null } = {}) {
     const bauplan = el?.stand?.bauplan;
     const eb = el?.erdbau ?? null;
-    const alt = bauplan?.rezept === 'gelaende' ? bauplan : null;   // Altbestand vor Teil XIV
+    // Altbestand vor Teil XIV: das Rezept, das sein Quellraster HEREINGEREICHT
+    // braucht (`{quelle, operationen}`) — gefragt wird diese Eigenschaft.
+    const alt = rezeptNach(bauplan?.rezept)?.braucht === 'quellraster' ? bauplan : null;
     // Das UR: aus der Anreicherung; ohne sie (headless) wenigstens EIN Hop
     // hinauf, wenn das Subjekt selbst eine Anzeigeform oder ein Teil eines
     // Erdbau-Vorgangs ist — sonst würde auf eine Kopie gesetzt.
     const ur = eb?.ur ?? alt?.parameter?.quelle
-        ?? ((istAnzeigeform(bauplan) || bauplan?.rezept === 'erdbau') ? bauplan.parameter?.quellen?.gelaende : null)
+        ?? ((istAnzeigeform(bauplan) || rezeptNach(bauplan?.rezept)?.erdbau) ? bauplan.parameter?.quellen?.gelaende : null)
         ?? el.globalId;
     const name = _urName(el, eb, alt);
     const quellBasis = { gelaende: eb?.quellBasis ?? el.quellmass?.pruefmass ?? null };

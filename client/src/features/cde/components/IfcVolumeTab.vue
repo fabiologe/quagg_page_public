@@ -224,7 +224,8 @@ watchEffect(async () => {
     // Altbestand `gelaende` und die ANZEIGE (Stufe 1: die Zeile „Gesamt",
     // die die Summe der Vorgänge sein muss). Die alte Namensliste vergass
     // die Bauwerksgrube.
-    const bauplaene = [...stand.values()].filter(b => b?.rezept === 'gelaende' || b?.rezept === 'anzeige' || !!rezeptNach(b?.rezept)?.erdbau);
+    // Was in den Mengen-Reiter gehört, sagt das Rezept: ein Erdbau oder ein Gelände.
+    const bauplaene = [...stand.values()].filter(b => { const r = rezeptNach(b?.rezept); return !!(r?.erdbau || r?.gelaendeform); });
     const lauf = ++_erdmassenLauf;
     const zeilen = bauplaene.length ? await api.erdmassen?.(bauplaene) ?? [] : [];
     if (lauf === _erdmassenLauf) erdmassen.value = zeilen;

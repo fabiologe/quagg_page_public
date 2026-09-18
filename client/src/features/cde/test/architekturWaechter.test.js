@@ -142,18 +142,17 @@ const INTERNA_ERLAUBT = {};
 /** W2 — Op-Namen in Verzweigungen. 38 → 0 mit A2: alles steht am Eintrag der Registry. */
 const OPNAMEN_ERLAUBT = {};
 
-/** W3 — Rezeptnamen ausserhalb des Katalogs. Ziel: die Altbestands-Stellen (A3). */
-const REZEPTNAMEN_ERLAUBT = {
-    'components/CdeToolbox.vue': 2,
-    'components/IfcViewer.vue': 1,
-    'components/IfcVolumeTab.vue': 2,
-    'services/Bearbeitungen.js': 2,
-    'services/GlobalIdAbbildung.js': 1,
-    'services/Griffe.js': 2,            // A2: `erdbauRezepte` fiel (Punktlisten kennt das Rezept)
-    'services/IfcAutor.js': 1,
-    'services/IfcEngine.js': 4,
-    'services/LaengsschnittSicht.js': 1,
-    'services/Vorschau.js': 1,
+/** W3 — Rezeptnamen ausserhalb des Katalogs. 19 → 0 mit A3: gefragt wird, was das Rezept KANN. */
+const REZEPTNAMEN_ERLAUBT = {};
+
+/**
+ * W3b — Werkzeuge, die beim SCHREIBEN ein Netzrezept beim Namen nennen
+ * (`rezept: 'rohr'`). Sie ersetzen gelieferte Netzelemente durch eigene Kopien;
+ * WELCHES Rezept eine Kante oder ein Knoten bekommt, beantwortet AE
+ * (Eigenschaftsart Netzrolle → Katalogrezept). Ziel: 0 (AE).
+ */
+const NETZREZEPT_SCHREIBER_ERLAUBT = {
+    'services/Bearbeitungen.js': 6,     // Kante verschieben/teilen, Knoten einfügen/entfernen, Trasse
 };
 
 /** W4 — `geometrie/ops` am Kernel-Vertrag vorbei. Ziel: nur das Hilfen-Fass (A8). */
@@ -311,9 +310,20 @@ describe('W2 — Geländeoperationen: ihr Name steht nur in ihrer Registry', () 
 
 describe('W3 — Rezeptnamen stehen nur im Katalog', () => {
     const namen = [...Object.keys(REZEPTE), ...Object.keys(ABLEITUNGEN)].join('|');
-    const muster = new RegExp(`(?:rezept\\s*[!=]==\\s*'(?:${namen})')|(?:new Set\\(\\[\\s*'(?:${namen})')`, 'g');
+    // Drei Formen derselben Sache: der Vergleich (`rezept === 'rohr'`, auch
+    // über `.id`), die Liste (`new Set(['linie', …`) und das NACHSCHLAGEN über
+    // den Namen (`{ kanalgraben: … }[b.rezept]`). Die dritte fehlte bis A3 —
+    // ein Wächter mit blindem Fleck zählt zu wenig und beweist nichts.
+    // `case` zählt NICHT: `case 'linie'` ist dort eine Primitivart, kein Rezept.
+    const muster = new RegExp(`(?:(?:rezept|\\.id)\\s*[!=]==\\s*'(?:${namen})')|(?:new Set\\(\\[\\s*'(?:${namen})')|(?:\\}\\[\\s*[\\w.?]*rezept\\s*\\])`, 'g');
     const gefunden = zaehle(muster, { nur: p => !/^services\/(ableitung\/|Bauteilrezepte\.js|Bibliothek\.js)/.test(p) });
     regel('W3 Rezeptnamen', gefunden, REZEPTNAMEN_ERLAUBT);
+});
+
+describe('W3b — Werkzeuge schreiben kein Netzrezept beim Namen', () => {
+    const muster = /rezept:\s*'(?:rohr|schacht|linie|flaeche)'/g;
+    const gefunden = zaehle(muster, { nur: p => !/^services\/(ableitung\/|Bauteilrezepte\.js|Bibliothek\.js)/.test(p) });
+    regel('W3b Netzrezept-Schreiber', gefunden, NETZREZEPT_SCHREIBER_ERLAUBT);
 });
 
 describe('W4 — der Kernel-Vertrag: `geometrie/ops` importiert nur der Kern', () => {

@@ -521,6 +521,9 @@ export const REZEPTE = Object.freeze({
         // Teil XIV, G5: eine Linie ohne eigene Höhe ist eine BRUCHKANTE — sie
         // liegt auf dem Gelände. Wer eine Höhe tippt, zeichnet eine Trasse.
         hoehenAus: 'gelaende',
+        // Die Ecken stehen in `parameter.punkte` — Griffe und Werkzeuge lesen
+        // DAS, nicht den Rezeptnamen (Teil XXIII, A3).
+        punkteIn: 'parameter',
         verschiebe: _verschiebePunktliste,
         fachmodell: _fachmodellNichts,
         baue: (parameter) => bandGeometrie(punkteAus(parameter)),
@@ -538,6 +541,7 @@ export const REZEPTE = Object.freeze({
             { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
         ],
+        punkteIn: 'parameter',
         verschiebe: _verschiebePunktliste,
         fachmodell: _fachmodellNichts,
         baue: (parameter) => flaechenGeometrie(punkteAus(parameter)),
@@ -561,6 +565,8 @@ export const REZEPTE = Object.freeze({
          */
         verschiebe: _verschiebeGelaende,
         fachmodell: _fachmodellGelaende,
+        // Ein GELÄNDE, keine Menge: gehört in den Mengen-Reiter neben die Erdbauten.
+        gelaendeform: true,
         braucht: 'quellraster',
         baue: null,
         baueMit: (parameter, quellraster) => {
@@ -584,6 +590,10 @@ export const REZEPTE = Object.freeze({
             { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300 },
         ],
+        punkteIn: 'parameter',
+        // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
+        // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
+        netzrolle: 'kante',
         verschiebe: _verschiebePunktliste,
         fachmodell: _fachmodellRohr,
         formAus: (parameter, form) => _formAusRohr(parameter, form, 12),
@@ -609,6 +619,8 @@ export const REZEPTE = Object.freeze({
             { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl',
               min: 300, max: 4000, vorgabe: 1000 },
         ],
+        punkteIn: 'parameter',
+        netzrolle: 'knoten',
         verschiebe: _verschiebePunktliste,
         fachmodell: _fachmodellSchacht,
         formAus: (parameter, form) => _formAusRohr(parameter, form, 16),

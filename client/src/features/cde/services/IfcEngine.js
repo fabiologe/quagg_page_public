@@ -244,6 +244,22 @@ export function ladeversatzAus({ baseCoordinates = null, position = null } = {})
     return { x: 0 - (p.x ?? 0), y: 0 - (p.y ?? 0), z: 0 - (p.z ?? 0), quelle: 'position' };
 }
 
+/**
+ * Die Füllungsspalten des Mengen-Reiters — aus dem REZEPT (Teil XXIII, A3).
+ *
+ * Der Teil, der eine verdichtete Menge trägt (`menge.compactedVolume`), ist
+ * die Füllung des Vorgangs. Heisst er `verfuellung`, füllt er einen Graben
+ * wieder (Graben − Rohr), sonst ist er ein Auftrag. Ohne solchen Teil (die
+ * Baugrube) bleiben beide Spalten leer. Bis A3 stand hier, WELCHE Rezepte
+ * welche Spalte füllen — beim Namen.
+ */
+function _fuellungsspalten(rz, k) {
+    const teil = (rz?.teile ?? []).find(t => t?.menge?.compactedVolume);
+    if (!teil) return { auftrag: null, verfuellung: null };
+    const wert = k?.[teil.menge.compactedVolume] ?? null;
+    return teil.rolle === 'verfuellung' ? { auftrag: null, verfuellung: wert } : { auftrag: wert, verfuellung: null };
+}
+
 export class IfcEngine {
     constructor() {
         this.components      = new OBC.Components();
@@ -4070,11 +4086,11 @@ export class IfcEngine {
             // DIE ANZEIGE (Stufe 1): je Ur-Gelände eine Zeile GESAMT — das
             // Ur gegen das Gelände nach allen Vorgängen. Sie muss die Summe
             // der Vorgangszeilen sein; ist sie es nicht, ist etwas falsch.
-            if (rz?.id === 'anzeige') {
+            if (rz?.summe) {
                 if (!b.ableitung || gesehen.has(b.ableitung)) continue;
                 gesehen.add(b.ableitung);
                 const k = this.autor?.ableitungen?.get(b.ableitung)?.kennzahlen ?? null;
-                const name = String(b.name ?? '').replace(/ \(Anzeige\)$/, '') + ' · Gesamt';
+                const name = (rz.quellnameAus?.(b) ?? String(b.name ?? '')) + ' · Gesamt';
                 if (!k) { zeilen.push({ name, art: 'anzeige', gesamt: true, aushub: null, auftrag: null, grund: 'noch nicht aufgebaut' }); continue; }
                 zeilen.push({ name, ableitung: b.ableitung, art: 'anzeige', gesamt: true,
                               aushub: k.aushubGesamt ?? null, auftrag: k.auftragGesamt ?? null,
@@ -4089,7 +4105,7 @@ export class IfcEngine {
                 gesehen.add(b.ableitung);
                 const a = this.autor?.ableitungen?.get(b.ableitung) ?? null;
                 const k = a?.kennzahlen;
-                const anhang = { kanalgraben: ' · Kanalgraben', bauwerksgrube: ' · Baugrube' }[b.rezept] ?? '';
+                const anhang = rz.mengenzeile ? ` · ${rz.mengenzeile}` : '';
                 const name = String(b.name ?? '')
                     .replace(/ · (Aushub|Auftrag|Graben|Verfüllung|Baugrube)$/, '')
                     .replace(/ \((geformt|mit Graben|mit Baugrube)\)$/, '')
@@ -4105,8 +4121,10 @@ export class IfcEngine {
                     aushub: aushubMasseVon(k),
                     massenQuelle: k.massenQuelle ?? null,
                     // Beim Kanalgraben ist der „Auftrag" die VERFÜLLUNG (Graben − Rohr).
-                    auftrag: (b.rezept === 'kanalgraben' || b.rezept === 'bauwerksgrube') ? null : (k.auftragRaster ?? null),
-                    verfuellung: b.rezept === 'kanalgraben' ? (k.verfuellung ?? null) : null,
+                    // Was der Vorgang AUFFÜLLT, sagt sein Rezept: der Teil, der eine
+                    // verdichtete Menge trägt — beim Graben die Verfüllung, sonst der
+                    // Auftrag. Eine Baugrube hat keinen.
+                    ..._fuellungsspalten(rz, k),
                     rohrVolumen: k.rohrVolumen ?? null,
                     aushubKoerper: k.aushubKoerper ?? null, auftragKoerper: k.auftragKoerper ?? null,
                     // Teil XXI (P4): die LOSE Masse (die abgefahren wird), der
@@ -4118,7 +4136,8 @@ export class IfcEngine {
                 });
                 continue;
             }
-            if (b?.rezept !== 'gelaende') continue;
+            // Altbestand vor Teil XIV: das Rezept, das sein Quellraster braucht.
+            if (rz?.braucht !== 'quellraster') continue;
             const quelle = b.parameter?.quelle;
             const raster = quelle
                 ? await this._quellrasterVon(quelle, { cell: b.parameter?.raster?.cell ?? null })

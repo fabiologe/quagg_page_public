@@ -671,6 +671,8 @@ function _stationenEntlang(punkte, schritt) {
 ABLEITUNGEN_ERWEITERT.kanalgraben = {
     id: 'kanalgraben',
     titel: 'Kanalgraben',
+    /** So heisst der Vorgang im Mengen-Reiter hinter dem Quellnamen („H-001 · Kanalgraben"). */
+    mengenzeile: 'Kanalgraben',
     icon: 'gerinne',
     erdbau: true,
     bauform: 'koerper',
@@ -1157,6 +1159,8 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
 const BAUWERKSGRUBE = {
     id: 'bauwerksgrube',
     titel: 'Bauwerksgrube',
+    /** So heisst der Vorgang im Mengen-Reiter hinter dem Quellnamen („H-001 · Baugrube"). */
+    mengenzeile: 'Baugrube',
     icon: 'ausheben',
     erdbau: true,
     bauform: 'koerper',
@@ -1372,6 +1376,18 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
     felder: [],
     braucht: { gelaende: ['hoehenfeld'] },
     formen:  { gelaende: 'raster' },
+    // Ein GELÄNDE, keine Menge: gehört in den Mengen-Reiter neben die Erdbauten.
+    gelaendeform: true,
+    // DIE SUMME (Stufe 1): je Ur-Gelände eine Zeile „Gesamt" — das Ur gegen das
+    // Gelände nach allen Vorgängen. Der Mengen-Reiter fragt das, nicht „anzeige".
+    summe: true,
+    /**
+     * Der Name des Ur-Geländes, aus dem diese Anzeige entstand — die Umkehrung
+     * von `teile[0].name`. HIER, weil hier das Suffix angehängt wird; vorher
+     * schnitten es der Mengen-Reiter und die GlobalId-Abbildung je selbst ab.
+     */
+    quellnameAus: (plan) => (plan?.name ? String(plan.name).replace(/ \(Anzeige\)$/, '') : null),
+
     teile: [
         { rolle: 'anzeige', kategorie: 'IFCGEOGRAPHICELEMENT', bauform: 'hoehenfeld', form: 'raster',
           predefinedType: 'TERRAIN', export: false, name: (q) => `${q} (Anzeige)` },
