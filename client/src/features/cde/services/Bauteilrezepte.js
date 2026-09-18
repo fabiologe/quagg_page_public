@@ -35,12 +35,13 @@
  * Stelle und wird nirgends noch einmal entschieden.
  */
 
-import * as THREE from 'three';
 import { formeNach, verschiebeOperationen } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometry/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
-import { sweep, kreisProfil } from './geometrie/ops/Sweep.js';
+import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
+import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
+import { LINIEN_BAND_M, dreiecksGeometrie, punkteAus, rohrKoerper } from './rezept/Geometriebau.js';
 import { versetztePunkte, ringFlaeche } from './geometrie/ops/Linien.js';
 // Default-Import: der benannte lief im Dev-Server und brach im vite build
 // (CJS-Interop) — derselbe Weg wie in IfcShapeOutlines.
@@ -48,31 +49,9 @@ import polygonClipping from 'polygon-clipping';
 import { erdbauStapelVon, quellenVon, urGelaendeVon } from './ableitung/Bezuege.js';
 
 export { quellenVon };
-
-/**
- * Anzeigebreite einer Linie in Metern.
- *
- * Eine Linie HAT keine Breite — das hier ist Darstellung, damit sie in der
- * Raumansicht überhaupt sichtbar ist (fragments zeichnet Netze, keine Striche).
- * Bewusst KEIN Parameter: wäre es einer, hielte ihn jemand für eine Bauteil-
- * breite und rechnete damit Massen. Der Lageplan zeichnet die Linie ohnehin
- * als echten Strich, ohne dieses Band.
- */
-export const LINIEN_BAND_M = 0.06;
-
-/** Ein Punkt aus dem Journal ist `[x, y, z]` — hier wird er three-tauglich. */
-function alsVec3(p) {
-    return new THREE.Vector3(Number(p?.[0]) || 0, Number(p?.[1]) || 0, Number(p?.[2]) || 0);
-}
-
-/** Punkte lesen und dabei aussortieren, was keiner ist. */
-export function punkteAus(parameter) {
-    const roh = parameter?.punkte;
-    if (!Array.isArray(roh)) return [];
-    return roh
-        .filter(p => Array.isArray(p) && p.length >= 2 && p.every(v => Number.isFinite(Number(v))))
-        .map(p => [Number(p[0]), Number(p[1] ?? 0), Number(p[2] ?? 0)]);
-}
+// Die Geometrie-Bausteine leben seit A4 in `rezept/Geometriebau.js` — die
+// Schnittstelle dieses Moduls bleibt (Leitplanke 3).
+export { LINIEN_BAND_M, punkteAus, rohrKoerper };
 
 /** Kennt das Wörterbuch diesen Typ (IFC 4.3 ADD2 oder eine Waise älterer Schemata)? */
 export function istKategorie(name) {
@@ -92,213 +71,6 @@ export function istKategorie(name) {
 export function istSchreibbar(name) {
     const e = ENTITY_META[String(name ?? '').toUpperCase().trim()];
     return !!e && e.schema.includes('IFC4X3_ADD2') && !e.abstract && e.hierarchy.includes('IfcProduct');
-}
-
-// ── Die Rezepte ─────────────────────────────────────────────────────────────
-
-/**
- * Ein Band entlang einer Polylinie — die Darstellung einer Linie im Raum.
- *
- * Waagerecht gelegt, weil eine Trasse, Bruchkante oder Grenze von oben gelesen
- * wird. Je Abschnitt zwei Dreiecke; die Breite steht senkrecht auf dem
- * Abschnitt in der XZ-Ebene.
- */
-function bandGeometrie(punkte, breite = LINIEN_BAND_M) {
-    if (punkte.length < 2) return null;
-    const halb = breite / 2;
-    const ecken = [];
-    const indizes = [];
-
-    for (let i = 0; i < punkte.length; i++) {
-        const hier = alsVec3(punkte[i]);
-        // Die Richtung am Punkt: gemittelt zwischen den anliegenden
-        // Abschnitten, damit die Ecken nicht aufklaffen.
-        const vor = i > 0 ? alsVec3(punkte[i - 1]) : null;
-        const nach = i < punkte.length - 1 ? alsVec3(punkte[i + 1]) : null;
-        const richtung = new THREE.Vector3();
-        if (vor) richtung.add(new THREE.Vector3(hier.x - vor.x, 0, hier.z - vor.z).normalize());
-        if (nach) richtung.add(new THREE.Vector3(nach.x - hier.x, 0, nach.z - hier.z).normalize());
-        if (richtung.lengthSq() < 1e-12) richtung.set(1, 0, 0);
-        richtung.normalize();
-        // Senkrechte in der XZ-Ebene.
-        const quer = new THREE.Vector3(-richtung.z, 0, richtung.x).multiplyScalar(halb);
-        ecken.push(hier.x - quer.x, hier.y, hier.z - quer.z);
-        ecken.push(hier.x + quer.x, hier.y, hier.z + quer.z);
-    }
-
-    for (let i = 0; i < punkte.length - 1; i++) {
-        const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-        indizes.push(a, c, b, b, c, d);
-    }
-
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(ecken, 3));
-    g.setIndex(indizes);
-    g.computeVertexNormals();
-    return g;
-}
-
-/**
- * Ein waagerechtes Polygon — die Fläche.
- *
- * Trianguliert über `THREE.ShapeUtils`, das auch konkave Umrisse trägt; ein
- * eigener Ohrenschneider wäre eine vierte Kopie einer gelösten Aufgabe.
- * Die Höhe kommt aus dem Feld `hoehe`, nicht aus den Punkten: im Lageplan
- * klickt man in XZ, die Höhe ist eine Angabe.
- */
-function flaechenGeometrie(punkte) {
-    if (punkte.length < 3) return null;
-    // Trianguliert wird im GRUNDRISS (x/z) — die Höhe darf die Zerlegung nicht
-    // beeinflussen, sonst zerfällt eine geneigte Fläche anders als dieselbe
-    // waagerecht.
-    const umriss = punkte.map(p => new THREE.Vector2(p[0], p[2]));
-    const dreiecke = THREE.ShapeUtils.triangulateShape(umriss, []);
-    if (!dreiecke.length) return null;
-
-    // JEDER PUNKT BEHÄLT SEINE HÖHE. Hier stand eine feste `hoehe`, die der
-    // Aufrufer immer als 0 übergab — die im Formular eingetragene Höhe steckt
-    // längst in den Punkten (`alsRaumpunkte` backt sie in y). Eine auf 305 m
-    // gezeichnete Fläche landete dadurch auf 0. Im Lageplan fiel es nicht auf,
-    // weil der direkt aus dem Journal zeichnet und die Geometrie gar nicht
-    // ansieht.
-    const ecken = [];
-    for (const p of punkte) ecken.push(p[0], p[1], p[2]);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(ecken, 3));
-    g.setIndex(dreiecke.flat());
-    g.computeVertexNormals();
-    return g;
-}
-
-/**
- * Der Katalog. Neue Rezepte hier ergänzen — sonst nirgends.
- *
- * Reihenfolge nach NUTZEN, nicht nach Schwierigkeit: `linie` zuerst, weil sie
- * Trasse, Bruchkante, Grenze und Absteckung auf einmal bedient — und weil
- * Stufe 10 sie als Achse fürs Gerinne braucht. `flaeche` gleich danach, weil
- * das Aushubpolygon dieselbe Eingabe ist.
- *
- * Eintrag:
- *   id, titel, icon      Darstellung
- *   bauform              Schlüssel aus BAUFORMEN — bestimmt, was danach an dem
- *                        Bauteil möglich ist (Ziehen, Operationen, Mengen)
- *   kategorieVorgabe     nur die VORGABE; der Typ ist ein Feld
- *   mindestPunkte        weniger ist kein Bauteil
- *   geschlossen          Umriss (Fläche) oder offener Zug (Linie)
- *   felder               wie im Bearbeitungs-Katalog
- *   baue(parameter)      → BufferGeometry | null. REIN: keine Engine, kein Vue.
- */
-/**
- * Ein Rohr: Kreisquerschnitt entlang der Achse.
- *
- * Warum ein eigenes Rezept und nicht das Band der `linie`: Eine geteilte
- * Haltung besteht aus zwei HALTUNGEN, nicht aus zwei flachen Streifen. Wer im
- * Kanalbau zwei Bänder im Raum liegen sieht, hat kein Modell, sondern eine
- * Skizze — und die Bauform wäre `linie` statt `achse+profil`, womit auch alle
- * Werkzeuge dieser Form ausfielen.
- *
- * Die Richtung an jedem Stützpunkt wird zwischen den anliegenden Abschnitten
- * gemittelt, damit die Ringe an Knicken nicht aufklaffen — dasselbe Vorgehen
- * wie beim Band. Der Ring liegt in der Ebene senkrecht zur Richtung.
- *
- * PARAMETRISCH GEDACHT: Was hier ein Netz wird, kennt die Bibliothek auch als
- * `editor.createCircleExtrusion({radius[], axes})`. Das Journal speichert
- * ohnehin nur PUNKTE und DN — der Umstieg auf die parametrische Form ändert
- * dann nichts am Journal, nur an dieser Funktion.
- */
-/**
- * Rohr und Schacht — seit G6 ein GESCHLOSSENER Sweep mit Kappen aus dem
- * Kernel: daran stellt `meshVolume` ein Attest aus, und die Bauform-Schicht
- * kann am eigenen Bauteil `gemessen` sagen. Vorher ein offener Schlauch aus
- * Ringen ohne Enden — kein Körper, kein Volumen.
- */
-function rohrGeometrie(punkte, dnMm = 300, seiten = 12) {
-    const k = rohrKoerper(punkte, dnMm, seiten);
-    return k ? dreiecksGeometrie(k.positions) : null;
-}
-
-/** Der Rohrkörper als Kernel-Form `koerper` — null, wenn kein Körper entsteht. */
-export function rohrKoerper(punkte, dnMm = 300, seiten = 12) {
-    if (!Array.isArray(punkte) || punkte.length < 2) return null;
-    const r = (Number(dnMm) || 300) / 2000;          // mm Durchmesser → m Radius
-    if (!(r > 0)) return null;
-    const { ergebnis } = sweep({ profil: kreisProfil(r, seiten), achse: { punkte: punkte.map(_p) } });
-    return ergebnis ?? null;
-}
-
-/**
- * Die Kernel-Form eines Rohrs/Schachts AUS DEM BAUPLAN (G6): der
- * Ableitungslauf fragt so nach der Achse eines eigenen Rohrs, ohne dass das
- * Rohr eine Ableitung sein müsste.
- */
-function _formAusRohr(parameter, form, seiten) {
-    const punkte = punkteAus(parameter);
-    if (punkte.length < 2) return null;
-    // EIN EIGENES ROHR LIEGT IN DER ROHRMITTE (Teil XXI, E4): der Sweep legt
-    // sein Kreisprofil UM die gezeichneten Punkte. Ohne diese Angabe müsste
-    // der Kanalgraben raten, und er riet anders als der Längsschnitt.
-    if (form === 'linie') {
-        return { punkte: punkte.map(_p), dn: Number(parameter?.dn) || null,
-                 achsbezug: 'mitte', quelle: 'bauplan' };
-    }
-    // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster Punkt IST
-    // seine Sohle. Vorher lieferte ein eigener Schacht gar keine Form `knoten`
-    // — im Strang fiel er still aus der Baugrubenrechnung.
-    if (form === 'knoten') {
-        const tief = punkte.map(_p).reduce((a, p) => (p.y <= a.y ? p : a));
-        return { x: tief.x, y: tief.y, z: tief.z, unterkante: tief.y, name: String(parameter?.name ?? '') };
-    }
-    if (form === 'koerper' || form === 'mesh') return rohrKoerper(punkte, parameter?.dn, seiten);
-    return null;
-}
-
-/**
- * Dreiecksliste (Welt) → BufferGeometry mit Normalen — INDIZIERT.
- *
- * DER INDEX IST PFLICHT, nicht Kosmetik. `representationFromGeometry` der
- * Bibliothek liest `geometry.index.array` ohne Prüfung
- * (`@thatopen/fragments/dist/index.mjs`); eine unindizierte Geometrie lässt
- * `createElements` mit „Cannot read properties of null (reading 'array')"
- * abbrechen. Der Fehler kommt aus dem Editor zurück und landet in
- * `misserfolge` — das Bauteil entsteht schlicht nicht, und im Raum fehlt es
- * ohne Meldung an der Oberfläche. Genau daran kam KEIN Erdkörper je an
- * (2026-09-09), während Linie und Fläche funktionierten: die beiden Bauer
- * darüber setzen ihren Index von sich aus.
- *
- * Der Index ist trivial (0,1,2,…) und schweisst NICHTS zusammen: die Ecken
- * bleiben je Dreieck eigen, damit `computeVertexNormals` flache Facetten
- * liefert. Ein Erdkörper mit gemittelten Normalen sähe an der Böschungskante
- * weich aus, wo eine Kante ist.
- */
-function dreiecksGeometrie(positions) {
-    if (!positions?.length) return null;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3));
-    const n = Math.floor(positions.length / 3);
-    // Über 65.535 Ecken trägt ein Uint16-Index nicht mehr — ein Gelände hat
-    // regelmässig Hunderttausende.
-    const index = n > 65535 ? new Uint32Array(n) : new Uint16Array(n);
-    for (let i = 0; i < n; i++) index[i] = i;
-    geo.setIndex(new THREE.BufferAttribute(index, 1));
-    geo.computeVertexNormals();
-    return geo;
-}
-
-/**
- * Rahmenwechsel (Lücke ⑤): jedes Rezept deklariert, wie seine Parameter in
- * einen neuen Ladeversatz gehoben werden — WELCHE Felder Punkte sind, weiss
- * nur das Rezept selbst. Ein Rezept ohne `verschiebe` fällt im Wächtertest
- * (`journalVersatz.test.js`), nicht erst an einer verschobenen Revision.
- */
-function _verschiebePunktliste(parameter, delta) {
-    const punkte = parameter?.punkte;
-    if (!Array.isArray(punkte)) return parameter;
-    return {
-        ...parameter,
-        punkte: punkte.map(p => (Array.isArray(p) && p.length >= 3
-            ? [p[0] + delta.x, p[1] + delta.y, p[2] + delta.z]
-            : p)),
-    };
 }
 
 /** Der Schwerpunkt einer Punktliste in XZ (Welt), oder null. */
@@ -471,162 +243,56 @@ function _verschiebeGelaende(parameter, delta) {
 }
 
 
-// ── Fachmodell-Projektion (Stufe 17.3 → Teil XIV): jedes Rezept sagt selbst,
-//    was es dem Fachmodell gibt — Kanten, Knoten, Gelände, Körper. ────────
-function _p(p) {
-    if (Array.isArray(p)) return { x: p[0] ?? 0, y: p[1] ?? 0, z: p[2] ?? 0 };
-    return { x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0 };
-}
-function _laengeVon(punkte) {
-    let l = 0;
-    for (let i = 0; i + 1 < punkte.length; i++) {
-        l += Math.hypot(punkte[i + 1].x - punkte[i].x, punkte[i + 1].y - punkte[i].y, punkte[i + 1].z - punkte[i].z);
-    }
-    return l;
-}
-/** Nur ROHRE werden Kanten: eine gezeichnete Linie ist eine Trasse, kein Kanal. */
-function _fachmodellRohr(globalId, plan) {
-    const roh = plan?.parameter?.punkte;
-    if (!Array.isArray(roh) || roh.length < 2) return {};
-    const punkte = roh.map(_p);
-    return { kanten: [{
-        globalId, name: plan.name ?? '', kategorie: plan.kategorie ?? 'IFCPIPESEGMENT',
-        anfang: punkte[0], ende: punkte[punkte.length - 1], punkte,
-        laenge: _laengeVon(punkte), dn: Number(plan.parameter?.dn) || null, quelle: 'bauplan',
-    }] };
-}
-/** Der Netz-Knoten eines Schachts ist die SOHLE (dieselbe Konvention wie die Platzierung). */
-function _fachmodellSchacht(globalId, plan) {
-    const roh = plan?.parameter?.punkte;
-    if (!Array.isArray(roh) || !roh.length) return {};
-    return { knoten: [{ globalId, name: plan.name ?? '', punkt: _p(roh[0]) }] };
-}
-const _fachmodellNichts = () => ({});
-const _fachmodellGelaende = (globalId) => ({ gelaende: [globalId] });
+// ── Der Katalog (Teil XXIII, A4) ───────────────────────────────────────────
+//
+// Die Rezepte sind DATEN (`rezept/Eingebaut.js`); `rezeptAusDeklaration`
+// macht daraus die Schnittstelle, die jeder Leser kennt. Neue Rezepte dort
+// ergänzen — oder, ab A5, in der Bibliothek. Hier bleibt nur, was Code ist.
 
-export const REZEPTE = Object.freeze({
-    linie: {
-        id: 'linie',
-        titel: 'Linie',
-        icon: 'route',
-        bauform: 'linie',
-        kategorieVorgabe: 'IFCANNOTATION',
-        mindestPunkte: 2,
-        geschlossen: false,
-        felder: [
-            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
-            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
-            { name: 'hoehe', titel: 'Höhe (leer = auf dem Gelände)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-        ],
-        // Teil XIV, G5: eine Linie ohne eigene Höhe ist eine BRUCHKANTE — sie
-        // liegt auf dem Gelände. Wer eine Höhe tippt, zeichnet eine Trasse.
-        hoehenAus: 'gelaende',
-        // Die Ecken stehen in `parameter.punkte` — Griffe und Werkzeuge lesen
-        // DAS, nicht den Rezeptnamen (Teil XXIII, A3).
-        punkteIn: 'parameter',
-        verschiebe: _verschiebePunktliste,
-        fachmodell: _fachmodellNichts,
-        baue: (parameter) => bandGeometrie(punkteAus(parameter)),
-    },
-    flaeche: {
-        id: 'flaeche',
-        titel: 'Fläche',
-        icon: 'areas',
-        bauform: 'flaeche',
-        kategorieVorgabe: 'IFCANNOTATION',
-        mindestPunkte: 3,
-        geschlossen: true,
-        felder: [
-            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
-            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
-            { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-        ],
-        punkteIn: 'parameter',
-        verschiebe: _verschiebePunktliste,
-        fachmodell: _fachmodellNichts,
-        baue: (parameter) => flaechenGeometrie(punkteAus(parameter)),
-    },
-    gelaende: {
-        id: 'gelaende',
-        titel: 'Geformtes Gelände',
-        icon: 'terrain',
-        bauform: 'hoehenfeld',
-        kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
-        mindestPunkte: 0,
-        geschlossen: false,
-        felder: [],
-        /**
-         * Dieses Rezept BRAUCHT etwas, das kein Parameter sein darf: das
-         * Höhenraster des GELIEFERTEN Geländes. Es ins Journal zu legen wäre
-         * Gesetz-5-Bruch (Gerechnetes gespeichert — und veraltet still mit
-         * der nächsten Revision). Deshalb deklariert das Rezept seinen
-         * Bedarf, und `baueErzeugte` reicht die Ableitung herein — die
-         * Parameter bleiben rein deklarativ: Quelle + Operationsliste.
-         */
-        verschiebe: _verschiebeGelaende,
-        fachmodell: _fachmodellGelaende,
-        // Ein GELÄNDE, keine Menge: gehört in den Mengen-Reiter neben die Erdbauten.
-        gelaendeform: true,
-        braucht: 'quellraster',
-        baue: null,
-        baueMit: (parameter, quellraster) => {
-            const { raster, warnungen } = formeNach(quellraster, parameter?.operationen ?? []);
-            const { positions } = dreieckeAusRaster(raster);
-            const geo = dreiecksGeometrie(positions);
-            return { geometrie: geo, warnungen };
-        },
-    },
-    rohr: {
-        id: 'rohr',
-        titel: 'Rohr',
-        icon: 'laengsschnitt',
-        bauform: 'achse+profil',
-        kategorieVorgabe: 'IFCPIPESEGMENT',
-        mindestPunkte: 2,
-        geschlossen: false,
-        felder: [
-            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
-            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
-            { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, vorgabe: 300 },
-        ],
-        punkteIn: 'parameter',
-        // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
-        // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
-        netzrolle: 'kante',
-        verschiebe: _verschiebePunktliste,
-        fachmodell: _fachmodellRohr,
-        formAus: (parameter, form) => _formAusRohr(parameter, form, 12),
-        baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn),
-    },
-    schacht: {
-        id: 'schacht',
-        titel: 'Schacht',
-        icon: 'schacht',
-        bauform: 'koerper',
-        kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
-        // ZWEI Punkte: Sohle und Deckel. Ein Schacht ist geometrisch ein
-        // senkrechtes Rohr — deshalb braucht er keine eigene Routine, nur
-        // eine andere Achse. Die Tiefe ist der Abstand der beiden Punkte,
-        // nicht ein drittes Feld daneben: zwei Wege zu derselben Grösse
-        // liefen auseinander.
-        mindestPunkte: 2,
-        geschlossen: false,
-        felder: [
-            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
-            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
-            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl',
-              min: 300, max: 4000, vorgabe: 1000 },
-        ],
-        punkteIn: 'parameter',
-        netzrolle: 'knoten',
-        verschiebe: _verschiebePunktliste,
-        fachmodell: _fachmodellSchacht,
-        formAus: (parameter, form) => _formAusRohr(parameter, form, 16),
-        baue: (parameter) => rohrGeometrie(punkteAus(parameter), parameter?.dn, 16),
+/**
+ * Das Altrezept `gelaende` bleibt CODE (Entscheidung E1): es BRAUCHT etwas,
+ * das kein Parameter sein darf — das Höhenraster des GELIEFERTEN Geländes.
+ * Es ins Journal zu legen wäre Gesetz-5-Bruch (Gerechnetes gespeichert — und
+ * veraltet still mit der nächsten Revision). Deshalb deklariert das Rezept
+ * seinen Bedarf, und `baueErzeugte` reicht die Ableitung herein — die
+ * Parameter bleiben rein deklarativ: Quelle + Operationsliste.
+ */
+const GELAENDE_REZEPT = Object.freeze({
+    id: 'gelaende',
+    art: 'code',
+    titel: 'Geformtes Gelände',
+    icon: 'terrain',
+    bauform: 'hoehenfeld',
+    kategorieVorgabe: 'IFCGEOGRAPHICELEMENT',
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [],
+    // Ein GELÄNDE, keine Menge: gehört in den Mengen-Reiter neben die Erdbauten.
+    gelaendeform: true,
+    braucht: 'quellraster',
+    baue: null,
+    verschiebe: _verschiebeGelaende,
+    baueMit: (parameter, quellraster) => {
+        const { raster, warnungen } = formeNach(quellraster, parameter?.operationen ?? []);
+        const { positions } = dreieckeAusRaster(raster);
+        const geo = dreiecksGeometrie(positions);
+        return { geometrie: geo, warnungen };
     },
 });
+
+/**
+ * Die Quellen des Katalogs in ihrer Reihenfolge — Deklarationen und das eine
+ * Code-Rezept. Der Architektur-Wächter (W5) zählt HIER die Funktionen: was
+ * im Rezeptbau entsteht, ist einmal geschriebener Code, nicht je Rezept.
+ */
+export const REZEPT_QUELLEN = Object.freeze([
+    ...EINGEBAUTE_REZEPTE.slice(0, 2),          // linie, flaeche
+    GELAENDE_REZEPT,
+    ...EINGEBAUTE_REZEPTE.slice(2),             // rohr, schacht, pfosten, platte
+]);
+
+export const REZEPTE = Object.freeze(Object.fromEntries(
+    REZEPT_QUELLEN.map(d => [d.id, rezeptAusDeklaration(d)])));
 
 /**
  * Das Rezept für ein Netzelement dieser Rolle (Teil XXIII, AE).

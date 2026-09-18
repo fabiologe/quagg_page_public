@@ -346,10 +346,10 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcRoof](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRoof.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcRoot](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRoot.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcShadingDevice](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcShadingDevice.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcSign](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSign.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcSign](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSign.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSignal](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSignal.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSite](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSite.htm) | Verbund | nein | IFC4X3_ADD2 |
-| [IfcSlab](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSlab.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcSlab](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSlab.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSpace](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpace.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSpatialElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialElement.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcSpatialStructureElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialStructureElement.htm) | Verbund | ja | IFC4X3_ADD2 |

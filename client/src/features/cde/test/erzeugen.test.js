@@ -71,13 +71,15 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
     it('kein Werkzeug zu einem Rezept ohne `baue` — „Gelände zeichnen" war ein toter Knopf', () => {
         const erzeugen = BEARBEITUNGEN.filter(b => b.gruppe === 'erzeugen');
         expect(erzeugen.map(b => b.id).sort())
-            .toEqual(['flaeche-zeichnen', 'linie-zeichnen', 'rohr-zeichnen', 'schacht-zeichnen']);
+            .toEqual(['flaeche-zeichnen', 'linie-zeichnen', 'pfosten-zeichnen', 'platte-zeichnen',
+                      'rohr-zeichnen', 'schacht-zeichnen']);
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
-        // das aus Punkten baut, und verlangt mindestens zwei Punkte.
+        // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
+        // Pfosten steht an EINEM Ort).
         for (const b of erzeugen) {
             const r = rezeptNach(b.rezept);
             expect(typeof r?.baue, b.id).toBe('function');
-            expect(b.mindestPunkte, b.id).toBeGreaterThanOrEqual(2);
+            expect(b.mindestPunkte, b.id).toBeGreaterThanOrEqual(1);
         }
         // Das Gelände-Rezept bleibt — es baut mit Quellraster (Alt-Journale, Erdbau).
         expect(typeof REZEPTE.gelaende.baueMit).toBe('function');

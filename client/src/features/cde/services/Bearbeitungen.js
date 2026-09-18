@@ -326,6 +326,13 @@ function zeichenBearbeitung(rezept) {
         rezept: rezept.id,
         mindestPunkte: rezept.mindestPunkte,
         geschlossen: rezept.geschlossen,
+        // HÖCHSTENS (A4): ein Pfosten steht an EINEM Ort — mit dem Tipp ist der
+        // Zug voll. Dieselbe Erklärung, mit der „An Schacht anschliessen" seinen
+        // einen Punkt nennt; die Musterschicht kennt sie schon.
+        ...(rezept.hoechstPunkte ? { eingaben: [{
+            schlitz: rezept.geschlossen ? 'umriss' : 'zug',
+            anzahl: { min: rezept.mindestPunkte, max: rezept.hoechstPunkte },
+        }] } : {}),
         // Teil XIV: Punkte AUF dem Gelände, wenn das Rezept es sagt (Bruchkante).
         hoehenAus: rezept.hoehenAus ?? null,
         // DIE HÖHE IST EINE HÖHE ÜBER NN, wie überall sonst auch.

@@ -34,7 +34,9 @@ BACKEND = {"Verbund": IFC / "verbund.py", "Eigenbau": IFC / "eigenbau.py", "Herk
 PAKET = IFC / "tests" / "daten" / "paket_v2.json"
 CLIENT = {
     "Typprofile": CDE / "services" / "bauform" / "Typprofile.js",
-    "Bauteilrezepte": CDE / "services" / "Bauteilrezepte.js",
+    # Seit Teil XXIII A4 sind die Rezepte Daten in `rezept/Eingebaut.js`; das
+    # Code-Rezept `gelaende` steht weiter in `Bauteilrezepte.js`.
+    "Bauteilrezepte": (CDE / "services" / "Bauteilrezepte.js", CDE / "services" / "rezept" / "Eingebaut.js"),
     "Gelände": CDE / "services" / "GelaendeQuelle.js",
     "Kategorien": CDE / "services" / "Kategorien.js",
 }
@@ -78,9 +80,10 @@ def genutzt() -> tuple:
     for b in json.loads(_lies(PAKET)).get("bauteile", []):
         if b.get("klasse"):
             nimm(b["klasse"], "Eigenbau-Paket")
-    for quelle, p in CLIENT.items():
-        for a, b in _JS_NAME.findall(_lies(p)):
-            nimm(a or b, quelle)
+    for quelle, pfade in CLIENT.items():
+        for p in (pfade if isinstance(pfade, tuple) else (pfade,)):
+            for a, b in _JS_NAME.findall(_lies(p)):
+                nimm(a or b, quelle)
     return {n: sorted(q) for n, q in sorted(wer.items())}, sorted(fremd)
 
 

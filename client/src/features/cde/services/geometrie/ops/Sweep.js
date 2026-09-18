@@ -12,6 +12,11 @@
  * `extrudiere` hebt einen Grundriss-Ring (mit Löchern) senkrecht von `von`
  * nach `bis`. Die Deckel trianguliert earcut (npm, kein three).
  *
+ * `platte` gibt einem Umriss MIT Punkthöhen eine Dicke — senkrecht, je Punkt
+ * (Teil XXIII, A4). Anders als `extrudiere` bleibt eine geneigte Fläche
+ * geneigt: dieselbe Regel wie die Fläche der CDE, „jeder Punkt behält seine
+ * Höhe".
+ *
  * WICKLUNG: alle Flächen zeigen nach aussen. Die Kappen werden je Dreieck
  * gegen die geforderte Richtung geprüft und gedreht — earcut legt seine
  * Orientierung selbst fest. Die Seiten folgen der Profil-/Ringordnung, die
@@ -51,6 +56,15 @@ export function kreisProfil(r, seiten = 12) {
         punkte.push({ u: Math.cos(w) * r, v: Math.sin(w) * r });
     }
     return { punkte };
+}
+
+/**
+ * Rechteckprofil, mittig um die Achse, gegen den Uhrzeigersinn in (u, v) —
+ * für Stäbe (Pfosten, Schild) und Rechteckkanäle (Teil XXIII, A4).
+ */
+export function rechteckProfil(breite, hoehe) {
+    const b2 = breite / 2, h2 = hoehe / 2;
+    return { punkte: [{ u: -b2, v: -h2 }, { u: b2, v: -h2 }, { u: b2, v: h2 }, { u: -b2, v: h2 }] };
 }
 
 /** Trapezprofil: Sohle unten (v = 0), Böschung 1:n nach oben; gegen den Uhrzeigersinn. */
@@ -241,6 +255,48 @@ export function extrudiere({ umriss } = {}, { von, bis } = {}) {
         const [a, b, c] = [flach[idx[i]], flach[idx[i + 1]], flach[idx[i + 2]]];
         dreiecke.push(_gerichtet(P(a, oben), P(b, oben), P(c, oben), { x: 0, y: 1, z: 0 }));
         dreiecke.push(_gerichtet(P(a, unten), P(b, unten), P(c, unten), { x: 0, y: -1, z: 0 }));
+    }
+    return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
+}
+
+// ── Platte ─────────────────────────────────────────────────────────────────
+
+/**
+ * Eine Platte: der Umriss mit seinen Höhen ist eine Seite, die Dicke geht
+ * senkrecht von ihr weg — `richtung: 'unten'` (Vorgabe) heisst, der Umriss
+ * ist die OBERKANTE (Belag, Decke, Fundament von oben gezeichnet).
+ *
+ * @param {{umriss: {ring: [{x, y, z}]}}} eingaben
+ * @param {{dicke: number, richtung?: 'unten'|'oben'}} parameter
+ * @returns {{ergebnis: koerper|null, warnungen: string[]}}
+ */
+export function platte({ umriss } = {}, { dicke, richtung = 'unten' } = {}) {
+    const warnungen = [];
+    const d = Number(dicke);
+    if (!(d > 0)) return { ergebnis: null, warnungen: ['platte_ohne_dicke'] };
+    let ring = (umriss?.ring ?? []).map(q => ({ x: Number(q.x), y: Number(q.y), z: Number(q.z) }))
+        .filter(q => Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z));
+    if (ring.length > 1 && Math.hypot(ring[0].x - ring[ring.length - 1].x, ring[0].z - ring[ring.length - 1].z) < 1e-9) ring.pop();
+    if (ring.length < 3) return { ergebnis: null, warnungen: ['platte_umriss_entartet'] };
+    const f = _flaeche2d(ring, 'x', 'z');
+    if (Math.abs(f) < 1e-12) return { ergebnis: null, warnungen: ['platte_umriss_entartet'] };
+    if (f < 0) ring = ring.slice().reverse();                 // dieselbe Ordnung wie in `extrudiere`
+
+    const versatz = richtung === 'oben' ? d : -d;
+    const oben = ring.map(q => (versatz > 0 ? { x: q.x, y: q.y + versatz, z: q.z } : q));
+    const unten = ring.map(q => (versatz > 0 ? q : { x: q.x, y: q.y + versatz, z: q.z }));
+
+    const dreiecke = [];
+    for (let j = 0; j < ring.length; j++) {
+        const k = (j + 1) % ring.length;
+        const a = unten[j], b = unten[k], c = oben[j], e = oben[k];
+        dreiecke.push([a, c, b], [b, c, e]);
+    }
+    const idx = _deckelIndizes([ring], 'x', 'z');
+    for (let i = 0; i < idx.length; i += 3) {
+        const [ia, ib, ic] = [idx[i], idx[i + 1], idx[i + 2]];
+        dreiecke.push(_gerichtet(oben[ia], oben[ib], oben[ic], { x: 0, y: 1, z: 0 }));
+        dreiecke.push(_gerichtet(unten[ia], unten[ib], unten[ic], { x: 0, y: -1, z: 0 }));
     }
     return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
 }

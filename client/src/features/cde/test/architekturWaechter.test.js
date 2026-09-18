@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { BEARBEITUNGEN } from '../services/Bearbeitungen.js';
-import { REZEPTE } from '../services/Bauteilrezepte.js';
+import { REZEPTE, REZEPT_QUELLEN } from '../services/Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
 import { GELAENDE_OPS } from '../services/gelaende/Operationen.js';
 
@@ -156,19 +156,27 @@ const NETZREZEPT_SCHREIBER_ERLAUBT = {};      // AE: 6 → 0 — `rezeptFuerNetz
 /** W4 — `geometrie/ops` am Kernel-Vertrag vorbei. Ziel: nur das Hilfen-Fass (A8). */
 const KERNEL_ERLAUBT = {
     'components/IfcViewer.vue': 2,
-    'services/Bauteilrezepte.js': 2,
+    'services/Bauteilrezepte.js': 1,
     'services/Bearbeitungen.js': 1,
     'services/GlobalIdAbbildung.js': 1,
     'services/IfcEngine.js': 2,
     'services/Nachspielen.js': 1,
     'services/ableitung/Ableitungen.js': 5,
+    // A4: der Sweep-Import ist mit den Geometrie-Bausteinen aus `Bauteilrezepte`
+    // hierher UMGEZOGEN (dort 2 → 1) — die Summe bleibt 14.
+    'services/rezept/Geometriebau.js': 1,
 };
 
 /** W6 — Codezeilen mit Fachwort in der Musterschicht. 21 → 0 mit A3: Griffart und Fang heissen „knoten". */
 const FACHWOERTER_ERLAUBT = {};
 
-/** W5 — Obergrenzen. `anwenden` sinkt mit A6, die Rezeptfunktionen mit A4. */
-const HOOKS_MAX = { anwenden: 48, rezeptFunktionen: 17 };
+/**
+ * W5 — Obergrenzen. `anwenden` sinkt mit A6. Die Rezeptfunktionen zählen seit
+ * A4 in den QUELLEN des Katalogs (Deklarationen + Code-Rezepte), nicht im
+ * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
+ * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
+ */
+const HOOKS_MAX = { anwenden: 48, rezeptFunktionen: 2 };
 
 /**
  * W7 — die Rückführung aus dem Audit „Bearbeitungsstruktur" (2026-09-18).
@@ -198,8 +206,7 @@ const RUECKFUEHRUNG = {
         'stuetzpunkt-verschieben', 'stuetzpunkt-einfuegen', 'stuetzpunkt-entfernen', 'kante-verschieben',
         'linie-teilen', 'linie-trimmen', 'linie-versetzen',
         'flaeche-teilen', 'flaeche-vereinigen', 'flaeche-versetzen',
-        // `zeichenBearbeitung(rezept)` — das Soll, einmal schon gebaut:
-        'linie-zeichnen', 'flaeche-zeichnen', 'rohr-zeichnen', 'schacht-zeichnen',
+        // `zeichenBearbeitung(rezept)` ordnet W7 über die HERKUNFT ein (`AUS_KATALOG`).
         // AE: Operationen auf KNOTEN und KANTE — gebunden an `netzrolle`, nicht an
         // „Schacht"/„Haltung". Die Ids bleiben (sie stehen in `KUREN` und im Verlauf).
         'schacht-verschieben', 'schacht-einfuegen', 'schacht-entfernen', 'haltung-teilen',
@@ -339,14 +346,14 @@ describe('W4 — der Kernel-Vertrag: `geometrie/ops` importiert nur der Kern', (
 
 describe('W5 — Code-Hooks im Katalog werden weniger, nicht mehr', () => {
     const hooks = (DATEIEN.find(d => d.pfad === 'services/Bearbeitungen.js').text.match(/^\s*anwenden:/gm) ?? []).length;
-    const funktionen = Object.values(REZEPTE)
+    const funktionen = REZEPT_QUELLEN
         .reduce((n, r) => n + Object.values(r).filter(v => typeof v === 'function').length, 0);
     merke('W5 Code-Hooks', { anwenden: hooks, rezeptFunktionen: funktionen });
 
     it(`Werkzeuge mit eigenem \`anwenden\`: höchstens ${HOOKS_MAX.anwenden}`, () => {
         expect(hooks).toBeLessThanOrEqual(HOOKS_MAX.anwenden);
     });
-    it(`Funktionen in REZEPTE: höchstens ${HOOKS_MAX.rezeptFunktionen}`, () => {
+    it(`Funktionen in den Katalogquellen: höchstens ${HOOKS_MAX.rezeptFunktionen}`, () => {
         expect(funktionen).toBeLessThanOrEqual(HOOKS_MAX.rezeptFunktionen);
     });
     it('die Obergrenzen sind nachgezogen', () => {
@@ -374,10 +381,17 @@ describe('W6 — die Musterschicht ist fachblind', () => {
 
 describe('W7 — jedes Werkzeug lässt sich zurückführen: Muster + Operation + Katalogeintrag', () => {
     const ids = BEARBEITUNGEN.map(b => b.id);
-    const alle = [...RUECKFUEHRUNG.nichtRueckfuehrbar, ...RUECKFUEHRUNG.handgeschrieben, ...RUECKFUEHRUNG.sauber];
+    // Aus Muster + Katalogeintrag ERZEUGT (`zeichenBearbeitung(rezept)`) — das
+    // Soll, einmal gebaut. Eingeordnet durch die HERKUNFT, nicht durch eine
+    // Namensliste: ein Rezept aus der Bibliothek (A5) bringt sein Werkzeug mit.
+    const AUS_KATALOG = BEARBEITUNGEN
+        .filter(b => b.gruppe === 'erzeugen' && typeof REZEPTE[b.rezept]?.baue === 'function')
+        .map(b => b.id);
+    const alle = [...RUECKFUEHRUNG.nichtRueckfuehrbar, ...RUECKFUEHRUNG.handgeschrieben,
+                  ...RUECKFUEHRUNG.sauber, ...AUS_KATALOG];
     merke('W7 Rückführung', { nichtRueckfuehrbar: RUECKFUEHRUNG.nichtRueckfuehrbar.length,
                                handgeschrieben: RUECKFUEHRUNG.handgeschrieben.length,
-                               sauber: RUECKFUEHRUNG.sauber.length, katalog: ids.length });
+                               sauber: RUECKFUEHRUNG.sauber.length + AUS_KATALOG.length, katalog: ids.length });
 
     it('ein NEUES Werkzeug muss eingeordnet werden — wer es schreibt, sagt, woraus es besteht', () => {
         expect(ids.filter(id => !alle.includes(id)), 'nicht eingeordnet').toEqual([]);
