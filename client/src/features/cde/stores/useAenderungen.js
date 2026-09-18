@@ -34,6 +34,7 @@ import { deltaZwischen, nennenswert, verschiebeEintrag } from '../services/Journ
 import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
+import { JOURNAL_KENNT, entfalte, ohneAbgeleitetes, schreibStufe, verdichte } from '../services/JournalFormat.js';
 const REPO_KEY = 'aenderungen';
 
 /**
@@ -192,6 +193,15 @@ export const AENDERUNGS_ARTEN = Object.freeze({
      * Rangfolge fällt dann auf die Regel zurück.
      */
     bauform:     { titel: 'Bauform (Auslegung)', icon: 'bauform', auslegung: true },
+    /**
+     * PLANINHALTE UND ROTSTIFT (Teil XXIII, A7, Befund B16) — Beschriftung,
+     * Symbole und Striche im Lageplan. Bis hierher lagen sie neben dem Journal
+     * (ohne Undo, ohne Commit, ohne Satz-Ebene). `nurPlan`: sie berühren kein
+     * Modell, gehören in keinen Änderungsbericht und in kein Nachspielen — in
+     * Undo, Commits und Ebenen aber wie alles andere. Geschrieben ab Stufe 3.
+     */
+    planinhalt:  { titel: 'Planinhalt', icon: 'text', nurPlan: true, gleich: gleichTief },
+    rotstift:    { titel: 'Rotstift', icon: 'radierer', nurPlan: true, gleich: gleichTief },
 });
 
 /** Ist diese Art eine AUSLEGUNG (unsere Lesart) statt einer Forderung an den Planer? */
@@ -520,6 +530,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     const _schreibstaende = { auftrag: 0, stand: 0 };
     /** {ebene, wer, wann} | null — gesetzt, sobald ein Sichern verweigert wurde. */
     const schreibKonflikt = ref(null);
+    /**
+     * NUR LESEN (Teil XXIII, A7): das geladene Journal verlangt eine neuere
+     * CDE oder ist unvollständig. Angezeigt wird es; jede schreibende
+     * Handlung wird abgewiesen, `_sichern` schreibt nicht.
+     */
+    const nurLesen = ref(null);
     // GESCHEITERTES SPEICHERN (Abnahme 2026-09-12): `RepoFacade.set` gibt bei
     // einem Netzfehler `false`, und das Journal machte stumm weiter — die
     // Arbeit lag nur noch im Speicher. `{ebene, wann, grund?}` oder null.
@@ -629,6 +645,9 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
 
     async function _sichern(ebene) {
+        // NUR LESEN (A7): nie über ein Journal schreiben, das dieser Client
+        // nicht ganz versteht — ein älterer Tab überschriebe es sonst.
+        if (nurLesen.value) return;
         try {
             // MEHRBENUTZER-WÄCHTER (Lücke ⑥): erst nachsehen, ob auf dem
             // Server inzwischen ein FREMDER Stand liegt. Wenn ja, wird die
@@ -651,18 +670,31 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // und wird nicht doppelt gespeichert.
             const liste = _liste(ebene).value;
             const je = new Map(liste.map(e => [e.id, e]));
+            // DIE DATEI (Teil XXIII, A7): ab Schreibstufe 3 werden `erzeugt`-
+            // Schritte gegen den vorigen Stand desselben Bauteils verdichtet —
+            // in DERSELBEN Reihenfolge, in der `_uebernimmV2` entfaltet
+            // (Commits, dann die Sitzung). Im Speicher bleibt alles voll.
+            const commitSchritte = commitsJe[ebene].value.map(c => c.schrittIds.map(id => je.get(id)).filter(Boolean));
+            const sitzungSchritte = sitzungJe[ebene].value
+                ? sitzungJe[ebene].value.schrittIds.map(id => je.get(id)).filter(Boolean) : [];
+            const stufe3 = schreibStufe() >= 3;
+            let reihe = [...commitSchritte.flat(), ...sitzungSchritte];
+            if (stufe3) reihe = verdichte(reihe.map(ohneAbgeleitetes)).schritte;
+            let k = 0;
+            const nimm = (n) => { const aus = reihe.slice(k, k + n); k += n; return aus; };
             const nutzlast = {
                 version: 2,
-                commits: commitsJe[ebene].value.map(c => ({
+                // Wer weniger kennt, liest nur (siehe `_uebernimmV2`).
+                ...(stufe3 ? { mindestClient: 3 } : {}),
+                commits: commitsJe[ebene].value.map((c, i) => ({
                     ...c, schrittIds: undefined,
-                    schritte: c.schrittIds.map(id => je.get(id)).filter(Boolean),
+                    schritte: nimm(commitSchritte[i].length),
                 })),
                 sitzung: sitzungJe[ebene].value
                     ? {
                         begonnen: sitzungJe[ebene].value.begonnen,
                         wer: sitzungJe[ebene].value.wer,
-                        schritte: sitzungJe[ebene].value.schrittIds
-                            .map(id => je.get(id)).filter(Boolean),
+                        schritte: nimm(sitzungSchritte.length),
                     }
                     : null,
                 schreibstand: {
@@ -687,10 +719,24 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
 
     /** Nutzlast v2 in die drei Zustände auspacken. */
     function _uebernimmV2(ebene, roh) {
+        // STUFEN (A7): ein Journal, das mehr verlangt, als dieser Client kennt,
+        // wird angezeigt, aber nie überschrieben.
+        if ((Number(roh.mindestClient) || 0) > JOURNAL_KENNT) {
+            nurLesen.value = { ebene, grund: 'Dieser Verlauf wurde mit einer neueren CDE geschrieben — bitte die Seite neu laden.' };
+        }
+        // Pfadschritte entfalten — in der Reihenfolge, in der sie verdichtet wurden.
+        const alleRoh = [...(roh.commits ?? []).flatMap(c => (Array.isArray(c.schritte) ? c.schritte : [])),
+                         ...(Array.isArray(roh.sitzung?.schritte) ? roh.sitzung.schritte : [])];
+        const { schritte: alleVoll, fehlend } = entfalte(alleRoh);
+        if (fehlend.length) {
+            nurLesen.value = { ebene, grund: `Der Verlauf ist unvollständig (${fehlend.length} Schritte ohne Grundlage) — er wird nur gelesen, nichts wird überschrieben.` };
+        }
+        let k = 0;
+        const voll = (n) => { const aus = alleVoll.slice(k, k + n); k += n; return aus; };
         const flach = [];
         const commits = [];
         for (const c of roh.commits ?? []) {
-            const schritte = Array.isArray(c.schritte) ? c.schritte : [];
+            const schritte = voll(Array.isArray(c.schritte) ? c.schritte.length : 0);
             flach.push(...schritte);
             commits.push({
                 id: c.id, nachricht: c.nachricht ?? '', wer: c.wer ?? '',
@@ -702,7 +748,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         }
         let sitzung = null;
         if (roh.sitzung) {
-            const schritte = Array.isArray(roh.sitzung.schritte) ? roh.sitzung.schritte : [];
+            const schritte = voll(Array.isArray(roh.sitzung.schritte) ? roh.sitzung.schritte.length : 0);
             flach.push(...schritte);
             sitzung = {
                 begonnen: roh.sitzung.begonnen ?? Date.now(),
@@ -738,6 +784,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     async function eintragen({ art, globalId, nachher, wer = '', modellSha = null,
                                basis, modell, ebene, vorgang, vorgangTitel, befunde, bezug = null }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
+        // NUR LESEN (A7): kein neuer Schritt, der ohnehin nie gespeichert würde.
+        if (nurLesen.value) return null;
         const ziel = ebene ?? vorgabeEbene.value;
         const stand = wirksamerStand(art);
         const vorher = stand.has(globalId) ? stand.get(globalId) : null;
@@ -1039,7 +1087,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      *
      * @returns {Promise<{schritte: object[], unaufgeloest: object[]}>}
      */
-    async function rebaseAuf({ abbildung, basisIst = new Map(), quellmasse = new Map(), wer = '',
+    async function rebaseAuf({ abbildung, basisIst = new Map(), quellmasse = new Map(), namen = new Map(), wer = '',
                                von = null, nach = null } = {}) {
         const abb = abbildung instanceof Map ? abbildung : new Map(Object.entries(abbildung ?? {}));
         const alle = [];
@@ -1050,7 +1098,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         for (const ebene of ['auftrag', 'stand']) {
             const liste = _liste(ebene).value;
             const staende = Object.fromEntries(Object.keys(AENDERUNGS_ARTEN).map(art => [art, standAus(liste, art)]));
-            const { schritte, unaufgeloest } = planeRebase({ staende, abbildung: abb, basisIst, quellmasse });
+            const { schritte, unaufgeloest } = planeRebase({ staende, abbildung: abb, basisIst, quellmasse, namen });
             ungeloest.push(...unaufgeloest.map(u => ({ ...u, ebene })));
             if (!schritte.length) continue;
             const vorgang = _neueVorgangsId();
@@ -1065,6 +1113,28 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             alle.push(...geschrieben);
         }
         return { schritte: alle, unaufgeloest: ungeloest };
+    }
+
+    /**
+     * ALTE PLANINHALTE ÜBERNEHMEN (Teil XXIII, A7b): was unter dem alten
+     * Schlüssel liegt und im Journal noch keinen Eintrag hat, wird EIN Commit
+     * „Übernahme …" — sichtbar im Verlauf, mit einem Klick zurückzunehmen. Der
+     * alte Schlüssel bleibt liegen (Rückweg), er wird nur nicht mehr geschrieben.
+     */
+    async function uebernimm(art, liste, nachricht, { wer = '' } = {}) {
+        if (!AENDERUNGS_ARTEN[art]?.nurPlan || nurLesen.value) return null;
+        const stand = wirksamerStand(art);
+        const neu = (liste ?? []).filter(e => e?.id && !stand.has(e.id));
+        if (!neu.length) return null;
+        const ebene = vorgabeEbene.value;
+        const vorgang = _neueVorgangsId();
+        const geschrieben = [];
+        for (const e of neu) {
+            const { id, ...wert } = e;
+            const eintrag = await eintragen({ art, globalId: id, nachher: wert, wer, ebene, vorgang, vorgangTitel: nachricht });
+            if (eintrag) geschrieben.push(eintrag);
+        }
+        return _commitAus(ebene, geschrieben, nachricht, wer);
     }
 
     /**
@@ -1436,6 +1506,6 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
         schliesseLeereSitzung, nachrichtVorschlag,
         verlauf, setzeSatz, neuLaden: laden,
-        schreibKonflikt, sicherFehler, setzeWeltversatz, ebeneVon,
+        schreibKonflikt, sicherFehler, nurLesen, setzeWeltversatz, ebeneVon, uebernimm,
     };
 });

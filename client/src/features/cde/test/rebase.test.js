@@ -102,6 +102,24 @@ describe('Das Umhängen — ein Commit, revertierbar, wiederholbar', () => {
         expect(commit.modellSha).toBe('sha-r02');                                // Lücke L6: das Modell, an dem es jetzt hängt
     });
 
+    it('die Namen ziehen mit: ein Vorgang, der nach dem alten Gelände hiess, heisst nach dem neuen (A7)', async () => {
+        const ae = await journalAufA();
+        const vorher = [...ae.wirksamerStand('erzeugt').values()];
+        // Das Szenario nennt sein Ur „Urgelände" — R02 heisst „Urgelände R02".
+        const alt = vorher.map(p => p.name).filter(n => /^Urgelände/.test(n));
+        expect(alt.length).toBeGreaterThan(0);
+        await ae.rebaseAuf({ abbildung: new Map([['A', 'B']]), namen: new Map([['B', { alt: 'Urgelände', neu: 'Urgelände R02' }]]),
+                             wer: 'pruefer', von: R01, nach: R02 });
+        const nachher = [...ae.wirksamerStand('erzeugt').values()];
+        for (const p of nachher.filter(q => q.parameter?.quellen?.gelaende === 'B')) {
+            if (/^Urgelände/.test(p.name)) expect(p.name, p.name).toMatch(/^Urgelände R02( |$)/);
+            for (const v of p.parameter.vorgaenge ?? []) if (/^Urgelände/.test(v.titel)) expect(v.titel).toMatch(/^Urgelände R02 /);
+        }
+        // Was nicht nach dem Gelände heisst, bleibt (der Kanalgraben heisst nach seiner Haltung).
+        const graben = nachher.find(p => p.rezept === 'kanalgraben');
+        expect(graben.name).toBe(vorher.find(p => p.rezept === 'kanalgraben').name);
+    });
+
     it('wiederholbar und nie auf Verdacht: ein zweiter Rebase hat 0 Schritte, einer ohne Zuordnung auch', async () => {
         const ae = await journalAufA();
         await ae.rebaseAuf({ abbildung: new Map([['A', 'B']]), von: R01, nach: R02 });

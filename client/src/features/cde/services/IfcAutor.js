@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
@@ -742,7 +742,8 @@ export class IfcAutor {
             if (!geometrie) return { ok: false, fehler: ['Teil ohne Geometrie'] };
             return {
                 ok: true, geometrie, kategorie: schritt.wert.kategorie, name: schritt.wert.name,
-                predefinedType: schritt.wert.predefinedType ?? null,
+                // Abgeleitet aus Rezept, Rolle und Parametern (A7) — nie der gespeicherte.
+                predefinedType: predefinedTypeVon(schritt.wert),
                 // Ein Raster ist eine OFFENE Fläche; ein Körper sagt es selbst
                 // (das meshVolume-Attest aus dem Kernel), statt dass wir raten.
                 geschlossen: r.teil?.form === 'raster' ? false : (r.teil?.daten?.closed ?? null),

@@ -25,9 +25,12 @@
  * @param {Map<string, string>} o.abbildung  alt → neu, BESTÄTIGT
  * @param {Map<string, object>} [o.basisIst]  neu → Lieferstand in der neuen Revision (für `lage`)
  * @param {Map<string, object>} [o.quellmasse] neu → Prüfmass der neuen Quelle
+ * @param {Map<string, {alt: string, neu: string}>} [o.namen]  neu → der Name der alten und der
+ *        neuen Quelle (Teil XXIII, A7): ein Vorgang, der nach seiner Quelle heisst
+ *        („Urgelände R01 · Ausheben"), heisst danach nach der neuen
  * @returns {{schritte: Array, unaufgeloest: Array}}
  */
-export function planeRebase({ staende = {}, abbildung, basisIst = new Map(), quellmasse = new Map() } = {}) {
+export function planeRebase({ staende = {}, abbildung, basisIst = new Map(), quellmasse = new Map(), namen = new Map() } = {}) {
     const abb = abbildung instanceof Map ? abbildung : new Map(Object.entries(abbildung ?? {}));
     const schritte = [];
     const unaufgeloest = [];
@@ -36,7 +39,7 @@ export function planeRebase({ staende = {}, abbildung, basisIst = new Map(), que
         if (!(stand instanceof Map)) continue;
         if (art === 'erzeugt') {
             for (const [gid, plan] of stand) {
-                const neu = _umgehaengt(plan, abb, quellmasse);
+                const neu = _umgehaengt(plan, abb, quellmasse, namen);
                 if (neu) schritte.push({ art, globalId: gid, nachher: neu, modell: 'cde' });
             }
             continue;
@@ -54,8 +57,20 @@ export function planeRebase({ staende = {}, abbildung, basisIst = new Map(), que
     return { schritte, unaufgeloest };
 }
 
+/**
+ * Einen Namen umschreiben, der mit dem Namen der alten Quelle BEGINNT — nur
+ * dann: ein eigener Name des Planers („Grube Ost") bleibt, wie er ist.
+ */
+function _umbenannt(name, umbenennen) {
+    if (typeof name !== 'string') return name;
+    for (const { alt, neu } of umbenennen) {
+        if (alt && neu && alt !== neu && (name === alt || name.startsWith(`${alt} `))) return neu + name.slice(alt.length);
+    }
+    return name;
+}
+
 /** Ein Bauplan mit umgehängten Quellen — oder null, wenn er keine alte Kennung nennt. */
-function _umgehaengt(plan, abb, quellmasse) {
+function _umgehaengt(plan, abb, quellmasse, namen = new Map()) {
     const p = plan?.parameter;
     if (!p || typeof p !== 'object') return null;
     let geaendert = false;
@@ -79,13 +94,22 @@ function _umgehaengt(plan, abb, quellmasse) {
     const quelle = typeof p.quelle === 'string' && abb.has(p.quelle) ? abb.get(p.quelle) : p.quelle;
     if (quelle !== p.quelle) geaendert = true;              // Altbestand `gelaende`: `{quelle, operationen}`
     if (!geaendert) return null;
+    // DER NAME ZIEHT MIT (Teil XXIII, A7): ein Vorgang, der nach seiner Quelle
+    // heisst, heisst nach dem Umhängen nach der NEUEN — auch die Titel der
+    // Vorgänge, die die Anzeige führt.
+    const neueKennungen = [...Object.values(quellen).flat(), quelle].filter(g => typeof g === 'string');
+    const umbenennen = neueKennungen.map(g => namen.get(g)).filter(Boolean);
+    const vorgaenge = Array.isArray(p.vorgaenge) && umbenennen.length
+        ? p.vorgaenge.map(v => ({ ...v, titel: _umbenannt(v?.titel, umbenennen) })) : p.vorgaenge;
     return {
         ...plan,
+        ...(umbenennen.length ? { name: _umbenannt(plan.name, umbenennen) } : {}),
         parameter: {
             ...p,
             ...(p.quellen ? { quellen } : {}),
             ...(p.quellBasis ? { quellBasis } : {}),
             ...(p.quelle !== undefined ? { quelle } : {}),
+            ...(p.vorgaenge !== undefined ? { vorgaenge } : {}),
         },
     };
 }

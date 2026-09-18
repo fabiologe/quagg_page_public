@@ -298,6 +298,33 @@ def test_entfernen_fragt_das_journal(frische_db, app_conn, projekte_wurzel):
     assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}").status_code == 200
 
 
+def test_entfernen_sieht_auch_verdichtete_journalschritte(frische_db, app_conn, projekte_wurzel):
+    """Teil XXIII A7: ein verdichteter Schritt nennt eine NEUE Quelle nur im Patch.
+
+    Nach einem Rebase haengt der Vorgang an R02 — und genau das steht nur als
+    Pfad `parameter.quellen.gelaende` im verdichteten Schritt. Die Sperre muss
+    es trotzdem sehen, sonst liesse sich R02 entfernen und das Journal zeigte
+    ins Leere.
+    """
+    p = projekte.anlegen(app_conn, name="Pfade", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    neu_ifc = GELAENDE_IFC.replace(b"2TestDGM0000000000TEST", b"3NeuesDGM000000000R02X")
+    d = _up(c, p["id"], "Neu.ifc", neu_ifc).json()
+    ablage = o.pfad / "CDE" / "_repo"
+    ablage.mkdir(exist_ok=True)
+    (ablage / "global:aenderungen.json").write_text(json.dumps({"version": 2, "mindestClient": 3, "sitzung": None, "commits": [
+        {"id": "c-1", "schritte": [
+            {"id": "e1", "art": "erzeugt", "globalId": "cde-a", "modell": "cde",
+             "nachher": {"rezept": "erdbau", "parameter": {"quellen": {"gelaende": "2TestDGM0000000000TEST"}}}},
+            {"id": "e2", "art": "erzeugt", "globalId": "cde-a", "modell": "cde",
+             "nachher": {"_pfade": {"basis": "e1", "patch": [
+                 {"pfad": ["parameter", "quellen", "gelaende"], "wert": "3NeuesDGM000000000R02X"}]}}}]}]}),
+        encoding="utf-8")
+    assert cde.journale_mit(o, d["sha256"]) == [{"ebene": "Auftrag", "eintraege": 1}]
+    assert c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}").status_code == 422
+
+
 def test_eine_linie_auch_wenn_nur_die_neue_revision_eine_projektkennung_traegt(frische_db, app_conn, projekte_wurzel):
     """R01 vor Stufe 4 (ohne GlobalId), R02 danach (mit): DASSELBE Modell — nicht zusammen in einen Satz.
 

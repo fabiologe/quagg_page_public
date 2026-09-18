@@ -24,7 +24,7 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { GELAENDE_OPS, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { GELAENDE_OPS, aufGelaende, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
 import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
 import { innenEcken } from '../gelaende/Innenecken.js';
@@ -409,7 +409,10 @@ const ABLEITUNGEN_ERWEITERT = {
             if (!kernel) throw new Error('erdbau: kein Kernel');
             const warnungen = [];
             const befunde = [];
-            const ops = _opsInWelt(parameter?.operationen ?? [], hoehenversatz);
+            // Randhöhen als Verweis (A7): Punkte mit `gelaende` sitzen auf dem
+            // Gelände VOR diesem Vorgang — `ur` hier, nach allen Vorgängern.
+            const ops = aufGelaende(_opsInWelt(parameter?.operationen ?? [], hoehenversatz),
+                                    (x, z) => rasterAbtasten(ur, x, z));
             if (!ops.length) throw new Error('erdbau: keine Operationen');
             // Das UR für „bis GOK" (Teil XX): `ur` hier ist das Gelände VOR diesem
             // Vorgang; das ursprüngliche liegt im Stapel.
@@ -486,7 +489,8 @@ const ABLEITUNGEN_ERWEITERT = {
             // Je Operation IHR Geist — gezeichnet von ihrem Eintrag in der
             // Registry (Teil XXIII, A2); die Zeichenhilfen reichen wir hinein.
             const c = { hoeheAn, hoehenversatz, farbe: farben.warn ?? '#ffb74d', primitive: [], chips: [], hilfen: VORSCHAU_HILFEN };
-            for (const op of _opsInWelt(parameter?.operationen ?? [], hoehenversatz)) GELAENDE_OPS[op.art]?.vorschau?.(op, c);
+            const ops = aufGelaende(_opsInWelt(parameter?.operationen ?? [], hoehenversatz), hoeheAn);
+            for (const op of ops) GELAENDE_OPS[op.art]?.vorschau?.(op, c);
             return { primitive: c.primitive, chips: c.chips, hinweise: [] };
         },
 

@@ -72,7 +72,11 @@ export function goldVon() {
 
 function normiere(wert) {
     const karte = new Map();
-    const json = JSON.stringify(wert, (k, v) => (typeof v === 'string' && /^(cde|ab)-[a-z0-9]+-[a-z0-9]+$/.test(v)
+    // `gelaende` an Umriss-/Linienpunkten kam mit A7 (Randhöhe als Verweis) —
+    // eine bewusste Ergänzung, geprüft in `randhoehen.test.js`; hier bleibt
+    // die A6-Frage „sagen die Werkzeuge sonst dasselbe?".
+    const json = JSON.stringify(wert, (k, v) => (k === 'gelaende' && typeof v === 'number' ? undefined
+        : typeof v === 'string' && /^(cde|ab)-[a-z0-9]+-[a-z0-9]+$/.test(v)
         ? (karte.has(v) ? karte.get(v) : (karte.set(v, `ID${karte.size}`), karte.get(v))) : v));
     return JSON.parse(json);
 }

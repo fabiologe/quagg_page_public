@@ -730,13 +730,42 @@ def _journal_schritte(roh) -> list:
     return list(roh.get("eintraege") or [])
 
 
+def _texte(wert) -> list:
+    """Alle Zeichenketten in einem Wert (Text, Liste, Objekt)."""
+    if isinstance(wert, str):
+        return [wert]
+    if isinstance(wert, list):
+        return [t for v in wert for t in _texte(v)]
+    if isinstance(wert, dict):
+        return [t for v in wert.values() for t in _texte(v)]
+    return []
+
+
 def _bezuege(schritt: dict) -> set:
-    """Die GlobalIds, an denen ein Journalschritt haengt: sein Subjekt und die Quellen einer Ableitung."""
+    """Die GlobalIds, an denen ein Journalschritt haengt: sein Subjekt und die Quellen einer Ableitung.
+
+    Teil XXIII A7: ein verdichteter Schritt (`nachher: {_pfade: {basis, patch}}`)
+    traegt nur, was sich GEAENDERT hat — eine neue Quelle (nach einem Rebase)
+    steht dann als Pfad `parameter.quellen…` im Patch. Die unveraenderten
+    Quellen nennt der volle Schritt, auf dem er aufbaut.
+    """
     werte = [schritt.get("globalId")]
     nachher = schritt.get("nachher")
-    quellen = ((nachher.get("parameter") or {}).get("quellen") or {}) if isinstance(nachher, dict) else {}
-    for v in quellen.values():
-        werte.extend(v if isinstance(v, list) else [v])
+    if isinstance(nachher, dict) and isinstance(nachher.get("_pfade"), dict):
+        for p in nachher["_pfade"].get("patch") or []:
+            if not isinstance(p, dict) or p.get("weg"):
+                continue
+            pfad, wert = p.get("pfad") or [], p.get("wert")
+            if pfad[:2] == ["parameter", "quellen"]:
+                werte.extend(_texte(wert))
+            elif pfad == ["parameter"] and isinstance(wert, dict):
+                werte.extend(_texte(wert.get("quellen")))
+            elif pfad == [] and isinstance(wert, dict):
+                werte.extend(_texte((wert.get("parameter") or {}).get("quellen")))
+    else:
+        quellen = ((nachher.get("parameter") or {}).get("quellen") or {}) if isinstance(nachher, dict) else {}
+        for v in quellen.values():
+            werte.extend(v if isinstance(v, list) else [v])
     return {w for w in werte if isinstance(w, str)}
 
 

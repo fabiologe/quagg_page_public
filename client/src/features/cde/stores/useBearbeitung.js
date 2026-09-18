@@ -720,6 +720,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         }
 
         const aenderungen = useAenderungen();
+        // NUR LESEN (A7): das Journal verlangt eine neuere CDE — das sagen,
+        // nicht „der Wert galt schon".
+        if (aenderungen.nurLesen) {
+            letzterGrund.value = aenderungen.nurLesen.grund;
+            return null;
+        }
 
         // BEZÜGE PRÜFEN, bevor etwas im Journal steht (Teil XIV, G4): eine
         // Ableitung, die auf sich selbst oder im Kreis zeigt, oder von der

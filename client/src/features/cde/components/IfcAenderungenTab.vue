@@ -34,6 +34,13 @@
       </div>
     </div>
 
+    <!-- NUR LESEN (Teil XXIII, A7): das Journal verlangt eine neuere CDE oder
+         ist unvollständig — es wird gezeigt, aber nie überschrieben. -->
+    <div v-if="ae.nurLesen" class="ae-schreibkonflikt">
+      <CdeIcon name="warn" :size="14" />
+      <div><strong>Nur lesen:</strong> {{ ae.nurLesen.grund }}</div>
+    </div>
+
     <!-- Gescheitertes Speichern (Abnahme 2026-09-12): der Server war nicht
          erreichbar — der Verlauf lebt nur in diesem Fenster. -->
     <div v-if="ae.sicherFehler" class="ae-schreibkonflikt">
@@ -452,7 +459,11 @@ async function umhaengen() {
       if (m) quellmasse.set(neu, m);
     }
     const w = rebase.hinweis?.wechsel ?? null;
-    const { schritte } = await ae.rebaseAuf({ abbildung, basisIst, quellmasse, wer: cde.bearbeiter || '',
+    // Die NAMEN ziehen mit (A7): der alte aus dem Journal, der neue vom Kandidaten.
+    const namen = new Map(rebase.zeilen.filter(z => z.neu).map(z => [z.neu, {
+      alt: z.name ?? null, neu: z.auswahl?.find(k => k.globalId === z.neu)?.name ?? null,
+    }]));
+    const { schritte } = await ae.rebaseAuf({ abbildung, basisIst, quellmasse, namen, wer: cde.bearbeiter || '',
                                               von: w?.von ?? null, nach: w?.nach ?? null });
     await anwenden(schritte);
     // Was das Umhängen erledigt hat, räumt das Nachspielen selbst

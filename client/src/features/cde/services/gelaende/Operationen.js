@@ -972,9 +972,38 @@ export function punkteInNn(zug, versatz, zusatz = 0) {
     for (const p of zug ?? []) {
         const y = Number(p?.y);
         if (!Number.isFinite(y)) return null;
-        aus.push({ x: Number(p.x) || 0, y: Math.round((nnAusWelt(y, versatz) + zusatz) * 1000) / 1000, z: Number(p.z) || 0 });
+        // RANDHÖHE ALS VERWEIS (Teil XXIII, A7, Befund S3): `gelaende` sagt
+        // „Gelände VOR diesem Vorgang + so viel" — die Ableitung tastet neu ab,
+        // wenn ein Vorgänger das Gelände ändert (`aufGelaende`). `y` bleibt als
+        // Rückfall: ein Client, der `gelaende` nicht kennt, rechnet wie bisher.
+        aus.push({ x: Number(p.x) || 0, y: Math.round((nnAusWelt(y, versatz) + zusatz) * 1000) / 1000, z: Number(p.z) || 0,
+                   gelaende: zusatz });
     }
     return aus;
+}
+
+/**
+ * Punkte, die ihre Höhe vom Gelände nehmen (`gelaende`), auf das Gelände VOR
+ * diesem Vorgang setzen — in WELT, nach `_opsInWelt`. Nicht aus dem eigenen
+ * Ergebnis (Teil XX A1: Idempotenz): das Gelände davor ändert die eigene
+ * Operation nicht. Wo es nichts gibt (ausserhalb), bleibt die gespeicherte Höhe.
+ * @param {(x:number, z:number) => number|null} hoeheAn  Welt-Höhe des Geländes davor
+ */
+export function aufGelaende(operationen, hoeheAn, { ops = GELAENDE_OPS } = {}) {
+    if (typeof hoeheAn !== 'function') return operationen;
+    return (operationen ?? []).map((op) => {
+        const felder = ops[op?.art]?.punktfelder ?? [];
+        let p = op.parameter;
+        for (const f of felder) {
+            if (!Array.isArray(p?.[f]) || !p[f].some(q => Number.isFinite(q?.gelaende))) continue;
+            p = { ...p, [f]: p[f].map((q) => {
+                if (!Number.isFinite(q?.gelaende)) return q;
+                const h = hoeheAn(q.x, q.z);
+                return Number.isFinite(h) ? { ...q, y: h + q.gelaende } : q;
+            }) };
+        }
+        return p === op.parameter ? op : { ...op, parameter: p };
+    });
 }
 const _mittelY = (punkte) => punkte.reduce((a, p) => a + p.y, 0) / punkte.length;
 const _neigungOderNull = (w) => { const n = Number(w); return Number.isFinite(n) && n > 0 ? n : null; };

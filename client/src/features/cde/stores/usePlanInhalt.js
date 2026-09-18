@@ -18,8 +18,8 @@
  */
 
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { repo } from '../services/RepoFacade.js';
+import { computed } from 'vue';
+import { planInhaltsListe } from './planJournal.js';
 import { symbolNach } from '../services/PlanSymbols.js';
 
 const REPO_KEY = 'plan-inhalte';
@@ -32,19 +32,14 @@ export const TEXT_GROESSE_MM = 2.5;
 /** Vorgabe-Symbolgröße in Papier-Millimetern. */
 export const SYMBOL_GROESSE_MM = 3;
 
-function _entprelle(fn, ms) {
-    let t = null;
-    return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-}
 
 export const usePlanInhalt = defineStore('cde-planinhalt', () => {
+    // Journal und alte Liste (Teil XXIII, A7) — siehe `planJournal.js`.
+    const { liste, schreibe, laden } = planInhaltsListe({
+        art: 'planinhalt', repoKey: REPO_KEY, uebernahme: 'Übernahme Planinhalte',
+    });
     /** [{ id, art, x, z, text?, symbol?, groesse, winkel }] */
-    const inhalte = ref([]);
-
-    const _sichern = _entprelle(() => {
-        repo.set(REPO_KEY, JSON.parse(JSON.stringify(inhalte.value)));
-    }, 250);
-
+    const inhalte = liste;
     const anzahl = computed(() => inhalte.value.length);
 
     function _id() {
@@ -61,20 +56,18 @@ export const usePlanInhalt = defineStore('cde-planinhalt', () => {
         // mehr anklicken kann, um sie loszuwerden.
         if (!inhalt || !punkt) return null;
         const eintrag = { id: _id(), art: 'text', x: punkt.x, z: punkt.z, text: inhalt, groesse, winkel };
-        inhalte.value.push(eintrag);
-        _sichern();
+        schreibe([{ id: eintrag.id, wert: eintrag }]);
         return eintrag;
     }
 
     /**
      * Symbol setzen.
-     * @param {string} symbol Name aus PLAN_SYMBOL_NAMES
+     * @param {string} symbol Name aus dem Symbolkatalog
      */
     function addSymbol(punkt, symbol, { groesse = SYMBOL_GROESSE_MM } = {}) {
         if (!punkt || !symbolNach(symbol)) return null;
         const eintrag = { id: _id(), art: 'symbol', x: punkt.x, z: punkt.z, symbol, groesse, winkel: 0 };
-        inhalte.value.push(eintrag);
-        _sichern();
+        schreibe([{ id: eintrag.id, wert: eintrag }]);
         return eintrag;
     }
 
@@ -82,28 +75,23 @@ export const usePlanInhalt = defineStore('cde-planinhalt', () => {
     function verschiebe(id, punkt) {
         const e = inhalte.value.find(i => i.id === id);
         if (!e || !punkt) return false;
-        e.x = punkt.x;
-        e.z = punkt.z;
-        _sichern();
+        schreibe([{ id, wert: { ...e, x: punkt.x, z: punkt.z } }]);
         return true;
     }
 
     function aendere(id, patch) {
         const e = inhalte.value.find(i => i.id === id);
         if (!e) return false;
-        Object.assign(e, patch);
-        _sichern();
+        schreibe([{ id, wert: { ...e, ...patch } }]);
         return true;
     }
 
     function entferne(id) {
-        inhalte.value = inhalte.value.filter(i => i.id !== id);
-        _sichern();
+        schreibe([{ id, wert: null }]);
     }
 
     function alleEntfernen() {
-        inhalte.value = [];
-        _sichern();
+        schreibe(inhalte.value.map(e => ({ id: e.id, wert: null })), { titel: 'Planinhalt entfernen' });
     }
 
     /**
@@ -121,13 +109,6 @@ export const usePlanInhalt = defineStore('cde-planinhalt', () => {
             if (d <= besteDistanz) { beste = e; besteDistanz = d; }
         }
         return beste;
-    }
-
-    async function laden() {
-        try {
-            const gespeichert = await repo.get(REPO_KEY);
-            if (Array.isArray(gespeichert)) inhalte.value = gespeichert;
-        } catch { /* Planinhalte sind kein Grund für einen Fehler */ }
     }
 
     const bereit = laden();

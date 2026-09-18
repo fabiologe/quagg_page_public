@@ -721,7 +721,8 @@ async function herkunftFaerben() {
   const eigene = new Set([...erzeugt.keys()].filter(gid => !anzeigen.has(gid)));
   const geaendert = new Set();
   for (const art of Object.keys(AENDERUNGS_ARTEN)) {
-    if (art === 'erzeugt') continue;
+    // Planinhalte hängen an keinem Bauteil (A7).
+    if (art === 'erzeugt' || AENDERUNGS_ARTEN[art]?.nurPlan) continue;
     for (const [gid, wert] of aenderungen.wirksamerStand(art)) {
       if (wert !== null && wert !== undefined && !eigene.has(gid) && !anzeigen.has(gid)) geaendert.add(gid);
     }

@@ -65,6 +65,8 @@ export function baueBericht({ eintraege = [], konflikte = [], meta = {}, zeitlei
     const stand = [];
     const auslegung = [];
     for (const [art, meta_] of Object.entries(AENDERUNGS_ARTEN)) {
+        // Planinhalte und Rotstift sind Blattinhalt, keine Forderung an den Planer (A7).
+        if (meta_?.nurPlan) continue;
         const ziel = meta_?.auslegung ? auslegung : stand;
         for (const [, { wert, eintrag }] of standMitEintrag(eintraege, art)) {
             if (wert === null || wert === undefined) continue;   // aufgehoben

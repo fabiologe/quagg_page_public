@@ -102,6 +102,10 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
         'components/IfcSemanticWindow.vue':
             'der Merkmalssatz über die Sitzung (Lücke ⑧) — `onAddPset` prüft '
             + '`bearbeitung.modusAn` als erste Sperre, geprüft unten',
+        'stores/planJournal.js':
+            'Planinhalte und Rotstift (Teil XXIII, A7) — Blattinhalt, kein Eingriff in ein '
+            + 'Bauteil; sie standen nie unter dem Bearbeiten-Modus, sondern unter dem '
+            + 'Plan-Werkzeugslot, und schreiben erst ab Schreibstufe 3 ins Journal',
     };
 
     it('nur bekannte Stellen schreiben ins Journal', () => {

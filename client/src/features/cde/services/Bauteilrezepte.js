@@ -365,6 +365,23 @@ export function planbildVon(bauplan) {
     return { punkte, name: bauplan.name, geschlossen: !!rezept?.geschlossen, symbol };
 }
 
+/**
+ * Der PredefinedType eines Bauteils — bei einem Ableitungsteil ABGELEITET aus
+ * Rezept, Rolle und Parametern, nie aus dem Journal (Teil XXIII, A7, B15): ein
+ * gespeicherter Wert veraltete still, sobald ein Werkzeug die Parameter ändert,
+ * ohne ihn nachzurechnen. Ein gespeicherter Wert ist nur noch Rückfall
+ * (Altbestand ohne Regel).
+ */
+export function predefinedTypeVon(bauplan) {
+    const r = ABLEITUNGEN[bauplan?.rezept];
+    const teil = r?.teile?.find(t => t.rolle === bauplan?.rolle);
+    if (teil && teil.predefinedType !== undefined) {
+        return typeof teil.predefinedType === 'function'
+            ? (teil.predefinedType(bauplan.parameter ?? {}) ?? null) : (teil.predefinedType ?? null);
+    }
+    return bauplan?.predefinedType ?? null;
+}
+
 /** Eine Ableitung rechnet aus anderen Objekten (`leite`); ein Rezept baut aus Parametern (`baue`). */
 export function istAbleitung(rezept) {
     return typeof rezept?.leite === 'function';
@@ -508,6 +525,8 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
                 rezept, rolle: teil.rolle, ableitung,
                 bauform: teil.bauform,
                 kategorie: String(kat).toUpperCase(),
+                // Abgeleitet — Leser fragen `predefinedTypeVon`; in die DATEI
+                // kommt er ab Schreibstufe 3 nicht mehr (`JournalFormat`).
                 predefinedType: pt,
                 name: typeof teil.name === 'function' ? teil.name(name || r.titel) : (teil.name ?? name),
                 parameter,
