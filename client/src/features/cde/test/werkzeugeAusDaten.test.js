@@ -14,10 +14,29 @@ import { PROBEN, goldVon } from './hilfen/werkzeugGold.js';
 
 const GOLD = JSON.parse(readFileSync(join(process.cwd(), 'src/features/cde/test/fixtures/werkzeuge_vor_a6.json'), 'utf8'));
 
+/**
+ * Die FELDER so, wie A6 sie kannte: was dazukam — ein Feld, eine Option, ein
+ * Schlüssel —, zählt nicht; was es gab, muss gleich sein. Seit Durchstich 2
+ * nennt „Auffüllen" ein drittes Ziel („bis zur Fläche") und ein Feld für die
+ * Zieloperation, und „Höhe über dem Rand" darf leer sein (sie gilt nur bei
+ * Ziel Höhe). Die Frage dieses Tests bleibt dieselbe: sagen die Werkzeuge zu
+ * den ALTEN Eingaben dasselbe? Jeder Journalschritt wird weiter exakt verglichen.
+ */
+function felderWieA6(felder, gold) {
+    if (!Array.isArray(felder) || !Array.isArray(gold)) return felder;
+    const alt = new Map(gold.map(f => [f.name, f]));
+    return felder.filter(f => alt.has(f.name)).map((f) => {
+        const g = alt.get(f.name);
+        const aus = Object.fromEntries(Object.entries(f).filter(([k]) => k in g));
+        if (Array.isArray(aus.optionen) && Array.isArray(g.optionen)) aus.optionen = aus.optionen.filter(o => g.optionen.some(x => x.wert === o.wert));
+        return aus;
+    });
+}
+
 describe('jedes umgebaute Werkzeug sagt, was es vorher sagte', () => {
     const jetzt = goldVon();
     PROBEN.forEach((p, i) => {
-        it(`${p.id} (Probe ${i + 1})`, () => expect(jetzt[i]).toEqual(GOLD[i]));
+        it(`${p.id} (Probe ${i + 1})`, () => expect({ ...jetzt[i], felder: felderWieA6(jetzt[i].felder, GOLD[i].felder) }).toEqual(GOLD[i]));
     });
 });
 
@@ -158,5 +177,34 @@ describe('Spiegeln', () => {
         // Einen Pfosten (ein Punkt) am eigenen Schwerpunkt zu spiegeln tut nichts.
         const pfosten = { globalId: 'p', stand: { bauplan: { rezept: 'pfosten', parameter: { punkte: [[1, 0, 1]] } } } };
         expect(nachId('spiegeln').anwenden(pfosten, { achse: 0, kopie: 'nein' })).toBeNull();
+    });
+});
+
+describe('„Auffüllen bis zur Fläche" ist ein Katalogeintrag (Durchstich 2, S3)', () => {
+    const UR = { globalId: '1Ur0Gelaende0Vertrag00', name: 'Urgelände', hoehenversatz: 0, quellmass: { cell: 1 } };
+    const zug = [{ x: 5, y: 100, z: 5 }, { x: 25, y: 100, z: 5 }, { x: 25, y: 100, z: 25 }, { x: 5, y: 100, z: 25 }];
+    const b = nachId('auffuellen');
+
+    it('Ziel Fläche: die Operation nennt ihre Zieloperation über die Kennung — keine Höhe, kein Index', () => {
+        const schritte = b.anwenden(UR, { ziel: 'flaeche', bis: 'op-P', neigung: '' }, { zug });
+        const op = schritte.find(s => s.nachher?.rezept === 'erdbau').nachher.parameter.operationen[0];
+        expect(op).toMatchObject({ art: 'schuettung', parameter: { ziel: 'flaeche', flaeche: 'op-P', neigung: null } });
+        expect(op.parameter.hoehe).toBeUndefined();
+        expect(op.parameter.umriss).toHaveLength(4);
+    });
+
+    it('was fehlt, sagt das Werkzeug — technisch, je Ziel (E5)', () => {
+        expect(b.anwenden(UR, { ziel: 'flaeche', bis: '', neigung: '' }, { zug })).toBeNull();
+        expect(b.warumNicht(UR, { ziel: 'flaeche', bis: '' }, { zug })).toMatch(/Zieloperation fehlt/);
+        expect(b.warumNicht(UR, { ziel: 'hoehe', mass: '' }, { zug })).toMatch(/Höhe über dem Rand fehlt/);
+        expect(b.warumNicht(UR, { ziel: 'ur' }, { zug })).toBeNull();
+        // Das Feld der Zieloperation ist eine Adresse, die ihre Kennung weiterreicht.
+        expect(b.felder.find(f => f.name === 'bis')).toMatchObject({ adresse: 'stapeloperation', leerErlaubt: true });
+    });
+
+    it('die Planumshöhe ist per Kommando setzbar; eine Krone hat nur das Ziel Höhe', () => {
+        expect(GELAENDE_OPS.planum.setzbar).toEqual({ hoehe: {} });
+        expect(GELAENDE_OPS.schuettung.kennhoehen({ ziel: 'flaeche', flaeche: 'op-P' })).toEqual([]);
+        expect(GELAENDE_OPS.schuettung.kennhoehen({ ziel: 'hoehe', hoehe: 101 })).toEqual([{ art: 'kronenkante', hoehe: 101 }]);
     });
 });

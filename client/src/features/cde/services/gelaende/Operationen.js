@@ -1206,6 +1206,8 @@ export const GELAENDE_OPS = Object.freeze({
         // Die Sollfläche: die Ebene auf der Planumshöhe — überall, nicht nur im
         // Umriss (eine Auffüllung daneben erreicht dieselbe Höhe).
         flaeche: (p) => (Number.isFinite(Number(p?.hoehe)) ? () => Number(p.hoehe) : null),
+        // Die Planumshöhe lässt sich per Kommando setzen („Mass am Vorgang setzen").
+        setzbar: { hoehe: {} },
         cutTyp: 'EXCAVATION',
         vorschau(op, c) {
             const q = op.parameter ?? {};
@@ -1339,8 +1341,10 @@ export const GELAENDE_OPS = Object.freeze({
         /**
          * AUFFÜLLEN (E1, Teil XX) — die umgedrehte Grube. Der Umriss ist der
          * BÖSCHUNGSFUSS auf dem Gelände; Ziel ist eine Höhe über der mittleren
-         * Randhöhe — oder „bis GOK", das Ur-Gelände (Rückverfüllung). Wer die
-         * KRONE zeichnen will, nimmt „Planum herstellen".
+         * Randhöhe — oder „bis GOK", das Ur-Gelände (Rückverfüllung) — oder
+         * die FLÄCHE einer Operation im Stapel, genannt über ihre Kennung
+         * (Durchstich 2, E3): „bis zum Planum P". Wer die KRONE zeichnen will,
+         * nimmt „Planum herstellen".
          */
         werkzeug: {
             id: 'auffuellen', titel: 'Auffüllen', icon: 'auffuellen', rang: 3,
@@ -1348,16 +1352,33 @@ export const GELAENDE_OPS = Object.freeze({
                 { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
                     { wert: 'hoehe', titel: 'Höhe über dem Rand' },
                     { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
+                    { wert: 'flaeche', titel: 'bis zur Fläche einer Operation (Planum)' },
                 ] },
-                { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, gueltig: { ueber: 0 }, vorgabe: 1 },
+                { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, gueltig: { ueber: 0 }, vorgabe: 1, leerErlaubt: true },
+                // Die Zieloperation — über ihre KENNUNG, irgendwo im Stapel des Geländes.
+                { name: 'bis', titel: 'Zieloperation (bei Ziel Fläche)', typ: 'text', leerErlaubt: true, adresse: 'stapeloperation' },
                 { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
             ],
             vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
+            // Was je Ziel fehlen kann — technisch, nicht fachlich (E5). Ob die
+            // Zieloperation eine Fläche HAT, entscheidet der Lauf (Warnung).
+            warumNicht: (werte) => {
+                const ziel = werte?.ziel ?? 'hoehe';
+                if (ziel === 'flaeche' && !werte?.bis) return 'Ziel „Fläche": die Zieloperation fehlt.';
+                if (ziel === 'hoehe' && !(Number(werte?.mass) > 0)) return 'Ziel „Höhe": die Höhe über dem Rand fehlt.';
+                return null;
+            },
             ausEingabe: (werte, zug, { versatz }) => {
                 const umriss = punkteInNn(zug, versatz);
                 if (!umriss) return null;
                 if (werte?.ziel === 'ur') {
                     return { titel: 'Auffüllen bis GOK', ops: [{ art: 'schuettung', parameter: { umriss, ziel: 'ur' } }] };
+                }
+                if (werte?.ziel === 'flaeche') {
+                    if (!werte?.bis) return null;
+                    return { titel: 'Auffüllen bis zur Fläche', ops: [{ art: 'schuettung', parameter: {
+                        umriss, ziel: 'flaeche', flaeche: String(werte.bis), neigung: _neigungOderNull(werte?.neigung),
+                    } }] };
                 }
                 const mass = Number(werte?.mass);
                 if (!Number.isFinite(mass) || mass <= 0) return null;
@@ -1372,8 +1393,9 @@ export const GELAENDE_OPS = Object.freeze({
         wirkbereich: _wbUmrissInnen,
         wirkflaeche: _RING_UMRISS,
         kennweiten: _kwUmriss,
-        // „bis GOK" hat keine ebene Krone — sein Deckel ist das Ur-Gelände.
-        kennhoehen: (p) => (p.ziel !== 'ur' ? [{ art: 'kronenkante', hoehe: p.hoehe }] : []),
+        // Eine ebene Krone hat nur das Ziel Höhe — „bis GOK" endet am Ur-Gelände,
+        // „bis zur Fläche" an der Fläche seines Ziels.
+        kennhoehen: (p) => ((p.ziel ?? 'hoehe') === 'hoehe' ? [{ art: 'kronenkante', hoehe: p.hoehe }] : []),
         // Der innere Ring ist die Krone — nur bei einer Zielhöhe, nicht „bis GOK".
         innen: { feld: 'hoehe', titel: 'Krone', richtung: -1,
                  gilt: (p) => (p.ziel ?? 'hoehe') === 'hoehe' && Number.isFinite(Number(p.hoehe)) },
