@@ -565,6 +565,17 @@ const SETZ_OPERATIONEN = Object.freeze({
             ? `${el?.name || el?.globalId || 'Das Bauteil'}: kein Ende liegt am Punkt — gesetzt wird nur, was dort anschliesst.`
             : null),
     },
+    vorgangsmass: {
+        // EIN MASS AM ERDBAU-VORGANG (Teil XXII, Rest): welche Operation und
+        // welches Mass, sagt erst der Griff — leer vorbelegt.
+        vorbelege: () => ({ op: 0, feld: '', wert: '' }),
+        schreibe: (s, el, werte) => _erdbauMassSchritte(el, werte),
+        warumNicht: (s, el, werte) => {
+            const ziel = _massZiel(el, werte);
+            if (ziel.grund) return ziel.grund;
+            return werte?.wert === '' || werte?.wert == null ? null : _massGueltig(Number(werte.wert), ziel.grenze);
+        },
+    },
     satz: {
         // Welcher Satz, sagt erst die Eingabe — leer vorbelegt.
         vorbelege: (s) => ({ [s.name]: '', [s.feld]: {} }),
@@ -833,15 +844,21 @@ function zeichenBearbeitung(rezept) {
  * des Formulars.
  */
 function _erdbauPunkt(bauplan, op = null, feld = null, index = 0) {
-    const listen = rezeptNach(bauplan?.rezept)?.punktlisten?.(bauplan?.parameter) ?? [];
+    const rz = rezeptNach(bauplan?.rezept);
+    // Dazu die Listen OHNE Höhe (die Achse eines Gerinnes, Teil XXII Rest) —
+    // gefunden nur, wenn nach ihnen gefragt wird: die Vorbelegung ohne Feld
+    // nimmt weiter den ersten Punkt MIT Höhe.
+    const listen = [...(rz?.punktlisten?.(bauplan?.parameter) ?? []),
+                    ...(feld ? (rz?.lagelisten?.(bauplan?.parameter) ?? []) : [])];
     for (const l of listen) {
         if (op != null && l.op !== Number(op)) continue;
         if (feld && l.feld !== feld) continue;
         if (!l.punkte.length) continue;
         const k = Number(index) || 0;
         const punkt = l.punkte[k];
-        if (!punkt || ![punkt.x, punkt.y, punkt.z].every(v => Number.isFinite(Number(v)))) continue;
-        return { op: l.op, feld: l.feld, index: k, punkt, liste: l.punkte };
+        const achsen = l.ohneHoehe ? [punkt?.x, punkt?.z] : [punkt?.x, punkt?.y, punkt?.z];
+        if (!punkt || !achsen.every(v => Number.isFinite(Number(v)))) continue;
+        return { op: l.op, feld: l.feld, index: k, punkt, liste: l.punkte, ohneHoehe: !!l.ohneHoehe };
     }
     return null;
 }
@@ -912,6 +929,17 @@ function _erdbauStuetzpunktSchritte(el, werte) {
             parameter: { ...mitHoehe.parameter,
                          umriss: treffer.liste.map((p, k) => (k === treffer.index ? { ...p, x: rand.x, z: rand.z } : p)) },
         }));
+    } else if (treffer.ohneHoehe) {
+        // EINE LISTE OHNE HÖHE (die Achse eines Gerinnes, Teil XXII Rest): nur
+        // die Lage wandert; die Sohle gehört Anfang und Ende des Ganzen.
+        const alt = treffer.punkt;
+        const neu = { ...alt, x: ost - v.x, z: -nord - v.z };
+        if (Math.abs(alt.x - neu.x) < 1e-4 && Math.abs(alt.z - neu.z) < 1e-4) return null;
+        operationen = plan.parameter.operationen.map((op, j) => (j !== treffer.op ? op : {
+            ...op,
+            parameter: { ...op.parameter,
+                         [treffer.feld]: treffer.liste.map((p, k) => (k === treffer.index ? neu : p)) },
+        }));
     } else {
         // Die Höhe bleibt in NN — die Op-Punktlisten tragen sie so.
         const neu = { ...treffer.punkt, x: ost - v.x, y: hoehe, z: -nord - v.z };
@@ -923,6 +951,14 @@ function _erdbauStuetzpunktSchritte(el, werte) {
                          [treffer.feld]: treffer.liste.map((p, k) => (k === treffer.index ? neu : p)) },
         }));
     }
+    return _vorgangMitOperationen(el, plan, operationen);
+}
+
+/**
+ * Einen Vorgang mit neuer Operationsliste schreiben — ALLE Teile, dieselben
+ * Kennungen, derselbe Parametersatz (`ableitungsSchritte({bestehend})`).
+ */
+function _vorgangMitOperationen(el, plan, operationen) {
     // Die TEILE des Vorgangs: ohne sie bekämen Aushub und Auftrag neue
     // Kennungen, und im Raum stünde der Vorgang doppelt. Sie kommen aus
     // `el.stand.teile` — der Store legt sie beim Einordnen an
@@ -940,6 +976,48 @@ function _erdbauStuetzpunktSchritte(el, werte) {
         name: _vorgangsStamm(plan.name),
         bestehend: { ableitung: plan.ableitung, teile: teile ?? { [plan.rolle]: { globalId: el.globalId, bauplan: plan } } },
     }), el.modellSha);
+}
+
+/**
+ * Was an einem Vorgang ein Eckzug setzen darf — und warum nicht (Teil XXII, Rest).
+ * @returns {{plan, j, op, grenze}|{grund: string}}
+ */
+function _massZiel(el, werte) {
+    const plan = el?.stand?.bauplan;
+    const rz = rezeptNach(plan?.rezept);
+    if (!el?.globalId || !plan?.ableitung || !rz?.erdbau) return { grund: 'Nur an einem eigenen Erdbau-Vorgang.' };
+    const j = Number(werte?.op);
+    const op = Number.isInteger(j) ? plan.parameter?.operationen?.[j] : null;
+    if (!op) return { grund: 'Diese Operation gibt es am Vorgang nicht.' };
+    const grenze = rz.setzbar?.(plan.parameter, j)?.[werte?.feld];
+    if (!grenze) return { grund: `„${werte?.feld ?? ''}" lässt sich an dieser Operation nicht setzen.` };
+    return { plan, rz, j, op, grenze };
+}
+
+/** Technisch gültig? Nur das (Teil XXIV, E5) — Fachgrenzen beraten, sie sperren nicht. */
+function _massGueltig(wert, g) {
+    if (!Number.isFinite(wert)) return 'Ein Zahlenwert fehlt.';
+    if (Number.isFinite(g?.min) && wert < g.min) return `Mindestens ${g.min}.`;
+    if (Number.isFinite(g?.ueber) && !(wert > g.ueber)) return `Grösser als ${g.ueber}.`;
+    if (Number.isFinite(g?.unter) && !(wert < g.unter)) return `Kleiner als ${g.unter}.`;
+    return null;
+}
+
+/**
+ * EIN MASS AM VORGANG SETZEN (Teil XXII, Rest) — was ein Eckzug an Gerinne,
+ * Böschung, Kanalgraben oder Baugrube schreibt: EIN Parameter der Operation,
+ * die volle Operationsliste über `ableitungsSchritte({bestehend})`.
+ */
+function _erdbauMassSchritte(el, werte) {
+    const ziel = _massZiel(el, werte);
+    if (ziel.grund) return null;
+    const wert = Number(werte?.wert);
+    if (_massGueltig(wert, ziel.grenze)) return null;
+    const { plan, rz, j, op } = ziel;
+    if (Math.abs(Number(op.parameter?.[werte.feld]) - wert) < 1e-6) return null;      // gilt schon
+    const neu = rz.setzeMass?.(op, werte.feld, wert) ?? { ...op, parameter: { ...op.parameter, [werte.feld]: wert } };
+    const operationen = plan.parameter.operationen.map((o, i) => (i === j ? neu : o));
+    return _vorgangMitOperationen(el, plan, operationen);
 }
 
 /** `stand.teile` (Map Rolle → {globalId, bauplan}) als Objekt für `ableitungsSchritte({bestehend})`, oder null. */
@@ -2167,6 +2245,39 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                      hoehe: _rundeM(Number(p.punkt.y)) };
         },
         anwenden: (el, werte) => _erdbauStuetzpunktSchritte(el, werte),
+    },
+    {
+        /**
+         * EIN MASS AM VORGANG SETZEN (Teil XXII, Rest — „Ecken ziehen" an
+         * Gerinne, Böschung an Kante, Kanalgraben, Baugrube ums Bauwerk).
+         *
+         * Diese Körper haben Ecken, die kein Punkt im Journal sind: die
+         * Sohlkante liegt eine halbe Sohlbreite neben der Achse, die
+         * Oberkante dort, wo die Böschung das Gelände trifft, die Sohlecke
+         * der Baugrube einen Arbeitsraum neben dem Bauwerk. Ein Zug an so
+         * einer Ecke setzt EIN Mass (`gelaende/Eckmasse.js` rechnet es aus
+         * der Lage); welches ein Vorgang hergibt und was technisch geht,
+         * sagt sein Rezept (`setzbar`).
+         *
+         * Das Formular ist der Griff (`eigeneOberflaeche`): eine Leiste mit
+         * „Operation Nr." und „Mass: Text" wäre unbedienbar. Im Kommando steht
+         * die Operation als Kennung und der Wert absolut.
+         */
+        id: 'erdbau-mass-setzen',
+        titel: 'Mass am Vorgang setzen',
+        icon: 'pointer',
+        gruppe: 'gelaende',
+        bauform: ['koerper'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        eigeneOberflaeche: 'griffe',
+        art: 'erzeugt',
+        felder: [
+            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'operation' },
+            { name: 'feld', titel: 'Mass', typ: 'text' },
+            { name: 'wert', titel: 'Wert', typ: 'zahl' },
+        ],
+        setzt: { art: 'vorgangsmass' },
     },
     {
         /**

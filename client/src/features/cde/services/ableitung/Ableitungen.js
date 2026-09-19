@@ -24,7 +24,7 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { GELAENDE_OPS, aufGelaende, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { GELAENDE_OPS, aufGelaende, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, lagelistenVon, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
 import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
 import { innenEcken } from '../gelaende/Innenecken.js';
@@ -39,6 +39,7 @@ import {
 import { stationenEntlang } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, knotensohle, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
 import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
+import { aussenkanten, aussenrichtung, querrichtung, strahlTreffer } from '../gelaende/Eckmasse.js';
 
 /** Welche Op-Parameter Höhen in m NN sind — und deshalb an der Grenze in Welt-Y wandern. */
 export const ERDBAU_HOEHENFELDER = Object.freeze({
@@ -496,6 +497,20 @@ const ABLEITUNGEN_ERWEITERT = {
 
         /** Die Ecken dieses Vorgangs — wer sie zeigt oder zieht, fragt HIER (Teil XXIII, A2). */
         punktlisten: (parameter) => punktlistenVon(parameter?.operationen),
+        /** Punktlisten ohne Höhe (die Achse eines Gerinnes) — ein Eckzug schiebt dort nur die Lage. */
+        lagelisten: (parameter) => lagelistenVon(parameter?.operationen),
+
+        /**
+         * DIE ECKEN, DIE KEIN PUNKT IM JOURNAL SIND (Teil XXII, Rest): Achse,
+         * Sohlkanten und Oberkanten eines Gerinnes, der Fuss einer Böschung an
+         * einer Kante — je Operation aus ihrem Eintrag (`gelaende/Eckmasse.js`).
+         * @param {object} ctx  {welt: (m NN) → Welt-Y, lauf: {kanten} des Laufs}
+         */
+        ecken: (parameter, ctx = {}) => (parameter?.operationen ?? []).flatMap((op, j) =>
+            (GELAENDE_OPS[op?.art]?.ecken?.(op?.parameter ?? {}, { welt: ctx.welt ?? ((v) => v), kanten: ctx.lauf?.kanten ?? [] }) ?? [])
+                .map(e => ({ ...e, op: j }))),
+        /** Welche Masse ein Eckzug an Operation j setzen darf, und was technisch geht. */
+        setzbar: (parameter, j) => GELAENDE_OPS[parameter?.operationen?.[j]?.art]?.setzbar ?? null,
 
         verschiebe: (parameter, delta) => ({
             ...parameter,
@@ -1101,6 +1116,72 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
     /** Der Bauplan trägt keine Punkte — die Quellen wandern selbst mit dem Rahmen. */
     verschiebe: (parameter) => parameter,
 
+    /**
+     * DIE ECKEN DES GRABENS (Teil XXII, Rest). Er folgt seiner Haltung — Lage
+     * und Sohle ziehen heisst die Haltung bearbeiten. Was an ihm selbst
+     * gezogen wird, sind seine MASSE: die Sohlkante an Anfang und Ende jeder
+     * Haltung zieht die Sohlbreite (dann eine eigene statt der Mindestbreite
+     * nach DIN EN 1610), die Böschungsoberkante — nur bei geböschter Wand —
+     * den Böschungswinkel. Beides gilt für den ganzen Graben. Die Lage kommt
+     * aus den Operationen, die der Lauf gerechnet hat (`lauf.ops`, Welt).
+     * Die Baugruben an den Schächten folgen dem Schacht-Aussenmass und haben
+     * keine eigenen Ecken.
+     */
+    ecken(parameter, ctx = {}) {
+        const j = (parameter?.operationen ?? []).findIndex(o => o?.art === 'kanalgraben');
+        if (j < 0) return [];
+        const w = _kanalgrabenWerte(parameter, null);
+        const wand = wandFuer({ wandform: w.wandform, boden: w.boden, winkelGrad: w.winkelGrad });
+        const oberkanten = aussenkanten(ctx.lauf?.kanten, ['oberkante']);
+        // Die Gräben sind die Operationen mit STATIONEN (je Haltung eine) — gefragt
+        // wird, was sie tragen, nicht wie sie heissen (W2).
+        const graeben = (ctx.lauf?.ops ?? []).filter(o => (o?.parameter?.stationen?.length ?? 0) >= 2);
+        const aus = [];
+        graeben.forEach((o, h) => {
+            const st = o.parameter.stationen;
+            const letzte = st.length - 1;
+            const wer = graeben.length > 1 ? ` (Haltung ${h + 1})` : '';
+            for (const [k, wo] of [[0, 'Anfang'], [letzte, 'Ende']]) {
+                const u = { x: Number(st[k].x), z: Number(st[k].z) };
+                const y = Number(st[k].y);
+                const sb = Number(st[k].sohlbreite) || 0;
+                if (![u.x, u.z, y].every(Number.isFinite) || !(sb > 0)) continue;
+                for (const [seite, name] of [[1, 'links'], [-1, 'rechts']]) {
+                    const r = querrichtung(st, k, seite);
+                    if (!r) continue;
+                    const richtung = { x: r.x, z: r.z };
+                    aus.push({ op: j, schluessel: `sohlkante:${h}:${k}:${seite}`, titel: `Sohlkante ${wo} ${name}${wer}`,
+                               pos: { x: u.x + r.x * sb / 2, y, z: u.z + r.z * sb / 2 },
+                               mass: { feld: 'breite', titel: 'Sohlbreite', einheit: 'm', art: 'linear', ursprung: u, richtung,
+                                       t0: sb / 2, w0: sb, k: 2, min: 0.3, max: 10 } });
+                    if (!(wand.n > 0)) continue;
+                    const treffer = strahlTreffer(u, richtung, oberkanten, { ab: sb / 2 + 0.1 });
+                    if (!treffer) continue;
+                    aus.push({ op: j, schluessel: `oberkante:${h}:${k}:${seite}`, titel: `Böschungsoberkante ${wo} ${name}${wer}`,
+                               pos: { x: treffer.punkt.x, y: Number.isFinite(treffer.punkt.y) ? treffer.punkt.y : y, z: treffer.punkt.z },
+                               mass: { feld: 'winkelGrad', titel: 'Böschungswinkel', einheit: '°', art: 'winkel', ursprung: u, richtung,
+                                       t0: treffer.t, s: sb / 2, w0: wand.winkelGrad, min: 10, max: 89 } });
+                }
+            }
+        });
+        return aus;
+    },
+    setzbar: () => ({ breite: { ueber: 0 }, winkelGrad: { ueber: 0, unter: 90 } }),
+    /**
+     * Ein Mass setzen. Ein Alt-Journal (vor B3) kennt `wandform` nicht und
+     * leitet Breite und Winkel aus `boeschung`/`arbeitsraum` ab — sie würden
+     * das gesetzte Mass überstimmen. Deshalb erst in die heutige Form.
+     */
+    setzeMass(op, feld, wert) {
+        const p = { ...(op?.parameter ?? {}) };
+        if (p.wandform === undefined) {
+            const w = _kanalgrabenWerte({ operationen: [op] }, null);
+            Object.assign(p, { wandform: w.wandform, winkelGrad: w.winkelGrad, breite: w.breite });
+            delete p.boeschung; delete p.arbeitsraum;
+        }
+        return { ...op, parameter: { ...p, [feld]: wert } };
+    },
+
     fachmodell: (globalId, plan) => (plan?.rolle === 'dgm'
         ? { gelaende: [globalId] }
         : { koerper: [globalId] }),
@@ -1260,6 +1341,48 @@ const BAUWERKSGRUBE = {
         ...parameter,
         operationen: verschiebeOperationen(parameter?.operationen ?? [], delta),
     }),
+
+    /**
+     * DIE ECKEN DER BAUGRUBE (Teil XXII, Rest). Sie folgt dem Bauwerk: die
+     * Sohlecken liegen einen Arbeitsraum neben seinem Grundriss, und wer eine
+     * zieht, zieht den ARBEITSRAUM (für alle Seiten — die Grube bleibt eine
+     * Parallele zum Bauwerk); ihr Höhengriff setzt die Sohle. Die
+     * Böschungsoberkante — nur bei geböschter Wand — zieht den
+     * Böschungswinkel. Die Sohlecken kommen aus dem Planum, das der Lauf
+     * gerechnet hat (`lauf.ops`, Welt).
+     */
+    ecken(parameter, ctx = {}) {
+        const j = (parameter?.operationen ?? []).findIndex(o => o?.art === 'bauwerksgrube');
+        // Die Sohle ist der Umriss, den die gerechneten Operationen tragen (Planum
+        // und Böschung teilen ihn), auf ihrer Höhe — gefragt nach dem, was sie
+        // tragen, nicht nach dem Namen (W2).
+        const sohlring = (ctx.lauf?.ops ?? []).find(o => Array.isArray(o?.parameter?.umriss) && Number.isFinite(Number(o.parameter.hoehe)));
+        const ring = (sohlring?.parameter?.umriss ?? []).map(q => ({ x: Number(q.x), z: Number(q.z) }));
+        const sohle = Number(sohlring?.parameter?.hoehe);
+        if (j < 0 || ring.length < 3 || !Number.isFinite(sohle) || !ring.every(q => Number.isFinite(q.x) && Number.isFinite(q.z))) return [];
+        const wand = _grubenWand(parameter);
+        const arbeitsraum = _arbeitsraumFuer(parameter, wand);
+        const oberkanten = aussenkanten(ctx.lauf?.kanten, ['oberkante']);
+        const aus = [];
+        ring.forEach((u, k) => {
+            const r = aussenrichtung(ring, k);
+            if (!r) return;
+            const richtung = { x: r.x, z: r.z };
+            aus.push({ op: j, schluessel: `sohlecke:${k}`, titel: `Sohlecke ${k + 1}`, pos: { x: u.x, y: sohle, z: u.z },
+                       mass: { feld: 'arbeitsraum', titel: 'Arbeitsraum', einheit: 'm', art: 'linear', ursprung: u, richtung,
+                               t0: 0, w0: arbeitsraum, k: 1 / r.faktor, min: 0, max: 5 },
+                       hoehe: { feld: 'sohle', titel: 'Sohle' } });
+            if (!(wand.n > 0)) return;
+            const treffer = strahlTreffer(u, richtung, oberkanten);
+            if (!treffer) return;
+            aus.push({ op: j, schluessel: `oberkante:${k}`, titel: `Böschungsoberkante ${k + 1}`,
+                       pos: { x: treffer.punkt.x, y: Number.isFinite(treffer.punkt.y) ? treffer.punkt.y : sohle, z: treffer.punkt.z },
+                       mass: { feld: 'winkelGrad', titel: 'Böschungswinkel', einheit: '°', art: 'winkel', ursprung: u, richtung,
+                               t0: treffer.t, s: 0, w0: wand.winkelGrad, min: 10, max: 89 } });
+        });
+        return aus;
+    },
+    setzbar: () => ({ arbeitsraum: { min: 0 }, winkelGrad: { ueber: 0, unter: 90 }, sohle: {} }),
 
     fachmodell: (globalIds) => ({ kanten: [], knoten: [], koerper: [globalIds.grube].filter(Boolean),
                                   gelaende: [globalIds.dgm].filter(Boolean) }),

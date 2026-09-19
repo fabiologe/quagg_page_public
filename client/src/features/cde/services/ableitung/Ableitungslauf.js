@@ -413,6 +413,10 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             // Kronenkante — gerechnet wie die Massen, nie gespeichert. Raum und
             // Paket lesen sie hier, nicht aus dem Journal.
             if (erg.kanten) eintrag.kanten = erg.kanten;
+            // DIE GERECHNETEN OPERATIONEN (Teil XXII, Rest): wo Kanalgraben und
+            // Baugrube ihre Sohle wirklich haben — in Welt, nie gespeichert. Die
+            // Ecken dieser Vorgänge sitzen dort (`rezept.ecken`).
+            if (erg.ops) eintrag.ops = erg.ops;
             return erg;
         })();
         memo.set(id, versprechen);

@@ -42,6 +42,10 @@ import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { achsenErlaubt } from './Achszug.js';
 import { rezeptNach } from './Bauteilrezepte.js';
 import { innenEcken, innenringName } from './gelaende/Innenecken.js';
+import { massWert, querlage } from './gelaende/Eckmasse.js';
+
+/** Wohin eine Mass-Ecke beim Zug darf (Teil XXII, Rest) — für die Oberfläche, die nicht in `gelaende/` greift. */
+export { aufMasslinie } from './gelaende/Eckmasse.js';
 
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
@@ -51,11 +55,13 @@ const DREH_MINDEST_PUNKTE = 2;
 
 /**
  * Hat dieser Bauplan Ecken, die „Ecken ziehen" zeigen kann (Teil XXII)? Ein
- * Erdbau-Vorgang mit mindestens einer Punktliste; Kanalgraben und
- * Bauwerksgrube folgen ihrer Haltung bzw. ihrem Bauwerk und haben keine.
+ * Erdbau-Vorgang mit mindestens einer Punktliste — oder ein Rezept, das
+ * Ecken nennt, die kein Punkt im Journal sind (Teil XXII, Rest: Gerinne,
+ * Böschungsfuss, Kanalgraben, Baugrube ums Bauwerk).
  */
 export function hatErdbauEcken(bauplan) {
-    return _punktlisten(bauplan).some(l => l.punkte.length >= 2);
+    if (!bauplan) return false;
+    return _punktlisten(bauplan).some(l => l.punkte.length >= 2) || typeof rezeptNach(bauplan.rezept)?.ecken === 'function';
 }
 
 /**
@@ -77,7 +83,7 @@ function _punktlisten(bauplan) {
  * @param {'geliefert'|'cde'} [q.subjektHerkunft]
  * @returns {Array<object>} Griffe, jeder mit key/globalId/name/herkunft/art/pos/achsen/werkzeug/felder
  */
-export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, typprofil = null, subjektHerkunft = 'geliefert', bauform = null } = {}) {
+export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, typprofil = null, subjektHerkunft = 'geliefert', bauform = null, vorgang = null } = {}) {
     const aus = [];
 
     // 1. Schachtgriffe — nur GELIEFERTE: der Ort eines eigenen Schachts lebt im
@@ -221,7 +227,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     // Jeder dieser Griffe trägt `ecken: true` — gezeigt werden sie nur, wenn
     // „Ecken ziehen" für dieses Bauteil läuft (`bearbeitung.eckenFuer`), und
     // `ring` (seine Nachbarn in Zeichenreihenfolge) für die Führungslinien.
-    if (eigen && bauplan && typeof rezeptNach(bauplan.rezept)?.punktlisten === 'function') {
+    const rz = bauplan ? rezeptNach(bauplan.rezept) : null;
+    if (eigen && bauplan && (typeof rz?.punktlisten === 'function' || typeof rz?.ecken === 'function')) {
         const listen = _punktlisten(bauplan);
         const gid = subjekt.globalId;
         const versatz = subjekt.hoehenversatz ?? 0;
@@ -260,6 +267,33 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                 });
             }
         });
+        // DIE ÜBRIGEN ECKEN (Teil XXII, Rest): die das Rezept nennt, weil sie
+        // kein Punkt im Journal sind — die Achse eines Gerinnes (Lage), und
+        // Ecken, die ein MASS sind (Sohlbreite, Neigung, Arbeitsraum, Sohle).
+        // Wo die Böschung das Gelände trifft und wo Graben und Baugrube ihre
+        // Sohle haben, rechnet der Lauf (`vorgang`: {ops, kanten}).
+        for (const e of rz?.ecken?.(bauplan.parameter, { welt: (nn) => weltAusNn(nn, versatz), lauf: vorgang }) ?? []) {
+            if (![e?.pos?.x, e?.pos?.y, e?.pos?.z].every(Number.isFinite)) continue;
+            const key = `erdbau-ecke:${gid}:${e.op}:${e.schluessel}`;
+            const basis = { globalId: gid, name: subjekt.name ?? '', herkunft: 'cde', ecken: true, titel: e.titel, op: e.op };
+            if (e.mass) {
+                aus.push({ ...basis, key, art: 'mass', pos: e.pos, achsen: 'XZ', mass: e.mass,
+                           werkzeug: 'erdbau-mass-setzen', felder: ['op', 'feld', 'wert'], werte: { op: e.op, feld: e.mass.feld } });
+            } else {
+                // Eine Ecke mit LAGE ohne eigene Höhe (Achse des Gerinnes):
+                // gezogen wie ein Knickpunkt, geschrieben wird nur Ost/Nord.
+                aus.push({ ...basis, key, art: 'stuetzpunkt', pos: e.pos, achsen: 'XZ', index: e.index, feld: e.feld,
+                           werkzeug: 'erdbau-stuetzpunkt-verschieben', felder: FELDER,
+                           werte: { op: e.op, feld: e.feld, index: e.index }, ring: e.ring, geschlossen: !!e.geschlossen });
+            }
+            if (e.hoehe) {
+                // Der Höhengriff daneben — die Höhe ist hier ein Mass des Ganzen (Sohle).
+                aus.push({ ...basis, key: `${key}:hoch`, art: 'mass', pos: e.pos, achsen: 'Y', rolle: 'hoehe',
+                           zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 }, titel: e.hoehe.titel,
+                           mass: { art: 'hoehe', feld: e.hoehe.feld, titel: e.hoehe.titel, einheit: 'm NN' },
+                           werkzeug: 'erdbau-mass-setzen', felder: ['op', 'feld', 'wert'], werte: { op: e.op, feld: e.hoehe.feld } });
+            }
+        }
         return aus;
     }
 
@@ -329,6 +363,15 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
             // Zielwert. `anwenden` rechnet daraus das Delta beider Endpunkte,
             // also bleibt der Wert absolut und die Anwendung idempotent.
             return { index: griff.index, ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)), hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
+        case 'mass': {
+            // EINE ECKE, DIE EIN MASS IST (Teil XXII, Rest): gemessen wird quer —
+            // auf der Linie, auf der die Ecke mit ihrem Mass wandert —, die Höhe
+            // senkrecht. Daraus der neue Wert; absolut, wie jedes Formularfeld.
+            const m = griff.mass ?? {};
+            const wert = m.art === 'hoehe' ? nnAusWelt(pos.y, hoehenversatz) : massWert(m, querlage(m, pos));
+            if (!Number.isFinite(wert)) return {};
+            return { ...(griff.werte ?? {}), wert: m.art === 'winkel' ? Math.round(wert * 10) / 10 : r3(wert) };
+        }
         case 'drehung': {
             // Der Winkel zwischen Start- und Ziellage um das Zentrum, in Grad —
             // dieselbe Drehrichtung wie `drehePunktliste` (x' = x·cos − z·sin).

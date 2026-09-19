@@ -29,7 +29,7 @@
  */
 
 import { computed, ref, watch } from 'vue';
-import { begrenze, griffZuWerten, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
+import { aufMasslinie, begrenze, griffZuWerten, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
 import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { ACHSEN, RASTER_M, achsPassung, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, waehleAchse, zugText } from '../services/Achszug.js';
@@ -105,8 +105,13 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Modellname lautet so". Der Modellname trügt (Delta-Modell des
         // Editors), und der Store leitet es längst so ab (`eigenes`).
         const herkunft = subjekt?.stand?.bauplan ? 'cde' : 'geliefert';
+        // Was der Lauf zu diesem Vorgang gerechnet hat (Operationen in Welt,
+        // Böschungskanten) — dort sitzen die Ecken, die kein Punkt im Journal
+        // sind (Teil XXII, Rest).
+        const ableitung = subjekt?.stand?.bauplan?.ableitung ?? null;
+        const vorgang = ableitung ? (e.autor?.ableitungen?.get?.(ableitung) ?? null) : null;
         const alle = griffeFuer({ schaechte, lageStand, subjekt, typprofil: getTypprofil?.() ?? null, subjektHerkunft: herkunft,
-                                  bauform: getBauform?.() ?? null });
+                                  bauform: getBauform?.() ?? null, vorgang });
         const scharf = bearbeitung?.scharfId ?? null;
         // Mit scharfem Werkzeug: nur die Griffe, die es bedienen — und nur am
         // gewählten Bauteil (ein Bild, eine Kugel; 27 Schachtkugeln wären wieder
@@ -319,6 +324,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         } else return;
         d = rasterFang(d, _raster(tipp));
         let pos = { x: z.griff.pos.x + d.x, y: z.griff.pos.y + d.y, z: z.griff.pos.z + d.z };
+        // EINE ECKE, DIE EIN MASS IST (Teil XXII, Rest), wandert nur auf ihrer
+        // Linie — quer zur Achse, nach aussen von der Kante. Was sie daneben
+        // zeigte, schriebe sie ohnehin nicht.
+        if (z.griff.art === 'mass' && z.achsen === 'XZ') pos = aufMasslinie(z.griff.mass, pos);
         z.aktiv = [];
         z.fang = null;
         if (z.linien.length && (z.griff.art === 'knoten' || z.griff.ecken)) {
@@ -369,12 +378,26 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                               punkte: [{ x: a.ost - v.x, y: z.pos.y, z: -a.nord - v.z }, { x: b.ost - v.x, y: z.pos.y, z: -b.nord - v.z }] });
             }
         }
+        // Die Linie, auf der eine Mass-Ecke wandert (Teil XXII, Rest).
+        if (z.griff.art === 'mass' && z.achsen === 'XZ' && z.griff.mass?.ursprung && z.griff.mass?.richtung) {
+            const { ursprung: u, richtung: r } = z.griff.mass;
+            const W = 40;
+            linien.push({ art: 'linie', gestrichelt: true, farbe: f.accent,
+                          punkte: [{ x: u.x, y: z.pos.y, z: u.z }, { x: u.x + r.x * W, y: z.pos.y, z: u.z + r.z * W }] });
+        }
         // Beim Achszug gehört die Ebene `fang` den Führungslinien (`_zeigeAchsen`).
         if (z.griff.art !== 'bauteil') e.overlayZeige?.('fang', linien);
         const d = { x: z.pos.x - z.griff.pos.x, y: z.pos.y - z.griff.pos.y, z: z.pos.z - z.griff.pos.z };
         const teile = [];
         const dxz = Math.hypot(d.x, d.z);
-        if (z.griff.art === 'drehung') teile.push(`${Number(z.winkel ?? 0).toFixed(1).replace('.', ',')}°`);
+        if (z.griff.art === 'mass') {
+            // Der Wert, den der Zug setzt — nicht der Weg, den er gegangen ist.
+            const m = z.griff.mass ?? {};
+            const w = griffZuWerten(z.griff, z.pos, { hoehenversatz: (z.subjekt ?? getSubjekt?.())?.hoehenversatz ?? getHoehenversatz?.() ?? 0 }).wert;
+            teile.push(Number.isFinite(w)
+                ? `${m.titel ?? m.feld} ${String(m.art === 'winkel' ? w.toFixed(1) : w.toFixed(2)).replace('.', ',')}${m.einheit ? ` ${m.einheit}` : ''}`
+                : `${m.titel ?? m.feld}: hier nicht möglich`);
+        } else if (z.griff.art === 'drehung') teile.push(`${Number(z.winkel ?? 0).toFixed(1).replace('.', ',')}°`);
         else if (z.griff.art === 'bauteil') teile.push(zugText(d, z.achse));
         else if (z.achsen === 'Y') teile.push(zugText(d, 'hoehe', { felder: ['hoehe'] }));
         else teile.push(zugText(d, null, { felder: ['ost', 'nord'] }));

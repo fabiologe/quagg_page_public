@@ -34,6 +34,7 @@ import { gleicherBezug } from '../geometrie/hilfen.js';
 import { nnAusWelt } from '../Hoehenbezug.js';
 import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
 import { regeltabelle } from '../regeln/Regelwerk.js';
+import { boeschungsFussEcken, gerinneEcken } from './Eckmasse.js';
 
 /** Ein Punkt kommt je nach Quelle als {x,z} oder [x,y,z]. */
 function _xz(p) {
@@ -863,6 +864,12 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 //   hoehenfelder / punktfelder        welche Parameter m NN tragen (einzeln / je Punkt)
 //   kennhoehen(p)                     → [{art, hoehe}]: ebene Kanten, die sie herstellt
 //   innen                             {feld, titel, richtung, gilt(p)}: ihr innerer Ring
+//   lagefelder                        Punktlisten OHNE Höhe (die Achse des Gerinnes — ihre Höhe
+//                                     kommt aus Sohle Anfang/Ende)
+//   ecken(p, {welt, kanten})          → Ecken, die kein Punkt im Journal sind (Teil XXII, Rest):
+//                                     Achspunkte, Sohlkanten, Oberkante/Fuss — siehe `Eckmasse.js`
+//   setzbar                           {feld: {ueber?, min?}}: welche Masse ein Eckzug setzen darf,
+//                                     und was technisch gerade noch geht
 //   cutTyp / fillTyp(p)               der IFC-PredefinedType, den sie beisteuert
 //   profilfaehig                      ob ein Profilkörper sie exakt nachbauen kann
 //   vorschau(op, c)                   ihr Geist vor dem Übernehmen (Hilfen in `c`)
@@ -1046,6 +1053,11 @@ export const GELAENDE_OPS = Object.freeze({
         // Teil XXI: ein Gerinne darf seine Sohle stationsweise tragen — auch
         // die Stationen sind Punkte mit Höhe in m NN.
         punktfelder: ['stationen'],
+        // Die gezeichnete Achse trägt keine Höhe: die Sohle läuft von Anfang
+        // bis Ende über die Weglänge (Teil XXII, Rest).
+        lagefelder: ['achse'],
+        ecken: (p, ctx) => (_stationenVon(p) ? [] : gerinneEcken(p, ctx)),
+        setzbar: { sohlbreite: { min: 0 }, boeschung: { min: 0 }, sohleAnfang: {}, sohleEnde: {} },
         wirkbereich(raster, p) {
             // MIT STATIONEN (Teil XXI): die Achse sind die Stationen, die Breite
             // die GRÖSSTE und die Sohle die TIEFSTE — der Bereich muss alles
@@ -1327,6 +1339,9 @@ export const GELAENDE_OPS = Object.freeze({
         },
         hoehenfelder: [],
         punktfelder: ['linie'],
+        // Der Fuss (bzw. die Oberkante eines Einschnitts) zieht die Neigung (Teil XXII, Rest).
+        ecken: (p, ctx) => boeschungsFussEcken(p, ctx),
+        setzbar: { neigung: { ueber: 0 } },
         wirkbereich(raster, p) {
             const huelle = _huelleXZ(p.linie);
             if (!huelle) return null;
@@ -1393,6 +1408,22 @@ export function punktlistenVon(operationen = [], { ops = GELAENDE_OPS } = {}) {
         for (const feld of ops[op?.art]?.punktfelder ?? []) {
             const punkte = op?.parameter?.[feld];
             if (Array.isArray(punkte)) aus.push({ op: j, feld, punkte });
+        }
+    });
+    return aus;
+}
+
+/**
+ * Die Punktlisten OHNE Höhe (`lagefelder`) — die Achse eines Gerinnes. Ein
+ * Eckzug verschiebt dort nur die Lage; die Höhe gehört einem anderen Feld.
+ * @returns {Array<{op: number, feld: string, punkte: Array}>}
+ */
+export function lagelistenVon(operationen = [], { ops = GELAENDE_OPS } = {}) {
+    const aus = [];
+    (operationen ?? []).forEach((op, j) => {
+        for (const feld of ops[op?.art]?.lagefelder ?? []) {
+            const punkte = op?.parameter?.[feld];
+            if (Array.isArray(punkte)) aus.push({ op: j, feld, punkte, ohneHoehe: true });
         }
     });
     return aus;

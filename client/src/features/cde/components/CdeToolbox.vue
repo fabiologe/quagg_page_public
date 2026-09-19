@@ -143,7 +143,7 @@
             </button>
           </div>
           <p v-if="eckenAktiv" class="tb-warum">
-            Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper.
+            Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper. Sohlkante, Oberkante und Fuß gleiten quer und setzen ein Maß des Ganzen: Sohlbreite, Böschung, Arbeitsraum.
           </p>
         </section>
         <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
