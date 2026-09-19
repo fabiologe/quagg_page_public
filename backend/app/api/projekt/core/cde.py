@@ -124,6 +124,10 @@ class CdeUnbekannt(KeyError):
     """Router: 404."""
 
 
+class CdeZuAlt(Exception):
+    """Router: 409 — die Nutzlast kommt von einem Client, der das gespeicherte Journal nicht ganz kennt."""
+
+
 def _jetzt() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -892,7 +896,45 @@ def repo_lesen(o: ordner.Ordner) -> dict:
 
 
 def repo_setzen(o: ordner.Ordner, key: str, wert) -> None:
-    _ablage_setzen(_repo_pfad(o), key, wert)
+    pfad = _repo_pfad(o)
+    _journal_waechter(pfad, key, wert)
+    _ablage_setzen(pfad, key, wert)
+
+
+def _mindest_client(wert) -> int:
+    """`mindestClient` einer Journal-Nutzlast; ohne Feld (v1-Liste, Tab von vor A7a) 0."""
+    if not isinstance(wert, dict):
+        return 0
+    try:
+        return int(wert.get("mindestClient") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _journal_waechter(pfad: Path, key: str, wert) -> None:
+    """Kein Journal wird von einem Client ueberschrieben, der es nicht ganz kennt (Teil XXIV, Fahrplan R9).
+
+    Der Client sperrt sich selbst (`nurLesen`, sobald `mindestClient` ueber dem
+    liegt, was er kennt) — aber erst seit 2026-09-18 16:05. Ein Tab von davor
+    kennt das Feld nicht und schreibt ohne es. Deshalb prueft hier auch der
+    Server: eine Nutzlast, deren `mindestClient` KLEINER ist als der
+    gespeicherte, wird abgelehnt (409). Gleich oder groesser geht durch; ein
+    Journal ohne gespeicherte Stufe sperrt nichts.
+    """
+    if key != JOURNAL_KEY and not key.endswith(f":{JOURNAL_KEY}"):
+        return
+    ziel = pfad / f"{key}.json"
+    if not ziel.is_file():
+        return
+    try:
+        gespeichert = _mindest_client(json.loads(ziel.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return
+    neu = _mindest_client(wert)
+    if neu < gespeichert:
+        raise CdeZuAlt(f"Journal {key}: gespeichert fuer Clients ab Stufe {gespeichert}, die Nutzlast "
+                       f"kommt von Stufe {neu} — dieser Tab kennt das Journal nicht ganz und wuerde es "
+                       f"ueberschreiben. Bitte die Seite neu laden.")
 
 
 def repo_loeschen(o: ordner.Ordner, key: str) -> bool:

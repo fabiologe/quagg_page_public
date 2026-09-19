@@ -14,7 +14,7 @@
  * Speicher legt. Für das Server-Backend prüft ein eigener Fall, dass
  * `getFrisch` den Cache wirklich verwirft (sonst sähe der Wächter NIE etwas).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { repo } from '../services/RepoFacade.js';
@@ -117,5 +117,45 @@ describe('getFrisch am Server-Backend', () => {
         expect((await b.get('ifc-repo:aenderungen')).schreibstand.zaehler).toBe(1);
         // … `getFrisch` schon.
         expect((await b.getFrisch('ifc-repo:aenderungen')).schreibstand.zaehler).toBe(5);
+    });
+});
+
+describe('der Server-Wächter für mindestClient (Teil XXIV, Fahrplan R9)', () => {
+    // Der Server lehnt ein Journal ab, dessen `mindestClient` unter dem
+    // gespeicherten liegt (409). Der Client nimmt das wie die Verweigerung des
+    // Mehrbenutzer-Wächters: der Vorgang gilt nicht, der Grund steht da — und
+    // ab jetzt liest dieser Tab nur. Ein Netzfehler bleibt ein Netzfehler.
+    const ablehnung = { response: { status: 409, data: { detail: 'Journal global:aenderungen: gespeichert fuer Clients ab Stufe 4 … Bitte die Seite neu laden.' } } };
+    function server({ put }) {
+        return { get: vi.fn(async () => ({ data: {} })), put: vi.fn(put), delete: vi.fn() };
+    }
+    beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); });
+    afterEach(() => repo.setBackend(null));
+
+    it('409 vom Server: der Vorgang ist abgelehnt, der Tab liest nur — nichts bleibt lokal', async () => {
+        const { RemoteBackend } = await import('../services/RepoFacade.js');
+        const b = new RemoteBackend('p1');
+        b._api = server({ put: async (url) => { if (/aenderungen/.test(url)) throw ablehnung; return { data: { ok: true } }; } });
+        repo.setBackend(b);
+        const ae = useAenderungen();
+        await ae.bereit;
+        const v = await ae.eintragenVorgang([{ art: 'kg', globalId: 'G1', nachher: '410' }]);
+        expect(v).toMatchObject({ ok: false, eintraege: [] });                    // vorher: ok, und der Schritt lebte nur lokal
+        expect(v.grund).toMatch(/Server hat das Sichern abgelehnt.*neu laden/);
+        expect(new Map(ae.wirksamerStand('kg')).has('G1')).toBe(false);
+        expect(ae.nurLesen).toMatchObject({ ebene: 'auftrag' });
+        // Der nächste Vorgang kommt gar nicht erst bis zum Server.
+        const puts = b._api.put.mock.calls.length;
+        expect((await ae.eintragenVorgang([{ art: 'kg', globalId: 'G2', nachher: '420' }])).ok).toBe(false);
+        expect(b._api.put.mock.calls.length).toBe(puts);
+    });
+
+    it('ein Netzfehler (500) bleibt, was er war: kein „nur lesen"', async () => {
+        const { RemoteBackend } = await import('../services/RepoFacade.js');
+        const b = new RemoteBackend('p1');
+        b._api = server({ put: async () => { throw { response: { status: 500 }, message: 'kaputt' }; } });
+        expect(await b.set('ifc-repo:global:aenderungen', { version: 2 })).toBe(false);
+        b._api = server({ put: async () => { throw ablehnung; } });
+        expect(await b.set('ifc-repo:global:aenderungen', { version: 2 })).toEqual({ abgelehnt: expect.stringMatching(/Stufe 4/) });
     });
 });

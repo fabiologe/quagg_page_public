@@ -283,7 +283,18 @@ export class RemoteBackend {
             const api = await this._client();
             await api.put(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`, value);
             return true;
-        } catch (e) { console.warn('[CDE remote] set', e?.message ?? e); return false; }
+        } catch (e) {
+            // ABGELEHNT (Teil XXIV, Fahrplan R9): der Server-Wächter verweigert
+            // ein Journal, das dieser Tab nicht ganz kennt (409). Kein Netzfehler —
+            // der Aufrufer bekommt den Grund, der Cache vergisst den Wert, der
+            // nie auf dem Server ankam.
+            if (e?.response?.status === 409) {
+                this._cache = null;
+                return { abgelehnt: String(e.response.data?.detail ?? 'vom Server abgelehnt') };
+            }
+            console.warn('[CDE remote] set', e?.message ?? e);
+            return false;
+        }
     }
     async delete(fullKey) {
         try {

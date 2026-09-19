@@ -734,6 +734,14 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
             };
             const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
+            // DER SERVER-WÄCHTER (Fahrplan R9): auf dem Server liegt ein Journal
+            // für neuere Clients. Dann liest dieser Tab ab jetzt nur — wie beim
+            // Laden eines solchen Journals —, und der Vorgang gilt nicht.
+            if (ok?.abgelehnt) {
+                console.error('cde: Journal NICHT gesichert — der Server lehnt ab:', ok.abgelehnt);
+                nurLesen.value = { ebene, grund: 'Der Server hat das Sichern abgelehnt: der Verlauf wurde mit einer neueren CDE geschrieben — bitte die Seite neu laden; nichts wurde überschrieben.' };
+                return 'nurLesen';
+            }
             if (ok !== false) { _schreibstaende[ebene] += 1; sicherFehler.value = null; return 'ok'; }
             sicherFehler.value = { ebene, wann: Date.now(), grund: null };
             return 'fehler';
@@ -916,10 +924,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // unverändert (`_uebernimmV2` übernimmt sie als Ganzes).
         if (kommando) eintraege[0].kommando = kommando;
         const ergebnis = await _sichern(ziel);
-        if (ergebnis === 'konflikt') {
+        // Verweigert — vom Mehrbenutzer-Wächter oder vom Server (R9): der Vorgang
+        // gilt nicht, er wird wieder herausgenommen.
+        if (ergebnis === 'konflikt' || ergebnis === 'nurLesen') {
             const weg = new Set(eintraege.map(e => e.id));
             _liste(ziel).value = _liste(ziel).value.filter(e => !weg.has(e.id));
             sitzungJe[ziel].value = sitzungVorher ? { ...sitzungVorher, schrittIds: idsVorher } : null;
+            if (ergebnis === 'nurLesen') return { ok: false, eintraege: [], grund: `Nicht eingetragen: ${nurLesen.value?.grund ?? 'der Verlauf wird nur gelesen'}` };
             const k = schreibKonflikt.value;
             return { ok: false, eintraege: [],
                      grund: `Nicht eingetragen: ${k?.wer || 'jemand anderes'} hat den Verlauf inzwischen geändert — Seite neu laden.` };

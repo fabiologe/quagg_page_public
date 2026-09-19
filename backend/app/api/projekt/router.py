@@ -48,6 +48,8 @@ def _uebersetzt(aufruf):
         raise HTTPException(status_code=422, detail=str(fehler))
     except (ordner.OrdnerNichtBereit, wopi.WopiAbgelehnt) as fehler:
         raise HTTPException(status_code=503, detail=str(fehler))
+    except cde.CdeZuAlt as fehler:
+        raise HTTPException(status_code=409, detail=str(fehler))
 
 
 class ProjektEingabe(BaseModel):

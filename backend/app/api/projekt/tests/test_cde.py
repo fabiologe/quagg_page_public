@@ -464,3 +464,41 @@ def test_eignung_gleich_der_des_clients():
     m = re.search(r"EIGNUNG = Object\.freeze\(\{(.*?)\}\);", js.read_text(encoding="utf-8"), re.S)
     assert m, "EIGNUNG in StatusWorkflow.js nicht gefunden"
     assert dict(re.findall(r"(\w+): '([^']+)'", m.group(1))) == cde.EIGNUNG
+
+
+def test_ein_aelterer_tab_ueberschreibt_kein_neueres_journal(frische_db, app_conn, projekte_wurzel):
+    """Teil XXIV, Fahrplan R9: der Server-Waechter fuer `mindestClient`.
+
+    Der Client liest ein Journal mit hoeherem `mindestClient` nur — aber erst
+    seit 2026-09-18 16:05. Ein Tab von davor kennt das Feld nicht und schriebe
+    eine Stufe-4-Datei mit seiner alten Lesart ueber. Vorher: 200, danach 409.
+    """
+    p = projekte.anlegen(app_conn, name="Waechter", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    url = f"/FastAPI/projekte/{p['id']}/cde/repo"
+    stufe = lambda n: {"version": 2, **({"mindestClient": n} if n else {}), "commits": [], "sitzung": None,
+                       "schreibstand": {"zaehler": 1, "marke": "m", "wer": "fabio", "wann": 0}}
+    assert c.put(f"{url}/global:aenderungen", json=stufe(4)).status_code == 200
+
+    # Ein Tab mit Stufe 2 (oder ganz ohne Feld, oder ein v1-Journal) auf eine Datei mit 4: abgelehnt, mit Grund.
+    for alt in (stufe(2), stufe(0), [{"id": "e1", "art": "kg"}]):
+        antwort = c.put(f"{url}/global:aenderungen", json=alt)
+        assert antwort.status_code == 409, alt
+        assert "Stufe 4" in antwort.json()["detail"] and "neu laden" in antwort.json()["detail"]
+    assert c.get(url).json()["global:aenderungen"]["mindestClient"] == 4      # die Datei blieb, wie sie war
+
+    # Gleich oder hoeher geht durch; dasselbe gilt fuer das Journal eines Satzes.
+    assert c.put(f"{url}/global:aenderungen", json=stufe(4)).status_code == 200
+    assert c.put(f"{url}/global:aenderungen", json=stufe(5)).status_code == 200
+    assert c.put(f"{url}/stand:s-1:aenderungen", json=stufe(4)).status_code == 200
+    assert c.put(f"{url}/stand:s-1:aenderungen", json=stufe(3)).status_code == 409
+
+    # Andere Schluessel und Journale ohne gespeicherte Stufe sperren nichts.
+    assert c.put(f"{url}/global:panel-state", json={"mindestClient": 9}).status_code == 200
+    assert c.put(f"{url}/global:panel-state", json={}).status_code == 200
+    assert c.put(f"{url}/stand:s-2:aenderungen", json=stufe(0)).status_code == 200
+    assert c.put(f"{url}/stand:s-2:aenderungen", json=stufe(0)).status_code == 200
+    # Der Kern sagt dasselbe ohne Router.
+    with pytest.raises(cde.CdeZuAlt):
+        cde.repo_setzen(o, "global:aenderungen", stufe(3))
