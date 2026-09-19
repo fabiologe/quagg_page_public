@@ -206,7 +206,7 @@ Der Fall existiert heute nicht: `auffuellen` kennt als Ziel nur eine Höhe oder 
 - **Migration alter Journale.** Einträge ohne Beleg bleiben gültig; sie sind Ergebnis ohne Absicht.
 - **Den Umbau der Formulare nach E5** (Fachgrenzen sperren nicht mehr) — eigener Arbeitsschritt nach dem Durchstich (**gebaut 2026-09-19 als K10**, Abschnitt 7a).
 
-## 7a · Umsetzungsstand (2026-09-18, spät — nicht committet)
+## 7a · Umsetzungsstand (bis 2026-09-19 — committet und ausgeliefert, K4b offen)
 
 Fabio hat das Schema am 2026-09-18 angenommen („ja zum Schema"), die offenen Punkte O1–O7 gelten wie empfohlen.
 
