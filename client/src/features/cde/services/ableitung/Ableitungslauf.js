@@ -129,7 +129,9 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
         if (!stufen) { stufen = [raster]; je.set(urGid, stufen); }
         for (let k = stufen.length; k <= bis; k++) {
             const ops = listen[k - 1] ?? [];
-            stufen.push(ops.length ? formeNach(stufen[k - 1], ops, { ur: raster }).raster : stufen[k - 1]);
+            // Die Operationen der früheren Vorgänge reisen mit — Ziel einer
+            // Auffüllung „bis zur Fläche" (Durchstich 2); nur die davor.
+            stufen.push(ops.length ? formeNach(stufen[k - 1], ops, { ur: raster, vorherige: listen.slice(0, k - 1).flat() }).raster : stufen[k - 1]);
         }
         return stufen[bis];
     }
@@ -144,8 +146,8 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
      * Zugeordnet wird an DENSELBEN Knoten: ein Vorgänger zählt, wenn er genau
      * dort aufgefüllt hat — nicht, weil sein Umriss in der Nähe liegt.
      */
-    async function _durchAuffuellung({ ur: urGid, ableitung }, vorher, ops, urRaster) {
-        const nachher = formeNach(vorher, ops, { ur: urRaster }).raster;
+    async function _durchAuffuellung({ ur: urGid, ableitung, opsVor = [] }, vorher, ops, urRaster) {
+        const nachher = formeNach(vorher, ops, { ur: urRaster, vorherige: opsVor }).raster;
         const ueber = new Float64Array(vorher.nx * vorher.nz);
         const knoten = [];
         for (let i = 0; i < ueber.length; i++) {

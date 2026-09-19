@@ -390,17 +390,32 @@ export function grube(raster, { umriss, sohle, neigung = null } = {}, { bereich 
  * Zielhöhe. Ziel `'hoehe'`: eine absolute Höhe (m NN an der Grenze, hier
  * Welt). Ziel `'ur'` („bis GOK"): das URSPRÜNGLICHE Gelände — eine
  * Rückverfüllung; sie braucht das Ur-Raster (`ur`, derselbe Rasterbezug).
+ * Ziel `'flaeche'` (Durchstich 2): die SOLLFLÄCHE einer anderen Operation
+ * des Stapels, genannt über ihre Kennung (`flaeche: 'op-…'`, E3) — beim
+ * Planum die Ebene auf seiner Höhe. Welche Operation eine Fläche hat, sagt
+ * ihr Eintrag (`flaeche(p)`), nicht ihr Name; gefunden wird sie über den
+ * Kontext (`operationVon`), und nur, wenn sie VOR dieser Schüttung liegt.
+ * Fehlt sie oder hat sie keine Fläche, wird nichts geschüttet und das steht
+ * als Warnung da (E5: ausgeführt und markiert, nicht abgelehnt).
  *
  * NUR FÜLLEND (`max`): eine Schüttung trägt nie ab. Idempotent aus
  * denselben Gründen wie die Grube.
  */
-export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = null } = {}, { bereich = null, ur = null } = {}) {
+export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = null, flaeche = null } = {},
+                           { bereich = null, ur = null, operationVon = null } = {}) {
     const warnungen = [];
     const ring = _mitHoehe(umriss);
     if (!ring || ring.length < 3) return { raster, warnungen: ['schuettung_ohne_umriss: jeder Umrisspunkt braucht seine Höhe'] };
     const bisUr = ziel === 'ur';
+    const bisFlaeche = ziel === 'flaeche';
     if (bisUr && !gleicherBezug(ur, raster)) return { raster, warnungen: ['schuettung_ohne_ur: das Ur-Gelände liegt nicht auf diesem Raster'] };
-    if (!bisUr && !Number.isFinite(hoehe)) return { raster, warnungen: ['schuettung_ohne_hoehe'] };
+    let sollAn = null;
+    if (bisFlaeche) {
+        const zielOp = operationVon?.(flaeche) ?? null;
+        if (!zielOp) return { raster, warnungen: [`schuettung_ziel_fehlt: die Operation ${flaeche ?? '—'} liegt im Stapel nicht vor dieser Auffüllung`] };
+        sollAn = flaecheVon(zielOp);
+        if (!sollAn) return { raster, warnungen: [`schuettung_ziel_ohne_flaeche: die Operation ${flaeche} stellt keine Fläche her`] };
+    } else if (!bisUr && !Number.isFinite(hoehe)) return { raster, warnungen: ['schuettung_ohne_hoehe'] };
     const n = Number(neigung) > 0 ? Number(neigung) : 0;
     const poly = ring.map(p => [p.x, p.z]);
     const neu = _kopie(raster);
@@ -419,8 +434,10 @@ export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = nu
                 soll = ur.heights[i];
                 if (!Number.isFinite(soll)) continue;
             } else {
+                const ziel = sollAn ? sollAn(k.x, k.z) : hoehe;
+                if (!Number.isFinite(ziel)) continue;
                 const r = _amRing(k.x, k.z, ring);
-                soll = n > 0 ? Math.min(hoehe, r.hoehe + r.abstand / n) : hoehe;
+                soll = n > 0 ? Math.min(ziel, r.hoehe + r.abstand / n) : ziel;
             }
             if (soll > h) { heights[i] = soll; getroffen++; }
         }
@@ -857,12 +874,15 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 //
 // Jetzt steht alles am Eintrag. Die Leser fragen den Eintrag, nie den Namen:
 //
-//   wende(raster, p, {bereich, ur})   die Operation selbst
+//   wende(raster, p, {bereich, ur, operationVon})   die Operation selbst; `operationVon(id)`
+//                                     findet eine Operation, die im Stapel VORHER liegt (E3)
 //   wirkbereich(raster, p)            → {huelle, saum}: wie weit sie reicht
 //   wirkflaeche                       {form: 'streifen'|'ring', punkte(p)} — Form und Lage der berührten Fläche
 //   kennweiten(raster, p, {box, neigung}) → Kandidaten fürs schmalste Mass
 //   hoehenfelder / punktfelder        welche Parameter m NN tragen (einzeln / je Punkt)
 //   kennhoehen(p)                     → [{art, hoehe}]: ebene Kanten, die sie herstellt
+//   flaeche(p)                        → ((x, z) → y) oder null: die Sollfläche, die sie herstellt —
+//                                     Ziel einer Auffüllung „bis zur Fläche" (Durchstich 2)
 //   innen                             {feld, titel, richtung, gilt(p)}: ihr innerer Ring
 //   lagefelder                        Punktlisten OHNE Höhe (die Achse des Gerinnes — ihre Höhe
 //                                     kommt aus Sohle Anfang/Ende)
@@ -1183,6 +1203,9 @@ export const GELAENDE_OPS = Object.freeze({
         // Ein Planum kann beides sein — es schneidet und schüttet; welche Kante
         // entsteht, entscheidet die Maske der Böschungskanten.
         kennhoehen: (p) => [{ art: 'sohlkante', hoehe: p.hoehe }, { art: 'kronenkante', hoehe: p.hoehe }],
+        // Die Sollfläche: die Ebene auf der Planumshöhe — überall, nicht nur im
+        // Umriss (eine Auffüllung daneben erreicht dieselbe Höhe).
+        flaeche: (p) => (Number.isFinite(Number(p?.hoehe)) ? () => Number(p.hoehe) : null),
         cutTyp: 'EXCAVATION',
         vorschau(op, c) {
             const q = op.parameter ?? {};
@@ -1528,9 +1551,14 @@ export function verschiebeOperationen(operationen, delta) {
  *                         Kette beginnt; wer auf einem schon gefalteten Stand
  *                         anfängt (Stapel), nennt es ausdrücklich.
  */
-export function formeNach(raster, operationen = [], { bereich = null, ganzesRaster = false, ur = raster } = {}) {
+export function formeNach(raster, operationen = [], { bereich = null, ganzesRaster = false, ur = raster, vorherige = [] } = {}) {
     const warnungen = [];
     let stand = raster;
+    // WORAUF EINE OPERATION ZEIGEN DARF (Durchstich 2, E3): auf eine, die VORHER
+    // liegt — in den Vorgängern des Stapels (`vorherige`) oder weiter vorn in
+    // dieser Liste. Eine spätere ist kein Ziel; so kann kein Zyklus entstehen.
+    const gesehen = [...(vorherige ?? [])];
+    const operationVon = (id) => (id ? gesehen.findLast(o => o?.id === id) ?? null : null);
     for (const op of operationen) {
         const eintrag = GELAENDE_OPS[op?.art];
         if (!eintrag) { warnungen.push(`unbekannte_operation: ${op?.art ?? '—'}`); continue; }
@@ -1539,9 +1567,10 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
         // vorgibt (`ganzesRaster` schaltet ihn ab — für den Zweifelsfall).
         const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p));
         const vor = stand;
-        const r = eintrag.wende(stand, p, { bereich: b, ur });
+        const r = eintrag.wende(stand, p, { bereich: b, ur, operationVon });
         stand = r.raster;
         warnungen.push(...r.warnungen);
+        gesehen.push(op);
         // ABGESCHNITTEN? Wenn am Rand des Bereichs noch etwas passiert ist,
         // reichte er nicht — das darf nicht still bleiben.
         if (b && _randBeruehrt(vor, stand, _zellbereich(vor, b))) {
@@ -1549,4 +1578,15 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
         }
     }
     return { raster: stand, warnungen };
+}
+
+/**
+ * Die SOLLFLÄCHE einer Operation, wie ihr Eintrag sie erklärt — oder null.
+ * Der eine Leser von `flaeche` (Durchstich 2): die Auffüllung fragt, ob ihr
+ * Ziel eine Fläche HAT, nie, was es IST.
+ * @returns {((x: number, z: number) => number)|null}
+ */
+export function flaecheVon(op, { ops = GELAENDE_OPS } = {}) {
+    const f = ops[op?.art]?.flaeche?.(op?.parameter ?? {}) ?? null;
+    return typeof f === 'function' ? f : null;
 }

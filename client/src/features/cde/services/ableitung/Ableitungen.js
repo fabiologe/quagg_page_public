@@ -417,7 +417,10 @@ const ABLEITUNGEN_ERWEITERT = {
             if (!ops.length) throw new Error('erdbau: keine Operationen');
             // Das UR für „bis GOK" (Teil XX): `ur` hier ist das Gelände VOR diesem
             // Vorgang; das ursprüngliche liegt im Stapel.
-            const { raster: neu, warnungen: w1 } = formeNach(ur, ops, { ur: stapel?.urRaster ?? ur });
+            // Die VORGÄNGER reisen mit (Durchstich 2): eine Auffüllung „bis zur
+            // Fläche" findet ihr Planum in einem früheren Vorgang des Stapels.
+            const vorherige = stapel?.opsVor ?? [];
+            const { raster: neu, warnungen: w1 } = formeNach(ur, ops, { ur: stapel?.urRaster ?? ur, vorherige });
             warnungen.push(...w1);
 
             // KÖRPER UND MASSEN auf dem feinen Korridor, wenn es einen gibt —
@@ -429,7 +432,7 @@ const ABLEITUNGEN_ERWEITERT = {
             const fein = quellen?.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
             let rechenAlt = ur, rechenNeu = neu;
             if (fein) {
-                const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops, { ur: quellen.gelaendeFein });
+                const { raster: feinNeu, warnungen: w2 } = formeNach(fein, ops, { ur: quellen.gelaendeFein, vorherige });
                 warnungen.push(...w2.filter(w => !w1.includes(w)));
                 rechenAlt = fein; rechenNeu = feinNeu;
             }

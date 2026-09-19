@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-    GELAENDE_OPS, cutTypAus, fillTypAus, kennweiteVon, punktlistenVon, wirkbereichVon, wirkflaecheVon,
+    GELAENDE_OPS, cutTypAus, fillTypAus, flaecheVon, formeNach, kennweiteVon, punktlistenVon, wirkbereichVon, wirkflaecheVon,
 } from '../services/gelaende/Operationen.js';
 import { ERDBAU_HOEHENFELDER, ERDBAU_PUNKTHOEHEN } from '../services/ableitung/Ableitungen.js';
 
@@ -120,5 +120,42 @@ describe('Die IFC-Typen der Erdkörper — wie vorher', () => {
         expect(fillTypAus([o('boeschungLinie'), o('schuettung', { ziel: 'ur' })])).toBe('BACKFILL');
         expect(fillTypAus([o('schuettung', { ziel: 'hoehe' })])).toBe('EMBANKMENT');
         expect(fillTypAus([o('planum')])).toBe('EMBANKMENT');
+    });
+});
+
+describe('Zielart „Fläche" (Durchstich 2): eine Operation füllt bis zur Fläche einer anderen', () => {
+    // Das Ur liegt auf 300; ein Planum 10 × 10 m auf 301, eine Auffüllung 20 × 20 m
+    // um es herum, „bis zur Fläche" des Planums. Ränder auf x,5 — die Knoten liegen
+    // eindeutig innen oder aussen.
+    const ring = (a, b) => [{ x: a, y: 300, z: a }, { x: b, y: 300, z: a }, { x: b, y: 300, z: b }, { x: a, y: 300, z: b }];
+    const PLANUM = { id: 'op-P', art: 'planum', parameter: { umriss: ring(10.5, 20.5), hoehe: 301 } };
+    const SCHUETTUNG = { id: 'op-S', art: 'schuettung', parameter: { umriss: ring(5.5, 25.5), ziel: 'flaeche', flaeche: 'op-P' } };
+    const hoeheBei = (r, x, z) => r.heights[x * r.nz + z];
+
+    it('die Fläche erklärt ihr Eintrag — das Planum hat eine, das Gerinne nicht', () => {
+        expect(typeof GELAENDE_OPS.planum.flaeche).toBe('function');
+        expect(flaecheVon(PLANUM)(3, 7)).toBe(301);
+        expect(flaecheVon({ art: 'gerinne', parameter: {} })).toBeNull();
+        expect(flaecheVon({ art: 'planum', parameter: {} })).toBeNull();      // ohne Höhe keine Fläche
+    });
+
+    it('das Ziel liegt vorher (als Vorgänger oder weiter vorn in der Liste): gefüllt wird bis 301, innen tut sie nichts', () => {
+        for (const [ops, vorherige] of [[[PLANUM, SCHUETTUNG], []], [[SCHUETTUNG], [PLANUM]]]) {
+            const start = vorherige.length ? formeNach(raster(), vorherige).raster : raster();
+            const { raster: r, warnungen } = formeNach(start, ops, { vorherige });
+            expect(warnungen).toEqual([]);
+            expect(hoeheBei(r, 8, 8)).toBe(301);          // im Ring
+            expect(hoeheBei(r, 15, 15)).toBe(301);        // im Planum — schon dort
+            expect(hoeheBei(r, 3, 3)).toBe(300);          // ausserhalb
+        }
+    });
+
+    it('ein Ziel, das nicht vorher liegt oder keine Fläche hat: nichts geschüttet, und das steht da (E5)', () => {
+        const hinten = formeNach(raster(), [SCHUETTUNG, PLANUM]);
+        expect(hinten.warnungen.some(w => w.startsWith('schuettung_ziel_fehlt'))).toBe(true);
+        expect(hoeheBei(hinten.raster, 8, 8)).toBe(300);
+        const ohne = formeNach(raster(), [{ ...PLANUM, art: 'grube', parameter: { umriss: ring(10.5, 20.5), sohle: 299 } }, SCHUETTUNG]);
+        expect(ohne.warnungen.some(w => w.startsWith('schuettung_ziel_ohne_flaeche'))).toBe(true);
+        expect(hoeheBei(ohne.raster, 8, 8)).toBe(300);
     });
 });
