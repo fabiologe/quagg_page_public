@@ -81,6 +81,9 @@ describe('Die Zuordnung — ein Vorschlag, keine Entscheidung', () => {
 describe('Das Umhängen — ein Commit, revertierbar, wiederholbar', () => {
     it('nach dem Rebase fehlt nichts mehr: B ist ausgeblendet, jede Ableitung fusst auf B, der Commit sagt es', async () => {
         const ae = await journalAufA();
+        // Ohne offene Bearbeitung wird das Zuordnen sofort eine Version (S5);
+        // mit offener geht es in sie ein (aenderungen.test.js).
+        await ae.commitSitzung('Erdbau', { wer: 'fabio' });
         const kennungen = [...ae.wirksamerStand('erzeugt').keys()].sort();
         const { schritte, unaufgeloest } = await ae.rebaseAuf({ abbildung: new Map([['A', 'B']]), wer: 'pruefer', von: R01, nach: R02 });
         expect(unaufgeloest).toEqual([]);

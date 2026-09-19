@@ -487,6 +487,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     const commitsJe = { auftrag: ref([]), stand: ref([]) };
     const sitzungJe = { auftrag: ref(null), stand: ref(null) };
     const commits = computed(() => [...commitsJe.auftrag.value, ...commitsJe.stand.value]);
+    /** Die Versionen des aktiven SATZES — das, was „+ Satz → Kopie" mitnimmt (S5). */
+    const satzVersionen = computed(() => (satzId.value ? commitsJe.stand.value.length : 0));
     const sitzung = computed(() => sitzungJe[vorgabeEbene.value].value);
     const sitzungOffen = computed(() => !!sitzung.value);
     const sitzungSchritte = computed(() => {
@@ -1173,7 +1175,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 kommando: beleg,
             };
             liste.push(protokoll);
-            await _commitAus(ebene, [protokoll],
+            await _inDenVerlauf(ebene, [protokoll],
                 'Meiner gilt — gegen den neuen Wert des Planers', wer);
             return protokoll;
         }
@@ -1210,7 +1212,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const gegen = _gegenEintrag(q, wer, { vorgang: beleg.id,
                 vorgangTitel: 'Nach Konflikt verworfen — der Planerwert gilt', kommando: beleg });
             liste.push(gegen);
-            await _commitAus(ebene, [gegen],
+            await _inDenVerlauf(ebene, [gegen],
                 'Konflikt verworfen — der Planerwert gilt', wer);
             return gegen;
         }
@@ -1234,7 +1236,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const beleg = systemBeleg('uebertragen', { ziel: [q.globalId, zielGlobalId], werte: { eintrag: q.id, nach: zielGlobalId }, wer });
         const vorgang = beleg.id;
         const titel = 'Vom Konflikt übertragen';
-        // EIN Vorgang, EIN Beleg, EIN Commit, EIN Sichern (2026-09-19): der neue
+        // EIN Vorgang, EIN Beleg, EIN Sichern (2026-09-19) — in der offenen
+        // Bearbeitung, sonst als EINE Version (S5): der neue
         // Eintrag am Ziel und der Gegeneintrag am Alten entstehen ZUSAMMEN. Bis
         // hierher lief der Gegeneintrag über `verwerfeEinen` — der committete und
         // sicherte ihn schon, danach wurde der gespeicherte Eintrag nachträglich
@@ -1247,7 +1250,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const beide = [neu, gegen].filter(Boolean);
         beide[0].kommando = beleg;               // der Beleg am ersten Eintrag (K2)
         liste.push(...beide);
-        await _commitAus(ebene, beide, `Konflikt übertragen auf ${zielGlobalId}`, wer);
+        await _inDenVerlauf(ebene, beide, `Konflikt übertragen auf ${zielGlobalId}`, wer);
         return beide;
     }
 
@@ -1279,11 +1282,16 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // EIN Vorgang je Ebene, ganz oder gar nicht (Teil XXIV, K2), mit Beleg (O4).
             const beleg = systemBeleg('rebase', { ziel: schritte.map(x => x.globalId),
                 werte: { von: von ?? null, nach: nach ?? null, abbildung: Object.fromEntries(abb) }, wer });
+            // S5: war eine Bearbeitung offen, bleibt das Zuordnen dort (der Nutzer
+            // versioniert es mit seiner Beschreibung) — sonst sofort eine Version.
+            const warOffen = !!sitzungJe[ebene].value;
             const { eintraege: geschrieben } = await eintragenVorgang(
                 schritte.map(schritt => ({ ...schritt, wer, modellSha: nach?.sha ?? schritt.modellSha ?? null })),
                 { ebene, vorgang: beleg.id, vorgangTitel: titel, kommando: beleg });
-            await _commitAus(ebene, geschrieben, titel, wer,
-                             { rebase: { von, nach, abbildung: Object.fromEntries(abb) } });
+            if (!warOffen) {
+                await _commitAus(ebene, geschrieben, titel, wer,
+                                 { rebase: { von, nach, abbildung: Object.fromEntries(abb) } });
+            }
             alle.push(...geschrieben);
         }
         return { schritte: alle, unaufgeloest: ungeloest };
@@ -1426,7 +1434,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             geschrieben.push(eintrag);
         }
         if (geschrieben.length) geschrieben[0].kommando = beleg;
-        await _commitAus(ziel, geschrieben, `Rückgängig: ${c.nachricht}`, wer);
+        await _inDenVerlauf(ziel, geschrieben, `Rückgängig: ${c.nachricht}`, wer);
         return geschrieben;
     }
 
@@ -1570,11 +1578,30 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
 
     /**
-     * Einträge, die NICHT aus der Hand des Nutzers kommen (Rücknahmen,
-     * Konflikt-Entscheidungen), werden ihr EIGENER Commit — auch mitten in
-     * einer offenen Sitzung: die Ids werden aus ihr herausgelöst, der
-     * Commit steht für sich. Ohne das mischte sich eine
-     * Konflikt-Entscheidung in die Arbeit des Nutzers.
+     * EIN SCHREIBWEG IN DEN VERLAUF (Kassensturz S5, K4 — Fabios Fahrplan vom
+     * 2026-09-12, gebaut 2026-09-19): was eine ENTSCHEIDUNG im Verlauf schreibt
+     * — Basis heben, Verwerfen, Übertragen, Zuordnen (Rebase), Revert —, kommt
+     * in die OFFENE Bearbeitung; der Nutzer versioniert es mit seiner
+     * Beschreibung, wie alles andere. Ist keine offen, wird es sofort eine
+     * Version mit automatischer Notiz. Bis hierher wurde jede solche
+     * Entscheidung ihre eigene Version, auch mitten in einer Bearbeitung: zwei
+     * Wege in den Verlauf, der zweite an der Beschreibung vorbei.
+     */
+    async function _inDenVerlauf(ziel, eintraege, notiz, wer = '', extra = null) {
+        const s = sitzungJe[ziel].value;
+        if (!s) return _commitAus(ziel, eintraege, notiz, wer, extra);
+        for (const e of (eintraege ?? []).filter(Boolean)) if (!s.schrittIds.includes(e.id)) s.schrittIds.push(e.id);
+        await _sichern(ziel);
+        return null;
+    }
+
+    /**
+     * Die sofortige Version — für Einträge, die NICHT aus der Hand des Nutzers
+     * kommen und keine Bearbeitung haben, in die sie gehören: die Rücknahme
+     * einer Version über „Rückgängig", das Wiederholen, die Übernahme beim
+     * Laden; und für die Entscheidungen, wenn keine Bearbeitung offen ist
+     * (`_inDenVerlauf`). Die Ids werden aus einer offenen Sitzung
+     * herausgelöst, der Commit steht für sich.
      */
     async function _commitAus(ziel, eintraege, nachricht, wer = '', extra = null) {
         const ids = (eintraege ?? []).filter(Boolean).map(e => e.id);
@@ -1671,6 +1698,33 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     }
 
     /**
+     * EINEN SATZ KOPIEREN (Kassensturz S5, K2): der Verlauf von `vonId` wird der
+     * Anfang von `nachId` — mit seiner Geschichte, wie ein Zweig. Nur auf
+     * ausdrücklichen Wunsch („+ Satz → Kopie von …"); ein Satzwechsel kopiert
+     * nichts. Nie über einen vorhandenen Verlauf; der Schreibstand des
+     * Mehrbenutzer-Wächters bleibt beim Original — der neue Satz beginnt seine
+     * eigene Schreibfolge.
+     *
+     * @returns {Promise<number>} wie viele Schritte mitkamen (0 = nichts kopiert)
+     */
+    async function kopiereSatz(vonId, nachId) {
+        if (!vonId || !nachId || vonId === nachId) return 0;
+        // Frisch vom Server: ein Cache-Stand verlöre den letzten Schritt, und
+        // „nie über einen vorhandenen Verlauf" gilt auch für den eines anderen.
+        const lies = (ablage) => ablage.getFrisch?.(REPO_KEY) ?? ablage.get(REPO_KEY);
+        const quelle = await lies(repo.withScope(`stand:${vonId}`));
+        if (quelle?.version !== 2) return 0;
+        const ziel = repo.withScope(`stand:${nachId}`);
+        if (await lies(ziel)) return 0;
+        const { schreibstand: _fremd, ...kopie } = quelle;
+        const schritte = (kopie.commits ?? []).reduce((n, c) => n + (c.schritte?.length ?? 0), 0)
+            + (kopie.sitzung?.schritte?.length ?? 0);
+        if (!schritte) return 0;
+        await ziel.set(REPO_KEY, kopie);
+        return schritte;
+    }
+
+    /**
      * Den aktiven Modellsatz wechseln.
      *
      * Lädt DESSEN Journal nach; die Auftragsebene bleibt stehen. Danach ergibt
@@ -1699,11 +1753,11 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
         anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
         wirksamerStand, historischerStand, eintragen, eintragenVorgang, zurueck, wiederholen, kannWiederholen, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
-        commits, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
+        commits, satzVersionen, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
         beginneSitzung, entferneSitzungsVorgang, verwerfeSitzung, commitSitzung,
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
         schliesseLeereSitzung, nachrichtVorschlag,
-        verlauf, setzeSatz, neuLaden: laden,
+        verlauf, setzeSatz, kopiereSatz, neuLaden: laden,
         schreibKonflikt, sicherFehler, nurLesen, setzeWeltversatz, ebeneVon, uebernimm, uebernimmAltbestand,
     };
 });

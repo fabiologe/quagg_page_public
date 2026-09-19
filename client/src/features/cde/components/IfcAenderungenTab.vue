@@ -88,13 +88,14 @@
 
       <!-- ── Zuordnen (Stufe 5 des Aushub-Fachmodells): eine neue Revision ist
            geladen, der Verlauf hängt an der alten. Vorschläge, bestätigen,
-           zuordnen — eine eigene Version, jederzeit rückgängig. ── -->
+           zuordnen — in die offene Bearbeitung, sonst sofort eine Version (S5),
+           jederzeit rückgängig. ── -->
       <section v-if="rebase.zeilen.length" class="ae-rebase">
         <h4 class="ae-abschnitt">
           <template v-if="rebase.hinweis?.wechsel">{{ ohneEndung(rebase.hinweis.wechsel.nach.name) }} ist geladen, {{ bauteileText(rebase.zeilen.length) }} {{ rebase.zeilen.length === 1 ? 'gehört' : 'gehören' }} noch zu {{ revisionKurz(rebase.hinweis.wechsel.von) }}</template>
           <template v-else>{{ bauteileText(rebase.zeilen.length) }} des Verlaufs {{ rebase.zeilen.length === 1 ? 'fehlt' : 'fehlen' }} im Modell</template>
         </h4>
-        <p class="ae-rtext">Wähle je Zeile dasselbe Bauteil im Modell. „Zuordnen" sichert das als eigene Version.</p>
+        <p class="ae-rtext">Wähle je Zeile dasselbe Bauteil im Modell. „Zuordnen" kommt in die laufende Bearbeitung — läuft keine, wird es sofort eine Version.</p>
         <div v-for="z in rebase.zeilen" :key="z.alt" class="ae-rzeile">
           <span class="ae-ralt" :title="z.alt">{{ z.name || kurz(z.alt) }}</span>
           <select v-model="z.neu" class="ae-rwahl">
@@ -240,13 +241,13 @@
               <button
                 v-if="istNeuesterOffener(v)"
                 class="ae-btn klein"
-                title="Diese Version rückgängig machen — als neue Version, die Spur bleibt"
+                title="Diese Version rückgängig machen — in die laufende Bearbeitung, sonst als neue Version; die Spur bleibt"
                 @click="versionRueckgaengig(v)"
               ><CdeIcon name="undo" :size="11" /> Rückgängig</button>
               <button
                 v-else
                 class="ae-btn klein"
-                title="Von der neuesten bis einschließlich dieser Version alles rückgängig machen — die Spur bleibt"
+                title="Von der neuesten bis einschließlich dieser Version alles rückgängig machen — in die laufende Bearbeitung, sonst als neue Versionen; die Spur bleibt"
                 @click="bisHierZurueck(v)"
               ><CdeIcon name="undo" :size="11" /> Bis hierher zurück</button>
             </div>

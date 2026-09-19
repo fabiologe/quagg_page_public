@@ -470,6 +470,9 @@
          Ansicht sie lief. -->
     <CommitDialog />
 
+    <!-- „+ Satz" (Kassensturz S5, K2): leer oder als Kopie mit Verlauf. -->
+    <SatzNeuDialog :offen="satzNeuOffen" @close="satzNeuOffen = false" @angelegt="onSatzAngelegt" />
+
     <!-- Übergabepaket (Lücke ⑩): Auswahl → ZIP mit Begleitschein + Protokoll. -->
     <CdeDialog :offen="transmittalOffen" titel="Übergabepaket schnüren" icon="send"
                @close="transmittalOffen = false">
@@ -525,6 +528,7 @@ import IfcViewer from '../components/IfcViewer.vue';
 import IfcPlanCanvas from '../components/IfcPlanCanvas.vue';
 import LaengsschnittCanvas from '../components/LaengsschnittCanvas.vue';
 import CommitDialog from '../components/CommitDialog.vue';
+import SatzNeuDialog from '../components/SatzNeuDialog.vue';
 import CdeDialog from '../components/ui/CdeDialog.vue';
 import CdeKopfleiste from '../components/CdeKopfleiste.vue';
 import CdeReiterleiste from '../components/CdeReiterleiste.vue';
@@ -1221,18 +1225,24 @@ async function onSatzWaehlen(id) {
   await satzAktivieren(id);
 }
 
-/** Einen Modellsatz anlegen — er übernimmt die Auswahl des aktuellen. */
-async function onNeuerSatz() {
-  const name = prompt('Name des neuen Satzes (z. B. „Variante Nord"):', '');
-  if (name === null || !name.trim()) return;
-  try {
-    // Wie `git branch`: der neue Satz startet mit dem, was gerade gilt.
-    await cde.satzAnlegen({ name: name.trim(), enthaelt: cde.aktiverSatz?.enthaelt ?? [] });
-    await aenderungen.setzeSatz(cde.aktiverSatzId);
-    await satzZeigen();
-  } catch (fehler) {
-    alert(fehler?.response?.data?.detail || fehler?.message || 'Der Satz konnte nicht angelegt werden.');
+/**
+ * Einen Modellsatz anlegen — er übernimmt die Auswahl des aktuellen, auf
+ * Wunsch auch seinen Verlauf (S5, `SatzNeuDialog`). Wie beim Wechsel (U2):
+ * bei OFFENER Bearbeitung erst sichern oder verwerfen — sonst bliebe der
+ * Entwurf im alten Satz stehen, oder er stünde als Kopie in beiden.
+ */
+const satzNeuOffen = ref(false);
+function onNeuerSatz() {
+  if (aenderungen.sitzungSchritte.length) {
+    bearbeitung.commitDialogOffen = true;
+    return;
   }
+  satzNeuOffen.value = true;
+}
+async function onSatzAngelegt({ warnung } = {}) {
+  satzNeuOffen.value = false;
+  await satzZeigen();
+  if (warnung) alert(warnung);
 }
 
 async function onSatzUmbenennen() {

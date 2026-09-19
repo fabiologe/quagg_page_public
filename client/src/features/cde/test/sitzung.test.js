@@ -115,18 +115,32 @@ describe('Der Commit', () => {
         expect(ae.commits[1].nachricht).toMatch(/^Rückgängig:/);
     });
 
-    it('Konflikt-Entscheidungen werden ihr EIGENER Commit — auch bei offener Sitzung', async () => {
+    // GEDREHT mit dem Kassensturz S5 (K4, gebaut 2026-09-19): EIN Schreibweg in
+    // den Verlauf. Bis hierher wurde jede Konflikt-Entscheidung ihre eigene
+    // Version, auch mitten in einer Bearbeitung — an der Beschreibung vorbei.
+    it('Konflikt-Entscheidungen gehen in die offene Bearbeitung — und werden mit ihr versioniert', async () => {
         const ae = useAenderungen();
         await arbeite(ae);
         await ae.commitSitzung('Arbeit', { wer: 'Fabio' });
         // Neue Sitzung läuft …
         await ae.eintragen({ art: 'kg', globalId: 'W9', nachher: '410', wer: 'Fabio' });
         const kgEintrag = ae.eintraege.find(e => e.globalId === 'W1');
+        const versionen = ae.commits.length;
         await ae.verwerfeEinen(kgEintrag.id, 'Fabio');
-        const konfliktCommit = ae.commits.find(c => /Konflikt verworfen/.test(c.nachricht));
-        expect(konfliktCommit).toBeTruthy();
-        // … und die offene Sitzung des Nutzers blieb unangetastet.
-        expect(ae.sitzungSchritte.map(e => e.globalId)).toEqual(['W9']);
+        expect(ae.commits.length).toBe(versionen);                       // keine eigene Version
+        expect(ae.sitzungSchritte.map(e => e.globalId)).toEqual(['W9', 'W1']);
+        const c = await ae.commitSitzung('Arbeit und Entscheidung', { wer: 'Fabio' });
+        expect(c.schrittIds).toHaveLength(2);
+    });
+
+    it('… und ohne offene Bearbeitung werden sie sofort eine Version', async () => {
+        const ae = useAenderungen();
+        await arbeite(ae);
+        await ae.commitSitzung('Arbeit', { wer: 'Fabio' });
+        const kgEintrag = ae.eintraege.find(e => e.globalId === 'W1');
+        await ae.verwerfeEinen(kgEintrag.id, 'Fabio');
+        expect(ae.commits.at(-1).nachricht).toMatch(/Konflikt verworfen/);
+        expect(ae.sitzungSchritte).toEqual([]);
     });
 });
 
