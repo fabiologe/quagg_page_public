@@ -212,7 +212,10 @@ describe('verschieben (Katalog)', () => {
         expect(e[1]).toMatchObject({ globalId: 'H1', nachher: { anschlusspunkt: { ende: 'anfang', ost: 1005, nord: -1999 } } });
         const wirklich = b().anwenden(schacht, { ost: 1005, nord: -1999, hoehe: 303, mitfuehren: 'wirklich' });
         expect(wirklich.map(x => x.art)).toEqual(['lage', 'geloescht', 'erzeugt']);
-        expect(wirklich[2].nachher.parameter.punkte[0]).toEqual([5, 3, -1]);
+        // Seit Stufe 4 (Teil XXIV, K4b, ausgeliefert 2026-09-19) speichert eine neue Kante ihre SOHLE
+        // (`achsbezug: 'sohle'`): die Achse hier sagt ihren Bezug nicht (Rohrmitte) — also y − DN/2.
+        expect(wirklich[2].nachher.parameter.punkte[0]).toEqual([5, 2.85, -1]);
+        expect(wirklich[2].nachher.parameter.achsbezug).toBe('sohle');
         // Der Regler erscheint NUR mit Anschlüssen.
         expect(felderFuer(b(), null, ROHR).map(f => f.name)).toEqual(['ost', 'nord', 'hoehe']);
         expect(felderFuer(b(), null, schacht).map(f => f.name)).toContain('mitfuehren');

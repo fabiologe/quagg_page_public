@@ -19,9 +19,10 @@ const warte = (ms = 350) => new Promise(r => setTimeout(r, ms));
 const liste = (k) => JSON.parse(localStorage.getItem(`ifc-repo:global:${k}`) ?? 'null');
 
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); });
-afterEach(() => setzeSchreibStufeFuerTests(2));
+afterEach(() => setzeSchreibStufeFuerTests());
 
-describe('Stufe 2 (A7a): wie bisher — und das Journal wird mitgelesen', () => {
+describe('Stufe 2 (A7a, bis 2026-09-19): wie bisher — und das Journal wird mitgelesen', () => {
+    beforeEach(() => setzeSchreibStufeFuerTests(2));             // seit 2026-09-19 schreibt der Client 4
     it('schreibt unter „plan-inhalte", nicht ins Journal', async () => {
         const p = usePlanInhalt(); await p.bereit;
         p.addText({ x: 1, z: 2 }, 'Bestand');

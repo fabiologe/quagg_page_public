@@ -76,12 +76,12 @@ describe('1 — das Subjekt aus dem Stand', () => {
         const { subjekt } = await achseGezogen();
         const s = subjekt('cde-H');
         expect(s).toMatchObject({ globalId: 'cde-H', name: 'H', category: 'IFCPIPESEGMENT', type: 'IFCPIPESEGMENT', hoehenversatz: 0 });
-        // Die gezeichneten Höhen sind SOHLEN (K4); gespeichert in Rohrmitte, und
-        // die Achse sagt es — `sohleAnAchse` rechnet zurück.
-        expect(s.achse).toMatchObject({ globalId: 'cde-H', dn: 300, quelle: 'bauplan', achsbezug: 'mitte' });
+        // Die gezeichneten Höhen sind SOHLEN (K4); seit Stufe 4 (K4b) auch so
+        // gespeichert, und die Achse sagt es.
+        expect(s.achse).toMatchObject({ globalId: 'cde-H', dn: 300, quelle: 'bauplan', achsbezug: 'sohle' });
         expect(s.achse.sohlabstand).toBeCloseTo(0.15, 12);
-        expect(s.achse.anfang.y).toBeCloseTo(100.15, 9);
-        expect(s.achse.ende.y).toBeCloseTo(100, 9);
+        expect(s.achse.anfang.y).toBeCloseTo(100, 9);
+        expect(s.achse.ende.y).toBeCloseTo(99.85, 9);
         expect(s.strang.map(k => k.globalId)).toEqual(['cde-H']);
         expect(s.knotenImNetz.map(k => k.globalId).sort()).toEqual(['cde-A', 'cde-B']);
         expect(s.stand.bauplan.rezept).toBe('rohr');

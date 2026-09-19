@@ -214,8 +214,10 @@ describe('Schacht verschieben: die Anschlüsse wandern um das DELTA', () => {
         const el = mitVersatz();
         const eintraege = b.anwenden(el, { ost: el.lage.ost + 12, nord: el.lage.nord + 9, mitfuehren: 'wirklich' });
         const punkte = eintraege.filter(e => e.art === 'erzeugt').map(e => e.nachher.parameter.punkte);
-        expect(punkte[0][0]).toEqual([60, 4, 200]);      // H1 fernes Ende
-        expect(punkte[1][1]).toEqual([140, 6, 200]);     // H2 fernes Ende
+        // Seit Stufe 4 (Teil XXIV, K4b, ausgeliefert 2026-09-19) speichert eine neue Kante ihre SOHLE
+        // (`achsbezug: 'sohle'`): die Achse hier sagt ihren Bezug nicht (Rohrmitte) — also y − DN/2.
+        expect(punkte[0][0]).toEqual([60, 3.85, 200]);   // H1 fernes Ende (Mitte 4, DN 300)
+        expect(punkte[1][1]).toEqual([140, 5.85, 200]);  // H2 fernes Ende (Mitte 6, DN 300)
     });
 
     it('als Forderung wandert nichts — nur der Anschlusspunkt wird festgelegt', () => {

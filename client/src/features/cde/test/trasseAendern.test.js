@@ -84,8 +84,10 @@ describe('Nur die Zwischenpunkte werden gezeichnet', () => {
         const [, neu] = nachId('trasse-aendern').anwenden(HALTUNG, {}, { zug });
         const p = neu.nachher.parameter.punkte;
         expect(p).toHaveLength(4);
-        expect(p[0]).toEqual([0, 20, 0]);
-        expect(p[3]).toEqual([100, 10, 0]);
+        // Seit Stufe 4 (Teil XXIV, K4b, ausgeliefert 2026-09-19) speichert eine neue Kante ihre SOHLE
+        // (`achsbezug: 'sohle'`): die Achse hier sagt ihren Bezug nicht (Rohrmitte) — also y − DN/2.
+        expect(p[0]).toEqual([0, 19.85, 0]);
+        expect(p[3]).toEqual([100, 9.85, 0]);
     });
 
     it('verteilt die Höhen gleichmässig über die NEUE Länge', () => {
@@ -96,7 +98,7 @@ describe('Nur die Zwischenpunkte werden gezeichnet', () => {
         const p = neu.nachher.parameter.punkte;
         // Die Höhen fallen streng und enden auf dem Ausgangswert.
         for (let i = 0; i + 1 < p.length; i++) expect(p[i][1]).toBeGreaterThan(p[i + 1][1]);
-        expect(p[3][1]).toBeCloseTo(10, 6);
+        expect(p[3][1]).toBeCloseTo(9.85, 6);                 // Sohle seit Stufe 4 (Mitte 10, DN 300)
     });
 
     it('ein einziger Zwischenpunkt genügt', () => {

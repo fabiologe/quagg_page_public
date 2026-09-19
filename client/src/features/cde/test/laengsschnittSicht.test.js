@@ -185,11 +185,13 @@ describe('Eigenes: der Bauplan wird fortgeschrieben (17.3b)', () => {
         expect(e.modell).toBe('cde');
         expect(e.nachher.name).toBe('H2.1');
         expect(e.nachher.parameter.dn).toBe(300);
-        // 307,5 m NN − 300 m Versatz = SOHLE 7,5 am gezogenen Ende. Der Bauplan
-        // liegt in Rohrmitte (ohne Angabe) — gespeichert wird 7,5 + DN 300 / 2.
-        // Bis Teil XXIV (K4) stand hier 7,5: das Rohr lag DN/2 zu tief (E7).
-        expect(e.nachher.parameter.punkte.map(p => p.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[50, 9, 0], [100, 7.65, 0]]);
-        expect(e.nachher.parameter.achsbezug).toBe('mitte');
+        // 307,5 m NN − 300 m Versatz = SOHLE 7,5 am gezogenen Ende. Seit Stufe 4
+        // (K4b, 2026-09-19) wird der fortgeschriebene Bauplan in SOHLE gespeichert:
+        // das andere Ende (Rohrmitte 9) steht dann als seine Sohle 8,85 da, das
+        // gezogene als 7,5. (K4a: Mitte, 9 / 7,65 — dieselben Sohlen. Bis K4 stand
+        // 7,5 roh in der Mitte: das Rohr lag DN/2 zu tief, E7.)
+        expect(e.nachher.parameter.punkte.map(p => p.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[50, 8.85, 0], [100, 7.5, 0]]);
+        expect(e.nachher.parameter.achsbezug).toBe('sohle');
     });
 
     it('nur Kanten — ohne Bauplan oder an einem Schacht entsteht nichts', () => {

@@ -131,10 +131,12 @@ describe('Teilen ergibt drei Einträge — und genau einen Vorgang', () => {
         const p1 = eins.nachher.parameter.punkte;
         const p2 = zwei.nachher.parameter.punkte;
         expect(p1[1]).toEqual(p2[0]);                    // gemeinsamer Punkt
-        expect(p1[0]).toEqual([0, 18, 0]);
-        expect(p2[1]).toEqual([100, 2, 0]);
+        // Seit Stufe 4 (Teil XXIV, K4b, ausgeliefert 2026-09-19) speichert eine neue Kante ihre SOHLE
+        // (`achsbezug: 'sohle'`): die Achse hier sagt ihren Bezug nicht (Rohrmitte) — also y − DN/2.
+        expect(p1[0]).toEqual([0, 17.75, 0]);            // Mitte 18, DN 500
+        expect(p2[1]).toEqual([100, 1.75, 0]);
         // Auf einem Viertel der Länge ist ein Viertel der Höhe abgebaut.
-        expect(p1[1][1]).toBeCloseTo(18 - 4, 6);
+        expect(p1[1][1]).toBeCloseTo(17.75 - 4, 6);
     });
 
     it('erbt DN und Typ der Haltung — beides steht in der Achse bzw. am Bauteil', async () => {

@@ -143,10 +143,12 @@ describe('Regler „wirklich mitführen" — die Haltungen folgen sichtbar', () 
         const [, , zuNeu, , abNeu] = e();
         const zu = zuNeu.nachher.parameter.punkte;
         const ab = abNeu.nachher.parameter.punkte;
-        expect(zu[0]).toEqual([-50, 8, 0]);          // Nachbarschacht, unberührt
-        expect(zu[1]).toEqual([10, 6, -20]);         // wandert mit
-        expect(ab[0]).toEqual([10, 6, -20]);         // wandert mit
-        expect(ab[1]).toEqual([50, 4, 0]);           // Nachbarschacht, unberührt
+        // Seit Stufe 4 (Teil XXIV, K4b, ausgeliefert 2026-09-19) speichert eine neue Kante ihre SOHLE
+        // (`achsbezug: 'sohle'`): die Achse hier sagt ihren Bezug nicht (Rohrmitte) — also y − DN/2.
+        expect(zu[0]).toEqual([-50, 7.85, 0]);       // Nachbarschacht, unberührt (Mitte 8, DN 300)
+        expect(zu[1]).toEqual([10, 5.85, -20]);      // wandert mit
+        expect(ab[0]).toEqual([10, 5.85, -20]);      // wandert mit
+        expect(ab[1]).toEqual([50, 3.85, 0]);        // Nachbarschacht, unberührt
     });
 
     it('DAS NETZ BLEIBT GESCHLOSSEN — beide Haltungen treffen den Schacht wieder', () => {

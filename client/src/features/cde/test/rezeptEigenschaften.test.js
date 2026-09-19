@@ -69,9 +69,10 @@ describe('Der Längsschnitt fragt die Netzrolle — und das Rezept bleibt, was e
     it('eine Kante bekommt den neuen Endpunkt', () => {
         const e = [zieh(plan)];
         expect(e[0].nachher.rezept).toBe('rohr');
-        // Gezogen wird die SOHLE (K4); der alte Bauplan liegt in Rohrmitte, also
-        // steht dort 296,50 + DN 300 / 2 — und seine Sohle ist, was gezogen wurde.
-        expect(e[0].nachher.parameter.punkte.at(-1)[1]).toBeCloseTo(296.65, 9);
+        // Gezogen wird die SOHLE (K4); seit Stufe 4 (K4b) steht sie so im Bauplan
+        // (bis dahin die Mitte, 296,50 + DN 300 / 2) — und seine Sohle ist, was gezogen wurde.
+        expect(e[0].nachher.parameter.punkte.at(-1)[1]).toBeCloseTo(296.5, 9);
+        expect(e[0].nachher.parameter.achsbezug).toBe('sohle');
         expect(rezeptNach('rohr').sohlen.lies(e[0].nachher.parameter).at(-1)).toBeCloseTo(296.5, 9);
     });
     it('ein Knoten oder eine Linie nicht — sie haben kein Gefälle', () => {

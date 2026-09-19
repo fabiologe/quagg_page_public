@@ -30,10 +30,14 @@
 export const JOURNAL_KENNT = 4;
 
 /**
- * Was dieser Client SCHREIBT. A7a liefert die Leser mit 2 aus; erst wenn sie
- * überall laufen (eine Auslieferung später, A7b), wird hier 3 gesetzt.
+ * Was dieser Client SCHREIBT. A7a lieferte die Leser mit 2 aus (2026-09-18
+ * 16:05), K4a den Leser der Sohle mit 4 (2026-09-19 13:21). Seit 2026-09-19
+ * (Fabio: „mach das alles") schreibt er 4 — A7b und K4b in EINER Auslieferung:
+ * jeder Tab ab 2026-09-18 16:05 kennt `mindestClient` und liest ein neueres
+ * Journal nur (`nurLesen`), statt es zu überschreiben.
  */
-let _schreibt = 2;
+export const SCHREIBT_AUSGELIEFERT = 4;
+let _schreibt = SCHREIBT_AUSGELIEFERT;
 export function schreibStufe() { return _schreibt; }
 
 /**
@@ -44,8 +48,8 @@ export function schreibStufe() { return _schreibt; }
  * Kommando „Sohle" nennen.
  */
 export function kantenbezugNeu() { return _schreibt >= 4 ? 'sohle' : 'mitte'; }
-/** Nur für Tests: die Schreibweise von A7b prüfen, bevor sie ausgeliefert wird. */
-export function setzeSchreibStufeFuerTests(n) { _schreibt = n; }
+/** Nur für Tests: eine andere Schreibweise prüfen; ohne Zahl zurück auf die ausgelieferte. */
+export function setzeSchreibStufeFuerTests(n) { _schreibt = n ?? SCHREIBT_AUSGELIEFERT; }
 
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 

@@ -265,11 +265,12 @@ describe('5 — fuehreAus: ohne Oberfläche, ganz oder gar nicht', () => {
         expect(Math.abs(gebaut[0][0] - 1.25)).toBeLessThan(1e-9);
         expect(Math.abs(gebaut[1][0] - 21.75)).toBeLessThan(1e-9);
         expect(Math.abs(gebaut[0][2] - 2.5)).toBeLessThan(1e-9);
-        // Die getippte Höhe ist die SOHLE (Teil XXIV, K4 — E7). Gespeichert wird
-        // bis Stufe 4 die Rohrmitte, ausdrücklich: 290 + DN 300 / 2.
+        // Die getippte Höhe ist die SOHLE (Teil XXIV, K4 — E7). Seit Stufe 4 (K4b,
+        // ausgeliefert 2026-09-19) steht sie so im Bauplan; bis dahin die
+        // Rohrmitte, ausdrücklich: 290 + DN 300 / 2.
         const plan = ae.wirksamerStand('erzeugt').get(e.globalId);
-        expect(plan.parameter.achsbezug).toBe('mitte');
-        expect(gebaut[0][1]).toBeCloseTo(290.15, 9);
+        expect(plan.parameter.achsbezug).toBe('sohle');
+        expect(gebaut[0][1]).toBeCloseTo(290, 9);
         expect(rezeptNach('rohr').sohlen.lies(plan.parameter)[0]).toBeCloseTo(290, 9);
     });
 });

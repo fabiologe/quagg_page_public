@@ -30,6 +30,7 @@ import { gefaellePromille, punkteDerAchse } from '../services/geometrie/Stationi
 import { eingebauteRegel, setzeRegelwerk } from '../services/regeln/Regelwerk.js';
 import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
+import { entfalte } from '../services/JournalFormat.js';
 
 /** Die Ablage im Speicher — gespeichert wird JSON, wie auf dem Server. */
 class Speicher {
@@ -154,8 +155,14 @@ describe('Abnahme C2 — nur Kommandos, ohne Oberfläche', () => {
         const datei = speicher.journal();
         expect(datei).toBeTruthy();
         const roh = JSON.parse(datei);
-        const schritte = [...(roh.commits ?? []).flatMap(c => c.schritte ?? []), ...(roh.sitzung?.schritte ?? [])];
-        expect(schritte).toHaveLength(5);
+        const gespeichert = [...(roh.commits ?? []).flatMap(c => c.schritte ?? []), ...(roh.sitzung?.schritte ?? [])];
+        expect(gespeichert).toHaveLength(5);
+        // Seit Stufe 3 (A7b, ausgeliefert 2026-09-19) steht ein Folgeschritt desselben
+        // Bauteils als PFADÄNDERUNG in der Datei — auch das ist Rezept, nicht
+        // Ergebnis; entfaltet ist es wieder der volle Bauplan.
+        expect(gespeichert.filter(s => s.nachher?._pfade).length).toBeGreaterThan(0);
+        const { schritte, fehlend } = entfalte(gespeichert);
+        expect(fehlend).toEqual([]);
         for (const s of schritte) {
             expect(Object.keys(s.nachher).sort()).toEqual(expect.arrayContaining(['rezept', 'parameter']));
             expect(Object.keys(s.nachher.parameter).sort()).toEqual(['achsbezug', 'anschluss', 'dn', 'kategorie', 'name', 'punkte'].filter(k => k in s.nachher.parameter).sort());

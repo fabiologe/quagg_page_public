@@ -40,7 +40,7 @@ beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
 });
-afterEach(() => setzeSchreibStufeFuerTests(2));
+afterEach(() => setzeSchreibStufeFuerTests());
 
 const kommando = (id, werkzeug, rest) => ({ schema: KOMMANDO_SCHEMA, id, werkzeug, ziel: [], wer: 'fabio', wann: '2026-09-19T08:00:00Z', ...rest });
 const MM = 0.001;
@@ -79,7 +79,7 @@ describe('1 — gezeichnet wird auf der Sohle', () => {
         const { plan, subjekt } = await achseGezogen();
         expect(Math.abs(sohleImRaum(plan(), 0) - 100)).toBeLessThan(MM);
         expect(Math.abs(sohleImRaum(plan(), 30) - 99.85)).toBeLessThan(MM);
-        expect(plan().parameter.achsbezug).toBe('mitte');                 // Stufe 2: ausdrücklich, und ein alter Client liest es richtig
+        expect(plan().parameter.achsbezug).toBe('sohle');                 // Stufe 4 (K4b, seit 2026-09-19): die Zahl IST die Sohle
         const s = subjekt();
         expect(sohleAnAchse(s.achse.anfang.y, s.achse)).toBeCloseTo(100, 9);
         expect(sohleAnAchse(s.achse.ende.y, s.achse)).toBeCloseTo(99.85, 9);

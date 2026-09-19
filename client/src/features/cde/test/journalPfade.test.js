@@ -23,7 +23,7 @@ const SCHLUESSEL = 'ifc-repo:global:aenderungen';
 const gespeichert = () => localStorage.getItem(SCHLUESSEL);
 
 beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); useBearbeitung().modusSetzen(true); });
-afterEach(() => setzeSchreibStufeFuerTests(2));
+afterEach(() => setzeSchreibStufeFuerTests());
 
 describe('Pfade: diff und anwenden', () => {
     it('patchAus → wendeAn ergibt genau den neuen Wert, ohne den alten zu verändern', () => {
@@ -95,8 +95,9 @@ describe('20 Eckzüge an einem Vorgang mit vier Operationen', () => {
     // Wiederholung, und wird nicht verdichtet. Gemessen werden deshalb zwei
     // Dinge getrennt: die Verdichtung der ZUSTÄNDE (unverändert ≈ 8×) und was
     // ein Beleg kostet.
-    it('Stufe 2 (heute) gegen Stufe 3: die Zustände schrumpfen etwa um das Achtfache, ein Beleg kostet wenig', async () => {
+    it('Stufe 2 (bis 2026-09-19) gegen Stufe 3: die Zustände schrumpfen etwa um das Achtfache, ein Beleg kostet wenig', async () => {
         const ohneBeleg = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === 'kommando' ? undefined : v)).length;
+        setzeSchreibStufeFuerTests(2);                     // seit 2026-09-19 schreibt der Client 4
         await zwanzigEckzuege();
         const voll = gespeichert();
         localStorage.clear(); setActivePinia(createPinia()); useBearbeitung().modusSetzen(true);
@@ -175,7 +176,8 @@ describe('Schutz: lesen, nie überschreiben', () => {
         expect(JSON.parse(gespeichert())).toEqual(kaputt);
     });
 
-    it('Stufe 2 (A7a ausgeliefert) schreibt, wie es immer schrieb — kein mindestClient, kein Pfad', async () => {
+    it('Stufe 2 (A7a, bis 2026-09-19) schreibt, wie es immer schrieb — kein mindestClient, kein Pfad', async () => {
+        setzeSchreibStufeFuerTests(2);
         await zwanzigEckzuege();
         const roh = JSON.parse(gespeichert());
         expect(roh.mindestClient).toBeUndefined();
