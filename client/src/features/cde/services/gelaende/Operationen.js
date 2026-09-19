@@ -873,7 +873,8 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 //   querschnitt(p, {welt})            → {achse (Sohle als Höhe), sohlbreite(n), neigung}: der Schnitt
 //                                     quer zur Achse (Teil XX, Stufe D) — siehe `Querschnitt.js`
 //   cutTyp / fillTyp(p)               der IFC-PredefinedType, den sie beisteuert
-//   profilfaehig                      ob ein Profilkörper sie exakt nachbauen kann
+//   profilbahn(p)                     → {bahn: [{x, y (Sohle, Welt), z, breite}], neigung} oder null:
+//                                     wie ein Profilkörper sie exakt nachbaut (Teil XXI, P6)
 //   vorschau(op, c)                   ihr Geist vor dem Übernehmen (Hilfen in `c`)
 //
 // Die Vorschau bekommt ihre Zeichenhilfen HEREINGEREICHT (`c.hilfen`): sie
@@ -1124,8 +1125,14 @@ export const GELAENDE_OPS = Object.freeze({
         kennhoehen: () => [],                    // keine ebene Fläche
         // Ein reines Gerinne ist ein Graben (TRENCH).
         cutTyp: 'TRENCH',
-        // Ein Graben ist ein Trapez aus der Norm: der Profilkörper baut ihn exakt (Teil XXI, P6).
-        profilfaehig: true,
+        // Ein Graben ist ein Trapez aus der Norm: der Profilkörper baut ihn exakt
+        // (Teil XXI, P6) — entlang seiner Stationen (Welt, wie der Lauf sie rechnet).
+        profilbahn: (p) => {
+            const st = _stationenVon(p);
+            if (!st) return null;
+            return { bahn: st.map(s => ({ x: Number(s.x), y: Number(s.y), z: Number(s.z), breite: Number(s.sohlbreite ?? p.sohlbreite) || 0 })),
+                     neigung: Math.max(0, Number(p.boeschung) || 0) };
+        },
         vorschau(op, c) {
             const q = op.parameter ?? {};
             const pts = c.hilfen.sohlPunkte(q.achse, Number(q.sohleAnfang), Number(q.sohleEnde));
@@ -1233,6 +1240,25 @@ export const GELAENDE_OPS = Object.freeze({
         },
         kennhoehen: (p) => [{ art: 'sohlkante', hoehe: p.sohle }],
         cutTyp: 'EXCAVATION',
+        /**
+         * Die Baugrube als Profilkörper (Teil XXI, P6-Rest): eine Bahn über ihre
+         * Länge, so breit wie sie. Hinter den Enden steigt der Profilkörper mit
+         * dem Abstand zum Rechteck an — dieselbe Regel wie `baugrube` (Hypotenuse
+         * an den Ecken). Eine runde Baugrube (nur `radius`) hat keine.
+         */
+        profilbahn: (p) => {
+            const m = p.mitte ? _xz(p.mitte) : null;
+            const L = Number(p.laenge), B = Number(p.breite), sohle = Number(p.sohle);
+            if (!m || !(L > 0) || !(B > 0) || !Number.isFinite(sohle)) return null;
+            let ux = 1, uz = 0;
+            const r = p.richtung;
+            if (r && Number.isFinite(r.x) && Number.isFinite(r.z) && Math.hypot(r.x, r.z) > 1e-9) {
+                const l = Math.hypot(r.x, r.z); ux = r.x / l; uz = r.z / l;
+            }
+            return { bahn: [{ x: m.x - ux * L / 2, y: sohle, z: m.z - uz * L / 2, breite: B },
+                            { x: m.x + ux * L / 2, y: sohle, z: m.z + uz * L / 2, breite: B }],
+                     neigung: Math.max(0, Number(p.neigung) || 0) };
+        },
     },
     // Teil XX: Umriss bzw. Kante AUF dem Gelände, Böschung nach innen bzw. zur Seite.
     grube: {

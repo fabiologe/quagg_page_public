@@ -939,34 +939,53 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         // (`geometrie/ops/Profilkoerper.js` nennt die ganze Messreihe). Deshalb aus
         // QUERPROFILEN, wo es geht.
         //
-        // Es geht, wenn dieser Vorgang aus GENAU EINEM Graben besteht. Zwei
-        // Haltungen oder eine Schachtbaugrube daneben durchdringen einander;
-        // zwei überlappende Schalen wären keine Menge mehr, und die
-        // 3D-Vereinigung dafür rechnet auf dem Server (G7). Dann bleibt es
-        // beim Rasterkörper — und der sagt es.
-        const gerinneOps = ops.filter(o => GELAENDE_OPS[o.art]?.profilfaehig);
-        const profilFaehig = ops.length === 1 && gerinneOps.length === 1;
-        let graben = null, koerperArt = 'raster', koerperGrund = null;
-        if (profilFaehig) {
-            const pk = await kernel.op('profilkoerper', { raster: rechen }, {
-                // Der Kern kennt eine BAHN, keinen Graben (Teil XXIII, A8): die
-                // Stationen des Grabens werden hier übersetzt.
-                bahn: gerinneOps[0].parameter.stationen.map(s => ({ x: s.x, y: s.y, z: s.z, breite: s.sohlbreite })),
-                neigung: wand.n,
-                // Ein Strang kann hunderte Meter lang werden (Fabio, 2026-09-17):
-                // die Profilzahl ist gedeckelt, der Schritt wächst mit der Länge.
-                schritt: Math.max(PROFIL_SCHRITT, laenge / KANALGRABEN_PROFILE_MAX),
-                quer: Math.max(rechen.cell, PROFIL_QUER),
-            });
-            if (pk.ergebnis?.closed) { graben = pk; koerperArt = 'profil'; }
-            else {
-                koerperGrund = pk.warnungen.join('; ') || 'kein geschlossener Profilkörper';
-                warnungen.push(`grabenkoerper_raster: ${koerperGrund}`);
+        // JEDE Operation, die ihre Bahn nennt (`profilbahn`: Gräben je Haltung,
+        // Schachtbaugruben), wird ein Profilkörper. Einer allein IST der Körper.
+        // Mehrere durchdringen einander (Haltung an Haltung, Graben in Baugrube)
+        // — zwei überlappende Schalen wären keine Menge, deshalb EINE
+        // Vereinigung auf dem Server (G7, gekettet in einem Aufruf; Teil XXI,
+        // P6-Rest, 2026-09-19). Bis dahin fielen Strang und Schachtbaugruben auf
+        // den Rasterkörper zurück — bei senkrechten Wänden (der Vorgabe) mit
+        // bis zu einer halben Sohlbreite Massenfehler. Ohne Server bleibt es
+        // dabei — und der sagt es.
+        const bahnen = ops.map(o => GELAENDE_OPS[o.art]?.profilbahn?.(o.parameter ?? {}) ?? null);
+        let graben = null, koerperArt = 'raster', koerperGrund = null, koerperTeile = 0;
+        // Mehrere Körper ohne einen Server, der sie vereinigt: gar nicht erst bauen.
+        let vereinbar = { ok: true };
+        if (bahnen.length > 1) { await kernel.bereit?.(); vereinbar = kernel.kann?.('booleVereinigung') ?? { ok: true }; }
+        if (!vereinbar.ok) {
+            koerperGrund = `${bahnen.length} Körper (Gräben, Baugruben) durchdringen einander — vereinigt würden sie auf dem Server: ${vereinbar.grund}`;
+        } else if (bahnen.length && bahnen.every(Boolean)) {
+            const koerper = [];
+            for (const [i, b] of bahnen.entries()) {
+                const pk = await kernel.op('profilkoerper', { raster: rechen }, {
+                    // Der Kern kennt eine BAHN, keinen Graben (Teil XXIII, A8).
+                    bahn: b.bahn,
+                    neigung: b.neigung,
+                    // Ein Strang kann hunderte Meter lang werden (Fabio, 2026-09-17):
+                    // die Profilzahl ist gedeckelt, der Schritt wächst mit der Länge.
+                    schritt: Math.max(PROFIL_SCHRITT, laenge / KANALGRABEN_PROFILE_MAX),
+                    quer: Math.max(rechen.cell, PROFIL_QUER),
+                });
+                if (!pk.ergebnis?.closed) {
+                    koerperGrund = `Körper ${i + 1} von ${bahnen.length}: ${pk.warnungen.join('; ') || 'nicht geschlossen'}`;
+                    break;
+                }
+                koerper.push(pk);
             }
+            if (koerper.length === bahnen.length && koerper.length === 1) {
+                graben = koerper[0]; koerperArt = 'profil'; koerperTeile = 1;
+            } else if (koerper.length === bahnen.length) {
+                const u = await kernel.op('booleVereinigung', { a: koerper[0].ergebnis, b: koerper.slice(1).map(k => k.ergebnis) });
+                if (u.ergebnis && Number.isFinite(u.ergebnis.volumen)) {
+                    graben = u; koerperArt = 'profil'; koerperTeile = koerper.length;
+                } else {
+                    koerperGrund = `${koerper.length} Körper (Gräben, Baugruben) durchdringen einander und liessen sich nicht vereinigen: ${u.warnungen.join('; ') || 'kein Ergebnis'}`;
+                }
+            }
+            if (!graben) warnungen.push(`grabenkoerper_raster: ${koerperGrund}`);
         } else {
-            koerperGrund = ops.length > 1
-                ? `${gerinneOps.length} Graben und ${ops.length - gerinneOps.length} Baugrube(n) in einem Vorgang — sie durchdringen einander`
-                : 'kein Graben in diesem Vorgang';
+            koerperGrund = bahnen.length ? 'eine Operation ohne Bahn (runde Baugrube?) — kein Profilkörper' : 'kein Graben in diesem Vorgang';
         }
         if (!graben) graben = await kernel.op('koerperZwischenRastern', { oben: rechen, unten: neuFein });
 
@@ -1018,7 +1037,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
                 aushubRaster: massen.aushub, aushubKoerper: graben.ergebnis?.volumen ?? 0,
                 auftragRaster: 0, auftragKoerper: 0,
                 // WELCHE ZAHL GILT (Teil XXI, P6) — und warum diese.
-                aushubMasse, koerperArt, koerperGrund,
+                aushubMasse, koerperArt, koerperGrund, koerperTeile,
                 massenQuelle: koerperArt === 'profil' ? 'Querprofile' : 'Raster',
                 rohrVolumen, verfuellung, verfuellungKoerper: verfuellungKoerper?.volumen ?? null,
                 // Auflockerung (Teil XXI, P4): Vorgabe aus der Bodenklasse, die

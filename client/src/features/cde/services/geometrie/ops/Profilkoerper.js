@@ -176,18 +176,33 @@ function _wandOben({ hoehe, p, qx, qz, seite, ziel, n, schritt, grenze }) {
 
 /**
  * Wie weit die Endrampe reicht: hinter dem Ende steigt die Sohle mit 1 : n, bis
- * sie das Gelände erreicht. Gesucht ist die Stelle, an der nur noch `DUENN`
- * Tiefe übrig ist — dort endet der Körper mit einem Fünf-Millimeter-Keil,
- * genau wie `koerperZwischenRastern` es am Rand tut.
+ * sie das Gelände erreicht. Gesucht ist die Stelle, an der nur noch
+ * `PROFIL_KEIL` Tiefe übrig ist — dort endet der Körper mit einem Keil, wie
+ * `koerperZwischenRastern` es am Rand tut.
+ *
+ * Gemessen wird die Resttiefe in der Achse UND an beiden Sohlkanten, die
+ * kleinste zählt (2026-09-19). Bei Quergefälle erreicht die tiefere Seite das
+ * Gelände früher: in der Achse standen noch 5 cm, an der Sohlkante nichts —
+ * die Wand dort hatte keine Höhe, ihre zwölf Stützpunkte fielen in einen
+ * Millimeter, und der Körper war nicht mehr mannigfaltig (48 bis 52 Kanten;
+ * er fiel auf das Raster zurück).
  */
-function _rampenEnde({ hoehe, x, z, ux, uz, sohle, n, schritt, grenze }) {
+function _rampenEnde({ hoehe, x, z, ux, uz, sohle, n, schritt, grenze, b2 = 0 }) {
     if (!(n > 0)) return 0;
-    let eVor = 0, dVor = (hoehe(x, z) || 0) - sohle;
+    const qx = -uz, qz = ux;                                  // quer zur Rampe
+    const tiefe = (ee) => {
+        let min = Infinity;
+        for (const o of (b2 > 0 ? [0, b2, -b2] : [0])) {
+            const h = hoehe(x + ux * ee + qx * o, z + uz * ee + qz * o);
+            min = Math.min(min, (Number.isFinite(h) ? h : -Infinity) - (sohle + ee / n));
+        }
+        return min;
+    };
+    let eVor = 0, dVor = tiefe(0);
     if (!(dVor > PROFIL_KEIL)) return 0;
     for (let e = schritt; ; e += schritt) {
         const ee = Math.min(e, grenze);
-        const h = hoehe(x + ux * ee, z + uz * ee);
-        const d = (Number.isFinite(h) ? h : -Infinity) - (sohle + ee / n);
+        const d = tiefe(ee);
         if (d <= PROFIL_KEIL) {
             return dVor - d > EPS ? eVor + (ee - eVor) * (dVor - PROFIL_KEIL) / (dVor - d) : eVor;
         }
@@ -247,8 +262,10 @@ export function profilkoerper({ raster } = {}, { bahn: bahnEin, neigung = 1.5, s
     const m = bahn.st.length - 1;
     const uA = _einheit(bahn.st[0].x - bahn.st[1].x, bahn.st[0].z - bahn.st[1].z);
     const uB = _einheit(bahn.st[m].x - bahn.st[m - 1].x, bahn.st[m].z - bahn.st[m - 1].z);
-    const eA = _rampenEnde({ hoehe, x: bahn.st[0].x, z: bahn.st[0].z, ux: uA.x, uz: uA.z, sohle: bahn.st[0].y, n, schritt: Math.min(dl, dq), grenze });
-    const eB = _rampenEnde({ hoehe, x: bahn.st[m].x, z: bahn.st[m].z, ux: uB.x, uz: uB.z, sohle: bahn.st[m].y, n, schritt: Math.min(dl, dq), grenze });
+    const eA = _rampenEnde({ hoehe, x: bahn.st[0].x, z: bahn.st[0].z, ux: uA.x, uz: uA.z, sohle: bahn.st[0].y, n, schritt: Math.min(dl, dq), grenze,
+                             b2: Math.max(0, Number(bahn.st[0].breite) || 0) / 2 });
+    const eB = _rampenEnde({ hoehe, x: bahn.st[m].x, z: bahn.st[m].z, ux: uB.x, uz: uB.z, sohle: bahn.st[m].y, n, schritt: Math.min(dl, dq), grenze,
+                             b2: Math.max(0, Number(bahn.st[m].breite) || 0) / 2 });
 
     const kandidaten = [{ d: 0, fest: true }, { d: bahn.laenge, fest: true }];
     for (const k of bahn.kum) kandidaten.push({ d: k, fest: true });
@@ -331,18 +348,34 @@ export function profilkoerper({ raster } = {}, { bahn: bahnEin, neigung = 1.5, s
             schiebe(A[k], B[k2], B[k]);
         }
     }
-    // Die Stirnseite als Fächer AUS DER SOHLECKE, nicht aus dem Schwerpunkt:
-    // an der Rampenspitze ist das Profil nur noch `DUENN` hoch, und dort fällt
-    // der Schwerpunkt rechnerisch GENAU auf die Deckellinie — zwölf Dreiecke
-    // je Kappe mit Fläche null, und der Körper schliesst nicht mehr (gemessen
-    // 2026-09-17: 24 entartete Dreiecke, 4 Kanten „nicht mannigfaltig").
-    // Die Sohlecke liegt immer unter dem Deckel, und die beiden Kanten an ihr
-    // sind der Rand des Fächers, nicht sein Inhalt.
+    // Die Stirnseite, OHNE Dreiecke der Fläche null (2026-09-19).
+    //
+    // Erst ein Fächer aus dem Schwerpunkt: an der Rampenspitze fällt er auf die
+    // Deckellinie (2026-09-17: 24 entartete Dreiecke, „nicht mannigfaltig").
+    // Dann ein Fächer aus der linken Sohlecke — aber der Sohlstreifen, eine
+    // gerade Böschung und ein ebener Deckel liegen mit ihr bzw. untereinander
+    // auf EINER Linie: je Körper 2 bis 8 Dreiecke mit Fläche null. Roh war er
+    // dicht; der Server wirft beim Aufräumen genau diese Dreiecke weg
+    // (`als_trimesh`), und dann ist er offen — keine Vereinigung, keine
+    // Verfüllung (gemessen 2026-09-19 am Strang mit Schachtbaugruben).
+    //
+    // Die Stirnseite ist aber geordnet: unten (Index i) und oben (Index
+    // 2P − 1 − i) tragen DIESELBE Querlage, oben liegt mindestens `DUENN`
+    // darüber. Spaltenweise zerlegt hat jedes Dreieck die Fläche
+    // ½ · Δquer · Höhe > 0 — dieselbe Zahl (2P − 2), dieselbe Fläche.
     const kappe = (ring, vorwaerts) => {
-        const s = K;                                   // die linke Sohlkante
-        for (let k = 1; k + 1 < M; k++) {
-            const a = ring[(s + k) % M], b = ring[(s + k + 1) % M];
-            if (vorwaerts) schiebe(ring[s], a, b); else schiebe(ring[s], b, a);
+        const fl = (a, b, c) => Math.hypot(
+            (b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y),
+            (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z),
+            (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+        const dreieck = (a, b, c) => {
+            if (!(fl(a, b, c) > 1e-12)) return;             // eine Spalte ohne Breite (Sohlbreite 0)
+            if (vorwaerts) schiebe(a, b, c); else schiebe(a, c, b);
+        };
+        for (let i = 0; i + 1 < P; i++) {
+            const u0 = ring[i], u1 = ring[i + 1], o1 = ring[2 * P - 2 - i], o0 = ring[2 * P - 1 - i];
+            dreieck(u0, u1, o1);
+            dreieck(u0, o1, o0);
         }
     };
     kappe(ringe[0], false);                       // Stirnseite am Anfang: Normale nach hinten
