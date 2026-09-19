@@ -9,7 +9,9 @@ Dieser Ordner hält die Aufträge dazu, die beiden Audits, auf die sie sich bezi
 | [audit-2-bearbeitungsstruktur-2026-09-18.md](audit-2-bearbeitungsstruktur-2026-09-18.md) | Audit 2 — Bearbeitungsstruktur (S1–S10), Stand vor Teil XXIII |
 | [auftrag-1-abgleich.md](auftrag-1-abgleich.md) | Auftrag: Bestand gegen das Zielbild abgleichen — **ausgeführt** |
 | [abgleich-2026-09-18.md](abgleich-2026-09-18.md) | Ergebnis: drei Körbe, sechs Fragen, Probe Auffüllung, Aufwand, Entscheidungen E1–E9, Urteil |
-| [auftrag-2-plan-kommandodefinition.md](auftrag-2-plan-kommandodefinition.md) | Auftrag: Entwurf des Kommandoschemas — **offen**, braucht zuerst E1–E9 |
-| `kommandodefinition.md` | entsteht aus Auftrag 2 — **gibt es noch nicht** |
+| [entscheidungen-2026-09-18.md](entscheidungen-2026-09-18.md) | Fabios Entscheidungen E1–E9, wörtlich — E7 nach der Messung nachgetragen |
+| [messbefund-e7-hoehenbezug-2026-09-18.md](messbefund-e7-hoehenbezug-2026-09-18.md) | Messung: die Sohle einer eigenen Haltung liegt DN/2 unter dem, was Längsschnitt und Werkzeug „Sohle" nennen — **bestätigt**; nach K4a nachgemessen: 0 mm |
+| [auftrag-2-plan-kommandodefinition.md](auftrag-2-plan-kommandodefinition.md) | Auftrag: Entwurf des Kommandoschemas |
+| [kommandodefinition.md](kommandodefinition.md) | Ergebnis Auftrag 2: Schema, fünf Kommandos, Undo/Redo, Eigenschaftsarten, Probe Auffüllung, O1–O7, Konflikte — **angenommen 2026-09-18**; K1–K9 gebaut — **der Durchstich ist vollständig, der Abnahmetest C2 grün**, dazu K8 (Verknüpfung), K10 (Formulare sperren nicht bei Fachgrenzen) und O6 (Längsschnitt, Merkmalsfenster und Cockpit setzen Kommandos ab) (Abschnitt 7a; K4b hinter Schreibstufe 4) |
 | [auftrag-3-plan-durchstich.md](auftrag-3-plan-durchstich.md) | Auftrag: Plan für den Durchstich „Achse ziehen" |
-| [durchstich-vorpruefung-und-plan-2026-09-18.md](durchstich-vorpruefung-und-plan-2026-09-18.md) | Ergebnis: Vorprüfung (Bruch bei Schritt 4) und Plan K1–K9 — **unter sechs Annahmen**, weil die Kommandodefinition fehlt |
+| [durchstich-vorpruefung-und-plan-2026-09-18.md](durchstich-vorpruefung-und-plan-2026-09-18.md) | Ergebnis: Vorprüfung (Bruch bei Schritt 4) und Plan — oben der Stand nach den Entscheidungen (K1–K9 + K2b im Durchstich, K8 und K10 danach) |

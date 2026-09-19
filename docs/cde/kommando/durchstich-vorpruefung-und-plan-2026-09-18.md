@@ -2,6 +2,39 @@
 
 Stand des Codes: Commit `443919b`. Alle Zeilenangaben relativ zu `client/src/features/cde/`. Die Verweise A2, A4, A6, U3, U6, E2 … zeigen in den [Abgleich](abgleich-2026-09-18.md).
 
+## Stand nach den Entscheidungen (2026-09-18, spät)
+
+Fabio hat E1–E9 entschieden ([Entscheidungen](entscheidungen-2026-09-18.md)), E7 ist gemessen ([Messbefund](messbefund-e7-hoehenbezug-2026-09-18.md)), und es gibt einen [Entwurf der Kommandodefinition](kommandodefinition.md). Die sechs Annahmen aus C0 sind damit ersetzt:
+
+| Annahme in C0 | jetzt |
+|---|---|
+| 1 · Schema | `kommandodefinition.md`, Abschnitt 1 — von Fabio angenommen (2026-09-18) |
+| 2 · Kennung vom Aufrufer | entschieden (E2), Feld `neu` |
+| 3 · Zugpunkte verweisen auf Knoten | entschieden (E6) — aber NACH dem Durchstich; im Durchstich fallen die Koordinaten in XZ zusammen |
+| 4 · Sohlhöhe | gemessen: heute DN/2 daneben; die vorgesehene Richtung gilt (E7) |
+| 5 · ungültig gegen regelwidrig | entschieden (E5) — der Umbau der Formulare NACH dem Durchstich |
+| 6 · ganz oder gar nicht beim Sichern | gebaut (K2): ein Vorgang, einmal gesichert; verweigert der Mehrbenutzer-Wächter, ist er abgelehnt. Scheitert nur das Netz, bleibt er ganz im Fenster und geht mit dem nächsten Schritt (Abnahme 2026-09-12) |
+
+**Die Schritte danach:**
+
+| # | Schritt | Entscheidung | im Durchstich? | Halbtage |
+|---|---|---|---|---|
+| K1 | Kommando als Wert, reine Auswertung, Kennung vom Aufrufer — **gebaut 2026-09-18** | E1, E2 | ja | 2 |
+| K2 | ganz oder gar nicht, Schemaversion, Beleg am ersten Eintrag, Vorgang = Kommando — **gebaut 2026-09-18** | E1 | ja | 2 |
+| K2b | Operationen tragen eine Kennung (`op-…`), Verweis `{operation}`; dazu Punktadressen statt Nummern — **gebaut 2026-09-18** | E3 | ja | 1 |
+| K3 | Subjekt eines eigenen Bauteils aus dem Stand — kuriert zugleich den Messbefund „gewählte eigene Haltung hat weder Achse noch Strang, Feld 0 m NN" — **gebaut 2026-09-18** | — | ja | 2–3 |
+| K4 | Sohlhöhe echt: Bauplan nennt `achsbezug`, neue Haltungen `sohle`; Längsschnitt-Sicht liest den Bezug (auch für Geliefertes, O7); **zwei Auslieferungen** — **K4a gebaut 2026-09-19** (Leser, Werkzeuge in Sohle, Speicherung Mitte), **K4b gebaut, hinter Schreibstufe 4** | E7 | ja | 3 |
+| K5 | ein Gefälle, eine Funktion — **gebaut 2026-09-19** | — | ja | 1 |
+| K6 | Markierung ohne Engine, Prüfliste einmal außerhalb der Modellschleife — **gebaut 2026-09-19** | — | ja | 2 |
+| K7 | Abnahmetest nur über Kommandos (C2) — **grün 2026-09-19** (`test/durchstichAchse.test.js`) | — | ja | 1 |
+| K9 | Wegwerf-Oberfläche: Kommando-Konsole — **gebaut 2026-09-19**, dazu Fang auf Knoten beim Zeichnen einer Kante | — | ja | 1 |
+| K8 | Verknüpfung deklariert + `netzToleranzM` statt fester 1 mm in `services/Netztopologie.js:26-27` — **gebaut 2026-09-19** | E6 | **danach** | 3 |
+| **K10** | **Formulare sperren nicht mehr:** `min/max` werden Befunde der Schwere `warnung`, `bereit` fragt nur Technisches (`services/Bearbeitungen.js:3106-3126`, `stores/useBearbeitung.js:149-150`, Fachgrenzen in `services/rezept/Eingebaut.js`, `services/gelaende/Operationen.js`) — **gebaut 2026-09-19** | E5 | **danach** | 2–3 |
+
+Im Durchstich **15–16 Halbtage**, danach K8 und K10 mit 5–6. Der erste sinnvolle Zwischenstand ist nach K1 + K2 **erreicht** (2026-09-18, nicht committet): die Naht existiert, und die Produktion verhält sich bis auf zwei gewollte Stellen wie vorher — jeder Vorgang trägt seinen Beleg, und ein vom Mehrbenutzer-Wächter verweigerter Schritt ist abgelehnt statt still lokal. Einzelheiten: `kommandodefinition.md`, Abschnitt 7a. Danach, ebenfalls gebaut und nicht committet: K2b samt Adressen statt Nummern (E3), Wiederholen (O2) und Systembelege (O4) — die letzten beiden liegen außerhalb der Halbtage des Durchstichs. Dann K3 (Subjekt aus dem Stand, im Browser feldgleich mit dem Viewer) und K4 (Sohle am gebauten Körper auf den Millimeter; K4b wartet auf die nächste Auslieferung) und K5 (ein Gefälle, gegen die Weglänge) und K6 (Markierung ohne Engine, einmal statt je Modell). **Der zweite Zwischenstand ist erreicht (K7, 2026-09-19): der Abnahmefall ist grün, ohne Oberfläche, allein über Kommandos.** **Mit K9 (2026-09-19) ist der Durchstich vollständig**: Konsole im Entwicklungsmodus, Fang auf Knoten beim Zeichnen, im Browser nachgeprüft. Danach, je eigener Schritt: K4b einschalten (eine Auslieferung nach K4a), K8 (Verknüpfung, `netzToleranzM` — **gebaut 2026-09-19**), K10 (Formulare sperren nicht mehr — **gebaut 2026-09-19**), O6 (Sohlzug, Merkmalsfenster und Cockpit als Kommandos — **gebaut 2026-09-19**).
+
+Die Abschnitte B und C unten sind der Stand VOR den Entscheidungen und bleiben als Begründung stehen.
+
 ## B — Vorprüfung: wie weit läuft der Abnahmefall heute? (Auftrag 3a)
 
 | # | Schritt | Urteil | Beleg |
