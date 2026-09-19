@@ -194,3 +194,49 @@ describe('5 — Verklebung (Textwächter): der Viewer ruft für eigene Bauteile 
         expect(block).toMatch(/const eigen = subjektAusStand\(result\.globalId, \{[^}]*netz: engine\.value\?\.netzAuskunft\?\.\(\)[^;]*\}\);\s*if \(eigen\) angereichert = \{ \.\.\.angereichert, \.\.\.eigen \};/s);
     });
 });
+
+// ── Fahrplan R5: gegen das Subjekt des ECHTEN Viewers ────────────────────────
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { netzauskunftAus } from '../services/CdeAchsen.js';
+import { rahmenAusBezug } from '../services/kommando/Kommando.js';
+import { bestimmeBezug } from '../services/Projektkoordinaten.js';
+
+describe('Das Subjekt aus dem Stand ist das Subjekt des Viewers (Fixture aus dem Browser, Fahrplan R5)', () => {
+    // Aufgenommen am 2026-09-19 im Browser (:3001, 42069): das A64-Netz geladen,
+    // zwei eigene Schächte und eine eigene Haltung per Kommando, dann über die
+    // Auswahl gewählt — `bearbeitung.bauteil`, so wie Werkzeuge es bekommen.
+    // Dazu die EINGABEN des Viewers: der Journalstand, der Bezug des ersten
+    // Modells (Georeferenz + Versatz) und die Knoten der Netzauskunft (auch
+    // die 524 gelieferten Schächte). Bis hierher war die Gleichheit nur im
+    // Browser gemessen; jetzt ist sie ein Test.
+    const F = JSON.parse(readFileSync(join(process.cwd(), 'src/features/cde/test/fixtures/viewerSubjekt-2026-09-19.json'), 'utf8'));
+    const wirksamerStand = (art) => new Map(F.stand[art] ?? []);
+    const rahmen = rahmenAusBezug(bestimmeBezug({ georeferenz: F.bezug.georeferenz, versatz: F.bezug.versatz }));
+    const netz = netzauskunftAus(cdeAchsenAus(wirksamerStand('erzeugt')).kanten, F.netzKnoten);
+
+    /** Feld für Feld, Zahlen auf 1e-9 — die Pfade, die abweichen. */
+    function abweichungen(a, b, pfad = '') {
+        if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a)) ? [] : [`${pfad}: ${a} ≠ ${b}`];
+        if (Array.isArray(a) || Array.isArray(b)) {
+            if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return [`${pfad}: Länge ${a?.length} ≠ ${b?.length}`];
+            return a.flatMap((x, i) => abweichungen(x, b[i], `${pfad}[${i}]`));
+        }
+        if (a && b && typeof a === 'object' && typeof b === 'object') {
+            const schluessel = new Set([...Object.keys(a), ...Object.keys(b)]);
+            return [...schluessel].flatMap(k => abweichungen(a[k], b[k], `${pfad}.${k}`));
+        }
+        return Object.is(a, b) || a === b ? [] : [`${pfad}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`];
+    }
+
+    for (const [rolle, gid, felderSoll] of [['Haltung', F.gids.H1, 16], ['Schacht', F.gids.S1, 14]]) {
+        it(`${rolle}: alle ${felderSoll} Felder des Subjekts gleich denen des Viewers`, () => {
+            const s = JSON.parse(JSON.stringify(subjektAusStand(gid, { wirksamerStand, rahmen, netz })));
+            const felder = Object.keys(s);
+            expect(felder).toHaveLength(felderSoll);                              // vorher: 0 verglichen
+            const v = F.viewer[gid];
+            const aus = felder.flatMap(k => abweichungen(s[k], v[k], k));
+            expect(aus).toEqual([]);
+        });
+    }
+});
