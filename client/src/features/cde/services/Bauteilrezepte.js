@@ -178,7 +178,8 @@ export function teilePunktlisteAnStation(punkte, station) {
     let gelaufen = 0;
     for (let i = 1; i < punkte.length; i++) {
         const a = punkte[i - 1], b = punkte[i];
-        const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+        // Im GRUNDRISS, wie die Geste „Ort auf der Achse zeigen" (2026-09-19).
+        const d = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (d < 1e-9) continue;
         if (s < gelaufen + d - 0.01) {
             const t = (s - gelaufen) / d;

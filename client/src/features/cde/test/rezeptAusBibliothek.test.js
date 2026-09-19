@@ -239,3 +239,28 @@ describe('Rechteckkanal: eine Kante im Netz, die keine Datei kennt', () => {
         expect(teile.map(p => p.parameter.b)).toEqual([1200, 1200]);
     });
 });
+
+describe('Schacht entfernen zwischen zwei Rechteckkanälen: es bleibt ein Rechteckkanal (N1, 2026-09-19)', () => {
+    // Bis hierher baute „Schacht entfernen" die zusammengelegte Haltung immer
+    // aus dem Katalogrezept der Rolle — aus zwei Rechteckkanälen wurde ein Rohr.
+    it('A — K1 — B — K2 — C: B entfernen ergibt EINEN Rechteckkanal mit dem Profil des Ablaufs', async () => {
+        const b = await ladeKatalogMit(repoMit({ projekt: { 'bauteil-rezepte': [RECHTECKKANAL] } }));
+        const { KOMMANDO_SCHEMA } = await import('../services/kommando/Kommando.js');
+        const k = (id, werkzeug, rest) => ({ schema: KOMMANDO_SCHEMA, id, werkzeug, ziel: [], wer: 'fabio', wann: '2026-09-19T16:00:00Z', ...rest });
+        const schacht = (gid, ost, sohle) => k(`ko-${gid}`, 'schacht-zeichnen', { neu: [gid], werte: { name: gid, kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', dn: 1500 },
+            eingaben: { zug: [{ ost, nord: 0, hoehe: sohle }, { ost, nord: -0.001, hoehe: sohle + 3 }] } });
+        const kanal = (gid, von, nach, breite) => k(`ko-${gid}`, 'rechteckkanal-zeichnen', { neu: [gid],
+            werte: { name: gid, kategorie: 'IFCPIPESEGMENT', hoehe: '', b: breite, h: 800 }, eingaben: { zug: [{ knoten: von }, { knoten: nach }] } });
+        for (const x of [schacht('cde-A', 0, 100), schacht('cde-B', 40, 99.8), schacht('cde-C', 80, 99.6),
+                         kanal('cde-K1', 'cde-A', 'cde-B', 1000), kanal('cde-K2', 'cde-B', 'cde-C', 1200)]) {
+            expect((await b.fuehreAus(x)).grund, x.id).toBe(null);
+        }
+        const erg = await b.fuehreAus(k('ko-e', 'schacht-entfernen', { ziel: ['cde-B'], neu: ['cde-K'], werte: {} }));
+        expect(erg.grund).toBe(null);
+        const plan = useAenderungen().wirksamerStand('erzeugt').get('cde-K');
+        expect(plan.rezept).toBe('rechteckkanal');                                   // vorher: 'rohr'
+        expect(plan.parameter).toMatchObject({ b: 1200, h: 800, anschluss: { anfang: 'cde-A', ende: 'cde-C' } });
+        expect(rezeptNach('rechteckkanal').sohlen.lies(plan.parameter).map(y => Math.round(y * 1000) / 1000)).toEqual([100, 99.8, 99.6]);
+    });
+});
+

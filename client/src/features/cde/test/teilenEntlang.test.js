@@ -22,6 +22,8 @@ import { nachId } from '../services/Bearbeitungen.js';
 import { stationAuf } from '../services/Fangpunkte.js';
 import { stationiere } from '../services/geometrie/Stationierung.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
+import { kantenVon } from '../services/Griffe.js';
+import { teilePunktlisteAnStation } from '../services/Bauteilrezepte.js';
 import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
 
 beforeEach(() => {
@@ -104,3 +106,39 @@ describe('Schacht einfügen', () => {
         expect(nachId('schacht-einfuegen').warumNicht(subjekt(), { station: 39 })).toBe(null);
     });
 });
+
+describe('Stützpunkt einfügen und Linie teilen zählen ebenfalls im Grundriss (2026-09-19)', () => {
+    // Eine steile Linie: 10 m im Grundriss, 10 m Höhe — räumlich 14,14 m. Bis
+    // hierher zählten „+"-Griff, Stützpunkt einfügen und Linie teilen räumlich,
+    // die Geste „Ort auf der Achse zeigen" im Grundriss: Station 5 lag bei
+    // 3,54 m statt 5 m.
+    const STEIL = [[0, 100, 0], [10, 110, 0]];
+
+    it('der „+"-Griff sitzt in der Mitte, und seine Station ist die halbe Weglänge im Grundriss', () => {
+        const [k] = kantenVon(STEIL);
+        expect(k.station).toBeCloseTo(5, 12);                       // vorher 7,07
+        expect(k.laenge).toBeCloseTo(Math.hypot(10, 10), 12);        // angezeigt wird die räumliche Länge
+    });
+
+    it('Linie teilen bei Station 5: der Punkt liegt 5 m im Grundriss vom Anfang, auf halber Höhe', () => {
+        const [eins, zwei] = teilePunktlisteAnStation(STEIL, 5);
+        expect(eins.at(-1).map(v => Math.round(v * 1e9) / 1e9)).toEqual([5, 105, 0]);   // vorher (3,54 | 103,54)
+        expect(zwei[0]).toEqual(eins.at(-1));
+    });
+
+    it('Stützpunkt einfügen an einer eigenen steilen Haltung: dort, wo die Geste zeigte', async () => {
+        const b = useBearbeitung();
+        await b.fuehreAus(kommando('ko-h', 'rohr-zeichnen', { neu: ['cde-S'], werte: { name: 'S', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 300 },
+            eingaben: { zug: [{ ost: 0, nord: 0, hoehe: 100 }, { ost: 10, nord: 0, hoehe: 110 }] } }));
+        const ae = useAenderungen();
+        const s = subjektAusStand('cde-S', { wirksamerStand: ae.wirksamerStand });
+        const { station } = stationAuf({ punkte: s.achse.polyline }, { x: 5, z: 0.2 });
+        expect(station).toBeCloseTo(5, 9);
+        expect((await b.fuehreAus(kommando('ko-e', 'stuetzpunkt-einfuegen', { ziel: ['cde-S'], werte: { station } }))).grund).toBe(null);
+        const punkte = ae.wirksamerStand('erzeugt').get('cde-S').parameter.punkte;
+        expect(punkte).toHaveLength(3);
+        expect(punkte[1][0]).toBeCloseTo(5, 9);                      // vorher 3,54
+        expect(nachId('stuetzpunkt-einfuegen').vorbelegung(s).station).toBe(5);
+    });
+});
+

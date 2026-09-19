@@ -390,7 +390,10 @@ export function begrenze(delta, achsen) {
  * Die Kanten einer Punktliste mit Mitte und Station der Mitte (S10).
  * Die Station zählt in DERSELBEN Kette wie `_stationEinfuegen` im Katalog
  * (beim Ring auch der Schlussabschnitt) — sonst landete der eingefügte Punkt
- * woanders als der „+", den man angetippt hat.
+ * woanders als der „+", den man angetippt hat. Und wie die Geste „Ort auf der
+ * Achse zeigen": im GRUNDRISS (2026-09-19; bis dahin räumlich — bei steilen
+ * Abschnitten lag der Punkt neben der getippten Stelle). `laenge` bleibt die
+ * räumliche Kantenlänge (sie wird angezeigt).
  */
 export function kantenVon(punkte, ring = false) {
     const aus = [];
@@ -402,13 +405,14 @@ export function kantenVon(punkte, ring = false) {
         const a = punkte[i], b = punkte[(i + 1) % n];
         if (!a || !b) { if (a && b) gelaufen += 0; continue; }
         const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-        if (d > 1e-6) {
+        const d2 = Math.hypot(b[0] - a[0], b[2] - a[2]);
+        if (d2 > 1e-6) {
             aus.push({
-                i, j: (i + 1) % n, laenge: d, station: gelaufen + d / 2,
+                i, j: (i + 1) % n, laenge: d, station: gelaufen + d2 / 2,
                 mitte: { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2, z: (a[2] + b[2]) / 2 },
             });
         }
-        gelaufen += d;
+        gelaufen += d2;
     }
     return aus;
 }

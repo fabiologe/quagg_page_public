@@ -130,12 +130,12 @@ function _weglaenge(achse) {
     return stationiere(punkteDerAchse(achse)).laenge;
 }
 
-/** Die Länge einer Bauplan-Punktliste (Summe der Abschnitte, XYZ). */
+/** Die Weglänge einer Bauplan-Punktliste im GRUNDRISS — dieselbe, in der ihre Station zählt. */
 function _bauplanLaenge(el) {
     const p = el?.stand?.bauplan?.parameter?.punkte;
     if (!Array.isArray(p) || p.length < 2) return 0;
     let l = 0;
-    for (let i = 1; i < p.length; i++) l += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1], p[i][2] - p[i - 1][2]);
+    for (let i = 1; i < p.length; i++) l += Math.hypot(p[i][0] - p[i - 1][0], p[i][2] - p[i - 1][2]);
     return l;
 }
 
@@ -151,7 +151,8 @@ function _stationEinfuegen(punkte, station, geschlossen = false) {
     let gelaufen = 0;
     for (let i = 1; i < kette.length; i++) {
         const a = kette[i - 1], b = kette[i];
-        const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+        // Im GRUNDRISS, wie die Geste und der „+"-Griff (2026-09-19).
+        const d = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (d < 1e-9) continue;
         if (s < gelaufen + d - 0.01) {
             const t = (s - gelaufen) / d;
@@ -2435,7 +2436,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             name: 'station', titel: 'Einfügen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
             aus: { geste: 'punkt', auf: 'achse', liefert: 'station' },
         }],
-        vorbelegung: (el) => ({ station: _rundeM((el?.achse?.laenge ?? _bauplanLaenge(el)) / 2) }),
+        vorbelegung: (el) => ({ station: _rundeM((el?.achse ? _weglaenge(el.achse) : _bauplanLaenge(el)) / 2) }),
         anwenden: (el, werte) => {
             const plan = el?.stand?.bauplan;
             const punkte = plan?.parameter?.punkte;
@@ -3022,19 +3023,32 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const dn = Math.max(Number(zu.dn) || 0, Number(ab.dn) || 0) || 300;
             // Die fernen Schächte, wie die beiden Haltungen sie ERKLÄRTEN (K8) —
             // bis hierher verlor die neue Haltung beide Anschlüsse.
-            const erklaert = (k) => (modellVon(k.globalId) === 'cde' ? bauplanVon?.(k.globalId)?.parameter?.anschluss : null) ?? {};
+            const planVon = (k) => (modellVon(k.globalId) === 'cde' ? bauplanVon?.(k.globalId) ?? null : null);
+            const erklaert = (k) => planVon(k)?.parameter?.anschluss ?? {};
             const anschluss = { anfang: erklaert(zu).anfang, ende: erklaert(ab).ende };
+            // DAS REZEPT BLEIBT (N1 aus Teil XXIII, 2026-09-19): sind beide eigene
+            // Haltungen DESSELBEN Rezepts, ist es auch die neue — ein Rechteckkanal
+            // aus der Bibliothek blieb bis hierher nicht einer, er wurde ein Rohr.
+            // Das Profil ist das des Ablaufs (stromab wird es nicht enger), eine
+            // Nennweite die grössere. Sonst, wie bisher, das Rezept der Rolle.
+            const pZu = planVon(zu), pAb = planVon(ab);
+            const gleichesRezept = !!pZu?.rezept && pZu.rezept === pAb?.rezept && rezeptNach(pZu.rezept)?.netzrolle === 'kante';
+            const hoehen = _kanteAusFremdenHoehen(punkte, dn, [...zuP.map(() => zu), ...abP.map(() => ab)]);
+            const parameter = gleichesRezept
+                ? { ...pAb.parameter, punkte: hoehen.punkte, ...(hoehen.achsbezug ? { achsbezug: hoehen.achsbezug } : {}),
+                    ...('dn' in pAb.parameter ? { dn } : {}) }
+                : hoehen;
 
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
                 { art: 'geloescht', globalId: zu.globalId, nachher: true },
                 { art: 'geloescht', globalId: ab.globalId, nachher: true },
                 erzeugtEintrag({
-                    rezept: rezeptFuerNetzrolle('kante'),
-                    kategorie: zu.kategorie ?? 'IFCPIPESEGMENT',
+                    rezept: gleichesRezept ? pZu.rezept : rezeptFuerNetzrolle('kante'),
+                    kategorie: (gleichesRezept ? pAb.kategorie : null) ?? zu.kategorie ?? 'IFCPIPESEGMENT',
                     name: zu.name || ab.name || '',
                     // Jeder Punkt mit dem Bezug SEINER Achse (K4).
-                    parameter: _mitAnschluss(_kanteAusFremdenHoehen(punkte, dn, [...zuP.map(() => zu), ...abP.map(() => ab)]), anschluss),
+                    parameter: _mitAnschluss(parameter, anschluss),
                 }),
             ];
         },
