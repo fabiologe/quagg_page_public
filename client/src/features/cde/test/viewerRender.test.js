@@ -211,3 +211,59 @@ describe('Der Viewer mountet und lebt', () => {
     w.unmount();
   });
 });
+
+describe('Strg+Z und Strg+Umschalt+Z (Teil XXIV, F3 — 2026-09-19)', () => {
+  // Bis hierher gab es Rückgängig nur als Knopf im Verlauf; die CDE brach bei
+  // jeder Modifikatortaste ab. Derselbe Weg wie der Knopf: Journal, dann anwenden.
+  const mitStrg = (key, { shift = false, ziel = document } = {}) =>
+    ziel.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, shiftKey: shift, bubbles: true }));
+
+  it('nimmt den letzten Schritt zurück und wiederholt ihn — und sagt es', async () => {
+    const w = await montiert();
+    const { useAenderungen } = await import('../stores/useAenderungen.js');
+    const ae = useAenderungen();
+    await ae.bereit;                                               // erst geladen, dann geschrieben
+    await ae.eintragen({ art: 'kg', globalId: 'H1', nachher: '411', wer: 'fabio' });
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
+    // Die Rückmeldung kommt erst NACH Journal, Sichern und Anwenden — auf sie
+    // wird gewartet, sonst läuft ein Sichern in den nächsten Test hinein.
+    const schritt = async (key, meldung, opts) => { mitStrg(key, opts); await vi.waitFor(() => expect(w.text()).toContain(meldung)); };
+
+    await schritt('z', 'Zurückgenommen.');
+    expect(ae.wirksamerStand('kg').has('H1')).toBe(false);
+    await schritt('Z', 'Wiederholt.', { shift: true });
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
+    await schritt('z', 'Zurückgenommen.');
+    await schritt('y', 'Wiederholt.');                            // Strg+Y wiederholt ebenso
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
+    expect(echteFehler()).toEqual([]);
+    w.unmount();
+  });
+
+  it('im Eingabefeld gilt das Text-Rückgängig; mitten in einer Bearbeitung nichts — mit Grund', async () => {
+    const w = await montiert();
+    const { useAenderungen } = await import('../stores/useAenderungen.js');
+    const ae = useAenderungen();
+    await ae.bereit;                                               // erst geladen, dann geschrieben
+    await ae.eintragen({ art: 'kg', globalId: 'H1', nachher: '411', wer: 'fabio' });
+
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
+    const feld = document.createElement('input');
+    document.body.appendChild(feld);
+    mitStrg('z', { ziel: feld });
+    await flushPromises();
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');         // das Journal bleibt
+
+    const b = useBearbeitung();
+    b.modusSetzen(true);
+    await b.einordne({ ...ROHR }, null);
+    expect(b.starte('kg-setzen')).toBe(true);
+    mitStrg('z');
+    await flushPromises();
+    expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
+    expect(w.text()).toContain('Erst die laufende Bearbeitung übernehmen');
+    feld.remove();
+    w.unmount();
+  });
+});
+

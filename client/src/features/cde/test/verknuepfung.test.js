@@ -57,8 +57,17 @@ const mitVerweis = () => ausfuehren(schacht('cde-A', 0, 100), schacht('cde-B', 3
 /** Dasselbe nur mit Koordinaten — keine Erklärung, nur Koinzidenz. */
 const mitKoordinaten = () => ausfuehren(schacht('cde-A', 0, 100), schacht('cde-B', 30, 99.85),
     haltung('cde-H', [{ ost: 0, nord: 0, hoehe: 100 }, { ost: 30, nord: 0, hoehe: 99.85 }]));
-const schachtVerschieben = (b, gid, ost) => b.fuehreAus(kommando('ko-v', 'verschieben', { ziel: [gid],
-    werte: { ost, nord: 0, hoehe: 101.25, mitfuehren: 'forderung' } }));
+/**
+ * Ein Schacht, der NEBEN seiner Haltung steht — so hinterliess „Verschieben"
+ * einen eigenen Schacht bis 2026-09-19 (die Haltung blieb stehen), und so kann
+ * ein Journal von damals ihn noch enthalten. Seitdem folgt die Haltung (8).
+ */
+async function schachtDaneben(ae, gid, ost) {
+    const plan = ae.wirksamerStand('erzeugt').get(gid);
+    const dx = ost - plan.parameter.punkte[0][0];
+    await ae.eintragen({ art: 'erzeugt', globalId: gid, modell: 'cde',
+        nachher: { ...plan, parameter: { ...plan.parameter, punkte: plan.parameter.punkte.map(p => [p[0] + dx, p[1], p[2]]) } } });
+}
 
 describe('1 — die Haltung nennt ihre Schächte', () => {
     it('Lage und Sohle vom Knoten, der Anschluss im Bauplan, das Netz verbindet — ohne Befund', async () => {
@@ -75,9 +84,9 @@ describe('1 — die Haltung nennt ihre Schächte', () => {
 });
 
 describe('2 — Erklärung gegen Lage', () => {
-    it('Schacht B 5 cm verschoben: „Anschluss abweichend" — nicht lose, nicht unverbunden', async () => {
-        const { b } = await mitVerweis();
-        expect((await schachtVerschieben(b, 'cde-B', 30.05)).grund).toBe(null);
+    it('Schacht B 5 cm neben der Haltung: „Anschluss abweichend" — nicht lose, nicht unverbunden', async () => {
+        const { b, ae } = await mitVerweis();
+        await schachtDaneben(ae, 'cde-B', 30.05);
         const befunde = b.befundeVon('cde-H');
         expect(regeln(befunde)).toEqual(['anschluss_abweichend']);
         expect(befunde[0].wert).toBe('0.05 m');
@@ -86,8 +95,8 @@ describe('2 — Erklärung gegen Lage', () => {
     });
 
     it('ohne Erklärung, nur Koordinaten: dasselbe ergibt ein loses Ende und einen Schacht ohne Anschluss (wie bisher)', async () => {
-        const { b } = await mitKoordinaten();
-        await schachtVerschieben(b, 'cde-B', 30.05);
+        const { b, ae } = await mitKoordinaten();
+        await schachtDaneben(ae, 'cde-B', 30.05);
         expect(regeln(b.befundeVon('cde-H'))).toEqual(['loses_ende']);
         expect(regeln(b.befundeVon('cde-B'))).toEqual(['schacht_ohne_anschluss']);
     });
@@ -103,8 +112,8 @@ describe('2 — Erklärung gegen Lage', () => {
 
 describe('3 — die Toleranz steht im Regelwerk', () => {
     it('5 cm daneben, ohne Erklärung: mit netzToleranzM = 0,1 m verbunden', async () => {
-        const { b } = await mitKoordinaten();
-        await schachtVerschieben(b, 'cde-B', 30.05);
+        const { b, ae } = await mitKoordinaten();
+        await schachtDaneben(ae, 'cde-B', 30.05);
         setzeRegelwerk([{ id: 'netzToleranzM', wert: 0.1, herkunft: 'buero' }]);
         expect(b.befundeVon('cde-H')).toEqual([]);
         expect(b.befundeVon('cde-B')).toEqual([]);
@@ -216,3 +225,63 @@ describe('7 — über die Engine: ein genannter GELIEFERTER Schacht', () => {
         expect(zeile.befunde.map(x => x.regel)).toEqual(['anschluss_abweichend']);
     });
 });
+
+describe('8 — ein eigener Schacht wandert, seine eigenen Haltungen folgen (2026-09-19)', () => {
+    // Bis hierher blieb die Haltung stehen: „Verschieben" kehrte im Zweig für
+    // eigene Bauteile zurück, bevor es die Anschlüsse nachführte — der Regler
+    // „mitführen" stand da und wirkte nicht (Nebenbefund aus K3). Und „wirklich
+    // mitführen" baute auch eine eigene Haltung als Katalog-Rohr neu (N1).
+    for (const werkzeug of ['verschieben', 'schacht-verschieben']) {
+        it(`${werkzeug}: dieselbe Kennung, derselbe Bauplan, nur das Ende wandert — kein Befund`, async () => {
+            const { b, ae, plan } = await mitVerweis();
+            const vorher = plan('cde-H');
+            const werte = werkzeug === 'verschieben' ? { ost: 30.05, nord: 0, hoehe: 101.25, mitfuehren: 'forderung' }
+                                                     : { ost: 30.05, nord: 0, mitfuehren: 'forderung' };
+            const erg = await b.fuehreAus(kommando('ko-v', werkzeug, { ziel: ['cde-B'], werte }));
+            expect(erg.grund).toBe(null);
+            expect(erg.eintraege.map(e => [e.art, e.globalId])).toEqual([['erzeugt', 'cde-B'], ['erzeugt', 'cde-H']]);
+            const nachher = plan('cde-H');
+            expect(nachher.rezept).toBe(vorher.rezept);
+            expect(nachher.parameter.dn).toBe(vorher.parameter.dn);
+            expect(nachher.parameter.anschluss).toEqual({ anfang: 'cde-A', ende: 'cde-B' });
+            expect(nachher.parameter.punkte[0]).toEqual(vorher.parameter.punkte[0]);          // das andere Ende bleibt
+            expect(nachher.parameter.punkte[1][0]).toBeCloseTo(30.05, 9);                     // dieses wandert mit
+            expect(nachher.parameter.punkte[1][1]).toBe(vorher.parameter.punkte[1][1]);       // in der Ebene
+            expect(plan('cde-B').parameter.punkte[0][0]).toBeCloseTo(30.05, 9);               // der Schacht als Bauplan, keine „lage"
+            expect(b.befundeVon('cde-H')).toEqual([]);                                        // vorher: anschluss_abweichend 0.05 m
+            expect(ae.wirksamerStand('lage').has('cde-B')).toBe(false);
+        });
+    }
+
+    it('der Regler erscheint nur, wenn eine GELIEFERTE Haltung am Schacht hängt', async () => {
+        const { ae } = await mitVerweis();
+        const { subjektAusStand } = await import('../services/kommando/Subjekt.js');
+        const { felderFuer, nachId } = await import('../services/Bearbeitungen.js');
+        const s = subjektAusStand('cde-B', { wirksamerStand: ae.wirksamerStand });
+        expect(s.anschluesse.map(k => k.globalId)).toEqual(['cde-H']);
+        expect(felderFuer(nachId('verschieben'), null, s).map(f => f.name)).not.toContain('mitfuehren');
+        const mitGeliefert = { ...s, anschluesse: [...s.anschluesse, { globalId: '2Gelief0Rohr0000000001', ende: 'anfang' }] };
+        expect(felderFuer(nachId('verschieben'), null, mitGeliefert).map(f => f.name)).toContain('mitfuehren');
+    });
+});
+
+describe('9 — Schacht entfernen: die neue Haltung behält Knicke und Anschlüsse (2026-09-19)', () => {
+    // Bis hierher bekam die zusammengelegte Haltung drei Punkte (fernes
+    // Zulauf-Ende, Schacht, fernes Ablauf-Ende) und KEINE Erklärung — die
+    // fernen Schächte hingen nur noch am Zufall der Koordinaten.
+    it('A — H1 (mit Knick) — B — H2 — C: B entfernen ergibt A → Knick → B → C, erklärt an A und C', async () => {
+        const { b, ae, plan } = await ausfuehren(schacht('cde-A', 0, 100), schacht('cde-B', 30, 99.85), schacht('cde-C', 60, 99.7),
+            haltung('cde-H1', [{ knoten: 'cde-A' }, { ost: 15, nord: 5, hoehe: 99.93 }, { knoten: 'cde-B' }]),
+            haltung('cde-H2', [{ knoten: 'cde-B' }, { knoten: 'cde-C' }]));
+        const erg = await b.fuehreAus(kommando('ko-e', 'schacht-entfernen', { ziel: ['cde-B'], neu: ['cde-H'], werte: {} }));
+        expect(erg.grund).toBe(null);
+        const h = plan('cde-H');
+        expect(h.parameter.anschluss).toEqual({ anfang: 'cde-A', ende: 'cde-C' });          // vorher: keine
+        expect(h.parameter.punkte.map(p => [p[0], p[2]])).toEqual([[0, 0], [15, -5], [30, 0], [60, 0]]);   // vorher: ohne (15|5)
+        expect(rezeptNach('rohr').sohlen.lies(h.parameter).map(y => Math.round(y * 1000) / 1000)).toEqual([100, 99.93, 99.85, 99.7]);   // jede Sohle bleibt
+        expect(b.pruefeEigenes().filter(z => z.globalId === 'cde-H' || z.globalId === 'cde-A' || z.globalId === 'cde-C')).toEqual([]);
+        expect(ae.eintraege.filter(e => e.vorgang === 'ko-e').map(e => [e.art, e.globalId])).toEqual(
+            [['geloescht', 'cde-B'], ['geloescht', 'cde-H1'], ['geloescht', 'cde-H2'], ['erzeugt', 'cde-H']]);
+    });
+});
+

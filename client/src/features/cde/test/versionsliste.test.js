@@ -9,7 +9,8 @@
  * Änderung im Modul), Verwerfen (Gegeneintrag) und Übertragen (wandern +
  * verwerfen, EIN Vorgang).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { repo } from '../services/RepoFacade.js';
 import { createPinia, setActivePinia } from 'pinia';
 import { useAenderungen, standAus } from '../stores/useAenderungen.js';
 
@@ -119,6 +120,29 @@ describe('Die drei Konflikt-Verben', () => {
         const stand = standAus(ae.eintraege, 'lage');
         expect(stand.has('H1')).toBe(false);
         expect(stand.get('H1-NEU')).toEqual({ x: 1, y: 2, z: 3 });
+    });
+
+    it('Übertragen ist EIN Commit, EIN Sichern — und kein Eintrag wird nachträglich umgeschrieben (2026-09-19)', async () => {
+        // Bis hierher lief der Gegeneintrag über `verwerfeEinen`: committet und
+        // gesichert, danach umgeschrieben (Vorgang, Beleg) und NOCH EINMAL
+        // committet — dieselbe Kennung in zwei Commits, drei Mal gesichert.
+        const ae = useAenderungen();
+        await fuelle(ae);
+        const lage = ae.eintraege.find(e => e.art === 'lage');
+        const commitsVorher = ae.commits.length;
+        const set = vi.spyOn(repo, 'set');
+        const beide = await ae.uebertrageAuf(lage.id, 'H1-NEU', { wer: 'Fabio', basis: { x: 1, y: 2, z: 3 } });
+        expect(ae.commits.length - commitsVorher).toBe(1);                       // vorher: 2
+        expect(ae.commits.at(-1).schrittIds).toEqual(beide.map(e => e.id));
+        expect(ae.commits.at(-1).nachricht).toBe('Konflikt übertragen auf H1-NEU');
+        const ids = ae.commits.flatMap(c => c.schrittIds);
+        expect(ids.length).toBe(new Set(ids).size);                              // keine Kennung in zwei Commits
+        expect(set.mock.calls.filter(([k]) => /aenderungen$/.test(k)).length).toBe(1);   // vorher: 3
+        expect(beide[0].kommando?.werkzeug).toBe('system:uebertragen');          // der Beleg am ersten Eintrag
+        expect(beide[1].kommando).toBeUndefined();
+        expect(beide[1].ruecknahmeVon).toBe(lage.id);
+        expect(ae.sitzungSchritte.map(e => e.id)).not.toContain(beide[0].id);   // nicht in der offenen Sitzung
+        set.mockRestore();
     });
 
     it('Übertragen auf sich selbst oder ins Leere: nichts', async () => {

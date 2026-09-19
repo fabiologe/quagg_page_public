@@ -1006,6 +1006,31 @@ async function uebernehmeScharf() {
 }
 
 /** Kurzmeldung des Modus-Knopfs — 4 s, dann weg (Gesetz 10: nie stumm). */
+/**
+ * Rückgängig/Wiederholen per Taste — DERSELBE Weg wie die Knöpfe im Verlauf
+ * (`IfcAenderungenTab`): das Journal geht einen Schritt, dann wird angewandt.
+ * Nicht mitten in einer Bearbeitung: dort nimmt die Rücktaste den letzten
+ * Punkt und Esc bricht ab — ein Rückgängig darunter nähme dem laufenden
+ * Werkzeug womöglich sein Bauteil. Nie stumm (Gesetz 10).
+ */
+async function rueckgaengigPerTaste(wieder) {
+  if (bearbeitung.werkzeug || eingabe.aktiv.value) {
+    melde('Erst die laufende Bearbeitung übernehmen oder mit Esc abbrechen.');
+    return;
+  }
+  if (wieder && !aenderungen.kannWiederholen) { melde('Nichts zu wiederholen.'); return; }
+  try {
+    const r = wieder ? await aenderungen.wiederholen(cde.bearbeiter || '') : await aenderungen.zurueck(cde.bearbeiter || '');
+    const liste = (Array.isArray(r) ? r : [r]).filter(Boolean);
+    if (!liste.length) { melde(wieder ? 'Nichts zu wiederholen.' : 'Nichts zurückzunehmen.'); return; }
+    await wendeEintragAn(liste.length > 1 ? liste : liste[0]);
+    melde(wieder ? 'Wiederholt.' : 'Zurückgenommen.');
+  } catch (fehler) {
+    console.error('cde: rückgängig per Taste', fehler);
+    melde(`Fehler: ${fehler?.message ?? fehler}`);
+  }
+}
+
 function melde(text) {
   modusMeldung.value = text;
   setTimeout(() => { if (modusMeldung.value === text) modusMeldung.value = ''; }, 4000);
@@ -2208,6 +2233,10 @@ onMounted(async () => {
 
     { id: 'bearb.modus', titel: 'Bearbeiten ein-/ausschalten', icon: 'edit',
       gruppe: 'Bearbeiten', key: 'E', run: () => bearbeitenUmschalten() },
+    { id: 'journal.zurueck', titel: 'Rückgängig', icon: 'undo', gruppe: 'Bearbeiten', key: 'Strg+Z',
+      run: () => rueckgaengigPerTaste(false) },
+    { id: 'journal.wiederholen', titel: 'Wiederholen', icon: 'redo', gruppe: 'Bearbeiten', key: 'Strg+Umschalt+Z',
+      verfuegbar: () => aenderungen.kannWiederholen, run: () => rueckgaengigPerTaste(true) },
   ]);
 
   // Büro-/Projektprofile einmal je Sitzung laden (Stufe 6: Vorrangregel).
@@ -2744,6 +2773,15 @@ function onKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
     if (e.key !== 'Escape' || !bearbeitung.werkzeug) return;
     e.target.blur?.();
+  }
+
+  // STRG+Z / STRG+UMSCHALT+Z (STRG+Y) — Rückgängig und Wiederholen (Teil XXIV,
+  // F3). Bis 2026-09-19 gab es beides nur als Knopf im Verlauf. Im Eingabefeld
+  // gilt das Text-Rückgängig des Browsers (die Sperre oben kehrt vorher zurück).
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key) && !e.target.isContentEditable) {
+    e.preventDefault();
+    rueckgaengigPerTaste(/^y$/i.test(e.key) || e.shiftKey);
+    return;
   }
 
   // ? toggles the shortcut overlay

@@ -240,6 +240,9 @@ export function anschluesseMitAchsen(netz, knotenId, achseVon) {
             ende,
             anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
             achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null,
+            // Die Punkte dazwischen — wie im Strang: wer zwei Anschlüsse zu einer
+            // Haltung zusammenlegt, soll keinen Knick verlieren.
+            punkte: a.polyline ?? a.punkte ?? null,
         } : null;
     };
     return [

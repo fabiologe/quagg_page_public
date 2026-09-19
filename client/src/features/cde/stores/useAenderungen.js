@@ -1186,24 +1186,29 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * (Für Konflikte ist das sicher: der Eintrag ist ohnehin nicht
      * anwendbar, spätere Arbeit auf dem Bauteil gibt es nicht.)
      */
+    /** Der Gegeneintrag zu `q` — er setzt zurück, was vor `q` galt. */
+    function _gegenEintrag(q, wer, { vorgang, vorgangTitel, kommando = null }) {
+        return {
+            id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+            art: q.art, globalId: q.globalId,
+            vorher: q.nachher, nachher: q.vorher ?? null,
+            wer, wann: Date.now(), modellSha: q.modellSha,
+            ...(q.basis !== undefined ? { basis: q.basis } : {}),
+            ...(q.modell !== undefined ? { modell: q.modell } : {}),
+            ruecknahmeVon: q.id,
+            vorgang, vorgangTitel,
+            ...(kommando ? { kommando } : {}),
+        };
+    }
+
     async function verwerfeEinen(eintragId, wer = '') {
         for (const ebene of ['auftrag', 'stand']) {
             const liste = _liste(ebene).value;
             const q = liste.find(e => e.id === eintragId);
             if (!q) continue;
             const beleg = systemBeleg('verwerfen', { ziel: [q.globalId], werte: { eintrag: q.id }, wer });
-            const gegen = {
-                id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-                art: q.art, globalId: q.globalId,
-                vorher: q.nachher, nachher: q.vorher ?? null,
-                wer, wann: Date.now(), modellSha: q.modellSha,
-                ...(q.basis !== undefined ? { basis: q.basis } : {}),
-                ...(q.modell !== undefined ? { modell: q.modell } : {}),
-                ruecknahmeVon: q.id,
-                vorgang: beleg.id,
-                vorgangTitel: 'Nach Konflikt verworfen — der Planerwert gilt',
-                kommando: beleg,
-            };
+            const gegen = _gegenEintrag(q, wer, { vorgang: beleg.id,
+                vorgangTitel: 'Nach Konflikt verworfen — der Planerwert gilt', kommando: beleg });
             liste.push(gegen);
             await _commitAus(ebene, [gegen],
                 'Konflikt verworfen — der Planerwert gilt', wer);
@@ -1219,22 +1224,30 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * Vorgang geklammert.
      */
     async function uebertrageAuf(eintragId, zielGlobalId, { wer = '', basis, modell } = {}) {
-        const q = eintraege.value.find(e => e.id === eintragId);
+        if (nurLesen.value) return [];
+        // Die Ebene des Konflikt-Eintrags — dort bleibt die Festlegung, dort
+        // steht ihr Gegeneintrag.
+        const ebene = ['auftrag', 'stand'].find(e => _liste(e).value.some(x => x.id === eintragId));
+        const liste = ebene ? _liste(ebene).value : null;
+        const q = liste?.find(e => e.id === eintragId) ?? null;
         if (!q || !zielGlobalId || zielGlobalId === q.globalId) return [];
         const beleg = systemBeleg('uebertragen', { ziel: [q.globalId, zielGlobalId], werte: { eintrag: q.id, nach: zielGlobalId }, wer });
         const vorgang = beleg.id;
         const titel = 'Vom Konflikt übertragen';
-        const { eintraege: [neu = null] } = await eintragenVorgang([{
-            art: q.art, globalId: zielGlobalId, nachher: q.nachher,
-            wer, modellSha: q.modellSha,
-            basis, modell: modell ?? q.modell,
-        }], { vorgang, vorgangTitel: titel, kommando: beleg });
-        const gegen = await verwerfeEinen(q.id, wer);
-        // EIN Vorgang, EIN Beleg: der Gegeneintrag gehört zum Übertragen.
-        if (gegen) { gegen.vorgang = vorgang; gegen.vorgangTitel = titel; delete gegen.kommando; }
+        // EIN Vorgang, EIN Beleg, EIN Commit, EIN Sichern (2026-09-19): der neue
+        // Eintrag am Ziel und der Gegeneintrag am Alten entstehen ZUSAMMEN. Bis
+        // hierher lief der Gegeneintrag über `verwerfeEinen` — der committete und
+        // sicherte ihn schon, danach wurde der gespeicherte Eintrag nachträglich
+        // umgeschrieben (Vorgang, Beleg) und ein zweites Mal committet: dieselbe
+        // Kennung in zwei Commits, „Konflikt verworfen" neben „Konflikt
+        // übertragen" im Verlauf, drei Mal gesichert.
+        const neu = _baueEintrag({ art: q.art, globalId: zielGlobalId, nachher: q.nachher, wer, modellSha: q.modellSha,
+                                   basis, modell: modell ?? q.modell, vorgang, vorgangTitel: titel });
+        const gegen = _gegenEintrag(q, wer, { vorgang, vorgangTitel: titel });
         const beide = [neu, gegen].filter(Boolean);
-        await _commitAus(vorgabeEbene.value, beide,
-            `Konflikt übertragen auf ${zielGlobalId}`, wer);
+        beide[0].kommando = beleg;               // der Beleg am ersten Eintrag (K2)
+        liste.push(...beide);
+        await _commitAus(ebene, beide, `Konflikt übertragen auf ${zielGlobalId}`, wer);
         return beide;
     }
 

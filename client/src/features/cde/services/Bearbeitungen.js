@@ -75,7 +75,7 @@ import { hatInnenring, innenEcken, innenFeld, randFuerInnenecke } from './gelaen
 import { achsmassAus } from './geometrie/hilfen.js';
 
 import { ACHSBEZUEGE, sohleAnAchse } from './Achsbezug.js';
-import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
+import { gefaelle, ortBei, punkteDerAchse, stationiere } from './geometrie/Stationierung.js';
 import { kantenbezugNeu } from './JournalFormat.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 import { registerStand, registrierte } from './rezept/Register.js';
@@ -93,26 +93,41 @@ export const GRUPPEN = Object.freeze({
 });
 
 /**
- * Der Punkt auf der Achse bei dieser Station, oder null.
+ * Die TEILUNG einer Achse bei dieser Station — der Ort AUF der Achse und die
+ * Punkte davor und danach, oder null.
  *
  * Von „Haltung teilen" UND „Schacht einfügen" gebraucht. Zweimal geschrieben
- * liefe er auseinander — und die beiden müssen bis auf den Millimeter
+ * liefe sie auseinander — und die beiden müssen bis auf den Millimeter
  * dasselbe rechnen, sonst passen die Stücke nach dem Einfügen nicht mehr
  * zusammen.
  *
+ * DIE STATION IST DIE WEGLÄNGE IM GRUNDRISS entlang der Achse — so zählt die
+ * Geste „Ort auf der Achse zeigen" (`Fangpunkte.stationAuf`), so zählen
+ * Längsschnitt und Gefälle (`Stationierung`). Bis 2026-09-19 lag der Punkt auf
+ * der SEHNE zwischen Anfang und Ende, als Anteil der räumlichen Länge: bei
+ * einer Haltung mit Knick neben dem Rohr, nicht dort, wo getippt wurde, und
+ * beide Stücke verloren ihre Zwischenpunkte.
+ *
  * Am Ende zu teilen ist kein Teilen: es ergäbe ein Bauteil der Länge null.
+ *
+ * @returns {{ punkt: {x,y,z}, vorher: Array<{x,y,z}>, nachher: Array<{x,y,z}>, laenge: number } | null}
+ *          `laenge` = die Weglänge der Achse im Grundriss (die Grenze der Station)
  */
-function _teilpunkt(achse, station) {
-    const laenge = Number(achse?.laenge) || 0;
+function _teilung(achse, station) {
+    const st = stationiere(punkteDerAchse(achse));
     const s = Number(station);
-    if (!achse?.anfang || !achse?.ende) return null;
-    if (!Number.isFinite(s) || s <= 0.01 || s >= laenge - 0.01) return null;
-    const anteil = s / laenge;
-    return {
-        x: achse.anfang.x + (achse.ende.x - achse.anfang.x) * anteil,
-        y: achse.anfang.y + (achse.ende.y - achse.anfang.y) * anteil,
-        z: achse.anfang.z + (achse.ende.z - achse.anfang.z) * anteil,
-    };
+    if (st.punkte.length < 2 || !Number.isFinite(s) || s <= 0.01 || s >= st.laenge - 0.01) return null;
+    const o = ortBei(st, s);
+    const punkt = { x: o.x, y: o.y, z: o.z };
+    // Ein Punkt, der schon da ist (die Station trifft einen Knick), kommt nicht doppelt.
+    const neu = (liste, p) => (liste.length && Math.hypot(liste.at(-1).x - p.x, liste.at(-1).z - p.z, (liste.at(-1).y ?? 0) - p.y) < 1e-9 ? liste : [...liste, p]);
+    const vorher = neu(st.punkte.slice(0, o.i + 1), punkt);
+    const nachher = st.punkte.slice(o.i + 1).reduce((l, p) => neu(l, { x: p.x, y: p.y ?? 0, z: p.z }), [punkt]);
+    return { punkt, vorher, nachher, laenge: st.laenge };
+}
+/** Die Weglänge einer Achse im Grundriss — dieselbe, in der ihre Station zählt. */
+function _weglaenge(achse) {
+    return stationiere(punkteDerAchse(achse)).laenge;
 }
 
 /** Die Länge einer Bauplan-Punktliste (Summe der Abschnitte, XYZ). */
@@ -152,7 +167,25 @@ function _stationEinfuegen(punkte, station, geschlossen = false) {
     return null;
 }
 
-/** Ein Raumpunkt als Zahlenpaar-Tripel, wie die Rezepte es lesen. */
+/** Hängt eine GELIEFERTE Haltung am Knoten? Nur dann hat der Regler „mitführen" etwas zu entscheiden. */
+const _gelieferteAnschluesse = (el) => (el?.anschluesse ?? []).some(k => modellVon(k.globalId) !== 'cde');
+
+/**
+ * Ein EIGENES Bauteil verschieben: sein Bauplan wandert um `d` (Welt), als
+ * `erzeugt` unter derselben Kennung — oder null, wenn es keins ist oder sein
+ * Rezept nicht verschieben kann.
+ */
+function _eigenVerschoben(el, d) {
+    const plan = el?.stand?.bauplan;
+    if (!plan?.rezept) return null;
+    const rezept = rezeptNach(plan.rezept);
+    if (typeof rezept?.verschiebe !== 'function') return null;
+    return erzeugtEintrag({
+        rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
+        globalId: el.globalId, parameter: rezept.verschiebe(plan.parameter, d),
+    });
+}
+
 /**
  * Die Anschlüsse eines Schachts nachführen, wenn er wandert — EINE Logik für
  * „Schacht verschieben" und „Verschieben": als FORDERUNG (der neue
@@ -178,22 +211,42 @@ function _stationEinfuegen(punkte, station, geschlossen = false) {
  * Mit dem DELTA bleibt jede Beziehung erhalten, die vorher bestand — auch
  * eine, die schon vorher nicht exakt sass: verschoben wird die ganze
  * Nachbarschaft starr, nicht auf einen neu berechneten Punkt.
+ *
+ * EIGENES WIRD ECHT (2026-09-19, Nebenbefund aus K3 und N1 aus Teil XXIII):
+ * eine EIGENE Haltung folgt immer — dieselbe Kennung, derselbe Bauplan
+ * (Rezept, Profil, Vorlagenbezug, Zwischenpunkte), nur ihr Ende wandert, und
+ * es nennt den Schacht (K8). Eine Forderung an sich selbst gibt es nicht. Der
+ * Regler „als Forderung / wirklich mitführen" gilt den GELIEFERTEN. Bis hierher
+ * wurde auch eine eigene Haltung gelöscht und als Katalog-Rohr mit zwei
+ * Punkten neu gebaut (ein Rechteckkanal wurde ein Rohr, die Kennung neu) —
+ * und am eigenen Schacht lief „Verschieben" gar nicht bis hierher.
+ *
+ * @param {object} delta  `{ost, nord}` Ziel in Projektkoordinaten, `{dx, dz}` Weg in der Welt
+ * @param {object} [kontext]  `{bauplanVon}` — die Baupläne der eigenen Haltungen
  */
-function _anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }) {
-    const dxN = zielX - (el?.anker?.x ?? 0);
-    const dzN = zielZ - (el?.anker?.z ?? 0);
-    const anschluesse = el?.anschluesse ?? [];
+function _anschluesseNachfuehren(el, werte, { ost, nord, dx: dxN, dz: dzN }, { bauplanVon = null } = {}) {
     const eintraege = [];
-    if (werte?.mitfuehren !== 'wirklich') {
-        for (const k of anschluesse) {
+    for (const k of el?.anschluesse ?? []) {
+        const seite = k.ende === 'anfang' ? 'anfang' : 'ende';
+        const plan = modellVon(k.globalId) === 'cde' ? bauplanVon?.(k.globalId) : null;
+        const roh = plan?.parameter?.punkte;
+        if (Array.isArray(roh) && roh.length >= 2) {
+            const punkte = roh.map(p => [...p]);
+            const i = seite === 'anfang' ? 0 : punkte.length - 1;
+            punkte[i] = [punkte[i][0] + dxN, punkte[i][1], punkte[i][2] + dzN];
+            eintraege.push(erzeugtEintrag({
+                rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: k.globalId,
+                parameter: _mitAnschluss({ ...plan.parameter, punkte }, { ...(plan.parameter.anschluss ?? {}), [seite]: el.globalId }),
+            }));
+            continue;
+        }
+        if (werte?.mitfuehren !== 'wirklich') {
             eintraege.push({
                 art: 'parametrik', globalId: k.globalId,
                 nachher: { anschlusspunkt: { ende: k.ende, ost: _rundeM(ost), nord: _rundeM(nord) } },
             });
+            continue;
         }
-        return eintraege;
-    }
-    for (const k of anschluesse) {
         const bleibt = k.ende === 'anfang' ? k.ende_ : k.anfang;
         const wandert = k.ende === 'anfang' ? k.anfang : k.ende_;
         // Um das Delta, nicht auf den Anker (siehe Kopf).
@@ -1582,20 +1635,20 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             // andere Weg hinein (Ort auf der Achse zeigen).
             aus: { geste: 'punkt', auf: 'achse', liefert: 'station' },
         }],
-        vorbelegung: (el) => ({ station: _rundeM((el?.achse?.laenge ?? 0) / 2) }),
+        vorbelegung: (el) => ({ station: _rundeM(_weglaenge(el?.achse) / 2) }),
         anwenden: (el, werte) => {
             const a = el?.achse;
             if (!a || !el?.globalId) return null;
-            const teilung = _teilpunkt(a, werte.station);
+            const teilung = _teilung(a, werte.station);
             if (!teilung) return null;
-            const punkt = _alsTripel;
             const name = el?.name ?? '';
             const alt = el?.stand?.bauplan?.parameter?.anschluss ?? {};
-            const stueck = (von, bis, zusatz, anschluss) => erzeugtEintrag({
+            // Jedes Stück behält die Punkte SEINER Seite — ein Knick bleibt ein Knick.
+            const stueck = (punkte, zusatz, anschluss) => erzeugtEintrag({
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', [punkt(von), punkt(bis)], a.dn, a), anschluss),
+                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', punkte.map(_alsTripel), a.dn, a), anschluss),
             });
 
             // Reihenfolge mit Absicht: erst das Alte weg, dann das Neue. Beim
@@ -1603,8 +1656,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             // Vorgang zeigt dann eher zu wenig als doppelt.
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
-                stueck(a.anfang, teilung, ' (1)', { anfang: alt.anfang }),
-                stueck(teilung, a.ende, ' (2)', { ende: alt.ende }),
+                stueck(teilung.vorher, ' (1)', { anfang: alt.anfang }),
+                stueck(teilung.nachher, ' (2)', { ende: alt.ende }),
             ];
         },
     },
@@ -1816,9 +1869,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         vorbelegung: (el) => {
             const a = el?.achse;
             const v = el?.hoehenversatz ?? 0;
-            const mitte = a ? _teilpunkt(a, (Number(a.laenge) || 0) / 2) : null;
+            const mitte = a ? _teilung(a, _weglaenge(a) / 2)?.punkt : null;
             return {
-                station: _rundeM((Number(a?.laenge) || 0) / 2),
+                station: _rundeM(_weglaenge(a) / 2),
                 // 2,50 m Regeltiefe — sichtbar als Annahme, nicht als Wahrheit.
                 deckel: _rundeM(mitte ? nnAusWelt(mitte.y, v) + 2.5 : 0),
                 durchmesser: 1000,
@@ -1828,10 +1881,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
          * Warum nicht? Fast immer liegt die Station ausserhalb der Haltung —
          * und dann sucht der Nutzer nach einem fehlenden „Bezug", den es
          * nicht gibt. Die Grenzen kommen aus derselben Rechnung wie
-         * `_teilpunkt`, damit Grund und Regel dasselbe messen.
+         * `_teilung` (Weglänge im Grundriss), damit Grund und Regel dasselbe messen.
          */
         warumNicht: (el, werte) => {
-            const l = Number(el?.achse?.laenge) || 0;
+            const l = _weglaenge(el?.achse);
             const s = Number(werte?.station);
             if (!el?.achse) return null;
             if (!Number.isFinite(s)) return 'Ohne Station lässt sich nicht teilen.';
@@ -1845,8 +1898,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         anwenden: (el, werte) => {
             const a = el?.achse;
             if (!a || !el?.globalId) return null;
-            const teilung = _teilpunkt(a, werte.station);
-            if (!teilung) return null;
+            const t = _teilung(a, werte.station);
+            if (!t) return null;
+            const teilung = t.punkt;
 
             const v = el?.hoehenversatz ?? 0;
             const deckelWelt = weltAusNn(Number(werte.deckel), v);
@@ -1858,11 +1912,11 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
 
             const name = el?.name ?? '';
             const alt = el?.stand?.bauplan?.parameter?.anschluss ?? {};
-            const stueck = (von, bis, zusatz, anschluss) => erzeugtEintrag({
+            const stueck = (punkte, zusatz, anschluss) => erzeugtEintrag({
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', [_alsTripel(von), _alsTripel(bis)], a.dn, a), anschluss),
+                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', punkte.map(_alsTripel), a.dn, a), anschluss),
             });
             // Der Schacht zuerst — die Stücke NENNEN ihn (K8).
             const schacht = erzeugtEintrag({
@@ -1878,8 +1932,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
                 schacht,
-                stueck(a.anfang, teilung, ' (1)', { anfang: alt.anfang, ende: schacht.globalId }),
-                stueck(teilung, a.ende, ' (2)', { anfang: schacht.globalId, ende: alt.ende }),
+                stueck(t.vorher, ' (1)', { anfang: alt.anfang, ende: schacht.globalId }),
+                stueck(t.nachher, ' (2)', { anfang: schacht.globalId, ende: alt.ende }),
             ];
         },
     },
@@ -1930,6 +1984,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'nord', titel: 'Hochwert', einheit: 'm', typ: 'zahl' },
             {
                 name: 'mitfuehren',
+                // Eigene Haltungen folgen immer (echt) — der Regler gilt den gelieferten.
+                nurWenn: _gelieferteAnschluesse,
                 rueckfall: {
                     titel: 'Angeschlossene Haltungen', typ: 'auswahl',
                     optionen: [
@@ -1960,7 +2016,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             }
             return null;
         },
-        anwenden: (el, werte) => {
+        anwenden: (el, werte, { bauplanVon = null } = {}) => {
             if (!el?.globalId || !el?.anker || !el?.versatz) return null;
             // Ohne umkehrbare Abbildung lieber gar nichts als eine Verschiebung
             // an die falsche Stelle.
@@ -1978,14 +2034,18 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const dz = zielZ - el.anker.z;
             if (Math.abs(dx) < 1e-4 && Math.abs(dz) < 1e-4) return null;
 
-            const eintraege = [{
+            // Ein EIGENER Schacht: sein Bauplan wandert (wie bei „Verschieben") —
+            // eine `lage` an einem eigenen Bauteil liest niemand.
+            const eigen = _eigenVerschoben(el, { x: dx, y: 0, z: dz });
+            const eintraege = eigen ? [eigen] : [{
                 art: 'lage', globalId: el.globalId,
                 // Die Höhe bleibt — verschoben wird in der Ebene. Wer die Sohle
                 // ändern will, hat dafür ein eigenes Werkzeug.
                 nachher: { x: zielX, y: el.anker.y, z: zielZ },
             }];
+            if (el.stand?.bauplan?.rezept && !eigen) return null;
 
-            eintraege.push(..._anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }));
+            eintraege.push(..._anschluesseNachfuehren(el, werte, { ost, nord, dx, dz }, { bauplanVon }));
             return eintraege;
         },
     },
@@ -2021,7 +2081,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'hoehe', titel: 'Höhe', einheit: 'm NN', typ: 'zahl' },
             {
                 name: 'mitfuehren',
-                nurWenn: (el) => (el?.anschluesse?.length ?? 0) > 0,
+                // Eigene Haltungen folgen immer (echt) — der Regler gilt den gelieferten.
+                nurWenn: _gelieferteAnschluesse,
                 rueckfall: {
                     titel: 'Angeschlossene Haltungen', typ: 'auswahl',
                     optionen: [
@@ -2035,9 +2096,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             ost: _rundeM(el?.lage?.ost ?? 0),
             nord: _rundeM(el?.lage?.nord ?? 0),
             hoehe: _rundeM(nnAusWelt(el?.anker?.y ?? 0, el?.hoehenversatz ?? 0)),
-            ...((el?.anschluesse?.length ?? 0) > 0 ? { mitfuehren: 'forderung' } : {}),
+            ...(_gelieferteAnschluesse(el) ? { mitfuehren: 'forderung' } : {}),
         }),
-        anwenden: (el, werte) => {
+        anwenden: (el, werte, { bauplanVon = null } = {}) => {
             if (!el?.globalId || !el?.anker || !el?.versatz) return null;
             if (el.lageUmkehrbar === false) return null;
             const ost = Number(werte.ost), nord = Number(werte.nord), hoehe = Number(werte.hoehe);
@@ -2046,18 +2107,15 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const d = { x: ziel.x - el.anker.x, y: ziel.y - el.anker.y, z: ziel.z - el.anker.z };
             if ([d.x, d.y, d.z].every(v => Math.abs(v) < 1e-4)) return null;
 
-            const plan = el.stand?.bauplan;
-            if (plan?.rezept) {
-                const rezept = rezeptNach(plan.rezept);
-                if (typeof rezept?.verschiebe !== 'function') return null;
-                return erzeugtEintrag({
-                    rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
-                    globalId: el.globalId, parameter: rezept.verschiebe(plan.parameter, d),
-                });
-            }
-            const eintraege = [{ art: 'lage', globalId: el.globalId, nachher: ziel }];
-            eintraege.push(..._anschluesseNachfuehren(el, werte, { ost, nord, zielX: ziel.x, zielZ: ziel.z }));
-            return eintraege;
+            // Eigen: der Bauplan wandert; geliefert: die Lage am Anker.
+            const eigen = _eigenVerschoben(el, d);
+            if (el.stand?.bauplan?.rezept && !eigen) return null;
+            // Ein Knoten nimmt seine Anschlüsse mit — eigen wie geliefert (bis
+            // 2026-09-19 kehrte der eigene Zweig vorher zurück: der Regler stand
+            // da und wirkte nicht).
+            const nach = _anschluesseNachfuehren(el, werte, { ost, nord, dx: d.x, dz: d.z }, { bauplanVon });
+            if (eigen && !nach.length) return eigen;
+            return [eigen ?? { art: 'lage', globalId: el.globalId, nachher: ziel }, ...nach];
         },
     },
     {
@@ -2944,7 +3002,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 ? `„${el?.name ?? 'Der Schacht'}" ist ein Endschacht (1 Anschluss) — entfernen geht nur beim Durchgangsschacht mit genau zwei.`
                 : `„${el?.name ?? 'Der Schacht'}" hat ${n} Anschlüsse — entfernen geht nur beim Durchgangsschacht mit genau zwei.`;
         },
-        anwenden: (el) => {
+        anwenden: (el, _werte, { bauplanVon = null } = {}) => {
             const a = el?.anschluesse ?? [];
             if (!el?.globalId || a.length !== 2) return null;
             const zu = a.find(k => k.ende === 'ende');     // fliesst HIER hinein
@@ -2953,15 +3011,19 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             // keine Durchgangs-Zusammenlegung — lieber nichts als Unsinn.
             if (!zu || !ab) return null;
 
-            const fernZu = zu.anfang;                      // Anfang des Zulaufs
-            const fernAb = ab.ende_;                       // Ende des Ablaufs
-            const knick = { x: zu.ende_.x, y: zu.ende_.y, z: zu.ende_.z };
-            const punkte = [
-                [fernZu.x, fernZu.y, fernZu.z],
-                [knick.x, knick.y, knick.z],
-                [fernAb.x, fernAb.y, fernAb.z],
-            ];
+            // ALLE Punkte beider Haltungen (2026-09-19): der Zulauf bis zum
+            // Schacht, der Ablauf ab dem Schacht — der Schacht wird ein Knick
+            // (mit der Höhe des Zulauf-Endes, wie bisher). Bis hierher blieben
+            // nur die fernen Enden und der Schacht; jeder Knick dazwischen ging
+            // verloren.
+            const zuP = punkteDerAchse({ polyline: zu.punkte, anfang: zu.anfang, ende: zu.ende_ });
+            const abP = punkteDerAchse({ polyline: ab.punkte, anfang: ab.anfang, ende: ab.ende_ }).slice(1);
+            const punkte = [...zuP, ...abP].map(p => [p.x, p.y, p.z]);
             const dn = Math.max(Number(zu.dn) || 0, Number(ab.dn) || 0) || 300;
+            // Die fernen Schächte, wie die beiden Haltungen sie ERKLÄRTEN (K8) —
+            // bis hierher verlor die neue Haltung beide Anschlüsse.
+            const erklaert = (k) => (modellVon(k.globalId) === 'cde' ? bauplanVon?.(k.globalId)?.parameter?.anschluss : null) ?? {};
+            const anschluss = { anfang: erklaert(zu).anfang, ende: erklaert(ab).ende };
 
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
@@ -2971,8 +3033,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                     rezept: rezeptFuerNetzrolle('kante'),
                     kategorie: zu.kategorie ?? 'IFCPIPESEGMENT',
                     name: zu.name || ab.name || '',
-                    // Zwei Punkte vom Zulauf, einer vom Ablauf — je mit dem Bezug SEINER Achse (K4).
-                    parameter: _kanteAusFremdenHoehen(punkte, dn, [zu, zu, ab]),
+                    // Jeder Punkt mit dem Bezug SEINER Achse (K4).
+                    parameter: _mitAnschluss(_kanteAusFremdenHoehen(punkte, dn, [...zuP.map(() => zu), ...abP.map(() => ab)]), anschluss),
                 }),
             ];
         },
