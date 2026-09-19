@@ -2938,6 +2938,18 @@ export class IfcEngine {
         return this._gelaendeSamplerLauf;
     }
 
+    /**
+     * Das URGELÄNDE als Höhenabfrage (Teil XX, Stufe D): die gelieferte Fläche
+     * eines Geländes, auch wenn es verborgen ist (die Anzeige steht davor).
+     * Der Querschnitt zeichnet sie gegen das Gelände jetzt (`hoeheAn`).
+     * @returns {Promise<{sample:(x:number, z:number) => number|null}|null>}
+     */
+    async urSamplerVon(globalId) {
+        if (!globalId) return null;
+        const netz = await this._quellFormVon(globalId, 'mesh');
+        return netz?.triCount ? makeHeightSampler(netz.positions, netz.triCount) : null;
+    }
+
     /** Synchron: Höhe aus dem gecachten Sampler — undefined, solange er nicht bereit ist. */
     hoeheAn(x, z) {
         if (!this._gelaendeSampler) return undefined;

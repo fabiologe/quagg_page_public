@@ -489,10 +489,11 @@ const ABLEITUNGEN_ERWEITERT = {
         vorschau(parameter, { hoeheAn = null, hoehenversatz = 0, farben = {} } = {}) {
             // Je Operation IHR Geist — gezeichnet von ihrem Eintrag in der
             // Registry (Teil XXIII, A2); die Zeichenhilfen reichen wir hinein.
-            const c = { hoeheAn, hoehenversatz, farbe: farben.warn ?? '#ffb74d', primitive: [], chips: [], hilfen: VORSCHAU_HILFEN };
+            // `profile`: das Querprofil als Skizze im Formular (Teil XX, Stufe D).
+            const c = { hoeheAn, hoehenversatz, farbe: farben.warn ?? '#ffb74d', primitive: [], chips: [], profile: [], hilfen: VORSCHAU_HILFEN };
             const ops = aufGelaende(_opsInWelt(parameter?.operationen ?? [], hoehenversatz), hoeheAn);
             for (const op of ops) GELAENDE_OPS[op.art]?.vorschau?.(op, c);
-            return { primitive: c.primitive, chips: c.chips, hinweise: [] };
+            return { primitive: c.primitive, chips: c.chips, profile: c.profile, hinweise: [] };
         },
 
         /** Die Ecken dieses Vorgangs — wer sie zeigt oder zieht, fragt HIER (Teil XXIII, A2). */
@@ -511,6 +512,17 @@ const ABLEITUNGEN_ERWEITERT = {
                 .map(e => ({ ...e, op: j }))),
         /** Welche Masse ein Eckzug an Operation j setzen darf, und was technisch geht. */
         setzbar: (parameter, j) => GELAENDE_OPS[parameter?.operationen?.[j]?.art]?.setzbar ?? null,
+        /**
+         * Der Schnitt quer zur Achse (Teil XX, Stufe D) — die erste Operation, die
+         * eine Achse hat (Gerinne). Ohne: kein Schnitt.
+         */
+        querschnitt: (parameter, ctx = {}) => {
+            for (const op of parameter?.operationen ?? []) {
+                const q = GELAENDE_OPS[op?.art]?.querschnitt?.(op?.parameter ?? {}, { welt: ctx.welt ?? ((v) => v) });
+                if (q) return { ...q, titel: GELAENDE_OPS[op.art].titel };
+            }
+            return null;
+        },
 
         verschiebe: (parameter, delta) => ({
             ...parameter,
@@ -1062,6 +1074,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             }
         }
         const primitive = [];
+        const profile = [];
         let deckung = Infinity, breiteMax = 0, tiefeMax = 0;
         for (const l of laeufe) {
             const r = l.dn / 2000;
@@ -1072,6 +1085,8 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             const gb = grabenbreite({ dn: l.dn, wanddickeMm: w.wanddickeMm, tiefe, wand, eigene: w.breite });
             breiteMax = Math.max(breiteMax, gb.sohlbreite);
             primitive.push(..._grabenGeist(sohle, { sohlbreite: gb.sohlbreite, boeschung: wand.n, tiefe }, farbe));
+            // Die Skizze im Formular (Teil XX, Stufe D) — je Haltung, die erste genügt dem Auge.
+            if (!profile.length) profile.push({ titel: 'Graben', sohlbreite: gb.sohlbreite, neigung: wand.n, tiefe });
             for (const p of l.punkte) { const h = hoeheAn?.(p.x, p.z); if (Number.isFinite(h)) deckung = Math.min(deckung, h - rohrscheitel(p.y, bezug)); }
         }
         // Die Schächte am Strang: ein Zylinder je Baugrube.
@@ -1110,7 +1125,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
             chips.push({ art: deckung < mindestUeberdeckung ? 'warnung' : 'vorschau',
                          text: `Überdeckung ≥ ${deckung.toFixed(2)} m${deckung < mindestUeberdeckung ? ` — unter ${mindestUeberdeckung} m` : ''}` });
         }
-        return { primitive, chips, hinweise: [] };
+        return { primitive, chips, profile, hinweise: [] };
     },
 
     /** Der Bauplan trägt keine Punkte — die Quellen wandern selbst mit dem Rahmen. */
@@ -1167,6 +1182,18 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
         return aus;
     },
     setzbar: () => ({ breite: { ueber: 0 }, winkelGrad: { ueber: 0, unter: 90 } }),
+    /**
+     * Der Schnitt quer zur Haltung (Teil XX, Stufe D): die Stationen, die der
+     * Lauf gerechnet hat (Grabensohle, Sohlbreite je Teilstrecke, Welt) — die
+     * erste Haltung, also die gewählte.
+     */
+    querschnitt(parameter, ctx = {}) {
+        const op = (ctx.lauf?.ops ?? []).find(o => (o?.parameter?.stationen?.length ?? 0) >= 2);
+        if (!op) return null;
+        const st = op.parameter.stationen;
+        return { titel: 'Kanalgraben', achse: st.map(q => ({ x: Number(q.x), y: Number(q.y), z: Number(q.z) })),
+                 sohlbreiten: st.map(q => Number(q.sohlbreite) || 0), neigung: Math.max(0, Number(op.parameter.boeschung) || 0) };
+    },
     /**
      * Ein Mass setzen. Ein Alt-Journal (vor B3) kennt `wandform` nicht und
      * leitet Breite und Winkel aus `boeschung`/`arbeitsraum` ab — sie würden

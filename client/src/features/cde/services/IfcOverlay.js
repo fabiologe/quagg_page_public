@@ -28,6 +28,8 @@ import { baueAusBauplan } from './Bauteilrezepte.js';
 
 /** Ebenen und ihre renderOrder — die Zahl IST die Reihenfolge, oben gewinnt. */
 export const EBENEN = Object.freeze({
+    // Die Querlinie des Gerinne-Schnitts (Teil XX, Stufe D) — unter der Vorschau.
+    querschnitt: 1000,
     vorschau: 1001,
     geist:    1002,
     griffe:   1003,

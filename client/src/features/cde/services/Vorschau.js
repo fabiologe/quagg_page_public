@@ -67,7 +67,8 @@ export const FAERBE_FARBEN = Object.freeze({
  * @param {object}   [ctx.farben]         {accent, warn, ok} als Hex
  * @param {boolean}  [ctx.einfach]        nur Färbung + Linien (Budget überschritten)
  * @param {Function} [ctx.jetzt]          Uhr (Tests)
- * @returns {{primitive:Array, faerbungen:Array<{globalId, rolle}>, chips:Array<{art, text}>,
+ * `profile`: Querprofile als Skizze fürs Formular — {titel, sohlbreite, neigung, tiefe} (Teil XX, Stufe D).
+ * @returns {{primitive:Array, faerbungen:Array<{globalId, rolle}>, chips:Array<{art, text}>, profile:Array,
  *            hinweise:string[], dauerMs:number}}
  */
 export function vorschauFuer(beschreibungen, ctx = {}) {
@@ -75,7 +76,7 @@ export function vorschauFuer(beschreibungen, ctx = {}) {
     const t0 = uhr();
     const liste = (Array.isArray(beschreibungen) ? beschreibungen : [beschreibungen]).filter(e => e?.art);
     const farben = { ...FARBEN_VORGABE, ...(ctx.farben ?? {}) };
-    const aus = { primitive: [], faerbungen: [], chips: [], hinweise: [] };
+    const aus = { primitive: [], faerbungen: [], chips: [], profile: [], hinweise: [] };
     const klammern = new Map();      // ableitungId → { rezept, parameter, teile }
     let neue = 0;
     let festlegungen = 0;
@@ -132,6 +133,7 @@ export function vorschauFuer(beschreibungen, ctx = {}) {
                 aus.primitive.push(...(v.primitive ?? []));
                 aus.faerbungen.push(...(v.faerbungen ?? []));
                 aus.chips.push(...(v.chips ?? []));
+                aus.profile.push(...(v.profile ?? []));
                 aus.hinweise.push(...(v.hinweise ?? []));
             }
         }

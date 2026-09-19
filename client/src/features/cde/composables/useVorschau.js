@@ -35,7 +35,7 @@ const ROLLEN = ['dimmen', 'kandidat', 'ziel'];
  */
 export function useVorschau({ engine, bearbeitung, getHoeheAn = null, getHoehenversatz = null,
                               farben = null, verzoegerungMs = 50 } = {}) {
-    /** { chips, hinweise, dauerMs, einfach } oder null, wenn nichts scharf ist. */
+    /** { chips, profile, hinweise, dauerMs, einfach } oder null, wenn nichts scharf ist. */
     const stand = ref(null);
     let timer = null;
     let lauf = 0;
@@ -100,7 +100,7 @@ export function useVorschau({ engine, bearbeitung, getHoeheAn = null, getHoehenv
         if (nr !== lauf) return null;
 
         if (!einfach && v.dauerMs > VORSCHAU_BUDGET_MS) einfachFuer = b.id;
-        stand.value = { chips: v.chips, hinweise: v.hinweise, dauerMs: v.dauerMs, einfach };
+        stand.value = { chips: v.chips, profile: v.profile ?? [], hinweise: v.hinweise, dauerMs: v.dauerMs, einfach };
         return stand.value;
     }
 

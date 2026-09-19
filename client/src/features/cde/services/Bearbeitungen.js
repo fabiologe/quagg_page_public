@@ -1269,6 +1269,8 @@ export function formwerkzeugFuer(art, op = GELAENDE_OPS[art]) {
         // Die Punkte liegen AUF dem Gelände (Teil XIV).
         hoehenAus: 'gelaende',
         ...(w.nachZug ? { nachZug: (el, zug) => w.nachZug(zug, { versatz: el?.hoehenversatz ?? 0 }) } : {}),
+        // Was an der Eingabe technisch nicht geht, sagt die Operation (E5).
+        ...(w.warumNicht ? { warumNicht: (el, werte, { zug = [] } = {}) => (zug?.length >= mindestPunkte ? w.warumNicht(werte, zug) : null) } : {}),
         anwenden: (el, werte, { zug = [] } = {}) => {
             if (!el?.globalId || zug.length < mindestPunkte) return null;
             const r = w.ausEingabe(werte, zug, { versatz: el.hoehenversatz ?? 0 });

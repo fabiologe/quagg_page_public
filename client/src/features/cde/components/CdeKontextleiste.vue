@@ -42,6 +42,10 @@
           <CdeIcon name="pointer" :size="12" /> {{ g.text }}
         </button>
       </div>
+      <!-- Das Querprofil als Skizze (Teil XX, Stufe D): Gerinne, Graben. -->
+      <div v-if="profile.length" class="kl-profile">
+        <CdeQuerprofilSkizze v-for="(p, i) in profile" :key="i" :profil="p" />
+      </div>
       <div v-if="chips.length" class="kl-chips">
         <span v-for="(c, i) in chips" :key="i" class="kl-chip" :class="`kl-chip--${c.art}`">{{ c.text }}</span>
       </div>
@@ -84,6 +88,7 @@
 import { computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
+import CdeQuerprofilSkizze from './CdeQuerprofilSkizze.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { eingabeArt, schreibtAmBauplan } from '../services/Bearbeitungen.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
@@ -93,6 +98,8 @@ const props = defineProps({
   tipp:         { type: Object, default: null },
   /** [{ art, text }] aus der Vorschau */
   chips:        { type: Array, default: () => [] },
+  /** Querprofile der Vorschau — {titel, sohlbreite, neigung, tiefe} (Teil XX, Stufe D). */
+  profile:      { type: Array, default: () => [] },
   /** { text, werkzeugId } nach dem Übernehmen, oder null */
   rueckmeldung: { type: Object, default: null },
   /** Der Eingabe-Motor des Raums (useEingabe) — Zug, Gesten, Enter-Regel (S3) */
@@ -204,6 +211,7 @@ function naechsterSchritt() {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .kl-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.kl-profile { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .kl-gesten { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .kl-geste {
   display: inline-flex; align-items: center; gap: 0.3rem;

@@ -870,6 +870,8 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 //                                     Achspunkte, Sohlkanten, Oberkante/Fuss — siehe `Eckmasse.js`
 //   setzbar                           {feld: {ueber?, min?}}: welche Masse ein Eckzug setzen darf,
 //                                     und was technisch gerade noch geht
+//   querschnitt(p, {welt})            → {achse (Sohle als Höhe), sohlbreite(n), neigung}: der Schnitt
+//                                     quer zur Achse (Teil XX, Stufe D) — siehe `Querschnitt.js`
 //   cutTyp / fillTyp(p)               der IFC-PredefinedType, den sie beisteuert
 //   profilfaehig                      ob ein Profilkörper sie exakt nachbauen kann
 //   vorschau(op, c)                   ihr Geist vor dem Übernehmen (Hilfen in `c`)
@@ -1009,6 +1011,12 @@ export function aufGelaende(operationen, hoeheAn, { ops = GELAENDE_OPS } = {}) {
     });
 }
 const _mittelY = (punkte) => punkte.reduce((a, p) => a + p.y, 0) / punkte.length;
+/** Weglänge einer Punktliste im Grundriss (m). */
+const _weglaengeXZ = (punkte) => {
+    let weg = 0;
+    for (let i = 1; i < (punkte?.length ?? 0); i++) weg += Math.hypot(Number(punkte[i].x) - Number(punkte[i - 1].x), Number(punkte[i].z) - Number(punkte[i - 1].z));
+    return weg;
+};
 const _neigungOderNull = (w) => { const n = Number(w); return Number.isFinite(n) && n > 0 ? n : null; };
 
 export const GELAENDE_OPS = Object.freeze({
@@ -1038,10 +1046,16 @@ export const GELAENDE_OPS = Object.freeze({
                     ...(Number.isFinite(e) ? { sohleEnde: nn(e) } : {}),
                 };
             },
+            // Eine Achse ohne Länge (zweimal dieselbe Stelle getippt) ist kein
+            // Gerinne — technisch unmöglich, nicht nur fachlich fraglich (E5).
+            // Die Browserprobe vom 2026-09-19 hatte eins angelegt.
+            warumNicht: (werte, zug) => (_weglaengeXZ(zug) >= 0.01 ? null : 'Die Achse hat keine Länge — zwei verschiedene Stellen tippen.'),
             ausEingabe: (werte, zug) => {
                 if (!Number.isFinite(Number(werte?.sohleAnfang))) return null;
+                if (!(_weglaengeXZ(zug) >= 0.01)) return null;
+                const achse = (zug ?? []).map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
                 return { titel: 'Gerinne', ops: [{ art: 'gerinne', parameter: {
-                    achse: zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 })),
+                    achse,
                     sohlbreite: Number(werte.sohlbreite) || 0,
                     boeschung: Number(werte.boeschung) || 1.5,
                     sohleAnfang: Number(werte.sohleAnfang),
@@ -1057,6 +1071,27 @@ export const GELAENDE_OPS = Object.freeze({
         // bis Ende über die Weglänge (Teil XXII, Rest).
         lagefelder: ['achse'],
         ecken: (p, ctx) => (_stationenVon(p) ? [] : gerinneEcken(p, ctx)),
+        /**
+         * Der Schnitt quer zur Achse (Teil XX, Stufe D): Achse mit der SOHLE als
+         * Höhe (Welt), Sohlbreite je Teilstrecke, Neigung. Die Sohle läuft wie in
+         * `gerinne` — mit Stationen stückweise, sonst linear über die Weglänge.
+         */
+        querschnitt: (p, { welt = (v) => v } = {}) => {
+            const st = _stationenVon(p);
+            if (st) {
+                return { achse: st.map(q => ({ x: Number(q.x), y: welt(Number(q.y)), z: Number(q.z) })),
+                         sohlbreiten: st.map(q => Number(q.sohlbreite ?? p.sohlbreite) || 0),
+                         neigung: Math.max(0, Number(p.boeschung) || 0) };
+            }
+            const achse = (p.achse ?? []).map(q => ({ x: Number(q.x), z: Number(q.z) }));
+            const sa = Number(p.sohleAnfang), se = Number.isFinite(Number(p.sohleEnde)) ? Number(p.sohleEnde) : sa;
+            if (achse.length < 2 || !Number.isFinite(sa)) return null;
+            const wege = [0];
+            for (let i = 1; i < achse.length; i++) wege.push(wege[i - 1] + Math.hypot(achse[i].x - achse[i - 1].x, achse[i].z - achse[i - 1].z));
+            const L = wege.at(-1);
+            return { achse: achse.map((q, i) => ({ ...q, y: welt(L > 0 ? sa + (se - sa) * (wege[i] / L) : sa) })),
+                     sohlbreite: Math.max(0, Number(p.sohlbreite) || 0), neigung: Math.max(0, Number(p.boeschung) || 0) };
+        },
         setzbar: { sohlbreite: { min: 0 }, boeschung: { min: 0 }, sohleAnfang: {}, sohleEnde: {} },
         wirkbereich(raster, p) {
             // MIT STATIONEN (Teil XXI): die Achse sind die Stationen, die Breite
@@ -1097,6 +1132,8 @@ export const GELAENDE_OPS = Object.freeze({
             if (pts.length < 2 || !Number.isFinite(pts[0].y)) return;
             const tiefe = c.hilfen.tiefeUeber(c.hoeheAn, pts);
             c.primitive.push(...c.hilfen.grabenGeist(pts, { sohlbreite: Number(q.sohlbreite) || 1, boeschung: Number(q.boeschung) || 1.5, tiefe }, c.farbe));
+            // Das Querprofil als Skizze im Formular (Teil XX, Stufe D).
+            c.profile?.push({ titel: 'Gerinne', sohlbreite: Number(q.sohlbreite) || 0, neigung: Math.max(0, Number(q.boeschung) || 0), tiefe });
             c.chips.push({ art: 'vorschau', text: `Gerinne · Sohle ${(pts[0].y + c.hoehenversatz).toFixed(2)} → ${(pts[pts.length - 1].y + c.hoehenversatz).toFixed(2)} m NN · bis ${tiefe.toFixed(1)} m tief` });
         },
     },

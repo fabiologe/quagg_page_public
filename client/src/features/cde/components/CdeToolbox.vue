@@ -146,6 +146,24 @@
             Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper. Sohlkante, Oberkante und Fuß gleiten quer und setzen ein Maß des Ganzen: Sohlbreite, Böschung, Arbeitsraum.
           </p>
         </section>
+        <!-- DER GERINNE-SCHNITT (Teil XX, Stufe D): an einer Station quer zur
+             Achse — Urgelände, Gelände jetzt, Soll. Nur auf Wunsch gerechnet. -->
+        <section v-if="querschnittMoeglich" class="tb-gruppe">
+          <h4 class="tb-kopf" title="Urgelände, Gelände jetzt und Soll-Trapez quer zur Achse">Querschnitt</h4>
+          <div v-if="!querschnittOffen" class="tb-liste">
+            <button class="tb-btn" type="button" title="Den Schnitt an einer Station zeigen" @click="querschnittOffen = true">
+              <CdeIcon name="gerinne" :size="13" /> <span>Querschnitt zeigen</span>
+            </button>
+          </div>
+          <template v-else>
+            <CdeQuerschnitt :subjekt="bearbeitung.bauteil" />
+            <div class="tb-liste">
+              <button class="tb-btn tb-btn--aus" type="button" @click="querschnittOffen = false">
+                <CdeIcon name="close" :size="13" /> <span>Schliessen</span>
+              </button>
+            </div>
+          </template>
+        </section>
         <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
           <h4 class="tb-kopf" :title="g.warum">{{ g.titel }}</h4>
           <div class="tb-liste">
@@ -348,6 +366,8 @@ import { hatHoehenbezug } from '../services/Hoehenbezug.js';
 import { achsAnzeige } from '../services/Achsanzeige.js';
 import { hatErdbauEcken } from '../services/Griffe.js';
 import IfcSemanticWindow from './IfcSemanticWindow.vue';
+import CdeQuerschnitt from './CdeQuerschnitt.vue';
+import { schnittachseVon } from '../services/QuerschnittSicht.js';
 
 const bearbeitung = useBearbeitung();
 const ifc = useIfcStore();
@@ -520,6 +540,16 @@ function eckenZiehen() {
   if (!ok) rueckmeldung.value = bearbeitung.letzterGrund || 'Ecken ziehen liess sich gerade nicht starten.';
 }
 function auslegen() { return werkzeug('bauform-auslegen', { bauform: herleitung.value.bauform }); }
+
+/** Der Gerinne-Schnitt (Teil XX, Stufe D): nur an Vorgängen mit einer Achse (Gerinne, Kanalgraben). */
+const querschnittMoeglich = computed(() => {
+  void ifc.geometrieStand;
+  const plan = bearbeitung.bauteil?.stand?.bauplan ?? null;
+  return !!schnittachseVon(plan, { lauf: api.laufVon?.(plan?.ableitung) ?? null });
+});
+const querschnittOffen = ref(false);
+// Eine andere Auswahl schliesst ihn (die Querlinie im Raum geht mit).
+watch(() => bearbeitung.bauteil?.globalId, () => { querschnittOffen.value = false; });
 
 // ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────
 /** Ein Zeichenwerkzeug starten — über den Motor im Raum; Vorlagen belegen vor. */

@@ -368,6 +368,7 @@
             v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung || bearbeitung.eckenFuer"
             :tipp="tippWerkzeug"
             :chips="vorschau.stand.value?.chips ?? []"
+            :profile="vorschau.stand.value?.profile ?? []"
             :rueckmeldung="rueckmeldung"
             :motor="eingabe"
             @fertig="messen.aktiv.value ? messen.beenden() : annotationActive ? annotationen.umschalten() : bearbeitung.eckenBeenden()"
@@ -491,7 +492,7 @@ import { useModellAblage, fmtBytes, fmtDate } from '../composables/useModellAbla
 import { useSchnitt } from '../composables/useSchnitt.js';
 import { useMessen } from '../composables/useMessen.js';
 import { useAnnotationen } from '../composables/useAnnotationen.js';
-import { useZeiger } from '../composables/useZeiger.js';
+import { tokenFarben, useZeiger } from '../composables/useZeiger.js';
 import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
@@ -1795,6 +1796,14 @@ provideViewerApi({
   erdmassen:            (bauplaene) => engine.value?.erdmassen(bauplaene) ?? Promise.resolve([]),
   /** Die Kennzahlen einer Ableitung aus dem letzten Aufbau — für die Mengen am Cut/Fill (Teil XX). */
   kennzahlenVon:        (ableitung) => engine.value?.autor?.ableitungen?.get(ableitung)?.kennzahlen ?? null,
+  /** Was der Lauf zu einer Ableitung gerechnet hat (Operationen in Welt, Kanten) — Querschnitt (Teil XX, D). */
+  laufVon:              (ableitung) => (ableitung ? engine.value?.autor?.ableitungen?.get(ableitung) ?? null : null),
+  /** Das Urgelände als Höhenabfrage — auch verborgen (Teil XX, D). */
+  urSampler:            (globalId) => engine.value?.urSamplerVon?.(globalId) ?? Promise.resolve(null),
+  /** Die Querlinie des Schnitts im Raum; null räumt sie ab (Teil XX, D). */
+  zeigeQuerlinie:       (punkte) => (punkte?.length === 2
+    ? engine.value?.overlayZeige?.('querschnitt', [{ art: 'linie', punkte, farbe: tokenFarben().accent }])
+    : engine.value?.overlayLeere?.('querschnitt')),
   /**
    * Ein Bauteil ohne Mausklick auswählen — für den Sprung aus der Prüfliste.
    *
