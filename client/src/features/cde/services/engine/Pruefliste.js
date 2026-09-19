@@ -23,7 +23,8 @@ import { pruefeStand } from '../Prueflauf.js';
  * @param {object} [opts.regelwerk]
  * @returns {Array<{modelId, localId, globalId, kategorie, name, befunde}>}
  */
-export function pruefeAlles(engine, { typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk = aufgeloestesRegelwerk() } = {}) {
+export function pruefeAlles(engine, { typprofilFuer = () => null, umgekehrtFuer = () => false, regelwerk = aufgeloestesRegelwerk(),
+                                      forderungVon = () => null } = {}) {
     const out = [];
     for (const [modelId, achsen] of (engine._achsen ?? new Map())) {
         const quelle = engine.quelleVon(modelId);
@@ -91,6 +92,8 @@ export function pruefeAlles(engine, { typprofilFuer = () => null, umgekehrtFuer 
         netz: engine.netzAuskunft?.()?.netz ?? null,
         bauplaene: engine._cdeBauplaene ?? null,
         umgekehrtFuer, typprofilFuer, regelwerk,
+        // Alte Forderungen an eigenen Haltungen (Fahrplan R3) — in m NN.
+        forderungVon, hoehenversatz: engine._hoehenversatz ?? 0,
     })) out.push({ modelId: CDE_MODELL_ID, ...z });
 
     // Das Schwerste zuerst — eine Liste, die man von oben abarbeitet.

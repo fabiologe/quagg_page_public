@@ -58,7 +58,11 @@ export function baueSicht({ strang, hoehenversatz = 0, parametrikStand = new Map
         const hA = (sohleAnAchse(Number(k.anfang.y) || 0, k) || 0) + hoehenversatz;
         const hE = (sohleAnAchse(Number(k.ende.y) || 0, k) || 0) + hoehenversatz;
 
-        const stand = parametrikStand.get?.(k.globalId);
+        // An einer EIGENEN Kante gilt der Bauplan (K4): eine alte Forderung
+        // von vor K4 löst kein Werkzeug mehr ein — sie ist ein Befund
+        // (`forderung_ohne_wirkung`, Fahrplan R3), keine Linie „gefordert".
+        const eigen = k.quelle === 'bauplan';
+        const stand = eigen ? null : parametrikStand.get?.(k.globalId);
         const fA = Number(stand?.sohlhoeheAnfang);
         const fE = Number(stand?.sohlhoeheEnde);
         const gefordert = (Number.isFinite(fA) || Number.isFinite(fE))

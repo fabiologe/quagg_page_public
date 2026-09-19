@@ -230,3 +230,47 @@ describe('8 — Stufe 4 (K4b, erst eine Auslieferung nach K4a): gespeichert wird
         expect(Math.abs(sohleImRaum(plan(), 30) - 99.91)).toBeLessThan(MM);
     });
 });
+
+describe('Alte Forderungen an eigenen Haltungen (Fahrplan R3)', () => {
+    // Vor K4 schrieb „Sohlhöhen festlegen" an einer eigenen Haltung eine
+    // Forderung (`parametrik`). Kein Werkzeug löst sie mehr ein — der
+    // Längsschnitt zeigte sie trotzdem als „gefordert", still.
+    async function mitAlterForderung() {
+        const b = useBearbeitung();
+        const ae = useAenderungen();
+        await ae.bereit;
+        const erg = await b.fuehreAus(kommando('ko-r3', 'rohr-zeichnen', { neu: ['cde-R3'], werte: { name: 'R3', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 300 },
+            eingaben: { zug: [{ ost: 0, nord: 0, hoehe: 100 }, { ost: 30, nord: 0, hoehe: 99.85 }] } }));
+        expect(erg.grund).toBe(null);
+        // Die alte Forderung, wie sie vor K4 im Journal landete.
+        await ae.eintragen({ art: 'parametrik', globalId: 'cde-R3', nachher: { sohlhoeheAnfang: 99, sohlhoeheEnde: 98.9 }, modell: 'cde' });
+        return { b, ae };
+    }
+
+    it('der Längsschnitt zeigt an der eigenen Haltung keine Forderung mehr — der Bauplan gilt (vorher: „gefordert 99,00")', async () => {
+        const { ae } = await mitAlterForderung();
+        const s = subjektAusStand('cde-R3', { wirksamerStand: ae.wirksamerStand });
+        expect(s.strang[0].quelle).toBe('bauplan');
+        const sicht = baueSicht({ strang: s.strang, parametrikStand: ae.wirksamerStand('parametrik') });
+        expect(sicht.segmente[0].gefordert).toBe(null);
+        expect(sicht.segmente[0].geliefert.hA).toBeCloseTo(100, 9);
+        // Ein GELIEFERTES Glied mit derselben Festlegung behält seine Forderung.
+        const geliefert = baueSicht({ strang: [{ ...s.strang[0], globalId: 'G1', quelle: 'axisRep' }],
+                                      parametrikStand: new Map([['G1', { sohlhoeheAnfang: 99 }]]) });
+        expect(geliefert.segmente[0].gefordert).toMatchObject({ hA: 99 });
+    });
+
+    it('der Prüflauf meldet sie — mit der Kur, sie in den Bauplan zu übernehmen; danach ist der Befund weg', async () => {
+        const { b } = await mitAlterForderung();
+        const befunde = () => b.befundeVon('cde-R3').filter(x => x.regel === 'forderung_ohne_wirkung');
+        const [f] = befunde();
+        expect(f).toMatchObject({ schwere: 'warnung', kur: { bearbeitung: 'sohlhoehen-setzen', werte: { anfang: 99, ende: 98.9 } } });
+        expect(f.text).toMatch(/gefordert 99\.00 m NN → 98\.90 m NN, gebaut 100\.00 m NN → 99\.85 m NN/);
+        // Die Kur: dasselbe Werkzeug mit den Werten des Befunds — an einer eigenen Haltung der Bauplan.
+        const erg = await b.fuehreAus(kommando('ko-kur', 'sohlhoehen-setzen', { ziel: ['cde-R3'], werte: f.kur.werte }));
+        expect(erg.grund).toBe(null);
+        expect(rezeptNach('rohr').sohlen.lies(useAenderungen().wirksamerStand('erzeugt').get('cde-R3').parameter)
+            .map(v => Math.round(v * 1000) / 1000)).toEqual([99, 98.9]);
+        expect(befunde()).toEqual([]);
+    });
+});

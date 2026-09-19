@@ -216,6 +216,9 @@ export function strangMitAchsen(netz, kantenId, achseVon) {
             // Die Punkte dazwischen (K5): Länge und Gefälle eines Glieds laufen
             // entlang der Achse, nicht über die Sehne.
             punkte: a?.polyline ?? a?.punkte ?? null,
+            // Woher die Achse kommt — `bauplan` heisst eigen: dort gilt der
+            // Bauplan, keine Forderung (Fahrplan R3).
+            quelle: a?.quelle ?? null,
         };
     }).filter(k => k.globalId && k.anfang && k.ende);
 }

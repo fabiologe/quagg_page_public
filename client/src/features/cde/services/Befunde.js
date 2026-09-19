@@ -96,6 +96,9 @@ export const KUREN = Object.freeze({
     mindestabstand:      { bearbeitung: 'verschieben' },
     durchdringung:       { bearbeitung: 'verschieben' },
     schacht_auf_haltung: { bearbeitung: 'haltung-teilen' },
+    // Eine alte Forderung an einem eigenen Bauteil (Fahrplan R3): in den Bauplan
+    // übernehmen — die Werte bringt der Befund mit.
+    forderung_ohne_wirkung: { bearbeitung: 'sohlhoehen-setzen' },
 });
 
 /**
@@ -157,6 +160,40 @@ export function befundeFuerWerte(felder, werte) {
         });
     }
     return out;
+}
+
+/**
+ * EINE FORDERUNG OHNE WIRKUNG (Teil XXIV, Fahrplan R3).
+ *
+ * Vor K4 schrieb „Sohlhöhen festlegen" auch an einer EIGENEN Haltung eine
+ * Forderung (`parametrik`) — an einen Planer, den es nicht gibt. Seit K4
+ * gilt dort der Bauplan, und kein Werkzeug löst die alte Forderung mehr ein;
+ * der Längsschnitt zeigte sie trotzdem als „gefordert". Jetzt ist sie ein
+ * Befund, solange sie vom Gebauten abweicht (1 mm), mit der Kur, sie in den
+ * Bauplan zu übernehmen — danach stimmen beide, und der Befund ist weg.
+ *
+ * @param {object} kante      eine eigene Kante `{anfang, ende, achsbezug, dn, sohlabstand}` (Welt)
+ * @param {object} forderung  ihre Festlegungen (`sohlhoeheAnfang`/`Ende` in m NN)
+ * @param {object} [o]
+ * @param {number} [o.hoehenversatz]  Welt → m NN
+ */
+export function befundeFuerForderung(kante, forderung, { hoehenversatz = 0 } = {}) {
+    const fA = Number(forderung?.sohlhoeheAnfang), fE = Number(forderung?.sohlhoeheEnde);
+    if (!kante?.anfang || !kante?.ende || (!Number.isFinite(fA) && !Number.isFinite(fE))) return [];
+    const gA = sohleAnAchse(Number(kante.anfang.y), kante) + hoehenversatz;
+    const gE = sohleAnAchse(Number(kante.ende.y), kante) + hoehenversatz;
+    const abweichend = (f, g) => Number.isFinite(f) && Math.abs(f - g) > 1e-3;
+    if (!abweichend(fA, gA) && !abweichend(fE, gE)) return [];
+    const anfang = Number.isFinite(fA) ? fA : gA, ende = Number.isFinite(fE) ? fE : gE;
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    const nn = (v) => `${Number(v).toFixed(2)} m NN`;
+    return [{
+        regel: 'forderung_ohne_wirkung', schwere: 'warnung', feld: 'sohlhoehen',
+        text: `Sohlhöhen gefordert ${nn(anfang)} → ${nn(ende)}, gebaut ${nn(gA)} → ${nn(gE)} — an einem eigenen Bauteil wirkt eine Forderung nicht, der Bauplan gilt`,
+        wert: `${nn(gA)} → ${nn(gE)}`, grenze: `gefordert ${nn(anfang)} → ${nn(ende)}`,
+        quelle: 'Forderung von vor Teil XXIV (K4)',
+        kur: { ...KUREN.forderung_ohne_wirkung, werte: { anfang: r3(anfang), ende: r3(ende) } },
+    }];
 }
 
 /** Das Mindestgefälle für diese Nennweite — fester Wert, sonst die benannte Formel 1:DN (Regelwerk). */

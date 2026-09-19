@@ -132,6 +132,8 @@ function pruefeGeometrie() {
     typprofilFuer: (kategorie) => profilFuer(kategorie, bearbeitung.profilSatz),
     // Eine korrigierte Fliessrichtung gilt auch für die Prüfliste.
     umgekehrtFuer: (globalId) => masse.get(globalId)?.fliessrichtung === 'umgekehrt',
+    // Eine alte Forderung an einem eigenen Bauteil wird ein Befund (Fahrplan R3).
+    forderungVon: (globalId) => masse.get(globalId) ?? null,
   }) ?? [];
 }
 /**

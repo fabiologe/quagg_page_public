@@ -25,7 +25,7 @@
  *
  * Rein: kein Vue, kein Store, keine Engine.
  */
-import { befundeFuer, befundeFuerNetz, befundeFuerWerte } from './Befunde.js';
+import { befundeFuer, befundeFuerForderung, befundeFuerNetz, befundeFuerWerte } from './Befunde.js';
 import { rezeptNach } from './Bauteilrezepte.js';
 import { achseAusKante, cdeAchsenAus, netzauskunftAus, verdeckteAus } from './CdeAchsen.js';
 import { aufgeloestesRegelwerk } from './regeln/Regelwerk.js';
@@ -48,7 +48,8 @@ import { aufgeloestesRegelwerk } from './regeln/Regelwerk.js';
  */
 export function pruefeStand({ kanten = [], knoten = [], verdeckt = new Set(), netz = null,
                               umgekehrtFuer = () => false, typprofilFuer = () => null,
-                              regelwerk = aufgeloestesRegelwerk(), bauplaene = null } = {}) {
+                              regelwerk = aufgeloestesRegelwerk(), bauplaene = null,
+                              forderungVon = () => null, hoehenversatz = 0 } = {}) {
     const sichtbarK = kanten.filter(k => k?.globalId && !verdeckt.has(k.globalId));
     const sichtbarN = knoten.filter(k => k?.globalId && !verdeckt.has(k.globalId));
     const n = netz ?? netzauskunftAus(sichtbarK, sichtbarN).netz;
@@ -61,7 +62,9 @@ export function pruefeStand({ kanten = [], knoten = [], verdeckt = new Set(), ne
             achse: achseAusKante(k),
             umgekehrt: umgekehrtFuer(k.globalId),
             typprofil: typprofilFuer(kategorie),
-        }, regelwerk).concat(netzBefunde.get(`cde:${k.globalId}`) ?? []);
+        }, regelwerk).concat(netzBefunde.get(`cde:${k.globalId}`) ?? [])
+            // Eine alte Forderung, die kein Werkzeug mehr einlöst (Fahrplan R3).
+            .concat(befundeFuerForderung(k, forderungVon(k.globalId), { hoehenversatz }));
         if (befunde.length) out.push({ localId: `cde:${k.globalId}`, globalId: k.globalId, kategorie, name: k.name ?? '', befunde });
     }
     for (const k of sichtbarN) {
@@ -106,6 +109,7 @@ export function pruefeStandAusJournal(wirksamerStand, opts = {}) {
         verdeckt: verdeckteAus(wirksamerStand('geloescht')),
         // Eine festgelegte Fliessrichtung gilt auch hier — wie in der Prüfliste.
         umgekehrtFuer: (gid) => masse.get(gid)?.fliessrichtung === 'umgekehrt',
+        forderungVon: (gid) => masse.get(gid) ?? null,
         ...opts,
     });
 }

@@ -706,6 +706,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     function pruefeEigenes() {
         return pruefeStandAusJournal(useAenderungen().wirksamerStand, {
             typprofilFuer: (kategorie) => profilFuer(kategorie, profilSatz.value),
+            hoehenversatz: rahmen.value?.hoehenversatz ?? 0,
         });
     }
     function befundeVon(globalId) {
