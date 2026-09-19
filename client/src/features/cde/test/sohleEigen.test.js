@@ -33,6 +33,7 @@ import { baueSicht } from '../services/LaengsschnittSicht.js';
 import { setzeSchreibStufeFuerTests } from '../services/JournalFormat.js';
 import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
+import { registriereRezepte } from '../services/katalog/Katalog.js';
 
 const SCHLUESSEL = 'ifc-repo:global:aenderungen';
 
@@ -273,4 +274,42 @@ describe('Alte Forderungen an eigenen Haltungen (Fahrplan R3)', () => {
             .map(v => Math.round(v * 1000) / 1000)).toEqual([99, 98.9]);
         expect(befunde()).toEqual([]);
     });
+});
+
+describe('Rechteckprofil: Abstand Mitte → Sohle ist die halbe Tiefe (Fahrplan R6)', () => {
+    // 7a: „Ein Rechteckprofil nimmt den Abstand Mitte → Sohle über dieselbe
+    // Formel (halbe Tiefe), ist aber nicht eigens getestet." Ein Rechteckkanal
+    // aus der Bibliothek, 800 mm hoch — der tiefste Punkt des gebauten
+    // Körpers muss auf der gesetzten Sohle liegen, in beiden Speicherformen.
+    const RECHTECKKANAL = {
+        id: 'rechteckkanal', titel: 'Rechteckkanal', icon: 'laengsschnitt', bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCPIPESEGMENT', mindestPunkte: 2, geschlossen: false, netzrolle: 'kante',
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
+            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
+            { name: 'hoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'b', titel: 'Breite', einheit: 'mm', typ: 'zahl', vorgabe: 1200 },
+            { name: 'h', titel: 'Höhe', einheit: 'mm', typ: 'zahl', vorgabe: 800 },
+        ],
+        geometrie: { art: 'sweep', profil: { art: 'rechteck', breite: 'b', tiefe: 'h', einheit: 'mm' } },
+    };
+    afterEach(() => registriereRezepte([]));
+
+    for (const stufe of [4, 2]) {
+        it(`Schreibstufe ${stufe} (${stufe >= 4 ? 'Sohle gespeichert' : 'Mitte gespeichert'}): Sohle 99,50 → 99,40 gesetzt, der Körper liegt mit seiner Unterkante darauf`, async () => {
+            setzeSchreibStufeFuerTests(stufe);
+            registriereRezepte([RECHTECKKANAL]);
+            const b = useBearbeitung();
+            const ae = useAenderungen();
+            await ae.bereit;
+            expect((await b.fuehreAus(kommando('ko-rk', 'rechteckkanal-zeichnen', { neu: ['cde-RK'], werte: { name: 'RK', kategorie: 'IFCPIPESEGMENT', hoehe: '', b: 1200, h: 800 },
+                eingaben: { zug: [{ ost: 0, nord: 0, hoehe: 100 }, { ost: 30, nord: 0, hoehe: 99.9 }] } }))).grund).toBe(null);
+            expect((await b.fuehreAus(kommando('ko-sh', 'sohlhoehen-setzen', { ziel: ['cde-RK'], werte: { anfang: 99.5, ende: 99.4 } }))).grund).toBe(null);
+            const plan = ae.wirksamerStand('erzeugt').get('cde-RK');
+            expect(plan.parameter.achsbezug).toBe(stufe >= 4 ? 'sohle' : 'mitte');
+            expect(rezeptNach('rechteckkanal').sohlen.abstand(plan.parameter)).toBeCloseTo(0.4, 12);
+            expect(Math.abs(sohleImRaum(plan, 0) - 99.5)).toBeLessThan(MM);
+            expect(Math.abs(sohleImRaum(plan, 30) - 99.4)).toBeLessThan(MM);
+        });
+    }
 });
