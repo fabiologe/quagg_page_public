@@ -81,6 +81,8 @@ export function nummernAlsAdressen(werkzeug, subjekt, werte, rahmen) {
     for (const { name, adresse } of [..._adressfelder(werkzeug)].reverse()) {
         const roh = aus[name];
         if (roh === null || roh === undefined || roh === '' || typeof roh === 'object') continue;
+        // Eine Adresse, die ihre Kennung weiterreicht, kommt schon als Kennung.
+        if (ADRESSEN[adresse].kennung) { aus[name] = { operation: String(roh) }; continue; }
         const i = Number(roh);
         const liste = ADRESSEN[adresse].liste(subjekt, werte);
         const eintrag = Number.isInteger(i) ? liste[i] : null;
@@ -107,10 +109,16 @@ export function adressenAlsNummern(werkzeug, subjekt, werte, rahmen) {
         const a = aus[name];
         if (a === null || a === undefined) continue;
         const liste = ADRESSEN[adresse].liste(subjekt, aus);
-        if (adresse === 'operation') {
+        const kennung = !!ADRESSEN[adresse].kennung;
+        if (adresse === 'operation' || kennung) {
             const j = liste.findIndex(op => op?.id === a.operation);
-            if (j < 0) return { werte: aus, grund: `Die Operation ${a.operation} gibt es an diesem Bauteil nicht (mehr).` };
-            aus[name] = j;
+            if (j < 0) {
+                return { werte: aus, grund: kennung
+                    ? `Die Operation ${a.operation} gibt es im Stapel dieses Geländes nicht (mehr) — oder sie trägt noch keine gespeicherte Kennung.`
+                    : `Die Operation ${a.operation} gibt es an diesem Bauteil nicht (mehr).` };
+            }
+            // Die Kennung selbst weiter (sie kommt so in den Bauplan) — oder die Nummer, die das Werkzeug liest.
+            aus[name] = kennung ? a.operation : j;
             continue;
         }
         const w = rahmen.ausProjekt({ ost: a.ost, nord: a.nord, hoehe: 0 });
@@ -296,7 +304,7 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
         for (const { name, adresse } of _adressfelder(b)) {
             const a = k.werte?.[name];
             if (a === undefined || a === null) continue;
-            if (adresse === 'operation') {
+            if (adresse === 'operation' || ADRESSEN[adresse]?.kennung) {
                 if (!a || typeof a !== 'object' || !_text(a.operation)) fehler.push(`werte.${name}: eine Operation wird über ihre Kennung angesprochen ({operation: 'op-…'}), nie über ihre Nummer (E3)`);
             } else if (!a || typeof a !== 'object' || !_fin(a.ost) || !_fin(a.nord)) {
                 fehler.push(`werte.${name}: ein Punkt wird über seine Lage angesprochen ({ost, nord, hoehe?}), nie über seine Nummer (E3)`);

@@ -461,6 +461,9 @@ export function teileVon(erzeugtStand, ableitungId) {
  *   letzter    der letzte Vorgang mit seinen Teilen und Operationen — an ihn
  *              hängt eine Erdbau-Folgeformung, wenn er selbst `erdbau` ist
  *   altDgm     dgm-Teile aus der Zeit vor Stufe 1 (werden beim Anfassen verborgen)
+ *   operationen  alle Operationen des Stapels mit GESPEICHERTER Kennung, in
+ *              Stapelreihenfolge, je mit `vorgang` — das, worauf ein Kommando
+ *              über seinen Vorgang hinaus zeigen darf (Durchstich 2, E3)
  *   quellBasis / cell   Prüfmass und Zellweite des Ur aus dem Journal
  *
  * Bis Stufe 0 hiess das `ableitungAuf` und kannte nur die eine erdbau-
@@ -483,6 +486,12 @@ export function erdbauStandVon(erzeugtStand, gid, { historie = null } = {}) {
         vorgaenge: vorgaenge.map(({ ableitung, art, titel }) => ({ ableitung, art, titel })),
         letzter: l ? { ableitung: l.ableitung, art: l.art, teile: teileVon(stand, l.ableitung),
                        operationen: l.bauplan?.parameter?.operationen ?? [] } : null,
+        // Nur mit gespeicherter Kennung: eine Operation von vor K2b hätte hier
+        // eine aus ihrem Inhalt abgeleitete (`op-alt-…`), und die kennt der
+        // Lauf nicht — er rechnet in Welt, der Inhalt steht in NN. Adressierbar
+        // wird sie, sobald ihr Vorgang einmal neu geschrieben ist.
+        operationen: vorgaenge.flatMap(v => (v.bauplan?.parameter?.operationen ?? [])
+            .filter(op => op?.id).map(op => ({ ...op, vorgang: v.ableitung }))),
         quellBasis: basis?.parameter?.quellBasis?.gelaende ?? null,
         cell: basis?.parameter?.raster?.cell ?? null,
     };

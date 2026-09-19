@@ -918,6 +918,12 @@ export const ADRESSEN = Object.freeze({
     operation: {
         liste: (el) => operationenMitKennung(el?.stand?.bauplan?.parameter?.operationen),
     },
+    // Eine Operation IRGENDWO im Erdbau-Stapel des Geländes (Durchstich 2) —
+    // weitergereicht wird ihre KENNUNG, keine Nummer: so steht sie im Bauplan.
+    stapeloperation: {
+        kennung: true,
+        liste: (el) => el?.erdbau?.operationen ?? [],
+    },
 });
 
 /**

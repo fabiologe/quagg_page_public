@@ -14,10 +14,10 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { kommandoAusZustand, pruefeKommando, rahmenOhneBezug, KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
+import { adressenAlsNummern, kommandoAusZustand, nummernAlsAdressen, pruefeKommando, rahmenOhneBezug, KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
 import { werteAus } from '../services/kommando/Auswertung.js';
 import { nachId, werkzeugKatalog } from '../services/Bearbeitungen.js';
-import { ableitungsSchritte, operationenMitKennung, zufallsKennung, mitKennungen } from '../services/Bauteilrezepte.js';
+import { ableitungsSchritte, erdbauStandVon, operationenMitKennung, zufallsKennung, mitKennungen } from '../services/Bauteilrezepte.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 
@@ -186,5 +186,34 @@ describe('4 — am echten Weg: Knickpunkt über die Oberfläche, Beleg ohne Numm
         // Nach dem ersten Zug tragen alle Operationen ihre Kennung gespeichert.
         const ops = ae.wirksamerStand('erzeugt').get('cde-a').parameter.operationen;
         expect(ops.every(o => /^op-/.test(o.id))).toBe(true);
+    });
+});
+
+describe('Eine Operation in einem ANDEREN Vorgang des Stapels (Durchstich 2)', () => {
+    // K2b adressiert Operationen des eigenen Bauplans. „Fülle bis zum Planum P"
+    // zeigt aus einem Vorgang in einen anderen: die Liste kommt vom Stapel des
+    // Geländes (`erdbauStandVon`), weitergereicht wird die KENNUNG.
+    const ring = [{ x: 0, z: 0 }, { x: 5, z: 0 }, { x: 5, z: 5 }];
+    const vorgang = (ops) => mitKennungen((art) => zufallsKennung(art), () =>
+        ableitungsSchritte({ rezept: 'erdbau', quellen: { gelaende: 'DGM1' }, raster: { cell: 1 }, operationen: ops, name: 'Ur' }));
+    const stand = (...listen) => new Map(listen.flat().map(s => [s.globalId, s.nachher]));
+    const WERKZEUG = { felder: [{ name: 'bis', typ: 'text', adresse: 'stapeloperation' }] };
+    const R = rahmenOhneBezug();
+
+    it('der Stapel nennt seine Operationen mit gespeicherter Kennung und ihrem Vorgang — Altoperationen ohne Kennung nicht', () => {
+        const A = vorgang([{ id: 'op-P', art: 'planum', parameter: { umriss: ring, hoehe: 101 } }]);
+        const B = vorgang([{ id: 'op-G', art: 'grube', parameter: { umriss: ring, sohle: 99 } }]);
+        // Eine Altoperation (vor K2b): im Bauplan OHNE Kennung.
+        const alt = vorgang([{ art: 'planum', parameter: { umriss: ring, hoehe: 102 } }])
+            .map(s => ({ ...s, nachher: { ...s.nachher, parameter: { ...s.nachher.parameter, operationen: [{ art: 'planum', parameter: { umriss: ring, hoehe: 102 } }] } } }));
+        const eb = erdbauStandVon(stand(A, B, alt), 'DGM1');
+        expect(eb.operationen.map(o => [o.id, o.vorgang])).toEqual([['op-P', A[0].nachher.ableitung], ['op-G', B[0].nachher.ableitung]]);
+    });
+
+    it('Adresse → Kennung (nicht Nummer); eine fehlende ist ein fehlendes Ziel (E8); die Oberfläche wickelt eine Kennung ein', () => {
+        const el = { erdbau: erdbauStandVon(stand(vorgang([{ id: 'op-P', art: 'planum', parameter: { umriss: ring, hoehe: 101 } }])), 'DGM1') };
+        expect(adressenAlsNummern(WERKZEUG, el, { bis: { operation: 'op-P' } }, R)).toEqual({ werte: { bis: 'op-P' }, grund: null });
+        expect(adressenAlsNummern(WERKZEUG, el, { bis: { operation: 'op-X' } }, R).grund).toMatch(/op-X gibt es im Stapel dieses Geländes nicht/);
+        expect(nummernAlsAdressen(WERKZEUG, el, { bis: 'op-P' }, R)).toEqual({ bis: { operation: 'op-P' } });
     });
 });
