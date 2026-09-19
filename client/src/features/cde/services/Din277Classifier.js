@@ -23,7 +23,7 @@
  * vorerst nur NUF/VF/TF + BGF (= Summe aller IFCSPACE-Footprints pro Geschoss).
  */
 
-import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { FRAGMENTS_DATA_CONFIG, globalIdAusDaten } from './IfcDataConfig.js';
 
 // ── Klassifikations-Klassen ─────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ export async function classifyDin277({
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const localId  = _scalar(item._localId ?? item.localId ?? item.expressID);
-            const globalId = _scalar(item.GlobalId) ?? '';
+            const globalId = globalIdAusDaten(item);
             const name     = _scalar(item.Name)        ?? '';
             const longName = _scalar(item.LongName)    ?? '';
             const bbox     = boxes?.[i] ?? null;

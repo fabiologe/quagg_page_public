@@ -13,6 +13,7 @@
  * `IfcEngine` behält 1:1-Delegationen, damit Aufrufer unberührt bleiben
  * (Hausvertrag, siehe IfcCamera.js).
  */
+import { globalIdAusDaten } from './IfcDataConfig.js';
 
 /** Welche Beziehungen `fragments.getData` mitliefern soll. */
 export const DATA_CONFIG = {
@@ -87,7 +88,7 @@ export function parseItemData(rawData) {
     return {
         type:           (scalar(item['_category']) ?? '').toUpperCase(),
         name:           scalar(item['Name'])           ?? '',
-        globalId:       scalar(item['GlobalId'])       ?? '',
+        globalId:       globalIdAusDaten(item),
         description:    scalar(item['Description'])    ?? '',
         predefinedType: scalar(item['PredefinedType']) ?? '',
         attrs, typeName, psets, quantities, materials,

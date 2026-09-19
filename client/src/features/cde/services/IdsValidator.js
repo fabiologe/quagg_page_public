@@ -12,7 +12,7 @@
  * Element-Referenzen (für Zoom/Highlight) und Meldungstexten.
  */
 
-import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { FRAGMENTS_DATA_CONFIG, globalIdAusDaten } from './IfcDataConfig.js';
 
 /** Unwrap OBC's `{value: x}` shape. */
 function _scalar(v) {
@@ -149,7 +149,7 @@ export async function validateIds({ specs, categoryGroups, fragmentsList, fragme
                         if (localId == null) continue;
                         elements.push({
                             modelId, localId,
-                            globalId:   _scalar(item.GlobalId) ?? '',
+                            globalId:   globalIdAusDaten(item),
                             attributes: _flattenAttrs(item),
                             psets:      _flattenPsets(item),
                         });

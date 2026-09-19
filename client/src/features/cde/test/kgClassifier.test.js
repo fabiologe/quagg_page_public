@@ -170,4 +170,24 @@ describe('Din276Defaults', () => {
     expect(kgTitle('330')).toMatch(/^330 — /)
     expect(kgTitle('999')).toBe('999')
   })
+
+  it('kennt die GlobalId auch ohne Datenabruf — sonst liesse sich die ERSTE Zuweisung nie setzen', async () => {
+    // Nur Kategorie-Regeln, noch keine Zuweisung: kein Datenabruf (wie oben).
+    // Die GlobalId kommt dann aus dem Index des Modells. Bis 2026-09-19 stand
+    // hier '' — die Tabelle sagte „Keine GlobalId geladen" und sperrte die Auswahl.
+    const mocks = mockModel({ category: 'IFCFOOTING', localIds: [7, 8], items: [], boxes: [box(), box()] })
+    mocks.fragmentsManager.getData = async () => { throw new Error('unerwarteter Datenzugriff') }
+    mocks.fragmentsList.get('m1').getGuidsByLocalIds = async (ids) => ids.map(id => `GID-${id}`)
+    const { byKg } = await classifyKg({ ...mocks, rules: [...KG_DEFAULT_RULES] })
+    expect(byKg.get('322').elements.map(e => e.globalId)).toEqual(['GID-7', 'GID-8'])
+  })
+
+  it('… und eine Zuweisung von Hand gilt dann auch ohne Datenabruf', async () => {
+    const mocks = mockModel({ category: 'IFCFOOTING', localIds: [7], items: [], boxes: [box()] })
+    mocks.fragmentsManager = null                                    // gar kein Datenweg
+    mocks.fragmentsList.get('m1').getGuidsByLocalIds = async (ids) => ids.map(id => `GID-${id}`)
+    const { byKg } = await classifyKg({ ...mocks, rules: [...KG_DEFAULT_RULES], overrides: new Map([['GID-7', '411']]) })
+    expect(byKg.get('411')?.count).toBe(1)
+    expect(byKg.get('322')).toBeUndefined()
+  })
 })

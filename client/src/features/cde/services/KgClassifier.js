@@ -16,7 +16,7 @@
  */
 
 import { findMatchingRule } from './VectorRuleEngine.js';
-import { FRAGMENTS_DATA_CONFIG } from './IfcDataConfig.js';
+import { FRAGMENTS_DATA_CONFIG, globalIdAusDaten } from './IfcDataConfig.js';
 import { collectQto, pickQtoValue, LENGTH_KEYS } from './QuantitySummary.js';
 import * as THREE from 'three';
 import { istLinear } from './Kategorien.js';
@@ -142,7 +142,7 @@ export async function classifyKg({
                         parsedData.set(lid, {
                             attributes: _flattenAttrs(item),
                             psets:      _flattenPsets(item),
-                            globalId:   _scalar(item.GlobalId) ?? '',
+                            globalId:   globalIdAusDaten(item),
                             // T1/E2: Laufmeter aus den Qto-BaseQuantities
                             laenge: collectLengths
                                 ? pickQtoValue(collectQto(item), LENGTH_KEYS)
@@ -154,11 +154,20 @@ export async function classifyKg({
                 }
             }
 
+            // DIE GLOBALID JEDES ELEMENTS — auch ohne Datenabruf, aus dem Index des
+            // Modells (billig: keine Merkmale). Bis 2026-09-19 kam sie nur aus dem
+            // Datenabruf — und dort las der Klassifizierer das falsche Feld
+            // (`GlobalId` statt `_guid`, `globalIdAusDaten`): im Cockpit stand bei
+            // jedem Element „Keine GlobalId geladen", keine Zuweisung von Hand griff.
+            let guids = null;
+            if (!parsedData) {
+                try { guids = (await model.getGuidsByLocalIds?.(localIds)) ?? null; } catch { guids = null; }
+            }
+
             for (let i = 0; i < localIds.length; i++) {
                 const localId = localIds[i];
                 const elemData = parsedData?.get(localId);
-                const globalId = elemData?.globalId
-                              ?? (boxes?.[i] ? '' : ''); // bbox-only path has no globalId
+                const globalId = elemData?.globalId || guids?.[i] || '';
 
                 let kgCode = overrides.get(globalId);
                 if (!kgCode) {
