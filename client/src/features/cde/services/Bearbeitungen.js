@@ -89,6 +89,9 @@ export const GRUPPEN = Object.freeze({
     parametrik: { titel: 'Maße',       icon: 'measure',       einstieg: 'auswahl' },
     lage:       { titel: 'Lage',       icon: 'pointer',       einstieg: 'auswahl' },
     erzeugen:   { titel: 'Erzeugen',   icon: 'add',           einstieg: 'werkzeug' },
+    // Was auf dem BLATT steht (Planinhalt, Rotstift — Fahrplan R2): kein Bauteil,
+    // kein Rezept; das Formular ist der Lageplan (`eigeneOberflaeche`).
+    blatt:      { titel: 'Blatt',      icon: 'karte',         einstieg: 'werkzeug' },
     gelaende:   { titel: 'Gelände',    icon: 'terrain',       einstieg: 'auswahl' },
 });
 
@@ -576,6 +579,18 @@ const SETZ_OPERATIONEN = Object.freeze({
             return werte?.wert === '' || werte?.wert == null ? null : _massGueltig(Number(werte.wert), ziel.grenze);
         },
     },
+    blatt: {
+        // BLATTINHALTE (Teil XXIV, Fahrplan R2): Planinhalte und Rotstift sind
+        // keine Bauteile — das Kommando nennt je Eintrag Kennung und vollen
+        // Wert (E2: der Aufrufer vergibt die Kennung), `null` entfernt. Ein
+        // Radierzug, der einen Strich in drei teilt, ist EIN Kommando.
+        vorbelege: (s) => ({ [s.feld]: [] }),
+        schreibe: (s, el, werte) => (_blattGrund(s, werte) ? null : werte[s.feld].map(({ id, wert }) => ({
+            art: s.journal, globalId: id,
+            nachher: wert ? (({ id: _weg, ...rest }) => rest)(wert) : null,
+        }))),
+        warumNicht: (s, el, werte) => _blattGrund(s, werte),
+    },
     satz: {
         // Welcher Satz, sagt erst die Eingabe — leer vorbelegt.
         vorbelege: (s) => ({ [s.name]: '', [s.feld]: {} }),
@@ -645,6 +660,19 @@ const SETZ_OPERATIONEN = Object.freeze({
 });
 
 /** Aus einer Setzer-Deklaration wird ein Werkzeug — `vorbelegung` und `anwenden` aus der Operation. */
+/** Was an einer Blatt-Eingabe technisch nicht geht (E5) — oder null. */
+function _blattGrund(s, werte) {
+    const liste = werte?.[s.feld];
+    if (!Array.isArray(liste) || !liste.length) return 'Nichts einzutragen.';
+    for (const e of liste) {
+        if (typeof e?.id !== 'string' || !e.id.startsWith(s.praefix)) return `„${e?.id ?? '—'}" ist kein ${s.titel} (${s.praefix}…).`;
+        const w = e.wert ?? null;
+        if (w !== null && (typeof w !== 'object' || Array.isArray(w))) return `Der Wert zu ${e.id} ist kein Eintrag.`;
+    }
+    if (new Set(liste.map(e => e.id)).size !== liste.length) return 'Ein Eintrag steht doppelt.';
+    return null;
+}
+
 function werkzeugAusSetzer(d) {
     const op = SETZ_OPERATIONEN[d.setzt?.art];
     if (!op) throw new Error(`Setzer „${d.id}": Operation „${d.setzt?.art}" gibt es nicht`);
@@ -655,8 +683,10 @@ function werkzeugAusSetzer(d) {
         // es zwei: fünf lieferten null, sechs einen Eintrag mit leerer
         // Kennung). Bei Mehrfachauswahl zählt der Store das als übersprungen,
         // allein nennt er den Grund aus `warumNicht`.
-        anwenden: (el, werte, kontext) => (el?.globalId ? op.schreibe(d.setzt, el, werte, kontext) : null),
-        warumNicht: (el, werte, kontext) => (el?.globalId
+        // `ohneBauteil`: ein Setzer, der kein Bauteil trifft (Blattinhalte) —
+        // seine Kennungen stehen in den Werten.
+        anwenden: (el, werte, kontext) => ((el?.globalId || d.ohneBauteil) ? op.schreibe(d.setzt, el, werte, kontext) : null),
+        warumNicht: (el, werte, kontext) => ((el?.globalId || d.ohneBauteil)
             ? (op.warumNicht?.(d.setzt, el, werte, kontext) ?? null)
             : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.'),
     };
@@ -3413,6 +3443,44 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     },
     {
         /**
+         * Planinhalt setzen (Teil XXIV, Fahrplan R2 — E4: „Planinhalt und
+         * Rotstift werden Kommandos"). Beschriftungen und Symbole im Lageplan:
+         * setzen, verschieben, ändern, entfernen — je Aufruf die Einträge mit
+         * vollem Wert. Sein Formular ist der Lageplan (`eigeneOberflaeche`);
+         * es trifft kein Bauteil (`ohneBauteil`), und es stand nie unter dem
+         * Bearbeiten-Modus: Blattinhalt ist kein Eingriff ins Modell.
+         * Bis hierher schrieb der Plan am Katalog vorbei, ohne Beleg.
+         */
+        id: 'planinhalt-setzen',
+        titel: 'Planinhalt',
+        icon: 'text',
+        gruppe: 'blatt',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'planinhalt',
+        eigeneOberflaeche: 'lageplan',
+        ohneBauteil: true,
+        felder: [{ name: 'inhalte', titel: 'Inhalte', typ: 'liste' }],
+        setzt: { art: 'blatt', journal: 'planinhalt', feld: 'inhalte', praefix: 'pi-', titel: 'Planinhalt' },
+        vorgangstitel: (werte) => werte?.titel || null,
+    },
+    {
+        /** Rotstift (Teil XXIV, Fahrplan R2) — Striche zeichnen und radieren, wie „Planinhalt". */
+        id: 'rotstift-zeichnen',
+        titel: 'Rotstift',
+        icon: 'edit',
+        gruppe: 'blatt',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'rotstift',
+        eigeneOberflaeche: 'lageplan',
+        ohneBauteil: true,
+        felder: [{ name: 'striche', titel: 'Striche', typ: 'liste' }],
+        setzt: { art: 'blatt', journal: 'rotstift', feld: 'striche', praefix: 'rs-', titel: 'Rotstiftstrich' },
+        vorgangstitel: (werte) => werte?.titel || null,
+    },
+    {
+        /**
          * Bauform auslegen — der Ausweg, wenn Typ UND Geometrie schweigen.
          *
          * DER FALL: ein Tiefbau-Planer liefert sein Geländemodell als
@@ -3586,7 +3654,9 @@ export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(
 
 /** Bearbeitungen einer Gruppe, unabhängig von einer Auswahl (Werkzeugleiste). */
 export function ausGruppe(gruppe, katalog = werkzeugKatalog()) {
-    return katalog.filter(b => b.gruppe === gruppe);
+    // Was sein Formular woanders hat (Merkmalsfenster, Lageplan, Griff), bietet
+    // keine Leiste an — dieselbe Regel wie `passende`.
+    return katalog.filter(b => b.gruppe === gruppe && !b.eigeneOberflaeche);
 }
 
 /** Eine Bearbeitung nach Id. */

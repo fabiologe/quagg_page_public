@@ -14,11 +14,19 @@
  *     Stufe 3 (A7b) schreibt ins Journal, und beim ersten Laden wird, was nur
  *     in der Liste liegt, EIN Commit „Übernahme …" (`useAenderungen.uebernimm`).
  *     Der alte Schlüssel bleibt liegen, als Rückweg.
+ *   MIT BELEG (Teil XXIV, Fahrplan R2): geschrieben wird über ein Kommando
+ *     (`planinhalt-setzen` / `rotstift-zeichnen`, `fuehreAus`) — bis hierher
+ *     ging der Weg an `eintragenVorgang` direkt, der einzige Vorgang ohne
+ *     Beleg im Journal. Unter dem Bearbeiten-Modus stand er nie: Blattinhalt
+ *     ist kein Eingriff ins Modell.
  */
 import { computed, ref } from 'vue';
 import { repo } from '../services/RepoFacade.js';
 import { schreibStufe } from '../services/JournalFormat.js';
+import { KOMMANDO_SCHEMA, neueKommandoId } from '../services/kommando/Kommando.js';
 import { useAenderungen } from './useAenderungen.js';
+import { useBearbeitung } from './useBearbeitung.js';
+import { useCdeStore } from './useCdeStore.js';
 
 function _entprelle(fn, ms) {
     let t = null;
@@ -26,9 +34,10 @@ function _entprelle(fn, ms) {
 }
 
 /**
- * @param {{art: 'planinhalt'|'rotstift', repoKey: string, uebernahme: string, entprellMs?: number}} o
+ * @param {{art: 'planinhalt'|'rotstift', repoKey: string, uebernahme: string, werkzeug: string, feld: string, entprellMs?: number}} o
+ *        `werkzeug`/`feld`: das Katalogwerkzeug, dessen Kommando schreibt, und sein Feld
  */
-export function planInhaltsListe({ art, repoKey, uebernahme, entprellMs = 250 }) {
+export function planInhaltsListe({ art, repoKey, uebernahme, werkzeug, feld, entprellMs = 250 }) {
     /** Was unter dem ALTEN Schlüssel liegt. */
     const _liste = ref([]);
     const _sichernListe = _entprelle(() => {
@@ -49,15 +58,18 @@ export function planInhaltsListe({ art, repoKey, uebernahme, entprellMs = 250 })
      * Schritt zurück.
      */
     async function schreibe(aenderungen, { titel = null } = {}) {
-        if (!aenderungen.length) return;
+        if (!aenderungen.length) return null;
         if (schreibStufe() >= 3) {
-            const ae = useAenderungen();
-            const vorgang = aenderungen.length > 1 ? ae.neueVorgangsId() : undefined;
-            // Ganz oder gar nicht (Teil XXIV, K2): ein Radierzug ist EIN Vorgang, einmal gesichert.
-            await ae.eintragenVorgang(aenderungen.map(({ id, wert }) => ({
-                art, globalId: id, nachher: wert ? (({ id: _weg, ...rest }) => rest)(wert) : null,
-            })), vorgang ? { vorgang, vorgangTitel: titel ?? undefined } : {});
-            return;
+            // EIN Kommando, EIN Vorgang, ganz oder gar nicht (Teil XXIV, K2) —
+            // mit Beleg (R2). Ein Radierzug ist ein Schritt zurück.
+            const kommando = {
+                schema: KOMMANDO_SCHEMA, id: neueKommandoId(), werkzeug, ziel: [],
+                werte: { [feld]: aenderungen.map(({ id, wert }) => ({ id, wert: wert ?? null })), ...(titel ? { titel } : {}) },
+                wer: useCdeStore().bearbeiter || '', wann: new Date().toISOString(),
+            };
+            const erg = await useBearbeitung().fuehreAus(kommando);
+            if (!erg.ausgefuehrt && erg.grund) console.warn(`cde: ${art} nicht eingetragen — ${erg.grund}`);
+            return erg;
         }
         // Stufe 2 (A7a): wie bisher in die Liste.
         let neu = [..._liste.value];
@@ -69,6 +81,7 @@ export function planInhaltsListe({ art, repoKey, uebernahme, entprellMs = 250 })
         }
         _liste.value = neu;
         _sichernListe();
+        return null;
     }
 
     async function laden() {

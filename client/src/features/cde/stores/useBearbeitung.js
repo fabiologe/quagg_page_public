@@ -876,7 +876,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             }),
             {
                 vorgang: kommando.id,
-                ...(mehrteilig ? { vorgangTitel: b.titel } : {}),
+                // Ein Werkzeug darf seinen Vorgang nach den Werten nennen („Radieren").
+                ...(mehrteilig ? { vorgangTitel: b.vorgangstitel?.(kommando.werte ?? {}) || b.titel } : {}),
                 // Der Beleg: die Absicht, wie sie ausgewertet wurde (mit `neu`).
                 kommando: ausgewertet,
                 ...(kommando.ebene ? { ebene: kommando.ebene } : {}),

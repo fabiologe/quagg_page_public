@@ -2269,7 +2269,8 @@ onMounted(async () => {
  * Prüfung, damit die Palette nichts anbietet, was das Menü verschweigt.
  */
 function werkzeugBefehleMelden() {
-  cmds.register('viewer-werkzeuge', werkzeugKatalog().map(b => ({
+  // Was sein Formular woanders hat (Merkmalsfenster, Lageplan, Griff), steht nicht in der Palette.
+  cmds.register('viewer-werkzeuge', werkzeugKatalog().filter(b => !b.eigeneOberflaeche).map(b => ({
     id: `bearb.${b.id}`, titel: b.titel, icon: b.icon,
     gruppe: GRUPPEN[b.gruppe]?.titel ?? 'Bearbeiten',
     // Kassensturz E4: ein Werkzeug wählen schaltet die Bearbeitung ein —

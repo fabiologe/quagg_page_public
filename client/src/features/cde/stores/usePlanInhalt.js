@@ -37,6 +37,7 @@ export const usePlanInhalt = defineStore('cde-planinhalt', () => {
     // Journal und alte Liste (Teil XXIII, A7) — siehe `planJournal.js`.
     const { liste, schreibe, laden } = planInhaltsListe({
         art: 'planinhalt', repoKey: REPO_KEY, uebernahme: 'Übernahme Planinhalte',
+        werkzeug: 'planinhalt-setzen', feld: 'inhalte',
     });
     /** [{ id, art, x, z, text?, symbol?, groesse, winkel }] */
     const inhalte = liste;

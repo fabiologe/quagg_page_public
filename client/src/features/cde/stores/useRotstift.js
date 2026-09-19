@@ -56,6 +56,7 @@ export const useRotstift = defineStore('cde-rotstift', () => {
     // Journal und alte Liste (Teil XXIII, A7) — siehe `planJournal.js`.
     const { liste, schreibe, laden } = planInhaltsListe({
         art: 'rotstift', repoKey: REPO_KEY, uebernahme: 'Übernahme Rotstift', entprellMs: 300,
+        werkzeug: 'rotstift-zeichnen', feld: 'striche',
     });
     /** [{ id, rev, tool, farbe, breiteMm, echterDruck, points: [[x,z,druck], …] }] */
     const striche = liste;

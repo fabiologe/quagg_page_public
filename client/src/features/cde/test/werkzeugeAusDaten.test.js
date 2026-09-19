@@ -81,9 +81,15 @@ describe('Setzer: eine Regel für die Kennung, zwei weitere als Daten', () => {
         expect(nachId('bauform-auslegen').anwenden({ globalId: 'H1' }, { bauform: '' })).toEqual({ art: 'bauform', globalId: 'H1', nachher: null });
     });
     it('ohne Kennung kein Eintrag — und der Grund nennt die GlobalId', () => {
-        for (const b of BEARBEITUNGEN.filter(x => x.setzt)) {
+        // Ausgenommen die Setzer OHNE Bauteil (Planinhalt, Rotstift — Fahrplan R2):
+        // ihre Kennungen stehen in den Werten, und ohne Werte gibt es nichts.
+        for (const b of BEARBEITUNGEN.filter(x => x.setzt && !x.ohneBauteil)) {
             expect(b.anwenden({ globalId: '' }, {}), b.id).toBeNull();
             expect(b.warumNicht({ globalId: '' }), b.id).toMatch(/GlobalId/);
+        }
+        for (const b of BEARBEITUNGEN.filter(x => x.ohneBauteil)) {
+            expect(b.anwenden({}, {}), b.id).toBeNull();
+            expect(b.warumNicht({}, {}), b.id).toMatch(/Nichts einzutragen/);
         }
     });
 });

@@ -102,9 +102,9 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
             'zwei einmalige Übernahmen von Altbestand beim Laden (kein Nutzereingriff, Systembeleg) '
             + '— die zwei Nutzerwege daneben gehen über den Kommandoweg',
         'stores/planJournal.js':
-            'Planinhalte und Rotstift (Teil XXIII, A7) — Blattinhalt, kein Eingriff in ein '
-            + 'Bauteil; sie standen nie unter dem Bearbeiten-Modus, sondern unter dem '
-            + 'Plan-Werkzeugslot, und schreiben erst ab Schreibstufe 3 ins Journal',
+            'die einmalige Übernahme der alten Planinhalt-/Rotstiftliste beim Laden (Systembeleg) '
+            + '— geschrieben wird seit R2 über `fuehreAus` mit Beleg; Blattinhalt stand nie '
+            + 'unter dem Bearbeiten-Modus, sondern unter dem Plan-Werkzeugslot',
     };
 
     it('nur bekannte Stellen schreiben ins Journal', () => {
