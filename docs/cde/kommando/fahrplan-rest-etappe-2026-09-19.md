@@ -58,7 +58,7 @@ Summe ohne R9: **5,5 Halbtage**; mit R9: **6,5**. R1 sofort, weil die Doku heute
 - **Ein Commit für K1–K10** statt je Schritt einer (C1) — geschehen, nicht rückgängig zu machen; künftig wieder je Schritt.
 - **Katalogverlauf** (E4), **CI** (nie gelaufen), **Kennwerte und Pauschalen** (E4: nach dem Durchstich neu bewerten).
 
-## 5 · Stand (2026-09-19, spät — R1–R9 gebaut, NICHT committet)
+## 5 · Stand (2026-09-19, spät — R1–R10 erledigt)
 
 Umgesetzt auf Fabios „bitte umsetzen und die Lücken für unsere Etappe füllen“. Entscheidungen, die der Plan offen ließ: R2 (a) Katalogwerkzeuge; R7 eingebaut; R9 Code und Tests, Neustart nur auf Zuruf. Einzelheiten und Gegenproben in [kommandodefinition.md](kommandodefinition.md), 7a, „Rest der Etappe“.
 
@@ -72,8 +72,8 @@ Umgesetzt auf Fabios „bitte umsetzen und die Lücken für unsere Etappe fülle
 | R6 | Rechteckprofil: 0 → 2 Tests | fertig |
 | R7 | Ende am gelieferten Schacht 240 → 235,39; Knoten aller Modelle (vorher nur des ersten) | fertig |
 | R8 | Tafel 3 ‰, Befund 3,0 ‰, Längsschnitt 3,000 ‰ (Sehne 4,24); Prüfliste 1 / 1 bei 0 und 2 Modellen; Vorschau: in den Testdaten keine geknickte gelieferte Achse | gemessen |
-| R9 | Nutzlast 2 auf Datei 4: 200 → 409; Client nimmt den Vorgang zurück und liest nur | gebaut, **wirkt nach `pm2 restart quagg-api` + Build** |
-| R10 | Suite, Commit, Build, Push | offen — auf Zuruf |
+| R9 | Nutzlast 2 auf Datei 4: 200 → 409; Client nimmt den Vorgang zurück und liest nur | live: pm2-Neustart 20:10 UTC; in Produktion geprüft an einem Probe-Schlüssel in 42069 (4 → 200, 2 → 409, ohne Feld → 409; danach gelöscht) |
+| R10 | Suite Client 446 / 4 776 grün, Server 145 grün; acht Commits `0d0b31b`…`2da17aa` (je Schritt einer, jeder Zwischenstand mit seinen Tests grün); Build 20:07 UTC (`index-Aw-19ceq.js`, `CdeView-BRvidCPU.js`, Konsole nicht im Bundle), Domain 200; Push `origin/cde-verbundexport` 60 → 0 | fertig (Fabio „oki geht klar“) |
 
 Neu offen (aus R8): eigene Bauteile, gezeichnet ohne geladenes Modell, bekommen beim späteren Laden eines Modells im selben Tab keinen Versatz nachgeführt; die Prüfliste zeigt höchstens 30 Bauteile.
 
