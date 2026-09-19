@@ -20,11 +20,11 @@ import {
 } from '../services/kommando/Kommando.js';
 import { werteAus } from '../services/kommando/Auswertung.js';
 import { bestimmeBezug } from '../services/Projektkoordinaten.js';
-import { nachId } from '../services/Bearbeitungen.js';
+import { nachId, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { neueGlobalId, rezeptNach, zufallsKennung } from '../services/Bauteilrezepte.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
-import { PROBEN } from './hilfen/werkzeugGold.js';
+import { OHNE_PROBE, PROBEN_ALLE } from './hilfen/werkzeugProben.js';
 
 beforeEach(() => {
     localStorage.clear();
@@ -126,9 +126,11 @@ function gleichBisAuf(a, b, eps = 1e-9, pfad = '') {
 }
 
 describe('3 — die Auswertung ruft das unveränderte Werkzeug', () => {
-    it('für jede Probe des A6-Goldstandards dieselben Schritte wie der direkte Aufruf', () => {
+    // Fahrplan R4: bis hierher nur die 15 Werkzeuge des A6-Goldstandards; jetzt
+    // jedes Werkzeug des Katalogs (`hilfen/werkzeugProben.js`).
+    it('für jede Probe — jedes Katalogwerkzeug — dieselben Schritte wie der direkte Aufruf', () => {
         let n = 0;
-        for (const p of PROBEN) {
+        for (const p of PROBEN_ALLE) {
             const b = nachId(p.id);
             const r = rahmenOhneBezug({ hoehenversatz: p.el.hoehenversatz ?? 0 });
             for (const w of p.werte) {
@@ -144,7 +146,24 @@ describe('3 — die Auswertung ruft das unveränderte Werkzeug', () => {
                 n++;
             }
         }
-        expect(n).toBeGreaterThanOrEqual(30);
+        expect(n).toBeGreaterThanOrEqual(90);
+    });
+
+    it('jedes Katalogwerkzeug hat eine Probe oder einen genannten Grund — und jede Probe liefert Schritte', () => {
+        const mitProbe = new Set(PROBEN_ALLE.map(p => p.id));
+        const ids = werkzeugKatalog().map(b => b.id);
+        const offen = ids.filter(id => !mitProbe.has(id) && !OHNE_PROBE[id]);
+        expect(offen).toEqual([]);                                             // vorher: 48 ohne Probe
+        expect(Object.keys(OHNE_PROBE).length).toBeLessThanOrEqual(5);
+        for (const [id, grund] of Object.entries(OHNE_PROBE)) expect(grund, id).toMatch(/\S{10,}/);
+        // Ein Werkzeug, dessen Proben nie etwas schreiben, wäre nicht geprüft —
+        // der Vergleich zweier leerer Listen beweist nichts. (Einzelne Proben
+        // DÜRFEN leer sein: A6 hält auch das Nein eines Werkzeugs fest.)
+        const schreibt = new Set(PROBEN_ALLE.filter(p => p.werte.some(w => {
+            const r = nachId(p.id).anwenden(p.el, w, { nummer: 0, zug: p.zug ?? [] });
+            return [].concat(r ?? []).some(x => x?.art);
+        })).map(p => p.id));
+        expect([...mitProbe].filter(id => !schreibt.has(id))).toEqual([]);
     });
 
     it('Gesten stehen unter `eingaben` (auswahl, punkt) — und kommen beim Werkzeug an wie vorher', () => {
