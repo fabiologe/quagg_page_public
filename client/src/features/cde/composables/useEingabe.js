@@ -183,12 +183,15 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         }
         if (!bester) return p;
         // Der Punkt NENNT seinen Knoten (K8) — daraus wird im Bauplan der
-        // Anschluss. Seine Höhe: bei einem eigenen Schacht dessen Sohle (sie
-        // steht dann fest); bei einem gelieferten nicht — der Treffer liegt auf
-        // der Oberfläche des Bauwerks, und das meint niemand, also gilt die
-        // getippte Höhe.
-        const fest = bester.k.hoeheFest === true && Number.isFinite(bester.k.punkt.y);
-        return { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, y: fest ? bester.k.punkt.y : NaN,
+        // Anschluss. Seine Höhe steht fest, wenn der Knoten sie nennt: ein
+        // eigener Schacht steht auf seiner Sohle (`hoeheFest`), ein gelieferter
+        // nennt die seiner Abläufe (`anschlusshoehe`, Fahrplan R7). Sonst gilt
+        // die getippte — der Treffer liegt auf der Oberfläche des Bauwerks.
+        const k = bester.k;
+        const hoehe = Number.isFinite(k.anschlusshoehe) ? k.anschlusshoehe
+            : (k.hoeheFest === true && Number.isFinite(k.punkt.y) ? k.punkt.y : null);
+        const fest = hoehe !== null;
+        return { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, y: fest ? hoehe : NaN,
                  knoten: bester.k.globalId, ...(fest ? { hoeheFest: true } : {}), fang: bester.k.name || 'Knoten' };
     }
 

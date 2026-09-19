@@ -8,7 +8,7 @@
  * ihre Aufrufer (Viewer, Tests) unverändert bleiben.
  */
 import { CDE_MODELL_ID } from '../IfcAutor.js';
-import { anschluesseMitAchsen, baueNetz } from '../Netztopologie.js';
+import { ablaufsohle, anschluesseMitAchsen, baueNetz } from '../Netztopologie.js';
 import { achsbezugDerAchse } from '../Achsbezug.js';
 
 /**
@@ -112,11 +112,43 @@ export function netzAuskunft(engine) {
     return {
         netz: engine.netzVon(modelId),
         achseVon: (id) => engine.achseVon(modelId, id),
-        knoten: [...schachtPunkteVon(engine, modelId)]
-            .map(([globalId, pk]) => ({ globalId, punkt: { x: pk.x, y: pk.y, z: pk.z }, name: pk.name ?? '',
-                                         // Ein eigener Knoten steht auf seiner Sohle (K8).
-                                         ...(engine._cdeKnoten?.has(globalId) ? { hoehenbezug: 'sohle', hoeheFest: true } : {}) })),
+        knoten: _knotenMitSohle(engine),
     };
+}
+
+/**
+ * Die Knoten, auf die ein Zug fangen darf — über ALLE Modelle, je Knoten mit
+ * dem, was über seine Höhe feststeht:
+ *   - ein EIGENER Schacht steht auf seiner Sohle (K8: `hoehenbezug`, `hoeheFest`);
+ *   - ein GELIEFERTER bekommt `anschlusshoehe` = die Sohle seiner gelieferten
+ *     Abläufe (Fahrplan R7, `Netztopologie.ablaufsohle`) — seine Platzierung
+ *     ist nicht sicher die Sohle. Ohne Ablauf bleibt die Höhe offen, und die
+ *     getippte gilt. Das Feld heisst neutral: die Musterschicht fängt Knoten,
+ *     nicht Schächte (W6).
+ * Eigene Haltungen zählen dabei nicht: die Sohle eines gelieferten Schachts
+ * kommt aus der Lieferung, nicht aus dem, was man an ihn gezeichnet hat.
+ */
+function _knotenMitSohle(engine) {
+    const verdeckt = engine._verdeckt ?? new Set();
+    const aus = new Map();
+    for (const [modelId, knoten] of engine._knoten ?? new Map()) {
+        let netz = null;
+        for (const [localId, k] of knoten) {
+            if (!k.globalId || verdeckt.has(k.globalId) || aus.has(k.globalId)) continue;
+            netz ??= engine.netzVon(modelId);
+            const geliefert = anschluesseMitAchsen(netz, localId, (id) => engine.achseVon(modelId, id))
+                .filter(a => !String(a.localId).startsWith('cde:'));
+            const sohle = ablaufsohle(geliefert);
+            aus.set(k.globalId, { globalId: k.globalId, punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z }, name: k.name ?? '',
+                                  ...(sohle !== null ? { anschlusshoehe: sohle } : {}) });
+        }
+    }
+    for (const [gid, k] of engine._cdeKnoten ?? new Map()) {
+        if (verdeckt.has(gid)) continue;
+        aus.set(gid, { globalId: gid, punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z }, name: k.name ?? '',
+                       hoehenbezug: 'sohle', hoeheFest: true });
+    }
+    return [...aus.values()];
 }
 
 /**

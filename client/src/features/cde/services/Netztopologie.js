@@ -22,7 +22,7 @@
  *
  * Reines Modul: kein Vue, kein three, kein WebGL, keine Engine.
  */
-import { achsbezugDerAchse } from './Achsbezug.js';
+import { achsbezugDerAchse, sohleAnAchse } from './Achsbezug.js';
 import { regelwert } from './regeln/Regelwerk.js';
 
 /**
@@ -252,4 +252,27 @@ export function anschluesseMitAchsen(netz, knotenId, achseVon) {
         ...knoten.kantenAb.map(id => eintrag(id, 'anfang')),
         ...knoten.kantenAn.map(id => eintrag(id, 'ende')),
     ].filter(Boolean);
+}
+
+/**
+ * Die SOHLE eines Knotens aus seinen Anschlüssen (Teil XXIV, Fahrplan R7): die
+ * tiefste Sohle der Kanten, die an ihm BEGINNEN (die Abläufe), jede mit ihrem
+ * Achsbezug gelesen. Ohne Ablauf `null` — dann weiss das Netz die Sohle nicht.
+ *
+ * Gebraucht für GELIEFERTE Schächte: ihre Platzierung ist nicht sicher die Sohle
+ * (`Achsbezug.knotensohle`), der Ablauf aber schon — er ist das, woran eine neue
+ * Haltung anschliesst. Ein Zulauf mit Absturz läge höher; er zählt nicht.
+ *
+ * @param {Array<{ende: 'anfang'|'ende', anfang: {y}, achsbezug?, dn?, sohlabstand?}>} anschluesse
+ *        wie `anschluesseMitAchsen` sie liefert
+ * @returns {number|null}  Höhe in der Welt (wie die Achsen)
+ */
+export function ablaufsohle(anschluesse) {
+    let tiefste = null;
+    for (const a of anschluesse ?? []) {
+        if (a?.ende !== 'anfang' || !Number.isFinite(a.anfang?.y)) continue;
+        const s = sohleAnAchse(a.anfang.y, a);
+        if (Number.isFinite(s) && (tiefste === null || s < tiefste)) tiefste = s;
+    }
+    return tiefste;
 }

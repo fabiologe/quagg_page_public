@@ -20,8 +20,9 @@
  *                         braucht es, wie in der Oberfläche
  *   bauplanVon(globalId)  der wirksame Bauplan eines eigenen Bauteils — für
  *                         Werkzeuge, die mehr als ihr Subjekt schreiben (K5)
- *   knotenVon(globalId)   Ort eines Knotens in der Welt `{x, y, z, hoehenbezug?}` —
- *                         für Zugpunkte `{knoten}` (K8)
+ *   knotenVon(globalId)   Ort eines Knotens in der Welt `{x, y, z, hoehenbezug?, anschlusshoehe?}` —
+ *                         für Zugpunkte `{knoten}` (K8); `anschlusshoehe` nennt
+ *                         ein gelieferter Knoten: die Sohle seiner Abläufe (R7)
  */
 import { felderFuer, nachId, pruefe, werkzeugKatalog } from '../Bearbeitungen.js';
 import { befundeFuerWerte } from '../Befunde.js';
@@ -60,12 +61,15 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
         if (!kn && !mitLage) return leer(`Den Knoten ${q.knoten} gibt es nicht (mehr) — ein Zug kann nicht an ihm beginnen oder enden.`);
         const lage = mitLage ? punktInWelt(q, rahmen) : { x: kn.x, z: kn.z };
         // Fest steht die Höhe, wenn das Kommando sie für diesen Punkt nennt oder
-        // der Knoten seine Sohle kennt (ein eigener Schacht); bei einem
-        // gelieferten Knoten ohne Höhe gilt die getippte (seine Platzierung ist
-        // nicht sicher die Sohle, Achsbezug.knotensohle).
+        // der Knoten seine Sohle kennt: ein eigener Schacht steht auf ihr, ein
+        // gelieferter nennt sie aus seinen Abläufen (`anschlusshoehe`, R7). Ohne
+        // beides gilt die getippte (die Platzierung eines gelieferten Schachts
+        // ist nicht sicher die Sohle, Achsbezug.knotensohle).
         const explizit = typeof q.hoehe === 'number';
-        const hoeheFest = explizit || kn?.hoehenbezug === 'sohle';
-        const y = explizit ? punktInWelt(q, rahmen).y : (Number.isFinite(kn?.y) ? kn.y : undefined);
+        const sohleKn = kn?.hoehenbezug === 'sohle' && Number.isFinite(kn?.y) ? kn.y
+            : (Number.isFinite(kn?.anschlusshoehe) ? kn.anschlusshoehe : null);
+        const hoeheFest = explizit || sohleKn !== null;
+        const y = explizit ? punktInWelt(q, rahmen).y : (sohleKn ?? (Number.isFinite(kn?.y) ? kn.y : undefined));
         punkte.push({ x: lage.x, ...(y !== undefined ? { y } : {}), z: lage.z, knoten: q.knoten,
                       ...(hoeheFest ? { hoeheFest: true } : {}) });
     }

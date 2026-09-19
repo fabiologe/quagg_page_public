@@ -285,3 +285,99 @@ describe('9 — Schacht entfernen: die neue Haltung behält Knicke und Anschlüs
     });
 });
 
+
+describe('10 — die Sohle eines GELIEFERTEN Schachts (Fahrplan R7)', () => {
+    // Bis hierher liess der Fang an einem gelieferten Schacht die GETIPPTE Höhe
+    // stehen — seine Platzierung ist nicht sicher die Sohle. Jetzt nennt das
+    // Netz die Sohle aus seinen Abläufen: die tiefste, mit ihrem Achsbezug.
+    //
+    // Geliefert (Achsen = Sohle, Achs-Repräsentation): Schacht G-S bei x = 30,
+    // platziert auf 240,80; ein Zulauf (236,00 am Schacht), zwei Abläufe
+    // (235,50 und 235,39). Endschacht G-E bei x = 60, am Ende des ersten
+    // Ablaufs: nur ein Zulauf. Der Zulauf von G-S beginnt an keinem Schacht.
+    function geliefert(ae) {
+        const achse = (gid, von, nach) => ({ globalId: gid, name: gid, anfang: von, ende: nach, dn: 300, quelle: 'axisRep',
+                                             laenge: Math.hypot(nach.x - von.x, nach.z - von.z), polyline: [von, nach] });
+        const dies = Object.assign(Object.create(IfcEngine.prototype), {
+            _achsen: new Map([['m1', new Map([
+                [20, achse('G-Z', { x: 30, y: 236.10, z: 40 }, { x: 30, y: 236.00, z: 0 })],
+                [21, achse('G-A1', { x: 30, y: 235.50, z: 0 }, { x: 60, y: 235.40, z: 0 })],
+                [22, achse('G-A2', { x: 30, y: 235.39, z: 0 }, { x: 30, y: 235.20, z: -40 })],
+            ])]]),
+            _knoten: new Map([['m1', new Map([
+                [10, { punkt: { x: 30, y: 240.8, z: 0 }, globalId: 'G-S', name: 'G-S' }],
+                [11, { punkt: { x: 60, y: 241.2, z: 0 }, globalId: 'G-E', name: 'G-E' }],
+            ])]]),
+            _merkmale: new Map(), quelleVon: () => null, merkmaleAlle: () => new Map(),
+        });
+        IfcEngine.prototype.setzeJournalStand.call(dies, {
+            ...cdeAchsenAus(ae.wirksamerStand('erzeugt')), verdeckt: verdeckteAus(ae.wirksamerStand('geloescht')),
+        });
+        return dies;
+    }
+    const knotenDer = (dies) => IfcEngine.prototype.netzAuskunft.call(dies).knoten;
+    const sohlenVon = (plan) => rezeptNach('rohr').sohlen.lies(plan.parameter).map(y => Math.round(y * 1000) / 1000);
+    const neueHaltung = (ae) => [...ae.wirksamerStand('erzeugt').values()].filter(p => p.rezept === 'rohr').at(-1);
+
+    async function zeichne(b, ae, dies, klicks) {
+        b.modusSetzen(true);
+        const m = useEingabe({ bearbeitung: b, cde: { bearbeiter: 'Fabio' }, getModellSha: () => null, getHoehenversatz: () => 0,
+                               getKnoten: () => knotenDer(dies) });
+        expect(b.starte('rohr-zeichnen')).toBe(true);
+        b.setzeWert('hoehe', 240);                                        // getippt
+        for (const point of klicks) m.aufTreffer({ point });
+        await m.enter();
+        return neueHaltung(ae);
+    }
+
+    it('die Netzauskunft nennt die tiefste ABLAUF-Sohle — nicht den Zulauf, nicht die Platzierung', async () => {
+        const { ae } = await ausfuehren(schacht('cde-A', 0, 236.5));
+        const k = Object.fromEntries(knotenDer(geliefert(ae)).map(x => [x.globalId, x]));
+        expect(k['G-S'].anschlusshoehe).toBeCloseTo(235.39, 9);
+        expect(k['G-S'].punkt.y).toBe(240.8);                             // die Platzierung bleibt, was sie ist
+        expect(k['G-E'].anschlusshoehe).toBeUndefined();                           // nur ein Zulauf: die Sohle bleibt offen
+        expect(k['cde-A']).toMatchObject({ hoehenbezug: 'sohle', hoeheFest: true });
+    });
+
+    it('gezeichnet an den gelieferten Schacht: das Ende nimmt 235,39 statt der getippten 240', async () => {
+        const { b, ae } = await ausfuehren(schacht('cde-A', 0, 236.5));
+        const dies = geliefert(ae);
+        const h = await zeichne(b, ae, dies, [{ x: 0.3, y: 7, z: 0.2 }, { x: 29.7, y: 7, z: 0.1 }]);
+        expect(h.parameter.anschluss).toEqual({ anfang: 'cde-A', ende: 'G-S' });
+        expect(sohlenVon(h)).toEqual([236.5, 235.39]);                    // vorher [236.5, 240]
+        expect(ae.eintraege.at(-1).kommando.eingaben.zug[1]).toMatchObject({ knoten: 'G-S', hoehe: expect.closeTo(235.39, 9) });
+    });
+
+    it('ein gelieferter Schacht ohne Ablauf: die getippte Höhe gilt wie bisher', async () => {
+        const { b, ae } = await ausfuehren(schacht('cde-A', 0, 236.5));
+        const dies = geliefert(ae);
+        const h = await zeichne(b, ae, dies, [{ x: 0.3, y: 7, z: 0.2 }, { x: 59.8, y: 7, z: 0.3 }]);
+        expect(h.parameter.anschluss).toEqual({ anfang: 'cde-A', ende: 'G-E' });
+        expect(sohlenVon(h)).toEqual([236.5, 240]);
+    });
+
+    it('eine EIGENE Haltung ab dem gelieferten Schacht ändert dessen Sohle nicht — sie kommt aus der Lieferung', async () => {
+        const { ae } = await ausfuehren(schacht('cde-A', 0, 236.5),
+            haltung('cde-H0', [{ knoten: 'G-S', ost: 30, nord: 0, hoehe: 230 }, { ost: 30, nord: 20, hoehe: 229.9 }]));
+        expect(knotenDer(geliefert(ae)).find(x => x.globalId === 'G-S').anschlusshoehe).toBeCloseTo(235.39, 9);
+    });
+
+    it('Knoten ALLER gelieferten Modelle — vorher nur die des ersten', async () => {
+        const { ae } = await ausfuehren(schacht('cde-A', 0, 236.5));
+        const dies = geliefert(ae);
+        dies._knoten.set('m2', new Map([[5, { punkt: { x: 90, y: 239, z: 0 }, globalId: 'G2-S', name: 'G2-S' }]]));
+        expect(knotenDer(dies).map(k => k.globalId).sort()).toEqual(['G-E', 'G-S', 'G2-S', 'cde-A']);
+    });
+
+    it('als Kommando: ein Knotenverweis ohne Höhe nimmt die Sohle, die der Aufrufer für den Knoten kennt', async () => {
+        const { b, ae, plan } = await ausfuehren(schacht('cde-A', 0, 236.5));
+        const dies = geliefert(ae);
+        const knotenVon = (gid) => {
+            const k = knotenDer(dies).find(x => x.globalId === gid);
+            return k ? { ...k.punkt, ...(k.anschlusshoehe !== undefined ? { anschlusshoehe: k.anschlusshoehe } : {}) } : null;
+        };
+        const erg = await b.fuehreAus(haltung('cde-H', [{ knoten: 'cde-A' }, { knoten: 'G-S' }], { hoehe: 240 }), { knotenVon });
+        expect(erg.grund).toBe(null);
+        expect(sohlenVon(plan('cde-H'))).toEqual([236.5, 235.39]);
+    });
+});
