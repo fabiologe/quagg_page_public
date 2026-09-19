@@ -378,6 +378,11 @@
             @rueckmeldung-zu="rueckmeldung = null"
           />
         </Transition>
+        <!-- Wegwerf (K9): Kommandos ohne Werkzeug absetzen — nur im Entwicklungsmodus. -->
+        <template v-if="KommandoKonsole">
+          <KommandoKonsole v-if="konsoleOffen" :wende-an="wendeEintragAn" @zu="konsoleOffen = false" />
+          <button v-else type="button" class="kk-auf" @click="konsoleOffen = true">Kommando</button>
+        </template>
         <!-- Flüchtige Rückmeldung (Messwert, Fehlgriff) — über der Leiste. -->
         <Transition name="fade">
           <div v-if="messen.meldung.value" class="measure-toast"><CdeIcon name="measure" :size="14" /> {{ messen.meldung.value.text }}</div>
@@ -456,7 +461,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, shallowRef, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, reactive, shallowRef, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue';
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -477,6 +482,8 @@ import { applyLayerStyle } from '../services/LayerStyleManager.js';
 import { provideViewerApi } from '../composables/viewerApi.js';
 import { baueBaeume, eigenbauBaum } from '../services/Bauwerksstruktur.js';
 import { bestimmeBezug } from '../services/Projektkoordinaten.js';
+import { rahmenAusBezug, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { subjektAusStand } from '../services/kommando/Subjekt.js';
 import { anwendungsweg, planFuerEintrag } from '../services/Nachspielen.js';
 import { karteMitEngine } from '../services/GlobalIdKarte.js';
 import '../styles/theme.css';
@@ -580,6 +587,11 @@ function _bezuegeNeuBestimmen() {
     out[modelId] = bestimmeBezug({ georeferenz: geo[modelId] ?? null, versatz });
   }
   bezuege.value = out;
+  // DER RAHMEN DER KOMMANDOS (Teil XXIV, K1): Kommandos sprechen in
+  // Ost/Nord/m NN. Derselbe Bezug wie beim Eigenbau-Paket — das erste Modell —,
+  // denn die eigenen Bauteile leben in einer Welt, nicht in einer je Modell.
+  const ersterBezug = Object.values(out)[0] ?? null;
+  bearbeitung.setzeRahmen(ersterBezug ? rahmenAusBezug(ersterBezug) : null);
 
   // Die LESART-Zeile: das erste Modell, das nach Festlegung in Metern gelesen
   // wird. Der Bericht sagt, ob gerechnet (worker/inline) oder aus der Ablage
@@ -846,6 +858,9 @@ const eingabe = useEingabe({
   getHoehenversatz: () => _hoehenversatzAusBezug(),
   getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
   bereiteHoehenVor: () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
+  // Die Knoten des Netzes für den Fang beim ZEICHNEN (Teil XXIV, K9) — dieselbe
+  // Auskunft, die das Subjekt eines eigenen Bauteils bekommt (K3).
+  getKnoten: () => engine.value?.netzAuskunft?.()?.knoten ?? [],
 });
 
 /**
@@ -942,6 +957,11 @@ const tippWerkzeug = computed(() => {
 
 /** Nach dem Übernehmen: was passiert ist, und „Nochmal" — verschwindet mit dem nächsten Werkzeug. */
 const rueckmeldung = ref(null);
+
+// DIE KOMMANDO-KONSOLE (Teil XXIV, K9) — nur im Entwicklungsmodus, und nur
+// dort gebündelt: im Build ist `import.meta.env.DEV` falsch, der Import fällt weg.
+const KommandoKonsole = import.meta.env.DEV ? defineAsyncComponent(() => import('./dev/KommandoKonsole.vue')) : null;
+const konsoleOffen = ref(false);
 let _rueckmeldungTimer = null;
 /** Gelieferte Bauteile mit EIGENER Farbe, die der Katalog nicht übermalt hat. */
 const erdbauEigene = ref([]);
@@ -1185,6 +1205,21 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       const anschluesse = engine.value?.anschluesseFuer?.(result.globalId) ?? [];
       if (anschluesse.length) angereichert = { ...angereichert, anschluesse };
     }
+
+    // EIGENE BAUTEILE (Teil XXIV, K3): Stand, Hülle, Lage, Achse, Strang und
+    // Anschlüsse aus DERSELBEN Funktion, die der Kommandoweg ohne Oberfläche
+    // nimmt — nur das Netz über alle Modelle reicht die Engine herein. Bis K3
+    // fragte der Viewer die Achse unter der Modellkennung; die Engine führt
+    // eigene Kanten unter `cde:<gid>`, und eine eigene Haltung hatte weder
+    // Achse noch Strang. Einen Versatz hatte kein eigenes Bauteil (die Engine
+    // setzt ihn nur für gelieferte Modelle) — Verschieben per Formular tat
+    // an ihnen nichts. Gemessen 2026-09-18 in 42069.
+    const eigen = subjektAusStand(result.globalId, {
+      wirksamerStand: aenderungen.wirksamerStand,
+      rahmen: bearbeitung.rahmen ?? rahmenOhneBezug(),
+      netz: engine.value?.netzAuskunft?.() ?? null,
+    });
+    if (eigen) angereichert = { ...angereichert, ...eigen };
 
     // DIE LAGE IN PROJEKTKOORDINATEN — und der Weg zurück.
     //
@@ -1928,6 +1963,8 @@ async function entwerteNach(arten) {
     engine.value?.setzeJournalStand?.({
       lagen, ableitungen,
       kanten, knoten, gelaende, koerper,
+      // Für die Fachgrenzen der Rezeptwerte in der Prüfliste (K10).
+      bauplaene: erzeugtStand,
       verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
       // Die NAMEN eigener Bauteile (G7): Prüfliste und Kandidatenlisten
       // nennen sie beim Namen statt „eigener Körper".
@@ -3209,6 +3246,12 @@ function onToggleNotes() { panels.toggle('issues'); }
 
 /* T3: Die Modus-Leiste — unten mittig, wie die Statuszeile in flood-3D. */
 /* Die Modus-Leiste wohnt seit Teil XVI in CdeKontextleiste.vue. */
+/* Der Knopf der Kommando-Konsole (K9, nur Entwicklungsmodus). */
+.kk-auf {
+  position: absolute; left: 12px; bottom: 12px; z-index: 30;
+  background: var(--cde-fill); color: var(--cde-text-dim); border: 1px dashed var(--cde-line);
+  border-radius: var(--cde-radius-sm); font-size: var(--cde-font-xs); padding: 2px 8px;
+}
 
 /* T1.3: Measurement UI */
 .measure-clear {

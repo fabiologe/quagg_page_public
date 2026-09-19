@@ -1203,8 +1203,8 @@ export const GELAENDE_OPS = Object.freeze({
         werkzeug: {
             id: 'graben-ausheben', titel: 'Ausheben', icon: 'ausheben', rang: 2,
             felder: [
-                { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 2 },
-                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
+                { name: 'mass', titel: 'Tiefe unter dem Rand', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, gueltig: { ueber: 0 }, vorgabe: 2 },
+                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
                 AUFLOCKERUNG_FELD,
             ],
             vorbelegung: () => ({ mass: 2, neigung: 1.5, auflockerung: regeltabelle('auflockerung', AUFLOCKERUNG).vorgabe }),
@@ -1251,8 +1251,8 @@ export const GELAENDE_OPS = Object.freeze({
                     { wert: 'hoehe', titel: 'Höhe über dem Rand' },
                     { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
                 ] },
-                { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, vorgabe: 1 },
-                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, leerErlaubt: true },
+                { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, gueltig: { ueber: 0 }, vorgabe: 1 },
+                { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
             ],
             vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
             ausEingabe: (werte, zug, { versatz }) => {
@@ -1311,7 +1311,7 @@ export const GELAENDE_OPS = Object.freeze({
                     { wert: 'rechts', titel: 'rechts der Zeichenrichtung' },
                     { wert: 'links', titel: 'links der Zeichenrichtung' },
                 ] },
-                { name: 'neigung', titel: 'Böschung 1 : n', typ: 'zahl', min: 0.1, max: 10, vorgabe: 1.5 },
+                { name: 'neigung', titel: 'Böschung 1 : n', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 1.5 },
             ],
             vorbelegung: () => ({ kante: 1, seite: 'rechts', neigung: 1.5 }),
             ausEingabe: (werte, zug, { versatz }) => {

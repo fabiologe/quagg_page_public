@@ -13,10 +13,11 @@
  * `rezeptAusDeklaration`, das dann nur ergänzt, was sich ableiten lässt.
  */
 import {
-    bandGeometrie, dreiecksGeometrie, flaechenGeometrie, massAus, platteKoerper, profilAus,
+    bandGeometrie, dreiecksGeometrie, flaechenGeometrie, hoehenUeberLaenge, massAus, platteKoerper, profilAus,
     punktXYZ, punkteAus, stabKoerper, sweepKoerper,
 } from './Geometriebau.js';
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
+import { bezugOder } from '../Achsbezug.js';
 
 /**
  * Die Geometriearten — die geschlossene Liste, die eine Deklaration nennen
@@ -48,9 +49,74 @@ function _vorgabeIn(felder) {
     return (feld) => v.get(feld) ?? null;
 }
 
+/**
+ * DIE SOHLEN EINER KANTE (Teil XXIV, K4 — Fabios E7).
+ *
+ * Gemessen am 2026-09-18: die Punkthöhe einer eigenen Haltung war die
+ * ROHRMITTE — der Sweep legt sein Profil um die Punkte —, während
+ * Längsschnitt, „Sohlhöhen festlegen" und Sohlzug dieselbe Zahl „Sohle"
+ * nannten. Die Sohle im Raum lag genau DN/2 darunter.
+ *
+ * Jetzt nennt der Bauplan seinen Bezug (`parameter.achsbezug`: 'mitte' |
+ * 'sohle'; ohne Angabe 'mitte' — alte Baupläne bleiben bitgleich), und wer
+ * eine Sohle liest oder schreibt, tut es HIER. Der Abstand Mitte → Sohle
+ * kommt aus dem PROFIL (Kreis r, Rechteck halbe Tiefe): der tiefste Punkt
+ * des gebauten Körpers ist damit genau die Sohle, nicht ungefähr.
+ *
+ * In welchem Bezug NEU gespeichert wird, entscheidet der Aufrufer über die
+ * Schreibstufe des Journals (`JournalFormat.kantenbezugNeu`) — das Rezept
+ * weiss nichts vom Journal.
+ */
+function _sohlen(geo, vorgabe) {
+    if (geo?.art !== 'sweep') return undefined;
+    const abstand = (parameter) => {
+        const p = profilAus(geo.profil, parameter, vorgabe);
+        return p?.punkte?.length ? Math.max(0, -Math.min(...p.punkte.map(q => q.v))) : 0;
+    };
+    const bezug = (parameter) => bezugOder(parameter?.achsbezug);
+    const lies = (parameter) => {
+        const d = bezug(parameter) === 'sohle' ? 0 : abstand(parameter);
+        return (parameter?.punkte ?? []).map(p => punktXYZ(p).y - d);
+    };
+    const speichere = (parameter, sohlen, { bezug: neu = 'mitte' } = {}) => {
+        const b = parameter?.achsbezug ? bezug(parameter) : bezugOder(neu);
+        const d = b === 'sohle' ? 0 : abstand(parameter);
+        const punkte = (parameter?.punkte ?? []).map((p, i) => {
+            const s = Number(sohlen?.[i]);
+            if (!Number.isFinite(s)) return p;
+            const q = punktXYZ(p);
+            return [q.x, s + d, q.z];
+        });
+        return { ...parameter, achsbezug: b, punkte };
+    };
+    return Object.freeze({
+        /** Mitte → Sohle in Metern, aus dem Profil. */
+        abstand,
+        /** Der Bezug des Bauplans ('mitte' ohne Angabe). */
+        bezug,
+        /** Die Sohlhöhe (Welt) je Punkt — gleich, in welchem Bezug gespeichert ist. */
+        lies,
+        /** Sohlhöhen (Welt) je Punkt speichern — im Bezug des Bauplans, sonst in `bezug`. */
+        speichere,
+        /** Die Enden auf Sohlhöhen (Welt) setzen, die Zwischenpunkte folgen linear; fehlt ein Ende, bleibt es. */
+        enden: (parameter, { anfang = null, ende = null } = {}, opts = {}) => {
+            const s = lies(parameter);
+            if (s.length < 2) return null;
+            const a = Number.isFinite(anfang) ? anfang : s[0];
+            const e = Number.isFinite(ende) ? ende : s[s.length - 1];
+            return speichere(parameter, hoehenUeberLaenge(parameter.punkte, a, e), opts);
+        },
+    });
+}
+
 /** Der Körper einer Deklaration mit Körper-Geometrie — null, wenn keiner entsteht. */
 function _koerper(geo, parameter, vorgabe) {
-    const punkte = punkteAus(parameter);
+    let punkte = punkteAus(parameter);
+    if (geo.art === 'sweep' && bezugOder(parameter?.achsbezug) === 'sohle') {
+        // Gespeichert ist die SOHLE — der Sweep legt sein Profil um die Mitte.
+        const d = _sohlen(geo, vorgabe).abstand(parameter);
+        punkte = punkte.map(p => [p[0], p[1] + d, p[2]]);
+    }
     if (geo.art === 'sweep') return sweepKoerper(punkte, profilAus(geo.profil, parameter, vorgabe));
     if (geo.art === 'stab') {
         return stabKoerper(punkte, profilAus(geo.profil, parameter, vorgabe),
@@ -83,13 +149,15 @@ function _formAus(geo, vorgabe) {
         if (geo.art === 'sweep') {
             const punkte = punkteAus(parameter);
             if (punkte.length < 2) return null;
-            // EIN EIGENES ROHR LIEGT IN DER ROHRMITTE (Teil XXI, E4): der Sweep
-            // legt sein Profil UM die gezeichneten Punkte. Ohne diese Angabe
-            // müsste der Kanalgraben raten, und er riet anders als der Längsschnitt.
+            // WO DIE PUNKTE EINES EIGENEN ROHRS LIEGEN (Teil XXI, E4; Teil XXIV,
+            // K4): das sagt der Bauplan — ohne Angabe in der Rohrmitte, weil
+            // der Sweep sein Profil UM die Punkte legt. Dazu der Abstand zur
+            // Sohle aus dem Profil, damit der Kanalgraben nicht über DN rät.
             if (form === 'linie') {
                 const feld = geo.profil?.durchmesser;
+                const s = _sohlen(geo, vorgabe);
                 return { punkte: punkte.map(punktXYZ), dn: (feld && Number(parameter?.[feld])) || null,
-                         achsbezug: 'mitte', quelle: 'bauplan' };
+                         achsbezug: s.bezug(parameter), sohlabstand: s.abstand(parameter), quelle: 'bauplan' };
             }
             // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster
             // Punkt IST seine Sohle — und die Form SAGT es (A9), statt dass
@@ -143,6 +211,7 @@ function _laengeVon(punkte) {
 /** Eine Kante: nur, was die Rolle hat — eine gezeichnete Linie ist eine Trasse, kein Kanal. */
 function _fachmodellKante(d) {
     const dn = d.geometrie?.profil?.durchmesser ?? null;
+    const sohlen = _sohlen(d.geometrie, _vorgabeIn(d.felder));
     return (globalId, plan) => {
         const roh = plan?.parameter?.punkte;
         if (!Array.isArray(roh) || roh.length < 2) return {};
@@ -151,14 +220,30 @@ function _fachmodellKante(d) {
             globalId, name: plan.name ?? '', kategorie: plan.kategorie ?? d.kategorieVorgabe,
             anfang: punkte[0], ende: punkte[punkte.length - 1], punkte,
             laenge: _laengeVon(punkte), dn: (dn && Number(plan.parameter?.[dn])) || null, quelle: 'bauplan',
+            // Die Netzkante sagt, WAS ihre Höhen sind (K4) — Längsschnitt,
+            // Befunde und Überdeckung rechnen damit auf die Sohle.
+            ...(sohlen ? { achsbezug: sohlen.bezug(plan.parameter), sohlabstand: sohlen.abstand(plan.parameter) } : {}),
+            // … und woran sie angeschlossen ist, wenn der Bauplan es nennt (K8, E6).
+            ...(_anschlussAus(plan.parameter) ? { anschluss: _anschlussAus(plan.parameter) } : {}),
         }] };
     };
 }
+/** Die Erklärung `anschluss: {anfang?, ende?}` eines Bauplans — nur, was eine GlobalId nennt. */
+function _anschlussAus(parameter) {
+    const a = parameter?.anschluss;
+    if (!a || typeof a !== 'object') return null;
+    const aus = {};
+    for (const ende of ['anfang', 'ende']) if (typeof a[ende] === 'string' && a[ende]) aus[ende] = a[ende];
+    return Object.keys(aus).length ? aus : null;
+}
+
 /** Der Netz-Knoten eines Schachts ist die SOHLE (dieselbe Konvention wie die Platzierung). */
 function _fachmodellKnoten(globalId, plan) {
     const roh = plan?.parameter?.punkte;
     if (!Array.isArray(roh) || !roh.length) return {};
-    return { knoten: [{ globalId, name: plan.name ?? '', punkt: punktXYZ(roh[0]) }] };
+    // `hoehenbezug` (K8): ein Zugpunkt auf diesem Knoten übernimmt seine Sohle —
+    // bei einem eigenen Schacht IST y die Sohle, bei einem gelieferten nicht sicher.
+    return { knoten: [{ globalId, name: plan.name ?? '', punkt: punktXYZ(roh[0]), hoehenbezug: 'sohle' }] };
 }
 const _fachmodellNichts = () => ({});
 const _fachmodellGelaende = (globalId) => ({ gelaende: [globalId] });
@@ -188,6 +273,12 @@ export function rezeptAusDeklaration(d) {
         r.baue = _baue(d.geometrie, vorgabe);
         const formAus = _formAus(d.geometrie, vorgabe);
         if (formAus) r.formAus = formAus;
+        // Eine KANTE im Netz kennt ihre Sohlen (K4). Ein Schacht ist auch ein
+        // Sweep, aber seine Punkte SIND Sohle und Deckel — er braucht das nicht.
+        if (d.netzrolle === 'kante') {
+            const sohlen = _sohlen(d.geometrie, vorgabe);
+            if (sohlen) r.sohlen = sohlen;
+        }
     }
     if (typeof r.fachmodell !== 'function') r.fachmodell = _fachmodell(d);
     // Was dieses Bauteil HAT (AE) — abgeleitet, nie von Hand gepflegt.

@@ -35,12 +35,13 @@ import { IfcQuelle } from './IfcQuelle.js';
 import { importBefund, zaehltAlsBauteil } from './ImportBefund.js';
 import { inMeterUmrechnen } from './Einheiten.js';
 import { erzeugeEinheitenWorker } from './EinheitenWorker.js';
-import { strangAb } from './Netztopologie.js';
+import { strangMitAchsen } from './Netztopologie.js';
+import { achseAusKante } from './CdeAchsen.js';
 
 import { leseGeoreferenz } from './Georeferenz.js';
 import { erdmassen as _ausgelagert_erdmassen } from './Erdmassen.js';
 import { _quellFormVon as _ausgelagert__quellFormVon, _achseAlsLinie as _ausgelagert__achseAlsLinie, gelaendeKandidaten as _ausgelagert_gelaendeKandidaten, erdbauKandidaten as _ausgelagert_erdbauKandidaten, koerperKandidaten as _ausgelagert_koerperKandidaten } from './engine/Quellformen.js';
-import { netzVon as _ausgelagert_netzVon, anschluesseVon as _ausgelagert_anschluesseVon, anschluesseFuer as _ausgelagert_anschluesseFuer, schachtPunkteVon as _ausgelagert_schachtPunkteVon, knotenGriffe as _ausgelagert_knotenGriffe } from './engine/Netzabfragen.js';
+import { netzVon as _ausgelagert_netzVon, anschluesseVon as _ausgelagert_anschluesseVon, anschluesseFuer as _ausgelagert_anschluesseFuer, schachtPunkteVon as _ausgelagert_schachtPunkteVon, netzAuskunft as _ausgelagert_netzAuskunft, knotenGriffe as _ausgelagert_knotenGriffe } from './engine/Netzabfragen.js';
 import { beziehungen as _ausgelagert_beziehungen, _beziehungsObjekte as _ausgelagert__beziehungsObjekte, _beziehungenDirtyAus as _ausgelagert__beziehungenDirtyAus, kollisionenPruefen as _ausgelagert_kollisionenPruefen } from './engine/Beziehungslauf.js';
 import { pruefeAlles as _ausgelagert_pruefeAlles } from './engine/Pruefliste.js';
 import { leseAchsen as _ausgelagert_leseAchsen } from './ifcleser/Achsen.js';
@@ -2314,11 +2315,12 @@ export class IfcEngine {
     /**
      * Die GlobalId eines Bauteils — aus dem GUID-Index, nicht aus den Attributen.
      *
-     * `parseItemData` liest `item['GlobalId']`, und das ist in Fragments nicht
+     * `parseItemData` las `item['GlobalId']`, und das ist in Fragments nicht
      * da: der IfcLoader importiert von Haus aus nur einen schmalen Satz
      * Attribute (Projekt/Geschoss, Materialien, Merkmalssätze), die GlobalId
      * gehört nicht dazu. Sie führt die Bibliothek in einem EIGENEN Index,
-     * erreichbar über `getGuidsByLocalIds`.
+     * erreichbar über `getGuidsByLocalIds` — im Datenabruf steht sie als
+     * `_guid` (seit 2026-09-19 gelesen über `IfcDataConfig.globalIdAusDaten`).
      *
      * Das war nicht folgenlos: `parseItemData` fällt auf `''` zurück, und
      * `eintragen` verwirft einen Eintrag ohne GlobalId. Jede Bearbeitung endete
@@ -2386,8 +2388,12 @@ export class IfcEngine {
      */
     setzeJournalStand({ kanten = [], knoten = [], gelaende = [], koerper = [], verdeckt = new Set(),
                         namen = new Map(), gelaendeKategorien = null, bauformVon = null,
-                        gelaendeBrauchtMerkmale = false, lagen = new Map(), ableitungen = [] } = {}) {
+                        gelaendeBrauchtMerkmale = false, lagen = new Map(), ableitungen = [],
+                        bauplaene = null } = {}) {
         this._cdeNamen = namen instanceof Map ? namen : new Map(Object.entries(namen ?? {}));
+        // Die Baupläne der eigenen Bauteile — nur für die Fachgrenzen ihrer
+        // Rezeptwerte in der Prüfliste (K10); die Engine liest kein Journal.
+        this._cdeBauplaene = bauplaene instanceof Map ? bauplaene : null;
         const neueLagen = lagen instanceof Map ? lagen : new Map(Object.entries(lagen ?? {}));
         const neuVerdeckt = verdeckt instanceof Set ? verdeckt : new Set(verdeckt);
         // Teil XVII: WAS sich gegen den vorigen Stand bewegt hat — der
@@ -2960,23 +2966,13 @@ export class IfcEngine {
     schachtPunkteVon(...a) { return _ausgelagert_schachtPunkteVon(this, ...a); }
 
     strangVon(modelId, localId) {
-        const netz = this.netzVon(modelId);
-        if (!netz.kanten.has(localId)) return [];
         // GlobalId und Name stehen seit 17.3 AN der Achse — ein Weg für
-        // geliefert und cde, keine Quell-Nachschläge mehr.
-        return strangAb(netz, localId).map((id) => {
-            const a = this.achseVon(modelId, id);
-            return {
-                localId: id,
-                globalId: a?.globalId ?? null,
-                name: a?.name ?? '',
-                anfang: a?.anfang ?? null,
-                ende: a?.ende ?? null,
-                laenge: a?.laenge ?? 0,
-                dn: a?.dn ?? null,
-            };
-        }).filter(k => k.globalId && k.anfang && k.ende);
+        // geliefert und cde; die Form des Strangs lebt seit K3 an EINER Stelle.
+        return strangMitAchsen(this.netzVon(modelId), localId, (id) => this.achseVon(modelId, id));
     }
+
+    /** → `engine/Netzabfragen.js` — das Netz, wie ein eigenes Subjekt es braucht (Teil XXIV, K3). */
+    netzAuskunft(...a) { return _ausgelagert_netzAuskunft(this, ...a); }
 
     /** → `engine/Netzabfragen.js` (Teil XXIII, A8: Engine-Diät). */
     anschluesseVon(...a) { return _ausgelagert_anschluesseVon(this, ...a); }
@@ -3175,13 +3171,7 @@ export class IfcEngine {
      */
     achseVon(modelId, localId) {
         if (typeof localId === 'string' && localId.startsWith('cde:')) {
-            const k = this._cdeKanten?.get(localId.slice(4)) ?? null;
-            if (!k) return null;
-            return {
-                globalId: k.globalId, name: k.name, kategorie: k.kategorie,
-                anfang: k.anfang, ende: k.ende, polyline: k.punkte,
-                laenge: k.laenge, dn: k.dn, quelle: 'bauplan',
-            };
+            return achseAusKante(this._cdeKanten?.get(localId.slice(4)) ?? null);
         }
         return this.achsenVon(modelId).get(localId) ?? null;
     }

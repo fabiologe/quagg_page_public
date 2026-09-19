@@ -121,8 +121,11 @@ describe('Vorbelegung aus der Achse, in m NN', () => {
         const b = useBearbeitung();
         await b.einordne({ ...HALTUNG }, resolverExtrusion);
         expect(b.starte('sohlhoehen-setzen')).toBe(true);
-        expect(b.werte.anfang).toBeCloseTo(318.4, 3);
-        expect(b.werte.ende).toBeCloseTo(302.5, 3);
+        // Die Achse kommt aus der EXTRUSION — sie liegt in der Rohrmitte. Seit
+        // Teil XXIV (K4, Empfehlung O7) steht im Feld „Sohle" die SOHLE, DN/2
+        // darunter (DN 500: 0,25 m); vorher stand dort die Mittenhöhe.
+        expect(b.werte.anfang).toBeCloseTo(318.4 - 0.25, 3);
+        expect(b.werte.ende).toBeCloseTo(302.5 - 0.25, 3);
     });
 
     it('eine bereits getroffene Festlegung schlägt die Datei', async () => {

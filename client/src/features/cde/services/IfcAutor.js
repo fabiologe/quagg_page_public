@@ -47,6 +47,7 @@ import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAn
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
+import { huelleAusGrenzen } from './geometrie/Huelle.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
 
@@ -74,17 +75,11 @@ export function ankerAusBox(box) {
 export function huelleAusBox(box) {
     if (!box || typeof box.getCenter !== 'function') return null;
     if (typeof box.isEmpty === 'function' && box.isEmpty()) return null;
-    const m = box.getCenter(new THREE.Vector3());
-    return {
-        anker: { x: m.x, y: m.y, z: m.z },
-        unterkante: box.min?.y ?? m.y,
-        oberkante: box.max?.y ?? m.y,
-        // Die ganze Box (Teil XVI, S2): die Vorschau einer Lageänderung
-        // zeichnet den Drahtkasten am neuen Ort — ohne zweiten Boxen-Aufruf.
-        box: (box.min && box.max)
-            ? { min: { x: box.min.x, y: box.min.y, z: box.min.z }, max: { x: box.max.x, y: box.max.y, z: box.max.z } }
-            : null,
-    };
+    // Die Rechnung selbst steht in `geometrie/Huelle.js` — der Kommandoweg
+    // rechnet die Hülle eines eigenen Bauteils ohne Engine aus derselben
+    // Formel (Teil XXIV, K3). Die ganze Box (Teil XVI, S2) kommt mit: die
+    // Vorschau einer Lageänderung zeichnet den Drahtkasten am neuen Ort.
+    return huelleAusGrenzen(box.min, box.max);
 }
 
 /** Der Weg von der jetzigen Lage zum Ziel. `null`, wenn eine Seite fehlt. */

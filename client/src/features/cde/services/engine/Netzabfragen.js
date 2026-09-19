@@ -8,7 +8,8 @@
  * ihre Aufrufer (Viewer, Tests) unverändert bleiben.
  */
 import { CDE_MODELL_ID } from '../IfcAutor.js';
-import { baueNetz } from '../Netztopologie.js';
+import { anschluesseMitAchsen, baueNetz } from '../Netztopologie.js';
+import { achsbezugDerAchse } from '../Achsbezug.js';
 
 /**
  * Das Netz eines Modells — wer hängt an wem (Stufe 14.5).
@@ -27,21 +28,24 @@ export function netzVon(engine, modelId, { toleranz } = {}) {
         // Verdeckte bleiben draussen: ein ausgeblendetes Bauteil, das
         // weiter verkettet und Befunde trägt, ist ein Geist im Netz.
         if (a.globalId && verdeckt.has(a.globalId)) continue;
-        kanten.push({ id, anfang: a.anfang, ende: a.ende, dn: a.dn, laenge: a.laenge });
+        kanten.push({ id, anfang: a.anfang, ende: a.ende, dn: a.dn, laenge: a.laenge,
+                      achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null });
     }
     for (const [gid, k] of engine._cdeKanten ?? new Map()) {
         if (verdeckt.has(gid)) continue;
-        kanten.push({ id: `cde:${gid}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge });
+        kanten.push({ id: `cde:${gid}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge,
+                      achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null,
+                      anschluss: k.anschluss ?? null });
     }
 
     const knotenListe = [];
     for (const [id, k] of knoten) {
         if (k.globalId && verdeckt.has(k.globalId)) continue;
-        knotenListe.push({ id, punkt: k.punkt });
+        knotenListe.push({ id, punkt: k.punkt, globalId: k.globalId ?? null });
     }
     for (const [gid, k] of engine._cdeKnoten ?? new Map()) {
         if (verdeckt.has(gid)) continue;
-        knotenListe.push({ id: `cde:${gid}`, punkt: k.punkt });
+        knotenListe.push({ id: `cde:${gid}`, punkt: k.punkt, globalId: gid });
     }
 
     return baueNetz({ kanten, knoten: knotenListe, toleranz });
@@ -59,25 +63,7 @@ export function netzVon(engine, modelId, { toleranz } = {}) {
  * Dateien keine erklärten Anschlüsse.
  */
 export function anschluesseVon(engine, modelId, localId) {
-    const netz = engine.netzVon(modelId);
-    const knoten = netz.knoten.get(localId);
-    if (!knoten) return [];
-    const eintrag = (kantenId, ende) => {
-        const a = engine.achseVon(modelId, kantenId);
-        return a?.globalId ? {
-            localId: kantenId,
-            globalId: a.globalId,
-            name: a.name ?? '',
-            kategorie: a.kategorie ?? 'IFCPIPESEGMENT',
-            // `ende` sagt, welches Ende an DIESEM Bauwerk hängt.
-            ende,
-            anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
-        } : null;
-    };
-    return [
-        ...knoten.kantenAb.map(id => eintrag(id, 'anfang')),
-        ...knoten.kantenAn.map(id => eintrag(id, 'ende')),
-    ].filter(Boolean);
+    return anschluesseMitAchsen(engine.netzVon(modelId), localId, (id) => engine.achseVon(modelId, id));
 }
 
 /**
@@ -100,12 +86,37 @@ export function anschluesseFuer(engine, globalId) {
     const ort = engine.schachtOrt(globalId);
     if (ort) return engine.anschluesseVon(ort.modelId, ort.localId);
     if (engine._cdeKnoten?.has(globalId) && !engine._verdeckt?.has(globalId)) {
-        // Das Netz eines beliebigen Modells führt die CDE-Knoten mit; ohne
-        // geliefertes Modell reicht das leere Achsenband.
-        const modelId = [...(engine._achsen?.keys() ?? [])][0] ?? CDE_MODELL_ID;
-        return engine.anschluesseVon(modelId, `cde:${globalId}`);
+        return engine.anschluesseVon(_netzModellFuerEigene(engine), `cde:${globalId}`);
     }
     return [];
+}
+
+/**
+ * Das Modell, dessen Netz die EIGENEN Kanten und Knoten mitführt: das Netz
+ * eines beliebigen Modells trägt die CDE-Teile; ohne geliefertes Modell reicht
+ * das leere Achsenband. EINE Regel für Anschlüsse und Netzauskunft.
+ */
+function _netzModellFuerEigene(engine) {
+    return [...(engine._achsen?.keys() ?? [])][0] ?? CDE_MODELL_ID;
+}
+
+/**
+ * Die NETZAUSKUNFT für ein eigenes Subjekt (Teil XXIV, K3): das Netz samt
+ * gelieferter Kanten, die Achse je Kanten-Id und alle Knoten. `subjektAusStand`
+ * nimmt sie im Viewer; ohne Oberfläche baut es dieselbe Auskunft aus dem
+ * Journal (`CdeAchsen.eigeneNetzauskunft`). Die Felder am Subjekt entstehen so
+ * an EINER Stelle, nur der Umfang des Netzes unterscheidet sich.
+ */
+export function netzAuskunft(engine) {
+    const modelId = _netzModellFuerEigene(engine);
+    return {
+        netz: engine.netzVon(modelId),
+        achseVon: (id) => engine.achseVon(modelId, id),
+        knoten: [...schachtPunkteVon(engine, modelId)]
+            .map(([globalId, pk]) => ({ globalId, punkt: { x: pk.x, y: pk.y, z: pk.z }, name: pk.name ?? '',
+                                         // Ein eigener Knoten steht auf seiner Sohle (K8).
+                                         ...(engine._cdeKnoten?.has(globalId) ? { hoehenbezug: 'sohle', hoeheFest: true } : {}) })),
+    };
 }
 
 /**

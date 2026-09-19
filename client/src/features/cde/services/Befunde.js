@@ -36,6 +36,8 @@
  */
 
 import { aufgeloestesRegelwerk, eingebautesRegelwerk, mindestGefaelleAus, regelquelle } from './regeln/Regelwerk.js';
+import { sohleAnAchse } from './Achsbezug.js';
+import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
 
 /**
  * Die Vorgabe-Grenzwerte — seit Teil XXIII (AR) aus dem REGELWERK-Katalog
@@ -68,6 +70,11 @@ export const SCHWEREN = Object.freeze(['hinweis', 'warnung']);
  *                             kann, bleibt sie Handarbeit.
  *   `schacht_ohne_anschluss` — löschen kann man ihn nicht anbieten, ohne zu
  *                              wissen, ob er nur unvollständig geliefert wurde
+ *   `anschluss_verwaist`    — der genannte Knoten ist weg; ob ein anderer
+ *                             gemeint ist oder die Haltung mit, weiss nur der Mensch
+ *   `wert_ausserhalb`       — eine Fachgrenze des Formulars (K10); die Kur ist
+ *                             dasselbe Werkzeug mit einem anderen Wert, und ob der
+ *                             Wert falsch ist, weiss nur, wer ihn eingab
  */
 export const KUREN = Object.freeze({
     gefaelle_gegen:      { bearbeitung: 'fliessrichtung-setzen', werte: { richtung: 'umgekehrt' } },
@@ -81,6 +88,8 @@ export const KUREN = Object.freeze({
     dn_nimmt_ab:         { bearbeitung: 'profilgroesse-setzen' },
     profilform_widerspruch: { bearbeitung: 'profilform-setzen' },
     loses_ende:          { bearbeitung: 'an-schacht-anschliessen' },
+    // Die Erklärung passt nicht mehr zum Ort (K8): das Ende wieder AUF den Knoten.
+    anschluss_abweichend: { bearbeitung: 'an-schacht-anschliessen' },
     // Aus dem Beziehungsindex (Teil XVII, B4):
     ueberdeckung_gering: { bearbeitung: 'sohlhoehen-setzen' },
     kreuzung_abstand:    { bearbeitung: 'sohlhoehen-setzen' },
@@ -102,16 +111,53 @@ const GRENZE_JE_REGEL = Object.freeze({
 });
 
 /** Ein Befund — immer dieselbe Form, damit die Anzeige nichts wissen muss. */
-function befund(regel, schwere, text, { wert, grenze, quelle } = {}) {
+function befund(regel, schwere, text, { wert, grenze, quelle, feld } = {}) {
     return {
         regel, schwere, text, wert: wert ?? null, grenze: grenze ?? null,
         quelle: quelle ?? (GRENZE_JE_REGEL[regel] ? regelquelle(GRENZE_JE_REGEL[regel]) : 'Büro-Regelwerk (Vorgabe)'),
         kur: KUREN[regel] ?? null,
+        // Das Rezeptfeld, dessen Wert beurteilt wird (K10) — beurteilt eine
+        // Regel ihn schon, sagt die Fachgrenze des Formulars nichts zweites.
+        ...(feld ? { feld } : {}),
     };
 }
 
 const _m = (v) => `${Number(v).toFixed(2)} m`;
 const _p = (v) => `${Number(v).toFixed(1)} ‰`;
+
+/**
+ * FACHGRENZEN EINES FORMULARS (Teil XXIV, K10 — Fabios E5): ein Wert ausserhalb
+ * von `min`/`max` wird AUSGEFÜHRT und markiert, nicht abgelehnt. DN 5000,
+ * eine Grube 70 m tief, ein Böschungswinkel von 5° — ungewöhnlich, vielleicht
+ * falsch, aber nicht unmöglich; das entscheidet der Mensch, nicht das Formular.
+ * Was technisch nicht geht, erklärt ein Feld als `gueltig` — das prüft
+ * `Bearbeitungen.pruefe` und sperrt.
+ *
+ * @param {Array} felder  aufgelöste Felder (`felderFuer`)
+ * @param {object} werte
+ * @returns {Array} Befunde der Schwere `warnung`, je Feld höchstens einer
+ */
+export function befundeFuerWerte(felder, werte) {
+    const out = [];
+    for (const f of felder ?? []) {
+        if (f?.typ !== 'zahl') continue;
+        const roh = werte?.[f.name];
+        if (roh === null || roh === undefined || roh === '') continue;
+        const z = Number(roh);
+        if (!Number.isFinite(z)) continue;
+        const titel = f.label || f.titel || f.name;
+        const e = f.einheit ? ` ${f.einheit}` : '';
+        const unter = f.min != null && z < f.min, ueber = f.max != null && z > f.max;
+        if (!unter && !ueber) continue;
+        out.push({
+            regel: 'wert_ausserhalb', schwere: 'warnung', feld: f.name,
+            text: `${titel} ${z}${e} liegt ${unter ? 'unter' : 'über'} der üblichen Grenze — ausgeführt, bitte prüfen.`,
+            wert: `${z}${e}`, grenze: unter ? `mindestens ${f.min}${e}` : `höchstens ${f.max}${e}`,
+            quelle: 'Fachgrenze des Formulars', kur: null,
+        });
+    }
+    return out;
+}
 
 /** Das Mindestgefälle für diese Nennweite — fester Wert, sonst die benannte Formel 1:DN (Regelwerk). */
 export function mindestGefaelle(dnMm, regelwerk = aufgeloestesRegelwerk()) {
@@ -136,14 +182,19 @@ export function befundeFuer(pruefling, regelwerk = aufgeloestesRegelwerk()) {
     // DIE FESTGELEGTE RICHTUNG GILT. Wer die Fliessrichtung korrigiert hat,
     // soll den Gefälle-Befund verschwinden sehen — sonst wäre der Klick eine
     // Behauptung ohne Wirkung. Die GEOMETRIE bleibt unberührt; getauscht wird
-    // nur, was als Anfang gilt.
+    // nur, was als Anfang gilt — und die Punkte dazwischen laufen mit.
     const a = pruefling.umgekehrt && pruefling.achse
-        ? { ...pruefling.achse, anfang: pruefling.achse.ende, ende: pruefling.achse.anfang }
+        ? { ...pruefling.achse, anfang: pruefling.achse.ende, ende: pruefling.achse.anfang,
+            polyline: [...punkteDerAchse(pruefling.achse)].reverse(), punkte: undefined }
         : (pruefling.achse ?? null);
 
     // ── Gefälle ─────────────────────────────────────────────────────────────
     if (a?.anfang && a?.ende && Number.isFinite(a.laenge) && a.laenge > 0) {
-        const fall = a.anfang.y - a.ende.y;             // positiv = fällt
+        // DAS GEFÄLLE aus der EINEN Rechnung (Teil XXIV, K5): gegen die
+        // Weglänge in der Draufsicht — bis K5 hier gegen die gerade Sehne,
+        // und eine Haltung mit Knick erschien steiler, als sie ist.
+        const g = gefaelle(punkteDerAchse(a));
+        const fall = g.fall;                             // positiv = fällt
         // GEGEN DIE WAAGERECHTE LÄNGE, nicht gegen die 3D-Länge.
         //
         // `laenge` aus der Achse ist die räumliche Strecke — sie enthält die
@@ -152,9 +203,10 @@ export function befundeFuer(pruefling, regelwerk = aufgeloestesRegelwerk()) {
         // die 3D-Länge nie übersteigen. Genau daran ist die Regel an Fabios
         // A64-Netz zunächst vorbeigelaufen, obwohl der Fall (237 m auf einer
         // Haltung) dort steht. Ein Gefälle ist Höhe je waagerechter Strecke.
-        const laenge2d = Math.hypot(a.ende.x - a.anfang.x, a.ende.z - a.anfang.z);
-        const bezug = laenge2d > 1e-6 ? laenge2d : a.laenge;
-        const promille = (fall / bezug) * 1000;
+        // Ein senkrechtes Stück hat keine waagerechte Länge — dann gilt die
+        // räumliche, damit „steiler als erlaubt" überhaupt fallen kann.
+        const laenge2d = g.laenge2d;
+        const promille = laenge2d > 1e-6 ? g.promille : (fall / a.laenge) * 1000;
 
         if (fall < -0.001) {
             // Der häufigste echte Datenfehler — im A64-Netz dreimal.
@@ -210,7 +262,7 @@ export function befundeFuer(pruefling, regelwerk = aufgeloestesRegelwerk()) {
             out.push(befund('dn_ausserhalb', 'warnung',
                 'Nennweite ausserhalb des Bereichs, den der Typ vorsieht.',
                 { wert: `DN ${dn}`, grenze: `${feld.min ?? '—'}…${feld.max ?? '—'} mm`,
-                  quelle: 'Typprofil' }));
+                  quelle: 'Typprofil', feld: 'dn' }));
         } else if (!regelwerk.dnReihe.includes(dn)) {
             out.push(befund('dn_nicht_normreihe', 'hinweis',
                 'Nennweite nicht in der üblichen Reihe.',
@@ -283,6 +335,23 @@ export function befundeFuerNetz(netz, regelwerk = aufgeloestesRegelwerk()) {
             { wert: '0 Anschlüsse', quelle: 'Netz aus der Geometrie' }));
     }
 
+    // EIN GENANNTER ANSCHLUSS, der nicht am Ort ist (Teil XXIV, K8 — Fabios E6):
+    // die Kante nennt ihren Knoten, sitzt aber nicht mehr auf ihm. Die
+    // Verknüpfung gilt weiter; der Befund sagt, dass Erklärung und Lage
+    // auseinanderlaufen — statt eines stillen losen Endes.
+    for (const a of netz.abweichend ?? []) {
+        anhaengen(a.kante, befund('anschluss_abweichend', 'warnung',
+            `Das ${a.ende === 'anfang' ? 'obere' : 'untere'} Ende ist an ${a.globalId} angeschlossen, liegt aber nicht darauf.`,
+            { wert: _m(a.abstand), grenze: `höchstens ${(regelwerk.netzToleranzM ?? 0.001) * 1000} mm`,
+              quelle: 'Anschluss im Bauplan' }));
+    }
+    // … und einer, den es nicht mehr gibt (gelöscht, verdeckt).
+    for (const v of netz.verwaist ?? []) {
+        anhaengen(v.kante, befund('anschluss_verwaist', 'warnung',
+            `Das ${v.ende === 'anfang' ? 'obere' : 'untere'} Ende nennt ${v.globalId} — das Bauwerk gibt es nicht mehr.`,
+            { wert: v.globalId, quelle: 'Anschluss im Bauplan' }));
+    }
+
     // Ein Rohrende, das auf keinem Schacht sitzt.
     for (const l of netz.loseEnden) {
         anhaengen(l.kante, befund('loses_ende', 'warnung',
@@ -311,13 +380,17 @@ export function befundeFuerNetz(netz, regelwerk = aufgeloestesRegelwerk()) {
         }
 
         // Der Zulauf darf nicht unter dem Ablauf liegen — sonst steht Wasser
-        // im Schacht. Verglichen werden die Sohlhöhen an DIESEM Knoten.
-        const tiefsterAb = Math.min(...ab.map(k => k.anfang.y));
+        // im Schacht. Verglichen werden die SOHLHÖHEN an DIESEM Knoten — seit
+        // K4 wirklich: jede Kante sagt, was ihre Höhe ist (eine eigene Haltung
+        // in Rohrmitte und eine gelieferte auf Sohlniveau lagen sonst DN/2
+        // auseinander, ohne dass eine Sohle es tat).
+        const tiefsterAb = Math.min(...ab.map(k => sohleAnAchse(k.anfang.y, k)));
         for (const k of zu) {
-            if (k.ende.y < tiefsterAb - 0.005) {
+            const sohle = sohleAnAchse(k.ende.y, k);
+            if (sohle < tiefsterAb - 0.005) {
                 anhaengen(k.id, befund('zulauf_unter_ablauf', 'warnung',
                     'Zulaufsohle liegt unter der Ablaufsohle — das Wasser müsste steigen.',
-                    { wert: _m(k.ende.y), grenze: `mindestens ${_m(tiefsterAb)}`,
+                    { wert: _m(sohle), grenze: `mindestens ${_m(tiefsterAb)}`,
                       quelle: 'Netz aus der Geometrie' }));
             }
         }

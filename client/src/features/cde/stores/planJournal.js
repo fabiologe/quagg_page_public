@@ -53,10 +53,10 @@ export function planInhaltsListe({ art, repoKey, uebernahme, entprellMs = 250 })
         if (schreibStufe() >= 3) {
             const ae = useAenderungen();
             const vorgang = aenderungen.length > 1 ? ae.neueVorgangsId() : undefined;
-            for (const { id, wert } of aenderungen) {
-                const nachher = wert ? (({ id: _weg, ...rest }) => rest)(wert) : null;
-                await ae.eintragen({ art, globalId: id, nachher, ...(vorgang ? { vorgang, vorgangTitel: titel ?? undefined } : {}) });
-            }
+            // Ganz oder gar nicht (Teil XXIV, K2): ein Radierzug ist EIN Vorgang, einmal gesichert.
+            await ae.eintragenVorgang(aenderungen.map(({ id, wert }) => ({
+                art, globalId: id, nachher: wert ? (({ id: _weg, ...rest }) => rest)(wert) : null,
+            })), vorgang ? { vorgang, vorgangTitel: titel ?? undefined } : {});
             return;
         }
         // Stufe 2 (A7a): wie bisher in die Liste.

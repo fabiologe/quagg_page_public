@@ -2,7 +2,21 @@
  * LaengsschnittSicht (Stufe 17.1) — Stationierung + geforderte Sohle.
  */
 import { describe, expect, it } from 'vitest';
-import { baueSicht, hoeheBei, griffe, sohlZugEintraege, neuePunkteFuerZug, cdeZugEintraege } from '../services/LaengsschnittSicht.js';
+import { baueSicht, hoeheBei, griffe, neuePunkteFuerZug } from '../services/LaengsschnittSicht.js';
+import { nachId } from '../services/Bearbeitungen.js';
+import { subjektAusStand, subjektAusStrang } from '../services/kommando/Subjekt.js';
+import { mitHoehenversatz, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+
+// SEIT O6 (Teil XXIV) schreibt ein Griff-Zug über das Werkzeug „Sohle am Punkt
+// setzen" (`sohle-ziehen`) — die Zusagen unten galten vorher für
+// `sohlZugEintraege`/`cdeZugEintraege` und gelten jetzt für das Werkzeug.
+const ZIEHEN = nachId('sohle-ziehen');
+const standMit = (parametrik = new Map(), erzeugt = new Map()) =>
+    (art) => (art === 'parametrik' ? parametrik : art === 'erzeugt' ? erzeugt : new Map());
+/** Geliefert: das Subjekt, das der Längsschnitt aus dem Strang baut. */
+const glied = (gid, stand = new Map()) =>
+    subjektAusStrang(STRANG.find(g => g.globalId === gid), { wirksamerStand: standMit(stand), hoehenversatz: 300 });
+const ziehe = (subjekt, ort, hoehe) => ZIEHEN.anwenden(subjekt, { hoehe }, { zug: [ort] });
 
 const STRANG = [
     { globalId: 'H1', name: 'H1', dn: 300,
@@ -104,11 +118,11 @@ describe('Die Griffe (17.2)', () => {
 });
 
 describe('Die Einträge eines Griff-Zugs', () => {
+    const SCHACHT = { x: 50, z: 0 };                  // H1-Ende = H2-Anfang
+
     it('je Segment EINE volle Rollen-Karte — das andere Ende behält die wirksame Höhe', () => {
-        const s = baueSicht({ strang: STRANG, hoehenversatz: 300 });
-        const e = sohlZugEintraege(s,
-            [{ globalId: 'H1', ende: 'E' }, { globalId: 'H2', ende: 'A' }], 308.75);
-        expect(e).toEqual([
+        // Welches Ende, sagt der ORT: an H1 das Ende, an H2 der Anfang.
+        expect(['H1', 'H2'].map(gid => ziehe(glied(gid), SCHACHT, 308.75))).toEqual([
             { art: 'parametrik', globalId: 'H1',
               nachher: { sohlhoeheAnfang: 310, sohlhoeheEnde: 308.75 } },
             { art: 'parametrik', globalId: 'H2',
@@ -118,15 +132,15 @@ describe('Die Einträge eines Griff-Zugs', () => {
 
     it('baut auf der FORDERUNG auf, wo eine steht — nicht auf der Lieferung', () => {
         const stand = new Map([['H1', { sohlhoeheAnfang: 311, sohlhoeheEnde: 309.5 }]]);
-        const s = baueSicht({ strang: STRANG, hoehenversatz: 300, parametrikStand: stand });
-        const e = sohlZugEintraege(s, [{ globalId: 'H1', ende: 'E' }], 309);
-        expect(e[0].nachher).toEqual({ sohlhoeheAnfang: 311, sohlhoeheEnde: 309 });
+        expect(ziehe(glied('H1', stand), SCHACHT, 309).nachher).toEqual({ sohlhoeheAnfang: 311, sohlhoeheEnde: 309 });
     });
 
-    it('unbekanntes Segment oder kaputte Höhe: nichts, kein Wurf', () => {
-        const s = baueSicht({ strang: STRANG, hoehenversatz: 300 });
-        expect(sohlZugEintraege(s, [{ globalId: 'X', ende: 'A' }], 300)).toEqual([]);
-        expect(sohlZugEintraege(s, [{ globalId: 'H1', ende: 'A' }], NaN)).toEqual([]);
+    it('unbekanntes Segment, kaputte Höhe oder kein Ende am Ort: nichts, kein Wurf — und der Grund', () => {
+        expect(ziehe(subjektAusStrang(undefined, { wirksamerStand: standMit() }), SCHACHT, 300)).toBeNull();
+        expect(ziehe(glied('H1'), SCHACHT, NaN)).toBeNull();
+        const daneben = { x: 50.01, z: 0 };            // 1 cm neben dem Schacht — nicht mehr derselbe Ort
+        expect(ziehe(glied('H1'), daneben, 309)).toBeNull();
+        expect(ZIEHEN.warumNicht(glied('H1'), { hoehe: 309 }, { zug: [daneben] })).toMatch(/kein Ende liegt am Punkt/);
     });
 });
 
@@ -155,32 +169,37 @@ describe('neuePunkteFuerZug — Eigenes = echt (17.3b)', () => {
     });
 });
 
-describe('cdeZugEintraege — der Bauplan wird fortgeschrieben (17.3b)', () => {
+describe('Eigenes: der Bauplan wird fortgeschrieben (17.3b)', () => {
     const BAUPLAN = {
         rezept: 'rohr', kategorie: 'IFCPIPESEGMENT', name: 'H2.1', bauform: 'achse+profil',
         parameter: { punkte: [[50, 9, 0], [100, 8, 0]], dn: 300 },
     };
-    const opts = { bauplanVon: (gid) => (gid === 'cde-a' ? BAUPLAN : undefined), hoehenversatz: 300 };
+    const eigen = (plan, gid = 'cde-a') => subjektAusStand(gid, {
+        wirksamerStand: standMit(new Map(), new Map([[gid, plan]])), rahmen: mitHoehenversatz(rahmenOhneBezug(), 300) });
+    const ENDE = { x: 100, z: 0 };
 
-    it('neuer erzeugt-Eintrag: gleiche Kennung, gleiche Parameter, neue Höhen in WELT', () => {
-        const [e] = cdeZugEintraege([{ globalId: 'cde-a', ende: 'E' }], 307.5, opts);
+    it('neuer erzeugt-Eintrag: gleiche Kennung, gleiche Parameter, neue SOHLE in WELT', () => {
+        const e = ziehe(eigen(BAUPLAN), ENDE, 307.5);
         expect(e.art).toBe('erzeugt');
         expect(e.globalId).toBe('cde-a');
         expect(e.modell).toBe('cde');
         expect(e.nachher.name).toBe('H2.1');
         expect(e.nachher.parameter.dn).toBe(300);
-        // 307,5 m NN − 300 m Versatz = Welt-Y 7,5 am gezogenen Ende.
-        expect(e.nachher.parameter.punkte).toEqual([[50, 9, 0], [100, 7.5, 0]]);
+        // 307,5 m NN − 300 m Versatz = SOHLE 7,5 am gezogenen Ende. Der Bauplan
+        // liegt in Rohrmitte (ohne Angabe) — gespeichert wird 7,5 + DN 300 / 2.
+        // Bis Teil XXIV (K4) stand hier 7,5: das Rohr lag DN/2 zu tief (E7).
+        expect(e.nachher.parameter.punkte.map(p => p.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[50, 9, 0], [100, 7.65, 0]]);
+        expect(e.nachher.parameter.achsbezug).toBe('mitte');
     });
 
-    it('nur Rohre — ein fremder oder fehlender Bauplan wird übersprungen', () => {
-        expect(cdeZugEintraege([{ globalId: 'cde-x', ende: 'A' }], 307, opts)).toEqual([]);
-        const schacht = { ...opts, bauplanVon: () => ({ rezept: 'schacht', parameter: { punkte: [[0, 0, 0], [0, 3, 0]] } }) };
-        expect(cdeZugEintraege([{ globalId: 'cde-s', ende: 'A' }], 307, schacht)).toEqual([]);
+    it('nur Kanten — ohne Bauplan oder an einem Schacht entsteht nichts', () => {
+        expect(ziehe(subjektAusStand('cde-x', { wirksamerStand: standMit() }), ENDE, 307)).toBeNull();
+        const schacht = { rezept: 'schacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', parameter: { punkte: [[0, 0, 0], [0, 3, 0]], dn: 1000 } };
+        expect(ziehe(eigen(schacht, 'cde-s'), { x: 0, z: 0 }, 307)).toBeNull();
     });
 
     it('kaputte Höhe: nichts, kein Wurf', () => {
-        expect(cdeZugEintraege([{ globalId: 'cde-a', ende: 'A' }], NaN, opts)).toEqual([]);
+        expect(ziehe(eigen(BAUPLAN), { x: 50, z: 0 }, NaN)).toBeNull();
     });
 });
 

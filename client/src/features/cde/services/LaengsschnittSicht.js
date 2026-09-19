@@ -1,4 +1,6 @@
-import { erzeugtEintrag, rezeptNach } from './Bauteilrezepte.js';
+import { sohleAnAchse } from './Achsbezug.js';
+import { hoehenUeberLaenge, punktXYZ } from './rezept/Geometriebau.js';
+import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
 
 /**
  * LaengsschnittSicht — der Strang als Stationierung, fertig für die Ansicht
@@ -16,6 +18,13 @@ import { erzeugtEintrag, rezeptNach } from './Bauteilrezepte.js';
  * zweite Linie; wo sie abweichen, ist genau das die Aussage des Bildes:
  * „geliefert = Forderung" sichtbar gemacht.
  *
+ * ANGEZEIGT WIRD DIE SOHLE (Teil XXIV, K4 — Messbefund E7): jedes Glied des
+ * Strangs sagt, was seine Höhen sind (`achsbezug`, aus dem Bauplan oder der
+ * Herkunft der gelieferten Achse), und hier wird EINMAL auf die Sohle
+ * gerechnet. Bis K4 stand die rohe Achshöhe als „Sohle" da — bei eigenen
+ * Haltungen und bei Achsen aus der Extrusion lag die wirkliche Sohle DN/2
+ * darunter. Ein Glied ohne Angabe bleibt, wie es war: die Höhe ist die Sohle.
+ *
  * STATIONEN LAUFEN WAAGERECHT (laenge2d): dieselbe Regel wie beim
  * Gefälle-Befund — die 3D-Länge enthält die Höhe schon, und ein Gefälle
  * gegen sie wäre doppelt gezählt.
@@ -23,10 +32,6 @@ import { erzeugtEintrag, rezeptNach } from './Bauteilrezepte.js';
  * Rein: kein Vue, kein Canvas, keine Engine.
  */
 
-/** Waagerechte Länge eines Segments. */
-function _laenge2d(a, e) {
-    return Math.hypot((e?.x ?? 0) - (a?.x ?? 0), (e?.z ?? 0) - (a?.z ?? 0));
-}
 
 /**
  * @param {object} opts
@@ -46,9 +51,12 @@ export function baueSicht({ strang, hoehenversatz = 0, parametrikStand = new Map
     let hMax = -Infinity;
 
     for (const k of kette) {
-        const laenge2d = _laenge2d(k.anfang, k.ende);
-        const hA = (Number(k.anfang.y) || 0) + hoehenversatz;
-        const hE = (Number(k.ende.y) || 0) + hoehenversatz;
+        // Die Weglänge in der Draufsicht (K5) — bei einer Haltung mit Knick
+        // mehr als die Sehne; dieselbe Länge wie das Gefälle.
+        const g0 = gefaelle(punkteDerAchse(k));
+        const laenge2d = g0.laenge2d;
+        const hA = (sohleAnAchse(Number(k.anfang.y) || 0, k) || 0) + hoehenversatz;
+        const hE = (sohleAnAchse(Number(k.ende.y) || 0, k) || 0) + hoehenversatz;
 
         const stand = parametrikStand.get?.(k.globalId);
         const fA = Number(stand?.sohlhoeheAnfang);
@@ -64,8 +72,8 @@ export function baueSicht({ strang, hoehenversatz = 0, parametrikStand = new Map
             s0: s, s1: s + laenge2d, laenge2d,
             geliefert: { hA, hE },
             gefordert,
-            // Gegen die WAAGERECHTE Länge — wie der Befund (14.4).
-            gefaellePromille: laenge2d > 0 ? ((hA - hE) / laenge2d) * 1000 : null,
+            // Die EINE Rechnung (K5) — mit den Sohlen, gegen die Weglänge.
+            gefaellePromille: gefaelle(punkteDerAchse(k), { anfang: hA, ende: hE }).promille,
         };
         segmente.push(seg);
         knoten.push({ s, ende: false });
@@ -127,36 +135,11 @@ export function griffe(sicht) {
     return out;
 }
 
-/**
- * Aus einem Griff-Zug die Journaleinträge — je betroffenem Segment EINE
- * volle Rollen-Karte (absolute NN-Zielhöhen, Gesetz 4): das gezogene Ende
- * bekommt die neue Höhe, das andere behält seine WIRKSAME. Die Faltung je
- * Rolle (14.2) macht daraus den richtigen Stand, egal was vorher galt.
- *
- * @param {object} sicht      aus `baueSicht`
- * @param {Array}  enden      [{globalId, ende: 'A'|'E'}] — der gezogene Griff
- * @param {number} hNeu       neue Höhe (NN)
- * @returns {Array} parametrik-Einträge (ohne wer/modellSha — die reicht der Aufrufer an)
- */
-export function sohlZugEintraege(sicht, enden, hNeu) {
-    if (!Number.isFinite(hNeu)) return [];
-    const eintraege = [];
-    for (const { globalId, ende } of enden ?? []) {
-        const seg = sicht?.segmente?.find(s => s.globalId === globalId);
-        if (!seg) continue;
-        const eff = seg.gefordert ?? seg.geliefert;
-        const anfang = ende === 'A' ? hNeu : eff.hA;
-        const schluss = ende === 'E' ? hNeu : eff.hE;
-        eintraege.push({
-            art: 'parametrik', globalId,
-            nachher: {
-                sohlhoeheAnfang: Math.round(anfang * 1000) / 1000,
-                sohlhoeheEnde: Math.round(schluss * 1000) / 1000,
-            },
-        });
-    }
-    return eintraege;
-}
+// DIE EINTRÄGE EINES GRIFF-ZUGS schreibt seit Teil XXIV (O6) das Werkzeug
+// „Sohle am Punkt setzen" (`Bearbeitungen.js`, `sohle-ziehen`) — als Kommando,
+// mit Beleg. Hier standen bis dahin `sohlZugEintraege` (Geliefertes: volle
+// Rollenkarte) und `cdeZugEintraege` (Eigenes: Bauplan fortgeschrieben); beide
+// Wege leben jetzt dort, wo auch „Sohlhöhen festlegen" sie geht.
 
 /**
  * Neue Stützpunkte eines CDE-Rohrs nach einem Griff-Zug (17.3b) —
@@ -172,62 +155,11 @@ export function sohlZugEintraege(sicht, enden, hNeu) {
  */
 export function neuePunkteFuerZug(punkte, ende, yNeu) {
     if (!Array.isArray(punkte) || punkte.length < 2 || !Number.isFinite(yNeu)) return null;
-    const p = punkte.map(q => (Array.isArray(q)
-        ? { x: q[0] ?? 0, y: q[1] ?? 0, z: q[2] ?? 0 }
-        : { x: q?.x ?? 0, y: q?.y ?? 0, z: q?.z ?? 0 }));
-
+    const p = punkte.map(punktXYZ);
     const yAnfang = ende === 'A' ? yNeu : p[0].y;
     const yEnde = ende === 'E' ? yNeu : p[p.length - 1].y;
-
-    const abschnitt = [];
-    let gesamt = 0;
-    for (let i = 0; i + 1 < p.length; i++) {
-        const d = Math.hypot(p[i + 1].x - p[i].x, p[i + 1].z - p[i].z);
-        abschnitt.push(d);
-        gesamt += d;
-    }
-    let gelaufen = 0;
-    return p.map((q, i) => {
-        if (i > 0) gelaufen += abschnitt[i - 1];
-        const t2 = gesamt > 0 ? gelaufen / gesamt : (i / (p.length - 1));
-        return [q.x, yAnfang + (yEnde - yAnfang) * t2, q.z];
-    });
-}
-
-/**
- * Die erzeugt-Einträge eines Griff-Zugs an CDE-ROHREN (17.3b) —
- * „Eigenes = echt": statt einer Forderung wird der BAUPLAN fortgeschrieben.
- * Ein neuer erzeugt-Eintrag mit denselben Parametern und neuen Stützpunkten
- * (voller absoluter Zustand — die Faltung „letzter gewinnt" bleibt, „zurück"
- * stellt exakt den vorigen Bauplan wieder her; dasselbe Muster wie beim
- * Gelände-Anhängen in Stufe 15).
- *
- * Die Sohlhöhen im Bauplan sind WELT-Y, der Griff zieht in NN — der
- * Versatz rechnet an genau dieser einen Stelle zurück.
- *
- * @param {Array}  enden      [{globalId, ende: 'A'|'E'}] — nur CDE-Teile
- * @param {number} hNeuNN     neue Höhe des Griffs (NN)
- * @param {object} opts       { bauplanVon: (globalId) => Bauplan|undefined, hoehenversatz }
- * @returns {Array} erzeugt-Einträge (ohne wer/modellSha — reicht der Aufrufer an)
- */
-export function cdeZugEintraege(enden, hNeuNN, { bauplanVon, hoehenversatz = 0 } = {}) {
-    if (!Number.isFinite(hNeuNN)) return [];
-    const out = [];
-    for (const { globalId, ende } of enden ?? []) {
-        const plan = bauplanVon?.(globalId);
-        // Eine KANTE im Netz (Teil XXIII, A3) — nicht „ein Rohr": ein
-        // Rechteckkanal aus der Bibliothek gehört genauso in den Längsschnitt.
-        if (rezeptNach(plan?.rezept)?.netzrolle !== 'kante') continue;
-        const punkte = neuePunkteFuerZug(plan.parameter?.punkte, ende, hNeuNN - hoehenversatz);
-        if (!punkte) continue;
-        out.push(erzeugtEintrag({
-            // Das Rezept des Plans BLEIBT — sonst würde aus einem Kanal ein Rohr.
-            rezept: plan.rezept,
-            kategorie: plan.kategorie,
-            name: plan.name ?? '',
-            globalId,
-            parameter: { ...plan.parameter, punkte },
-        }));
-    }
-    return out;
+    // Die Regel „Zwischenpunkte linear über die waagerechte Länge" steht seit
+    // K4 an EINER Stelle (`Geometriebau.hoehenUeberLaenge`).
+    const h = hoehenUeberLaenge(p, yAnfang, yEnde);
+    return p.map((q, i) => [q.x, h[i], q.z]);
 }

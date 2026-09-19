@@ -28,9 +28,15 @@ import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugR
 import { ladeKatalog } from '../services/katalog/Katalog.js';
 import { eingebauteRollen, pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { useAenderungen } from './useAenderungen.js';
-import { rezeptNach, teileVon, vorgangEntfernenSchritte } from '../services/Bauteilrezepte.js';
+import { modellVon, operationenMitKennung, rezeptNach, vorgangEntfernenSchritte, zufallsKennung } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
-import { befundeFuer } from '../services/Befunde.js';
+import { befundeFuer, befundeFuerWerte } from '../services/Befunde.js';
+import { istErzeugen, kommandoAusZustand, mitHoehenversatz, pruefeKommando, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { werteAus } from '../services/kommando/Auswertung.js';
+import { systemBeleg } from '../services/kommando/Beleg.js';
+import { standVon, subjektAusStand } from '../services/kommando/Subjekt.js';
+import { pruefeStandAusJournal } from '../services/Prueflauf.js';
+import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
 
 /** Der leere Eingabe-Zustand — je Aufruf ein frisches Objekt, nie geteilt. */
 function _eingabeLeer() {
@@ -148,6 +154,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);
+    // FACHGRENZEN (K10, Fabios E5): was über der üblichen Grenze liegt, sperrt
+    // nicht mehr — es wird gesagt, ausgeführt und am Eintrag markiert.
+    const grenzhinweise = computed(() => (scharf.value ? befundeFuerWerte(felder.value, werte.value) : []));
 
     /**
      * Was an diesem Bauteil möglich ist — die EINE Antwort, aus der alle lesen.
@@ -353,47 +362,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
 
     /**
      * Was für dieses Bauteil GERADE gilt — aus dem Journal, nicht aus der Datei.
-     *
-     * Die Vorbelegungen im Katalog lesen `el.stand.kg`, `el.stand.din277`,
-     * `el.stand.profilGroesse` und `el.stand.dicke`. Ein `stand` wurde bisher
-     * an KEINER Stelle erzeugt: das Formular zeigte nie den geltenden Wert, und
-     * „Querschnittsgröße festlegen" und „Stärke festlegen" haben kein
-     * `leerErlaubt` — sie standen deshalb ab dem Aufschlagen auf „fehlt", mit
-     * grauem Knopf. Das sah aus wie eine kaputte Bearbeitung und war ein
-     * fehlendes Feld.
-     *
-     * `parametrik` führt `{rolle, wert}` je Bauteil und faltet „letzter
-     * gewinnt" — wer erst DN und dann die Stärke festlegt, verliert das DN.
-     * Hier wird deshalb nur die Rolle übernommen, die auch wirklich gilt; das
-     * Falten selbst ist eine Frage des Journals und gehört nicht hierher.
+     * Die Faltung lebt seit Teil XXIV (K3) in `kommando/Subjekt.standVon`: der
+     * Kommandoweg ohne Oberfläche braucht dieselbe, und zwei Fassungen liefen
+     * auseinander.
      */
     function _standVon(globalId) {
-        if (!globalId) return {};
-        const ae = useAenderungen();
-        const stand = {
-            kg:     ae.wirksamerStand('kg').get(globalId) ?? null,
-            din277: ae.wirksamerStand('din277').get(globalId) ?? null,
-            // Stufe 15: der wirksame BAUPLAN eines erzeugten Bauteils — die
-            // Gelände-Werkzeuge hängen ihre Operation an die bestehende
-            // Liste an, statt ein zweites geformtes Gelände zu erzeugen.
-            bauplan: ae.wirksamerStand('erzeugt').get(globalId) ?? null,
-            // Die AUSLEGUNG dieses einen Bauteils: „lies diesen Volumenkörper
-            // als Höhenfeld". Sie schlägt die Regel, weil sie spezifischer
-            // ist — und wird vom Katalogeintrag `bauform-auslegen` als
-            // Vorbelegung gelesen, damit das Formular den geltenden Wert zeigt.
-            bauformAusnahme: ae.wirksamerStand('bauform').get(globalId) ?? null,
-        };
-        // `parametrik` faltet seit Stufe 14.2 je ROLLE (siehe `falte` dort) —
-        // der Wert ist eine Karte und lässt sich unverändert übernehmen.
-        // Vorher stand hier ein Notbehelf, der nur die zuletzt gesetzte Rolle
-        // durchreichte, weil das Journal die übrigen ohnehin verloren hatte.
-        // Teil XIV: die Geschwister-Teile einer Ableitung (Aushub, Auftrag,
-        // DGM) — die Folgeformung schreibt sie unter denselben GlobalIds.
-        if (stand.bauplan?.ableitung) {
-            stand.teile = teileVon(ae.wirksamerStand('erzeugt'), stand.bauplan.ableitung);
-        }
-        const masse = ae.wirksamerStand('parametrik').get(globalId);
-        return masse && typeof masse === 'object' ? { ...stand, ...masse } : stand;
+        return standVon(globalId, useAenderungen().wirksamerStand);
     }
 
     /**
@@ -675,57 +649,169 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             ? bauteile.value
             : [gegenstand];
 
-        // EINE BEARBEITUNG DARF MEHRERE EINTRÄGE SCHREIBEN (Stufe 14.3).
-        //
-        // „Haltung teilen" ist ein Löschen und zwei Erzeugen. Ein Eintrag hat
-        // trotzdem weiterhin GENAU EIN Subjekt — daran hängen fünfzehn Stellen
-        // im Journal, vom Faltmechanismus bis zum Drei-Wege-Vergleich. Die
-        // Klammer ist ein `vorgang`, kein Bauteil-Array.
-        // `nummer` zählt über die Auswahl hoch — das Umbenennen braucht es,
-        // alle anderen sehen es nicht einmal.
-        const beschreibungen = [];
-        let uebersprungen = 0;
-        for (const [i, g] of gegenstaende.entries()) {
-            // `zug` ist die zweite Eingabeart neben den Formularwerten: ein
-            // gezeichneter Linienzug. Bearbeitungen, die keinen wollen, sehen
-            // ihn nicht einmal — `anwenden` liest nur, was es kennt.
-            const roh = b.anwenden(g, werte.value, { nummer: i, zug: zug ?? [] });
-            const teil = (Array.isArray(roh) ? roh : [roh]).filter(x => x?.art);
-            if (!teil.length) uebersprungen++;
-            beschreibungen.push(...teil);
-        }
-        if (!beschreibungen.length) {
-            // DAS WERKZEUG DARF SAGEN, WARUM ES NICHT KANN (2026-09-09).
-            //
-            // `anwenden` gibt null — und der Store weiss nicht, weshalb. Hier
-            // stand deshalb EIN Satz für jeden Fall: „Dem Bauteil fehlt der
-            // Bezug." Am echten Netz gemessen war der bei den häufigsten
-            // Ablehnungen schlicht falsch: „Schacht entfernen" an einem
-            // ENDschacht lehnt zu Recht ab (es braucht genau zwei
-            // Anschlüsse), und „Schacht einfügen" bei einer Station
-            // ausserhalb der Haltung ebenso. Beide Male ist die Ablehnung
-            // richtig und die BEGRÜNDUNG irreführend — der Nutzer sucht
-            // einen fehlenden Bezug, den es gar nicht gibt (Gesetz 10: was
-            // nicht geht, nennt den Grund — den richtigen).
-            //
-            // Also fragt der Store das Werkzeug. `warumNicht` ist optional;
-            // wer es nicht hat, bekommt den alten Satz — er stimmt für die
-            // Fälle, für die er geschrieben wurde (fehlender Anker, fehlende
-            // Hülle).
+        // DAS KOMMANDO (Teil XXIV, K1). Was die Oberfläche hält — scharfes
+        // Werkzeug, Formularwerte, Subjekte, gezeichnete Punkte —, wird EIN
+        // Wert, und geschrieben wird nur, was die Auswertung dieses Werts
+        // ergibt. Derselbe Weg, den ein Skript ohne Oberfläche nimmt
+        // (`fuehreAus`); hier kommen nur die Bequemlichkeiten der Oberfläche
+        // dazu: der Modus, die Formularprüfung von `bereit`, die Rückmeldung.
+        const erzeugt = istErzeugen(b);
+        const r = mitHoehenversatz(rahmen.value ?? rahmenOhneBezug(), gegenstand?.hoehenversatz);
+        const { kommando, ziele, ohneKennung } = kommandoAusZustand({
+            werkzeug: b, werte: werte.value, subjekte: gegenstaende, rahmen: r, wer,
+            // Erzeugen: das Gezeichnete steht an der Stelle des Subjekts.
+            punkte: erzeugt ? (gegenstand?.punkte ?? null) : zug,
+        });
+        // OHNE KENNUNG KEIN ZIEL. Ein solches Subjekt lief bisher durch
+        // `anwenden` und kam leer zurück — gezählt als „übersprungen", allein
+        // mit dem Grund, den das Werkzeug nennt.
+        if (!erzeugt && !ziele.length) {
             let grund = null;
             try { grund = b.warumNicht?.(gegenstaende[0], werte.value, { zug: zug ?? [] }) ?? null; }
             catch { grund = null; }
             letzterGrund.value = grund || 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.';
             return null;
         }
+        const karte = new Map(ziele.map(s => [s.globalId, s]));
+        const erg = await fuehreAus(kommando, {
+            subjektVon: (gid) => karte.get(gid) ?? null,
+            rahmen: r,
+            // Die Oberfläche vergibt ihre Kennungen beim Auswerten (E2); das
+            // ausgewertete Kommando nennt sie danach in `neu`.
+            kennungsgeber: zufallsKennung,
+            // Die Formularprüfung hat `bereit` schon gemacht — mit genau den
+            // Feldern, die das Formular zeigt. Keine zweite mit anderem Profil.
+            pruefeWerte: () => fehler.value,
+            felder: felder.value,
+            basis, modell, modellSha,
+            hauptSubjekt: gegenstand,
+            befunde: befunde.value,
+            uebersprungenVorab: ohneKennung.length,
+        });
+        letzterGrund.value = erg.grund ?? '';
+        if (!erg.ausgefuehrt) return null;
+        abbrechen();
+        // Einteilig bleibt einteilig: der Rückgabewert ist DER Eintrag, nicht
+        // eine Liste mit einem. Sonst müssten alle bisherigen Aufrufer
+        // umgeschrieben werden, obwohl sich für sie nichts geändert hat.
+        return erg.mehrteilig ? erg.eintraege : (erg.eintraege[0] ?? null);
+    }
+
+    /**
+     * DIE MARKIERUNG OHNE OBERFLÄCHE (Teil XXIV, K6): die Befunde der eigenen
+     * Bauteile aus dem Journal — dieselben Regeln, dasselbe Regelwerk wie die
+     * Prüfliste der Engine. Ein geliefertes Bauteil braucht sein Modell; hier
+     * hat es keine Zeile.
+     */
+    function pruefeEigenes() {
+        return pruefeStandAusJournal(useAenderungen().wirksamerStand, {
+            typprofilFuer: (kategorie) => profilFuer(kategorie, profilSatz.value),
+        });
+    }
+    function befundeVon(globalId) {
+        return pruefeEigenes().find(z => z.globalId === globalId)?.befunde ?? [];
+    }
+
+    /** Der Rahmen Welt ↔ Projektkoordinaten — der Viewer setzt ihn, wenn ein Modell seinen Bezug hat. */
+    const rahmen = ref(null);
+    function setzeRahmen(r) { rahmen.value = r ?? null; }
+
+    /**
+     * EIN KOMMANDO AUSFÜHREN — ganz oder gar nicht (Teil XXIV, K1).
+     *
+     * Der Weg ohne Oberfläche: kein Bearbeiten-Modus, kein scharfes Werkzeug,
+     * keine Formularwerte im Store — nur das Kommando und der Kontext, aus dem
+     * die Auswertung liest (`Auswertung.werteAus`). Abgelehnt wird, was
+     * technisch nicht geht (E5): ein ungültiges Kommando, ein fehlendes Ziel,
+     * eine Kennung in `neu`, die es schon gibt, ein unzulässiger Bezug, ein
+     * Journal, das nur gelesen wird. Fachregeln lehnen NIE ab; sie markieren
+     * nach dem Schreiben (Befunde).
+     *
+     * @param {object} kommando  siehe `services/kommando/Kommando.js`
+     * @param {object} [k]       Kontext: `subjektVon`, `rahmen`, `kennungsgeber`,
+     *        `pruefeWerte`, `felder` (die das Formular zeigt), `basis`, `modell`,
+     *        `modellSha`, `jeEintrag` (GlobalId → {basis, modell, modellSha} des Eintrags —
+     *        ein Kommando über gelieferte UND eigene Bauteile, O6), `hauptSubjekt`,
+     *        `befunde` (Momentaufnahme), `uebersprungenVorab`.
+     *        `subjektVon` darf für ein eigenes Bauteil nichts wissen — dann gilt der Stand.
+     * @returns {Promise<{ausgefuehrt: boolean, grund: string|null, eintraege: object[],
+     *                    mehrteilig: boolean, kommando: object, hinweise?: object[]}>}
+     *          `kommando` ist das AUSGEWERTETE — mit den verwendeten Kennungen in `neu`;
+     *          `hinweise` die überschrittenen Fachgrenzen (K10) — ausgeführt trotzdem.
+     */
+    async function fuehreAus(kommando, { subjektVon = null, knotenVon = null, rahmen: rahmenK = null, kennungsgeber = null,
+                                        pruefeWerte = null, felder: felderVorgabe = null, basis = undefined,
+                                        modell = undefined, modellSha = null, jeEintrag = null,
+                                        hauptSubjekt = null, befunde: moment = [], uebersprungenVorab = 0 } = {}) {
+        const abgelehnt = (grund) => ({ ausgefuehrt: false, grund, eintraege: [], mehrteilig: false, kommando });
+        const fehlerKommando = pruefeKommando(kommando);
+        if (fehlerKommando.length) return abgelehnt(fehlerKommando.join(' · '));
+
+        const typprofilFuer = (el) => profilFuer(el?.category ?? el?.type, profilSatz.value);
+        const rahmenWirksam = rahmenK ?? rahmen.value ?? rahmenOhneBezug();
+        // OHNE OBERFLÄCHE (Teil XXIV, K3): das Subjekt eines EIGENEN Bauteils
+        // kommt aus dem Stand — dieselbe Funktion, die der Viewer für eigene
+        // Bauteile ruft. Ein geliefertes Bauteil lebt in seiner Datei; ohne
+        // geladenes Modell gibt es sein Subjekt nicht — das ist technisch
+        // unmöglich, nicht regelwidrig (E5), und wird so gesagt.
+        if (!subjektVon) {
+            const geliefert = (kommando.ziel ?? []).filter(gid => modellVon(gid) !== 'cde');
+            if (geliefert.length) {
+                return abgelehnt(`${geliefert.join(', ')}: ein geliefertes Bauteil braucht sein geladenes Modell — ohne Oberfläche kennt ein Kommando nur eigene Bauteile.`);
+            }
+        }
+        const ae0 = useAenderungen();
+        // Was der Aufrufer kennt (der Viewer: das Angereicherte; der Längsschnitt:
+        // die gelieferten Glieder), sonst der Stand — je Kennung einmal.
+        const subjekte = new Map();
+        const subjektWirksam = (gid) => {
+            if (!subjekte.has(gid)) {
+                subjekte.set(gid, subjektVon?.(gid)
+                    ?? subjektAusStand(gid, { wirksamerStand: ae0.wirksamerStand, rahmen: rahmenWirksam }));
+            }
+            return subjekte.get(gid);
+        };
+        // Die KNOTEN, auf die ein Zug zeigen darf (K8): die eigenen aus dem
+        // Journal, dazu, was der Aufrufer kennt (der Viewer: das Gelieferte).
+        const eigeneKnoten = new Map(cdeAchsenAus(ae0.wirksamerStand('erzeugt')).knoten
+            .filter(kn => !verdeckteAus(ae0.wirksamerStand('geloescht')).has(kn.globalId))
+            .map(kn => [kn.globalId, { ...kn.punkt, hoehenbezug: kn.hoehenbezug ?? null }]));
+        const aus = werteAus(kommando, {
+            subjektVon: subjektWirksam,
+            bauplanVon: (gid) => ae0.wirksamerStand('erzeugt').get(gid) ?? null,
+            knotenVon: (gid) => eigeneKnoten.get(gid) ?? knotenVon?.(gid) ?? null,
+            rahmen: rahmenWirksam,
+            kennungsgeber,
+            typprofilFuer,
+            ...(pruefeWerte ? { pruefeWerte } : {}),
+            ...(felderVorgabe ? { felder: felderVorgabe } : {}),
+        });
+        if (aus.grund) return abgelehnt(aus.grund);
+        // FACHGRENZEN (K10, E5): ausgeführt wird trotzdem — markiert am Eintrag
+        // (die Momentaufnahme der Befunde) und im Ergebnis.
+        const hinweise = aus.hinweise ?? [];
+        const momentMitHinweisen = [...(moment ?? []), ...hinweise];
+        const beschreibungen = aus.schritte;
+        const uebersprungen = aus.uebersprungen + uebersprungenVorab;
+        const ausgewertet = { ...kommando, ...(aus.neu.length ? { neu: aus.neu } : {}) };
+        const b = aus.werkzeug;
+        const gegenstand = hauptSubjekt ?? (kommando.ziel?.length ? subjektWirksam(kommando.ziel[0]) : null);
 
         const aenderungen = useAenderungen();
         // NUR LESEN (A7): das Journal verlangt eine neuere CDE — das sagen,
         // nicht „der Wert galt schon".
-        if (aenderungen.nurLesen) {
-            letzterGrund.value = aenderungen.nurLesen.grund;
-            return null;
+        if (aenderungen.nurLesen) return abgelehnt(aenderungen.nurLesen.grund);
+
+        // NEU HEISST NEU (E2): eine Kennung, die das Journal schon kennt, darf
+        // kein zweites Bauteil bekommen — die Faltung „letzter gewinnt" ersetzte
+        // sonst still das alte.
+        const bekannt = new Set(aenderungen.eintraege.map(e => e.globalId));
+        // … und dasselbe für Operationen (E3): eine Operationskennung gehört einer Operation.
+        for (const plan of aenderungen.wirksamerStand('erzeugt').values()) {
+            for (const op of operationenMitKennung(plan?.parameter?.operationen)) if (op?.id) bekannt.add(op.id);
         }
+        const doppelt = aus.neu.filter(id => bekannt.has(id));
+        if (doppelt.length) return abgelehnt(`Die Kennung ${doppelt.join(', ')} gibt es schon — „neu" heisst neu.`);
 
         // BEZÜGE PRÜFEN, bevor etwas im Journal steht (Teil XIV, G4): eine
         // Ableitung, die auf sich selbst oder im Kreis zeigt, oder von der
@@ -735,61 +821,76 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // Die Historie weist eine zurückgenommene Gelände-Quelle ab (Fahrplan
         // Erdbau-Container, Stufe 1) — die Ansicht war dann nicht mehr aktuell.
         const historie = aenderungen.historischerStand?.('erzeugt') ?? null;
-        for (const b of beschreibungen) {
-            const quellen = b?.art === 'erzeugt' ? b.nachher?.parameter?.quellen : null;
+        for (const s of beschreibungen) {
+            const quellen = s?.art === 'erzeugt' ? s.nachher?.parameter?.quellen : null;
             if (!quellen) continue;
             const fehler = pruefeBezuege({
-                quellen, globalId: b.globalId, stand: erzeugtStand,
+                quellen, globalId: s.globalId, stand: erzeugtStand,
                 ebeneVon: (gid) => aenderungen.ebeneVon(gid),
                 zielEbene: aenderungen.vorgabeEbene,
                 historie, rezeptNach,
             });
-            if (fehler.length) {
-                letzterGrund.value = `Bezug unzulässig: ${fehler.join(' · ')}`;
-                return null;
-            }
+            if (fehler.length) return abgelehnt(`Bezug unzulässig: ${fehler.join(' · ')}`);
         }
 
+        // EINE BEARBEITUNG DARF MEHRERE EINTRÄGE SCHREIBEN (Stufe 14.3).
+        //
+        // „Haltung teilen" ist ein Löschen und zwei Erzeugen. Ein Eintrag hat
+        // trotzdem weiterhin GENAU EIN Subjekt — daran hängen fünfzehn Stellen
+        // im Journal, vom Faltmechanismus bis zum Drei-Wege-Vergleich. Die
+        // Klammer ist ein `vorgang`, kein Bauteil-Array.
         const mehrteilig = beschreibungen.length > 1;
         // Was nicht ging, wird GEZÄHLT und gemeldet. „Auf 12 von 15 angewandt"
         // ist eine Auskunft; ein stilles Überspringen wäre eine Behauptung.
         const uebersprungenText = uebersprungen
             ? ` — ${uebersprungen} übersprungen (Bezug fehlt)` : '';
-        const vorgang = mehrteilig ? aenderungen.neueVorgangsId() : undefined;
-        const geschrieben = [];
-        for (const beschreibung of beschreibungen) {
-            // Was die Bearbeitung selbst schon sagt, gilt: `erzeugtEintrag`
-            // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
-            // nicht überschreiben.
-            const eintrag = await aenderungen.eintragen({
-                basis, modell, ...beschreibung, wer,
+        // EIN KOMMANDO IST EIN VORGANG (Teil XXIV, K2 — Fabios E1): die
+        // Vorgangskennung IST die Kommandokennung, auch bei einem einzigen
+        // Eintrag. Der Titel bleibt, wie er war: nur mehrteilige Vorgänge
+        // heissen nach dem Werkzeug, ein einzelner Eintrag nach seiner Art.
+        const { ok, eintraege: geschrieben, grund: grundVorgang } = await aenderungen.eintragenVorgang(
+            beschreibungen.map((beschreibung) => {
+              // JE EINTRAG, was der Aufrufer über SEIN Bauteil weiss (O6): am
+              // gemischten Knoten ist eine Haltung geliefert (Basis, Modell),
+              // die andere eigen — ein Vorgabewert für alle träfe eine falsch.
+              const je = jeEintrag?.(beschreibung.globalId) ?? {};
+              return {
+                // Was die Bearbeitung selbst schon sagt, gilt: `erzeugtEintrag`
+                // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
+                // nicht überschreiben.
+                basis: 'basis' in je ? je.basis : basis, modell: je.modell ?? modell,
+                ...beschreibung, wer: kommando.wer ?? '',
                 // DAS BEARBEITETE MODELL (Stufe 4, Lücke L6): was die Bearbeitung
-                // selbst sagt (Erdbau: die Datei des Ur-Geländes), sonst das
-                // Subjekt, sonst der Aufrufer — der nennt nur das ZUERST
-                // geladene Modell, und genau das stand bis hierher in jedem Commit.
-                modellSha: beschreibung.modellSha ?? gegenstand?.modellSha ?? modellSha,
-                ...(vorgang ? { vorgang, vorgangTitel: b.titel } : {}),
+                // selbst sagt (Erdbau: die Datei des Ur-Geländes), sonst der
+                // Aufrufer je Eintrag, sonst das Subjekt, sonst der Aufrufer — der
+                // nennt nur das ZUERST geladene Modell, und genau das stand bis
+                // hierher in jedem Commit.
+                modellSha: beschreibung.modellSha ?? je.modellSha ?? gegenstand?.modellSha ?? modellSha,
                 // WAS BEIM SETZEN BEKANNT WAR (Stufe 14.4). Eine Momentaufnahme
                 // der Befunde, nicht ihr laufender Stand — der wird abgeleitet
                 // und ändert sich mit dem Modell. Ohne sie ist später nicht zu
                 // unterscheiden, ob jemand das flache Gefälle in Kauf nahm oder
                 // nichts davon wusste.
-                ...(befunde.value.length ? { befunde: befunde.value } : {}),
+                ...(momentMitHinweisen.length ? { befunde: momentMitHinweisen } : {}),
+              };
+            }),
+            {
+                vorgang: kommando.id,
+                ...(mehrteilig ? { vorgangTitel: b.titel } : {}),
+                // Der Beleg: die Absicht, wie sie ausgewertet wurde (mit `neu`).
+                kommando: ausgewertet,
+                ...(kommando.ebene ? { ebene: kommando.ebene } : {}),
             });
-            if (eintrag) geschrieben.push(eintrag);
-        }
+        if (!ok) return abgelehnt(grundVorgang);
+        let grund = null;
         if (!geschrieben.length) {
-            letzterGrund.value = beschreibungen[0].globalId
+            grund = beschreibungen[0].globalId
                 ? `Der Wert galt schon — nichts einzutragen.${uebersprungenText}`
                 : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.';
         } else if (uebersprungen) {
-            letzterGrund.value = `Auf ${geschrieben.length} angewandt${uebersprungenText}.`;
+            grund = `Auf ${geschrieben.length} angewandt${uebersprungenText}.`;
         }
-        abbrechen();
-        // Einteilig bleibt einteilig: der Rückgabewert ist DER Eintrag, nicht
-        // eine Liste mit einem. Sonst müssten alle bisherigen Aufrufer
-        // umgeschrieben werden, obwohl sich für sie nichts geändert hat.
-        return mehrteilig ? geschrieben : (geschrieben[0] ?? null);
+        return { ausgefuehrt: true, grund, eintraege: geschrieben, mehrteilig, kommando: ausgewertet, hinweise };
     }
 
     /**
@@ -816,23 +917,28 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             letzterGrund.value = 'Diesen Vorgang gibt es nicht mehr.';
             return null;
         }
-        const vorgang = schritte.length > 1 ? aenderungen.neueVorgangsId() : undefined;
-        const geschrieben = [];
-        for (const s of schritte) {
-            const e = await aenderungen.eintragen({ ...s, wer, ...(vorgang ? { vorgang, vorgangTitel: 'Vorgang entfernen' } : {}) });
-            if (e) geschrieben.push(e);
-        }
+        // Ganz oder gar nicht (Teil XXIV, K2), mit Beleg (O4) — der Vorgang
+        // heisst wie sein Beleg, auch wenn er nur einen Eintrag hat.
+        const beleg = systemBeleg('vorgang-entfernen', { ziel: schritte.map(s => s.globalId), werte: { ableitung }, wer });
+        const { ok, eintraege: geschrieben, grund } = await aenderungen.eintragenVorgang(
+            schritte.map(s => ({ ...s, wer })),
+            { vorgang: beleg.id, vorgangTitel: schritte.length > 1 ? 'Vorgang entfernen' : undefined, kommando: beleg });
+        if (!ok) { letzterGrund.value = grund; return null; }
         return geschrieben.length > 1 ? geschrieben : (geschrieben[0] ?? null);
     }
 
     return {
         entferneVorgang,
         einordnung, bauteil, bauteile, profilSatz, regeln, katalogBefunde, katalogStand, scharfId, werte, laeuft, letzterGrund,
-        typprofil, passendeKontext, scharf, felder, fehler, bereit, moeglich, befunde,
+        typprofil, passendeKontext, scharf, felder, fehler, bereit, grenzhinweise, moeglich, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
         ladeProfile, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
+        // Teil XXIV, K1: der Kommandoweg — auch ohne Oberfläche.
+        fuehreAus, rahmen, setzeRahmen,
+        // Teil XXIV, K6: die Markierung ohne Oberfläche.
+        pruefeEigenes, befundeVon,
     };
 });

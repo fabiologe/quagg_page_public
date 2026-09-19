@@ -39,7 +39,13 @@ describe('Der Durchgangsfall', () => {
             ['geloescht', 'S5'], ['geloescht', 'ZU'], ['geloescht', 'AB'],
         ]);
         const p = s[3].nachher.parameter.punkte;
-        expect(p).toEqual([[-50, 8, 0], [0, 6, 0], [50, 4, 5]]);
+        // Die SOHLEN bleiben (Teil XXIV, K4): Zulauf DN 300 und Ablauf DN 400
+        // werden EINE Haltung DN 400. Die Achsen dieses Beispiels sagen ihren
+        // Bezug nicht — sie gelten wie bisher als Rohrmitte. Die Zulaufsohle
+        // (8 − 0,15) bleibt also, und die neue Mitte liegt 5 cm höher; bis K4
+        // blieb die Mitte, und die Sohle sackte um 5 cm ab.
+        expect(p.map(q => q.map(v => Math.round(v * 1e9) / 1e9))).toEqual([[-50, 8.05, 0], [0, 6.05, 0], [50, 4, 5]]);
+        expect(s[3].nachher.parameter.achsbezug).toBe('mitte');
     });
 
     it('fliesst weiter in FLIESSRICHTUNG — Anfang ist der ferne Zulauf', () => {

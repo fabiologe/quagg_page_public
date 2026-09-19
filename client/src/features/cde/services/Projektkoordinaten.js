@@ -124,8 +124,32 @@ export function bestimmeBezug({ georeferenz, versatz, weltProbe = { x: 0, y: 0, 
         };
     }
 
+    /**
+     * Die UMKEHRUNG von `nachProjekt` (Teil XXIV, K1): Ost/Nord/Höhe → Welt.
+     *
+     * Ein Kommando spricht in Projektkoordinaten (Entscheidung O1) — damit ein
+     * Skript seine Punkte kennt und ein abgelegtes Kommando nicht veraltet,
+     * wenn der Ladeversatz wechselt. Ausgewertet wird in der Welt; dafür
+     * braucht es genau diesen Rückweg, und zwar mit DERSELBEN Kartenumrechnung.
+     */
+    function ausProjekt(projekt) {
+        let ost = Number(projekt?.ost), nord = Number(projekt?.nord), hoehe = Number(projekt?.hoehe ?? 0);
+        if (mapAngewandt) {
+            const e0 = ost - (kb.ost ?? 0), n0 = nord - (kb.nord ?? 0);
+            ost = (e0 * cos + n0 * sin) / massstab;
+            nord = (-e0 * sin + n0 * cos) / massstab;
+            hoehe = (hoehe - (kb.hoehe ?? 0)) / massstab;
+        }
+        return {
+            x: ost - (versatz?.x ?? 0),
+            y: hoehe - (versatz?.y ?? 0),
+            z: -nord - (versatz?.z ?? 0),
+        };
+    }
+
     return {
         nachProjekt,
+        ausProjekt,
         mapAngewandt,
         geometrieIstVerortet,
         crs: {

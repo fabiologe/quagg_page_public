@@ -66,9 +66,20 @@ export function halbmesser(dn) {
     return Number.isFinite(d) && d > 0 ? d / 2000 : 0;
 }
 
-/** Der Abstand von der Achse zur Sohle: bei Bezug „Sohle" null, sonst r. */
-function _abstand(bezug, dn) {
-    return bezugOder(bezug) === 'sohle' ? 0 : halbmesser(dn);
+/**
+ * Der Abstand von der ROHRMITTE zur Sohle in Metern. Ein Rezept kennt ihn
+ * aus seinem Profil (`sohlabstand` — beim Kreis r, beim Rechteck die halbe
+ * Tiefe; Teil XXIV, K4); ohne ihn gilt der Halbmesser aus DN.
+ */
+function _mitteZurSohle(rohr) {
+    const s = Number(rohr?.sohlabstand);
+    return rohr?.sohlabstand !== null && rohr?.sohlabstand !== undefined && Number.isFinite(s) && s >= 0
+        ? s : halbmesser(rohr?.dn);
+}
+
+/** Der Abstand von der Achse zur Sohle: bei Bezug „Sohle" null, sonst der Weg Mitte → Sohle. */
+function _abstand(rohr) {
+    return bezugOder(rohr?.achsbezug) === 'sohle' ? 0 : _mitteZurSohle(rohr);
 }
 
 /**
@@ -91,19 +102,57 @@ function _hoehe(y) {
  */
 export function rohrsohle(y, rohr = {}) {
     const v = _hoehe(y);
-    return Number.isFinite(v) ? v - _abstand(rohr.achsbezug, rohr.dn) : NaN;
+    return Number.isFinite(v) ? v - _abstand(rohr) : NaN;
 }
 
 /** Die ROHRMITTE zu einer Achshöhe — die Achse des Sweeps. */
 export function rohrmitte(y, rohr = {}) {
     const v = _hoehe(y);
-    return Number.isFinite(v) ? v + (bezugOder(rohr.achsbezug) === 'sohle' ? halbmesser(rohr.dn) : 0) : NaN;
+    return Number.isFinite(v) ? v + (bezugOder(rohr.achsbezug) === 'sohle' ? _mitteZurSohle(rohr) : 0) : NaN;
 }
 
 /** Der ROHRSCHEITEL zu einer Achshöhe — daran misst sich die Überdeckung. */
 export function rohrscheitel(y, rohr = {}) {
     const v = _hoehe(y);
-    return Number.isFinite(v) ? rohrsohle(v, rohr) + 2 * halbmesser(rohr.dn) : NaN;
+    return Number.isFinite(v) ? rohrsohle(v, rohr) + 2 * _mitteZurSohle(rohr) : NaN;
+}
+
+/**
+ * Die ACHSHÖHE, die eine Sohlhöhe in einem Bezug bedeutet — die Umkehrung
+ * von `rohrsohle` (Teil XXIV, K4). Wer eine Sohle schreibt, schreibt über sie.
+ */
+export function achshoeheAusSohle(sohle, rohr = {}) {
+    const v = _hoehe(sohle);
+    return Number.isFinite(v) ? v + _abstand(rohr) : NaN;
+}
+
+/**
+ * Der Bezug einer ACHSE, wie Engine und Journal sie liefern (Teil XXIV, K4):
+ * ausdrücklich (`achsbezug`, ein eigener Bauplan nennt ihn), sonst aus ihrer
+ * Herkunft (`quelle`: Achs-Repräsentation = Sohle, Extrusion/Netz/Bauplan =
+ * Mitte). Sagt die Achse gar nichts, gilt die `vorgabe` des LESERS — sie ist
+ * dort verschieden gewachsen (der Längsschnitt las eine Höhe ohne Angabe als
+ * Sohle, der Kanalgraben als Mitte), und still vereinheitlicht verschöbe sie
+ * einen der beiden um DN/2.
+ */
+export function achsbezugDerAchse(a, vorgabe = null) {
+    if (ACHSBEZUEGE[String(a?.achsbezug ?? '')]) return a.achsbezug;
+    if (a?.quelle) return achsbezugVon(a.quelle);
+    return vorgabe;
+}
+
+/**
+ * Die SOHLE an einer Höhe dieser Achse — mit ihrem Bezug, ihrem DN, ihrem
+ * Profil. Die eine Rechnung für jeden, der eine Haltungshöhe als Sohle liest.
+ * Ohne Aussage der Achse und ohne `vorgabe` ist die Höhe die Sohle.
+ */
+export function sohleAnAchse(y, a, { vorgabe = 'sohle' } = {}) {
+    return rohrsohle(y, { achsbezug: achsbezugDerAchse(a, vorgabe) ?? 'sohle', dn: a?.dn, sohlabstand: a?.sohlabstand });
+}
+
+/** Der SCHEITEL an einer Höhe dieser Achse — daran misst sich die Überdeckung. */
+export function scheitelAnAchse(y, a, { vorgabe = 'mitte' } = {}) {
+    return rohrscheitel(y, { achsbezug: achsbezugDerAchse(a, vorgabe) ?? 'mitte', dn: a?.dn, sohlabstand: a?.sohlabstand });
 }
 
 /** Alle drei Höhen auf einmal — für Leser, die ohnehin zwei davon brauchen. */

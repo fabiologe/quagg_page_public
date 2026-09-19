@@ -57,14 +57,22 @@ describe('schreibstand an der Nutzlast', () => {
         };
         localStorage.setItem(SCHLUESSEL, JSON.stringify(fremd));
 
-        await ae.eintragen({ art: 'kg', globalId: 'G2', nachher: '420', wer: 'fabio' });
+        const drin = await ae.eintragen({ art: 'kg', globalId: 'G2', nachher: '420', wer: 'fabio' });
 
         // Der fremde Stand steht UNVERÄNDERT in der Ablage …
         expect(gespeichert()).toEqual(fremd);
-        // … der eigene Schritt lebt lokal weiter …
-        expect(new Map(ae.wirksamerStand('kg')).get('G2')).toBe('420');
+        // … der eigene Schritt ist ABGELEHNT, nicht still lokal (Teil XXIV, K2 —
+        // Fabios E5: der Mehrbenutzer-Wächter darf ablehnen, und ein Vorgang gilt
+        // ganz oder gar nicht). Bis K2 lebte er lokal weiter und ging beim
+        // Neuladen verloren, ohne dass es jemand gesagt hätte …
+        expect(drin).toBeNull();
+        expect(new Map(ae.wirksamerStand('kg')).has('G2')).toBe(false);
+        expect(new Map(ae.wirksamerStand('kg')).get('G1')).toBe('410');
         // … und der Konflikt ist sichtbar, nicht still.
         expect(ae.schreibKonflikt).toMatchObject({ wer: 'petra', wann: 1234 });
+        const v = await ae.eintragenVorgang([{ art: 'kg', globalId: 'G3', nachher: '430' }]);
+        expect(v).toMatchObject({ ok: false, eintraege: [] });
+        expect(v.grund).toMatch(/petra hat den Verlauf inzwischen geändert/);
     });
 
     it('der eigene ältere Stand sperrt NICHT — auch nach F5 (Marke neu, Zähler übernommen)', async () => {

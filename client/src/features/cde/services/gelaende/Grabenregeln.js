@@ -116,6 +116,8 @@ export const AUFLOCKERUNG_FELD = Object.freeze({
     name: 'auflockerung',
     titel: 'Auflockerung (loses Volumen je m³ gewachsen)',
     typ: 'zahl', min: AUFLOCKERUNG.min, max: AUFLOCKERUNG.max, schritt: 0.01,
+    // Ein Faktor ≤ 0 gäbe ein loses Volumen ≤ 0 — das lässt sich nicht bauen (K10).
+    gueltig: { ueber: 0 },
     vorgabe: AUFLOCKERUNG.vorgabe,
 });
 

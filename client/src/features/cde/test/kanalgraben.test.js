@@ -85,7 +85,9 @@ describe('Der Katalog', () => {
         // `achsbezug` steht seit Teil XXI im Bauplan: wo die Achshöhe liegt,
         // verschiebt jede Höhe des Grabens um DN/2 — das gehört ins Journal,
         // nicht in eine Annahme im Code (E4).
-        expect(p.operationen).toEqual([{ art: 'kanalgraben', parameter: {
+        // Seit Teil XXIV (K2b) trägt jede Operation eine Kennung (`op-…`).
+        expect(p.operationen[0].id).toMatch(/^op-/);
+        expect(p.operationen.map(({ id, ...o }) => o)).toEqual([{ art: 'kanalgraben', parameter: {
             umfang: 'haltung', achsbezug: 'quelle', wandform: 'boeschung', boden: 'nichtbindig', winkelGrad: null, wanddickeMm: 0,
             breite: null, bettung: 0.15, schachtMass: 1, dn: 300 } }]);
         expect(JSON.stringify(p)).not.toMatch(/heights|positions/);

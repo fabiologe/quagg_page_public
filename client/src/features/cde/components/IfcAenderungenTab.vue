@@ -17,19 +17,28 @@
         :disabled="!ae.kannZurueck"
         @click="zurueck"
       />
+      <!-- WIEDERHOLEN (Teil XXIV, O2): wendet das Zurückgenommene wieder an —
+           das gespeicherte Ergebnis. Nach jedem neuen Schritt ist es weg. -->
+      <CdeIconButton
+        icon="redo"
+        titel="Wiederholen — was zuletzt zurückgenommen wurde, gilt wieder"
+        :disabled="!ae.kannWiederholen"
+        @click="wiederholen"
+      />
     </CdeCardHeader>
 
     <!-- Mehrbenutzer-Wächter (Lücke ⑥): das Sichern wurde verweigert, weil
          auf dem Server ein neuerer, FREMDER Stand liegt. Nichts wurde
-         überschrieben — weder die fremde Arbeit noch die eigene; die eigene
-         lebt nur noch lokal, bis neu geladen wird. -->
+         überschrieben. Seit Teil XXIV (K2) wird ein so verweigerter Vorgang
+         ABGELEHNT und nicht eingetragen (Fabios E5) — vorher lebte er lokal
+         weiter und ging beim Neuladen still verloren. -->
     <div v-if="ae.schreibKonflikt" class="ae-schreibkonflikt">
       <CdeIcon name="warn" :size="14" />
       <div>
         <strong>Nicht gesichert:</strong>
         {{ ae.schreibKonflikt.wer || 'Jemand anderes' }} hat den Verlauf inzwischen
         geändert<template v-if="ae.schreibKonflikt.wann"> ({{ relativ(ae.schreibKonflikt.wann) }})</template>.
-        Deine weiteren Schritte bleiben nur lokal — Seite neu laden, dann auf dem
+        Weitere Schritte werden nicht eingetragen — Seite neu laden, dann auf dem
         aktuellen Stand weiterarbeiten.
       </div>
     </div>
@@ -397,6 +406,10 @@ async function anwenden(eintraege) {
 
 async function zurueck() {
   await anwenden(await ae.zurueck(cde.bearbeiter || ''));
+}
+
+async function wiederholen() {
+  await anwenden(await ae.wiederholen(cde.bearbeiter || ''));
 }
 
 /** Ist dieser Commit der neueste, der noch offen ist? Nur er darf einzeln

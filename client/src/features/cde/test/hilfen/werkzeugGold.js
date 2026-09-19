@@ -75,7 +75,12 @@ function normiere(wert) {
     // `gelaende` an Umriss-/Linienpunkten kam mit A7 (Randhöhe als Verweis) —
     // eine bewusste Ergänzung, geprüft in `randhoehen.test.js`; hier bleibt
     // die A6-Frage „sagen die Werkzeuge sonst dasselbe?".
-    const json = JSON.stringify(wert, (k, v) => (k === 'gelaende' && typeof v === 'number' ? undefined
+    // Die Kennung einer Operation (`op-…`) kam mit Teil XXIV K2b — ebenso eine
+    // bewusste Ergänzung (`kommando.test.js`, `operationsKennung.test.js`).
+    // Die technische Grenze eines Felds (`gueltig`) kam mit K10 — geprüft in
+    // `formularGrenzen.test.js`; sie ändert keinen Schritt, nur was sperrt.
+    const json = JSON.stringify(wert, (k, v) => ((k === 'gelaende' && typeof v === 'number') || k === 'gueltig'
+        || (k === 'id' && typeof v === 'string' && v.startsWith('op-')) ? undefined
         : typeof v === 'string' && /^(cde|ab)-[a-z0-9]+-[a-z0-9]+$/.test(v)
         ? (karte.has(v) ? karte.get(v) : (karte.set(v, `ID${karte.size}`), karte.get(v))) : v));
     return JSON.parse(json);

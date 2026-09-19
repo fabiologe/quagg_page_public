@@ -179,15 +179,21 @@ describe('felderFuer — dasselbe Feld, je Typ anders benannt', () => {
 });
 
 describe('pruefe — Grenzen wirken, statt nur dazustehen', () => {
-    const zahl = [{ name: 'dn', typ: 'zahl', min: 50, max: 4000 }];
+    const zahl = [{ name: 'dn', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 } }];
 
     it('nimmt einen Wert innerhalb der Grenzen an', () => {
         expect(pruefe(zahl, { dn: 300 })).toEqual([]);
     });
 
-    it('weist zu klein und zu groß ab', () => {
-        expect(pruefe(zahl, { dn: 10 })[0]).toMatch(/kleiner als 50/);
-        expect(pruefe(zahl, { dn: 99999 })[0]).toMatch(/größer als 4000/);
+    // GEDREHT mit K10 (Teil XXIV, Fabios E5): bis hierher wies die Prüfung
+    // jede Formulargrenze ab. Jetzt sperrt nur die TECHNISCHE (`gueltig`) —
+    // DN 10 und DN 99 999 sind ungewöhnlich, nicht unbaubar: sie werden
+    // ausgeführt und als `wert_ausserhalb` markiert (`formularGrenzen.test.js`).
+    it('Fachgrenzen sperren nicht mehr, die technische Grenze schon', () => {
+        expect(pruefe(zahl, { dn: 10 })).toEqual([]);
+        expect(pruefe(zahl, { dn: 99999 })).toEqual([]);
+        expect(pruefe(zahl, { dn: 0 })[0]).toMatch(/muss größer als 0/);
+        expect(pruefe(zahl, { dn: -300 })[0]).toMatch(/muss größer als 0/);
     });
 
     it('weist Nicht-Zahlen ab, statt NaN weiterzureichen', () => {

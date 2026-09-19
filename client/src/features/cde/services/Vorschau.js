@@ -29,6 +29,8 @@
 
 import { ableitungNach } from './ableitung/Ableitungen.js';
 import { weltAusNn } from './Hoehenbezug.js';
+import { sohleAnAchse } from './Achsbezug.js';
+import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
 import { istAnzeigeform } from './Bauteilrezepte.js';
 
 /** Ein Frame — mehr darf eine Vorschau je Änderung nicht kosten. */
@@ -216,14 +218,17 @@ function _forderung(e, ctx, farben, aus) {
 
     if ('sohlhoeheAnfang' in n || 'sohlhoeheEnde' in n) {
         if (a?.anfang && a?.ende) {
-            const p1 = { x: a.anfang.x, y: Number.isFinite(Number(n.sohlhoeheAnfang)) ? weltAusNn(Number(n.sohlhoeheAnfang), v) : a.anfang.y, z: a.anfang.z };
-            const p2 = { x: a.ende.x,   y: Number.isFinite(Number(n.sohlhoeheEnde))   ? weltAusNn(Number(n.sohlhoeheEnde), v)   : a.ende.y,   z: a.ende.z };
+            // Ein Ende ohne Forderung gilt mit seiner SOHLE (K4) — nicht mit der
+            // rohen Achshöhe: sonst stünden im Gefälle Sohle gegen Rohrmitte.
+            const p1 = { x: a.anfang.x, y: Number.isFinite(Number(n.sohlhoeheAnfang)) ? weltAusNn(Number(n.sohlhoeheAnfang), v) : sohleAnAchse(a.anfang.y, a), z: a.anfang.z };
+            const p2 = { x: a.ende.x,   y: Number.isFinite(Number(n.sohlhoeheEnde))   ? weltAusNn(Number(n.sohlhoeheEnde), v)   : sohleAnAchse(a.ende.y, a),   z: a.ende.z };
             aus.primitive.push({ art: 'forderung', farbe: farben.warn, linien: [[p1, p2], [a.anfang, p1], [a.ende, p2]] });
             aus.primitive.push({ art: 'marke', punkt: p1, normal: { x: 0, y: 1, z: 0 }, farbe: farben.warn, radius: 0.2 });
             aus.primitive.push({ art: 'marke', punkt: p2, normal: { x: 0, y: 1, z: 0 }, farbe: farben.warn, radius: 0.2 });
-            const l = Math.hypot(p2.x - p1.x, p2.z - p1.z);
-            if (l > 0.01) {
-                const gef = ((p1.y - p2.y) / l) * 1000;
+            // Die EINE Rechnung (K5), entlang der Achse.
+            const g = gefaelle(punkteDerAchse(a), { anfang: p1.y, ende: p2.y });
+            if (g.laenge2d > 0.01) {
+                const gef = g.promille;
                 aus.chips.push({ art: 'forderung', text: `Sohlen ${Number(n.sohlhoeheAnfang).toFixed(2)} → ${Number(n.sohlhoeheEnde).toFixed(2)} m NN · ${gef >= 0 ? '' : '−'}${Math.abs(gef).toFixed(1)} ‰` });
             }
         }

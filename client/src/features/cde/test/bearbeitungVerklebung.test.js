@@ -91,17 +91,16 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
      * Diese Liste ist der Vertrag. Wer eine Stelle ergänzt, muss sie hier
      * eintragen — und dabei erklären, warum sie ohne Modus schreiben darf.
      */
+    // SEIT TEIL XXIV (O6) schreiben Längsschnitt, Merkmalsfenster und Cockpit
+    // nicht mehr selbst: sie setzen Kommandos über `useKommandoweg` ab, und der
+    // prüft den Modus vor `fuehreAus` (geprüft unten). Gesucht wird seitdem
+    // nach JEDEM Schreibweg des Journals, nicht nur nach `eintragen`.
     const ERLAUBT = {
-        'stores/useBearbeitung.js': 'die Engstelle selbst — prüft den Modus davor',
+        'stores/useBearbeitung.js': 'die Engstelle selbst — `ausfuehren` prüft den Modus davor; '
+            + '`fuehreAus` ist der Weg ohne Oberfläche (Kommandos, Skripte), Fenster rufen ihn über `useKommandoweg`',
         'components/IfcPlanningCockpit.vue':
-            'zwei einmalige Übernahmen von Altbestand beim Laden (kein Nutzereingriff) '
-            + '— die zwei Nutzerwege daneben prüfen `bearbeitung.modusAn`',
-        'components/LaengsschnittCanvas.vue':
-            'der Griff-Zug (17.2) — Griffe existieren nur bei `bearbeitung.modusAn` '
-            + '(die Sperre steht in onZeigerAb, VOR jedem Anfassen), geprüft unten',
-        'components/IfcSemanticWindow.vue':
-            'der Merkmalssatz über die Sitzung (Lücke ⑧) — `onAddPset` prüft '
-            + '`bearbeitung.modusAn` als erste Sperre, geprüft unten',
+            'zwei einmalige Übernahmen von Altbestand beim Laden (kein Nutzereingriff, Systembeleg) '
+            + '— die zwei Nutzerwege daneben gehen über den Kommandoweg',
         'stores/planJournal.js':
             'Planinhalte und Rotstift (Teil XXIII, A7) — Blattinhalt, kein Eingriff in ein '
             + 'Bauteil; sie standen nie unter dem Bearbeiten-Modus, sondern unter dem '
@@ -119,7 +118,8 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
                 for (const [i, zeile] of text.split('\n').entries()) {
                     const roh = zeile.trimStart();
                     if (roh.startsWith('*') || roh.startsWith('//')) continue;
-                    if (/\.eintragen\(/.test(zeile)) {
+                    // `uebernimm` heisst auch die Übergabe der Plangesten — gezählt nur am Journal-Store.
+                    if (/\.eintragen(Vorgang)?\(|\b(aenderungen|ae)\.uebernimm(Altbestand)?\(/.test(zeile)) {
                         const rel = pfad.replace(WURZEL, '');
                         if (!treffer.has(rel)) treffer.set(rel, []);
                         treffer.get(rel).push(i + 1);
@@ -130,6 +130,16 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
         suche(WURZEL);
         const unbekannt = [...treffer.keys()].filter(d => !(d in ERLAUBT));
         expect(unbekannt, 'Neue Schreibstelle: prüft sie den Bearbeiten-Modus?').toEqual([]);
+        // … und die Liste ist nachgezogen: wer nicht mehr schreibt, steht nicht mehr darin.
+        expect(Object.keys(ERLAUBT).filter(d => !treffer.has(d)), 'veralteter Eintrag').toEqual([]);
+    });
+
+    it('der Kommandoweg der Fenster prüft den Modus VOR dem Kommando', () => {
+        const text = lies('composables/useKommandoweg.js');
+        const sperre = text.indexOf('bearbeitung.modusAn');
+        const schreibt = text.indexOf('bearbeitung.fuehreAus');
+        expect(sperre).toBeGreaterThan(-1);
+        expect(sperre).toBeLessThan(schreibt);
     });
 
     it('der Längsschnitt-Griff prüft den Modus VOR dem Anfassen', () => {
@@ -144,12 +154,12 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
     });
 
     it('der Merkmalssatz prüft den Modus VOR dem Eintragen', () => {
-        // Der Beleg für den ERLAUBT-Eintrag oben (Lücke ⑧): die Sperre steht
-        // im HANDLER, vor dem `eintragen` — nicht in der Darstellung.
+        // Lücke ⑧: die Sperre steht im HANDLER, vor dem Kommando — nicht in der
+        // Darstellung. (Seit O6 schaltet sie den Modus ein, der Kommandoweg prüft ihn noch einmal.)
         const text = lies('components/IfcSemanticWindow.vue');
         const handler = text.indexOf('async function onAddPset');
         const sperre = text.indexOf('bearbeitung.modusAn', handler);
-        const schreibt = text.indexOf('aenderungen.eintragen', handler);
+        const schreibt = text.indexOf('kommandoweg.absetzen', handler);
         expect(sperre).toBeGreaterThan(-1);
         expect(sperre).toBeLessThan(schreibt);
     });

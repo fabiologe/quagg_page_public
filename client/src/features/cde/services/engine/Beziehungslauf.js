@@ -7,6 +7,7 @@
  * nur, was sie braucht; die Engine behält eine einzeilige Weiterleitung, damit
  * ihre Aufrufer (Viewer, Tests) unverändert bleiben.
  */
+import { achsbezugDerAchse } from '../Achsbezug.js';
 import { CDE_MODELL_ID } from '../IfcAutor.js';
 import { aufgeloestesRegelwerk } from '../regeln/Regelwerk.js';
 import { baueBeziehungen } from '../Beziehungen.js';
@@ -94,7 +95,8 @@ export async function _beziehungsObjekte(engine, dirty = null) {
             objekte.push({
                 globalId: gid, name: z.Name?.value ?? '', kategorie: quelle.kategorieVon(z) ?? '',
                 herkunft: 'geliefert', huelle,
-                achse: a ? { punkte: a.polyline, dn: a.dn } : null,
+                // Mit dem BEZUG der Achse (K4): die Überdeckung misst am Scheitel.
+                achse: a ? { punkte: a.polyline, dn: a.dn, achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null } : null,
                 knoten: k ? k.punkt : null,
                 ort: { modelId, localId },
             });
@@ -124,7 +126,7 @@ export async function _beziehungsObjekte(engine, dirty = null) {
                 globalId: gid, name: engine._cdeNameVon?.(gid) ?? k?.name ?? sK?.name ?? '',
                 kategorie: k?.kategorie ?? (sK ? 'IFCDISTRIBUTIONCHAMBERELEMENT' : 'IFCEARTHWORKSCUT'),
                 herkunft: 'cde', huelle,
-                achse: k ? { punkte: k.punkte ?? [k.anfang, k.ende], dn: k.dn } : null,
+                achse: k ? { punkte: k.punkte ?? [k.anfang, k.ende], dn: k.dn, achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null } : null,
                 knoten: sK ? sK.punkt : null,
                 ort: t ? { modelId: CDE_MODELL_ID, localId: t.localId } : null,
             });

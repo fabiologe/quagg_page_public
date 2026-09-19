@@ -16,14 +16,18 @@
  * „der davor", damit eine fehlende Basis auffällt statt still falsch zu falten.
  *
  * STUFEN: 2 = volle Baupläne (bis A7a), 3 = Pfadschritte, Planinhalte und
- * Rotstift im Journal, Randhöhen als Verweis, nichts Abgeleitetes (A7b).
+ * Rotstift im Journal, Randhöhen als Verweis, nichts Abgeleitetes (A7b),
+ * 4 = neue Haltungen speichern ihre SOHLE (`achsbezug: 'sohle'`, Teil XXIV,
+ * K4b). Ein Client, der Stufe 4 nicht kennt, baute eine solche Haltung um
+ * DN/2 zu tief — deshalb erst der Leser (K4a), eine Auslieferung später
+ * der Schreiber.
  * Ein Journal trägt `mindestClient`, sobald es Stufe-3-Schreibweisen enthält;
  * ein Client, der weniger KENNT, liest es nur (`nurLesen`) und schreibt nie
  * darüber — ein älterer Tab startete sonst leer und überschriebe es.
  */
 
-/** Was dieser Client LESEN kann. */
-export const JOURNAL_KENNT = 3;
+/** Was dieser Client LESEN kann. Seit K4a: auch `achsbezug` im Bauplan einer Kante. */
+export const JOURNAL_KENNT = 4;
 
 /**
  * Was dieser Client SCHREIBT. A7a liefert die Leser mit 2 aus; erst wenn sie
@@ -31,6 +35,15 @@ export const JOURNAL_KENNT = 3;
  */
 let _schreibt = 2;
 export function schreibStufe() { return _schreibt; }
+
+/**
+ * In welchem Bezug eine NEUE oder neu geschriebene Kante ihre Höhen speichert
+ * (Teil XXIV, K4). Bis Stufe 4 die Rohrmitte — ausdrücklich genannt, und ein
+ * älterer Client liest sie richtig, weil sie seine Lesart ist. Ab Stufe 4 die
+ * Sohle: die gespeicherte Zahl ist dann, was Werkzeug, Längsschnitt und
+ * Kommando „Sohle" nennen.
+ */
+export function kantenbezugNeu() { return _schreibt >= 4 ? 'sohle' : 'mitte'; }
 /** Nur für Tests: die Schreibweise von A7b prüfen, bevor sie ausgeliefert wird. */
 export function setzeSchreibStufeFuerTests(n) { _schreibt = n; }
 

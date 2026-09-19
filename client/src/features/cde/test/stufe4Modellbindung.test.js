@@ -102,6 +102,9 @@ describe('2 + 3 · ausfuehren und commitSitzung', () => {
     it('Reihenfolge, als Wächter am Quelltext: Bearbeitung vor Subjekt vor Aufrufer', () => {
         // Unter jsdom ist `import.meta.url` keine Datei-URL — der Pfad kommt aus dem Arbeitsordner (client/).
         const text = readFileSync(resolve(process.cwd(), 'src/features/cde/stores/useBearbeitung.js'), 'utf8');
-        expect(text).toMatch(/modellSha: beschreibung\.modellSha \?\? gegenstand\?\.modellSha \?\? modellSha/);
+        // Seit Teil XXIV (O6) steht dazwischen, was der Aufrufer JE EINTRAG weiss
+        // (`jeEintrag`, Längsschnitt am gemischten Knoten) — spezifischer als das
+        // Hauptsubjekt, unspezifischer als die Bearbeitung selbst.
+        expect(text).toMatch(/modellSha: beschreibung\.modellSha \?\? je\.modellSha \?\? gegenstand\?\.modellSha \?\? modellSha/);
     });
 });

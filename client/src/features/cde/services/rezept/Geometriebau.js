@@ -150,6 +150,34 @@ export function punktXYZ(p) {
     return { x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0 };
 }
 
+/**
+ * Höhen LINEAR über die waagerechte Länge eines Zugs: der erste Punkt bekommt
+ * `a`, der letzte `e`, die Zwischenpunkte folgen der Strecke (Stufe 14.12,
+ * 17.3b — die Zwischenpunkte einer Haltung tragen keine eigene Höhenaussage).
+ * Die EINE Regel für „Sohlhöhen festlegen", den Sohlzug im Längsschnitt und
+ * das Zeichnen einer Trasse (Teil XXIV, K4).
+ *
+ * @param {Array} punkte  [[x,y,z]|{x,y,z}, …]
+ * @returns {number[]}    eine Höhe je Punkt
+ */
+export function hoehenUeberLaenge(punkte, a, e) {
+    const p = (punkte ?? []).map(punktXYZ);
+    if (p.length < 2) return p.map(() => a);
+    const abschnitt = [];
+    let gesamt = 0;
+    for (let i = 0; i + 1 < p.length; i++) {
+        const d = Math.hypot(p[i + 1].x - p[i].x, p[i + 1].z - p[i].z);
+        abschnitt.push(d);
+        gesamt += d;
+    }
+    let gelaufen = 0;
+    return p.map((_, i) => {
+        if (i > 0) gelaufen += abschnitt[i - 1];
+        const t = gesamt > 0 ? gelaufen / gesamt : (i / (p.length - 1));
+        return a + (e - a) * t;
+    });
+}
+
 /** Einheiten der Masse in einer Deklaration — geteilt wird, damit mm exakt bleibt. */
 export const EINHEITEN = Object.freeze({ mm: 1000, cm: 100, m: 1 });
 

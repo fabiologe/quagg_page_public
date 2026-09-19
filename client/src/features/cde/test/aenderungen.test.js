@@ -129,7 +129,12 @@ describe('Zurücknehmen', () => {
     expect(zurueck.ruecknahmeVon).toBe(hin.id);
     expect(zurueck.vorher).toBe('330');
     expect(zurueck.nachher).toBeNull();
-    expect(zurueck.vorgang).toBeUndefined();   // ohne Vorgang bleibt alles wie zuvor
+    // SEIT Teil XXIV (O4) trägt jeder Systemvorgang einen Beleg, und die
+    // Vorgangskennung ist seine Kennung — auch bei einem einzigen Eintrag.
+    // Weiterhin ein Schritt, ohne Vorgangstitel.
+    expect(zurueck.vorgang).toBe(zurueck.kommando.id);
+    expect(zurueck.kommando.werkzeug).toBe('system:zuruecknehmen');
+    expect(zurueck.vorgangTitel).toBeUndefined();
   });
 
   it('geht über die Rücknahme hinweg zum Schritt davor', async () => {

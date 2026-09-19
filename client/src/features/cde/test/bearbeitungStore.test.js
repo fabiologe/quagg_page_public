@@ -134,7 +134,8 @@ describe('starte — die Güteschranke gilt in jedem Einstieg', () => {
         const b = useBearbeitung();
         await b.einordne({ ...ROHR }, resolverEchteAchse);
         expect(b.bauteil.stand).toEqual({
-            kg: null, din277: null, bauplan: null, bauformAusnahme: null,
+            // `pset` seit Teil XXIV (O6): „Merkmalssatz setzen" schreibt den vollen Stand fort.
+            kg: null, din277: null, bauplan: null, bauformAusnahme: null, pset: null,
         });
     });
 

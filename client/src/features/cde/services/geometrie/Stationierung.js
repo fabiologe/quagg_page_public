@@ -69,6 +69,53 @@ export function ortBei(st, s, { ausserhalb = 'klemmen' } = {}) {
     };
 }
 
+/**
+ * Die Punkte einer ACHSE, gleich woher sie kommt: die Engine liefert
+ * `polyline`, eine Netzkante aus dem Bauplan `punkte`, ein Strangglied
+ * mindestens Anfang und Ende.
+ */
+export function punkteDerAchse(a) {
+    if (Array.isArray(a?.polyline) && a.polyline.length >= 2) return a.polyline;
+    if (Array.isArray(a?.punkte) && a.punkte.length >= 2) return a.punkte;
+    return a?.anfang && a?.ende ? [a.anfang, a.ende] : [];
+}
+
+/**
+ * DAS GEFÄLLE, EINMAL (Teil XXIV, K5).
+ *
+ * Bis K5 rechneten fünf Stellen selbst — Befund, Achsbeschriftung,
+ * Längsschnitt-Sicht, Vorschau, „Strang-Gefälle setzen" —, und nicht gegen
+ * dieselbe Länge: die einen gegen die Weglänge in der Draufsicht, die anderen
+ * gegen die gerade Sehne vom Anfang zum Ende, „Strang-Gefälle setzen" gegen die
+ * räumliche Länge. Bei einer geraden Haltung ist das dasselbe; bei einer mit
+ * Knick ist die Sehne kürzer, das Gefälle erscheint steiler, und ein zu
+ * flaches Rohr fiel durch.
+ *
+ * Ein Gefälle ist Höhe je WAAGERECHTER Strecke entlang der Achse — dieselbe
+ * Weglänge, mit der stationiert wird. Positiv heisst: fällt vom Anfang zum Ende.
+ *
+ * @param {Array<{x, y?, z}>} punkte  die Achse
+ * @param {{anfang?: number, ende?: number}} [hoehen]  Höhen an Anfang und Ende,
+ *        wenn nicht die der Punkte gelten (die Sohle statt der Achshöhe, eine
+ *        Forderung statt der Lieferung) — dieselbe Einheit kommt zurück
+ * @returns {{ fall: number, laenge2d: number, promille: number|null }}
+ *          `promille` null, wenn die Achse keine waagerechte Länge oder keine Höhe hat
+ */
+export function gefaelle(punkte, { anfang = null, ende = null } = {}) {
+    const p = (punkte ?? []).filter(Boolean);
+    if (p.length < 2) return { fall: NaN, laenge2d: 0, promille: null };
+    const hA = Number.isFinite(anfang) ? anfang : (p[0].y == null ? NaN : Number(p[0].y));
+    const hE = Number.isFinite(ende) ? ende : (p[p.length - 1].y == null ? NaN : Number(p[p.length - 1].y));
+    const fall = hA - hE;
+    const { laenge } = stationiere(p);
+    return { fall, laenge2d: laenge, promille: laenge > 1e-9 && Number.isFinite(fall) ? (fall / laenge) * 1000 : null };
+}
+
+/** Nur die Zahl: ‰, positiv = fällt; null ohne Länge oder Höhe. */
+export function gefaellePromille(punkte, hoehen) {
+    return gefaelle(punkte, hoehen).promille;
+}
+
 /** Einheitsrichtung des Abschnitts i in der Draufsicht ({0,0} ohne Länge). */
 export function richtungVon(punkte, i) {
     const a = punkte[i], b = punkte[i + 1];

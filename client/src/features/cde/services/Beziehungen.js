@@ -45,6 +45,7 @@
  * Reines Modul: kein Vue, kein three, kein WebGL, keine Engine.
  */
 import { baueNetz } from './Netztopologie.js';
+import { scheitelAnAchse } from './Achsbezug.js';
 
 /** Die Arten — eine Systematik aus Dimensionspaaren, keine Beispielsammlung. */
 export const ARTEN = Object.freeze({
@@ -253,7 +254,10 @@ function _normiere(o) {
     const punkte = o.achse?.punkte ?? o.achse?.polyline
         ?? (o.achse?.anfang && o.achse?.ende ? [o.achse.anfang, o.achse.ende] : null);
     const achse = Array.isArray(punkte) && punkte.filter(punktGut).length >= 2
-        ? { punkte: punkte.filter(punktGut), dn: fin(o.achse?.dn) ? o.achse.dn : null }
+        ? { punkte: punkte.filter(punktGut), dn: fin(o.achse?.dn) ? o.achse.dn : null,
+            // Was die Höhen SIND (K4) — die Überdeckung misst am Scheitel.
+            achsbezug: o.achse?.achsbezug ?? null, quelle: o.achse?.quelle ?? null,
+            sohlabstand: fin(o.achse?.sohlabstand) ? o.achse.sohlabstand : null }
         : null;
     const knoten = punktGut(o.knoten) ? { x: o.knoten.x, y: o.knoten.y, z: o.knoten.z } : null;
     let huelle = boxGut(o.huelle) ? o.huelle : null;
@@ -432,14 +436,17 @@ export function baueBeziehungen({
             let mass = null;
             if (o.achse) {
                 // Rohrscheitel gegen das Gelände, an Stützpunkten und Segmentmitten
-                // — dasselbe Mass wie im Kanalgraben-Rezept.
-                const r = fin(o.achse.dn) ? o.achse.dn / 2000 : 0;
+                // — dasselbe Mass wie im Kanalgraben-Rezept. Der Scheitel mit
+                // dem BEZUG der Achse (K4): eine Achse auf Sohlniveau hat ihn
+                // 2r darüber, nicht r — die Überdeckung war dort um r zu gross.
+                const scheitelVon = (y) => scheitelAnAchse(y, { ...o.achse, dn: fin(o.achse.dn) ? o.achse.dn : 0 });
                 let min = Infinity, wo = null;
                 const probe = (x, y, z) => {
                     const h = hoeheAn(x, z);
                     if (!fin(h)) return;
-                    const u = h - (y + r);
-                    if (u < min) { min = u; wo = { x, y: y + r, z }; }
+                    const s = scheitelVon(y);
+                    const u = h - s;
+                    if (u < min) { min = u; wo = { x, y: s, z }; }
                 };
                 const pts = o.achse.punkte;
                 for (let i = 0; i < pts.length; i++) {

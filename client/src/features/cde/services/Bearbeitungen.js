@@ -33,7 +33,7 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform, rezeptFuerNetzrolle } from './Bauteilrezepte.js';
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -74,7 +74,9 @@ import { hatInnenring, innenEcken, innenFeld, randFuerInnenecke } from './gelaen
 // Rezepts, nicht eine Kopie daneben (Gesetz 7).
 import { achsmassAus } from './geometrie/hilfen.js';
 
-import { ACHSBEZUEGE } from './Achsbezug.js';
+import { ACHSBEZUEGE, sohleAnAchse } from './Achsbezug.js';
+import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
+import { kantenbezugNeu } from './JournalFormat.js';
 import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
@@ -204,7 +206,9 @@ function _anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }) {
             rezept: rezeptFuerNetzrolle('kante'),
             kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
             name: k.name ?? '',
-            parameter: { punkte, dn: k.dn ?? 300 },
+            // Das mitgeführte Ende hängt am verschobenen Knoten — und nennt ihn (K8).
+            parameter: _mitAnschluss(_kanteAusFremdenHoehen(punkte, k.dn ?? 300, punkte.map(() => k)),
+                                     { [k.ende === 'anfang' ? 'anfang' : 'ende']: el.globalId }),
         }));
     }
     return eintraege;
@@ -220,14 +224,60 @@ function _anschluesseNachfuehren(el, werte, { ost, nord, zielX, zielZ }) {
  * seinen Bezug. Ein GELIEFERTES Bauteil hat keine Parameter — es bekommt,
  * was die Achse weiss.
  */
-function _netzParameter(bauplan, rolle, punkte, dn) {
+function _netzParameter(bauplan, rolle, punkte, dn, quelle = null) {
     const behaelt = !!bauplan?.rezept && rezeptNach(bauplan.rezept)?.netzrolle === rolle;
-    return behaelt ? { ...bauplan.parameter, punkte } : { punkte, dn: dn ?? 300 };
+    // Behält es sein Rezept, stammen die Punkte von SEINER Achse — sie stehen
+    // schon in seinem Bezug, und `achsbezug` kommt mit den Parametern mit.
+    if (behaelt) return { ...bauplan.parameter, punkte };
+    return rolle === 'kante'
+        ? _kanteAusFremdenHoehen(punkte, dn ?? 300, punkte.map(() => quelle))
+        : { punkte, dn: dn ?? 300 };
+}
+
+/**
+ * Eine NEUE eigene Kante aus Punkten fremder Achsen (Teil XXIV, K4).
+ *
+ * Die Höhen stammen von einer anderen Achse — einer gelieferten (isyifc
+ * schreibt sie auf Sohlniveau, eine Extrusion liegt in der Rohrmitte) oder
+ * einer eigenen (ihr Bauplan sagt es). Bis K4 gingen sie roh in den neuen
+ * Bauplan, und der gilt ohne Angabe als Rohrmitte: „Haltung teilen" an
+ * einer gelieferten isyifc-Haltung legte die Teile DN/2 zu tief. Jetzt wird
+ * jede Höhe mit dem Bezug IHRER Achse zur Sohle, und die Kante speichert sie
+ * im Bezug der Schreibstufe (`kantenbezugNeu`).
+ *
+ * Sagt eine Quelle nichts über ihren Bezug, bleibt es beim bisherigen Lesen
+ * (Rohrmitte) — eine Achse ohne Angabe soll nicht still wandern.
+ *
+ * @param {Array<[x,y,z]>} punkte
+ * @param {Array<object|null>} quellen  je Punkt die Achse, von der seine Höhe stammt
+ */
+function _kanteAusFremdenHoehen(punkte, dn, quellen) {
+    const neu = { punkte, dn };
+    const sohlen = rezeptNach(rezeptFuerNetzrolle('kante'))?.sohlen;
+    if (!sohlen) return neu;
+    // Kennt die Quelle ihr DN nicht, gilt das der neuen Kante — sonst rechnete
+    // die Sohle mit r = 0 und das Speichern mit r, und das Rohr stiege um r.
+    return sohlen.speichere(neu, punkte.map((p, i) => sohleAnAchse(p[1], { ...quellen[i], dn: quellen[i]?.dn ?? dn }, { vorgabe: 'mitte' })),
+                            { bezug: kantenbezugNeu() });
 }
 
 function _alsTripel(p) {
     return [p.x, p.y, p.z];
 }
+
+/**
+ * DER ANSCHLUSS EINES STÜCKS (Teil XXIV, K8). Aus einer Kante werden Stücke
+ * (Teilen, Schacht einfügen): jedes Stück behält nur, was an SEINEM Ende
+ * stimmt — `anfang` vom ersten Stück, `ende` vom letzten, dazwischen der neue
+ * Knoten (oder keiner). Eine Kopie nennt gar keinen: sie liegt woanders, und
+ * eine erklärte Verbindung zum alten Schacht wäre eine falsche Aussage.
+ */
+function _mitAnschluss(parameter, anschluss) {
+    const { anschluss: _alt, ...rest } = parameter ?? {};
+    const neu = Object.fromEntries(Object.entries(anschluss ?? {}).filter(([, g]) => typeof g === 'string' && g));
+    return Object.keys(neu).length ? { ...rest, anschluss: neu } : rest;
+}
+const _ohneAnschluss = (parameter) => _mitAnschluss(parameter, null);
 
 /**
  * Einen Namen aus einem Muster bilden.
@@ -311,24 +361,102 @@ function alsRaumpunkte(punkte, hoehe = 0) {
  * Die Deklaration nennt `setzt: { art, … }`; `werkzeugAusSetzer` macht daraus
  * `vorbelegung` und `anwenden`. Vier Operationen tragen elf Werkzeuge:
  *
- *   mass      Grössen je Rolle als Festlegung (`parametrik`), faltet je Rolle
+ *   mass      Grössen je Rolle als Festlegung (`parametrik`), faltet je Rolle;
+ *             mit `amOrt: '<feld>'` (O6) setzt das eine Feld die Rolle, deren
+ *             Ort (`ort` je Wert) am getippten Punkt liegt — die Sohle am
+ *             Schacht, gezogen im Längsschnitt oder getippt im Raum
  *   merkmal   ein Wert unter seiner Journalart (kg, din277, massnahme, bauform,
  *             geloescht) — leer heisst zurücknehmen
  *   benennen  Name nach Muster, bei Mehrfachauswahl durchnummeriert
  *   hoehe     die Lage um die Differenz der Bezugshöhe verschieben
  *   parameter ein Parameter eines EIGENEN Bauteils (Rezeptfeld `setzbar`) —
  *             ein neuer Bauplan unter derselben Kennung
+ *   satz      ein Eintrag einer Karte unter seinem Namen (der Merkmalssatz,
+ *             O6) — die übrigen Sätze bleiben, wie sie gelten
  */
 const _VORBELEGUNG_WELT = Object.freeze({
     // Welt-y oder null — umgerechnet in m NN wird beim Vorbelegen.
-    'achse.anfang': (el) => el?.achse?.anfang?.y ?? null,
-    'achse.ende': (el) => el?.achse?.ende?.y ?? null,
+    // Die SOHLE der Achse (Teil XXIV, K4): mit ihrem Bezug. Bis K4 stand die
+    // rohe Achshöhe im Feld „Sohle" — bei eigenen Haltungen und Achsen aus
+    // der Extrusion die Rohrmitte (Messbefund E7).
+    'achse.anfang': (el) => (el?.achse?.anfang ? sohleAnAchse(el.achse.anfang.y, el.achse) : null),
+    'achse.ende': (el) => (el?.achse?.ende ? sohleAnAchse(el.achse.ende.y, el.achse) : null),
     // Der Deckel ist die Oberkante der Hülle; ohne sie der Anker, ohne ihn 0.
     'oberkante': (el) => el?.oberkante ?? el?.anker?.y ?? 0,
 });
 
-function _vorbelegtMass(w, el) {
-    const stand = el?.stand?.[w.rolle];
+/**
+ * EIGENES WIRD ECHT (Teil XXIV, K4). Ein Setzer, der `amBauplan` nennt, schreibt
+ * an einem eigenen Bauteil, dessen Rezept diese Fähigkeit hat, den BAUPLAN
+ * fort statt einer Forderung. Das Rezept entscheidet, nicht der Bauteiltyp
+ * (Abgleich A2, U7: „Sohlhöhen festlegen" war an einer eigenen Haltung eine
+ * Forderung, die niemand las — und die Kur, die der Gefällebefund nannte,
+ * eine Schleife ohne Wirkung).
+ */
+function _amBauplan(s, el) {
+    const plan = el?.stand?.bauplan;
+    const faehigkeit = s?.amBauplan && plan?.rezept ? rezeptNach(plan.rezept)?.[s.amBauplan] : null;
+    return faehigkeit ? { plan, faehigkeit } : null;
+}
+
+/** Schreibt dieses Werkzeug an diesem Bauteil den Bauplan fort statt einer Forderung? (Hinweis in der Kontextleiste.) */
+export function schreibtAmBauplan(werkzeug, el) {
+    return !!_amBauplan(werkzeug?.setzt, el);
+}
+
+/**
+ * WO EINE ROLLE SITZT (O6): der Ort am Subjekt, an dem ihr Wert gilt — die
+ * Sohle Anfang am Anfang der Achse. Nur Lage (x, z); die Höhe ist der Wert.
+ */
+const _ORTE = Object.freeze({
+    'achse.anfang': (el) => el?.achse?.anfang ?? null,
+    'achse.ende': (el) => el?.achse?.ende ?? null,
+});
+
+/**
+ * Welche Rolle am Punkt `p` sitzt: die, deren Ort ihm in der Draufsicht am
+ * nächsten liegt — und das höchstens so weit, wie das Netz zwei Enden noch
+ * für DENSELBEN Ort hält (`netzToleranzM`). Kein Radius zum Fangen: bei
+ * Mehrfachauswahl zöge ein Fangradius die Haltung am Nachbarschacht mit.
+ */
+function _rolleAmOrt(s, el, p) {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return null;
+    let beste = null, abstand = Infinity;
+    for (const w of s.werte) {
+        const o = _ORTE[w.ort]?.(el);
+        if (!o) continue;
+        const d = Math.hypot(o.x - p.x, o.z - p.z);
+        if (d < abstand) { abstand = d; beste = w; }
+    }
+    return beste && abstand <= regelwert('netzToleranzM') ? beste : null;
+}
+
+/**
+ * Das Feld am Ort schreiben (O6). Eigenes: nur DIESES Ende — der Bauplan
+ * behält das andere exakt (dieselbe Fähigkeit `sohlen` wie „Sohlhöhen
+ * festlegen"). Geliefertes: die volle Rollenkarte (Gesetz 4), das andere
+ * Ende mit seiner WIRKSAMEN Höhe — so schrieb der Längsschnitt-Zug seit 17.2.
+ */
+function _massAmOrt(s, el, werte, { zug = [] } = {}) {
+    const w = _rolleAmOrt(s, el, zug[0]);
+    if (!w) return null;
+    const ohneOrt = { ...s, amOrt: undefined };
+    const wert = werte?.[s.amOrt];
+    if (_amBauplan(s, el)) return SETZ_OPERATIONEN.mass.schreibe({ ...ohneOrt, werte: [w] }, el, { [w.feld]: wert });
+    const jetzt = Object.fromEntries(s.werte.map(x => [x.feld, _vorbelegtMass(x, el, null)]));
+    return SETZ_OPERATIONEN.mass.schreibe(ohneOrt, el, { ...jetzt, [w.feld]: wert });
+}
+
+/** Die zwei Sohlen einer Haltung — je Rolle ihr Feld, ihr Ort und was ohne Festlegung gilt. */
+const SOHLEN_WERTE = Object.freeze([
+    { feld: 'anfang', rolle: 'sohlhoeheAnfang', ort: 'achse.anfang', zahl: true, runden: true, sonst: { welt: 'achse.anfang', leer: 0 } },
+    { feld: 'ende', rolle: 'sohlhoeheEnde', ort: 'achse.ende', zahl: true, runden: true, sonst: { welt: 'achse.ende', leer: 0 } },
+]);
+
+function _vorbelegtMass(w, el, echt = null) {
+    // Am eigenen Bauplan gilt der Bauplan — eine alte Forderung daneben
+    // (vor K4 geschrieben) wird nicht mehr gelesen, sie wirkte nie.
+    const stand = echt ? null : el?.stand?.[w.rolle];
     let wert = stand ?? null;
     if (wert == null && w.sonst) {
         const welt = _VORBELEGUNG_WELT[w.sonst.welt]?.(el) ?? null;
@@ -340,8 +468,30 @@ function _vorbelegtMass(w, el) {
 
 const SETZ_OPERATIONEN = Object.freeze({
     mass: {
-        vorbelege: (s, el) => Object.fromEntries(s.werte.map(w => [w.feld, _vorbelegtMass(w, el)])),
-        schreibe: (s, el, werte) => {
+        vorbelege: (s, el) => {
+            // Am Ort: welche Rolle es wird, sagt erst der Punkt — das Feld bleibt leer.
+            if (s.amOrt) return { [s.amOrt]: null };
+            const echt = _amBauplan(s, el);
+            return Object.fromEntries(s.werte.map(w => [w.feld, _vorbelegtMass(w, el, echt)]));
+        },
+        schreibe: (s, el, werte, kontext) => {
+            if (s.amOrt) return _massAmOrt(s, el, werte, kontext);
+            const echt = _amBauplan(s, el);
+            if (echt) {
+                // Die Felder sind Höhen in m NN — die Fähigkeit nimmt sie in der Welt.
+                const welt = {};
+                for (const w of s.werte) {
+                    const z = Number(werte?.[w.feld]);
+                    if (!Number.isFinite(z)) return null;
+                    welt[w.feld] = weltAusNn(z, el?.hoehenversatz ?? 0);
+                }
+                const parameter = echt.faehigkeit.enden(echt.plan.parameter, welt, { bezug: kantenbezugNeu() });
+                if (!parameter) return null;
+                return erzeugtEintrag({
+                    rezept: echt.plan.rezept, kategorie: echt.plan.kategorie, name: echt.plan.name ?? '',
+                    globalId: el.globalId, parameter,
+                });
+            }
             const nachher = {};
             for (const w of s.werte) {
                 const roh = werte?.[w.feld];
@@ -356,6 +506,22 @@ const SETZ_OPERATIONEN = Object.freeze({
                 }
             }
             return { art: 'parametrik', globalId: el.globalId, nachher };
+        },
+        warumNicht: (s, el, _werte, { zug = [] } = {}) => ((s.amOrt && zug.length && !_rolleAmOrt(s, el, zug[0]))
+            ? `${el?.name || el?.globalId || 'Das Bauteil'}: kein Ende liegt am Punkt — gesetzt wird nur, was dort anschliesst.`
+            : null),
+    },
+    satz: {
+        // Welcher Satz, sagt erst die Eingabe — leer vorbelegt.
+        vorbelege: (s) => ({ [s.name]: '', [s.feld]: {} }),
+        schreibe: (s, el, werte) => {
+            const name = String(werte?.[s.name] ?? '').trim();
+            // Der Inhalt ist, was das Fenster liefert — beim Merkmalssatz die Liste
+            // `[{name, value}]` aus dem Pset-Browser. Nur „nichts" wird nicht geschrieben.
+            const inhalt = werte?.[s.feld];
+            if (!name || inhalt == null || typeof inhalt !== 'object') return null;
+            // Voller Zielzustand im Eintrag: alle Sätze, dieser neu (Lücke ⑧, 2026-09-02).
+            return { art: s.journal, globalId: el.globalId, nachher: { ...(el?.stand?.[s.standFeld] ?? {}), [name]: inhalt } };
         },
     },
     merkmal: {
@@ -399,9 +565,15 @@ const SETZ_OPERATIONEN = Object.freeze({
             const wert = s.zahl ? Number(roh) : roh;
             if (s.zahl && !Number.isFinite(wert)) return null;
             if (plan.parameter?.[s.feld] === wert) return null;           // nichts zu tun
+            // DIE SOHLE BLEIBT (Teil XXIV, K4): ein grösseres DN an einer
+            // Haltung in Rohrmitte hob sonst ihre Sohle um die halbe Differenz.
+            const sohlen = rezeptNach(plan.rezept)?.sohlen;
+            const parameter = sohlen
+                ? sohlen.speichere({ ...plan.parameter, [s.feld]: wert }, sohlen.lies(plan.parameter), { bezug: kantenbezugNeu() })
+                : { ...plan.parameter, [s.feld]: wert };
             return erzeugtEintrag({
                 rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
-                globalId: el.globalId, parameter: { ...plan.parameter, [s.feld]: wert },
+                globalId: el.globalId, parameter,
             });
         },
     },
@@ -419,7 +591,9 @@ function werkzeugAusSetzer(d) {
         // Kennung). Bei Mehrfachauswahl zählt der Store das als übersprungen,
         // allein nennt er den Grund aus `warumNicht`.
         anwenden: (el, werte, kontext) => (el?.globalId ? op.schreibe(d.setzt, el, werte, kontext) : null),
-        warumNicht: (el) => (el?.globalId ? null : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.'),
+        warumNicht: (el, werte, kontext) => (el?.globalId
+            ? (op.warumNicht?.(d.setzt, el, werte, kontext) ?? null)
+            : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.'),
     };
 }
 
@@ -480,9 +654,14 @@ function zeichenBearbeitung(rezept) {
         // HÖCHSTENS (A4): ein Pfosten steht an EINEM Ort — mit dem Tipp ist der
         // Zug voll. Dieselbe Erklärung, mit der „An Schacht anschliessen" seinen
         // einen Punkt nennt; die Musterschicht kennt sie schon.
-        ...(rezept.hoechstPunkte ? { eingaben: [{
+        ...((rezept.hoechstPunkte || rezept.netzrolle === 'kante') ? { eingaben: [{
             schlitz: rezept.geschlossen ? 'umriss' : 'zug',
-            anzahl: { min: rezept.mindestPunkte, max: rezept.hoechstPunkte },
+            ...(rezept.hoechstPunkte ? { anzahl: { min: rezept.mindestPunkte, max: rezept.hoechstPunkte } } : {}),
+            // EINE KANTE FÄNGT AUF KNOTEN (Teil XXIV, K9): ein gezeichneter
+            // Punkt nahe einem Schacht springt auf dessen Mitte — sonst fiele
+            // das Netz über die 1-mm-Koinzidenz nur zufällig zusammen. Fachblind:
+            // die Netzrolle des Rezepts entscheidet, nicht sein Name.
+            ...(rezept.netzrolle === 'kante' ? { fang: 'knoten' } : {}),
         }] } : {}),
         // Teil XIV: Punkte AUF dem Gelände, wenn das Rezept es sagt (Bruchkante).
         hoehenAus: rezept.hoehenAus ?? null,
@@ -512,16 +691,17 @@ function zeichenBearbeitung(rezept) {
                 .filter(f => f.vorgabe !== undefined)
                 .map(f => [f.name, f.vorgabe])),
         }),
-        anwenden: (el, werte) => erzeugtEintrag({
-            rezept: rezept.id,
-            kategorie: werte.kategorie,
-            name: werte.name ?? '',
-            parameter: {
+        anwenden: (el, werte) => {
+            const roh = el?.punkte ?? [];
+            let parameter = {
                 // Eine GETIPPTE Höhe gilt für alle Punkte — auch für solche, die
                 // vom Gelände eine mitbringen. Leer heisst: das Gelände gilt.
+                // AUSSER für einen Punkt, dessen Höhe feststeht (K8): er sitzt auf
+                // einem eigenen Schacht und übernimmt dessen Sohle, oder das
+                // Kommando nennt seine Höhe ausdrücklich.
                 punkte: (werte.hoehe === '' || werte.hoehe === null || werte.hoehe === undefined)
-                    ? alsRaumpunkte(el?.punkte, 0)
-                    : alsRaumpunkte((el?.punkte ?? []).map(p => (Array.isArray(p) ? [p[0], NaN, p[2]] : { x: p?.x, z: p?.z })),
+                    ? alsRaumpunkte(roh, 0)
+                    : alsRaumpunkte(roh.map(p => (p?.hoeheFest ? p : Array.isArray(p) ? [p[0], NaN, p[2]] : { x: p?.x, z: p?.z })),
                                     weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0)),
                 // Alles, was das Rezept sonst noch braucht (DN beim Rohr).
                 ...Object.fromEntries(rezept.felder
@@ -531,8 +711,33 @@ function zeichenBearbeitung(rezept) {
                 // trägt das Bauteil deren Id. Kein Formularfeld — der Bezug
                 // entsteht beim Start aus der Bibliothek (`vorbelegeAusVorlage`).
                 ...(werte.vorlage ? { vorlage: String(werte.vorlage) } : {}),
-            },
-        }),
+            };
+            // DER ANSCHLUSS (Teil XXIV, K8 — Fabios E6): beginnt oder endet eine
+            // KANTE auf einem Knoten, nennt der Bauplan ihn. Das Netz nimmt die
+            // Erklärung vor der Koinzidenz; weicht der Ort später ab, ist es ein Befund.
+            if (rezept.netzrolle === 'kante') {
+                const anschluss = {
+                    ...(roh[0]?.knoten ? { anfang: String(roh[0].knoten) } : {}),
+                    ...(roh.length > 1 && roh[roh.length - 1]?.knoten ? { ende: String(roh[roh.length - 1].knoten) } : {}),
+                };
+                if (Object.keys(anschluss).length) parameter.anschluss = anschluss;
+            }
+            // EINE NEUE KANTE WIRD AUF IHRER SOHLE GEZEICHNET (Teil XXIV, K4 —
+            // Fabios E7): die gezeichneten oder getippten Höhen sind Sohlhöhen.
+            // Bis K4 lag dort die Rohrmitte, und das Rohr ragte DN/2 unter die
+            // Linie, die man gezogen hatte. Gespeichert wird im Bezug der
+            // Schreibstufe; die Fähigkeit rechnet um.
+            const sohlen = rezeptNach(rezept.id)?.sohlen;
+            if (sohlen) {
+                parameter = sohlen.speichere(parameter, parameter.punkte.map(p => p[1]), { bezug: kantenbezugNeu() });
+            }
+            return erzeugtEintrag({
+                rezept: rezept.id,
+                kategorie: werte.kategorie,
+                name: werte.name ?? '',
+                parameter,
+            });
+        },
     };
 }
 
@@ -586,6 +791,33 @@ function _erdbauPunkt(bauplan, op = null, feld = null, index = 0) {
     }
     return null;
 }
+
+/**
+ * ADRESSEN (Teil XXIV — Fabios E3): Felder, die im Formular eine NUMMER tragen
+ * (Stützpunkt, Knickpunkt, Operation), stehen im Kommando als das, was sie
+ * meinen — der alte Punkt, die Kennung der Operation. Die Werkzeuge rechnen
+ * weiter mit der Nummer; übersetzt wird an der Naht (`kommando/Kommando.js`),
+ * je Adressart über die Liste, in die die Nummer zeigt.
+ *
+ *   stuetzpunkt  Stützpunkte des Bauplans (`parameter.punkte`), Höhe in Welt
+ *   knickpunkt   Punkte der Operationsliste, in die das Erdbau-Werkzeug zeigt
+ *                (Operation `op`, Liste `feld`) — Höhen dort in m NN
+ *   operation    die Operationen des Vorgangs, mit Kennung (K2b)
+ */
+export const ADRESSEN = Object.freeze({
+    stuetzpunkt: {
+        hoeheInNn: false,
+        liste: (el) => (el?.stand?.bauplan?.parameter?.punkte ?? [])
+            .map(p => (Array.isArray(p) ? { x: p[0], y: p[1], z: p[2] } : p)),
+    },
+    knickpunkt: {
+        hoeheInNn: true,
+        liste: (el, werte) => _erdbauPunkt(el?.stand?.bauplan, werte?.op, werte?.feld || null, 0)?.liste ?? [],
+    },
+    operation: {
+        liste: (el) => operationenMitKennung(el?.stand?.bauplan?.parameter?.operationen),
+    },
+});
 
 /**
  * Den gezogenen Knickpunkt zurückschreiben — als VOLLE Operationsliste über
@@ -1006,12 +1238,12 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
               optionen: (el) => (el?.gelaendeQuellen ?? []).map(g => ({
                   wert: g.globalId, titel: g.name || g.globalId + (g.herkunft === 'cde' ? ' (eigenes)' : ''),
               })) },
-            { name: 'arbeitsraum', titel: 'Arbeitsraum (leer = DIN 4124)', einheit: 'm', typ: 'zahl', min: 0, max: 5, leerErlaubt: true },
+            { name: 'arbeitsraum', titel: 'Arbeitsraum (leer = DIN 4124)', einheit: 'm', typ: 'zahl', min: 0, max: 5, gueltig: { min: 0 }, leerErlaubt: true },
             { name: 'wandform', titel: 'Grubenwand', typ: 'auswahl',
               optionen: Object.entries(WANDFORMEN).map(([wert, w]) => ({ wert, titel: w.titel })) },
             { name: 'boden', titel: 'Bodenklasse (Böschungswinkel ohne Nachweis, DIN 4124)', typ: 'auswahl',
               optionen: Object.entries(BODENKLASSEN).map(([wert, b]) => ({ wert, titel: b.titel })) },
-            { name: 'winkel', titel: 'Böschungswinkel (leer = aus der Bodenklasse)', einheit: '°', typ: 'zahl', min: 10, max: 89, leerErlaubt: true },
+            { name: 'winkel', titel: 'Böschungswinkel (leer = aus der Bodenklasse)', einheit: '°', typ: 'zahl', min: 10, max: 89, gueltig: { ueber: 0, unter: 90 }, leerErlaubt: true },
             { name: 'sohle', titel: 'Sohle (leer = Unterkante des Bauwerks)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
             AUFLOCKERUNG_FELD,
         ],
@@ -1061,12 +1293,12 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
               optionen: Object.entries(WANDFORMEN).map(([wert, w]) => ({ wert, titel: w.titel })) },
             { name: 'boden', titel: 'Bodenklasse (Böschungswinkel ohne Nachweis, DIN 4124)', typ: 'auswahl',
               optionen: Object.entries(BODENKLASSEN).map(([wert, b]) => ({ wert, titel: b.titel })) },
-            { name: 'winkel', titel: 'Böschungswinkel (leer = aus der Bodenklasse)', einheit: '°', typ: 'zahl', min: 10, max: 89, leerErlaubt: true },
-            { name: 'breite', titel: 'Sohlbreite (leer = Mindestbreite DIN EN 1610)', einheit: 'm', typ: 'zahl', min: 0.3, max: 10, leerErlaubt: true },
-            { name: 'wanddicke', titel: 'Rohrwanddicke (OD = DN + 2·s)', einheit: 'mm', typ: 'zahl', min: 0, max: 200, vorgabe: 0 },
-            { name: 'bettung', titel: 'Untere Bettung (0,10 üblich · 0,15 Fels)', einheit: 'm', typ: 'zahl', min: 0, max: 1, vorgabe: GRABENREGELN.bettung.ueblich },
-            { name: 'schachtMass', titel: 'Schacht-Außenmaß (Ø oder Kantenlänge) — Baugrube eckig', einheit: 'm', typ: 'zahl', min: 0.3, max: 5, vorgabe: 1.0 },
-            { name: 'dn', titel: 'DN (leer = aus der Achse)', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, leerErlaubt: true },
+            { name: 'winkel', titel: 'Böschungswinkel (leer = aus der Bodenklasse)', einheit: '°', typ: 'zahl', min: 10, max: 89, gueltig: { ueber: 0, unter: 90 }, leerErlaubt: true },
+            { name: 'breite', titel: 'Sohlbreite (leer = Mindestbreite DIN EN 1610)', einheit: 'm', typ: 'zahl', min: 0.3, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
+            { name: 'wanddicke', titel: 'Rohrwanddicke (OD = DN + 2·s)', einheit: 'mm', typ: 'zahl', min: 0, max: 200, gueltig: { min: 0 }, vorgabe: 0 },
+            { name: 'bettung', titel: 'Untere Bettung (0,10 üblich · 0,15 Fels)', einheit: 'm', typ: 'zahl', min: 0, max: 1, gueltig: { min: 0 }, vorgabe: GRABENREGELN.bettung.ueblich },
+            { name: 'schachtMass', titel: 'Schacht-Außenmaß (Ø oder Kantenlänge) — Baugrube eckig', einheit: 'm', typ: 'zahl', min: 0.3, max: 5, gueltig: { ueber: 0 }, vorgabe: 1.0 },
+            { name: 'dn', titel: 'DN (leer = aus der Achse)', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, leerErlaubt: true },
             AUFLOCKERUNG_FELD,
         ],
         vorbelegung: (el) => ({
@@ -1259,7 +1491,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
          * die Gestalt des Rohres, und das gelieferte Modell gehört dem Planer
          * (Fabios Entscheidung: geliefert = Forderung, Eigenes = echt). Sie
          * geht in den Änderungsbericht. Für CDE-eigene Bauteile wird sie
-         * später wirklich gebaut — dort ist die Achse ein Wert.
+         * seit Teil XXIV (K4) wirklich gebaut — dort ist die Achse ein Wert
+         * (`setzt.amBauplan`, die Fähigkeit `sohlen` des Rezepts).
          */
         id: 'sohlhoehen-setzen',
         titel: 'Sohlhöhen festlegen',
@@ -1276,11 +1509,37 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'ende', ausTypprofil: 'sohlhoeheEnde',
               rueckfall: { titel: 'Sohle Ende', einheit: 'm NN', typ: 'zahl' } },
         ],
-        // Was GILT: erst die Festlegung, sonst die Achse aus der Datei (m NN).
-        setzt: { art: 'mass', werte: [
-            { feld: 'anfang', rolle: 'sohlhoeheAnfang', zahl: true, runden: true, sonst: { welt: 'achse.anfang', leer: 0 } },
-            { feld: 'ende', rolle: 'sohlhoeheEnde', zahl: true, runden: true, sonst: { welt: 'achse.ende', leer: 0 } },
-        ] },
+        // Was GILT: erst die Festlegung, sonst die Sohle der Achse (m NN).
+        // An einem EIGENEN Bauteil, dessen Rezept seine Sohlen kennt, wird der
+        // Bauplan fortgeschrieben (K4) — geliefert bleibt es eine Forderung.
+        setzt: { art: 'mass', amBauplan: 'sohlen', werte: SOHLEN_WERTE },
+    },
+    {
+        /**
+         * Sohle am Punkt setzen (Teil XXIV, O6) — was der Griff im Längsschnitt
+         * tut, als Werkzeug und damit als Kommando: EINE Höhe für jedes Ende,
+         * das am Punkt liegt. Am Schacht zieht ein Griff Zulauf-Ende und
+         * Ablauf-Anfang zugleich; „Sohlhöhen festlegen" kann das nicht, weil
+         * jede Haltung dort ein ANDERES Ende hätte. Das Ende adressiert der
+         * Ort, nie eine Nummer (E3). Geliefert: Forderung; eigen: Bauplan (K4).
+         */
+        id: 'sohle-ziehen',
+        titel: 'Sohle am Punkt setzen',
+        icon: 'laengsschnitt',
+        gruppe: 'parametrik',
+        bauform: ['achse+profil', 'linie'],
+        brauchtRolle: ['sohlhoeheAnfang', 'sohlhoeheEnde'],
+        mindestGuete: 'gemessen',
+        art: 'parametrik',
+        nurFestlegung: true,
+        // Mehrere Haltungen, EIN Ort: gesetzt wird nur, was dort endet.
+        mehrfach: true,
+        eingabe: 'zug',
+        mindestPunkte: 1,
+        // Ein Punkt; er fängt auf Knoten (K9) — ein Tipp neben die Schachtmitte trifft ihre Enden.
+        eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 }, fang: 'knoten' }],
+        felder: [{ name: 'hoehe', titel: 'Sohle am Punkt', einheit: 'm NN', typ: 'zahl' }],
+        setzt: { art: 'mass', amBauplan: 'sohlen', amOrt: 'hoehe', werte: SOHLEN_WERTE },
     },
     {
         /**
@@ -1318,7 +1577,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         gilt: (e, ctx) => !(ctx?.eigenes && e?.bauform === 'linie'),
         art: 'erzeugt',
         felder: [{
-            name: 'station', titel: 'Teilen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0,
+            name: 'station', titel: 'Teilen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
             // Teil XVI: die Station bleibt ein FELD — die Geste ist nur der
             // andere Weg hinein (Ort auf der Achse zeigen).
             aus: { geste: 'punkt', auf: 'achse', liefert: 'station' },
@@ -1331,11 +1590,12 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             if (!teilung) return null;
             const punkt = _alsTripel;
             const name = el?.name ?? '';
-            const stueck = (von, bis, zusatz) => erzeugtEintrag({
+            const alt = el?.stand?.bauplan?.parameter?.anschluss ?? {};
+            const stueck = (von, bis, zusatz, anschluss) => erzeugtEintrag({
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: _netzParameter(el?.stand?.bauplan, 'kante', [punkt(von), punkt(bis)], a.dn),
+                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', [punkt(von), punkt(bis)], a.dn, a), anschluss),
             });
 
             // Reihenfolge mit Absicht: erst das Alte weg, dann das Neue. Beim
@@ -1343,8 +1603,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             // Vorgang zeigt dann eher zu wenig als doppelt.
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
-                stueck(a.anfang, teilung, ' (1)'),
-                stueck(teilung, a.ende, ' (2)'),
+                stueck(a.anfang, teilung, ' (1)', { anfang: alt.anfang }),
+                stueck(teilung, a.ende, ' (2)', { ende: alt.ende }),
             ];
         },
     },
@@ -1440,6 +1700,12 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
          * DIE KETTE KOMMT AM BAUTEIL HEREIN (`el.strang`), damit diese Datei
          * rein bleibt: kein Netz, keine Engine, kein Zustand. Sie endet am
          * Abzweig — welche Haltung dort gemeint ist, entscheidet ein Mensch.
+         *
+         * SEIT TEIL XXIV (K4/K5): die Sohlen sind Sohlen (Vorbelegung mit dem
+         * Bezug der Achse), verteilt wird nach der WAAGERECHTEN Weglänge (vorher
+         * nach der räumlichen), und ein EIGENES Glied bekommt seinen Bauplan
+         * fortgeschrieben statt einer Forderung, die niemand las — die
+         * Baupläne der anderen Glieder reicht der Kontext (`bauplanVon`).
          */
         id: 'strang-gefaelle-setzen',
         titel: 'Sohlhöhen über den Strang',
@@ -1462,29 +1728,43 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const v = el?.hoehenversatz ?? 0;
             if (!s.length) return { anfang: 0, ende: 0 };
             return {
-                anfang: _rundeM(nnAusWelt(s[0].anfang.y, v)),
-                ende: _rundeM(nnAusWelt(s[s.length - 1].ende.y, v)),
+                anfang: _rundeM(nnAusWelt(sohleAnAchse(s[0].anfang.y, s[0]), v)),
+                ende: _rundeM(nnAusWelt(sohleAnAchse(s[s.length - 1].ende.y, s[s.length - 1]), v)),
             };
         },
-        anwenden: (el, werte) => {
+        anwenden: (el, werte, { bauplanVon = null } = {}) => {
             const s = el?.strang ?? [];
             const v = el?.hoehenversatz ?? 0;
             const von = Number(werte.anfang);
             const bis = Number(werte.ende);
             if (!s.length || !Number.isFinite(von) || !Number.isFinite(bis)) return null;
 
-            const gesamt = s.reduce((n, k) => n + (Number(k.laenge) || 0), 0);
-            if (!(gesamt > 0)) return null;
-
             // Gleichmässig nach LÄNGE, nicht nach Anzahl: zwei kurze und eine
             // lange Haltung bekommen sonst dasselbe Gefälle-Drittel, und der
-            // Strang knickt an jedem Schacht.
+            // Strang knickt an jedem Schacht. Die Länge ist die WAAGERECHTE
+            // Weglänge (K5) — dieselbe, gegen die das Gefälle gemessen wird;
+            // mit der räumlichen fiele es ungleich aus.
+            const laengen = s.map(k => gefaelle(punkteDerAchse(k)).laenge2d);
+            const gesamt = laengen.reduce((n, l) => n + l, 0);
+            if (!(gesamt > 0)) return null;
+
             let gelaufen = 0;
             const hoeheBei = (s0) => von - ((von - bis) * (s0 / gesamt));
-            return s.map((k) => {
+            return s.map((k, i) => {
                 const anfang = hoeheBei(gelaufen);
-                gelaufen += Number(k.laenge) || 0;
+                gelaufen += laengen[i];
                 const ende = hoeheBei(gelaufen);
+                // EIN EIGENES GLIED WIRD ECHT (K4): sein Bauplan kennt seine Sohlen.
+                const plan = k.globalId === el.globalId ? el?.stand?.bauplan : bauplanVon?.(k.globalId);
+                const sohlen = plan?.rezept ? rezeptNach(plan.rezept)?.sohlen : null;
+                if (sohlen) {
+                    const parameter = sohlen.enden(plan.parameter,
+                        { anfang: weltAusNn(anfang, v), ende: weltAusNn(ende, v) }, { bezug: kantenbezugNeu() });
+                    if (parameter) {
+                        return erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
+                                                globalId: k.globalId, parameter });
+                    }
+                }
                 return {
                     art: 'parametrik', globalId: k.globalId,
                     nachher: {
@@ -1493,9 +1773,6 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                     },
                 };
             });
-            // `v` bleibt ungenutzt: die Eingabe ist bereits m NN, und die
-            // Ausgabe ist es auch. Der Versatz wird nur für die VORBELEGUNG
-            // gebraucht, die aus Weltkoordinaten kommt.
         },
     },
     {
@@ -1531,10 +1808,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         mindestGuete: 'gemessen',
         art: 'erzeugt',
         felder: [
-            { name: 'station', titel: 'Einfügen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0,
+            { name: 'station', titel: 'Einfügen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
               aus: { geste: 'punkt', auf: 'achse', liefert: 'station' } },
             { name: 'deckel', titel: 'Deckelhöhe', einheit: 'm NN', typ: 'zahl' },
-            { name: 'durchmesser', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000 },
+            { name: 'durchmesser', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, gueltig: { ueber: 0 } },
         ],
         vorbelegung: (el) => {
             const a = el?.achse;
@@ -1573,29 +1850,36 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
 
             const v = el?.hoehenversatz ?? 0;
             const deckelWelt = weltAusNn(Number(werte.deckel), v);
-            if (!Number.isFinite(deckelWelt) || deckelWelt <= teilung.y) return null;
+            // Der Schacht steht auf der SOHLE der Haltung (K4) — ein Knoten ist
+            // seine Sohle; die Achshöhe einer Haltung in Rohrmitte liegt DN/2
+            // darüber. Ohne Angabe der Achse bleibt es bei ihrer Höhe.
+            const sohleTeilung = sohleAnAchse(teilung.y, a);
+            if (!Number.isFinite(deckelWelt) || deckelWelt <= sohleTeilung) return null;
 
             const name = el?.name ?? '';
-            const stueck = (von, bis, zusatz) => erzeugtEintrag({
+            const alt = el?.stand?.bauplan?.parameter?.anschluss ?? {};
+            const stueck = (von, bis, zusatz, anschluss) => erzeugtEintrag({
                 rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                 kategorie: el.category ?? 'IFCPIPESEGMENT',
                 name: name ? `${name}${zusatz}` : '',
-                parameter: _netzParameter(el?.stand?.bauplan, 'kante', [_alsTripel(von), _alsTripel(bis)], a.dn),
+                parameter: _mitAnschluss(_netzParameter(el?.stand?.bauplan, 'kante', [_alsTripel(von), _alsTripel(bis)], a.dn, a), anschluss),
+            });
+            // Der Schacht zuerst — die Stücke NENNEN ihn (K8).
+            const schacht = erzeugtEintrag({
+                rezept: rezeptFuerNetzrolle('knoten'),
+                kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+                name: name ? `${name} (Schacht)` : '',
+                parameter: {
+                    punkte: [[teilung.x, sohleTeilung, teilung.z], [teilung.x, deckelWelt, teilung.z]],
+                    dn: Number(werte.durchmesser) || 1000,
+                },
             });
 
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
-                erzeugtEintrag({
-                    rezept: rezeptFuerNetzrolle('knoten'),
-                    kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT',
-                    name: name ? `${name} (Schacht)` : '',
-                    parameter: {
-                        punkte: [_alsTripel(teilung), [teilung.x, deckelWelt, teilung.z]],
-                        dn: Number(werte.durchmesser) || 1000,
-                    },
-                }),
-                stueck(a.anfang, teilung, ' (1)'),
-                stueck(teilung, a.ende, ' (2)'),
+                schacht,
+                stueck(a.anfang, teilung, ' (1)', { anfang: alt.anfang, ende: schacht.globalId }),
+                stueck(teilung, a.ende, ' (2)', { anfang: schacht.globalId, ende: alt.ende }),
             ];
         },
     },
@@ -1806,9 +2090,11 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, aus: { geste: 'griff' } },
+            // `adresse` (Teil XXIV, E3): im KOMMANDO steht nicht die Nummer, sondern
+            // die Kennung der Operation bzw. der alte Punkt — siehe `ADRESSEN`.
+            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'operation' },
             { name: 'feld', titel: 'Punktliste', typ: 'text' },
-            { name: 'index', titel: 'Knickpunkt Nr.', typ: 'zahl', min: 0 },
+            { name: 'index', titel: 'Knickpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, adresse: 'knickpunkt' },
             { name: 'ost', titel: 'Rechtswert', einheit: 'm', typ: 'zahl' },
             { name: 'nord', titel: 'Hochwert', einheit: 'm', typ: 'zahl' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm NN', typ: 'zahl' },
@@ -1846,7 +2132,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'index', titel: 'Stützpunkt Nr.', typ: 'zahl', min: 0, aus: { geste: 'griff' } },
+            { name: 'index', titel: 'Stützpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'stuetzpunkt' },
             { name: 'ost', titel: 'Rechtswert', einheit: 'm', typ: 'zahl' },
             { name: 'nord', titel: 'Hochwert', einheit: 'm', typ: 'zahl' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm NN', typ: 'zahl' },
@@ -1944,7 +2230,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 rezept: plan.rezept,
                 kategorie: plan.kategorie,
                 name: plan.name ? `${plan.name} Kopie` : '',
-                parameter: rezept.verschiebe(plan.parameter, delta),
+                parameter: _ohneAnschluss(rezept.verschiebe(plan.parameter, delta)),
             });
         },
     },
@@ -1965,7 +2251,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'anzahl', titel: 'Anzahl Kopien', typ: 'zahl', min: 1, max: 200, vorgabe: 3 },
+            { name: 'anzahl', titel: 'Anzahl Kopien', typ: 'zahl', min: 1, max: 200, gueltig: { min: 1 }, vorgabe: 3 },
             { name: 'ost', titel: 'Abstand Ost', einheit: 'm', typ: 'zahl', vorgabe: 5 },
             { name: 'nord', titel: 'Abstand Nord', einheit: 'm', typ: 'zahl', vorgabe: 0 },
         ],
@@ -1984,7 +2270,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                     rezept: plan.rezept,
                     kategorie: plan.kategorie,
                     name: plan.name ? `${plan.name} (${k + 1})` : '',
-                    parameter: rezept.verschiebe(plan.parameter, { x: ost * k, y: 0, z: -nord * k }),
+                    parameter: _ohneAnschluss(rezept.verschiebe(plan.parameter, { x: ost * k, y: 0, z: -nord * k })),
                 }));
             }
             return aus;
@@ -2065,7 +2351,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 kategorie: plan.kategorie,
                 name: kopie && plan.name ? `${plan.name} (gespiegelt)` : (plan.name ?? ''),
                 globalId: kopie ? null : el.globalId,
-                parameter: spiegelePunktliste(plan.parameter, w),
+                // Gespiegelt liegt es nicht mehr an seinen Schächten (K8).
+                parameter: _ohneAnschluss(spiegelePunktliste(plan.parameter, w)),
             });
         },
     },
@@ -2087,7 +2374,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [{
-            name: 'station', titel: 'Einfügen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0,
+            name: 'station', titel: 'Einfügen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
             aus: { geste: 'punkt', auf: 'achse', liefert: 'station' },
         }],
         vorbelegung: (el) => ({ station: _rundeM((el?.achse?.laenge ?? _bauplanLaenge(el)) / 2) }),
@@ -2120,7 +2407,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'index', titel: 'Stützpunkt Nr.', typ: 'zahl', min: 0, aus: { geste: 'griff' } },
+            { name: 'index', titel: 'Stützpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'stuetzpunkt' },
         ],
         vorbelegung: (el) => ({ index: Math.max(0, (el?.stand?.bauplan?.parameter?.punkte?.length ?? 1) - 1) }),
         anwenden: (el, werte) => {
@@ -2156,7 +2443,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [{
-            name: 'station', titel: 'Teilen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0,
+            name: 'station', titel: 'Teilen bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
             aus: { geste: 'punkt', auf: 'achse', liefert: 'station' },
         }],
         vorbelegung: (el) => ({ station: _rundeM(_bauplanLaenge(el) / 2) }),
@@ -2472,7 +2759,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'index', titel: 'Kante ab Stützpunkt Nr.', typ: 'zahl', min: 0, aus: { geste: 'griff' } },
+            { name: 'index', titel: 'Kante ab Stützpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'stuetzpunkt' },
             { name: 'ost', titel: 'Kantenmitte Rechtswert', einheit: 'm', typ: 'zahl' },
             { name: 'nord', titel: 'Kantenmitte Hochwert', einheit: 'm', typ: 'zahl' },
             { name: 'hoehe', titel: 'Kantenmitte Höhe', einheit: 'm NN', typ: 'zahl' },
@@ -2580,14 +2867,30 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const wandert = ende === 'anfang' ? a.anfang : a.ende;
             const bleibt = ende === 'anfang' ? a.ende : a.anfang;
 
-            // Das ferne Ende sitzt schon auf einem Schacht? Starr verschieben
-            // risse es ab.
+            const dx = ziel.punkt.x - wandert.x;
+            const dz = ziel.punkt.z - wandert.z;
+
+            // EIN EIGENES ROHR (Teil XXIV, K8 — Fabios E6): der Bauplan NENNT den
+            // Knoten, und nur dieses Ende rückt auf ihn — die Sohle bleibt.
+            // Sitzt es schon dort, fehlt vielleicht nur die Erklärung.
+            const plan = el?.stand?.bauplan;
+            const eigenKante = plan?.rezept && rezeptNach(plan.rezept)?.netzrolle === 'kante' && Array.isArray(plan.parameter?.punkte);
+            if (eigenKante) {
+                const alt = plan.parameter.anschluss ?? {};
+                if (Math.hypot(dx, dz) < 1e-4 && alt[ende] === ziel.globalId) return null;
+                const punkte = plan.parameter.punkte.map(p => [...p]);
+                const i = ende === 'anfang' ? 0 : punkte.length - 1;
+                punkte[i] = [ziel.punkt.x, punkte[i][1], ziel.punkt.z];
+                return erzeugtEintrag({
+                    rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: el.globalId,
+                    parameter: _mitAnschluss({ ...plan.parameter, punkte }, { ...alt, [ende]: ziel.globalId }),
+                });
+            }
+            // GELIEFERT wird starr verschoben — sitzt das ferne Ende schon auf
+            // einem Schacht, risse es ab. (Ein eigenes Rohr oben rückt nur sein Ende.)
             for (const k of knoten) {
                 if (abstand(k.punkt, bleibt) <= 0.001) return null;
             }
-
-            const dx = ziel.punkt.x - wandert.x;
-            const dz = ziel.punkt.z - wandert.z;
             if (Math.hypot(dx, dz) < 1e-4) return null;   // sitzt schon
 
             return {
@@ -2668,7 +2971,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                     rezept: rezeptFuerNetzrolle('kante'),
                     kategorie: zu.kategorie ?? 'IFCPIPESEGMENT',
                     name: zu.name || ab.name || '',
-                    parameter: { punkte, dn },
+                    // Zwei Punkte vom Zulauf, einer vom Ablauf — je mit dem Bezug SEINER Achse (K4).
+                    parameter: _kanteAusFremdenHoehen(punkte, dn, [zu, zu, ab]),
                 }),
             ];
         },
@@ -2870,7 +3174,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                     rezept: rezeptFuerNetzrolle('kante', el?.stand?.bauplan),
                     kategorie: el.category ?? 'IFCPIPESEGMENT',
                     name: el.name ?? '',
-                    parameter: _netzParameter(el?.stand?.bauplan, 'kante', punkte, a.dn),
+                    parameter: _netzParameter(el?.stand?.bauplan, 'kante', punkte, a.dn, a),
                 }),
             ];
         },
@@ -2895,6 +3199,28 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             },
         }],
         setzt: { art: 'merkmal', journal: 'din277', feld: 'din277' },
+    },
+    {
+        /**
+         * Merkmalssatz setzen (Teil XXIV, O6) — was das Merkmalsfenster tut, als
+         * Werkzeug und damit als Kommando: ein Satz unter seinem Namen, die
+         * übrigen Sätze bleiben. Sein Formular IST das Merkmalsfenster (Name +
+         * Tabelle der Merkmale); eine Karte als Feld in der Werkzeugleiste wäre
+         * unbedienbar — deshalb `eigeneOberflaeche`: die Leiste bietet es nicht an.
+         */
+        id: 'merkmalssatz-setzen',
+        titel: 'Merkmalssatz setzen',
+        icon: 'info',
+        gruppe: 'merkmale',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'pset',
+        eigeneOberflaeche: 'merkmalsfenster',
+        felder: [
+            { name: 'satz', titel: 'Satzname', typ: 'text' },
+            { name: 'merkmale', titel: 'Merkmale', typ: 'karte' },
+        ],
+        setzt: { art: 'satz', journal: 'pset', name: 'satz', feld: 'merkmale', standFeld: 'pset' },
     },
     {
         /**
@@ -3015,6 +3341,9 @@ export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(
     // Rezept (eigen), Bauformregel (Proxy), Typprofil (Familie).
     const eigenschaften = eigenschaftenVon({ bauform, typprofil, rezept, regel });
     return katalog.filter((b) => {
+        // Ein Werkzeug mit EIGENER Oberfläche (O6: das Merkmalsfenster) bietet
+        // die Werkzeugleiste nicht an — es läuft als Kommando aus seinem Fenster.
+        if (b.eigeneOberflaeche) return false;
         // Teil XVI: manche Werkzeuge gibt es nur an EIGENEN Bauteilen (Bauplan).
         if (b.nurEigene && !eigenes) return false;
         // Der Setzer eines Rezeptfelds (A6) gilt nur für Bauteile DIESES Rezepts.
@@ -3100,8 +3429,17 @@ export function felderFuer(bearbeitung, typprofil = null, el = null) {
 }
 
 /**
- * Fehlt ein Pflichtwert oder liegt einer außerhalb seiner Grenze?
- * @returns {string[]} leere Liste heißt „in Ordnung"
+ * Ist das TECHNISCH ausführbar? (Teil XXIV, K10 — Fabios E5)
+ *
+ * Abgelehnt wird nur, was sich nicht bauen oder speichern lässt: ein fehlender
+ * Pflichtwert, keine Zahl, ein Wert ausserhalb der Auswahl, und was ein Feld
+ * als technische Grenze erklärt (`gueltig: {min, max, ueber, unter}` — ein DN
+ * von 0 baut keinen Körper, ein Böschungswinkel von 90° keine Böschung).
+ * Die FACHGRENZEN (`min`/`max`) sperren nicht mehr: sie werden ausgeführt und
+ * markiert (`Befunde.befundeFuerWerte`). Bis K10 sperrte hier jede Grenze —
+ * „Beraten, nicht verbieten" galt für die Befunde, aber nicht fürs Formular.
+ *
+ * @returns {string[]} leere Liste heißt „ausführbar"
  */
 export function pruefe(felder, werte) {
     const fehler = [];
@@ -3115,8 +3453,11 @@ export function pruefe(felder, werte) {
         if (feld.typ === 'zahl') {
             const z = Number(wert);
             if (!Number.isFinite(z)) { fehler.push(`${feld.name}: keine Zahl`); continue; }
-            if (feld.min != null && z < feld.min) fehler.push(`${feld.name}: kleiner als ${feld.min}`);
-            if (feld.max != null && z > feld.max) fehler.push(`${feld.name}: größer als ${feld.max}`);
+            const g = feld.gueltig ?? {};
+            if (g.min != null && z < g.min) fehler.push(`${feld.name}: kleiner als ${g.min} — so lässt es sich nicht bauen`);
+            if (g.max != null && z > g.max) fehler.push(`${feld.name}: größer als ${g.max} — so lässt es sich nicht bauen`);
+            if (g.ueber != null && !(z > g.ueber)) fehler.push(`${feld.name}: muss größer als ${g.ueber} sein`);
+            if (g.unter != null && !(z < g.unter)) fehler.push(`${feld.name}: muss kleiner als ${g.unter} sein`);
         }
         if (feld.typ === 'auswahl' && Array.isArray(feld.optionen) && feld.optionen.length) {
             if (!feld.optionen.some(o => o.wert === wert)) fehler.push(`${feld.name}: nicht in der Auswahl`);

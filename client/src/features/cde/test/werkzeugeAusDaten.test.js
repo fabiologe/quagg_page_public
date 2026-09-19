@@ -58,7 +58,9 @@ describe('Ein Geländewerkzeug entsteht aus seiner Operation', () => {
         const w = formwerkzeugFuer('mulde', MULDE);
         const schritte = w.anwenden(UR, { tiefe: 0.5 }, { zug: RING });
         const bauplan = schritte.find(e => e.art === 'erzeugt' && e.nachher.rezept === 'erdbau').nachher;
-        expect(bauplan.parameter.operationen).toEqual([{ art: 'mulde', parameter: { umriss: RING.map(p => ({ x: p.x, z: p.z })), tiefe: 0.5 } }]);
+        // Seit Teil XXIV (K2b) trägt jede Operation eine Kennung (`op-…`).
+        expect(bauplan.parameter.operationen[0].id).toMatch(/^op-/);
+        expect(bauplan.parameter.operationen.map(({ id, ...o }) => o)).toEqual([{ art: 'mulde', parameter: { umriss: RING.map(p => ({ x: p.x, z: p.z })), tiefe: 0.5 } }]);
         expect(bauplan.name).toMatch(/· Mulde ·/);
         expect(w.anwenden(UR, { tiefe: 0.5 }, { zug: RING.slice(0, 2) })).toBeNull();
     });

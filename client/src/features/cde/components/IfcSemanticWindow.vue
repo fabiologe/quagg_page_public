@@ -91,10 +91,9 @@ import IfcSidebar from './IfcSidebar.vue';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { useKommandoweg } from '../composables/useKommandoweg.js';
 import { istAnzeigeform, mengenVon, rezeptNach } from '../services/Bauteilrezepte.js';
-import { CDE_MODELL_ID } from '../services/IfcAutor.js';
 import { m3 } from '../services/Mengenzeile.js';
 import { vorlagenbezugVon } from '../services/Bibliothek.js';
 
@@ -106,8 +105,8 @@ defineProps({ eingebettet: { type: Boolean, default: false } });
 const ifc  = useIfcStore();
 const aenderungen = useAenderungen();
 const bearbeitung = useBearbeitung();
-const cde = useCdeStore();
 const api = useViewerApi();
+const kommandoweg = useKommandoweg();
 const isCopying = ref(false);
 
 const BRIDGE_TYPES = ['IFCBEAM', 'IFCSLAB', 'IFCCOLUMN', 'IFCBRIDGE', 'IFCBUILDINGELEMENT', 'IFCMEMBER'];
@@ -193,6 +192,9 @@ async function clearSelection() {
  * vorbeikam. Jetzt: Journaleintrag (Karte Satzname → Felder, ABSOLUTER
  * Zielzustand — der Eintrag trägt alle bisher gesetzten Sätze mit) und die
  * Anwendung über denselben `wendeEintragAn` wie jede andere Festlegung.
+ *
+ * SEIT O6 (Teil XXIV) als KOMMANDO: „Merkmalssatz setzen" aus dem Katalog,
+ * mit Beleg. Die Karte baut das Werkzeug aus dem Stand, nicht dieses Fenster.
  */
 async function onAddPset({ psetName, props }) {
   const el = ifc.selectedElement;
@@ -205,16 +207,13 @@ async function onAddPset({ psetName, props }) {
     return;
   }
   try {
-    const bisher = new Map(aenderungen.wirksamerStand('pset')).get(el.globalId) ?? {};
-    const eintrag = await aenderungen.eintragen({
-      art: 'pset',
-      globalId: el.globalId,
-      nachher: { ...bisher, [psetName]: props },
-      wer: cde.bearbeiter,
-      modellSha: api.modellShaVon?.(el.globalId) ?? api.getLoadedModelSha?.() ?? null,
-      modell: el.modelId === CDE_MODELL_ID ? 'cde' : 'geliefert',
+    const erg = await kommandoweg.absetzen({
+      werkzeug: 'merkmalssatz-setzen',
+      ziel: [el.globalId],
+      werte: { satz: psetName, merkmale: props },
     });
-    if (!eintrag) { ifc.setPsetError('Der Satz galt schon — nichts einzutragen.'); return; }
+    const [eintrag] = erg.eintraege;
+    if (!erg.ausgefuehrt || !eintrag) { ifc.setPsetError(erg.grund || 'Der Satz galt schon — nichts einzutragen.'); return; }
     ifc.setPsetError('');
     await api.wendeEintragAn?.(eintrag);
     const aktualisiert = await api.refreshElement?.();

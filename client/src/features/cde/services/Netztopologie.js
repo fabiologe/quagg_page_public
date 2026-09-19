@@ -22,9 +22,21 @@
  *
  * Reines Modul: kein Vue, kein three, kein WebGL, keine Engine.
  */
+import { achsbezugDerAchse } from './Achsbezug.js';
+import { regelwert } from './regeln/Regelwerk.js';
 
-/** Voreinstellung: 1 mm. In den Dateien ist die Abweichung exakt 0. */
+/**
+ * Der Rückfall: 1 mm. In den Dateien ist die Abweichung exakt 0. Die GELTENDE
+ * Toleranz steht seit Teil XXIV (K8, Fabios E6) im Regelwerk
+ * (`netzToleranzM`, eingebaut ebenfalls 1 mm) — ein Büro kann sie ändern, und
+ * die Regel liegt nicht mehr lose neben dem Katalog.
+ */
 export const TOLERANZ_M = 0.001;
+
+function _toleranzAusRegelwerk() {
+    const t = Number(regelwert('netzToleranzM'));
+    return Number.isFinite(t) && t > 0 ? t : TOLERANZ_M;
+}
 
 /** Schlüssel eines Ortes im Raster der Toleranz — so wird das Suchen billig. */
 function _zelle(x, z, toleranz) {
@@ -34,19 +46,30 @@ function _zelle(x, z, toleranz) {
 /**
  * Das Netz aus Kanten und Knoten bauen.
  *
+ * ERKLÄRT VOR ZUFALL (Teil XXIV, K8 — Fabios E6): eine Kante darf ihre Knoten
+ * NENNEN (`anschluss: {anfang, ende}` als GlobalId; die Knoten tragen dafür
+ * ihre `globalId`). Dann gilt die Erklärung, auch wenn der Ort nicht mehr
+ * passt — und das ist ein Befund (`abweichend`), kein stilles loses Ende.
+ * Ein genannter Knoten, den es im Netz nicht gibt (gelöscht, verdeckt), ist
+ * ebenfalls ein Befund (`verwaist`); die Kante fällt dann auf die Koinzidenz
+ * zurück. Ohne Erklärung — Geliefertes, alte Baupläne — bleibt es die
+ * Koinzidenz in der Draufsicht.
+ *
  * @param {object} opts
- * @param {Array<{id, anfang:{x,y,z}, ende:{x,y,z}, dn?, laenge?}>} opts.kanten
+ * @param {Array<{id, anfang:{x,y,z}, ende:{x,y,z}, dn?, laenge?, anschluss?:{anfang?, ende?}}>} opts.kanten
  *        die Haltungen — `anfang`/`ende` in Weltkoordinaten
- * @param {Array<{id, punkt:{x,y,z}}>} opts.knoten  die Schächte
- * @param {number} [opts.toleranz]
+ * @param {Array<{id, punkt:{x,y,z}, globalId?}>} opts.knoten  die Schächte
+ * @param {number} [opts.toleranz]  Vorgabe: `netzToleranzM` aus dem Regelwerk
  * @returns {{
  *   knoten: Map<id, {id, punkt, kantenAn: string[], kantenAb: string[]}>,
  *   kanten: Map<id, {id, von: id|null, nach: id|null, dn, laenge, anfang, ende}>,
  *   loseEnden: Array<{kante, ende: 'anfang'|'ende', punkt}>,
  *   ohneAnschluss: id[],
+ *   abweichend: Array<{kante, ende, knoten, globalId, abstand}>,
+ *   verwaist: Array<{kante, ende, globalId}>,
  * }}
  */
-export function baueNetz({ kanten = [], knoten = [], toleranz = TOLERANZ_M } = {}) {
+export function baueNetz({ kanten = [], knoten = [], toleranz = _toleranzAusRegelwerk() } = {}) {
     const tol = toleranz > 0 ? toleranz : TOLERANZ_M;
 
     // Raster über die Schächte. Ein Ort wird in allen neun Nachbarzellen
@@ -54,9 +77,11 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = TOLERANZ_M } = {
     // obwohl er innerhalb der Toleranz liegt.
     const raster = new Map();
     const knotenKarte = new Map();
+    const jeGlobalId = new Map();
     for (const k of knoten) {
         if (!k?.id || !k.punkt) continue;
         knotenKarte.set(k.id, { id: k.id, punkt: k.punkt, kantenAn: [], kantenAb: [] });
+        if (k.globalId) jeGlobalId.set(k.globalId, k.id);
         const s = _zelle(k.punkt.x, k.punkt.z, tol);
         if (!raster.has(s)) raster.set(s, []);
         raster.get(s).push(k);
@@ -82,14 +107,35 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = TOLERANZ_M } = {
 
     const kantenKarte = new Map();
     const loseEnden = [];
+    const abweichend = [];
+    const verwaist = [];
+    // Das Ende einer Kante: erst die Erklärung, dann die Koinzidenz.
+    const endeVon = (e, ende) => {
+        const p = e[ende];
+        const gid = e.anschluss?.[ende] ?? null;
+        if (gid) {
+            const id = jeGlobalId.get(gid);
+            if (id) {
+                const k = knotenKarte.get(id);
+                const abstand = Math.hypot(k.punkt.x - p.x, k.punkt.z - p.z);
+                if (abstand > tol) abweichend.push({ kante: e.id, ende, knoten: id, globalId: gid, abstand });
+                return id;
+            }
+            verwaist.push({ kante: e.id, ende, globalId: gid });
+        }
+        return suche(p);
+    };
     for (const e of kanten) {
         if (!e?.id || !e.anfang || !e.ende) continue;
-        const von = suche(e.anfang);
-        const nach = suche(e.ende);
+        const von = endeVon(e, 'anfang');
+        const nach = endeVon(e, 'ende');
         kantenKarte.set(e.id, {
             id: e.id, von, nach,
             dn: e.dn ?? null, laenge: e.laenge ?? null,
             anfang: e.anfang, ende: e.ende,
+            // WAS die Höhen sind (Teil XXIV, K4) — die Befunde am Knoten
+            // vergleichen Sohlen, nicht rohe Achshöhen zweier Bezüge.
+            achsbezug: e.achsbezug ?? null, sohlabstand: e.sohlabstand ?? null,
         });
         if (von) knotenKarte.get(von).kantenAb.push(e.id);
         else loseEnden.push({ kante: e.id, ende: 'anfang', punkt: e.anfang });
@@ -101,7 +147,7 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = TOLERANZ_M } = {
         .filter(k => !k.kantenAn.length && !k.kantenAb.length)
         .map(k => k.id);
 
-    return { knoten: knotenKarte, kanten: kantenKarte, loseEnden, ohneAnschluss };
+    return { knoten: knotenKarte, kanten: kantenKarte, loseEnden, ohneAnschluss, abweichend, verwaist };
 }
 
 /**
@@ -138,4 +184,66 @@ export function strangAb(netz, kantenId, grenze = 500) {
         aktuell = weiter.length === 1 ? weiter[0] : null;
     }
     return kette;
+}
+
+/**
+ * Der Strang ab einer Kante, MIT den Achsen seiner Glieder — die Form, die am
+ * Subjekt hängt (Teil XXIV, K3).
+ *
+ * Eine Funktion für beide Wege: die Engine ruft sie mit ihrem Netz über alle
+ * Achsen, der Kommandoweg ohne Oberfläche mit dem Netz aus dem Journal
+ * (`CdeAchsen.eigeneNetzauskunft`). Zwei Nachbauten liefen auseinander.
+ *
+ * @param {function(string): object|null} achseVon  Kanten-Id → Achse
+ */
+export function strangMitAchsen(netz, kantenId, achseVon) {
+    if (!netz?.kanten?.has(kantenId)) return [];
+    return strangAb(netz, kantenId).map((id) => {
+        const a = achseVon(id);
+        return {
+            localId: id,
+            globalId: a?.globalId ?? null,
+            name: a?.name ?? '',
+            anfang: a?.anfang ?? null,
+            ende: a?.ende ?? null,
+            laenge: a?.laenge ?? 0,
+            dn: a?.dn ?? null,
+            // Was die Höhen des Glieds SIND (K4): Längsschnitt und Sohlzug
+            // rechnen damit auf die Sohle — für gelieferte Achsen aus ihrer
+            // Herkunft, für eigene aus dem Bauplan.
+            achsbezug: achsbezugDerAchse(a),
+            sohlabstand: a?.sohlabstand ?? null,
+            // Die Punkte dazwischen (K5): Länge und Gefälle eines Glieds laufen
+            // entlang der Achse, nicht über die Sehne.
+            punkte: a?.polyline ?? a?.punkte ?? null,
+        };
+    }).filter(k => k.globalId && k.anfang && k.ende);
+}
+
+/**
+ * Die Anschlüsse eines Knotens — welche Kante mit welchem Ende (Stufe 14.8),
+ * MIT ihren Achsen. Derselbe Gedanke wie `strangMitAchsen`: eine Funktion,
+ * die Engine und der Kommandoweg rufen sie mit ihrem Netz.
+ *
+ * `ende` sagt, welches Ende der Kante an DIESEM Knoten hängt.
+ */
+export function anschluesseMitAchsen(netz, knotenId, achseVon) {
+    const knoten = netz?.knoten?.get(knotenId);
+    if (!knoten) return [];
+    const eintrag = (kantenId, ende) => {
+        const a = achseVon(kantenId);
+        return a?.globalId ? {
+            localId: kantenId,
+            globalId: a.globalId,
+            name: a.name ?? '',
+            kategorie: a.kategorie ?? 'IFCPIPESEGMENT',
+            ende,
+            anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
+            achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null,
+        } : null;
+    };
+    return [
+        ...knoten.kantenAb.map(id => eintrag(id, 'anfang')),
+        ...knoten.kantenAn.map(id => eintrag(id, 'ende')),
+    ].filter(Boolean);
 }

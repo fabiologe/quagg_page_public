@@ -139,11 +139,14 @@ describe('IfcAutor.schreibeMerkmalssatz + wendeAn', () => {
 describe('IfcSemanticWindow schreibt über den EINEN Weg', () => {
     const quelle = fs.readFileSync(`${WURZEL}components/IfcSemanticWindow.vue`, 'utf8');
 
-    it('onAddPset: Modus-Sperre, Journaleintrag, wendeEintragAn — kein Direktschreiber', () => {
+    it('onAddPset: Modus-Sperre, Kommando, wendeEintragAn — kein Direktschreiber', () => {
+        // Seit Teil XXIV (O6) ein KOMMANDO aus dem Katalog („Merkmalssatz setzen"),
+        // nicht mehr ein Eintrag, den das Fenster selbst baut.
         const handler = quelle.slice(quelle.indexOf('async function onAddPset'));
         expect(handler).toContain('bearbeitung.modusAn');
-        expect(handler).toContain('aenderungen.eintragen');
-        expect(handler).toContain("art: 'pset'");
+        expect(handler).toContain('kommandoweg.absetzen');
+        expect(handler).toContain("werkzeug: 'merkmalssatz-setzen'");
+        expect(handler).not.toContain('aenderungen.eintragen');
         expect(handler).toContain('api.wendeEintragAn');
         expect(quelle).not.toContain('addPsetToElement');
     });

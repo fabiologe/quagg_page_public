@@ -90,16 +90,28 @@ describe('20 Eckzüge an einem Vorgang mit vier Operationen', () => {
     // erwartete > 10; was bleibt, sind je Schritt die Metadaten (Kennung,
     // Zeit, Vorgang, Bearbeiter — rund die Hälfte eines verdichteten
     // Schritts) und die zwei vollen Anfangsstände.
-    it('Stufe 2 (heute) gegen Stufe 3: die Datei schrumpft etwa um das Achtfache', async () => {
+    // SEIT TEIL XXIV (K2) trägt jeder Vorgang seinen BELEG — das Kommando,
+    // das ihn erzeugt hat (Fabios E1). Der Beleg ist neue Information, keine
+    // Wiederholung, und wird nicht verdichtet. Gemessen werden deshalb zwei
+    // Dinge getrennt: die Verdichtung der ZUSTÄNDE (unverändert ≈ 8×) und was
+    // ein Beleg kostet.
+    it('Stufe 2 (heute) gegen Stufe 3: die Zustände schrumpfen etwa um das Achtfache, ein Beleg kostet wenig', async () => {
+        const ohneBeleg = (text) => JSON.stringify(JSON.parse(text), (k, v) => (k === 'kommando' ? undefined : v)).length;
         await zwanzigEckzuege();
-        const voll = gespeichert().length;
+        const voll = gespeichert();
         localStorage.clear(); setActivePinia(createPinia()); useBearbeitung().modusSetzen(true);
         setzeSchreibStufeFuerTests(3);
         await zwanzigEckzuege();
-        const dicht = gespeichert().length;
-        process.stderr.write(`JOURNAL 20 Eckzüge: ${voll} → ${dicht} Zeichen (Faktor ${(voll / dicht).toFixed(1)})\n`);
-        expect(voll / dicht).toBeGreaterThan(7);
-        expect(JSON.parse(gespeichert()).mindestClient).toBe(3);
+        const dicht = gespeichert();
+        const belege = JSON.parse(dicht).sitzung.schritte.filter(s => s.kommando).length;
+        const jeBeleg = (dicht.length - ohneBeleg(dicht)) / belege;
+        process.stderr.write(`JOURNAL 20 Eckzüge: ${voll.length} → ${dicht.length} Zeichen (Faktor ${(voll.length / dicht.length).toFixed(1)}); `
+            + `ohne Belege ${ohneBeleg(voll)} → ${ohneBeleg(dicht)} (Faktor ${(ohneBeleg(voll) / ohneBeleg(dicht)).toFixed(1)}); `
+            + `${belege} Belege à ${jeBeleg.toFixed(0)} Zeichen\n`);
+        expect(ohneBeleg(voll) / ohneBeleg(dicht)).toBeGreaterThan(7);
+        expect(belege).toBe(20);
+        expect(jeBeleg).toBeLessThan(600);
+        expect(JSON.parse(dicht).mindestClient).toBe(3);
     });
 
     it('neu geladen: derselbe Stand, und Undo läuft wie vorher', async () => {
@@ -131,8 +143,9 @@ describe('20 Eckzüge an einem Vorgang mit vier Operationen', () => {
 });
 
 describe('Schutz: lesen, nie überschreiben', () => {
-    it('ein Journal einer NEUEREN CDE (mindestClient 4) wird gezeigt, aber nicht überschrieben', async () => {
-        const fremd = { version: 2, mindestClient: 4, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
+    // Seit Teil XXIV (K4a) KENNT diese CDE Stufe 4 — „neuer" ist jetzt 5.
+    it('ein Journal einer NEUEREN CDE (mindestClient 5) wird gezeigt, aber nicht überschrieben', async () => {
+        const fremd = { version: 2, mindestClient: 5, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
             schritte: [{ id: 's1', art: 'kg', globalId: 'G1', nachher: '410', vorher: null, wann: 1 }] }], sitzung: null,
             schreibstand: { zaehler: 3, marke: 'FREMD', wer: 'petra', wann: 1 } };
         localStorage.setItem(SCHLUESSEL, JSON.stringify(fremd));

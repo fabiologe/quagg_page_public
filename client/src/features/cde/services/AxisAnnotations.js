@@ -38,6 +38,7 @@
  * Meridian gegen die Fragment-Welt.
  */
 
+import { gefaelle } from './geometrie/Stationierung.js';
 import * as THREE from 'three';
 
 /**
@@ -312,15 +313,12 @@ export function polylineLength(pts) {
  * die horizontale Länge. null wenn die Achse keine Höheninformation trägt.
  */
 export function polylineGefaellePromille(pts) {
-    if (pts.length < 2) return null;
-    let l2d = 0;
-    for (let i = 0; i + 1 < pts.length; i++) {
-        l2d += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].z - pts[i].z);
-    }
-    if (l2d < 1e-9) return null;
-    const dy = (pts[0].y ?? 0) - (pts[pts.length - 1].y ?? 0);
-    if (Math.abs(dy) < 1e-9) return null; // 2D-Achse oder exakt horizontal
-    return (dy / l2d) * 1000;
+    // Die Rechnung selbst steht an EINER Stelle (Teil XXIV, K5). Hier bleibt
+    // nur die Anzeigeregel: eine 2D-Achse oder eine exakt waagerechte heisst
+    // „waagerecht", nicht „0 ‰".
+    const g = gefaelle(pts);
+    if (g.promille == null || Math.abs(g.fall) < 1e-9) return null;
+    return g.promille;
 }
 
 /** Längstes Einzelsegment (für die Label-Platzierung). */

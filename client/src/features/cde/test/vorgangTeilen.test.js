@@ -17,7 +17,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen, standAus } from '../stores/useAenderungen.js';
 import { nachId } from '../services/Bearbeitungen.js';
-import { baueAusBauplan } from '../services/Bauteilrezepte.js';
+import { baueAusBauplan, rezeptNach } from '../services/Bauteilrezepte.js';
 import { ANWENDBARE_ARTEN } from '../services/IfcAutor.js';
 
 beforeEach(() => {
@@ -259,8 +259,15 @@ describe('Schacht einfügen — vier Einträge, ein Vorgang', () => {
         const [, schacht, eins, zwei] = await b.ausfuehren({ wer: 'Fabio' });
 
         const sohle = schacht.nachher.parameter.punkte[0];
-        expect(eins.nachher.parameter.punkte[1]).toEqual(sohle);
-        expect(zwei.nachher.parameter.punkte[0]).toEqual(sohle);
+        // Verkettet wird in XY (Netztopologie) — dort liegen alle drei gleich.
+        expect([eins.nachher.parameter.punkte[1][0], eins.nachher.parameter.punkte[1][2]]).toEqual([sohle[0], sohle[2]]);
+        expect([zwei.nachher.parameter.punkte[0][0], zwei.nachher.parameter.punkte[0][2]]).toEqual([sohle[0], sohle[2]]);
+        // In der Höhe steht der Schacht auf der ROHRSOHLE (Teil XXIV, K4): die
+        // Achse aus der Extrusion liegt in der Rohrmitte, DN 500 / 2 darüber.
+        // Bis K4 stand der Schacht auf der Mitte — seine Sohle DN/2 zu hoch.
+        const s = rezeptNach('rohr').sohlen;
+        expect(s.lies(eins.nachher.parameter)[1]).toBeCloseTo(sohle[1], 9);
+        expect(s.lies(zwei.nachher.parameter)[0]).toBeCloseTo(sohle[1], 9);
     });
 
     it('der Schacht steht SENKRECHT und reicht bis zur Deckelhöhe', async () => {

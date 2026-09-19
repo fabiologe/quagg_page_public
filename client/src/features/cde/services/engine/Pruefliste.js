@@ -10,6 +10,7 @@
 import { CDE_MODELL_ID } from '../IfcAutor.js';
 import { befundeAusBeziehungen, befundeFuer, befundeFuerNetz } from '../Befunde.js';
 import { aufgeloestesRegelwerk } from '../regeln/Regelwerk.js';
+import { pruefeStand } from '../Prueflauf.js';
 
 /**
  * Das ganze Modell prüfen — die Prüfliste (Stufe 14.4).
@@ -61,44 +62,12 @@ export function pruefeAlles(engine, { typprofilFuer = () => null, umgekehrtFuer 
             });
         }
 
-        // Die CDE-KANTEN durch dieselben Regeln — ein selbst gebautes
-        // Rohr mit Gegengefälle verdient denselben Befund wie ein
-        // geliefertes (Stufe 17.3).
-        for (const [gid, k] of engine._cdeKanten ?? new Map()) {
-            if (engine._verdeckt?.has(gid)) continue;
-            const kantenId = `cde:${gid}`;
-            const befunde = befundeFuer({
-                globalId: gid,
-                kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
-                achse: k,
-                umgekehrt: umgekehrtFuer(gid),
-                typprofil: typprofilFuer(k.kategorie ?? 'IFCPIPESEGMENT'),
-            }, regelwerk).concat(netzBefunde.get(kantenId) ?? []);
-            netzBefunde.delete(kantenId);
-            if (!befunde.length) continue;
-            out.push({
-                modelId, localId: kantenId,
-                globalId: gid, kategorie: k.kategorie ?? 'IFCPIPESEGMENT',
-                name: k.name ?? '', befunde,
-            });
-        }
-
-        // Was übrig bleibt, sind Bauteile ohne Achse — die Schächte
-        // (gelieferte über die Quelle, selbst gesetzte über den Stand)
-        // und die CDE-Kanten, deren Befunde die Schleife oben nicht sah.
+        // Was übrig bleibt, sind Bauteile ohne Achse — die gelieferten
+        // Schächte. Die EIGENEN Teile prüft der Lauf unten, EINMAL (K6):
+        // hier, in der Schleife über die Modelle, kamen sie ohne Lieferung gar
+        // nicht vor und mit zweien doppelt.
         for (const [localId, befunde] of netzBefunde) {
-            if (typeof localId === 'string' && localId.startsWith('cde:')) {
-                const gid = localId.slice(4);
-                const meta = engine._cdeKnoten?.get(gid) ?? engine._cdeKanten?.get(gid) ?? null;
-                out.push({
-                    modelId, localId,
-                    globalId: gid,
-                    kategorie: meta?.kategorie ?? 'IFCDISTRIBUTIONCHAMBERELEMENT',
-                    name: meta?.name ?? '',
-                    befunde,
-                });
-                continue;
-            }
+            if (typeof localId === 'string' && localId.startsWith('cde:')) continue;
             const zeile = quelle?.zeile(localId) ?? null;
             const knotenMeta = engine._knoten?.get(modelId)?.get(localId) ?? null;
             if (knotenMeta?.globalId && engine._verdeckt?.has(knotenMeta.globalId)) continue;
@@ -111,6 +80,18 @@ export function pruefeAlles(engine, { typprofilFuer = () => null, umgekehrtFuer 
             });
         }
     }
+
+    // DIE EIGENEN BAUTEILE, EINMAL — ausserhalb der Modellschleife (Teil
+    // XXIV, K6), mit dem Netz der Engine: es kennt das Gelieferte, an das eine
+    // eigene Haltung anschliesst (dieselbe Auskunft wie beim Subjekt, K3).
+    for (const z of pruefeStand({
+        kanten: [...(engine._cdeKanten?.values() ?? [])],
+        knoten: [...(engine._cdeKnoten?.values() ?? [])],
+        verdeckt: engine._verdeckt ?? new Set(),
+        netz: engine.netzAuskunft?.()?.netz ?? null,
+        bauplaene: engine._cdeBauplaene ?? null,
+        umgekehrtFuer, typprofilFuer, regelwerk,
+    })) out.push({ modelId: CDE_MODELL_ID, ...z });
 
     // Das Schwerste zuerst — eine Liste, die man von oben abarbeitet.
     // Die Befunde der ABLEITUNGEN (Teil XIV): die Gegenprobe Körper gegen

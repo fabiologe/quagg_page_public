@@ -394,6 +394,47 @@ export function neueAbleitungsId() {
     return `ab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// ── Kennungen der Operationen (Teil XXIV, K2b — Fabios E3) ─────────────────
+//
+// Eine Operation eines Vorgangs (Planum, Grube, Schüttung …) ist bis hier die
+// Nummer j in einer Liste — „fülle bis zum Planum P" konnte kein Ziel nennen,
+// und ein Kommando, das eine Ecke zieht, hätte die Nummer tragen müssen. Jetzt
+// trägt jede Operation eine Kennung `op-…`.
+
+/** Eine neue Operationskennung — vom Aufrufer über die Kennungsquelle (E2), sonst Zufall. */
+export function neueOperationsId() {
+    return _kennungsquelle ? _kennungsquelle('operation') : zufallsKennung('operation');
+}
+
+/** FNV-1a über einen Text → Base36. Für abgeleitete Kennungen, nicht für Sicherheit. */
+function _hash(text) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(36);
+}
+
+/**
+ * Die Operationen einer Liste MIT Kennung.
+ *
+ * Gespeicherte Kennungen gelten. Eine Operation aus der Zeit vor K2b hat keine;
+ * sie bekommt eine aus ihrem INHALT abgeleitete (`op-alt-<hash>`). Die ist
+ * stabil, solange sich die Operation nicht ändert — und ändern kann sie sich
+ * nur durch einen Schreibvorgang, der ihr dann genau diese Kennung mitgibt
+ * (`ableitungsSchritte`). Zwei gleiche Altoperationen in einer Liste werden
+ * durchgezählt, damit keine Kennung doppelt ist.
+ */
+export function operationenMitKennung(liste) {
+    const gesehen = new Map();
+    return (liste ?? []).map((op) => {
+        if (!op || typeof op !== 'object') return op;
+        if (op.id) return op;
+        const basis = `op-alt-${_hash(JSON.stringify({ art: op.art ?? null, parameter: op.parameter ?? null }))}`;
+        const n = (gesehen.get(basis) ?? 0) + 1;
+        gesehen.set(basis, n);
+        return { ...op, id: n === 1 ? basis : `${basis}-${n}` };
+    });
+}
+
 /**
  * Die Teile einer Ableitung im wirksamen Stand: Rolle → {globalId, bauplan}.
  * Gebraucht bei der Folgeformung — dieselben GlobalIds, volle Liste.
@@ -497,6 +538,20 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
     const r = ABLEITUNGEN[rezept];
     if (!r) throw new Error(`Ableitung „${rezept}" gibt es nicht`);
     const ableitung = bestehend?.ableitung ?? neueAbleitungsId();
+    const vorhanden = bestehend?.teile instanceof Map ? bestehend.teile : new Map(Object.entries(bestehend?.teile ?? {}));
+    // JEDE OPERATION TRÄGT EINE KENNUNG (Teil XXIV, K2b — E3). Eine neue
+    // bekommt ihre vom Aufrufer (Kennungsquelle); eine aus der Zeit vor K2b,
+    // die an derselben Stelle der bisherigen Liste stand, behält die aus ihrem
+    // bisherigen Inhalt abgeleitete — die, mit der ein Kommando sie eben
+    // angesprochen hat. Die Stelle zählt hier nur beim Schreiben, gespeichert
+    // wird die Kennung.
+    const bisher = [...vorhanden.values()].find(t => Array.isArray(t?.bauplan?.parameter?.operationen))?.bauplan.parameter.operationen ?? [];
+    const bisherMitKennung = operationenMitKennung(bisher);
+    operationen = (operationen ?? []).map((op, j) => {
+        if (!op || typeof op !== 'object' || op.id) return op;
+        const alt = bisher[j] && !bisher[j].id ? bisherMitKennung[j].id : null;
+        return { ...op, id: alt ?? neueOperationsId() };
+    });
     // `vorgaenge` trägt nur die Anzeige (Stufe 1): die Reihenfolge der
     // Erdbau-Vorgänge — eine Entscheidung, nichts Gerechnetes.
     // `auflockerung` gehört dem VORGANG, nicht einer Operation: sie ändert
@@ -504,7 +559,7 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
     const parameter = { quellen, quellBasis, raster, operationen,
                         ...(vorgaenge ? { vorgaenge } : {}),
                         ...(Number.isFinite(Number(auflockerung)) ? { auflockerung: Number(auflockerung) } : {}) };
-    const vorhandene = bestehend?.teile instanceof Map ? bestehend.teile : new Map(Object.entries(bestehend?.teile ?? {}));
+    const vorhandene = vorhanden;
     // NACHGEZOGENE Teile: Rollen, die das Rezept nicht mehr kennt (der
     // `dgm`-Teil aus der Zeit vor Stufe 1), aber die Klammer noch trägt. Sie
     // bekommen dieselben Parameter — eine Klammer, EIN Parametersatz; sonst
@@ -667,10 +722,52 @@ export async function baueMitAbleitung(bauplan, holeQuellraster) {
  * Kein IFC-konformer 22-Zeichen-Base64-Wert: das Bauteil steht nicht im
  * gelieferten IFC, und eine echte GUID vorzutäuschen wäre eine Behauptung
  * über Herkunft, die nicht stimmt.
+ *
+ * WER DIE KENNUNG VERGIBT (Teil XXIV, K1 — Fabios Entscheidung E2): der
+ * AUFRUFER, im Kommando (`neu`). Das Werkzeug fragt hier weiter nach einer
+ * Kennung, beantwortet wird die Frage aber von der Kennungsquelle, die die
+ * Auswertung eines Kommandos setzt (`mitKennungen`). Ohne Kommando — ein Test
+ * oder die Vorschau ruft `anwenden` direkt — gilt die Zufallskennung; ein
+ * solches Ergebnis wird nie eingetragen.
  */
+let _kennungsquelle = null;
 export function neueGlobalId() {
+    return _kennungsquelle ? _kennungsquelle('bauteil') : zufallsGlobalId();
+}
+
+/** Eine frische Zufallskennung `cde-<Zeit>-<Zufall>` — der Kennungsgeber der Oberfläche. */
+export function zufallsGlobalId() {
     const zufall = Math.random().toString(36).slice(2, 10);
     return `cde-${Date.now().toString(36)}-${zufall}`;
+}
+
+/** Die Präfixe der Kennungsarten — `neu` in einem Kommando trägt beide (E2, E3). */
+export const KENNUNGS_PRAEFIX = Object.freeze({ bauteil: 'cde-', operation: 'op-' });
+
+/** Eine frische Zufallskennung der Art `bauteil` oder `operation`. */
+export function zufallsKennung(art = 'bauteil') {
+    if (art === 'operation') return `op-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return zufallsGlobalId();
+}
+
+/**
+ * `fn` auswerten, während neue Kennungen aus `quelle` kommen.
+ *
+ * NUR SYNCHRON: die Quelle ist Modulzustand und gilt genau für die Dauer des
+ * Aufrufs. Eine Auswertung, die ein Versprechen zurückgäbe, liefe nach dem
+ * Zurücksetzen weiter und zöge Zufallskennungen — das wäre ein stiller Bruch
+ * von E2. Deshalb wirft es dann, statt es hinzunehmen.
+ */
+export function mitKennungen(quelle, fn) {
+    const vorher = _kennungsquelle;
+    _kennungsquelle = quelle;
+    try {
+        const aus = fn();
+        if (aus && typeof aus.then === 'function') throw new Error('mitKennungen: die Auswertung muss synchron sein');
+        return aus;
+    } finally {
+        _kennungsquelle = vorher;
+    }
 }
 
 /**

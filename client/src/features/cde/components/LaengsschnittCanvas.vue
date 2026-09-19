@@ -53,8 +53,11 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
-import { baueSicht, griffe, sohlZugEintraege, cdeZugEintraege } from '../services/LaengsschnittSicht.js';
-import { useCdeStore } from '../stores/useCdeStore.js';
+import { baueSicht, griffe } from '../services/LaengsschnittSicht.js';
+import { mitHoehenversatz, punktAusWelt, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { subjektAusStrang } from '../services/kommando/Subjekt.js';
+import { modellVon } from '../services/Bauteilrezepte.js';
+import { useKommandoweg } from '../composables/useKommandoweg.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
 
@@ -67,8 +70,8 @@ const bearbeitung = useBearbeitung();
 const aenderungen = useAenderungen();
 const ifc = useIfcStore();
 const farbmodus = useFarbmodus();
-const cde = useCdeStore();
 const api = useViewerApi();
+const kommandoweg = useKommandoweg();
 
 /** Blattlage: Station/Höhe in der Bildmitte + Lupe (px je Station-Meter). */
 const mitte = ref({ s: 0, h: 0 });
@@ -187,10 +190,16 @@ async function onZeigerAuf(ev) {
 }
 
 /**
- * Der Zug wird zum VORGANG: je betroffenem Segment eine volle Rollen-Karte
- * (absolut, NN). „Geliefert = Forderung": nichts bewegt sich am Modell, die
- * gestrichelte Linie im Schnitt IST die Wirkung — und der Änderungsbericht
- * trägt sie zum Planer.
+ * DER ZUG IST EIN KOMMANDO (Teil XXIV, O6): „Sohle am Punkt setzen" —
+ * Ziel sind die Haltungen am Griff, der Ort ist ihr gemeinsames Ende
+ * (Ost/Nord), der Wert die gezogene Sohle in m NN. Am gemischten Knoten
+ * zieht EIN Griff beides, jede Seite auf ihrem Weg (17.3b): geliefert wird
+ * eine FORDERUNG (parametrik, gestrichelte Linie — der Änderungsbericht
+ * trägt sie zum Planer), Eigenes wird ECHT (Bauplan, Neuaufbau). Welches
+ * Ende, sagt der Ort — keine Nummer, kein „A"/„E" im Kommando (E3).
+ *
+ * Bis O6 schrieb diese Komponente ihre Einträge selbst: ohne Beleg, ohne
+ * Modus-Prüfung, ohne die Rückmeldung des Kommandowegs.
  */
 async function zugAbschliessen(z, abgebrochen) {
     if (abgebrochen || !sicht.value) return;
@@ -198,38 +207,33 @@ async function zugAbschliessen(z, abgebrochen) {
     const vorher = griffListe.find(g => g.station === z.station)?.hoehe;
     if (Number.isFinite(vorher) && Math.abs(z.hoehe - vorher) < 0.005) return;
 
-    // Am gemischten Knoten zieht EIN Griff beides — jede Seite auf ihrem
-    // Weg (17.3b): geliefert wird eine FORDERUNG (parametrik, gestrichelte
-    // Linie), Eigenes wird ECHT (Bauplan fortgeschrieben, Neuaufbau).
-    const geliefert = z.enden.filter(e => !String(e.globalId).startsWith('cde-'));
-    const eigene = z.enden.filter(e => String(e.globalId).startsWith('cde-'));
-    const erzStand = aenderungen.wirksamerStand('erzeugt');
-    const eintraege = [
-        ...sohlZugEintraege(sicht.value, geliefert, z.hoehe),
-        ...cdeZugEintraege(eigene, z.hoehe, {
-            bauplanVon: (gid) => erzStand.get(gid),
-            hoehenversatz: bearbeitung.bauteil?.hoehenversatz ?? 0,
-        }),
-    ];
-    if (!eintraege.length) return;
-    const vorgang = eintraege.length > 1
-        ? { vorgang: `vg-ls-${Date.now().toString(36)}`, vorgangTitel: 'Sohle im Längsschnitt gezogen' }
-        : {};
-    const geschrieben = [];
-    for (const e of eintraege) {
-        const drin = await aenderungen.eintragen({
-            ...e, ...vorgang,
-            wer: cde.bearbeiter || '',
-            modellSha: api.modellShaVon?.(e.globalId) ?? api.getLoadedModelSha?.() ?? null,
-            ...(e.art === 'parametrik'
-                ? { basis: api.lieferstandVon?.(e.globalId) ?? null, modell: 'geliefert' }
-                : {}),
-        });
-        if (drin) geschrieben.push(drin);
+    const b = bearbeitung.bauteil;
+    const glieder = new Map((b?.strang ?? []).map(g => [g.globalId, g]));
+    const erstes = glieder.get(z.enden[0]?.globalId);
+    if (!erstes) return;
+    const ort = z.enden[0].ende === 'A' ? erstes.anfang : erstes.ende;
+    const rahmen = mitHoehenversatz(bearbeitung.rahmen ?? rahmenOhneBezug(), b.hoehenversatz ?? 0);
+    const erg = await kommandoweg.absetzen({
+        werkzeug: 'sohle-ziehen',
+        ziel: [...new Set(z.enden.map(e => e.globalId))],
+        eingaben: { zug: [punktAusWelt({ x: ort.x, z: ort.z }, rahmen)] },
+        werte: { hoehe: Math.round(z.hoehe * 1000) / 1000 },
+        rahmen,
+        // Ein GELIEFERTES Glied kennt der Längsschnitt aus dem Strang — dieselbe
+        // Achse, aus der er die Sohle zeigt. Eigenes kommt aus dem Stand.
+        subjektVon: (gid) => (modellVon(gid) === 'cde' ? null
+            : subjektAusStrang(glieder.get(gid), { wirksamerStand: aenderungen.wirksamerStand, hoehenversatz: b.hoehenversatz ?? 0 })),
+        // Die Forderung an einer gelieferten Haltung: ihr Lieferstand als Basis.
+        jeEintrag: (gid) => (modellVon(gid) === 'cde' ? {} : { basis: api.lieferstandVon?.(gid) ?? null, modell: 'geliefert' }),
+    });
+    if (!erg.ausgefuehrt) {
+        if (erg.grund) console.warn('cde: Sohle ziehen', erg.grund);
+        return;
     }
     // ANWENDEN — über denselben Weg wie jede andere Anwendung (Gesetz 7):
     // die Forderung wird nur gemeldet, der fortgeschriebene Bauplan baut
     // das CDE-Modell neu, und der Hub zieht Achsen, Netz und Plan nach.
+    const geschrieben = erg.eintraege;
     if (geschrieben.length) {
         await api.wendeEintragAn?.(geschrieben.length > 1 ? geschrieben : geschrieben[0]);
     }

@@ -61,12 +61,18 @@ describe('abhaengige', () => {
 });
 
 describe('die Prüfung steht VOR dem Eintragen', () => {
-    it('useBearbeitung.ausfuehren ruft pruefeBezuege, bevor es eintragen ruft', () => {
+    // Seit Teil XXIV (K1) ist `fuehreAus` die EINE Stelle, an der ein Kommando
+    // geschrieben wird — für die Oberfläche (`ausfuehren` ruft sie) und ohne.
+    it('useBearbeitung.fuehreAus ruft pruefeBezuege, bevor es eintragen ruft — und ausfuehren geht über fuehreAus', () => {
         const q = fs.readFileSync(`${WURZEL}stores/useBearbeitung.js`, 'utf8');
-        const start = q.indexOf('async function ausfuehren');
+        const start = q.indexOf('async function fuehreAus');
         const pruefung = q.indexOf('pruefeBezuege(', start);
-        const eintragen = q.indexOf('aenderungen.eintragen(', start);
+        const eintragen = q.indexOf('aenderungen.eintragenVorgang(', start);
         expect(pruefung).toBeGreaterThan(start);
         expect(pruefung).toBeLessThan(eintragen);
+        const aus = q.indexOf('async function ausfuehren');
+        const ende = q.indexOf('\n    }\n', aus);
+        expect(q.slice(aus, ende)).toContain('await fuehreAus(kommando');
+        expect(q.slice(aus, ende)).not.toContain('aenderungen.eintragen');
     });
 });

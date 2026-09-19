@@ -42,12 +42,17 @@ function ausgabe(rz, p) {
     const r = { geo: summe(rz.baue(p)) };
     const k = rz.formAus?.(p, 'koerper');
     if (k) r.koerper = { tri: k.triCount, vol: k.volumen, closed: k.closed, mv: meshVolume(k.positions, k.triCount).volume };
-    const l = rz.formAus?.(p, 'linie'); if (l) r.linie = l;
+    // `sohlabstand` (Linie) und `achsbezug`/`sohlabstand` (Netzkante) sind NEU
+    // aus Teil XXIV (K4) — Bedeutungsfelder wie die aus A9; die Zahlen bleiben.
+    // Geprüft werden sie in `sohleEigen.test.js`.
+    const l = rz.formAus?.(p, 'linie'); if (l) { const { sohlabstand, ...alt } = l; r.linie = alt; }
     // Die Bedeutungsfelder aus A9 (`hoehenbezug`, `oberkante`) sind NEU — der
     // Goldstandard hält die ZAHLEN von vor A4; die Felder prüft formsemantik.test.js.
     const kn = rz.formAus?.(p, 'knoten');
     if (kn) { const { hoehenbezug, oberkante, ...alt } = kn; r.knoten = alt; }
     r.fachmodell = rz.fachmodell('G1', { name: 'N', parameter: p });
+    for (const k of r.fachmodell.kanten ?? []) { delete k.achsbezug; delete k.sohlabstand; }
+    for (const k of r.fachmodell.knoten ?? []) delete k.hoehenbezug;      // K8: Bedeutungsfeld, geprüft in verknuepfung.test.js
     r.verschoben = rz.verschiebe(p, { x: 1, y: 2, z: 3 });
     return JSON.parse(JSON.stringify(r));
 }

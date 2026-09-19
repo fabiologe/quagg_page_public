@@ -46,9 +46,16 @@ describe('Verklebung (Textwächter)', () => {
         expect(viewer).toMatch(/wendeEintragAn: \(eintragOderListe\) => wendeEintragAn\(eintragOderListe\)/);
     });
 
-    it('das Subjekt trägt seine Box — die Lage-Vorschau braucht sie', () => {
+    it('das Subjekt trägt seine Box — die Lage-Vorschau braucht sie', async () => {
         expect(viewer).toMatch(/box: h\.box \?\? null/);
-        expect(lies('services/IfcAutor.js')).toMatch(/box: \(box\.min && box\.max\)/);
+        // Seit Teil XXIV (K3) rechnet `geometrie/Huelle.js` die Hülle — für die
+        // Box aus dem Raum und für die aus dem Rezept. Geprüft wird das
+        // Ergebnis, nicht mehr die Zeile.
+        const THREE = await import('three');
+        const { huelleAusBox } = await import('../services/IfcAutor.js');
+        const h = huelleAusBox(new THREE.Box3(new THREE.Vector3(1, 2, 3), new THREE.Vector3(5, 6, 9)));
+        expect(h).toEqual({ anker: { x: 3, y: 4, z: 6 }, unterkante: 2, oberkante: 6,
+                            box: { min: { x: 1, y: 2, z: 3 }, max: { x: 5, y: 6, z: 9 } } });
     });
 
     it('die alte Modus-Leiste ist restlos umgezogen', () => {

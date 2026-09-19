@@ -10,7 +10,8 @@
 import { describe, expect, it } from 'vitest';
 import { REZEPTE, rezeptNach } from '../services/Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
-import { cdeZugEintraege } from '../services/LaengsschnittSicht.js';
+import { nachId } from '../services/Bearbeitungen.js';
+import { subjektAusStand } from '../services/kommando/Subjekt.js';
 
 describe('Die Eigenschaften, nach denen gefragt wird', () => {
     it('wer seine Ecken in `parameter.punkte` trägt, sagt es', () => {
@@ -61,15 +62,19 @@ describe('Der Quellname ist die Umkehrung des Teilnamens — an EINER Stelle', (
 describe('Der Längsschnitt fragt die Netzrolle — und das Rezept bleibt, was es war', () => {
     const plan = { rezept: 'rohr', kategorie: 'IFCPIPESEGMENT', name: 'H1',
                    parameter: { punkte: [[0, 297, 0], [30, 296.7, 0]], dn: 300 } };
+    // Seit O6 schreibt der Zug über „Sohle am Punkt setzen" — dieselbe Frage an das Rezept.
+    const zieh = (p, gid = 'cde-h1') => nachId('sohle-ziehen').anwenden(
+        subjektAusStand(gid, { wirksamerStand: (art) => new Map(art === 'erzeugt' ? [[gid, p]] : []) }),
+        { hoehe: 296.5 }, { zug: [{ x: 30, z: 0 }] });
     it('eine Kante bekommt den neuen Endpunkt', () => {
-        const e = cdeZugEintraege([{ globalId: 'cde-h1', ende: 'E' }], 296.5, { bauplanVon: () => plan });
-        expect(e).toHaveLength(1);
+        const e = [zieh(plan)];
         expect(e[0].nachher.rezept).toBe('rohr');
-        expect(e[0].nachher.parameter.punkte.at(-1)[1]).toBeCloseTo(296.5, 9);
+        // Gezogen wird die SOHLE (K4); der alte Bauplan liegt in Rohrmitte, also
+        // steht dort 296,50 + DN 300 / 2 — und seine Sohle ist, was gezogen wurde.
+        expect(e[0].nachher.parameter.punkte.at(-1)[1]).toBeCloseTo(296.65, 9);
+        expect(rezeptNach('rohr').sohlen.lies(e[0].nachher.parameter).at(-1)).toBeCloseTo(296.5, 9);
     });
     it('ein Knoten oder eine Linie nicht — sie haben kein Gefälle', () => {
-        for (const rezept of ['schacht', 'linie']) {
-            expect(cdeZugEintraege([{ globalId: 'x', ende: 'E' }], 296.5, { bauplanVon: () => ({ ...plan, rezept }) })).toEqual([]);
-        }
+        for (const rezept of ['schacht', 'linie']) expect(zieh({ ...plan, rezept }, 'cde-x')).toBeNull();
     });
 });

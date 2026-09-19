@@ -85,7 +85,7 @@ import { computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { eingabeArt } from '../services/Bearbeitungen.js';
+import { eingabeArt, schreibtAmBauplan } from '../services/Bearbeitungen.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
 
 const props = defineProps({
@@ -149,6 +149,13 @@ const subjektName = computed(() => {
  * Höhenbezug zählt der Wert ab Modellursprung.
  */
 const hinweis = computed(() => {
+  // Eine überschrittene FACHGRENZE (K10, Fabios E5) sperrt nicht mehr — sie
+  // wird hier gesagt, vor dem nächsten Schritt, und am Eintrag markiert.
+  const grenze = bearbeitung.grenzhinweise?.[0]?.text ?? '';
+  const weiter = naechsterSchritt();
+  return grenze && weiter ? `${grenze} · ${weiter}` : (grenze || weiter);
+});
+function naechsterSchritt() {
   const s = bearbeitung.scharf;
   if (!s) return '';
   const art = eingabeArt(s);
@@ -157,14 +164,16 @@ const hinweis = computed(() => {
     if (props.motor?.hinweis?.value) return props.motor.hinweis.value;
     return `${art === 'zug' ? 'Zug' : 'Umriss'} im Bild setzen — Punkte anklicken, Enter schliesst ab.`;
   }
-  if (s.nurFestlegung) return 'Wird als Forderung an den Planer geführt — die Geometrie bleibt bei ihm.';
+  // Am EIGENEN Bauteil wird der Bauplan fortgeschrieben (Teil XXIV, K4) — dort
+  // ist es keine Forderung, und der Hinweis wäre falsch.
+  if (s.nurFestlegung && !schreibtAmBauplan(s, bearbeitung.bauteil)) return 'Wird als Forderung an den Planer geführt — die Geometrie bleibt bei ihm.';
   if (s.brauchtRolle === 'sohlhoehe' && !hatHoehenbezug(bearbeitung.bauteil?.hoehenversatz)) {
     return 'Kein Höhenbezug im Modell — der Wert zählt ab Modellursprung, nicht ab NN.';
   }
   const e = bearbeitung.einordnung;
   if (e && e.guete !== 'gemessen') return `Form nur ${e.guete} — Wert prüfen.`;
   return '';
-});
+}
 </script>
 
 <style scoped>

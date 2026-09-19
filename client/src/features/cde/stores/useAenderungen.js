@@ -35,6 +35,7 @@ import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
 import { JOURNAL_KENNT, entfalte, ohneAbgeleitetes, schreibStufe, verdichte } from '../services/JournalFormat.js';
+import { systemBeleg } from '../services/kommando/Beleg.js';
 const REPO_KEY = 'aenderungen';
 
 /**
@@ -615,6 +616,16 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * arbeitet.
      */
     const kannZurueck = computed(() => letzterOffener(_liste(vorgabeEbene.value).value) !== null);
+    /**
+     * WIEDERHOLEN (Teil XXIV — Fabios E9, Empfehlung O2): was „zurück" genommen
+     * hat, liegt je Ebene auf einem Stapel und lässt sich wieder anwenden —
+     * das GESPEICHERTE Ergebnis, nicht neu ausgewertet. Jeder andere Schritt,
+     * der gesichert wird, leert den Stapel (`_sichern`): wiederholt wird nur,
+     * was unmittelbar davor zurückgenommen wurde.
+     */
+    const wiederholbarJe = { auftrag: ref([]), stand: ref([]) };
+    let _imRueckgaengig = false;
+    const kannWiederholen = computed(() => wiederholbarJe[vorgabeEbene.value].value.length > 0);
     /** Wie viele Bauteile insgesamt berührt sind (nicht wie viele Schritte). */
     const beruehrteBauteile = computed(() => new Set(eintraege.value.map(e => e.globalId)).size);
 
@@ -644,17 +655,27 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         return hist;
     }
 
+    /**
+     * Die Ebene sichern. Das ERGEBNIS zählt seit Teil XXIV (K2): ein Vorgang
+     * gilt ganz oder gar nicht, und wer ihn einträgt, muss wissen, ob der
+     * Mehrbenutzer-Wächter das Schreiben verweigert hat.
+     *
+     * @returns {Promise<'ok'|'konflikt'|'fehler'|'nurLesen'>}
+     */
     async function _sichern(ebene) {
         // NUR LESEN (A7): nie über ein Journal schreiben, das dieser Client
         // nicht ganz versteht — ein älterer Tab überschriebe es sonst.
-        if (nurLesen.value) return;
+        if (nurLesen.value) return 'nurLesen';
+        // Ein neuer Schritt macht das Wiederholen des Zurückgenommenen ungültig (O2).
+        if (!_imRueckgaengig && wiederholbarJe[ebene].value.length) wiederholbarJe[ebene].value = [];
         try {
             // MEHRBENUTZER-WÄCHTER (Lücke ⑥): erst nachsehen, ob auf dem
             // Server inzwischen ein FREMDER Stand liegt. Wenn ja, wird die
-            // fremde Arbeit nicht überschrieben — die eigene bleibt im
-            // Speicher, der Konflikt wird angezeigt, und Neuladen führt
-            // zusammen. Ein v1/leerer Stand trägt keinen `schreibstand` und
-            // kann deshalb nichts sperren.
+            // fremde Arbeit nicht überschrieben, und der Konflikt wird
+            // angezeigt. Den eigenen Vorgang nimmt `eintragenVorgang` dann
+            // wieder heraus (Teil XXIV, K2 — abgelehnt, nicht still lokal).
+            // Ein v1/leerer Stand trägt keinen `schreibstand` und kann
+            // deshalb nichts sperren.
             const ablage = _repoFuer(ebene);
             const fremd = (await ablage.getFrisch?.(REPO_KEY)) ?? null;
             const fs = fremd?.schreibstand;
@@ -662,7 +683,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 schreibKonflikt.value = { ebene, wer: fs.wer ?? '', wann: fs.wann ?? null };
                 console.error('cde: Journal NICHT gesichert — auf dem Server liegt ein neuerer Stand',
                     schreibKonflikt.value);
-                return;
+                return 'konflikt';
             }
 
             // Format v2: die Schritte leben IN ihren Commits bzw. der
@@ -684,8 +705,10 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const nimm = (n) => { const aus = reihe.slice(k, k + n); k += n; return aus; };
             const nutzlast = {
                 version: 2,
-                // Wer weniger kennt, liest nur (siehe `_uebernimmV2`).
-                ...(stufe3 ? { mindestClient: 3 } : {}),
+                // Wer weniger kennt, liest nur (siehe `_uebernimmV2`). Stufe 4
+                // (K4b): Kanten speichern ihre Sohle — ein Client ohne diese
+                // Lesart baute sie um DN/2 zu tief.
+                ...(stufe3 ? { mindestClient: Math.min(schreibStufe(), 4) } : {}),
                 commits: commitsJe[ebene].value.map((c, i) => ({
                     ...c, schrittIds: undefined,
                     schritte: nimm(commitSchritte[i].length),
@@ -709,11 +732,13 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
             };
             const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
-            if (ok !== false) { _schreibstaende[ebene] += 1; sicherFehler.value = null; }
-            else sicherFehler.value = { ebene, wann: Date.now(), grund: null };
+            if (ok !== false) { _schreibstaende[ebene] += 1; sicherFehler.value = null; return 'ok'; }
+            sicherFehler.value = { ebene, wann: Date.now(), grund: null };
+            return 'fehler';
         } catch (fehler) {
             console.warn('cde: aenderungen sichern', fehler?.message ?? fehler);
             sicherFehler.value = { ebene, wann: Date.now(), grund: fehler?.message ?? String(fehler) };
+            return 'fehler';
         }
     }
 
@@ -781,12 +806,19 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      * @param {'stand'|'auftrag'} [ebene]  Vorgabe: Modellsatz, wenn einer aktiv ist
      * @returns {object|null} der Eintrag, oder null wenn nichts zu tun war
      */
-    async function eintragen({ art, globalId, nachher, wer = '', modellSha = null,
-                               basis, modell, ebene, vorgang, vorgangTitel, befunde, bezug = null }) {
+    async function eintragen({ ebene, ...schritt } = {}) {
+        const { eintraege } = await eintragenVorgang([schritt], { ebene });
+        return eintraege[0] ?? null;
+    }
+
+    /**
+     * Einen Eintrag BAUEN, ohne ihn abzulegen — die eine Stelle, an der ein
+     * Journaleintrag entsteht. `vorher` kommt aus dem wirksamen Stand (siehe
+     * `eintragen`); ein Schritt, der nichts ändert, ergibt null.
+     */
+    function _baueEintrag({ art, globalId, nachher, wer = '', modellSha = null,
+                            basis, modell, vorgang, vorgangTitel, befunde, bezug = null, wiederholungVon = null }) {
         if (!(art in AENDERUNGS_ARTEN) || !globalId) return null;
-        // NUR LESEN (A7): kein neuer Schritt, der ohnehin nie gespeichert würde.
-        if (nurLesen.value) return null;
-        const ziel = ebene ?? vorgabeEbene.value;
         const stand = wirksamerStand(art);
         const vorher = stand.has(globalId) ? stand.get(globalId) : null;
         // Dieselbe Zuweisung noch einmal ist keine Änderung — sonst füllt sich
@@ -795,13 +827,6 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // der Art: Objektwerte (Anker, Maße) tragen kein `===`.
         if (gleichFuer(art)(vorher, nachher ?? null)) return null;
 
-        // Jeder Schritt gehört zu einer SITZUNG (U2). Wer ohne offene
-        // schreibt (Tests, System-Übernahmen), eröffnet implizit eine —
-        // committet wird sie wie jede andere.
-        if (!sitzungJe[ziel].value) {
-            sitzungJe[ziel].value = { begonnen: Date.now(), wer, schrittIds: [] };
-        }
-
         const eintrag = {
             id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
             art, globalId, vorher, nachher: nachher ?? null,
@@ -809,7 +834,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // Ein VORGANG bindet mehrere Einträge zusammen, ohne die Invariante
             // „ein Eintrag, ein Bauteil" anzutasten — an der hängen fünfzehn
             // Stellen. Rein additiv: ohne ihn verhält sich alles wie zuvor.
-            ...(vorgang ? { vorgang, vorgangTitel } : {}),
+            ...(vorgang ? { vorgang, ...(vorgangTitel ? { vorgangTitel } : {}) } : {}),
             // Momentaufnahme, kein laufender Stand — siehe `useBearbeitung`.
             ...(befunde?.length ? { befunde } : {}),
             // Der BEZUG (Stufe 16 / Teil XVI, S3): `{art, ziel, ende, zielBasis}`
@@ -818,6 +843,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // Bezugs-Arm las ein Feld, das nie ins Journal kam. Gefunden durch
             // den Motor-Test, der den Anschluss end-to-end schreibt.
             ...(bezug ? { bezug } : {}),
+            // WIEDERHOLT (Teil XXIV, O2): welcher zurückgenommene Eintrag hier wieder gilt.
+            ...(wiederholungVon ? { wiederholungVon } : {}),
         };
         // `basis` ist der Wert im GELIEFERTEN Modell — der Bezugspunkt des
         // Drei-Wege-Vergleichs. Nur Arten, die das Modell berühren, führen ihn;
@@ -832,10 +859,70 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             // (Stufe 0 Aushub-Fachmodell; Begründung bei `modellVon`).
             eintrag.modell = modell ?? modellVon(globalId);
         }
-        _liste(ziel).value.push(eintrag);
-        sitzungJe[ziel].value.schrittIds.push(eintrag.id);
-        await _sichern(ziel);
         return eintrag;
+    }
+
+    /**
+     * EINEN VORGANG EINTRAGEN — ganz oder gar nicht (Teil XXIV, K2).
+     *
+     * Bis hier sicherte jeder Eintrag einzeln: ein vierteiliger Vorgang waren
+     * vier volle GET+PUT, und fiel das Netz nach dem zweiten, lag ein halber
+     * Vorgang auf dem Server. Jetzt kommen alle Einträge zusammen in die Liste
+     * und werden EINMAL gesichert.
+     *
+     * Verweigert der Mehrbenutzer-Wächter das Schreiben, wird der ganze
+     * Vorgang wieder herausgenommen — er ist abgelehnt (Fabios E5), und
+     * niemand soll glauben, er stünde irgendwo. Scheitert nur das NETZ, bleibt
+     * er ganz im Speicher und der nächste Schritt schreibt ihn mit (Abnahme
+     * 2026-09-12: „Fenster offen lassen — der nächste Schritt versucht es
+     * erneut"); `sicherFehler` sagt es.
+     *
+     * @param {object[]} schritte  wie `eintragen` sie nimmt
+     * @param {object} [opts]  `ebene`, `vorgang`, `vorgangTitel`, `wer`,
+     *        `kommando` — der BELEG (Absicht, Teil XXIV) am ersten Eintrag
+     * @returns {Promise<{ok: boolean, eintraege: object[], grund: string|null}>}
+     */
+    async function eintragenVorgang(schritte, { ebene, vorgang, vorgangTitel, wer, kommando = null } = {}) {
+        // NUR LESEN (A7): kein neuer Schritt, der ohnehin nie gespeichert würde.
+        if (nurLesen.value) return { ok: false, eintraege: [], grund: nurLesen.value.grund };
+        const ziel = ebene ?? vorgabeEbene.value;
+        const sitzungVorher = sitzungJe[ziel].value;
+        const idsVorher = sitzungVorher ? [...sitzungVorher.schrittIds] : null;
+        const eintraege = [];
+        for (const s of schritte ?? []) {
+            const e = _baueEintrag({
+                ...s,
+                ...(wer !== undefined && s.wer === undefined ? { wer } : {}),
+                ...(vorgang ? { vorgang, vorgangTitel } : {}),
+            });
+            if (!e) continue;
+            // Jeder Schritt gehört zu einer SITZUNG (U2). Wer ohne offene
+            // schreibt (Tests, System-Übernahmen), eröffnet implizit eine —
+            // committet wird sie wie jede andere.
+            if (!sitzungJe[ziel].value) {
+                sitzungJe[ziel].value = { begonnen: Date.now(), wer: e.wer, schrittIds: [] };
+            }
+            // Der nächste Schritt desselben Vorgangs liest seinen `vorher` aus
+            // dem Stand MIT diesem — deshalb gleich in die Liste.
+            _liste(ziel).value.push(e);
+            sitzungJe[ziel].value.schrittIds.push(e.id);
+            eintraege.push(e);
+        }
+        if (!eintraege.length) return { ok: true, eintraege, grund: null };
+        // DER BELEG (Teil XXIV, K2 — Fabios E1): die Absicht am Vorgang, am
+        // ERSTEN Eintrag. Nur Einträge überleben einen älteren Leser
+        // unverändert (`_uebernimmV2` übernimmt sie als Ganzes).
+        if (kommando) eintraege[0].kommando = kommando;
+        const ergebnis = await _sichern(ziel);
+        if (ergebnis === 'konflikt') {
+            const weg = new Set(eintraege.map(e => e.id));
+            _liste(ziel).value = _liste(ziel).value.filter(e => !weg.has(e.id));
+            sitzungJe[ziel].value = sitzungVorher ? { ...sitzungVorher, schrittIds: idsVorher } : null;
+            const k = schreibKonflikt.value;
+            return { ok: false, eintraege: [],
+                     grund: `Nicht eingetragen: ${k?.wer || 'jemand anderes'} hat den Verlauf inzwischen geändert — Seite neu laden.` };
+        }
+        return { ok: true, eintraege, grund: null };
     }
 
     /**
@@ -856,7 +943,22 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      */
     async function zurueck(wer = '', { ebene } = {}) {
         const ziel = ebene ?? vorgabeEbene.value;
+        _imRueckgaengig = true;
+        try { return await _zurueck(wer, ziel); } finally { _imRueckgaengig = false; }
+    }
 
+    /** Einen Eintrag als Schritt, wie `eintragenVorgang` ihn nimmt — das gespeicherte Ergebnis (E9). */
+    function _alsSchritt(q) {
+        return {
+            art: q.art, globalId: q.globalId, nachher: q.nachher, wer: q.wer ?? '', modellSha: q.modellSha ?? null,
+            ...(q.basis !== undefined ? { basis: q.basis } : {}),
+            ...(q.modell !== undefined ? { modell: q.modell } : {}),
+            ...(q.bezug ? { bezug: q.bezug } : {}),
+            ...(q.befunde?.length ? { befunde: q.befunde } : {}),
+        };
+    }
+
+    async function _zurueck(wer, ziel) {
         // WÄHREND einer offenen Sitzung heisst „zurück": den letzten Vorgang
         // aus dem ENTWURF nehmen (Unstage) — kein Gegeneintrag, die Historie
         // beginnt erst mit dem Commit (U2).
@@ -866,7 +968,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const letzterId = s.schrittIds[s.schrittIds.length - 1];
             const letzterE = liste.find(e => e.id === letzterId);
             if (letzterE) {
-                return entferneSitzungsVorgang(letzterE.vorgang ?? letzterE.id, { ebene: ziel });
+                const schluessel = letzterE.vorgang ?? letzterE.id;
+                const raus = liste.filter(e => s.schrittIds.includes(e.id) && (e.vorgang ?? e.id) === schluessel)
+                    .map(e => JSON.parse(JSON.stringify(e)));
+                const gegen = await entferneSitzungsVorgang(schluessel, { ebene: ziel });
+                if (gegen.length) wiederholbarJe[ziel].value = [...wiederholbarJe[ziel].value, { weg: 'sitzung', eintraege: raus }];
+                return gegen;
             }
         }
 
@@ -889,8 +996,11 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             : [letzter];
 
         // Die Gegeneinträge bilden ihrerseits EINEN Vorgang. Ohne das nähme der
-        // nächste Klick die Rücknahme stückweise zurück.
-        const gegenVorgang = betroffen.length > 1 ? _neueVorgangsId() : undefined;
+        // nächste Klick die Rücknahme stückweise zurück. Sein Beleg sagt, was
+        // zurückgenommen wurde (Teil XXIV, O4) — auch bei einem einzigen Eintrag.
+        const beleg = systemBeleg('zuruecknehmen', { ziel: betroffen.map(e => e.globalId),
+                                                     werte: { vorgang: letzter.vorgang ?? letzter.id }, wer });
+        const mehrteilig = betroffen.length > 1;
         const geschrieben = [];
         // Rückwärts: der zuletzt gemachte Schritt wird zuerst rückgängig.
         for (const q of [...betroffen].reverse()) {
@@ -905,19 +1015,64 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 // ausgerechnet der Eintrag, der am Ende gilt.
                 ...(q.basis !== undefined ? { basis: q.basis } : {}),
                 ...(q.modell !== undefined ? { modell: q.modell } : {}),
-                ...(gegenVorgang ? { vorgang: gegenVorgang,
-                                     vorgangTitel: `${q.vorgangTitel ?? 'Vorgang'} zurückgenommen` } : {}),
+                vorgang: beleg.id,
+                ...(mehrteilig ? { vorgangTitel: `${q.vorgangTitel ?? 'Vorgang'} zurückgenommen` } : {}),
                 ruecknahmeVon: q.id,
             };
             liste.push(eintrag);
             geschrieben.push(eintrag);
         }
+        if (geschrieben.length) geschrieben[0].kommando = beleg;
         // Auf Commits ist die Rücknahme selbst ein COMMIT — „Revert: …",
         // wie bei git (U2).
-        await _commitAus(ziel, geschrieben,
-            `Rückgängig: ${letzter.vorgangTitel ?? AENDERUNGS_ARTEN[letzter.art]?.titel ?? letzter.art}`,
-            wer);
+        const titel = letzter.vorgangTitel ?? AENDERUNGS_ARTEN[letzter.art]?.titel ?? letzter.art;
+        await _commitAus(ziel, geschrieben, `Rückgängig: ${titel}`, wer);
+        if (geschrieben.length) {
+            wiederholbarJe[ziel].value = [...wiederholbarJe[ziel].value,
+                { weg: 'commit', original: betroffen.map(e => JSON.parse(JSON.stringify(e))), titel }];
+        }
         return geschrieben;
+    }
+
+    /**
+     * Das zuletzt Zurückgenommene WIEDERHOLEN (Teil XXIV — E9, O2).
+     *
+     * Wieder angewendet wird das gespeicherte ERGEBNIS, nicht das Kommando neu
+     * ausgewertet — deterministisch, und bei einer inzwischen neuen Lieferung
+     * genau so, wie es damals war. In der offenen Sitzung kommen die Einträge
+     * mit ihrem Beleg zurück, als wäre nichts gewesen; nach einem Commit
+     * entstehen neue Einträge mit `wiederholungVon` und ein Commit
+     * „Wiederholt: …" — die Spur bleibt vollständig.
+     *
+     * @returns {Promise<object[]>} die geschriebenen Einträge (für die Anwendung am Modell)
+     */
+    async function wiederholen(wer = '', { ebene } = {}) {
+        const ziel = ebene ?? vorgabeEbene.value;
+        const oben = wiederholbarJe[ziel].value.at(-1);
+        if (!oben) return [];
+        _imRueckgaengig = true;
+        try {
+            let neu;
+            if (oben.weg === 'sitzung') {
+                const erster = oben.eintraege[0];
+                const r = await eintragenVorgang(oben.eintraege.map(_alsSchritt), {
+                    ebene: ziel, vorgang: erster.vorgang, vorgangTitel: erster.vorgangTitel, kommando: erster.kommando ?? null });
+                if (!r.ok) return [];
+                neu = r.eintraege;
+            } else {
+                const beleg = systemBeleg('wiederholen', { ziel: oben.original.map(e => e.globalId),
+                    werte: { vorgang: oben.original[0]?.vorgang ?? oben.original[0]?.id ?? null }, wer });
+                const r = await eintragenVorgang(oben.original.map(q => ({ ..._alsSchritt(q), wer, wiederholungVon: q.id })), {
+                    ebene: ziel, vorgang: beleg.id, vorgangTitel: `Wiederholt: ${oben.titel}`, kommando: beleg });
+                if (!r.ok) return [];
+                neu = r.eintraege;
+                await _commitAus(ziel, neu, `Wiederholt: ${oben.titel}`, wer);
+            }
+            wiederholbarJe[ziel].value = wiederholbarJe[ziel].value.slice(0, -1);
+            return neu;
+        } finally {
+            _imRueckgaengig = false;
+        }
     }
 
     /**
@@ -1005,6 +1160,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const q = liste.find(e => e.id === eintragId);
             if (!q) continue;
             q.basis = istWert;
+            const beleg = systemBeleg('basis-heben', { ziel: [q.globalId], werte: { eintrag: q.id }, wer });
             const protokoll = {
                 id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
                 art: q.art, globalId: q.globalId,
@@ -1012,7 +1168,9 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 basis: istWert,
                 wer, wann: Date.now(), modellSha: q.modellSha,
                 basisGehoben: q.id,
+                vorgang: beleg.id,
                 vorgangTitel: 'Meiner gilt — gegen den neuen Wert des Planers',
+                kommando: beleg,
             };
             liste.push(protokoll);
             await _commitAus(ebene, [protokoll],
@@ -1033,6 +1191,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const liste = _liste(ebene).value;
             const q = liste.find(e => e.id === eintragId);
             if (!q) continue;
+            const beleg = systemBeleg('verwerfen', { ziel: [q.globalId], werte: { eintrag: q.id }, wer });
             const gegen = {
                 id: 'ae-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
                 art: q.art, globalId: q.globalId,
@@ -1041,7 +1200,9 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(q.basis !== undefined ? { basis: q.basis } : {}),
                 ...(q.modell !== undefined ? { modell: q.modell } : {}),
                 ruecknahmeVon: q.id,
+                vorgang: beleg.id,
                 vorgangTitel: 'Nach Konflikt verworfen — der Planerwert gilt',
+                kommando: beleg,
             };
             liste.push(gegen);
             await _commitAus(ebene, [gegen],
@@ -1060,16 +1221,17 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
     async function uebertrageAuf(eintragId, zielGlobalId, { wer = '', basis, modell } = {}) {
         const q = eintraege.value.find(e => e.id === eintragId);
         if (!q || !zielGlobalId || zielGlobalId === q.globalId) return [];
-        const vorgang = _neueVorgangsId();
+        const beleg = systemBeleg('uebertragen', { ziel: [q.globalId, zielGlobalId], werte: { eintrag: q.id, nach: zielGlobalId }, wer });
+        const vorgang = beleg.id;
         const titel = 'Vom Konflikt übertragen';
-        const neu = await eintragen({
+        const { eintraege: [neu = null] } = await eintragenVorgang([{
             art: q.art, globalId: zielGlobalId, nachher: q.nachher,
             wer, modellSha: q.modellSha,
             basis, modell: modell ?? q.modell,
-            vorgang, vorgangTitel: titel,
-        });
+        }], { vorgang, vorgangTitel: titel, kommando: beleg });
         const gegen = await verwerfeEinen(q.id, wer);
-        if (gegen) { gegen.vorgang = vorgang; gegen.vorgangTitel = titel; }
+        // EIN Vorgang, EIN Beleg: der Gegeneintrag gehört zum Übertragen.
+        if (gegen) { gegen.vorgang = vorgang; gegen.vorgangTitel = titel; delete gegen.kommando; }
         const beide = [neu, gegen].filter(Boolean);
         await _commitAus(vorgabeEbene.value, beide,
             `Konflikt übertragen auf ${zielGlobalId}`, wer);
@@ -1101,13 +1263,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             const { schritte, unaufgeloest } = planeRebase({ staende, abbildung: abb, basisIst, quellmasse, namen });
             ungeloest.push(...unaufgeloest.map(u => ({ ...u, ebene })));
             if (!schritte.length) continue;
-            const vorgang = _neueVorgangsId();
-            const geschrieben = [];
-            for (const schritt of schritte) {
-                const e = await eintragen({ ...schritt, wer, ebene, vorgang, vorgangTitel: titel,
-                                            modellSha: nach?.sha ?? schritt.modellSha ?? null });
-                if (e) geschrieben.push(e);
-            }
+            // EIN Vorgang je Ebene, ganz oder gar nicht (Teil XXIV, K2), mit Beleg (O4).
+            const beleg = systemBeleg('rebase', { ziel: schritte.map(x => x.globalId),
+                werte: { von: von ?? null, nach: nach ?? null, abbildung: Object.fromEntries(abb) }, wer });
+            const { eintraege: geschrieben } = await eintragenVorgang(
+                schritte.map(schritt => ({ ...schritt, wer, modellSha: nach?.sha ?? schritt.modellSha ?? null })),
+                { ebene, vorgang: beleg.id, vorgangTitel: titel, kommando: beleg });
             await _commitAus(ebene, geschrieben, titel, wer,
                              { rebase: { von, nach, abbildung: Object.fromEntries(abb) } });
             alle.push(...geschrieben);
@@ -1127,14 +1288,29 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const neu = (liste ?? []).filter(e => e?.id && !stand.has(e.id));
         if (!neu.length) return null;
         const ebene = vorgabeEbene.value;
-        const vorgang = _neueVorgangsId();
-        const geschrieben = [];
-        for (const e of neu) {
-            const { id, ...wert } = e;
-            const eintrag = await eintragen({ art, globalId: id, nachher: wert, wer, ebene, vorgang, vorgangTitel: nachricht });
-            if (eintrag) geschrieben.push(eintrag);
-        }
+        // EIN Vorgang, ganz oder gar nicht (Teil XXIV, K2), mit Beleg (O4).
+        const beleg = systemBeleg('uebernahme', { ziel: neu.map(e => e.id), werte: { art }, wer });
+        const { eintraege: geschrieben } = await eintragenVorgang(
+            neu.map(({ id, ...wert }) => ({ art, globalId: id, nachher: wert, wer })),
+            { ebene, vorgang: beleg.id, vorgangTitel: nachricht, kommando: beleg });
         return _commitAus(ebene, geschrieben, nachricht, wer);
+    }
+
+    /**
+     * ALTBESTAND ÜBERNEHMEN (Teil XXIV, O6) — Handzuweisungen, die vor Stufe 7
+     * als flache Karte `GlobalId → Wert` unter einem eigenen Repo-Schlüssel
+     * lagen (Kostengruppen, DIN 277). EIN Vorgang mit Systembeleg (O4), ganz
+     * oder gar nicht, einmal gesichert — vorher je Zuweisung ein Eintrag und ein
+     * Sichern, ohne Beleg. In die Sitzung wie bisher, nicht als Commit.
+     *
+     * @returns {Promise<{ok: boolean, eintraege: Array, grund?: string}>}
+     */
+    async function uebernimmAltbestand(art, karte, titel, { wer = 'Übernahme' } = {}) {
+        const liste = Object.entries(karte ?? {});
+        if (!liste.length) return { ok: true, eintraege: [] };
+        const beleg = systemBeleg('uebernahme', { ziel: liste.map(([gid]) => gid), werte: { art }, wer });
+        return eintragenVorgang(liste.map(([globalId, nachher]) => ({ art, globalId, nachher, wer })),
+            { vorgang: beleg.id, vorgangTitel: titel, kommando: beleg });
     }
 
     /**
@@ -1218,7 +1394,8 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             .filter(e => e && !e.ruecknahmeVon && !revertiert.has(e.id));
         if (!offen.length) return [];
 
-        const gegenVorgang = _neueVorgangsId();
+        const beleg = systemBeleg('revert', { ziel: offen.map(e => e.globalId), werte: { commit: c.id }, wer });
+        const gegenVorgang = beleg.id;
         const geschrieben = [];
         for (const q of [...offen].reverse()) {
             const eintrag = {
@@ -1235,6 +1412,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
             liste.push(eintrag);
             geschrieben.push(eintrag);
         }
+        if (geschrieben.length) geschrieben[0].kommando = beleg;
         await _commitAus(ziel, geschrieben, `Rückgängig: ${c.nachricht}`, wer);
         return geschrieben;
     }
@@ -1435,11 +1613,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      */
     async function verwerfe(art, wer = '', { ebene } = {}) {
         const ziel = ebene ?? vorgabeEbene.value;
-        const geschrieben = [];
-        for (const [globalId] of standAus(_liste(ziel).value, art)) {
-            const e = await eintragen({ art, globalId, nachher: null, wer, ebene: ziel });
-            if (e) geschrieben.push(e);
-        }
+        const ids = [...standAus(_liste(ziel).value, art).keys()];
+        if (!ids.length) return [];
+        // EIN Vorgang, ganz oder gar nicht, mit Beleg (Teil XXIV, K2/O4).
+        const beleg = systemBeleg('art-verwerfen', { ziel: ids, werte: { art }, wer });
+        const { eintraege: geschrieben } = await eintragenVorgang(ids.map(globalId => ({ art, globalId, nachher: null, wer })),
+            { ebene: ziel, vorgang: beleg.id, vorgangTitel: `${AENDERUNGS_ARTEN[art]?.titel ?? art}: verworfen`, kommando: beleg });
         return geschrieben;
     }
 
@@ -1468,6 +1647,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 // VERWERFEN, nie stillschweigend — die Zeitleiste beginnt
                 // frisch, und das Log sagt, was fiel.
                 console.info(`[CDE] v1-Journal verworfen (${gespeichert.length} Einträge) — Umstieg auf das Commit-Format`);
+            } else if (gespeichert && typeof gespeichert === 'object' && gespeichert.version !== undefined) {
+                // EINE VERSION, DIE DIESER CLIENT NICHT KENNT (Teil XXIV, K2).
+                // Bis hier fiel sie durch beide Zweige: der Store startete leer,
+                // und der nächste Schritt überschrieb die Datei als Version 2 —
+                // genau der Schaden, gegen den `mindestClient` gebaut ist.
+                nurLesen.value = { ebene, grund: `Dieser Verlauf hat die Version ${gespeichert.version} — diese CDE kennt 2. Bitte die Seite neu laden; nichts wird überschrieben.` };
             }
         } catch { /* egal — dann bleibt, was da ist */ }
     }
@@ -1500,12 +1685,12 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         neueVorgangsId: _neueVorgangsId,
         auftragsEintraege, standEintraege, satzId, eintraege, vorgabeEbene,
         anzahl, kannZurueck, beruehrteBauteile, kgStand, din277Stand, bereit,
-        wirksamerStand, historischerStand, eintragen, zurueck, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
+        wirksamerStand, historischerStand, eintragen, eintragenVorgang, zurueck, wiederholen, kannWiederholen, zurueckBis, verwerfeEinen, hebeBasisAn, rebaseAuf, uebertrageAuf, vorgaenge, hebeAufAuftragsebene, verwerfe,
         commits, sitzung, sitzungOffen, sitzungSchritte, sitzungVorgaenge,
         beginneSitzung, entferneSitzungsVorgang, verwerfeSitzung, commitSitzung,
         commitZeitleiste, revertiereCommit, zurueckBisCommit,
         schliesseLeereSitzung, nachrichtVorschlag,
         verlauf, setzeSatz, neuLaden: laden,
-        schreibKonflikt, sicherFehler, nurLesen, setzeWeltversatz, ebeneVon, uebernimm,
+        schreibKonflikt, sicherFehler, nurLesen, setzeWeltversatz, ebeneVon, uebernimm, uebernimmAltbestand,
     };
 });

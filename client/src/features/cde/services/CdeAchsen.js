@@ -20,6 +20,7 @@
  */
 
 import { istEigen, modellVon, rezeptNach } from './Bauteilrezepte.js';
+import { baueNetz } from './Netztopologie.js';
 
 /**
  * Kanten, Knoten, Gelände und Körper aus dem erzeugt-Stand.
@@ -40,6 +41,61 @@ export function cdeAchsenAus(erzeugtStand = new Map()) {
         }
     }
     return out;
+}
+
+/**
+ * Die ACHSE einer eigenen Kante — die Form, die `IfcEngine.achseVon` für
+ * `cde:<gid>` liefert und die am Subjekt hängt (Teil XXIV, K3). Ein Ort.
+ */
+export function achseAusKante(k) {
+    if (!k) return null;
+    return {
+        globalId: k.globalId, name: k.name, kategorie: k.kategorie,
+        anfang: k.anfang, ende: k.ende, polyline: k.punkte,
+        laenge: k.laenge, dn: k.dn, quelle: 'bauplan',
+        // Was die Höhen SIND (K4) — ein eigener Bauplan sagt es selbst.
+        ...(k.achsbezug ? { achsbezug: k.achsbezug } : {}),
+        ...(Number.isFinite(k.sohlabstand) ? { sohlabstand: k.sohlabstand } : {}),
+    };
+}
+
+/**
+ * Das Netz der EIGENEN Bauteile, als Auskunft wie `engine.netzAuskunft()`:
+ * `{netz, achseVon(id), knoten}` — für den Kommandoweg ohne Oberfläche
+ * (Teil XXIV, K3). Ids wie in der Engine: `cde:<globalId>`. Verdeckte fehlen,
+ * dieselbe Regel wie im Fachmodell.
+ *
+ * @param {Map<string, object>} erzeugtStand
+ * @param {object} [opts]  `verdeckt` (Set der GlobalIds), `toleranz`
+ */
+export function eigeneNetzauskunft(erzeugtStand = new Map(), { verdeckt = new Set(), toleranz } = {}) {
+    const sichtbar = new Map([...erzeugtStand].filter(([gid]) => !verdeckt.has(gid)));
+    const { kanten, knoten } = cdeAchsenAus(sichtbar);
+    return netzauskunftAus(kanten, knoten, { toleranz });
+}
+
+/**
+ * Dieselbe Auskunft aus Kanten und Knoten, wie `cdeAchsenAus` sie liefert —
+ * für den Prüflauf, der sie aus der Engine oder aus dem Journal bekommt (K6).
+ */
+export function netzauskunftAus(kanten = [], knoten = [], { toleranz } = {}) {
+    const jeId = new Map(kanten.map(k => [`cde:${k.globalId}`, k]));
+    const netz = baueNetz({
+        kanten: kanten.map(k => ({ id: `cde:${k.globalId}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge,
+                                   achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null,
+                                   anschluss: k.anschluss ?? null })),
+        knoten: knoten.map(k => ({ id: `cde:${k.globalId}`, punkt: k.punkt, globalId: k.globalId })),
+        toleranz,
+    });
+    return {
+        netz,
+        achseVon: (id) => achseAusKante(jeId.get(id) ?? null),
+        // `hoeheFest` (K8): die Höhe dieses Knotens gilt für einen Anschluss —
+        // die Musterschicht fragt das, ohne zu wissen, dass es eine Sohle ist.
+        knoten: knoten.map(k => ({ globalId: k.globalId, punkt: { x: k.punkt.x, y: k.punkt.y, z: k.punkt.z }, name: k.name ?? '',
+                                   ...(k.hoehenbezug ? { hoehenbezug: k.hoehenbezug } : {}),
+                                   ...(k.hoehenbezug === 'sohle' ? { hoeheFest: true } : {}) })),
+    };
 }
 
 /** Verdeckt dieser Schritt (Plan- oder Journalschritt) sein Bauteil? */

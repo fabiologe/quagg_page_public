@@ -47,7 +47,7 @@ const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
     'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung',
 ]);
-const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar']);
+const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar']);
 
 const _einfach = (w) => ['string', 'number', 'boolean'].includes(typeof w);
 const _istObjekt = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
@@ -109,6 +109,14 @@ function _felder(liste, fehler) {
         for (const k of Object.keys(f)) if (!FELD_SCHLUESSEL.includes(k)) fehler.push(`Feld „${f.name}": unbekannter Schlüssel „${k}".`);
         if (!FELDTYPEN.includes(f.typ)) fehler.push(`Feld „${f.name}": Typ „${f.typ}" gibt es nicht (${FELDTYPEN.join(', ')}).`);
         for (const k of ['min', 'max']) if (f[k] != null && !Number.isFinite(f[k])) fehler.push(`Feld „${f.name}": ${k} ist keine Zahl.`);
+        // Die TECHNISCHE Grenze (K10): was sich nicht bauen lässt. Nur Zahlen unter bekannten Schlüsseln.
+        if (f.gueltig != null) {
+            if (typeof f.gueltig !== 'object' || Array.isArray(f.gueltig)) fehler.push(`Feld „${f.name}": gueltig ist ein Objekt {min, max, ueber, unter}.`);
+            else for (const [k, v] of Object.entries(f.gueltig)) {
+                if (!['min', 'max', 'ueber', 'unter'].includes(k)) fehler.push(`Feld „${f.name}": gueltig.${k} gibt es nicht (min, max, ueber, unter).`);
+                else if (!Number.isFinite(v)) fehler.push(`Feld „${f.name}": gueltig.${k} ist keine Zahl.`);
+            }
+        }
         if (f.vorgabe !== undefined && !_einfach(f.vorgabe)) fehler.push(`Feld „${f.name}": Vorgabe ist kein einfacher Wert.`);
         if (f.setzbar !== undefined && typeof f.setzbar !== 'boolean') fehler.push(`Feld „${f.name}": \`setzbar\` muss wahr oder falsch sein.`);
         if (f.setzbar && ['name', 'kategorie', 'hoehe'].includes(f.name)) fehler.push(`Feld „${f.name}" ist kein Parameter — dafür gibt es eigene Werkzeuge.`);

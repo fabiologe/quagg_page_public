@@ -94,7 +94,6 @@ import { ref, computed, onMounted, watch } from 'vue';
 import IfcAreaSchedule from './IfcAreaSchedule.vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useAenderungen } from '../stores/useAenderungen.js';
-import { useCdeStore } from '../stores/useCdeStore.js';
 import IfcKgEditor     from './IfcKgEditor.vue';
 import IfcVolumeTab    from './IfcVolumeTab.vue';
 import IfcCountTab     from './IfcCountTab.vue';
@@ -110,13 +109,14 @@ import { IDS_DEFAULT_SPECS } from '../services/IdsDefaults.js';
 import { mergeKennwerte } from '../services/KgKennwerte.js';
 import { repo } from '../services/RepoFacade.js';
 import { useViewerApi } from '../composables/viewerApi.js';
+import { useKommandoweg } from '../composables/useKommandoweg.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 
 // Engine-Accessoren per provide/inject aus IfcViewer.vue statt Funktions-Props.
 const api = useViewerApi();
 const aenderungen = useAenderungen();
-const cde = useCdeStore();
+const kommandoweg = useKommandoweg();
 const bearbeitung = useBearbeitung();
 
 /**
@@ -186,10 +186,9 @@ async function loadOverrides() {
   const alt = await repo.get(REPO_KEY_OVERRIDES);
   if (alt && typeof alt === 'object' && Object.keys(alt).length) {
     await aenderungen.bereit;
-    for (const [globalId, classCode] of Object.entries(alt)) {
-      await aenderungen.eintragen({ art: 'din277', globalId, nachher: classCode, wer: 'Übernahme' });
-    }
-    await repo.delete(REPO_KEY_OVERRIDES);
+    // EIN Vorgang mit Systembeleg (Teil XXIV, O6); der alte Schlüssel geht erst, wenn er steht.
+    const { ok } = await aenderungen.uebernimmAltbestand('din277', alt, 'Übernahme DIN-277-Zuweisungen');
+    if (ok) await repo.delete(REPO_KEY_OVERRIDES);
   }
 }
 
@@ -217,10 +216,9 @@ async function loadKgPersisted() {
   const alt = await repo.get(REPO_KEY_KG_OVERRIDES);
   if (alt && typeof alt === 'object' && Object.keys(alt).length) {
     await aenderungen.bereit;
-    for (const [globalId, kgCode] of Object.entries(alt)) {
-      await aenderungen.eintragen({ art: 'kg', globalId, nachher: kgCode, wer: 'Übernahme' });
-    }
-    await repo.delete(REPO_KEY_KG_OVERRIDES);
+    // EIN Vorgang mit Systembeleg (Teil XXIV, O6); der alte Schlüssel geht erst, wenn er steht.
+    const { ok } = await aenderungen.uebernimmAltbestand('kg', alt, 'Übernahme Kostengruppen-Zuweisungen');
+    if (ok) await repo.delete(REPO_KEY_KG_OVERRIDES);
   }
 }
 
@@ -288,11 +286,9 @@ async function onOverrideKg({ globalId, kgCode }) {
   // der Darstellung sitzt, ist keine — sie fällt beim nächsten Umbau der
   // Tabelle weg, und niemand merkt es.
   if (!globalId || !bearbeitung.modusAn) return;
-  await aenderungen.eintragen({
-    art: 'kg', globalId, nachher: kgCode || null,
-    wer: cde.bearbeiter || '',
-    modellSha: api.modellShaVon?.(globalId) ?? api.getLoadedModelSha?.() ?? null,
-  });
+  // Als KOMMANDO (Teil XXIV, O6): dasselbe Werkzeug wie in der Werkzeugleiste.
+  const erg = await kommandoweg.absetzen({ werkzeug: 'kg-setzen', ziel: [globalId], werte: { kg: kgCode || '' } });
+  if (!erg.ausgefuehrt) console.warn('cde: Kostengruppe', erg.grund);
   await recomputeKg();
 }
 
@@ -415,11 +411,9 @@ async function onOverrideClass({ globalId, classCode }) {
   // der Darstellung sitzt, ist keine — sie fällt beim nächsten Umbau der
   // Tabelle weg, und niemand merkt es.
   if (!globalId || !bearbeitung.modusAn) return;
-  await aenderungen.eintragen({
-    art: 'din277', globalId, nachher: classCode || null,
-    wer: cde.bearbeiter || '',
-    modellSha: api.modellShaVon?.(globalId) ?? api.getLoadedModelSha?.() ?? null,
-  });
+  // Als KOMMANDO (Teil XXIV, O6): dasselbe Werkzeug wie in der Werkzeugleiste.
+  const erg = await kommandoweg.absetzen({ werkzeug: 'din277-setzen', ziel: [globalId], werte: { din277: classCode || '' } });
+  if (!erg.ausgefuehrt) console.warn('cde: DIN-277-Klasse', erg.grund);
   recomputeAreas();
 }
 

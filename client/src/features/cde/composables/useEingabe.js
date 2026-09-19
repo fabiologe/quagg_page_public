@@ -33,7 +33,7 @@ import { regelwert } from '../services/regeln/Regelwerk.js';
 // in `anwenden` prüft; ein Büro kann ihn ändern.
 
 export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
-                             getHoehenversatz, getHoeheAn = null, bereiteHoehenVor = null } = {}) {
+                             getHoehenversatz, getHoeheAn = null, bereiteHoehenVor = null, getKnoten = null } = {}) {
     let hoehenBereit = null;
     /** Was zuletzt schiefging; wird beim nächsten Start gelöscht. */
     const grund = ref('');
@@ -166,16 +166,30 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         if (geaendert) schreibe({ auto });
     }
 
-    /** Fang auf Schachtmitten, wenn der Schlitz es verlangt (Anschliessen). */
+    /**
+     * Fang auf Schachtmitten, wenn der Schlitz es verlangt (Anschliessen, und
+     * seit K9 jede gezeichnete Kante). Die Knoten kennt das gewählte Bauteil
+     * (`knotenImNetz`); beim ZEICHNEN ist keins gewählt — dann fragt der Motor
+     * die Auskunft, die der Viewer hereinreicht (`getKnoten`, das Netz der
+     * Engine). Gefangen wird in der Draufsicht; die Höhe bleibt, woher sie kam.
+     */
     function _gefangen(p) {
         if (zugSchlitz.value?.fang !== 'knoten') return p;
-        const knoten = bearbeitung?.bauteil?.knotenImNetz ?? [];
+        const knoten = bearbeitung?.bauteil?.knotenImNetz ?? getKnoten?.() ?? [];
         let bester = null;
         for (const k of knoten) {
             const d = Math.hypot(k.punkt.x - p.x, k.punkt.z - p.z);
             if (d <= regelwert('fangKnotenM') && (!bester || d < bester.d)) bester = { d, k };
         }
-        return bester ? { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, fang: bester.k.name || 'Knoten' } : p;
+        if (!bester) return p;
+        // Der Punkt NENNT seinen Knoten (K8) — daraus wird im Bauplan der
+        // Anschluss. Seine Höhe: bei einem eigenen Schacht dessen Sohle (sie
+        // steht dann fest); bei einem gelieferten nicht — der Treffer liegt auf
+        // der Oberfläche des Bauwerks, und das meint niemand, also gilt die
+        // getippte Höhe.
+        const fest = bester.k.hoeheFest === true && Number.isFinite(bester.k.punkt.y);
+        return { ...p, x: bester.k.punkt.x, z: bester.k.punkt.z, y: fest ? bester.k.punkt.y : NaN,
+                 knoten: bester.k.globalId, ...(fest ? { hoeheFest: true } : {}), fang: bester.k.name || 'Knoten' };
     }
 
     /**
@@ -333,7 +347,8 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         }
         if (aufGelaende() && hoehenBereit) {
             await hoehenBereit;
-            punkte.value = punkte.value.map(p => (Number.isFinite(p.y) ? p : _mitHoehe(p)));
+            // Was der Punkt sonst trägt (der Knoten, auf dem er sitzt — K8), bleibt.
+            punkte.value = punkte.value.map(p => (Number.isFinite(p.y) ? p : { ...p, ..._mitHoehe(p) }));
             _nachZug();
         }
         const b = werkzeug.value;

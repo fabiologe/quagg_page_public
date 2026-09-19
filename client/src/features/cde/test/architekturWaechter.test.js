@@ -232,9 +232,11 @@ const SCHICHTEN = [
     { id: 'L2', titel: 'Katalog — Rezepte, Ableitungen, Bibliothek, Regelwerk',
       passt: p => /^services\/(ableitung|rezept|katalog)\//.test(p)
           || ['services/Bauteilrezepte.js', 'services/Bibliothek.js'].includes(p) },
+    // Das Kommando (Teil XXIV, K1) ist die Naht zwischen Oberfläche und Modell —
+    // es gehört zu Journal und Werkzeugen, nie darüber.
     { id: 'L3', titel: 'Journal und Werkzeuge',
-      passt: p => p.startsWith('stores/')
-          || /^services\/(Bearbeitungen|Griffe|Eingaben|Nachspielen|Journal\w+|Vorschau)\.js$/.test(p) },
+      passt: p => p.startsWith('stores/') || p.startsWith('services/kommando/')
+          || /^services\/(Bearbeitungen|Griffe|Eingaben|Nachspielen|Journal\w+|Vorschau|Prueflauf)\.js$/.test(p) },
     { id: 'L4', titel: 'Anzeige und IFC-Leser',
       passt: p => /^services\/(Ifc\w+|GelaendeKanten|ErdbauUmrisse)\.js$/.test(p) || p.startsWith('services/ifcleser/') },
     { id: 'L5', titel: 'Oberfläche',

@@ -344,8 +344,8 @@ import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
-import { hatHoehenbezug, nnAusWelt } from '../services/Hoehenbezug.js';
-import { formatGefaelle } from '../services/AxisAnnotations.js';
+import { hatHoehenbezug } from '../services/Hoehenbezug.js';
+import { achsAnzeige } from '../services/Achsanzeige.js';
 import { hatErdbauEcken } from '../services/Griffe.js';
 import IfcSemanticWindow from './IfcSemanticWindow.vue';
 
@@ -392,26 +392,12 @@ const WARNUNG_TEXT = Object.freeze({
  * nur bei einer EXAKTEN Achse belastbar; bei einer skelettierten ist die
  * Reihenfolge willkürlich, deshalb steht die Herkunft dabei.
  */
-const achse = computed(() => {
-  const roh = bearbeitung.bauteil?.achse;
-  if (!roh?.anfang || !roh?.ende) return null;
+const achse = computed(() => achsAnzeige(bearbeitung.bauteil?.achse, {
   // Eine festgelegte Fliessrichtung gilt auch für die Anzeige — sonst stünde
   // hier weiter „läuft bergauf", während der Befund daneben verschwunden ist.
-  const umgekehrt = bearbeitung.bauteil?.stand?.fliessrichtung === 'umgekehrt';
-  const a = umgekehrt ? { ...roh, anfang: roh.ende, ende: roh.anfang } : roh;
-  const v = bearbeitung.bauteil?.hoehenversatz ?? 0;
-  const nn = (y) => nnAusWelt(y, v).toFixed(2);
-  const gefaelle = umgekehrt && roh.gefaelle != null ? -roh.gefaelle : roh.gefaelle;
-  return {
-    umgekehrt,
-    anfangNn: nn(a.anfang.y),
-    endeNn: nn(a.ende.y),
-    gefaelle: gefaelle == null ? 'waagerecht' : formatGefaelle(gefaelle),
-    laenge: a.laenge?.toFixed(2) ?? '—',
-    dn: a.dn ?? null,
-    herkunft: a.quelle === 'extrusion' ? 'aus der Extrusion' : 'aus der Achs-Repräsentation',
-  };
-});
+  umgekehrt: bearbeitung.bauteil?.stand?.fliessrichtung === 'umgekehrt',
+  hoehenversatz: bearbeitung.bauteil?.hoehenversatz ?? 0,
+}));
 
 /**
  * Wie die Kur eines Befunds heisst — aus dem KATALOG, nicht aus der Tabelle.
