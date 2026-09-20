@@ -135,16 +135,18 @@ describe('b — ein seitlich versetztes Profil ist heute nicht ausdrückbar', ()
         expect(h.zMax).toBeCloseTo(0.075, 6);
     });
 
-    it('DIE LÜCKE (V2): ein Versatz besteht die Schemaprüfung und wird still ignoriert', () => {
+    it('seit V1 sagt das Schema es, statt den Versatz still zu schlucken', () => {
         const mitVersatz = mitProfil({ ...RECHTECK, versatzU: 0.5 });
-        // Heute: das Schema prüft die Schlüssel des Rezepts und der Felder, aber
-        // keinen einzigen innerhalb von `geometrie.profil` (V1 schliesst das).
-        expect(pruefeEintrag('rezept', mitVersatz).ok).toBe(true);
-        registriereRezepte([mitVersatz]);
-        const h = huelle(rezeptNach('bordstein').baue({ ...BORDSTEIN_PLAN, versatzU: 0.5 }));
-        // Unverändert mittig — der Versatz hat keine Wirkung, und niemand sagt es.
-        expect(h.zMin).toBeCloseTo(-0.075, 6);
-        expect(h.zMax).toBeCloseTo(0.075, 6);
+        // Bis V1 bestand diese Deklaration die Prüfung und wirkte nie: niemand
+        // prüfte die Schlüssel INNERHALB von `geometrie.profil`.
+        const { ok, fehler } = pruefeEintrag('rezept', mitVersatz);
+        expect(ok).toBe(false);
+        expect(fehler.join(' ')).toMatch(/Profil .rechteck.*versatzU/);
+        // Und sie wird nicht aktiv — gemeldet, nie halb (A5).
+        const { aktiv, befunde } = registriereRezepte([mitVersatz]);
+        expect(aktiv).toEqual([]);
+        expect(befunde).toHaveLength(1);
+        expect(rezeptNach('bordstein')).toBe(null);
     });
 });
 

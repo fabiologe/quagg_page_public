@@ -28,20 +28,41 @@ import { bezugOder } from '../Achsbezug.js';
  *   sweep     Profil entlang der Punkte (Rohr, Schacht, Rechteckkanal)
  *   stab      Profil senkrecht auf EINEM Punkt (Pfosten, Schild, Poller)
  *   platte    Umriss mit Dicke (Decke, Belag, Fundament)
+ *
+ * Je Art steht hier, WAS sie tragen darf (Teil XXV, V1): `masse` sind
+ * Feldnamen, die eine Zahl aus den Parametern holen, `weitere` sind eigene
+ * Angaben. Alles andere in einer Deklaration ist ein Tippfehler — bis V1
+ * fiel er durch, weil niemand die Schlüssel INNERHALB der Geometrie prüfte,
+ * und die Angabe wirkte dann einfach nicht.
  */
 export const GEOMETRIE_ARTEN = Object.freeze({
-    band:    { koerper: false, profil: false },
-    flaeche: { koerper: false, profil: false },
-    sweep:   { koerper: true,  profil: true },
-    stab:    { koerper: true,  profil: true },
-    platte:  { koerper: true,  profil: false },
+    band:    { koerper: false, profil: false, masse: [],        weitere: [] },
+    flaeche: { koerper: false, profil: false, masse: [],        weitere: [] },
+    sweep:   { koerper: true,  profil: true,  masse: [],        weitere: [] },
+    stab:    { koerper: true,  profil: true,  masse: ['laenge'], weitere: [] },
+    platte:  { koerper: true,  profil: false, masse: ['dicke'],  weitere: ['richtung'] },
 });
 
-/** Die Querschnittsarten eines Profils. */
+/**
+ * Die Querschnittsarten eines Profils — `masse` wie oben, `weitere` je Art.
+ * `art` und `einheit` trägt jedes Profil.
+ */
 export const PROFIL_ARTEN = Object.freeze({
-    kreis:    ['durchmesser'],
-    rechteck: ['breite', 'tiefe'],
+    kreis:    { masse: ['durchmesser'],     weitere: ['ecken'] },
+    rechteck: { masse: ['breite', 'tiefe'], weitere: [] },
 });
+
+/** Alle Schlüssel, die eine Geometrieart tragen darf. */
+export function geometrieSchluessel(art) {
+    const g = GEOMETRIE_ARTEN[art];
+    return g ? ['art', ...(g.profil ? ['profil'] : []), ...g.masse, ...g.weitere] : [];
+}
+
+/** Alle Schlüssel, die eine Profilart tragen darf. */
+export function profilSchluessel(art) {
+    const p = PROFIL_ARTEN[art];
+    return p ? ['art', 'einheit', ...p.masse, ...p.weitere] : [];
+}
 
 /** Die Vorgabe eines Feldes — der Rückfall, wenn ein Bauplan das Mass nicht nennt. */
 function _vorgabeIn(felder) {

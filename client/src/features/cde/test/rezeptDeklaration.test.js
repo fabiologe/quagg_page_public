@@ -95,7 +95,7 @@ describe('2 — es sind Daten', () => {
             expect(GEOMETRIE_ARTEN, d.id).toHaveProperty(d.geometrie.art);
             if (d.geometrie.profil) {
                 expect(PROFIL_ARTEN, d.id).toHaveProperty(d.geometrie.profil.art);
-                for (const schluessel of PROFIL_ARTEN[d.geometrie.profil.art]) {
+                for (const schluessel of PROFIL_ARTEN[d.geometrie.profil.art].masse) {
                     // Das Profil nennt ein FELD — und das Feld gibt es im Formular.
                     expect(d.felder.map(f => f.name), `${d.id}.${schluessel}`).toContain(d.geometrie.profil[schluessel]);
                 }

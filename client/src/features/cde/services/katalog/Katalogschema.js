@@ -22,7 +22,7 @@ import { ABLEITUNGEN } from '../ableitung/Ableitungen.js';
 import { BAUFORMEN } from '../bauform/Bauformen.js';
 import { EINGEBAUTE_PROFILE } from '../bauform/Typprofile.js';
 import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
-import { GEOMETRIE_ARTEN, PROFIL_ARTEN } from '../rezept/Rezeptbau.js';
+import { GEOMETRIE_ARTEN, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
@@ -59,6 +59,19 @@ export function eingebauteRollen() {
     const r = new Set();
     for (const p of Object.values(EINGEBAUTE_PROFILE)) for (const k of Object.keys(p?.felder ?? {})) r.add(k);
     return r;
+}
+
+/**
+ * Nur bekannte Schlüssel (Teil XXV, V1) — mit „meintest du …?“, weil ein
+ * Tippfehler sonst als fehlende Angabe durchginge.
+ */
+function _nurBekannt(objekt, erlaubt, wo, fehler) {
+    const bekannt = new Set(erlaubt);
+    for (const k of Object.keys(objekt ?? {})) {
+        if (bekannt.has(k)) continue;
+        const nah = _aehnlichster(k, erlaubt);
+        fehler.push(`${wo}: unbekannter Schlüssel „${k}“${nah ? ` — meintest du „${nah}“?` : ''} (${erlaubt.join(', ')}).`);
+    }
 }
 
 /** Der nächste bekannte Name — für „meintest du …?" bei einem Tippfehler. */
@@ -164,23 +177,28 @@ function _rezept(d, fehler) {
         if (!f) fehler.push(`${wozu}: Feld „${name}" gibt es nicht.`);
         else if (f.typ !== 'zahl') fehler.push(`${wozu}: Feld „${name}" ist keine Zahl.`);
     };
+    // NUR BEKANNTE SCHLÜSSEL — auch INNERHALB der Geometrie (Teil XXV, V1).
+    // Bis hierher prüfte das Schema die Schlüssel des Rezepts und die der
+    // Felder, aber keinen einzigen in `geometrie` oder `geometrie.profil`:
+    // ein `versatzU` am Profil bestand die Prüfung und wirkte nie. Dieselbe
+    // Fehlerklasse wie ein vertippter Rollenname im Typprofil, nur stiller.
+    _nurBekannt(g, geometrieSchluessel(g.art), `Geometrie „${g.art}"`, fehler);
+    for (const k of GEOMETRIE_ARTEN[g.art].masse) zahlfeld(g[k], `${g.art}.${k}`);
+
     if (GEOMETRIE_ARTEN[g.art].profil) {
         const p = g.profil;
         if (!_istObjekt(p) || !PROFIL_ARTEN[p.art]) {
             fehler.push(`Profilart „${p?.art}" gibt es nicht (${Object.keys(PROFIL_ARTEN).join(', ')}).`);
         } else {
-            for (const k of PROFIL_ARTEN[p.art]) zahlfeld(p[k], `Profil ${p.art}.${k}`);
+            _nurBekannt(p, profilSchluessel(p.art), `Profil „${p.art}"`, fehler);
+            for (const k of PROFIL_ARTEN[p.art].masse) zahlfeld(p[k], `Profil ${p.art}.${k}`);
             if (p.einheit !== undefined && !EINHEITEN[p.einheit]) fehler.push(`Einheit „${p.einheit}" gibt es nicht.`);
             if (p.ecken !== undefined && !(Number.isInteger(p.ecken) && p.ecken >= 3 && p.ecken <= 64)) fehler.push('`ecken` muss zwischen 3 und 64 liegen.');
         }
     }
-    if (g.art === 'stab') {
-        zahlfeld(g.laenge, 'Stab.laenge');
-        if (d.hoechstPunkte !== 1) fehler.push('Ein Stab steht an EINEM Ort: `hoechstPunkte: 1`.');
-    }
-    if (g.art === 'platte') {
-        zahlfeld(g.dicke, 'Platte.dicke');
-        if (g.richtung !== undefined && !['unten', 'oben'].includes(g.richtung)) fehler.push(`Richtung „${g.richtung}" gibt es nicht (unten, oben).`);
+    if (g.art === 'stab' && d.hoechstPunkte !== 1) fehler.push('Ein Stab steht an EINEM Ort: `hoechstPunkte: 1`.');
+    if (g.art === 'platte' && g.richtung !== undefined && !['unten', 'oben'].includes(g.richtung)) {
+        fehler.push(`Richtung „${g.richtung}" gibt es nicht (unten, oben).`);
     }
     if ((g.art === 'platte' || g.art === 'flaeche') && !d.geschlossen) fehler.push(`Eine ${g.art === 'platte' ? 'Platte' : 'Fläche'} braucht einen geschlossenen Umriss.`);
     if (g.art === 'sweep' && d.mindestPunkte < 2) fehler.push('Ein Sweep braucht mindestens 2 Punkte.');
