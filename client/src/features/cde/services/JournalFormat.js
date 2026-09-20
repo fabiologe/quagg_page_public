@@ -21,22 +21,36 @@
  * K4b). Ein Client, der Stufe 4 nicht kennt, baute eine solche Haltung um
  * DN/2 zu tief — deshalb erst der Leser (K4a), eine Auslieferung später
  * der Schreiber.
+ * 5 = OPERATIONEN VERWEISEN AUFEINANDER (Teil XXIV-4): eine Auffüllung füllt
+ * „bis zur Fläche" einer anderen Operation, die Böschung eines Planums zeigt
+ * auf dessen Fläche statt seine Höhe zu kopieren. Ein Client, der das nicht
+ * kennt, liest eine Böschung ohne eigene Höhe als `boeschung_ohne_hoehe`:
+ * er zeigte das Planum OHNE Böschung, mit falschen Massen und falschem IFC —
+ * und diese Warnung sieht niemand. Deshalb die Stufe.
  * Ein Journal trägt `mindestClient`, sobald es Stufe-3-Schreibweisen enthält;
  * ein Client, der weniger KENNT, liest es nur (`nurLesen`) und schreibt nie
  * darüber — ein älterer Tab startete sonst leer und überschriebe es.
  */
 
-/** Was dieser Client LESEN kann. Seit K4a: auch `achsbezug` im Bauplan einer Kante. */
-export const JOURNAL_KENNT = 4;
+/**
+ * Was dieser Client LESEN kann. Seit K4a: `achsbezug` im Bauplan einer Kante;
+ * seit Teil XXIV-4: eine Operation, die auf die Fläche einer anderen zeigt.
+ */
+export const JOURNAL_KENNT = 5;
 
 /**
  * Was dieser Client SCHREIBT. A7a lieferte die Leser mit 2 aus (2026-09-18
  * 16:05), K4a den Leser der Sohle mit 4 (2026-09-19 13:21). Seit 2026-09-19
  * (Fabio: „mach das alles") schreibt er 4 — A7b und K4b in EINER Auslieferung:
  * jeder Tab ab 2026-09-18 16:05 kennt `mindestClient` und liest ein neueres
- * Journal nur (`nurLesen`), statt es zu überschreiben.
+ * Journal nur (`nurLesen`), statt es zu überschreiben. Aus demselben Grund
+ * gehen Leser und Schreiber der Stufe 5 (Teil XXIV-4) in EINER Auslieferung:
+ * ein Tab von gestern liest ein solches Journal nur und sagt es im Banner,
+ * und der Server-Wächter (Fahrplan R9) hält noch ältere ab. Der Preis, offen
+ * benannt: bis zum Neuladen kann ein solcher Tab im Lesemodus falsche Massen
+ * zeigen und ein falsches IFC ausgeben — dieselbe Klasse wie bei Stufe 4.
  */
-export const SCHREIBT_AUSGELIEFERT = 4;
+export const SCHREIBT_AUSGELIEFERT = 5;
 let _schreibt = SCHREIBT_AUSGELIEFERT;
 export function schreibStufe() { return _schreibt; }
 

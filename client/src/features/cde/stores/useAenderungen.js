@@ -710,7 +710,7 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 // Wer weniger kennt, liest nur (siehe `_uebernimmV2`). Stufe 4
                 // (K4b): Kanten speichern ihre Sohle — ein Client ohne diese
                 // Lesart baute sie um DN/2 zu tief.
-                ...(stufe3 ? { mindestClient: Math.min(schreibStufe(), 4) } : {}),
+                ...(stufe3 ? { mindestClient: Math.min(schreibStufe(), 5) } : {}),
                 commits: commitsJe[ebene].value.map((c, i) => ({
                     ...c, schrittIds: undefined,
                     schritte: nimm(commitSchritte[i].length),

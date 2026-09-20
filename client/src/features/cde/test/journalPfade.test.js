@@ -144,9 +144,10 @@ describe('20 Eckzüge an einem Vorgang mit vier Operationen', () => {
 });
 
 describe('Schutz: lesen, nie überschreiben', () => {
-    // Seit Teil XXIV (K4a) KENNT diese CDE Stufe 4 — „neuer" ist jetzt 5.
+    // Seit Teil XXIV-4 KENNT diese CDE Stufe 5 (Operationen verweisen
+    // aufeinander) — „neuer als ich" ist deshalb 6.
     it('ein Journal einer NEUEREN CDE (mindestClient 5) wird gezeigt, aber nicht überschrieben', async () => {
-        const fremd = { version: 2, mindestClient: 5, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
+        const fremd = { version: 2, mindestClient: 6, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
             schritte: [{ id: 's1', art: 'kg', globalId: 'G1', nachher: '410', vorher: null, wann: 1 }] }], sitzung: null,
             schreibstand: { zaehler: 3, marke: 'FREMD', wer: 'petra', wann: 1 } };
         localStorage.setItem(SCHLUESSEL, JSON.stringify(fremd));
