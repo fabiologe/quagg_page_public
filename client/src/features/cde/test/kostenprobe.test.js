@@ -218,14 +218,28 @@ describe('c — ein Punktobjekt gibt es schon, ein bestimmtes ist eine Vorlage',
 // ── (d) Eine weitere Zielfläche ─────────────────────────────────────────────
 
 describe('d — eine Zielfläche ist eine Angabe am Eintrag der Operation', () => {
-    it('der Leser ist allgemein; das Gerinne nennt heute keine Fläche (V7)', () => {
-        // `flaecheVon` fragt den Eintrag, nie den Namen — wer eine Fläche HAT,
-        // taugt als Ziel einer Auffüllung (Durchstich 2).
+    const GERINNE = { art: 'gerinne', parameter: {
+        achse: [{ x: 0, z: 0 }, { x: 10, z: 0 }], sohleAnfang: 98, sohleEnde: 97.8,
+        sohlbreite: 1, boeschung: 1.5,
+    } };
+
+    it('der Leser ist allgemein: wer eine Fläche HAT, taugt als Ziel', () => {
+        // `flaecheVon` fragt den Eintrag, nie den Namen (Durchstich 2).
+        // Bis V7 hatte GENAU EINE Operation eine Fläche — der Mechanismus
+        // diente einem Paar. Jetzt sind es zwei, und die zweite kostete
+        // keine Zeile am Auföser: nur eine Angabe an ihrem Eintrag.
         expect(flaecheVon({ art: 'planum', parameter: { hoehe: 101 } })).toBeTypeOf('function');
-        expect(flaecheVon({ art: 'gerinne', parameter: {
-            achse: [{ x: 0, z: 0 }, { x: 10, z: 0 }], sohleAnfang: 98, sohleEnde: 97.8,
-            sohlbreite: 1, boeschung: 1.5,
-        } })).toBe(null);
+        expect(flaecheVon(GERINNE)).toBeTypeOf('function');
+    });
+
+    it('die Gerinnefläche ist die gerechnete Sohle, nicht eine zweite Formel', () => {
+        const an = flaecheVon(GERINNE);
+        expect(an(0, 0)).toBeCloseTo(98, 9);            // Anfang
+        expect(an(10, 0)).toBeCloseTo(97.8, 9);         // Ende
+        expect(an(5, 0)).toBeCloseTo(97.9, 9);          // dazwischen linear
+        // Neben der Sohle steigt sie mit der Böschung 1 : 1,5 — 0,5 m Sohlrand,
+        // dann 1,5 m quer: 1,0 m über der Sohle.
+        expect(an(5, 2)).toBeCloseTo(97.9 + 1, 9);
     });
 });
 

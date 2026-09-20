@@ -248,6 +248,40 @@ function _kopie(raster) {
  *
  * @returns {{raster, warnungen: string[]}}
  */
+/**
+ * Welche Höhe ein Gerinne an einem Ort herstellt (Teil XXV, V7).
+ *
+ * In der Sohle ihre interpolierte Sohlhöhe, daneben die Böschung 1 : n nach
+ * oben, ausserhalb ihrer Reichweite `NaN`. EINE Rechnung für zwei Leser: das
+ * Formen des Rasters (`gerinne`) und die Sollfläche, auf die eine Auffüllung
+ * zielen darf (`flaeche` am Registry-Eintrag, Durchstich 2).
+ */
+function _gerinneSoll({ pfad, st, sohleAnfang, ende, b2Fest, n }) {
+    return (x, z) => {
+        const lage = _anAchse(x, z, pfad);
+        if (!lage) return NaN;
+        let sohle, b2;
+        if (st) {
+            // Stückweise linear zwischen den beiden Stationen der Teilstrecke;
+            // die BREITE gehört der Teilstrecke, die dort beginnt. Über die
+            // Enden hinaus gilt die Randstation.
+            const a = st[lage.i], b = st[lage.i + 1];
+            sohle = a.y + (b.y - a.y) * Math.min(1, Math.max(0, lage.t));
+            b2 = a.sohlbreite / 2;
+        } else {
+            sohle = lage.laenge > 0
+                ? sohleAnfang + (ende - sohleAnfang) * (lage.station / lage.laenge)
+                : sohleAnfang;
+            b2 = b2Fest;
+        }
+        // Abstand zum SOHLSTREIFEN: quer über die halbe Breite hinaus, längs
+        // über das Ende hinaus — beides zusammen als Hypotenuse.
+        const d = Math.hypot(Math.max(0, lage.quer - b2), lage.ueberstand);
+        if (d === 0) return sohle;
+        return n > 0 ? sohle + d / n : NaN;                       // senkrecht: aussen nichts
+    };
+}
+
 export function gerinne(raster, { achse, stationen, sohlbreite, boeschung = 1.5, sohleAnfang, sohleEnde } = {}, { bereich = null } = {}) {
     const warnungen = [];
     const st = _stationenAus(stationen, sohlbreite);
@@ -264,6 +298,10 @@ export function gerinne(raster, { achse, stationen, sohlbreite, boeschung = 1.5,
         warnungen.push(`gerinne_feiner_als_zelle: Sohlbreite ${schmalste} m < Zellweite ${raster.cell.toFixed(2)} m`);
     }
 
+    // DIE SOLLFLÄCHE DES GERINNES (Teil XXV, V7) — dieselbe Rechnung, die
+    // formt, beantwortet auch „welche Höhe stellt diese Operation hier her?".
+    const soll = _gerinneSoll({ pfad, st, sohleAnfang, ende, b2Fest, n });
+
     const neu = _kopie(raster);
     const { nx, nz, heights } = neu;
     // Nur die Zellen im Wirkbereich — ausserhalb kann sich nichts ändern.
@@ -274,29 +312,8 @@ export function gerinne(raster, { achse, stationen, sohlbreite, boeschung = 1.5,
             const h = heights[i];
             if (!Number.isFinite(h)) continue;                    // NaN bleibt NaN
             const k = rasterKnoten(raster, ix, iz);
-            const lage = _anAchse(k.x, k.z, pfad);
-            if (!lage) continue;
-            let sohle, b2;
-            if (st) {
-                // Stückweise linear zwischen den beiden Stationen der
-                // Teilstrecke; die BREITE gehört der Teilstrecke, die dort
-                // beginnt. Über die Enden hinaus gilt die Randstation.
-                const a = st[lage.i], b = st[lage.i + 1];
-                sohle = a.y + (b.y - a.y) * Math.min(1, Math.max(0, lage.t));
-                b2 = a.sohlbreite / 2;
-            } else {
-                sohle = lage.laenge > 0
-                    ? sohleAnfang + (ende - sohleAnfang) * (lage.station / lage.laenge)
-                    : sohleAnfang;
-                b2 = b2Fest;
-            }
-            // Abstand zum SOHLSTREIFEN: quer über die halbe Breite hinaus,
-            // längs über das Ende hinaus — beides zusammen als Hypotenuse.
-            const d = Math.hypot(Math.max(0, lage.quer - b2), lage.ueberstand);
-            let ziel;
-            if (d === 0) ziel = sohle;
-            else if (n > 0) ziel = sohle + d / n;
-            else continue;                                        // senkrecht: aussen nichts
+            const ziel = soll(k.x, k.z);
+            if (!Number.isFinite(ziel)) continue;                 // ausserhalb oder senkrecht
             heights[i] = Math.min(h, ziel);                       // nur schneiden
         }
     }
@@ -1234,6 +1251,28 @@ export const GELAENDE_OPS = Object.freeze({
             return aus;
         },
         kennhoehen: () => [],                    // keine ebene Fläche
+        /**
+         * DIE SOLLFLÄCHE (Teil XXV, V7): die geformte Gerinneoberfläche — in
+         * der Sohle ihre interpolierte Höhe, daneben die Böschung 1 : n nach
+         * oben. Damit ist „Auffüllen bis zur Fläche" nicht mehr auf das
+         * Planum beschränkt: eine Verfüllung kann auf die Gerinnesohle zielen.
+         *
+         * Dieselbe Rechnung wie beim Formen (`_gerinneSoll`) — hätte die
+         * Fläche eine eigene, liefen sie auseinander.
+         */
+        flaeche: (p) => {
+            const st = _stationenAus(p?.stationen, p?.sohlbreite);
+            const pfad = st ?? p?.achse;
+            if (!Array.isArray(pfad) || pfad.length < 2) return null;
+            const anfang = Number(p?.sohleAnfang);
+            if (!st && !Number.isFinite(anfang)) return null;
+            return _gerinneSoll({
+                pfad, st, sohleAnfang: anfang,
+                ende: Number.isFinite(Number(p?.sohleEnde)) ? Number(p.sohleEnde) : anfang,
+                b2Fest: Math.max(0, (Number(p?.sohlbreite) || 0) / 2),
+                n: Math.max(0, Number(p?.boeschung) || 0),
+            });
+        },
         // Ein reines Gerinne ist ein Graben (TRENCH).
         cutTyp: 'TRENCH',
         // Ein Graben ist ein Trapez aus der Norm: der Profilkörper baut ihn exakt
