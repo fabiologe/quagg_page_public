@@ -235,7 +235,13 @@ describe('Das Subjekt aus dem Stand ist das Subjekt des Viewers (Fixture aus dem
             const felder = Object.keys(s);
             expect(felder).toHaveLength(felderSoll);                              // vorher: 0 verglichen
             const v = F.viewer[gid];
-            const aus = felder.flatMap(k => abweichungen(s[k], v[k], k));
+            const aus = felder.flatMap(k => abweichungen(s[k], v[k], k))
+                // SEIT DER AUFNAHME dazugekommen (Teil XXV, V2): die Achse nennt
+                // ihre Profilhöhe (Sohle → Scheitel), damit der Scheitel eines
+                // unsymmetrischen Querschnitts nicht als 2 × Sohlabstand geraten
+                // wird. Additiv — jeder ALTE Wert muss weiter stimmen. Geprüft
+                // in `kostenprobe.test.js`.
+                .filter(z => !/\.profilhoehe:/.test(z));
             expect(aus).toEqual([]);
         });
     }

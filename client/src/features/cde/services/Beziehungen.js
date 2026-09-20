@@ -257,7 +257,8 @@ function _normiere(o) {
         ? { punkte: punkte.filter(punktGut), dn: fin(o.achse?.dn) ? o.achse.dn : null,
             // Was die Höhen SIND (K4) — die Überdeckung misst am Scheitel.
             achsbezug: o.achse?.achsbezug ?? null, quelle: o.achse?.quelle ?? null,
-            sohlabstand: fin(o.achse?.sohlabstand) ? o.achse.sohlabstand : null }
+            sohlabstand: fin(o.achse?.sohlabstand) ? o.achse.sohlabstand : null,
+            profilhoehe: fin(o.achse?.profilhoehe) ? o.achse.profilhoehe : null }
         : null;
     const knoten = punktGut(o.knoten) ? { x: o.knoten.x, y: o.knoten.y, z: o.knoten.z } : null;
     let huelle = boxGut(o.huelle) ? o.huelle : null;

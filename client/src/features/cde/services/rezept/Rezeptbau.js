@@ -45,12 +45,31 @@ export const GEOMETRIE_ARTEN = Object.freeze({
 
 /**
  * Die Querschnittsarten eines Profils — `masse` wie oben, `weitere` je Art.
- * `art` und `einheit` trägt jedes Profil.
+ *
+ * `art`, `einheit`, `versatzU` und `versatzV` trägt JEDES Profil: der Versatz
+ * setzt es neben oder unter seine Achse (Teil XXV, V2 — ein Bordstein steht
+ * neben der Linie, die man zeichnet).
+ *
+ *   versatzU   quer zur Achse. POSITIV ist LINKS in Zeichenrichtung — der
+ *              Sweep spannt seinen Rahmen als `oben × Richtung` auf. Gemessen
+ *              (V2): eine Achse nach Osten legt +1 m auf z − 1 (Norden), eine
+ *              nach Süden auf x + 1 (Osten), eine nach Westen auf z + 1.
+ *   versatzV   senkrecht, positiv nach oben.
+ *
+ * Beides ist eine feste Zahl in der Einheit des Profils ODER der Name eines
+ * Zahlfelds — ein Bordstein hat seinen Versatz fest, eine Rinne stellt ihn.
+ *
+ * `polygon` beschreibt einen Querschnitt frei, für alles, was weder Kreis noch
+ * Rechteck ist (Hochbord mit Fase, Eiprofil, Rinne): `punkte: [[u, v], …]`.
  */
 export const PROFIL_ARTEN = Object.freeze({
     kreis:    { masse: ['durchmesser'],     weitere: ['ecken'] },
     rechteck: { masse: ['breite', 'tiefe'], weitere: [] },
+    polygon:  { masse: [],                  weitere: ['punkte'] },
 });
+
+/** Was jedes Profil tragen darf, gleich welcher Art. */
+const PROFIL_IMMER = Object.freeze(['art', 'einheit', 'versatzU', 'versatzV']);
 
 /** Alle Schlüssel, die eine Geometrieart tragen darf. */
 export function geometrieSchluessel(art) {
@@ -61,7 +80,7 @@ export function geometrieSchluessel(art) {
 /** Alle Schlüssel, die eine Profilart tragen darf. */
 export function profilSchluessel(art) {
     const p = PROFIL_ARTEN[art];
-    return p ? ['art', 'einheit', ...p.masse, ...p.weitere] : [];
+    return p ? [...PROFIL_IMMER, ...p.masse, ...p.weitere] : [];
 }
 
 /** Die Vorgabe eines Feldes — der Rückfall, wenn ein Bauplan das Mass nicht nennt. */
@@ -94,6 +113,18 @@ function _sohlen(geo, vorgabe) {
         const p = profilAus(geo.profil, parameter, vorgabe);
         return p?.punkte?.length ? Math.max(0, -Math.min(...p.punkte.map(q => q.v))) : 0;
     };
+    // DIE PROFILHOEHE (Teil XXV, V2): Sohle bis Scheitel, aus dem Profil.
+    // Bis hierher rechnete `Achsbezug.rohrscheitel` den Scheitel als Sohle
+    // plus ZWEIMAL dem Abstand zur Sohle — das stimmt nur, solange jedes
+    // Profil um seine Achse symmetrisch ist. Mit `polygon` und `versatzV`
+    // ist es das nicht mehr, und ein Eiprofil laege mit seinem Scheitel
+    // daneben (die Ueberdeckung waere zu gross gerechnet).
+    const hoehe = (parameter) => {
+        const p = profilAus(geo.profil, parameter, vorgabe);
+        if (!p?.punkte?.length) return 0;
+        const v = p.punkte.map(q => q.v);
+        return Math.max(0, Math.max(...v) - Math.min(...v));
+    };
     const bezug = (parameter) => bezugOder(parameter?.achsbezug);
     const lies = (parameter) => {
         const d = bezug(parameter) === 'sohle' ? 0 : abstand(parameter);
@@ -113,6 +144,8 @@ function _sohlen(geo, vorgabe) {
     return Object.freeze({
         /** Mitte → Sohle in Metern, aus dem Profil. */
         abstand,
+        /** Sohle → Scheitel in Metern, aus dem Profil (V2). */
+        hoehe,
         /** Der Bezug des Bauplans ('mitte' ohne Angabe). */
         bezug,
         /** Die Sohlhöhe (Welt) je Punkt — gleich, in welchem Bezug gespeichert ist. */
@@ -178,7 +211,8 @@ function _formAus(geo, vorgabe) {
                 const feld = geo.profil?.durchmesser;
                 const s = _sohlen(geo, vorgabe);
                 return { punkte: punkte.map(punktXYZ), dn: (feld && Number(parameter?.[feld])) || null,
-                         achsbezug: s.bezug(parameter), sohlabstand: s.abstand(parameter), quelle: 'bauplan' };
+                         achsbezug: s.bezug(parameter), sohlabstand: s.abstand(parameter),
+                         profilhoehe: s.hoehe(parameter), quelle: 'bauplan' };
             }
             // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster
             // Punkt IST seine Sohle — und die Form SAGT es (A9), statt dass

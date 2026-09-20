@@ -7,7 +7,7 @@
  * einem Repo), oder muss der KERN ein neues Wort lernen?
  *
  *   a) Rechteckkanal statt Kreisrohr        Katalog — 0 Zeilen Code
- *   b) Bordstein: Profil neben der Achse    KERN — heute nicht ausdrückbar (V2)
+ *   b) Bordstein: Profil neben der Achse    Katalog SEIT V2 — `versatzU`, `polygon`
  *   c) Leitpfosten als Punktobjekt          Katalog — Rezept da, Vorlage genügt
  *   d) Gerinnesohle als Zielfläche          Katalog — Eintrag der Operation (V7)
  *   e) mehrere Bauteile gleichzeitig        Katalog — ein Feld `mehrfach`
@@ -29,6 +29,7 @@ import { registriereRezepte } from '../services/katalog/Katalog.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { flaecheVon } from '../services/gelaende/Operationen.js';
+import { scheitelAnAchse } from '../services/Achsbezug.js';
 import { WELT } from './hilfen/werkzeugProben.js';
 
 class Speicher {
@@ -127,26 +128,72 @@ const mitProfil = (profil) => ({ ...BORDSTEIN, geometrie: { art: 'sweep', profil
 const RECHTECK = { art: 'rechteck', breite: 'breite', tiefe: 'tiefe', einheit: 'm' };
 const BORDSTEIN_PLAN = { punkte: [[0, 100, 0], [10, 100, 0]], breite: 0.15, tiefe: 0.3 };
 
-describe('b — ein seitlich versetztes Profil ist heute nicht ausdrückbar', () => {
-    it('ein Profil sitzt IMMER auf der Achse: quer von −b/2 bis +b/2', () => {
+describe('b — ein Bordstein steht NEBEN seiner Achse (V2)', () => {
+    it('ohne Versatz sitzt das Profil auf der Achse: quer von −b/2 bis +b/2', () => {
         registriereRezepte([mitProfil(RECHTECK)]);
         const h = huelle(rezeptNach('bordstein').baue(BORDSTEIN_PLAN));
-        expect(h.zMin).toBeCloseTo(-0.075, 6);
-        expect(h.zMax).toBeCloseTo(0.075, 6);
+        expect(h.zMin).toBeCloseTo(-0.075, 4);
+        expect(h.zMax).toBeCloseTo(0.075, 4);
     });
 
-    it('seit V1 sagt das Schema es, statt den Versatz still zu schlucken', () => {
-        const mitVersatz = mitProfil({ ...RECHTECK, versatzU: 0.5 });
-        // Bis V1 bestand diese Deklaration die Prüfung und wirkte nie: niemand
-        // prüfte die Schlüssel INNERHALB von `geometrie.profil`.
-        const { ok, fehler } = pruefeEintrag('rezept', mitVersatz);
+    it('A1: mit `versatzU` ist der Bordstein ein JSON — die Linie ist seine Kante', () => {
+        // Bis V2 war das nicht ausdrückbar: jedes Profil war um den Ursprung
+        // zentriert, und ein `versatzU` bestand die Prüfung, ohne zu wirken.
+        const versetzt = mitProfil({ ...RECHTECK, versatzU: 0.075 });
+        expect(pruefeEintrag('rezept', versetzt)).toEqual({ ok: true, fehler: [] });
+        expect(registriereRezepte([versetzt]).aktiv).toEqual(['bordstein']);
+        // Positiv ist LINKS in Zeichenrichtung; die Achse läuft nach Osten,
+        // der Stein liegt also nördlich davon — und die Linie ist seine Kante.
+        const h = huelle(rezeptNach('bordstein').baue(BORDSTEIN_PLAN));
+        expect(h.zMin).toBeCloseTo(-0.15, 4);        // vorher −0,075
+        expect(h.zMax).toBeCloseTo(0, 4);            // vorher +0,075
+        // Und die Höhe bleibt, wo sie war — der Versatz ist nur seitlich.
+        expect(h.yMin).toBeCloseTo(99.85, 4);
+        expect(h.yMax).toBeCloseTo(100.15, 4);
+    });
+
+    it('der Versatz darf auch ein FELD sein — dann stellt ihn das Formular', () => {
+        const ueberFeld = mitProfil({ ...RECHTECK, versatzU: 'abstand' });
+        const mitFeld = { ...ueberFeld, felder: [...ueberFeld.felder,
+            { name: 'abstand', titel: 'Abstand zur Achse', einheit: 'm', typ: 'zahl', vorgabe: 0.075 }] };
+        expect(pruefeEintrag('rezept', mitFeld)).toEqual({ ok: true, fehler: [] });
+        registriereRezepte([mitFeld]);
+        const h = huelle(rezeptNach('bordstein').baue({ ...BORDSTEIN_PLAN, abstand: 0.5 }));
+        expect(h.zMin).toBeCloseTo(-0.575, 4);
+        expect(h.zMax).toBeCloseTo(-0.425, 4);
+    });
+
+    it('V1 bleibt scharf: ein Tippfehler im Profil wird abgelehnt, mit Vorschlag', () => {
+        const { ok, fehler } = pruefeEintrag('rezept', mitProfil({ ...RECHTECK, versatzX: 0.5 }));
         expect(ok).toBe(false);
-        expect(fehler.join(' ')).toMatch(/Profil .rechteck.*versatzU/);
-        // Und sie wird nicht aktiv — gemeldet, nie halb (A5).
-        const { aktiv, befunde } = registriereRezepte([mitVersatz]);
-        expect(aktiv).toEqual([]);
-        expect(befunde).toHaveLength(1);
-        expect(rezeptNach('bordstein')).toBe(null);
+        expect(fehler.join(' ')).toMatch(/versatzX.*meintest du .versatzU/);
+    });
+
+    it('ein POLYGON beschreibt seinen Querschnitt selbst — Sohle und Scheitel stimmen', () => {
+        // Unsymmetrisch mit Absicht: die Sohle liegt AUF der Achse (v = 0), der
+        // Scheitel 0,30 m darüber. Die alte Rechnung „Sohle + 2 × Sohlabstand"
+        // hätte den Scheitel auf die Sohle gelegt.
+        const eiform = { ...BORDSTEIN, id: 'eiprofil', kategorieVorgabe: 'IFCPIPESEGMENT',
+                         geometrie: { art: 'sweep', profil: { art: 'polygon', einheit: 'm',
+                                      punkte: [[-0.1, 0], [0.1, 0], [0.1, 0.2], [-0.1, 0.3]] } } };
+        expect(pruefeEintrag('rezept', eiform)).toEqual({ ok: true, fehler: [] });
+        registriereRezepte([eiform]);
+        const plan = { punkte: [[0, 100, 0], [10, 100, 0]], achsbezug: 'sohle' };
+        const h = huelle(rezeptNach('eiprofil').baue(plan));
+        expect(h.yMin).toBeCloseTo(100, 4);          // Sohle auf der kommandierten Höhe
+        expect(h.yMax).toBeCloseTo(100.3, 4);         // float32 im Puffer: 0,1 mm genau
+        const form = rezeptNach('eiprofil').formAus(plan, 'linie');
+        expect(form.sohlabstand).toBeCloseTo(0, 9);
+        expect(form.profilhoehe).toBeCloseTo(0.3, 9);
+        expect(scheitelAnAchse(100, form)).toBeCloseTo(100.3, 9);
+        // Gegenprobe: ohne die Profilhöhe fällt der Scheitel auf die Sohle.
+        expect(scheitelAnAchse(100, { ...form, profilhoehe: undefined })).toBeCloseTo(100, 9);
+    });
+
+    it('ein Polygon mit weniger als drei Punkten ist keines', () => {
+        const zuKlein = { ...BORDSTEIN, geometrie: { art: 'sweep', profil: {
+            art: 'polygon', einheit: 'm', punkte: [[0, 0], [1, 0]] } } };
+        expect(pruefeEintrag('rezept', zuKlein).ok).toBe(false);
     });
 });
 

@@ -29,12 +29,14 @@ export function netzVon(engine, modelId, { toleranz } = {}) {
         // weiter verkettet und Befunde trägt, ist ein Geist im Netz.
         if (a.globalId && verdeckt.has(a.globalId)) continue;
         kanten.push({ id, anfang: a.anfang, ende: a.ende, dn: a.dn, laenge: a.laenge,
-                      achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null });
+                      achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null,
+                      profilhoehe: a.profilhoehe ?? null });
     }
     for (const [gid, k] of engine._cdeKanten ?? new Map()) {
         if (verdeckt.has(gid)) continue;
         kanten.push({ id: `cde:${gid}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge,
                       achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null,
+                      profilhoehe: k.profilhoehe ?? null,
                       anschluss: k.anschluss ?? null });
     }
 

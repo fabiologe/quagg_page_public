@@ -56,6 +56,7 @@ export function achseAusKante(k) {
         // Was die Höhen SIND (K4) — ein eigener Bauplan sagt es selbst.
         ...(k.achsbezug ? { achsbezug: k.achsbezug } : {}),
         ...(Number.isFinite(k.sohlabstand) ? { sohlabstand: k.sohlabstand } : {}),
+        ...(Number.isFinite(k.profilhoehe) ? { profilhoehe: k.profilhoehe } : {}),
     };
 }
 
@@ -83,6 +84,7 @@ export function netzauskunftAus(kanten = [], knoten = [], { toleranz } = {}) {
     const netz = baueNetz({
         kanten: kanten.map(k => ({ id: `cde:${k.globalId}`, anfang: k.anfang, ende: k.ende, dn: k.dn, laenge: k.laenge,
                                    achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null,
+                                   profilhoehe: k.profilhoehe ?? null,
                                    anschluss: k.anschluss ?? null })),
         knoten: knoten.map(k => ({ id: `cde:${k.globalId}`, punkt: k.punkt, globalId: k.globalId })),
         toleranz,

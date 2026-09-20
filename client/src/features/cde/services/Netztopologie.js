@@ -136,6 +136,7 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = _toleranzAusRege
             // WAS die Höhen sind (Teil XXIV, K4) — die Befunde am Knoten
             // vergleichen Sohlen, nicht rohe Achshöhen zweier Bezüge.
             achsbezug: e.achsbezug ?? null, sohlabstand: e.sohlabstand ?? null,
+            profilhoehe: e.profilhoehe ?? null,
         });
         if (von) knotenKarte.get(von).kantenAb.push(e.id);
         else loseEnden.push({ kante: e.id, ende: 'anfang', punkt: e.anfang });
@@ -212,7 +213,7 @@ export function strangMitAchsen(netz, kantenId, achseVon) {
             // rechnen damit auf die Sohle — für gelieferte Achsen aus ihrer
             // Herkunft, für eigene aus dem Bauplan.
             achsbezug: achsbezugDerAchse(a),
-            sohlabstand: a?.sohlabstand ?? null,
+            sohlabstand: a?.sohlabstand ?? null, profilhoehe: a?.profilhoehe ?? null,
             // Die Punkte dazwischen (K5): Länge und Gefälle eines Glieds laufen
             // entlang der Achse, nicht über die Sehne.
             punkte: a?.polyline ?? a?.punkte ?? null,
@@ -243,6 +244,7 @@ export function anschluesseMitAchsen(netz, knotenId, achseVon) {
             ende,
             anfang: a.anfang, ende_: a.ende, laenge: a.laenge, dn: a.dn,
             achsbezug: achsbezugDerAchse(a), sohlabstand: a.sohlabstand ?? null,
+            profilhoehe: a.profilhoehe ?? null,
             // Die Punkte dazwischen — wie im Strang: wer zwei Anschlüsse zu einer
             // Haltung zusammenlegt, soll keinen Knick verlieren.
             punkte: a.polyline ?? a.punkte ?? null,

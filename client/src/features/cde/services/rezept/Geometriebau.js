@@ -198,16 +198,64 @@ export function massAus(parameter, feld, { einheit = 'm', rueckfall = null } = {
  */
 export function profilAus(dekl, parameter, vorgabe = () => null) {
     const einheit = dekl?.einheit ?? 'm';
+    // DER VERSATZ (Teil XXV, V2): ein Profil muss nicht auf seiner Achse
+    // sitzen. Ein Bordstein steht NEBEN der Linie, die man zeichnet, eine
+    // Rinne darunter. Bis hierher war jedes Profil um den Ursprung zentriert,
+    // und ein Rezept konnte das nicht sagen.
+    const versetzt = (profil) => _versetze(
+        profil,
+        _ausDeklaration(dekl?.versatzU, parameter, vorgabe, einheit),
+        _ausDeklaration(dekl?.versatzV, parameter, vorgabe, einheit));
     if (dekl?.art === 'kreis') {
         const d = massAus(parameter, dekl.durchmesser, { einheit, rueckfall: vorgabe(dekl.durchmesser) });
-        return d > 0 ? kreisProfil(d / 2, dekl.ecken ?? 12) : null;
+        return d > 0 ? versetzt(kreisProfil(d / 2, dekl.ecken ?? 12)) : null;
     }
     if (dekl?.art === 'rechteck') {
         const b = massAus(parameter, dekl.breite, { einheit, rueckfall: vorgabe(dekl.breite) });
         const t = massAus(parameter, dekl.tiefe, { einheit, rueckfall: vorgabe(dekl.tiefe) });
-        return b > 0 && t > 0 ? rechteckProfil(b, t) : null;
+        return b > 0 && t > 0 ? versetzt(rechteckProfil(b, t)) : null;
+    }
+    // EIN FREI BESCHRIEBENES PROFIL (V2): Hochbord mit Fase, Eiprofil, Rinne.
+    // Die Umlaufrichtung muss niemand beachten — `sweep` dreht sie sich hin.
+    if (dekl?.art === 'polygon') {
+        const p = _polygon(dekl.punkte, einheit);
+        return p ? versetzt(p) : null;
     }
     return null;
+}
+
+/**
+ * Ein Mass, das die DEKLARATION nennt: entweder eine feste Zahl in ihrer
+ * Einheit oder der Name eines Feldes, dessen Wert aus den Parametern kommt.
+ *
+ * Anders als `massAus` kein `||`-Rückfall: ein Versatz von 0 ist eine
+ * Aussage („sitzt doch auf der Achse"), kein fehlender Wert.
+ */
+function _ausDeklaration(roh, parameter, vorgabe, einheit) {
+    const teiler = EINHEITEN[einheit] ?? 1;
+    if (typeof roh === 'number') return Number.isFinite(roh) ? roh / teiler : 0;
+    if (typeof roh !== 'string' || !roh) return 0;
+    const wert = Number(parameter?.[roh]);
+    if (Number.isFinite(wert)) return wert / teiler;
+    const v = Number(vorgabe(roh));
+    return Number.isFinite(v) ? v / teiler : 0;
+}
+
+/** Die Punkte eines Polygonprofils, in Metern — `[[u, v], …]` oder `[{u, v}, …]`. */
+function _polygon(punkte, einheit) {
+    const teiler = EINHEITEN[einheit] ?? 1;
+    const aus = (Array.isArray(punkte) ? punkte : []).map((p) => {
+        const u = Number(Array.isArray(p) ? p[0] : p?.u);
+        const v = Number(Array.isArray(p) ? p[1] : p?.v);
+        return (Number.isFinite(u) && Number.isFinite(v)) ? { u: u / teiler, v: v / teiler } : null;
+    }).filter(Boolean);
+    return aus.length >= 3 ? { punkte: aus, art: 'polygon' } : null;
+}
+
+/** Das Profil verschieben — die Achse bleibt, wo sie ist. */
+function _versetze(profil, u, v) {
+    if (!profil || (u === 0 && v === 0)) return profil;
+    return { ...profil, punkte: profil.punkte.map(p => ({ u: p.u + u, v: p.v + v })) };
 }
 
 /** Ein Profil entlang der Punkte — geschlossen, mit Kappen. */

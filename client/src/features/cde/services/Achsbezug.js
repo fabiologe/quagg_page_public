@@ -114,7 +114,25 @@ export function rohrmitte(y, rohr = {}) {
 /** Der ROHRSCHEITEL zu einer Achshöhe — daran misst sich die Überdeckung. */
 export function rohrscheitel(y, rohr = {}) {
     const v = _hoehe(y);
-    return Number.isFinite(v) ? rohrsohle(v, rohr) + 2 * _mitteZurSohle(rohr) : NaN;
+    return Number.isFinite(v) ? rohrsohle(v, rohr) + _profilhoehe(rohr) : NaN;
+}
+
+/**
+ * Sohle → Scheitel in Metern (Teil XXV, V2).
+ *
+ * Nennt die Achse ihre Profilhöhe, gilt sie. Ohne Angabe der alte Weg:
+ * zweimal der Abstand Mitte → Sohle — richtig für jedes Profil, das um
+ * seine Achse symmetrisch ist (Kreis, Rechteck), und das waren bis V2 alle.
+ * Ein Eiprofil oder ein Profil mit `versatzV` ist es nicht.
+ */
+function _profilhoehe(rohr) {
+    // `Number(null)` ist NULL, nicht NaN (siehe `_hoehe`): eine Achse, die das
+    // Feld mitführt, aber nicht kennt, hätte damit einen Scheitel auf ihrer
+    // Sohle bekommen — und die Überdeckung wäre um r zu gross.
+    const roh = rohr?.profilhoehe;
+    if (roh === null || roh === undefined || roh === '') return 2 * _mitteZurSohle(rohr);
+    const h = Number(roh);
+    return Number.isFinite(h) && h >= 0 ? h : 2 * _mitteZurSohle(rohr);
 }
 
 /**
@@ -152,7 +170,8 @@ export function sohleAnAchse(y, a, { vorgabe = 'sohle' } = {}) {
 
 /** Der SCHEITEL an einer Höhe dieser Achse — daran misst sich die Überdeckung. */
 export function scheitelAnAchse(y, a, { vorgabe = 'mitte' } = {}) {
-    return rohrscheitel(y, { achsbezug: achsbezugDerAchse(a, vorgabe) ?? 'mitte', dn: a?.dn, sohlabstand: a?.sohlabstand });
+    return rohrscheitel(y, { achsbezug: achsbezugDerAchse(a, vorgabe) ?? 'mitte', dn: a?.dn,
+                             sohlabstand: a?.sohlabstand, profilhoehe: a?.profilhoehe });
 }
 
 /** Alle drei Höhen auf einmal — für Leser, die ohnehin zwei davon brauchen. */

@@ -194,6 +194,25 @@ function _rezept(d, fehler) {
             for (const k of PROFIL_ARTEN[p.art].masse) zahlfeld(p[k], `Profil ${p.art}.${k}`);
             if (p.einheit !== undefined && !EINHEITEN[p.einheit]) fehler.push(`Einheit „${p.einheit}" gibt es nicht.`);
             if (p.ecken !== undefined && !(Number.isInteger(p.ecken) && p.ecken >= 3 && p.ecken <= 64)) fehler.push('`ecken` muss zwischen 3 und 64 liegen.');
+            // DER VERSATZ (V2): eine feste Zahl in der Einheit des Profils oder
+            // der Name eines Zahlfelds — beides, weil ein Bordstein seinen
+            // Versatz fest hat und eine Rinne ihn einstellbar braucht.
+            for (const k of ['versatzU', 'versatzV']) {
+                if (p[k] === undefined) continue;
+                if (typeof p[k] === 'number') { if (!Number.isFinite(p[k])) fehler.push(`Profil ${p.art}.${k}: keine Zahl.`); }
+                else if (typeof p[k] === 'string') zahlfeld(p[k], `Profil ${p.art}.${k}`);
+                else fehler.push(`Profil ${p.art}.${k}: eine Zahl oder ein Feldname.`);
+            }
+            // EIN POLYGONPROFIL (V2) beschreibt seinen Querschnitt selbst:
+            // Punkte `[u, v]` in seiner Einheit, quer und senkrecht zur Achse.
+            // Die Umlaufrichtung ist gleichgültig, `sweep` dreht sie sich hin.
+            if (p.art === 'polygon') {
+                const punkte = Array.isArray(p.punkte) ? p.punkte : null;
+                if (!punkte || punkte.length < 3) fehler.push('Profil polygon: `punkte` ist eine Liste von mindestens 3 Punkten.');
+                else if (!punkte.every(q => Array.isArray(q) && q.length === 2 && q.every(Number.isFinite))) {
+                    fehler.push('Profil polygon: jeder Punkt ist ein Paar [u, v] aus Zahlen.');
+                }
+            }
         }
     }
     if (g.art === 'stab' && d.hoechstPunkte !== 1) fehler.push('Ein Stab steht an EINEM Ort: `hoechstPunkte: 1`.');
