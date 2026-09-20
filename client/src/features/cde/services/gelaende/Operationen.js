@@ -1269,13 +1269,23 @@ export const GELAENDE_OPS = Object.freeze({
                 const mittel = ys.reduce((a, b) => a + b, 0) / ys.length;
                 return { hoehe: Math.round(nnAusWelt(mittel, versatz) * 10) / 10 };
             },
-            ausEingabe: (werte, zug) => {
+            ausEingabe: (werte, zug, { neueKennung } = {}) => {
                 const hoehe = Number(werte?.hoehe);
                 if (!Number.isFinite(hoehe)) return null;
                 const umriss = zug.map(p => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
-                const ops = [{ art: 'planum', parameter: { umriss, hoehe } }];
+                // Das Planum nennt seine Kennung SELBST (E2/E3) — damit die
+                // Böschung darauf zeigen kann, statt seine Höhe zu kopieren.
+                const id = neueKennung?.() ?? null;
+                const ops = [{ ...(id ? { id } : {}), art: 'planum', parameter: { umriss, hoehe } }];
                 const n = Number(werte?.neigung);
-                if (Number.isFinite(n) && n > 0) ops.push({ art: 'boeschung', parameter: { umriss, hoehe, neigung: n } });
+                // DIE BÖSCHUNG FOLGT (Teil XXIV-4): sie schliesst an die FLÄCHE des
+                // Planums an. Eine Kopie der Höhe wäre falsch, sobald jemand das
+                // Planum ändert — gemessen: Planum 101,50, Böschung weiter 101,00.
+                if (Number.isFinite(n) && n > 0) {
+                    ops.push({ art: 'boeschung', parameter: id
+                        ? { umriss, ziel: 'flaeche', flaeche: id, neigung: n }
+                        : { umriss, hoehe, neigung: n } });
+                }
                 return { titel: 'Planum', ops };
             },
         },

@@ -67,7 +67,39 @@ export function goldVon() {
         }
         aus.push(r);
     }
-    return normiere(aus);
+    return normiere(verweiseAlsKopie(aus));
+}
+
+/**
+ * EIN VERWEIS ZÄHLT WIE DIE KOPIE (Teil XXIV-4).
+ *
+ * Seit die Böschung eines Planums auf dessen FLÄCHE zeigt (`ziel: 'flaeche'`,
+ * `flaeche: 'op-…'`), steht in ihren Parametern keine Höhe mehr. Die Frage
+ * dieses Goldstandards ist aber „sagt das Werkzeug dasselbe wie vor A6?" — und
+ * das tut es: die Zielhöhe ist unverändert, sie wird nur nicht mehr kopiert.
+ * Für den Vergleich wird deshalb ein Verweis auf die Operation DIREKT DAVOR
+ * wieder zu deren Höhe. Zeigt er woandershin, bleibt er stehen, und der Test
+ * schlägt an.
+ */
+function verweiseAlsKopie(wert) {
+    if (Array.isArray(wert)) return wert.map(verweiseAlsKopie);
+    if (!wert || typeof wert !== 'object') return wert;
+    const aus = {};
+    for (const [k, v] of Object.entries(wert)) {
+        aus[k] = (k === 'operationen' && Array.isArray(v)) ? _opsAufgeloest(v) : verweiseAlsKopie(v);
+    }
+    return aus;
+}
+function _opsAufgeloest(ops) {
+    return ops.map((op, i) => {
+        const p = op?.parameter;
+        const davor = ops[i - 1];
+        const zeigtAufDavor = p?.ziel === 'flaeche' && davor?.id && p.flaeche === davor.id
+            && Number.isFinite(davor?.parameter?.hoehe);
+        if (!zeigtAufDavor) return verweiseAlsKopie(op);
+        const { ziel: _z, flaeche: _f, ...rest } = p;
+        return verweiseAlsKopie({ ...op, parameter: { ...rest, hoehe: davor.parameter.hoehe } });
+    });
 }
 
 function normiere(wert) {

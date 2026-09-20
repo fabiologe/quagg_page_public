@@ -33,7 +33,7 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung } from './Bauteilrezepte.js';
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -1309,7 +1309,11 @@ export function formwerkzeugFuer(art, op = GELAENDE_OPS[art]) {
         ...(w.warumNicht ? { warumNicht: (el, werte, { zug = [] } = {}) => (zug?.length >= mindestPunkte ? w.warumNicht(werte, zug) : null) } : {}),
         anwenden: (el, werte, { zug = [] } = {}) => {
             if (!el?.globalId || zug.length < mindestPunkte) return null;
-            const r = w.ausEingabe(werte, zug, { versatz: el.hoehenversatz ?? 0 });
+            // DIE KENNUNG EINER OPERATION, SCHON BEIM BAUEN (Teil XXIV-4): eine
+            // Operation, die auf eine andere DESSELBEN Vorgangs zeigt, braucht
+            // deren Kennung, bevor `ableitungsSchritte` sie vergibt. Die Quelle
+            // ist dieselbe (E2): im Kommando aus `neu`, sonst Zufall.
+            const r = w.ausEingabe(werte, zug, { versatz: el.hoehenversatz ?? 0, neueKennung: neueOperationsId });
             return r ? _gelaendeSchritte(el, r.ops, { titel: r.titel, auflockerung: r.auflockerung ?? null }) : null;
         },
     };

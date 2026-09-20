@@ -129,20 +129,24 @@ function _hoeheAn(rasterDaten, x, z) {
 
 // ── B0: was heute gilt ────────────────────────────────────────────────────
 
-describe('Vor der Kur: ein Planum mit Böschung', () => {
-    it('schreibt ZWEI Operationen — und beide tragen ihre eigene Kopie der Höhe', async () => {
+describe('Ein Planum mit Böschung: die Böschung ZEIGT auf das Planum', () => {
+    it('zwei Operationen — und nur EINE trägt eine Höhe', async () => {
         expect((await fuehre(PLANUM())).grund).toBe(null);
         const ops = opsVon('cde-P-auftrag');
         expect(ops.map(o => [o.id, o.art])).toEqual([['op-P', 'planum'], ['op-B', 'boeschung']]);
-        // DIESE Erwartung ändert sich mit der Kur (B2): die Böschung zeigt dann auf op-P.
-        expect(ops.map(o => o.parameter.hoehe)).toEqual([301, 301]);
+        // Vor der Kur stand hier [301, 301] — zwei Kopien derselben Zahl.
+        expect(ops.map(o => o.parameter.hoehe)).toEqual([301, undefined]);
+        expect(ops[1].parameter).toMatchObject({ ziel: 'flaeche', flaeche: 'op-P', neigung: 2 });
     });
 
-    it('und die Böschung folgt dem Planum NICHT — der gemessene Fehler', async () => {
+    it('das Planum geändert: die Böschung folgt, ohne einen zweiten Eintrag', async () => {
         await fuehre(PLANUM());
-        expect((await fuehre(PLANUM_AUF(301.5))).grund).toBe(null);
+        const erg = await fuehre(PLANUM_AUF(301.5));
+        expect(erg.grund).toBe(null);
         const ops = opsVon('cde-P-auftrag');
-        expect(ops.map(o => o.parameter.hoehe)).toEqual([301.5, 301]);   // nach der Kur: [301.5, undefined]
+        // Vor der Kur: [301.5, 301] — das Planum stieg, die Böschung blieb.
+        expect(ops.map(o => o.parameter.hoehe)).toEqual([301.5, undefined]);
+        expect(ops[1].parameter.flaeche).toBe('op-P');
     });
 });
 
