@@ -36,6 +36,9 @@ import { BEARBEITUNGEN } from '../services/Bearbeitungen.js';
 import { REZEPTE, REZEPT_QUELLEN } from '../services/Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
 import { GELAENDE_OPS } from '../services/gelaende/Operationen.js';
+import { subjektAusStand } from '../services/kommando/Subjekt.js';
+import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { WELT } from './hilfen/werkzeugProben.js';
 
 const WURZEL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rel = (p) => path.relative(WURZEL, p).split(path.sep).join('/');
@@ -419,5 +422,66 @@ describe('W8 — Fachregeln stehen im Regelwerk, nicht lose im Code', () => {
             for (const m of d.text.matchAll(muster)) if (!erlaubt.has(m[1])) neu.push(`${d.pfad}: ${m[1]}`);
         }
         expect(neu).toEqual([]);
+    });
+});
+
+/**
+ * W9 — DER SUBJEKTVERTRAG (Teil XXV, V0).
+ *
+ * Die Werkzeuge lesen ihr Bauteil als Objekt (`el.achse`, `el.stand`, …). Für
+ * ein EIGENES Bauteil baut `kommando/Subjekt.js` dieses Objekt aus dem Journal
+ * (K3) — ohne Viewer, ohne Engine. Jedes Feld, das ein Werkzeug liest und der
+ * Stand nicht liefert, ist ein Werkzeug, das ohne Oberfläche nicht läuft
+ * (gemessen: `reichweite.test.js`).
+ *
+ * Gemessen am 2026-09-20: neun Felder fehlen, davon sind drei keine
+ * Anreicherung eines Bauteils (siehe `KEIN_BAUTEILFELD`). Bleiben sechs; V3
+ * holt `eigeneFlaechen`, `vorlagen` und `erdbau` in den Stand, drei bleiben
+ * beim Viewer, weil sie aus GELIEFERTER Geometrie kommen.
+ */
+const SUBJEKT_ERLAUBT = {
+    // Kandidaten aus der Engine: welche Gelände- bzw. Körperquellen es im
+    // geladenen Modell gibt. Kein eigenes Bauteil beschreibt sie.
+    'gelaendeQuellen': 1,
+    'koerperQuellen': 1,
+    // Das Prüfmass einer gelieferten Quelle (Dreiecke, Spannweiten) — es
+    // entsteht beim Auflösen der Geometrie, nicht im Journal.
+    'quellmass': 1,
+    // V3 holt diese drei in den Stand: die eigenen Flächen und der Erdbau-Stand
+    // stehen im Journal, die Vorlagen in der Bibliothek.
+    'eigeneFlaechen': 1,
+    'vorlagen': 1,
+    'erdbau': 1,
+};
+
+/** Felder, die kein Bauteil beschreiben — sie gehören nicht in den Subjektvertrag. */
+const KEIN_BAUTEILFELD = new Set([
+    'punkte',            // das GEZEICHNETE beim Erzeugen (`{punkte, hoehenversatz}`)
+    'modelId', 'modellSha',  // die Datei, aus der es stammt — der Aufrufer weiss sie
+]);
+
+describe('W9 — was ein Werkzeug vom Bauteil liest, liefert der Stand', () => {
+    const quelle = fs.readFileSync(path.join(WURZEL, 'services/Bearbeitungen.js'), 'utf8');
+    const gelesen = new Set([...quelle.matchAll(/\bel\??\.([a-zA-Z][a-zA-Z0-9]*)/g)].map(m => m[1]));
+    // Was `subjektAusStand` für ein eigenes Bauteil liefert — an der echten
+    // Probenwelt gemessen, nicht am Text der Datei.
+    const wirksamerStand = (art) => (art === 'erzeugt' ? WELT : new Map());
+    const rahmen = rahmenOhneBezug({ hoehenversatz: 300 });
+    const geliefert = new Set();
+    for (const gid of WELT.keys()) {
+        const s = subjektAusStand(gid, { wirksamerStand, rahmen });
+        if (s) for (const k of Object.keys(s)) geliefert.add(k);
+    }
+    const fehlend = new Map();
+    for (const k of gelesen) {
+        if (geliefert.has(k) || KEIN_BAUTEILFELD.has(k)) continue;
+        fehlend.set(k, 1);
+    }
+    regel('W9 Subjektvertrag', fehlend, SUBJEKT_ERLAUBT);
+
+    it('der Stand liefert, woran die Auswertung hängt: Achse, Strang, Anschlüsse, Stand', () => {
+        for (const feld of ['achse', 'strang', 'anschluesse', 'stand', 'anker', 'versatz', 'knotenImNetz']) {
+            expect(geliefert.has(feld), feld).toBe(true);
+        }
     });
 });
