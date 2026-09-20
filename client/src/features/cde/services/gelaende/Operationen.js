@@ -35,6 +35,33 @@ import { nnAusWelt } from '../Hoehenbezug.js';
 import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
 import { regeltabelle } from '../regeln/Regelwerk.js';
 import { boeschungsFussEcken, gerinneEcken } from './Eckmasse.js';
+import { ZIELARTEN, ZIEL_VORGABE, eigeneHoehe, sollhoeheVon, zielMerkmale, zielart } from './Sollhoehe.js';
+
+/**
+ * Was „Auffüllen" je ZIEL im Formular verlangt und in die Operation schreibt —
+ * eine Zeile je Zielart (Teil XXIV-4). Ein viertes Ziel wäre eine Zeile mehr,
+ * und kein `if` im Werkzeug. Die Zielart selbst (was sie BEDEUTET) steht in
+ * `Sollhoehe.js`; hier steht nur, wie dieses eine Werkzeug danach fragt.
+ */
+const ZIEL_EINGABE = Object.freeze({
+    hoehe: Object.freeze({
+        option: 'Höhe über dem Rand', vorgang: 'Auffüllen',
+        fehlt: (w) => (Number(w?.mass) > 0 ? null : 'die Höhe über dem Rand fehlt.'),
+        // Die Zielhöhe ist die mittlere RANDhöhe plus das getippte Mass.
+        parameter: (w, { umriss }) => ({ hoehe: Math.round((_mittelY(umriss) + Number(w.mass)) * 1000) / 1000,
+                                         neigung: _neigungOderNull(w?.neigung) }),
+    }),
+    ur: Object.freeze({
+        option: 'bis GOK — auf das gelieferte Gelände', vorgang: 'Auffüllen bis GOK',
+        fehlt: () => null,
+        parameter: () => ({}),
+    }),
+    flaeche: Object.freeze({
+        option: 'bis zur Fläche einer Operation (Planum)', vorgang: 'Auffüllen bis zur Fläche',
+        fehlt: (w) => (w?.bis ? null : 'die Zieloperation fehlt.'),
+        parameter: (w) => ({ flaeche: String(w.bis), neigung: _neigungOderNull(w?.neigung) }),
+    }),
+});
 
 /** Ein Punkt kommt je nach Quelle als {x,z} oder [x,y,z]. */
 function _xz(p) {
@@ -401,22 +428,17 @@ export function grube(raster, { umriss, sohle, neigung = null } = {}, { bereich 
  * NUR FÜLLEND (`max`): eine Schüttung trägt nie ab. Idempotent aus
  * denselben Gründen wie die Grube.
  */
-export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = null, flaeche = null } = {},
-                           { bereich = null, ur = null, operationVon = null } = {}) {
+export function schuettung(raster, parameter = {}, { bereich = null, ur = null, flaecheAn = null } = {}) {
+    const { umriss, neigung = null } = parameter;
     const warnungen = [];
     const ring = _mitHoehe(umriss);
     if (!ring || ring.length < 3) return { raster, warnungen: ['schuettung_ohne_umriss: jeder Umrisspunkt braucht seine Höhe'] };
-    const bisUr = ziel === 'ur';
-    const bisFlaeche = ziel === 'flaeche';
-    if (bisUr && !gleicherBezug(ur, raster)) return { raster, warnungen: ['schuettung_ohne_ur: das Ur-Gelände liegt nicht auf diesem Raster'] };
-    let sollAn = null;
-    if (bisFlaeche) {
-        const zielOp = operationVon?.(flaeche) ?? null;
-        if (!zielOp) return { raster, warnungen: [`schuettung_ziel_fehlt: die Operation ${flaeche ?? '—'} liegt im Stapel nicht vor dieser Auffüllung`] };
-        sollAn = flaecheVon(zielOp);
-        if (!sollAn) return { raster, warnungen: [`schuettung_ziel_ohne_flaeche: die Operation ${flaeche} stellt keine Fläche her`] };
-    } else if (!bisUr && !Number.isFinite(hoehe)) return { raster, warnungen: ['schuettung_ohne_hoehe'] };
-    const n = Number(neigung) > 0 ? Number(neigung) : 0;
+    // WOHIN (Teil XXIV-4): die Zielhöhe am Ort — eine Höhe, das Ur-Gelände oder
+    // die Fläche einer anderen Operation. Welche Zielart das ist, weiss hier
+    // niemand mehr; die Schüttung weiss nur, dass sie FÜLLT.
+    const soll = sollhoeheVon(parameter, { art: 'schuettung', feld: 'hoehe' }, { raster, ur, flaecheAn });
+    if (soll.grund) return { raster, warnungen: [soll.grund] };
+    const n = soll.mitBoeschung && Number(neigung) > 0 ? Number(neigung) : 0;
     const poly = ring.map(p => [p.x, p.z]);
     const neu = _kopie(raster);
     const { nz, heights } = neu;
@@ -429,17 +451,11 @@ export function schuettung(raster, { umriss, ziel = 'hoehe', hoehe, neigung = nu
             if (!Number.isFinite(h)) continue;
             const k = rasterKnoten(raster, ix, iz);
             if (!punktInPolygon(k.x, k.z, poly)) continue;
-            let soll;
-            if (bisUr) {
-                soll = ur.heights[i];
-                if (!Number.isFinite(soll)) continue;
-            } else {
-                const ziel = sollAn ? sollAn(k.x, k.z) : hoehe;
-                if (!Number.isFinite(ziel)) continue;
-                const r = _amRing(k.x, k.z, ring);
-                soll = n > 0 ? Math.min(ziel, r.hoehe + r.abstand / n) : ziel;
-            }
-            if (soll > h) { heights[i] = soll; getroffen++; }
+            const ziel = soll.an(k.x, k.z, i);
+            if (!Number.isFinite(ziel)) continue;
+            // Mit Böschung steigt sie vom Rand nach innen bis zur Zielhöhe.
+            const hin = n > 0 ? Math.min(ziel, _amRing(k.x, k.z, ring).hoehe + _amRing(k.x, k.z, ring).abstand / n) : ziel;
+            if (hin > h) { heights[i] = hin; getroffen++; }
         }
     }
     if (!getroffen) warnungen.push('schuettung_ohne_treffer: kein Rasterpunkt im Umriss liegt unter der Zielhöhe');
@@ -1349,43 +1365,30 @@ export const GELAENDE_OPS = Object.freeze({
         werkzeug: {
             id: 'auffuellen', titel: 'Auffüllen', icon: 'auffuellen', rang: 3,
             felder: [
-                { name: 'ziel', titel: 'Ziel', typ: 'auswahl', optionen: [
-                    { wert: 'hoehe', titel: 'Höhe über dem Rand' },
-                    { wert: 'ur', titel: 'bis GOK — auf das gelieferte Gelände' },
-                    { wert: 'flaeche', titel: 'bis zur Fläche einer Operation (Planum)' },
-                ] },
+                { name: 'ziel', titel: 'Ziel', typ: 'auswahl',
+                  optionen: Object.entries(ZIEL_EINGABE).map(([wert, e]) => ({ wert, titel: e.option })) },
                 { name: 'mass', titel: 'Höhe über dem Rand (bei Ziel Höhe)', einheit: 'm', typ: 'zahl', min: 0.05, max: 60, gueltig: { ueber: 0 }, vorgabe: 1, leerErlaubt: true },
                 // Die Zieloperation — über ihre KENNUNG, irgendwo im Stapel des Geländes.
                 { name: 'bis', titel: 'Zieloperation (bei Ziel Fläche)', typ: 'text', leerErlaubt: true, adresse: 'stapeloperation' },
                 { name: 'neigung', titel: 'Böschung 1 : n (leer = senkrecht)', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
             ],
-            vorbelegung: () => ({ ziel: 'hoehe', mass: 1, neigung: 1.5 }),
+            vorbelegung: () => ({ ziel: ZIEL_VORGABE, mass: 1, neigung: 1.5 }),
             // Was je Ziel fehlen kann — technisch, nicht fachlich (E5). Ob die
             // Zieloperation eine Fläche HAT, entscheidet der Lauf (Warnung).
             warumNicht: (werte) => {
-                const ziel = werte?.ziel ?? 'hoehe';
-                if (ziel === 'flaeche' && !werte?.bis) return 'Ziel „Fläche": die Zieloperation fehlt.';
-                if (ziel === 'hoehe' && !(Number(werte?.mass) > 0)) return 'Ziel „Höhe": die Höhe über dem Rand fehlt.';
-                return null;
+                // Ein Ziel, das es nicht gibt, sperrt nichts — die Formularprüfung
+                // nimmt es ohnehin nicht an (Auswahlfeld).
+                const z = werte?.ziel ?? ZIEL_VORGABE;
+                const fehlt = ZIEL_EINGABE[z]?.fehlt(werte) ?? null;
+                return fehlt ? `Ziel „${ZIELARTEN[z].titel}": ${fehlt}` : null;
             },
             ausEingabe: (werte, zug, { versatz }) => {
                 const umriss = punkteInNn(zug, versatz);
                 if (!umriss) return null;
-                if (werte?.ziel === 'ur') {
-                    return { titel: 'Auffüllen bis GOK', ops: [{ art: 'schuettung', parameter: { umriss, ziel: 'ur' } }] };
-                }
-                if (werte?.ziel === 'flaeche') {
-                    if (!werte?.bis) return null;
-                    return { titel: 'Auffüllen bis zur Fläche', ops: [{ art: 'schuettung', parameter: {
-                        umriss, ziel: 'flaeche', flaeche: String(werte.bis), neigung: _neigungOderNull(werte?.neigung),
-                    } }] };
-                }
-                const mass = Number(werte?.mass);
-                if (!Number.isFinite(mass) || mass <= 0) return null;
-                return { titel: 'Auffüllen', ops: [{ art: 'schuettung', parameter: {
-                    umriss, ziel: 'hoehe', hoehe: Math.round((_mittelY(umriss) + mass) * 1000) / 1000,
-                    neigung: _neigungOderNull(werte?.neigung),
-                } }] };
+                const z = zielart(werte);
+                const e = ZIEL_EINGABE[z];
+                if (e.fehlt(werte)) return null;
+                return { titel: e.vorgang, ops: [{ art: 'schuettung', parameter: { umriss, ziel: z, ...e.parameter(werte, { umriss }) } }] };
             },
         },
         hoehenfelder: ['hoehe'],
@@ -1395,18 +1398,19 @@ export const GELAENDE_OPS = Object.freeze({
         kennweiten: _kwUmriss,
         // Eine ebene Krone hat nur das Ziel Höhe — „bis GOK" endet am Ur-Gelände,
         // „bis zur Fläche" an der Fläche seines Ziels.
-        kennhoehen: (p) => ((p.ziel ?? 'hoehe') === 'hoehe' ? [{ art: 'kronenkante', hoehe: p.hoehe }] : []),
+        kennhoehen: (p) => (eigeneHoehe(p) ? [{ art: 'kronenkante', hoehe: p.hoehe }] : []),
         // Der innere Ring ist die Krone — nur bei einer Zielhöhe, nicht „bis GOK".
         innen: { feld: 'hoehe', titel: 'Krone', richtung: -1,
-                 gilt: (p) => (p.ziel ?? 'hoehe') === 'hoehe' && Number.isFinite(Number(p.hoehe)) },
+                 gilt: (p) => eigeneHoehe(p) && Number.isFinite(Number(p.hoehe)) },
         cutTyp: 'EXCAVATION',
         // Eine Rückverfüllung bis GOK ist BACKFILL.
-        fillTyp: (p) => (p?.ziel === 'ur' ? 'BACKFILL' : null),
+        // Eine Rückverfüllung ist BACKFILL — welche Zielart das ist, sagt die Tabelle.
+        fillTyp: (p) => (zielMerkmale(p).rueckverfuellung ? 'BACKFILL' : null),
         vorschau(op, c) {
             const v = _ringVorschau(op, c);
             if (!v) return;
             const q = op.parameter ?? {};
-            if (q.ziel === 'ur') {
+            if (zielMerkmale(q).rueckverfuellung) {
                 c.chips.push({ art: 'vorschau', text: 'Auffüllen bis GOK — auf das Ur-Gelände, nur auffüllen' });
                 return;
             }
@@ -1579,8 +1583,15 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
     // WORAUF EINE OPERATION ZEIGEN DARF (Durchstich 2, E3): auf eine, die VORHER
     // liegt — in den Vorgängern des Stapels (`vorherige`) oder weiter vorn in
     // dieser Liste. Eine spätere ist kein Ziel; so kann kein Zyklus entstehen.
+    //
+    // Gereicht wird die FÄHIGKEIT, nicht die Operation: „gibt es sie, und stellt
+    // sie eine Fläche her?" (Teil XXIV-4). Der Auflöser der Sollhöhe kennt damit
+    // weder die Registry noch eine Operationsart.
     const gesehen = [...(vorherige ?? [])];
-    const operationVon = (id) => (id ? gesehen.findLast(o => o?.id === id) ?? null : null);
+    const flaecheAn = (id) => {
+        const op = id ? gesehen.findLast(o => o?.id === id) ?? null : null;
+        return op ? { gefunden: true, an: flaecheVon(op) } : { gefunden: false, an: null };
+    };
     for (const op of operationen) {
         const eintrag = GELAENDE_OPS[op?.art];
         if (!eintrag) { warnungen.push(`unbekannte_operation: ${op?.art ?? '—'}`); continue; }
@@ -1589,7 +1600,7 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
         // vorgibt (`ganzesRaster` schaltet ihn ab — für den Zweifelsfall).
         const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p));
         const vor = stand;
-        const r = eintrag.wende(stand, p, { bereich: b, ur, operationVon });
+        const r = eintrag.wende(stand, p, { bereich: b, ur, flaecheAn });
         stand = r.raster;
         warnungen.push(...r.warnungen);
         gesehen.push(op);
