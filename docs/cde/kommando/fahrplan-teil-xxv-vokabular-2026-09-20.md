@@ -90,3 +90,53 @@ Wenn gekürzt werden muss: V1, V2 und V3 sind der Kern — sie schließen die zw
 ---
 
 Aufträge und Grundlagen: [README](README.md)
+
+---
+
+## 6 · Soll gegen Ist (nach dem Bauen, 2026-09-20)
+
+Gebaut auf Fabios „lets go mit dem Ausführen des Plans". Je Stufe ein Commit, jeder mit einem Test, der vorher rot war.
+
+| # | Commit | Soll | Ist |
+|---|---|---|---|
+| V0 | `7ca84d6` | Zahlen einfrieren | `test/reichweite.test.js` (38/23/2), `test/kostenprobe.test.js` (6 Fälle), Wächter W9 |
+| V1 | `4ac6c22` | Schema-Loch | Jede Art nennt ihre Schlüssel (`masse`/`weitere`); zwei Sonderzweige fielen weg (Stab.laenge, Platte.dicke sind jetzt `masse`) |
+| V2 | `2911fd8` | Profil neben der Achse | `versatzU`/`versatzV` an jeder Art, Profilart `polygon`, dazu `profilhoehe` — siehe unten |
+| V3 | `d50ef3a` | Auflöser im Kontext | `kommando/Kandidaten.js`, zwei Arten; Bibliothek gehört zum Katalog |
+| V4 | `ce5ac6f` | ein Bauplan-Schreiber | **2 → 1, nicht 3 → 1** — siehe unten |
+| V6 | `ce5ac6f`, `2275453` | tote Wörter | Namensmuster kuriert, `ebene` bewiesen, Einzelschreiber bewacht, `art` begründet stehen gelassen |
+| V7 | `39e8de7` | zweite Zielfläche | `gerinne.flaeche(p)`; die Punktrechnung EINMAL (`_gerinneSoll`) |
+| V8 | `3fcee7b` | ein Katalog-Schreibweg | `katalog/Katalogablage.js`, 6 → 0 Umgehungen |
+| V5 | — | „Vorgang entfernen" als Werkzeug | **nicht gebaut** — siehe unten |
+
+### Die Abnahme
+
+| # | Kriterium | vorher | nachher |
+|---|---|---|---|
+| A1 | Bordstein als JSON | nicht ausdrückbar | quer von z = −0,15 bis 0 statt ±0,075, Höhe unverändert |
+| A2 | unbekannter Schlüssel im Profil | `ok: true`, still ignoriert | `ok: false` mit Vorschlag, Rezept nicht aktiv |
+| A3 | ohne Oberfläche ausführbar | 38 von 63, 2 offen | **40 von 63, 0 offen** |
+| A4 | Setzer, die einen Bauplan schreiben | 2 | 1 |
+| A5 | „Vorgang entfernen" als Katalogwerkzeug | Store-Funktion | unverändert, mit Grund |
+| A6 | Subjektfelder nur vom Viewer | 6 | **3** |
+| A7 | Rechteckkanal = 0 Zeilen | einmalige Probe | Test |
+
+Suite nach V8: 301 Dateien, 3 365 Tests grün.
+
+### Wo es anders kam als geplant
+
+**V5 fällt aus, und das ist ein Befund.** Der Plan nahm an, „Vorgang entfernen" brauche nur den Stand seiner Ableitung, und den reiche der Kontext aus V3 herein. V3 hat aber einen KANDIDATEN-Auflöser gebaut: er beantwortet „welche anderen Objekte kommen für dieses Werkzeug in Frage". `vorgangEntfernenSchritte` braucht etwas anderes — den ganzen eigenen Stand: alle Teile der Klammer, alle Anzeige-Bauteile, die sie in ihrer Vorgangsliste nennen, und ob das Ur-Gelände ausgeblendet ist. Das in die Kandidatenform zu biegen hieße, dem Vokabular eine Bedeutung zu geben, die es nicht hat; ein `standVon()` im Kommandokontext wäre die Tür, durch die ein Werkzeug das ganze Modell sieht — genau die Grenze, die der Katalog seit jeher hält (ein Werkzeug bekommt ein Subjekt, nicht das Modell). Der heutige Weg trägt einen Systembeleg und die Modus-Sperre. **Fällig wird es, wenn ein zweites Werkzeug den ganzen Stand braucht** — dann ist die Frage „wie sieht ein Werkzeug mehr als sein Subjekt?" zu beantworten, nicht vorher.
+
+**V4 ist 2 → 1, nicht 3 → 1.** „Mass am Vorgang" (`vorgangsmass`) schreibt keinen Bauplan, sondern einen ganzen Erdbau-Vorgang mit allen Teilen. Andere Form, kein Sonderfall. Steht als Grund am Helfer.
+
+**V2 hat einen Fehler mitgenommen, den es sonst verursacht hätte.** `rohrscheitel` rechnete den Scheitel als Sohle plus zweimal dem Abstand zur Sohle — richtig für jedes Profil, das um seine Achse symmetrisch ist, und das waren bis V2 alle. Die Kernel-Form nennt deshalb ihre `profilhoehe`. Dabei gefunden: `Number(null)` ist 0, nicht NaN — eine Achse, die das Feld mitführt, aber nicht kennt, hätte ihren Scheitel auf der Sohle gehabt und die Überdeckung wäre um r zu gross gewesen. Gefangen hat das der Überdeckungstest in `sohleEigen.test.js`, nicht das Lesen.
+
+**Die Versatzrichtung ist gemessen, nicht gerechnet:** positiv ist LINKS in Zeichenrichtung (Achse nach Osten legt +1 m auf z − 1, nach Süden auf x + 1, nach Westen auf z + 1). Steht in der Deklaration.
+
+**Drei eingefrorene Vergleiche mussten nachziehen**, jeder benannt und begründet: der Goldstandard vor A4 und die Viewer-Fixture tragen das additive `profilhoehe` aus; die Fixture trägt zusätzlich `erdbau.operationen` aus, das NICHT von hier kommt, sondern von Durchstich 2 (S2). Und der Goldstandard der Werkzeuge hielt einen Fehler fest — „H-{n:03}" als Name —, die zwei Werte sind korrigiert.
+
+### Was offen bleibt
+
+- **Browserprobe**: nicht gelaufen. Die Geometrie ist an den gebauten Körpern gemessen (Testebene), die Oberfläche nicht. Offen bleibt damit: zeigt das Formular die Kandidaten, erscheint das Zeichenwerkzeug eines Bibliotheksrezepts, rendert der versetzte Körper.
+- **Build und Push**: nicht gemacht. Der Build geht live, und parallel lief Teil XXIV-4 in denselben Dateien; beides gehört auf Zuruf.
+- **V5** wie oben.
