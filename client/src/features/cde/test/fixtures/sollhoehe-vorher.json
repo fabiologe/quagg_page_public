@@ -1,0 +1,501 @@
+{
+ "planum": {
+  "warnungen": [],
+  "summe": 504400,
+  "gewichtet": 24403760,
+  "min": 300,
+  "max": 301,
+  "geaendert": 100,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "planum + boeschung 1:2": {
+  "warnungen": [],
+  "summe": 504444.261231,
+  "gewichtet": 24405663.701324,
+  "min": 300,
+  "max": 301,
+  "geaendert": 192,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   300.75,
+   300.25,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "planum ohne hoehe": {
+  "warnungen": [
+   "planum_ohne_hoehe"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "boeschung ohne hoehe": {
+  "warnungen": [
+   "boeschung_ohne_hoehe"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "grube senkrecht": {
+  "warnungen": [],
+  "summe": 504100,
+  "gewichtet": 24388580,
+  "min": 298,
+  "max": 300,
+  "geaendert": 100,
+  "loecher": 0,
+  "proben": [
+   298,
+   298,
+   298,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "grube 1:1,5": {
+  "warnungen": [],
+  "summe": 504194.666667,
+  "gewichtet": 24393525.333333,
+  "min": 298,
+  "max": 300,
+  "geaendert": 100,
+  "loecher": 0,
+  "proben": [
+   298,
+   299.666667,
+   299,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "grube ohne sohle": {
+  "warnungen": [
+   "grube_ohne_sohle"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis hoehe 1:1,5": {
+  "warnungen": [],
+  "summe": 504649.333333,
+  "gewichtet": 24415716.666667,
+  "min": 300,
+  "max": 301,
+  "geaendert": 400,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   301,
+   301,
+   301,
+   300,
+   301,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis ur in der mitte einer grube": {
+  "warnungen": [],
+  "summe": 504132,
+  "gewichtet": 24390044,
+  "min": 298,
+  "max": 300,
+  "geaendert": 84,
+  "loecher": 0,
+  "proben": [
+   300,
+   298,
+   298,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis ur, fremdes raster": {
+  "warnungen": [
+   "schuettung_ohne_ur: das Ur-Gelände liegt nicht auf diesem Raster"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis flaeche, ziel in derselben liste": {
+  "warnungen": [],
+  "summe": 504700,
+  "gewichtet": 24418746,
+  "min": 300,
+  "max": 301,
+  "geaendert": 400,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   301,
+   301,
+   301,
+   300,
+   301,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis flaeche, ziel im vorgaenger": {
+  "warnungen": [],
+  "summe": 504649.333333,
+  "gewichtet": 24415716.666667,
+  "min": 300,
+  "max": 301,
+  "geaendert": 400,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   301,
+   301,
+   301,
+   300,
+   301,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis flaeche, ziel fehlt": {
+  "warnungen": [
+   "schuettung_ziel_fehlt: die Operation op-X liegt im Stapel nicht vor dieser Auffüllung"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung bis flaeche, ziel ohne flaeche": {
+  "warnungen": [
+   "schuettung_ziel_ohne_flaeche: die Operation op-G stellt keine Fläche her"
+  ],
+  "summe": 504100,
+  "gewichtet": 24388580,
+  "min": 298,
+  "max": 300,
+  "geaendert": 100,
+  "loecher": 0,
+  "proben": [
+   298,
+   298,
+   298,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "schuettung, unbekannte zielart": {
+  "warnungen": [],
+  "summe": 504700,
+  "gewichtet": 24418746,
+  "min": 300,
+  "max": 301,
+  "geaendert": 400,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   301,
+   301,
+   301,
+   300,
+   301,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "baugrube": {
+  "warnungen": [],
+  "summe": 504109.859107,
+  "gewichtet": 24389383.096222,
+  "min": 297,
+  "max": 300,
+  "geaendert": 99,
+  "loecher": 0,
+  "proben": [
+   297,
+   298,
+   298,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "baugrube ohne sohle": {
+  "warnungen": [
+   "baugrube_ohne_sohle"
+  ],
+  "summe": 504300,
+  "gewichtet": 24398700,
+  "min": 300,
+  "max": 300,
+  "geaendert": 0,
+  "loecher": 0,
+  "proben": [
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "planum über das ganze raster": {
+  "warnungen": [],
+  "summe": 502619,
+  "gewichtet": 24317371,
+  "min": 299,
+  "max": 299,
+  "geaendert": 1681,
+  "loecher": 0,
+  "proben": [
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299,
+   299
+  ]
+ },
+ "planum in zu kleinem bereich": {
+  "warnungen": [
+   "wirkbereich_zu_klein: „Planum herstellen\" wirkt bis an den Rand des gerechneten Bereichs"
+  ],
+  "summe": 504349,
+  "gewichtet": 24401101,
+  "min": 300,
+  "max": 301,
+  "geaendert": 49,
+  "loecher": 0,
+  "proben": [
+   301,
+   300,
+   301,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "planum mit loch im raster": {
+  "warnungen": [],
+  "summe": 504099,
+  "gewichtet": 24384195,
+  "min": 300,
+  "max": 301,
+  "geaendert": 99,
+  "loecher": 1,
+  "proben": [
+   301,
+   301,
+   301,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ },
+ "planum + boeschung auf 0,5 m": {
+  "warnungen": [],
+  "summe": 1968876.749565,
+  "gewichtet": 96150054.416463,
+  "min": 300,
+  "max": 301,
+  "geaendert": 725,
+  "loecher": 0,
+  "proben": [
+   301,
+   301,
+   301,
+   300.75,
+   300.25,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300,
+   300
+  ]
+ }
+}
