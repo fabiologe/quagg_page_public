@@ -794,9 +794,14 @@ function _ringMass(punkte) {
  * Hüllrechteck. Ohne Angabe: die Fläche des Wirkbereichs (dieselbe Schranke
  * wie bisher).
  */
-export function wirkflaecheVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
+export function wirkflaecheVon(raster, art, parameter = {}, { ops = GELAENDE_OPS, ctx = null } = {}) {
     const p = parameter ?? {};
-    const box = wirkbereichVon(raster, art, p, { ops });
+    // MIT DEMSELBEN KONTEXT wie der Wirkbereich (Teil XXIV-4): die Fläche liest
+    // ihren Saum aus der Box, und die hängt an der Zielhöhe. Ohne den Kontext
+    // fiele eine Operation, die auf eine Fläche zeigt, hier auf Saum 0 zurück —
+    // und die Feinheit des Korridors wäre eine andere als bei derselben
+    // Operation mit kopierter Höhe.
+    const box = wirkbereichVon(raster, art, p, { ops, ctx });
     // Welche FORM die Fläche hat UND wo ihre Punkte stehen, sagt der Eintrag:
     // ein Streifen um eine Achse oder ein Ring mit Saum. Die beiden Formeln
     // bleiben hier — sie sind Geometrie, keine Eigenschaft einer Operation.
@@ -868,7 +873,7 @@ export function feinheitFuer(raster, ops = [], { zelle = 0.5, budget = 160000, v
     let flaeche = 0;
     let kennweite = Infinity;
     for (const { op, ctx } of mitVorherigen(ops, { vorherige })) {
-        const f = wirkflaecheVon(raster, op?.art, op?.parameter ?? {});
+        const f = wirkflaecheVon(raster, op?.art, op?.parameter ?? {}, { ctx });
         if (Number.isFinite(f)) flaeche += Math.max(0, f);
         const w = kennweiteVon(raster, op?.art, op?.parameter ?? {}, { ctx });
         if (Number.isFinite(w) && w > 0) kennweite = Math.min(kennweite, w);
@@ -1712,11 +1717,11 @@ export function flaecheVon(op, { ops = GELAENDE_OPS } = {}) {
  * behält es Byte für Byte.
  *
  * Umgeschrieben wird nur, was zweifelsfrei eine Kopie IST: die Operation darf
- * ihrer Vorgängerin folgen (`zielAusVorgaenger`), sie trägt ihre Höhe
- * unverändert aus dem alten Stand, die Vorgängerin ist dieselbe wie damals und
- * stellt eine Fläche her, beide haben denselben Umriss, und die Fläche lag
- * GENAU auf der kopierten Höhe. Eine absichtlich abweichende Böschung bleibt
- * damit, wie sie ist.
+ * ihrer Vorgängerin folgen (`zielAusVorgaenger`), sie trägt eine eigene Höhe,
+ * die Vorgängerin ist dieselbe wie damals und stellt eine Fläche her, beide
+ * haben denselben Umriss, und diese Fläche lag — im ALTEN Stand, vor der
+ * laufenden Änderung — GENAU auf dieser Höhe. Eine absichtlich abweichende
+ * Böschung bleibt damit, wie sie ist.
  *
  * @param {Array} alt  die Operationen, wie sie im Journal stehen (mit Kennung)
  * @param {Array} neu  die Operationen, wie sie geschrieben werden (mit Kennung)
@@ -1725,9 +1730,8 @@ export function kopienAlsVerweise(alt = [], neu = [], { ops = GELAENDE_OPS } = {
     return (neu ?? []).map((op, i) => {
         if (i === 0 || !ops[op?.art]?.zielAusVorgaenger) return op;
         const p = op.parameter ?? {};
-        const altOp = (alt ?? [])[i], altDavor = (alt ?? [])[i - 1], neuDavor = neu[i - 1];
-        if (!eigeneHoehe(p) || !Number.isFinite(p.hoehe)) return op;                    // trägt keine Kopie
-        if (altOp?.art !== op.art || altOp?.parameter?.hoehe !== p.hoehe) return op;    // von Hand geändert
+        const altDavor = (alt ?? [])[i - 1], neuDavor = neu[i - 1];
+        if (!eigeneHoehe(p) || !Number.isFinite(p.hoehe)) return op;                    // trägt keine eigene Höhe
         if (!neuDavor?.id || !altDavor?.id || neuDavor.id !== altDavor.id) return op;   // andere Vorgängerin
         const an = flaecheVon(altDavor, { ops });
         if (!an || !_gleicheUmrisse(p.umriss, altDavor.parameter?.umriss)) return op;

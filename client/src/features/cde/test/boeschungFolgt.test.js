@@ -36,6 +36,8 @@ import { erdbauStandVon, operationenMitKennung, rezeptNach } from '../services/B
 import { neuerAbleitungslauf } from '../services/ableitung/Ableitungslauf.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
+import { GELAENDE_OPS, kopienAlsVerweise } from '../services/gelaende/Operationen.js';
+import { JOURNAL_KENNT } from '../services/JournalFormat.js';
 
 const PFAD = join(process.cwd(), 'src/features/cde/test/fixtures/boeschung-vorher.json');
 /** Der Höhenversatz: Welt 0 heisst 300,00 m NN. */
@@ -53,8 +55,10 @@ class Speicher {
     async listBlobs() { return []; }
 }
 
+let speicher;
 beforeEach(() => {
-    repo.setBackend(new Speicher());
+    speicher = new Speicher();
+    repo.setBackend(speicher);
     setActivePinia(createPinia());
 });
 afterEach(() => repo.setBackend(null));
@@ -167,6 +171,49 @@ describe('Ein ALT-JOURNAL (Böschung mit kopierter Höhe) baut wie immer', () =>
     });
 });
 
+describe('Der Abnahmefall: die Zahl', () => {
+    const GOLD = JSON.parse(readFileSync(PFAD, 'utf8'));
+    // Gelände eben 300,00 m NN; Planum 10 × 10 m (Ränder auf x,25) auf 301,00,
+    // Böschung 1:2. Ein Knoten 0,75 m ausserhalb des Rands liegt damit auf
+    //     301,00 − 0,75 / 2 = 300,625.
+    // Nach „Planumshöhe 301,50" muss derselbe Knoten auf
+    //     301,50 − 0,75 / 2 = 301,125
+    // liegen — 0,50 m höher, genau wie das Planum. Vor der Kur blieb er auf
+    // 300,625, und am Rand stand eine Stufe von 0,875 m.
+
+    it('Planum 301,00 mit Böschung 1:2: 0,75 m draussen liegt das Gelände auf 300,625', async () => {
+        expect((await fuehre(PLANUM())).grund).toBe(null);
+        expect((await miss()).hoeheAn).toEqual([301, 301, 300.625, 300]);
+    });
+
+    it('Planum auf 301,50: derselbe Knoten auf 301,125 — mit EINEM Kommando, ohne zweites', async () => {
+        await fuehre(PLANUM());
+        const erg = await fuehre(PLANUM_AUF(301.5));
+        expect(erg.grund).toBe(null);
+        // Geschrieben wird der Vorgang, nichts sonst: seine beiden Teile.
+        expect(erg.eintraege.map(e => e.globalId).sort()).toEqual(['cde-P-auftrag', 'cde-P-aushub']);
+        expect((await miss()).hoeheAn).toEqual([301.5, 301.5, 301.125, 300]);
+    });
+
+    it('Kopie und Verweis rechnen dasselbe — Massen, Feinheit, Bild', async () => {
+        // Derselbe Vorgang, einmal wie gestern geschrieben (Fixture) und einmal
+        // wie heute (Verweis). Hier zeigte sich sonst der stille Zahlensprung:
+        // ein Wirkbereich ohne Ziel liesse den feinen Korridor wegfallen.
+        expect((await fuehre(PLANUM())).grund).toBe(null);
+        expect(opsVon('cde-P-auftrag')[1].parameter.flaeche).toBe('op-P');
+        expect(await miss()).toEqual(GOLD.zahlen);
+    });
+});
+
+describe('Die Datei sagt, was sie verlangt', () => {
+    it('ein Journal mit Verweisen nennt mindestClient 5 — ein älterer Tab liest es nur', async () => {
+        expect((await fuehre(PLANUM())).grund).toBe(null);
+        const datei = JSON.parse(speicher.daten.get([...speicher.daten.keys()].find(k => k.endsWith(':aenderungen'))));
+        expect(datei.mindestClient).toBe(5);
+        expect(JOURNAL_KENNT).toBe(5);
+    });
+});
+
 describe('Bestand: ein Journal von gestern wird umgestellt, sobald es angefasst wird', () => {
     const GOLD = JSON.parse(readFileSync(PFAD, 'utf8'));
 
@@ -239,3 +286,47 @@ if (process.env.BOESCHUNG_SCHREIBEN) {
         });
     });
 }
+
+describe('Die Regel selbst (kopienAlsVerweise): was NICHT umgeschrieben wird', () => {
+    // Die Regel entscheidet an fünf Bedingungen. Jede einzeln geprüft — am
+    // Kommando liesse sich das nur umständlich stellen (eine Grube hat kein
+    // setzbares Mass, ein anderer Umriss entsteht über keinen Weg).
+    const ring = (a, b) => [{ x: a, z: a }, { x: b, z: a }, { x: b, z: b }, { x: a, z: b }];
+    const PLAN = { id: 'op-P', art: 'planum', parameter: { umriss: ring(10, 20), hoehe: 301 } };
+    const BOE = (parameter) => ({ id: 'op-B', art: 'boeschung', parameter: { umriss: ring(10, 20), neigung: 2, ...parameter } });
+    const verweist = (alt, neu) => kopienAlsVerweise(alt, neu)[1].parameter;
+
+    it('die Kopie einer Ebene davor wird ein Verweis', () => {
+        const alt = [PLAN, BOE({ hoehe: 301 })];
+        expect(verweist(alt, [{ ...PLAN, parameter: { ...PLAN.parameter, hoehe: 301.5 } }, BOE({ hoehe: 301 })]))
+            .toEqual({ umriss: ring(10, 20), neigung: 2, ziel: 'flaeche', flaeche: 'op-P' });
+    });
+
+    it('… aber nicht bei anderem Umriss', () => {
+        const boe = BOE({ hoehe: 301, umriss: ring(11, 21) });
+        expect(verweist([PLAN, boe], [PLAN, boe]).hoehe).toBe(301);
+    });
+
+    it('… nicht, wenn die Operation davor keine Fläche herstellt', () => {
+        const grube = { id: 'op-G', art: 'grube', parameter: { umriss: ring(10, 20), sohle: 301 } };
+        expect(verweist([grube, BOE({ hoehe: 301 })], [grube, BOE({ hoehe: 301 })]).hoehe).toBe(301);
+    });
+
+    it('… nicht, wenn die Fläche damals woanders lag (eine eigene Höhe)', () => {
+        expect(verweist([PLAN, BOE({ hoehe: 300.8 })], [PLAN, BOE({ hoehe: 300.8 })]).hoehe).toBe(300.8);
+    });
+
+    it('… nicht, wenn vorher eine ANDERE Operation stand', () => {
+        const alt = [{ ...PLAN, id: 'op-anders' }, BOE({ hoehe: 301 })];
+        expect(verweist(alt, [PLAN, BOE({ hoehe: 301 })]).hoehe).toBe(301);
+    });
+
+    it('… und eine Operation, die gar nicht folgen DARF, bleibt unberührt', () => {
+        // Ein zweites Planum erfüllte jede andere Bedingung — aber nur die
+        // Böschung ist im Katalog als Nachfolgerin erklärt (`zielAusVorgaenger`).
+        const zweites = { id: 'op-P2', art: 'planum', parameter: { umriss: ring(10, 20), hoehe: 301 } };
+        expect(kopienAlsVerweise([PLAN, zweites], [PLAN, zweites])[1].parameter).toEqual({ umriss: ring(10, 20), hoehe: 301 });
+        expect(GELAENDE_OPS.planum.zielAusVorgaenger).toBeUndefined();
+        expect(GELAENDE_OPS.boeschung.zielAusVorgaenger).toBe(true);
+    });
+});
