@@ -341,7 +341,11 @@ const _ohneAnschluss = (parameter) => _mitAnschluss(parameter, null);
  *
  * Platzhalter, absichtlich nur zwei:
  *   `{n}`    die laufende Nummer
- *   `{n:3}`  dieselbe, mit Nullen auf drei Stellen aufgefüllt
+ *   `{n:3}`  dieselbe, mit Nullen auf drei Stellen aufgefüllt — die Breite
+ *            darf mehrstellig sein, und `{n:03}` meint dasselbe (Teil XXV, V6).
+ *            Bis dahin traf das Muster nur EINE Ziffer: wer `{n:03}` tippte
+ *            (die gewohnte Form aus printf), bekam den Platzhalter als NAMEN
+ *            ans Bauteil geschrieben, ohne Meldung.
  *   `{alt}`  der bisherige Name — für „H-{n} ({alt})"
  *
  * Mehr wäre eine kleine Sprache, und die will gepflegt und dokumentiert
@@ -351,7 +355,7 @@ export function nameAusMuster(muster, { nummer = 1, alt = '' } = {}) {
     const m = String(muster ?? '');
     if (!m) return '';
     return m
-        .replace(/\{n:(\d)\}/g, (_, breite) => String(nummer).padStart(Number(breite), '0'))
+        .replace(/\{n:(\d+)\}/g, (_, breite) => String(nummer).padStart(Math.min(Number(breite), 12), '0'))
         .replace(/\{n\}/g, String(nummer))
         .replace(/\{alt\}/g, String(alt ?? ''));
 }
@@ -389,6 +393,11 @@ function _kgOptionen() {
  *   mindestGuete  ab welcher Belastbarkeit angeboten wird
  *   felder        [{ name, ausTypprofil?, rueckfall|... }]
  *   art           Änderungsart fürs Journal
+ *   art           KEIN LESER (gemessen 2026-09-20: 50 Einträge nennen es, keine
+ *                 Produktionsstelle liest es — der Journalschritt trägt seine
+ *                 Art selbst). Es steht noch da, weil der A6-Goldstandard die
+ *                 GESTALT eines Werkzeugs eingefroren hat; herausnehmen, wenn
+ *                 `werkzeuge_vor_a6.json` das nächste Mal neu geschrieben wird.
  *   vorbelegung   (el) => werte
  *   anwenden      (el, werte) => Journaleintrag (MUTIERT NICHT)
  */
@@ -523,6 +532,27 @@ function _vorbelegtMass(w, el, echt = null) {
     return w.runden && wert != null ? _rundeM(wert) : wert;
 }
 
+/**
+ * EINEN BAUPLAN FORTSCHREIBEN (Teil XXV, V4).
+ *
+ * Zwei Setzer schrieben dieselbe Form je für sich: „Mass am Bauplan" (die
+ * Sohlen einer Kante) und „Parameter ändern" (ein `setzbar`-Feld des
+ * Rezepts). Fortschreiben heisst an EINER Stelle: dieselbe Kennung, dasselbe
+ * Rezept, dieselbe Kategorie, derselbe Name — nur andere Parameter. Die
+ * Geometrie folgt beim nächsten Aufbau.
+ *
+ * NICHT hier: „Mass am Vorgang" (`vorgangsmass`). Es schreibt keinen Bauplan,
+ * sondern einen ganzen Erdbau-Vorgang mit allen seinen Teilen
+ * (`_vorgangMitOperationen`) — eine andere Form, kein Sonderfall dieser.
+ */
+function bauplanFortschreiben(el, plan, parameter) {
+    if (!plan?.rezept || !el?.globalId || !parameter) return null;
+    return erzeugtEintrag({
+        rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
+        globalId: el.globalId, parameter,
+    });
+}
+
 const SETZ_OPERATIONEN = Object.freeze({
     mass: {
         vorbelege: (s, el) => {
@@ -542,12 +572,8 @@ const SETZ_OPERATIONEN = Object.freeze({
                     if (!Number.isFinite(z)) return null;
                     welt[w.feld] = weltAusNn(z, el?.hoehenversatz ?? 0);
                 }
-                const parameter = echt.faehigkeit.enden(echt.plan.parameter, welt, { bezug: kantenbezugNeu() });
-                if (!parameter) return null;
-                return erzeugtEintrag({
-                    rezept: echt.plan.rezept, kategorie: echt.plan.kategorie, name: echt.plan.name ?? '',
-                    globalId: el.globalId, parameter,
-                });
+                return bauplanFortschreiben(el, echt.plan,
+                    echt.faehigkeit.enden(echt.plan.parameter, welt, { bezug: kantenbezugNeu() }));
             }
             const nachher = {};
             for (const w of s.werte) {
@@ -648,13 +674,9 @@ const SETZ_OPERATIONEN = Object.freeze({
             // DIE SOHLE BLEIBT (Teil XXIV, K4): ein grösseres DN an einer
             // Haltung in Rohrmitte hob sonst ihre Sohle um die halbe Differenz.
             const sohlen = rezeptNach(plan.rezept)?.sohlen;
-            const parameter = sohlen
+            return bauplanFortschreiben(el, plan, sohlen
                 ? sohlen.speichere({ ...plan.parameter, [s.feld]: wert }, sohlen.lies(plan.parameter), { bezug: kantenbezugNeu() })
-                : { ...plan.parameter, [s.feld]: wert };
-            return erzeugtEintrag({
-                rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
-                globalId: el.globalId, parameter,
-            });
+                : { ...plan.parameter, [s.feld]: wert });
         },
     },
 });
