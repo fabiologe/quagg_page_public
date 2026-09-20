@@ -107,7 +107,7 @@ Gebaut auf Fabios „lets go mit dem Ausführen des Plans". Je Stufe ein Commit,
 | V6 | `ce5ac6f`, `2275453` | tote Wörter | Namensmuster kuriert, `ebene` bewiesen, Einzelschreiber bewacht, `art` begründet stehen gelassen |
 | V7 | `39e8de7` | zweite Zielfläche | `gerinne.flaeche(p)`; die Punktrechnung EINMAL (`_gerinneSoll`) |
 | V8 | `3fcee7b` | ein Katalog-Schreibweg | `katalog/Katalogablage.js`, 6 → 0 Umgehungen |
-| V5 | — | „Vorgang entfernen" als Werkzeug | **nicht gebaut** — siehe unten |
+| V5 | `43f52f8` | „Vorgang entfernen" als Werkzeug | gebaut — **nach einem Irrtum**, siehe unten |
 
 ### Die Abnahme
 
@@ -115,9 +115,9 @@ Gebaut auf Fabios „lets go mit dem Ausführen des Plans". Je Stufe ein Commit,
 |---|---|---|---|
 | A1 | Bordstein als JSON | nicht ausdrückbar | quer von z = −0,15 bis 0 statt ±0,075, Höhe unverändert |
 | A2 | unbekannter Schlüssel im Profil | `ok: true`, still ignoriert | `ok: false` mit Vorschlag, Rezept nicht aktiv |
-| A3 | ohne Oberfläche ausführbar | 38 von 63, 2 offen | **40 von 63, 0 offen** |
+| A3 | ohne Oberfläche ausführbar | 38 von 63, 2 offen | **41 von 64, 0 offen** |
 | A4 | Setzer, die einen Bauplan schreiben | 2 | 1 |
-| A5 | „Vorgang entfernen" als Katalogwerkzeug | Store-Funktion | unverändert, mit Grund |
+| A5 | „Vorgang entfernen" als Katalogwerkzeug | Store-Funktion mit Systembeleg | **Katalog 63 → 64, der Beleg ist das Kommando** |
 | A6 | Subjektfelder nur vom Viewer | 6 | **3** |
 | A7 | Rechteckkanal = 0 Zeilen | einmalige Probe | Test |
 
@@ -125,7 +125,9 @@ Suite nach V8: CDE 301 Dateien / 3 365 Tests grün, ganze Client-Suite 451 Datei
 
 ### Wo es anders kam als geplant
 
-**V5 fällt aus, und das ist ein Befund.** Der Plan nahm an, „Vorgang entfernen" brauche nur den Stand seiner Ableitung, und den reiche der Kontext aus V3 herein. V3 hat aber einen KANDIDATEN-Auflöser gebaut: er beantwortet „welche anderen Objekte kommen für dieses Werkzeug in Frage". `vorgangEntfernenSchritte` braucht etwas anderes — den ganzen eigenen Stand: alle Teile der Klammer, alle Anzeige-Bauteile, die sie in ihrer Vorgangsliste nennen, und ob das Ur-Gelände ausgeblendet ist. Das in die Kandidatenform zu biegen hieße, dem Vokabular eine Bedeutung zu geben, die es nicht hat; ein `standVon()` im Kommandokontext wäre die Tür, durch die ein Werkzeug das ganze Modell sieht — genau die Grenze, die der Katalog seit jeher hält (ein Werkzeug bekommt ein Subjekt, nicht das Modell). Der heutige Weg trägt einen Systembeleg und die Modus-Sperre. **Fällig wird es, wenn ein zweites Werkzeug den ganzen Stand braucht** — dann ist die Frage „wie sieht ein Werkzeug mehr als sein Subjekt?" zu beantworten, nicht vorher.
+**V5 fiel zuerst aus — das Argument war zu schnell.** Ich hatte geschrieben, die Rechnung brauche den ganzen eigenen Stand, und den ins Kommando zu reichen sei die Tür, durch die ein Werkzeug das Modell sieht. Sie braucht ihn nicht: sie braucht die **Teile EINES Vorgangs**, und dafür gibt es seit V3 die Form. Die Kandidatenart `vorgang:teile` liefert die Bauteile derselben Klammer und die Anzeige, die sie führt — die Klammer kommt aus dem Bauplan des Subjekts, nicht aus einer Suche über alles. Die Rechnung selbst blieb, wo sie war; sie bekommt die Teile als Stand. Der Systembeleg fällt damit weg: „Vorgang entfernen" ist eine Nutzerabsicht, kein Nachweis ohne Absicht.
+
+Was dabei auffiel: der neue Auflöser fragte zuerst `rezept === 'anzeige'` — ein Rezeptname außerhalb des Katalogs, und W3 hat ihn sofort gemeldet. Jetzt fragt er `istAnzeigeform(bauplan)`, an zwei Stellen.
 
 **V4 ist 2 → 1, nicht 3 → 1.** „Mass am Vorgang" (`vorgangsmass`) schreibt keinen Bauplan, sondern einen ganzen Erdbau-Vorgang mit allen Teilen. Andere Form, kein Sonderfall. Steht als Grund am Helfer.
 
@@ -155,7 +157,13 @@ Danach lief sie durch, auf `:3001`, Projekt 42069, ohne eine Zeile Code im Proje
 
 **Push:** 27 Commits, `e56a968 → d0b635d`. Vorher auf Geheimnisse und Projektdaten geprüft — die beiden neuen Fixtures sind synthetisch, die A64-Dateien liegen ohnehin seit Januar im öffentlichen Repo.
 
+### Nachtrag V5 in der Oberfläche (2026-09-20, nach dem ersten Build)
+
+Im Browser geprüft: der Katalog kennt 64 Werkzeuge, `vorgang-entfernen` ist dabei, trägt `eigeneOberflaeche` und erscheint richtigerweise NICHT in der Werkzeugleiste. Die Seite lädt sauber, die Konsole bleibt leer — die Fehlerklasse aus V9 ist damit auch für V5 ausgeschlossen.
+
+**Nicht im Browser geprüft:** das Entfernen selbst. 42069 hat kein Gelände, und der Upload des Testgeländes lief zweimal in die Zeitgrenze. Der Weg ist durch `vorgangEntfernenEngstelle.test.js` gedeckt (echter Store, echtes Journal: Modus-Sperre, EIN Vorgang, Rückgabeform). Der Projektzustand ist zurückgesetzt: „zuletzt offen" wie vorher, Journal leer.
+
 ### Was offen bleibt
 
-- **V5** wie oben.
+- Das Entfernen eines echten Erdbau-Vorgangs durch die Oberfläche, an einem Projekt MIT Gelände.
 - Der Build liefert auch **Durchstich 2 und Teil XXIV-4** der Parallelsitzung aus, darunter **Journal-Schreibstufe 5**. Das ist dort ausdrücklich so vorgesehen (Leser und Schreiber in EINER Auslieferung, Preis benannt) — aber es ist deren Entscheidung, nicht meine, und ein Tab von gestern liest ab jetzt nur noch.
