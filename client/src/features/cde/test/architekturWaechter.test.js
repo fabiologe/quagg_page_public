@@ -482,6 +482,19 @@ describe('W9 — was ein Werkzeug vom Bauteil liest, liefert der Stand', () => {
         }
     });
 
+    it('kein Produktionsweg schreibt einen Einzelschritt OHNE Beleg (V6)', () => {
+        // `useAenderungen.eintragen` schreibt EINEN Schritt ohne Kommando und
+        // ohne Systembeleg. Seit R2 geht jeder Schreibweg der Produktion über
+        // `eintragenVorgang` und trägt einen Beleg (O4); gemessen 2026-09-20:
+        // null Aufrufer ausserhalb der Tests. Der Export bleibt — Tests nutzen
+        // ihn als Einzelschritt-Helfer —, aber die Tür ist zu.
+        const treffer = DATEIEN
+            .filter(d => !d.pfad.startsWith('test/') && d.pfad !== 'stores/useAenderungen.js')
+            .filter(d => /\.eintragen\s*\(/.test(d.text.replace(/eintragenVorgang\s*\(/g, '')))
+            .map(d => d.pfad);
+        expect(treffer).toEqual([]);
+    });
+
     it('kein Werkzeug erwartet mehr eine fertige LISTE am Subjekt (V3)', () => {
         // `optionen: (el) => …` liest eine Liste vom Subjekt; `optionenAus`
         // nennt eine Kandidatenart und fragt damit dieselbe Stelle wie die

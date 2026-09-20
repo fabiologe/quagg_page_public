@@ -25,6 +25,20 @@ import { neueGlobalId, rezeptNach, zufallsKennung } from '../services/Bauteilrez
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { OHNE_PROBE, PROBEN_ALLE } from './hilfen/werkzeugProben.js';
+import { repo } from '../services/RepoFacade.js';
+
+/** Eine Ablage im Speicher — wie auf dem Server, nur ohne Netz. */
+class Speicher {
+    constructor() { this.d = new Map(); }
+    async get(k) { return this.d.has(k) ? JSON.parse(this.d.get(k)) : null; }
+    async set(k, v) { this.d.set(k, JSON.stringify(v)); return true; }
+    async delete(k) { this.d.delete(k); return true; }
+    async listKeys(p) { return [...this.d.keys()].filter(x => x.startsWith(p)); }
+    async getBlob() { return null; }
+    async setBlob() { return false; }
+    async deleteBlob() { return false; }
+    async listBlobs() { return []; }
+}
 
 beforeEach(() => {
     localStorage.clear();
@@ -294,3 +308,27 @@ describe('5 — fuehreAus: ohne Oberfläche, ganz oder gar nicht', () => {
         expect(rezeptNach('rohr').sohlen.lies(plan.parameter)[0]).toBeCloseTo(290, 9);
     });
 });
+describe('6 — die Ebene im Kommando (Teil XXV, V6, Fabios E16)', () => {
+    // `ebene` steht im Schema, seit es das Schema gibt, und KEIN Produktionsweg
+    // setzt sie: die Oberfläche schreibt immer in die aktive Ebene. Ein Feld
+    // ohne Beweis ist ein Versprechen — hier ist der Beweis, dass ein Skript
+    // gezielt auf die Auftragsebene schreiben kann.
+    it('ein Kommando darf seine Ebene nennen — der Eintrag landet dort', async () => {
+        const speicher = new Speicher();
+        repo.setBackend(speicher);
+        setActivePinia(createPinia());
+        const b = useBearbeitung();
+        const ae = useAenderungen();
+        const erg = await b.fuehreAus({
+            schema: KOMMANDO_SCHEMA, id: 'ko-ebene', werkzeug: 'linie-zeichnen', ziel: [], neu: ['cde-Lx'],
+            werte: { name: 'L', kategorie: 'IFCKERB', hoehe: 100 },
+            eingaben: { zug: [{ ost: 0, nord: 0 }, { ost: 10, nord: 0 }] },
+            ebene: 'auftrag', wer: 'skript', wann: '2026-09-20T09:00:00Z',
+        });
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(ae.ebeneVon('cde-Lx')).toBe('auftrag');
+        expect(ae.auftragsEintraege.map(e => e.globalId)).toContain('cde-Lx');
+        repo.setBackend(null);
+    });
+});
+
