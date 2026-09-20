@@ -157,3 +157,55 @@ describe('Was die Registry über eine Zielart sagt — ebenfalls eingefroren', (
                        grube: ['sohle'], schuettung: ['hoehe'], boeschungLinie: [] });
     });
 });
+
+describe('Der Nachweis (A3): eine ZWEITE Operation bekommt die Zielart, ohne sie zu kennen', () => {
+    // In `grube()` steht kein Zweig für eine Zielart — sie fragt den Auflöser und
+    // schneidet. Diese drei Fälle kann sie seit dem Umbau, ohne eine Zeile über
+    // „Fläche" oder „Ur" zu enthalten.
+    const hoeheBei = (r, x, z) => r.heights[Math.round((x - r.x0) / r.cell) * r.nz + Math.round((z - r.z0) / r.cell)];
+    const GRUBE_GROSS = (ziel) => ({ id: 'op-G', art: 'grube', parameter: { umriss: ring(5.5, 25.5), ...ziel } });
+
+    it('bis zur FLÄCHE eines Planums: sie hebt bis auf dessen Ebene aus, nicht tiefer', () => {
+        const tief = { id: 'op-P', art: 'planum', parameter: { umriss: ring(10.5, 20.5), hoehe: 299 } };
+        const { raster: r, warnungen } = formeNach(raster(), [tief, GRUBE_GROSS({ ziel: 'flaeche', flaeche: 'op-P' })]);
+        expect(warnungen).toEqual([]);
+        expect(hoeheBei(r, 7, 7)).toBe(299);          // im Ring der Grube, ausserhalb des Planums
+        expect(hoeheBei(r, 15, 15)).toBe(299);        // im Planum: schon dort
+        expect(hoeheBei(r, 3, 3)).toBe(300);          // ausserhalb
+    });
+
+    it('bis zum UR-Gelände: nach einer Schüttung trägt sie wieder ab', () => {
+        const auf = { id: 'op-S', art: 'schuettung', parameter: { umriss: ring(10.5, 20.5), ziel: 'hoehe', hoehe: 302 } };
+        const ur = raster();
+        const { raster: r, warnungen } = formeNach(raster(), [auf, { id: 'op-G', art: 'grube', parameter: { umriss: ring(8.5, 22.5), ziel: 'ur' } }], { ur });
+        expect(warnungen).toEqual([]);
+        expect(hoeheBei(r, 15, 15)).toBe(300);        // die Schüttung ist wieder weg
+        expect(hoeheBei(r, 3, 3)).toBe(300);
+    });
+
+    it('ein Ziel, das es nicht gibt: die Grube meldet sich mit IHREM Namen', () => {
+        const { raster: r, warnungen } = formeNach(raster(), [GRUBE_GROSS({ ziel: 'flaeche', flaeche: 'op-X' })]);
+        expect(warnungen).toEqual(['grube_ziel_fehlt: die Operation op-X liegt im Stapel nicht vor dieser Grube']);
+        expect(hoeheBei(r, 7, 7)).toBe(300);
+    });
+
+    it('„bis GOK" kennt keine Böschung — der Umriss liegt auf der Grubensohle, gefüllt wird trotzdem bis ans Ur', () => {
+        // Rückverfüllung einer Grube: der Ring wird auf der SOHLE gezeichnet (y = 298).
+        // Mit Böschung stiege die Schüttung von 298 mit 1:1,5 an; „bis GOK" tut das
+        // nicht — sie füllt überall bis zum Ur-Gelände. So ist es seit Teil XX.
+        const ur = raster();
+        const ops = [{ id: 'op-G', art: 'grube', parameter: { umriss: ring(10.5, 20.5), sohle: 298 } },
+                     { id: 'op-S', art: 'schuettung', parameter: { umriss: ring(12.5, 18.5, 298), ziel: 'ur', neigung: 1.5 } }];
+        const { raster: r } = formeNach(raster(), ops, { ur });
+        expect(hoeheBei(r, 13, 15)).toBe(300);        // 0,5 m vom Rand: voll bis zum Ur
+        expect(hoeheBei(r, 15, 15)).toBe(300);
+        expect(hoeheBei(r, 11, 15)).toBe(298);        // ausserhalb der Schüttung: die Grube bleibt
+    });
+
+    it('und ihre eigene Sohle rechnet sie wie vorher — mit Böschung 1:1,5', () => {
+        const { raster: r } = formeNach(raster(), [{ id: 'op-G', art: 'grube', parameter: { umriss: ring(10.5, 20.5), sohle: 298, neigung: 1.5 } }]);
+        expect(hoeheBei(r, 15, 15)).toBe(298);                    // Mitte: auf der Sohle
+        // 0,5 m innerhalb des Rands: die Böschung fällt vom Rand (300) mit 1:1,5 ab.
+        expect(hoeheBei(r, 11, 15)).toBeCloseTo(300 - 0.5 / 1.5, 9);
+    });
+});

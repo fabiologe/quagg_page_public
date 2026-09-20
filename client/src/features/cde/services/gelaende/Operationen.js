@@ -384,12 +384,14 @@ export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}, { berei
  * Die Randhöhe kommt aus den Umrisspunkten, deshalb ist die Operation
  * idempotent. `neigung` leer oder 0 heisst senkrecht (verbaut).
  */
-export function grube(raster, { umriss, sohle, neigung = null } = {}, { bereich = null } = {}) {
+export function grube(raster, parameter = {}, { bereich = null, ur = null, flaecheAn = null } = {}) {
+    const { umriss, neigung = null } = parameter;
     const warnungen = [];
     const ring = _mitHoehe(umriss);
     if (!ring || ring.length < 3) return { raster, warnungen: ['grube_ohne_umriss: jeder Umrisspunkt braucht seine Höhe'] };
-    if (!Number.isFinite(sohle)) return { raster, warnungen: ['grube_ohne_sohle'] };
-    const n = Number(neigung) > 0 ? Number(neigung) : 0;
+    const soll = sollhoeheVon(parameter, { art: 'grube', feld: 'sohle' }, { raster, ur, flaecheAn });
+    if (soll.grund) return { raster, warnungen: [soll.grund] };
+    const n = soll.mitBoeschung && Number(neigung) > 0 ? Number(neigung) : 0;
     const poly = ring.map(p => [p.x, p.z]);
     const neu = _kopie(raster);
     const { nz, heights } = neu;
@@ -402,6 +404,8 @@ export function grube(raster, { umriss, sohle, neigung = null } = {}, { bereich 
             if (!Number.isFinite(h)) continue;                    // NaN bleibt NaN
             const k = rasterKnoten(raster, ix, iz);
             if (!punktInPolygon(k.x, k.z, poly)) continue;        // aussen: nichts
+            const sohle = soll.an(k.x, k.z, i);
+            if (!Number.isFinite(sohle)) continue;
             const r = _amRing(k.x, k.z, ring);
             const ziel = n > 0 ? Math.max(sohle, r.hoehe - r.abstand / n) : sohle;
             if (ziel < h) { heights[i] = ziel; getroffen++; }
