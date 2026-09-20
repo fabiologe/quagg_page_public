@@ -1,0 +1,68 @@
+{
+ "operationen": [
+  {
+   "art": "planum",
+   "parameter": {
+    "umriss": [
+     {
+      "x": 10.25,
+      "z": 10.25
+     },
+     {
+      "x": 20.25,
+      "z": 10.25
+     },
+     {
+      "x": 20.25,
+      "z": 20.25
+     },
+     {
+      "x": 10.25,
+      "z": 20.25
+     }
+    ],
+    "hoehe": 301
+   },
+   "id": "op-P"
+  },
+  {
+   "art": "boeschung",
+   "parameter": {
+    "umriss": [
+     {
+      "x": 10.25,
+      "z": 10.25
+     },
+     {
+      "x": 20.25,
+      "z": 10.25
+     },
+     {
+      "x": 20.25,
+      "z": 20.25
+     },
+     {
+      "x": 10.25,
+      "z": 20.25
+     }
+    ],
+    "hoehe": 301,
+    "neigung": 2
+   },
+   "id": "op-B"
+  }
+ ],
+ "zahlen": {
+  "auftrag": 144.214237,
+  "aushub": 0,
+  "zellweite": 1,
+  "zellweiteDgm": 1,
+  "korridor": false,
+  "hoeheAn": [
+   301,
+   301,
+   300.625,
+   300
+  ]
+ }
+}
