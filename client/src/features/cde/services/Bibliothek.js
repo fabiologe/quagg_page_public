@@ -22,9 +22,10 @@
  */
 import { rezeptNach } from './Bauteilrezepte.js';
 import { pruefeEintrag } from './katalog/Katalogschema.js';
-import { ablageFuer, katalogSchreibe } from './katalog/Katalogablage.js';
+import { VORLAGEN_KEY, ablageFuer, katalogSchreibe } from './katalog/Katalogablage.js';
 
-export const REPO_KEY = 'bauteil-vorlagen';
+/** Der Schlüssel der Bibliothek — er wohnt in der Ablage (V8/V9, kein Importkreis). */
+export const REPO_KEY = VORLAGEN_KEY;
 
 /** Der eingebaute Satz — die gängigen Kanalbauteile. Büro und Projekt erweitern. */
 export const EINGEBAUTE_VORLAGEN = Object.freeze([

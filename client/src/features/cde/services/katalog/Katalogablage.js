@@ -23,9 +23,19 @@
  *
  * Rein: kein Vue, kein Store. Nie werfen — der Aufrufer zeigt den Grund.
  */
-import { REPO_KEY as VORLAGEN_KEY } from '../Bibliothek.js';
 import { REPO_KEY as TYPPROFIL_KEY } from '../bauform/Typprofile.js';
 import { REPO_KEY as BAUFORMREGEL_KEY } from '../bauform/Bauformregeln.js';
+
+/**
+ * Der Schlüssel der Bibliothek steht HIER, nicht in `Bibliothek.js`.
+ *
+ * Andersherum entstünde ein Importkreis: die Bibliothek schreibt über diese
+ * Ablage, und die Ablage hätte ihren Schlüssel von der Bibliothek geholt. Im
+ * Browser brach das beim Laden ab („Cannot access 'VORLAGEN_KEY' before
+ * initialization") — gefunden in der Browserprobe zu V9, von keinem Test.
+ * `Bibliothek.js` reicht ihn unter seinem alten Namen weiter.
+ */
+export const VORLAGEN_KEY = 'bauteil-vorlagen';
 
 /** Wo eine Katalogart liegt und wie sie aussieht. */
 export const KATALOG_ARTEN = Object.freeze({

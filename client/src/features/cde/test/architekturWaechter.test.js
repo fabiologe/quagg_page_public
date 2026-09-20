@@ -457,6 +457,51 @@ const KEIN_BAUTEILFELD = new Set([
     'modelId', 'modellSha',  // die Datei, aus der es stammt — der Aufrufer weiss sie
 ]);
 
+/**
+ * W10 — KEIN IMPORTKREIS (Teil XXV, V9).
+ *
+ * Gefunden in der Browserprobe, von keinem Test: V8 liess die Katalogablage
+ * ihren Schlüssel aus `Bibliothek.js` holen, während die Bibliothek über die
+ * Ablage schreibt. Im Browser brach die Seite beim Laden ab — „Cannot access
+ * 'VORLAGEN_KEY' before initialization“ —, weil ein Kreis eine der beiden
+ * Dateien halb ausgewertet betritt. Vitest hat das nie gesehen: es lädt in
+ * anderer Reihenfolge, und eine Attrappe verdeckte den Rest.
+ *
+ * Der Wächter findet jeden Kreis über statische `import`-Kanten. Erlaubt ist
+ * heute keiner; wo ein Kreis unvermeidlich wäre, gehört das Gemeinsame in ein
+ * BLATT (so löst `rezept/Register.js` denselben Fall seit A5).
+ */
+describe('W10 — kein Importkreis', () => {
+    const kanten = new Map();
+    for (const d of DATEIEN) {
+        const ziele = new Set();
+        for (const { ziel } of importeVon(d)) {
+            for (const kandidat of [ziel, `${ziel}.js`, `${ziel}/index.js`]) {
+                if (DATEIEN.some(x => x.pfad === kandidat)) { ziele.add(kandidat); break; }
+            }
+        }
+        kanten.set(d.pfad, ziele);
+    }
+    // Tarjan wäre genauer; für eine Warnung genügt die Tiefensuche mit Pfad.
+    const kreise = [];
+    const zustand = new Map();
+    const suche = (knoten, pfad) => {
+        if (zustand.get(knoten) === 'fertig') return;
+        const i = pfad.indexOf(knoten);
+        if (i >= 0) { kreise.push([...pfad.slice(i), knoten].join(' → ')); return; }
+        pfad.push(knoten);
+        for (const z of kanten.get(knoten) ?? []) suche(z, pfad);
+        pfad.pop();
+        zustand.set(knoten, 'fertig');
+    };
+    for (const d of DATEIEN) suche(d.pfad, []);
+    merke('W10 Importkreise', kreise);
+
+    it('keine Datei importiert sich über Umwege selbst', () => {
+        expect([...new Set(kreise)]).toEqual([]);
+    });
+});
+
 describe('W9 — was ein Werkzeug vom Bauteil liest, liefert der Stand', () => {
     const quelle = fs.readFileSync(path.join(WURZEL, 'services/Bearbeitungen.js'), 'utf8');
     const gelesen = new Set([...quelle.matchAll(/\bel\??\.([a-zA-Z][a-zA-Z0-9]*)/g)].map(m => m[1]));
