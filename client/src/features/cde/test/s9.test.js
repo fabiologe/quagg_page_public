@@ -8,12 +8,13 @@
  * ein Weg, deshalb steht das hier als Vertrag.
  */
 import { describe, expect, it } from 'vitest';
-import { nachId, passende } from '../services/Bearbeitungen.js';
+import { nachId, passende, felderFuer } from '../services/Bearbeitungen.js';
 import {
     versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
 } from '../services/Bauteilrezepte.js';
 import { offset, versetztePunkte, ringFlaeche } from '../services/geometrie/ops/Linien.js';
 import { eingabenFuer } from '../services/Eingaben.js';
+import { kandidatenAus } from '../services/kommando/Kandidaten.js';
 import { EINGEBAUTE_VORLAGEN } from '../services/Bibliothek.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
@@ -174,21 +175,30 @@ describe('Fläche — versetzen, teilen, vereinigen (nur eigen)', () => {
         expect(b('flaeche-teilen').anwenden(EIGEN('flaeche', RING), {}, { zug: [{ x: 1, z: -1 }] })).toBeNull();
         expect(b('flaeche-teilen').anwenden(EIGEN('flaeche', RING), {}, { zug: [{ x: 9, z: -1 }, { x: 9, z: 9 }] })).toBeNull();
     });
-    it('vereinigen: die andere kommt aus `eigeneFlaechen` (Auswahl-Geste); beide verborgen, eine neue', () => {
+    it('vereinigen: die andere kommt aus dem KONTEXT (V3, Auswahl-Geste); beide verborgen, eine neue', () => {
+        // Bis Teil XXV (V3) stand die Liste am Subjekt (`el.eigeneFlaechen`) und
+        // nur der Viewer trug sie ein. Jetzt fragen Formular und Auswertung
+        // denselben Auföser — hier mit der Journalwelt dieses Tests.
         const B = [[3, 7, 0], [7, 7, 0], [7, 7, 4], [3, 7, 4]];
-        const el = EIGEN('flaeche', RING, { eigeneFlaechen: [{ globalId: 'cde1', name: 'L1', punkte: RING }, { globalId: 'cde2', name: 'F2', punkte: B }] });
-        const feld = b('flaeche-vereinigen').felder[0];
+        const el = EIGEN('flaeche', RING);
+        const kandidatenVon = kandidatenAus({ wirksamerStand: (art) => (art === 'erzeugt' ? new Map([
+            ['cde1', { rezept: 'flaeche', name: 'L1', parameter: { name: 'L1', punkte: RING } }],
+            ['cde2', { rezept: 'flaeche', name: 'F2', parameter: { name: 'F2', punkte: B } }],
+        ]) : new Map()) });
+        const feld = felderFuer(b('flaeche-vereinigen'), null, el, { kandidatenVon })[0];
         expect(feld.aus.geste).toBe('auswahl');
-        expect(feld.optionen(el)).toEqual([{ wert: 'cde2', titel: 'F2' }]);   // sich selbst nicht
-        expect(b('flaeche-vereinigen').vorbelegung(el)).toEqual({ andere: 'cde2' });
-        const liste = b('flaeche-vereinigen').anwenden(el, { andere: 'cde2' });
+        expect(feld.optionen).toEqual([{ wert: 'cde2', titel: 'F2' }]);   // sich selbst nicht
+        expect(b('flaeche-vereinigen').vorbelegung(el, { kandidatenVon })).toEqual({ andere: 'cde2' });
+        const liste = b('flaeche-vereinigen').anwenden(el, { andere: 'cde2' }, { kandidatenVon });
         expect(liste).toHaveLength(3);
         expect(liste.slice(0, 2).map(x => x.globalId)).toEqual(['cde1', 'cde2']);
         expect(liste[2].nachher.name).toBe('L1 + F2');
         const xz = (r) => r.map(p => ({ x: p[0], z: p[2] }));
         expect(ringFlaeche(xz(liste[2].nachher.parameter.punkte))).toBeCloseTo(28, 6);
-        expect(b('flaeche-vereinigen').anwenden(el, { andere: 'cde1' })).toBeNull();
-        expect(b('flaeche-vereinigen').anwenden(el, { andere: 'gibtsnicht' })).toBeNull();
+        expect(b('flaeche-vereinigen').anwenden(el, { andere: 'cde1' }, { kandidatenVon })).toBeNull();
+        expect(b('flaeche-vereinigen').anwenden(el, { andere: 'gibtsnicht' }, { kandidatenVon })).toBeNull();
+        // OHNE Kontext gibt es keinen Partner — und keinen stillen Treffer.
+        expect(b('flaeche-vereinigen').anwenden(el, { andere: 'cde2' })).toBeNull();
     });
 });
 
@@ -196,30 +206,33 @@ describe('Tauschen aus der Bibliothek (9.8)', () => {
     const SCHACHT = (dn) => EIGEN('schacht', [[0, 0, 0], [0, 3, 0]], {
         category: 'IFCDISTRIBUTIONCHAMBERELEMENT',
         stand: { bauplan: { rezept: 'schacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', name: 'S1', parameter: { punkte: [[0, 0, 0], [0, 3, 0]], dn } } },
-        vorlagen: [...EINGEBAUTE_VORLAGEN, { id: 'schacht-dn1200', name: 'Schacht DN 1200', rezept: 'schacht', vorgaben: { dn: 1200, kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT' } }],
     });
+    // Die Bibliothek ist seit V3 eine Eingabe des Kontexts, keine Liste am Subjekt.
+    const BIBLIOTHEK = [...EINGEBAUTE_VORLAGEN,
+        { id: 'schacht-dn1200', name: 'Schacht DN 1200', rezept: 'schacht', vorgaben: { dn: 1200, kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT' } }];
+    const kandidatenVon = kandidatenAus({ vorlagen: BIBLIOTHEK });
     it('bietet nur Vorlagen DESSELBEN Rezepts an, an eigenen Bauteilen', () => {
         const el = SCHACHT(1000);
-        const opt = b('koerper-tauschen').felder[0].optionen(el).map(o => o.wert);
+        const opt = felderFuer(b('koerper-tauschen'), null, el, { kandidatenVon })[0].optionen.map(o => o.wert);
         expect(opt).toEqual(['schacht-dn1000', 'schacht-dn1200']);
         expect(passende({ bauform: 'koerper', guete: 'gemessen' }, { eigenes: true }).map(x => x.id)).toContain('koerper-tauschen');
         expect(passende({ bauform: 'koerper', guete: 'gemessen' }).map(x => x.id)).not.toContain('koerper-tauschen');
     });
     it('tauscht die Parameter, hält Lage und GlobalId; dieselbe Vorlage nochmal → null', () => {
         const el = SCHACHT(1000);
-        const e = b('koerper-tauschen').anwenden(el, { vorlage: 'schacht-dn1200' });
+        const e = b('koerper-tauschen').anwenden(el, { vorlage: 'schacht-dn1200' }, { kandidatenVon });
         expect(e).toMatchObject({ art: 'erzeugt', globalId: 'cde1', nachher: { rezept: 'schacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', name: 'S1' } });
         // Seit Teil XXIII A1 wandert die HERKUNFT mit — vorher war sie nach dem Tausch weg.
         expect(e.nachher.parameter).toEqual({ punkte: [[0, 0, 0], [0, 3, 0]], dn: 1200, vorlage: 'schacht-dn1200' });
-        expect(b('koerper-tauschen').anwenden(el, { vorlage: 'rohr-dn500' })).toBeNull();   // anderes Rezept
+        expect(b('koerper-tauschen').anwenden(el, { vorlage: 'rohr-dn500' }, { kandidatenVon })).toBeNull();   // anderes Rezept
     });
     it('dieselbe Vorlage nochmal → null; dieselben Masse OHNE Herkunft → die Herkunft wird nachgetragen', () => {
         // „Nochmal" heisst: Masse UND Bezug stimmen schon.
         const schon = SCHACHT(1000);
         schon.stand.bauplan.parameter.vorlage = 'schacht-dn1000';
-        expect(b('koerper-tauschen').anwenden(schon, { vorlage: 'schacht-dn1000' })).toBeNull();
+        expect(b('koerper-tauschen').anwenden(schon, { vorlage: 'schacht-dn1000' }, { kandidatenVon })).toBeNull();
         // Vorher galt „gleiche Masse → nichts zu tun", und der Bezug entstand nie.
-        const e = b('koerper-tauschen').anwenden(SCHACHT(1000), { vorlage: 'schacht-dn1000' });
+        const e = b('koerper-tauschen').anwenden(SCHACHT(1000), { vorlage: 'schacht-dn1000' }, { kandidatenVon });
         expect(e.nachher.parameter).toMatchObject({ dn: 1000, vorlage: 'schacht-dn1000' });
     });
 });

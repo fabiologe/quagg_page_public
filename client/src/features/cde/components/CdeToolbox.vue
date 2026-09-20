@@ -599,6 +599,10 @@ async function vorlageSichern() {
   const r = await speichereVorlage(repo, { name: name.trim(), rezept: scharf.rezept, vorgaben }, { ebene });
   if (!r.ok) console.warn('cde: vorlage sichern', r.grund);
   await vorlagenLaden();
+  // Auch der Katalog liest die Bibliothek (Teil XXV, V3): aus ihr füllt
+  // „Tauschen" seine Auswahl. Ohne dies böte es die neue Vorlage erst nach
+  // dem nächsten Laden an.
+  await bearbeitung.ladeProfile();
 }
 
 async function vorlageEntfernen(v) {
@@ -606,6 +610,7 @@ async function vorlageEntfernen(v) {
   if (!confirm(`Vorlage „${v.name}" löschen?`)) return;
   await loescheVorlage(repo, v.id, { ebene: v.herkunft });
   await vorlagenLaden();
+  await bearbeitung.ladeProfile();
 }
 
 </script>

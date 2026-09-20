@@ -20,6 +20,10 @@
  *                         braucht es, wie in der Oberfläche
  *   bauplanVon(globalId)  der wirksame Bauplan eines eigenen Bauteils — für
  *                         Werkzeuge, die mehr als ihr Subjekt schreiben (K5)
+ *   kandidatenVon(art, el) was ein Werkzeug AUSSER seinem Ziel braucht (V3):
+ *                         die andere eigene Fläche, die Vorlage aus der
+ *                         Bibliothek — dieselbe Quelle, aus der das Formular
+ *                         seine Auswahl füllt (`services/kommando/Kandidaten.js`)
  *   knotenVon(globalId)   Ort eines Knotens in der Welt `{x, y, z, hoehenbezug?, anschlusshoehe?}` —
  *                         für Zugpunkte `{knoten}` (K8); `anschlusshoehe` nennt
  *                         ein gelieferter Knoten: die Sohle seiner Abläufe (R7)
@@ -40,7 +44,7 @@ const KENNUNG_FEHLT = Symbol('kennung-fehlt');
  */
 export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = null, rahmen = rahmenOhneBezug(),
                                     kennungsgeber = null, typprofilFuer = null, pruefeWerte = null, bauplanVon = null,
-                                    knotenVon = null, felder: felderVorgabe = null } = {}) {
+                                    knotenVon = null, kandidatenVon = null, felder: felderVorgabe = null } = {}) {
     const k = kommando;
     const b = nachId(k.werkzeug, katalog);
     const leer = (grund) => ({ schritte: [], uebersprungen: 0, neu: [], werkzeug: b, grund, hinweise: [] });
@@ -93,7 +97,7 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
     // Adressen → Nummern (E3), gegen den AKTUELLEN Stand des ersten Subjekts.
     const { werte, grund: grundAdresse } = adressenAlsNummern(b, subjekte[0], werteFuerWerkzeug(k), rahmen);
     if (grundAdresse) return leer(grundAdresse);
-    const felderJetzt = felderVorgabe ?? felderFuer(b, typprofilFuer?.(subjekte[0]) ?? null, subjekte[0]);
+    const felderJetzt = felderVorgabe ?? felderFuer(b, typprofilFuer?.(subjekte[0]) ?? null, subjekte[0], { kandidatenVon });
     const fehlerFelder = pruefeWerte ? (pruefeWerte(b, werte, subjekte[0]) ?? []) : pruefe(felderJetzt, werte);
     if (fehlerFelder.length) return leer(fehlerFelder.join(' · '));
     const hinweise = befundeFuerWerte(felderJetzt, werte);
@@ -122,7 +126,7 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
                 // `bauplanVon` (K5): ein Werkzeug, das über das Subjekt hinaus
                 // schreibt (der ganze Strang), fragt so nach den Bauplänen der
                 // anderen — ohne selbst ins Journal zu greifen.
-                const roh = b.anwenden(el, werte, { nummer: i, zug: erzeugt ? [] : punkte, bauplanVon });
+                const roh = b.anwenden(el, werte, { nummer: i, zug: erzeugt ? [] : punkte, bauplanVon, kandidatenVon });
                 const teil = (Array.isArray(roh) ? roh : [roh]).filter(x => x?.art);
                 if (!teil.length) uebersprungen++;
                 schritte.push(...teil);
@@ -141,7 +145,7 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
     if (!schritte.length) {
         // DAS WERKZEUG DARF SAGEN, WARUM ES NICHT KANN — derselbe Weg wie bisher.
         let grund = null;
-        try { grund = b.warumNicht?.(subjekte[0], werte, { zug: punkte }) ?? null; } catch { grund = null; }
+        try { grund = b.warumNicht?.(subjekte[0], werte, { zug: punkte, kandidatenVon }) ?? null; } catch { grund = null; }
         return { ...leer(grund || 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.'), uebersprungen };
     }
     return { schritte, uebersprungen, neu: verwendet, werkzeug: b, grund: null, hinweise };

@@ -34,15 +34,19 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { nachId, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { kommandoAusZustand, rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
-import { PROBEN_ALLE, WELT } from './hilfen/werkzeugProben.js';
+import { PROBEN_ALLE, VORLAGEN, WELT } from './hilfen/werkzeugProben.js';
 
-/** Der Stand am 2026-09-19 (63 Werkzeuge). Steigt `ausgefuehrt`, fällt `offen`. */
+/**
+ * Der Stand (63 Werkzeuge). Steigt `ausgefuehrt`, fällt `offen`.
+ *   2026-09-19, gemessen:  38 / 23 / 2
+ *   2026-09-20, nach V3:   40 / 23 / 0
+ */
 const HEUTE = Object.freeze({
     werkzeuge: 63,
-    ausgefuehrt: 38,
+    ausgefuehrt: 40,
     geliefert: 23,
-    /** EIGENES Ziel und trotzdem abgelehnt — die Lücke aus V3. */
-    offen: Object.freeze(['flaeche-vereinigen', 'koerper-tauschen']),
+    /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
+    offen: Object.freeze([]),
 });
 
 class Speicher {
@@ -67,7 +71,11 @@ async function frischeWelt() {
     await ae.eintragenVorgang(
         [...WELT].map(([globalId, plan]) => ({ art: 'erzeugt', globalId, nachher: plan, modell: 'cde', wer: 'probe' })),
         { vorgang: 'welt' });
-    return { ae, bearbeitung: useBearbeitung() };
+    const bearbeitung = useBearbeitung();
+    // Die Bibliothek ist eine EINGABE, kein Viewer-Zustand: ohne Oberfläche
+    // lädt sie `ladeProfile` mit dem Katalog (V3), hier setzt der Test sie.
+    bearbeitung.vorlagen = [...VORLAGEN];
+    return { ae, bearbeitung };
 }
 
 /** Ein Werkzeug OHNE Oberfläche auslösen — das Kommando aus der Probe, das Subjekt aus dem Stand. */
@@ -113,41 +121,33 @@ describe('Die Reichweite des Kommandostroms — ohne Oberfläche', () => {
         expect(ids.length).toBe(HEUTE.werkzeuge);
     }, 300_000);
 
-    it('die beiden offenen Werkzeuge scheitern an einer LISTE, nicht am Schema', async () => {
-        // Das Kommando nennt die Partnerfläche korrekt; `werteAus` findet sie nur
-        // in `el.eigeneFlaechen`, und die führt `subjektAusStand` nicht (V3).
-        const { bearbeitung } = await frischeWelt();
-        const zweite = await bearbeitung.fuehreAus({
-            schema: 1, id: 'ko-f2', werkzeug: 'flaeche-zeichnen', ziel: [], neu: ['cde-F2'],
-            werte: { name: 'F2', kategorie: 'IFCSLAB', hoehe: '' },
-            eingaben: { umriss: [{ ost: 10, nord: -30, hoehe: 100 }, { ost: 20, nord: -30, hoehe: 100 },
-                                 { ost: 20, nord: -40, hoehe: 100 }, { ost: 10, nord: -40, hoehe: 100 }] },
-            wer: 'probe', wann: '2026-09-20T08:00:00Z',
-        }, { rahmen: RAHMEN });
-        expect(zweite.ausgefuehrt).toBe(true);
+    it('was ein Werkzeug AUSSER seinem Ziel braucht, löst der Kontext auf (V3)', async () => {
+        // Bis V3 erwarteten beide eine Liste am Subjekt (`el.eigeneFlaechen`,
+        // `el.vorlagen`), und die trug nur der Viewer ein: dieselben Kommandos
+        // liefen mit hereingereichter Liste durch und scheiterten ohne sie.
+        const { ae, bearbeitung } = await frischeWelt();
+        const kommando = (id, werkzeug, rest) => ({ schema: 1, id, werkzeug, ziel: [], wer: 'probe',
+                                                    wann: '2026-09-20T08:00:00Z', ...rest });
 
-        const kommando = (id) => ({
-            schema: 1, id, werkzeug: 'flaeche-vereinigen', ziel: ['cde-F1'],
-            eingaben: { auswahl: { andere: 'cde-F2' } }, wer: 'probe', wann: '2026-09-20T08:00:00Z',
-        });
-        const erg = await bearbeitung.fuehreAus(kommando('ko-v'), { rahmen: RAHMEN });
-        expect(erg.ausgefuehrt).toBe(false);
-        expect(erg.grund).toMatch(/fehlt der Bezug/);
+        // Die andere Fläche kommt aus dem JOURNAL.
+        const vereinigt = await bearbeitung.fuehreAus(
+            kommando('ko-v', 'flaeche-vereinigen', { ziel: ['cde-F1'], neu: ['cde-FU'],
+                                                     eingaben: { auswahl: { andere: 'cde-F2' } } }),
+            { rahmen: RAHMEN });
+        expect(vereinigt.ausgefuehrt, vereinigt.grund ?? '').toBe(true);
+        expect(vereinigt.eintraege.map(e => e.art)).toEqual(['geloescht', 'geloescht', 'erzeugt']);
+        expect(ae.wirksamerStand('erzeugt').get('cde-FU')?.parameter?.punkte?.length).toBeGreaterThan(3);
 
-        // Dasselbe Kommando mit der Liste, die der Viewer führen würde: es läuft.
-        // Das Schema trägt also — es fehlt der Auflöser (V3).
-        const mitListe = (gid) => {
-            const s = subjektAusStand(gid, { wirksamerStand: useAenderungen().wirksamerStand, rahmen: RAHMEN });
-            if (!s) return null;
-            const flaechen = [...useAenderungen().wirksamerStand('erzeugt')]
-                .filter(([, plan]) => plan.rezept === 'flaeche')
-                .map(([globalId, plan]) => ({ globalId, name: plan.parameter?.name ?? globalId,
-                                              punkte: plan.parameter?.punkte, hoehenversatz: 300 }));
-            return { ...s, eigeneFlaechen: flaechen };
-        };
-        const mit = await bearbeitung.fuehreAus({ ...kommando('ko-v2'), neu: ['cde-FU'] },
-                                                { rahmen: RAHMEN, subjektVon: mitListe });
-        expect(mit.ausgefuehrt, mit.grund ?? '').toBe(true);
-        expect(mit.eintraege).toHaveLength(3);          // beide Flächen weg, die vereinigte neu
+        // Die Vorlage kommt aus der geladenen BIBLIOTHEK.
+        const getauscht = await bearbeitung.fuehreAus(
+            kommando('ko-t', 'koerper-tauschen', { ziel: ['cde-S1'], werte: { vorlage: 'vl-dn1200' } }),
+            { rahmen: RAHMEN });
+        expect(getauscht.ausgefuehrt, getauscht.grund ?? '').toBe(true);
+        expect(ae.wirksamerStand('erzeugt').get('cde-S1')?.parameter?.dn).toBe(1200);
+
+        // Und das FORMULAR füllt seine Auswahl aus derselben Quelle.
+        const el = bearbeitung.kandidatenVon('vorlage:gleichesRezept',
+            { stand: { bauplan: ae.wirksamerStand('erzeugt').get('cde-S2') } });
+        expect(el.map(k => k.id)).toEqual(['vl-dn1200']);
     });
 });

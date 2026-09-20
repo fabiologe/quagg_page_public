@@ -25,7 +25,7 @@
  *
  * Rein: kein Vue, kein Store, keine Engine.
  */
-import { istAbleitung, rezeptNach, teileVon } from '../Bauteilrezepte.js';
+import { erdbauStandVon, istAbleitung, rezeptNach, teileVon } from '../Bauteilrezepte.js';
 import { eigeneNetzauskunft, verdeckteAus } from '../CdeAchsen.js';
 import { anschluesseMitAchsen, strangMitAchsen } from '../Netztopologie.js';
 import { huelleAusGrenzen } from '../geometrie/Huelle.js';
@@ -102,7 +102,7 @@ function _huelleAusRezept(plan) {
  *        (`engine.netzAuskunft()`); ohne: das Netz der eigenen Bauteile
  * @returns {object|null}  null, wenn die GlobalId kein eigenes, sichtbares Bauteil ist
  */
-export function subjektAusStand(globalId, { wirksamerStand, rahmen = rahmenOhneBezug(), netz = null } = {}) {
+export function subjektAusStand(globalId, { wirksamerStand, rahmen = rahmenOhneBezug(), netz = null, historie = null } = {}) {
     if (!globalId || typeof wirksamerStand !== 'function') return null;
     const erzeugt = wirksamerStand('erzeugt');
     const plan = erzeugt.get(globalId);
@@ -154,6 +154,13 @@ export function subjektAusStand(globalId, { wirksamerStand, rahmen = rahmenOhneB
         const anschluesse = anschluesseMitAchsen(n.netz, id, n.achseVon);
         if (anschluesse.length) s.anschluesse = anschluesse;
     }
+    // DER ERDBAU-STAND (Teil XXV, V3): welcher Vorgang auf welchem Ur-Gelände
+    // steht, mit seinen Operationen. Er steht vollständig im Journal — bis
+    // hierher trug ihn nur der Viewer nach, und die Erdbau-Werkzeuge (Ecken
+    // ziehen, Mass am Vorgang setzen) fanden ihre Operationen ohne Oberfläche
+    // nur, weil sie den Bauplan direkt lesen.
+    const erdbau = erdbauStandVon(erzeugt, globalId, { historie });
+    if (erdbau) s.erdbau = erdbau;
     return s;
 }
 

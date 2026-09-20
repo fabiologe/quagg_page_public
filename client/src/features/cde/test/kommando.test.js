@@ -134,12 +134,13 @@ describe('3 — die Auswertung ruft das unveränderte Werkzeug', () => {
             const b = nachId(p.id);
             const r = rahmenOhneBezug({ hoehenversatz: p.el.hoehenversatz ?? 0 });
             for (const w of p.werte) {
-                const direkt = b.anwenden(p.el, w, { nummer: 0, zug: p.zug ?? [] });
+                const direkt = b.anwenden(p.el, w, { nummer: 0, zug: p.zug ?? [], kandidatenVon: p.kandidaten ?? null });
                 const { kommando } = kommandoAusZustand({ werkzeug: b, werte: w, subjekte: [p.el], punkte: p.zug ?? null, rahmen: r });
                 expect(pruefeKommando(kommando), p.id).toEqual([]);
                 const aus = werteAus(kommando, {
                     subjektVon: (gid) => (gid === p.el.globalId ? p.el : null), rahmen: r,
                     kennungsgeber: zufallsKennung, pruefeWerte: () => [],
+                    kandidatenVon: p.kandidaten ?? null,
                 });
                 const erwartet = normiere((Array.isArray(direkt) ? direkt : [direkt]).filter(x => x?.art));
                 gleichBisAuf(normiere(aus.schritte), erwartet, 1e-9, `${p.id}/${JSON.stringify(w)}`);
@@ -160,7 +161,7 @@ describe('3 — die Auswertung ruft das unveränderte Werkzeug', () => {
         // der Vergleich zweier leerer Listen beweist nichts. (Einzelne Proben
         // DÜRFEN leer sein: A6 hält auch das Nein eines Werkzeugs fest.)
         const schreibt = new Set(PROBEN_ALLE.filter(p => p.werte.some(w => {
-            const r = nachId(p.id).anwenden(p.el, w, { nummer: 0, zug: p.zug ?? [] });
+            const r = nachId(p.id).anwenden(p.el, w, { nummer: 0, zug: p.zug ?? [], kandidatenVon: p.kandidaten ?? null });
             return [].concat(r ?? []).some(x => x?.art);
         })).map(p => p.id));
         expect([...mitProbe].filter(id => !schreibt.has(id))).toEqual([]);

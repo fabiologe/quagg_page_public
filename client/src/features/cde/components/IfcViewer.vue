@@ -1244,6 +1244,7 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       wirksamerStand: aenderungen.wirksamerStand,
       rahmen: bearbeitung.rahmen ?? rahmenOhneBezug(),
       netz: engine.value?.netzAuskunft?.() ?? null,
+      historie: aenderungen.historischerStand('erzeugt'),
     });
     if (eigen) angereichert = { ...angereichert, ...eigen };
 
@@ -1299,8 +1300,9 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
 
     // DER ERDBAU-STAND DES SUBJEKTS (Stufe 1; Stufe 0 nannte es D3): wer das
     // Ur-Gelände, seine Anzeige oder ein Alt-DGM anfasst, soll an den
-    // vorhandenen Stapel anhängen statt ihn zu klonen. Gefunden über die
-    // QUELLEN im Journal — nicht über den Namen.
+    // vorhandenen Stapel anhängen statt ihn zu klonen. Er steht im Journal und
+    // kommt seit Teil XXV (V3) mit `subjektAusStand` — hier wird er nur noch
+    // für ein GELIEFERTES Bauteil nachgetragen, das keinen Bauplan hat.
     if (result.globalId && !angereichert.erdbau) {
       angereichert = { ...angereichert, erdbau: erdbauStandVon(aenderungen.wirksamerStand('erzeugt'), result.globalId,
                                                                { historie: aenderungen.historischerStand('erzeugt') }) };
@@ -1316,27 +1318,12 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
     // benannt, nie aus der Engine geraten.
     const koerperKandidaten = engine.value?.koerperKandidaten?.() ?? [];
     if (koerperKandidaten.length) angereichert = { ...angereichert, koerperQuellen: koerperKandidaten };
-    // DIE EIGENEN FLÄCHEN als Partner einer Vereinigung (S9) — aus dem
-    // Journal, mit ihren Punkten: `anwenden` ist synchron und rechnet die
-    // Vereinigung aus zwei Ringen, ohne die Engine zu fragen. Verdecktes
-    // (verborgene eigene Quellen) zählt nicht.
-    // EIGEN heisst: das Journal führt einen Bauplan zu dieser GlobalId — nicht
-    // der Modellname (der Headless-Lauf fand das Subjekt eines eigenen Bauteils
-    // unter einem anderen modelId-Wert, und die Listen blieben leer).
-    const erzeugtStand = aenderungen.wirksamerStand('erzeugt');
-    if (result.globalId && erzeugtStand.get(result.globalId)) {
-      const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
-      const eigeneFlaechen = [...erzeugtStand]
-        .filter(([gid, plan]) => _rezeptNachFuerMengen(plan?.rezept)?.bauform === 'flaeche' && !verdeckt.has(gid) && Array.isArray(plan?.parameter?.punkte))
-        .map(([gid, plan]) => ({ globalId: gid, name: plan.name || '', punkte: plan.parameter.punkte }));
-      if (eigeneFlaechen.length) angereichert = { ...angereichert, eigeneFlaechen };
-      // DIE BIBLIOTHEK (9.8) für „Tauschen": Vorlagen sind Daten je Rezept —
-      // Projekt schlägt Büro schlägt eingebaut, dieselbe Liste wie im Zeichnen-Popover.
-      try {
-        const vorlagen = await ladeVorlagen(repo);
-        if (vorlagen.length) angereichert = { ...angereichert, vorlagen };
-      } catch (fehler) { console.warn('cde: vorlagen fürs Tauschen', fehler?.message ?? fehler); }
-    }
+    // DIE EIGENEN FLÄCHEN (Partner einer Vereinigung, S9) und DIE BIBLIOTHEK
+    // (für „Tauschen", 9.8) standen hier als Listen am Subjekt — und nur hier.
+    // Seit Teil XXV (V3) fragen Formular UND Auswertung denselben Auföser
+    // (`kommando/Kandidaten.js`, `useBearbeitung.kandidatenVon`): beide Quellen
+    // sind das Journal und der geladene Katalog, keine davon braucht den Viewer.
+    // Damit laufen „Flächen vereinigen" und „Tauschen" auch als Kommando.
     // Der Vorfilter fürs Prüfmass — dieselbe Kandidatenmenge wie beim Sampler,
     // damit ein per Auslegung zum Gelände erklärter Proxy sein Prüfmass auch
     // bekommt. Grosszügig sein kostet hier nur einen Resolver-Treffer.

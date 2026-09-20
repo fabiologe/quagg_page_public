@@ -133,7 +133,9 @@ const vorlagenbezug = computed(() => {
   const gid = ifc.selectedElement?.globalId;
   const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
   if (!plan?.parameter?.vorlage) return null;
-  const vorlagen = bearbeitung.bauteil?.globalId === gid ? bearbeitung.bauteil?.vorlagen : null;
+  // Die Bibliothek kommt aus dem KATALOG (Teil XXV, V3), nicht mehr als Liste
+  // am Subjekt: dieselbe Quelle, aus der „Tauschen" seine Auswahl füllt.
+  const vorlagen = bearbeitung.vorlagen;
   if (!Array.isArray(vorlagen)) return { id: String(plan.parameter.vorlage), name: String(plan.parameter.vorlage), fehlt: false, abweichend: [] };
   return vorlagenbezugVon(plan, vorlagen);
 });

@@ -87,8 +87,11 @@ describe('Zeichnen aus der Bibliothek — die Herkunft bleibt', () => {
 
 describe('Tauschen — der Bezug wandert mit', () => {
     async function tausche(t, gid, vorlageId) {
+        // Seit Teil XXV (V3) ist die Bibliothek eine Eingabe des KATALOGS, keine
+        // Liste am Subjekt: der Store lädt sie mit `ladeProfile`, hier der Test.
+        t.bearbeitung.vorlagen = VORLAGEN;
         await t.bearbeitung.einordne({ globalId: gid, modelId: 'cde-eigenbau', localId: 1,
-                                       category: 'IFCDISTRIBUTIONCHAMBERELEMENT', vorlagen: VORLAGEN }, null);
+                                       category: 'IFCDISTRIBUTIONCHAMBERELEMENT' }, null);
         expect(t.bearbeitung.starte('koerper-tauschen')).toBeTruthy();
         t.bearbeitung.setzeWert('vorlage', vorlageId);
         return t.bearbeitung.ausfuehren({ wer: 'Fabio' });
@@ -195,9 +198,9 @@ describe('Das Semantik-Fenster sagt, woher das Bauteil stammt', () => {
 
         const t = bau();
         const { gid } = await schachtZeichnen(t, DN1000);
+        if (vorlagenImSubjekt) t.bearbeitung.vorlagen = vorlagenImSubjekt;
         await t.bearbeitung.einordne({ globalId: gid, modelId: 'cde-eigenbau', localId: 1,
-                                       category: 'IFCDISTRIBUTIONCHAMBERELEMENT',
-                                       ...(vorlagenImSubjekt ? { vorlagen: vorlagenImSubjekt } : {}) }, null);
+                                       category: 'IFCDISTRIBUTIONCHAMBERELEMENT' }, null);
         useIfcStore().setElement({ globalId: gid, type: 'IFCDISTRIBUTIONCHAMBERELEMENT', name: 'S1' });
         const Huelle = defineComponent({ setup() { provideViewerApi({}); return () => h(IfcSemanticWindow); } });
         const w = mount(Huelle, { global: { stubs: { CdeIcon: { template: '<i />' }, IfcSidebar: { template: '<div />' } } } });

@@ -19,6 +19,7 @@
 import { nachId } from '../../services/Bearbeitungen.js';
 import { ableitungsSchritte, mitKennungen } from '../../services/Bauteilrezepte.js';
 import { subjektAusStand } from '../../services/kommando/Subjekt.js';
+import { kandidatenAus } from '../../services/kommando/Kandidaten.js';
 import { rahmenOhneBezug } from '../../services/kommando/Kommando.js';
 import { PROBEN as PROBEN_A6 } from './werkzeugGold.js';
 
@@ -46,6 +47,10 @@ function welt() {
             [P(0, 100, 20), P(10, 100.1, 20), P(20, 100.2, 25)]);
     zeichne(erzeugt, 'flaeche-zeichnen', 'cde-F1', { name: 'F1', kategorie: 'IFCSLAB', hoehe: '' },
             [P(0, 100, 30), P(10, 100, 30), P(10, 100, 40), P(0, 100, 40)]);
+    // Eine ZWEITE Fläche, überlappend — der Partner für „Flächen vereinigen".
+    // Seit V3 kommt er aus dem Journal, nicht aus einer Liste am Subjekt.
+    zeichne(erzeugt, 'flaeche-zeichnen', 'cde-F2', { name: 'F2', kategorie: 'IFCSLAB', hoehe: '' },
+            [P(5, 100, 35), P(15, 100, 35), P(15, 100, 45), P(5, 100, 45)]);
     zeichne(erzeugt, 'platte-zeichnen', 'cde-PL1', { name: 'PL1', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.3 },
             [P(20, 100, 30), P(30, 100, 30), P(30, 100, 40), P(20, 100, 40)]);
     zeichne(erzeugt, 'pfosten-zeichnen', 'cde-PF1', { name: 'PF1', kategorie: 'IFCSIGN', hoehe: '', laenge: 0.12, breite: 0.12, tiefe: 1.1 },
@@ -97,6 +102,16 @@ const SCHACHT_G = {
 };
 const UR = { globalId: '1Ur0Gelaende0Vertrag00', category: 'IFCGEOGRAPHICELEMENT', name: 'Urgelände',
              hoehenversatz: HV, quellmass: { pruefmass: { n: 4, summe: 12.5 }, cell: 2 }, modellSha: 'sha-ur' };
+
+/**
+ * Der Kandidaten-Auföser der Probenwelt (V3): die eigenen Flächen aus dem
+ * Journal, dazu EINE Vorlage der Bibliothek. Dieselbe Funktion, die der Store
+ * ohne Oberfläche baut — hier nur mit der Probenwelt als Quelle.
+ */
+export const VORLAGEN = Object.freeze([
+    { id: 'vl-dn1200', name: 'Schacht DN 1200', rezept: 'schacht', vorgaben: { dn: 1200 } },
+]);
+const KANDIDATEN = kandidatenAus({ wirksamerStand, vorlagen: VORLAGEN });
 
 /** Die Erzeugen-Subjekte: das Gezeichnete an der Stelle des angeklickten Bauteils. */
 const zug = (...punkte) => ({ punkte, hoehenversatz: HV });
@@ -151,10 +166,10 @@ const NEU = [
     { id: 'linie-umkehren', el: eigen('cde-L1'), werte: [{}] },
     { id: 'flaeche-versetzen', el: eigen('cde-F1'), werte: [{ abstand: 1, ergebnis: 'ersetzen' }] },
     { id: 'flaeche-teilen', el: eigen('cde-F1'), zug: [P(5, 100, 28), P(5, 100, 42)], werte: [{}] },
-    { id: 'flaeche-vereinigen', el: { ...eigen('cde-F1'), eigeneFlaechen: [{ globalId: 'cde-F2', name: 'F2',
-      punkte: [[5, 100 - HV, 35], [15, 100 - HV, 35], [15, 100 - HV, 45], [5, 100 - HV, 45]] }] }, werte: [{ andere: 'cde-F2' }] },
-    { id: 'koerper-tauschen', el: { ...eigen('cde-S1'), vorlagen: [{ id: 'vl-dn1200', name: 'Schacht DN 1200', rezept: 'schacht', vorgaben: { dn: 1200 } }] },
-      werte: [{ vorlage: 'vl-dn1200' }] },
+    // Seit Teil XXV (V3) tragen diese beiden keine LISTE am Subjekt mehr: was
+    // sie ausser ihrem Ziel brauchen, löst der Kontext auf (`kandidaten`).
+    { id: 'flaeche-vereinigen', el: eigen('cde-F1'), werte: [{ andere: 'cde-F2' }], kandidaten: KANDIDATEN },
+    { id: 'koerper-tauschen', el: eigen('cde-S1'), werte: [{ vorlage: 'vl-dn1200' }], kandidaten: KANDIDATEN },
 
     // ── Netz ──
     { id: 'haltung-teilen', el: eigen('cde-H1'), werte: [{ station: 10 }] },

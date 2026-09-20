@@ -434,10 +434,12 @@ describe('W8 — Fachregeln stehen im Regelwerk, nicht lose im Code', () => {
  * Stand nicht liefert, ist ein Werkzeug, das ohne Oberfläche nicht läuft
  * (gemessen: `reichweite.test.js`).
  *
- * Gemessen am 2026-09-20: neun Felder fehlen, davon sind drei keine
- * Anreicherung eines Bauteils (siehe `KEIN_BAUTEILFELD`). Bleiben sechs; V3
- * holt `eigeneFlaechen`, `vorlagen` und `erdbau` in den Stand, drei bleiben
- * beim Viewer, weil sie aus GELIEFERTER Geometrie kommen.
+ * Gemessen am 2026-09-20: neun Felder fehlten, davon drei ohne Bezug zu einem
+ * Bauteil (siehe `KEIN_BAUTEILFELD`). Von den sechs übrigen hat V3 drei
+ * geholt: `erdbau` steht im Journal und kommt mit `subjektAusStand`,
+ * `eigeneFlaechen` und `vorlagen` sind keine Felder mehr — die beiden
+ * Werkzeuge fragen den Kandidaten-Auföser (`kommando/Kandidaten.js`).
+ * Es bleiben drei, und die kommen aus GELIEFERTER Geometrie.
  */
 const SUBJEKT_ERLAUBT = {
     // Kandidaten aus der Engine: welche Gelände- bzw. Körperquellen es im
@@ -447,11 +449,6 @@ const SUBJEKT_ERLAUBT = {
     // Das Prüfmass einer gelieferten Quelle (Dreiecke, Spannweiten) — es
     // entsteht beim Auflösen der Geometrie, nicht im Journal.
     'quellmass': 1,
-    // V3 holt diese drei in den Stand: die eigenen Flächen und der Erdbau-Stand
-    // stehen im Journal, die Vorlagen in der Bibliothek.
-    'eigeneFlaechen': 1,
-    'vorlagen': 1,
-    'erdbau': 1,
 };
 
 /** Felder, die kein Bauteil beschreiben — sie gehören nicht in den Subjektvertrag. */
@@ -479,9 +476,21 @@ describe('W9 — was ein Werkzeug vom Bauteil liest, liefert der Stand', () => {
     }
     regel('W9 Subjektvertrag', fehlend, SUBJEKT_ERLAUBT);
 
-    it('der Stand liefert, woran die Auswertung hängt: Achse, Strang, Anschlüsse, Stand', () => {
-        for (const feld of ['achse', 'strang', 'anschluesse', 'stand', 'anker', 'versatz', 'knotenImNetz']) {
+    it('der Stand liefert, woran die Auswertung hängt: Achse, Strang, Anschlüsse, Stand, Erdbau', () => {
+        for (const feld of ['achse', 'strang', 'anschluesse', 'stand', 'anker', 'versatz', 'knotenImNetz', 'erdbau']) {
             expect(geliefert.has(feld), feld).toBe(true);
         }
+    });
+
+    it('kein Werkzeug erwartet mehr eine fertige LISTE am Subjekt (V3)', () => {
+        // `optionen: (el) => …` liest eine Liste vom Subjekt; `optionenAus`
+        // nennt eine Kandidatenart und fragt damit dieselbe Stelle wie die
+        // Auswertung. Übrig sind die drei Ableitungen: ihre Kandidaten kommen
+        // aus der ENGINE (Gelände- und Körperquellen des geladenen Modells).
+        const mitFunktion = BEARBEITUNGEN
+            .filter(b => (b.felder ?? []).some(f => typeof f.optionen === 'function')).map(b => b.id);
+        expect(mitFunktion.sort()).toEqual([                       // vorher: 5
+            'aussparung-ableiten', 'bauwerksgrube-ableiten', 'kanalgraben-ableiten',
+        ]);
     });
 });

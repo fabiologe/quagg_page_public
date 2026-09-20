@@ -2876,25 +2876,26 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         felder: [
             { name: 'andere', titel: 'Mit dieser eigenen Fläche', typ: 'auswahl',
               aus: { geste: 'auswahl', herkunft: 'cde', liefert: 'globalId' },
-              optionen: (el) => (el?.eigeneFlaechen ?? [])
-                  .filter(f => f.globalId !== el?.globalId)
-                  .map(f => ({ wert: f.globalId, titel: f.name || f.globalId })) },
+              optionenAus: 'eigene:flaeche' },
         ],
-        vorbelegung: (el) => ({ andere: (el?.eigeneFlaechen ?? []).find(f => f.globalId !== el?.globalId)?.globalId ?? '' }),
-        anwenden: (el, werte) => {
+        vorbelegung: (el, { kandidatenVon = null } = {}) =>
+            ({ andere: kandidatenVon?.('eigene:flaeche', el)?.[0]?.id ?? '' }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) => {
             const plan = el?.stand?.bauplan;
             const punkte = plan?.parameter?.punkte;
-            if (!plan?.rezept || !REZEPTE[plan.rezept]?.geschlossen || !Array.isArray(punkte) || !el?.globalId) return null;
-            const andere = (el.eigeneFlaechen ?? []).find(f => f.globalId === werte?.andere && f.globalId !== el.globalId);
+            if (!plan?.rezept || !rezeptNach(plan.rezept)?.geschlossen || !Array.isArray(punkte) || !el?.globalId) return null;
+            // Die andere Fläche kommt aus dem Kontext, nicht aus einer Liste am
+            // Subjekt (V3) — dieselbe Quelle, aus der das Formular sie anbietet.
+            const andere = (kandidatenVon?.('eigene:flaeche', el) ?? []).find(f => f.id === werte?.andere);
             if (!andere) return null;
             const vereinigt = vereinigeRinge(punkte, andere.punkte);
             if (!vereinigt.punkte) return null;
             return [
                 { art: 'geloescht', globalId: el.globalId, nachher: true },
-                { art: 'geloescht', globalId: andere.globalId, nachher: true },
+                { art: 'geloescht', globalId: andere.id, nachher: true },
                 erzeugtEintrag({
                     rezept: plan.rezept, kategorie: plan.kategorie,
-                    name: plan.name ? `${plan.name} + ${andere.name || ''}`.trim() : '',
+                    name: plan.name ? `${plan.name} + ${andere.titel || ''}`.trim() : '',
                     parameter: { ...plan.parameter, punkte: vereinigt.punkte },
                 }),
             ];
@@ -2920,16 +2921,16 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         nurEigene: true,
         art: 'erzeugt',
         felder: [
-            { name: 'vorlage', titel: 'Vorlage', typ: 'auswahl',
-              optionen: (el) => (el?.vorlagen ?? [])
-                  .filter(v => v.rezept === el?.stand?.bauplan?.rezept)
-                  .map(v => ({ wert: v.id, titel: v.name })) },
+            { name: 'vorlage', titel: 'Vorlage', typ: 'auswahl', optionenAus: 'vorlage:gleichesRezept' },
         ],
-        vorbelegung: (el) => ({ vorlage: (el?.vorlagen ?? []).find(v => v.rezept === el?.stand?.bauplan?.rezept)?.id ?? '' }),
-        anwenden: (el, werte) => {
+        vorbelegung: (el, { kandidatenVon = null } = {}) =>
+            ({ vorlage: kandidatenVon?.('vorlage:gleichesRezept', el)?.[0]?.id ?? '' }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) => {
             const plan = el?.stand?.bauplan;
             if (!plan?.rezept || !el?.globalId) return null;
-            const vorlage = (el.vorlagen ?? []).find(v => v.id === werte?.vorlage && v.rezept === plan.rezept);
+            // Die Vorlage kommt aus dem Kontext (V3); die Kandidatenart nennt
+            // schon, dass nur Vorlagen DIESES Rezepts in Frage kommen.
+            const vorlage = (kandidatenVon?.('vorlage:gleichesRezept', el) ?? []).find(v => v.id === werte?.vorlage);
             if (!vorlage) return null;
             const { kategorie, name: _n, vorlage: _v, ...vorgaben } = vorlage.vorgaben ?? {};
             // Die Vorgaben wandern in den Bauplan — UND die Id der Vorlage
@@ -3682,7 +3683,7 @@ export function nachId(id, katalog = werkzeugKatalog()) {
  * Grenzen. So heißt dasselbe Feld am Rohr „DN" und am Träger „Profilreihe",
  * ohne dass irgendwo nach Typ verzweigt würde.
  */
-export function felderFuer(bearbeitung, typprofil = null, el = null) {
+export function felderFuer(bearbeitung, typprofil = null, el = null, { kandidatenVon = null } = {}) {
     // Ein Feld darf vom SUBJEKT abhängen (`nurWenn`): der Anschluss-Regler von
     // „Verschieben" hat an einem Rohr nichts zu sagen, an einem Schacht alles.
     return (bearbeitung?.felder ?? []).filter(f => typeof f.nurWenn !== 'function' || !!f.nurWenn(el)).map((feld) => {
@@ -3691,8 +3692,15 @@ export function felderFuer(bearbeitung, typprofil = null, el = null) {
             : (feld.rueckfall ?? feld);
         // Optionen dürfen vom SUBJEKT abhängen (G6: welche Gelände kommen als
         // Quelle in Frage) — dann sind sie eine Funktion, hier aufgelöst.
-        const optionen = typeof aufgeloest?.optionen === 'function'
-            ? (aufgeloest.optionen(el) ?? []) : aufgeloest?.optionen;
+        //
+        // NENNT das Feld eine Kandidatenart (Teil XXV, V3), fragt es dieselbe
+        // Stelle wie die Auswertung: das Formular zeigt genau die Kandidaten,
+        // die ein Kommando nennen darf. Bis hierher las eine Funktion am Feld
+        // eine Liste vom Subjekt, und die trug nur der Viewer ein.
+        const optionen = aufgeloest?.optionenAus
+            ? (kandidatenVon?.(aufgeloest.optionenAus, el) ?? []).map(k => ({ wert: k.id, titel: k.titel }))
+            : (typeof aufgeloest?.optionen === 'function'
+                ? (aufgeloest.optionen(el) ?? []) : aufgeloest?.optionen);
         return { name: feld.name, ...(aufgeloest ?? {}), ...(optionen !== undefined ? { optionen } : {}) };
     });
 }

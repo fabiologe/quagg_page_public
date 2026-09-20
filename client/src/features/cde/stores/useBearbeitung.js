@@ -35,6 +35,8 @@ import { istErzeugen, kommandoAusZustand, mitHoehenversatz, pruefeKommando, rahm
 import { werteAus } from '../services/kommando/Auswertung.js';
 import { systemBeleg } from '../services/kommando/Beleg.js';
 import { standVon, subjektAusStand } from '../services/kommando/Subjekt.js';
+import { kandidatenAus } from '../services/kommando/Kandidaten.js';
+import { ladeVorlagen } from '../services/Bibliothek.js';
 import { pruefeStandAusJournal } from '../services/Prueflauf.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
 
@@ -84,6 +86,17 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     const katalogBefunde = ref([]);
     /** Der Stand des Rezept-Registers — wandert mit jeder Registrierung (A5). */
     const katalogStand = ref(0);
+    /**
+     * Die Vorlagen der Bibliothek (Teil XXV, V3) — EINE Quelle für das
+     * Formular und die Auswertung. Bis hierher las sie der Viewer je Auswahl
+     * und trug sie ans Subjekt; ohne Oberfläche gab es sie damit nicht, und
+     * „Tauschen (Bibliothek)" lief als Kommando nie.
+     *
+     * `null` heisst NOCH NICHT GELADEN und ist etwas anderes als die leere
+     * Bibliothek: wer ein Bauteil aus einer Vorlage vor sich hat, urteilt
+     * ohne geladene Liste nicht über sie (`IfcSemanticWindow`).
+     */
+    const vorlagen = ref(null);
     /** Id der scharfen Bearbeitung, oder null. */
     const scharfId = ref(null);
     /** Formularwerte der scharfen Bearbeitung. */
@@ -151,7 +164,19 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         umgekehrt: bauteil.value?.stand?.fliessrichtung === 'umgekehrt',
         typprofil: typprofil.value,
     })));
-    const felder = computed(() => (scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value) : []));
+    /**
+     * WAS EIN WERKZEUG AUSSER SEINEM ZIEL BRAUCHT (Teil XXV, V3).
+     *
+     * Eine Stelle für beide Seiten: das Formular füllt daraus seine Auswahl,
+     * die Auswertung findet damit das genannte Objekt. Alles aus dem Journal
+     * und der geladenen Bibliothek — kein Viewer, kein Modell.
+     */
+    function kandidatenVon(art, el) {
+        return kandidatenAus({ wirksamerStand: useAenderungen().wirksamerStand, vorlagen: vorlagen.value })(art, el);
+    }
+
+    const felder = computed(() => (void katalogStand.value,
+        scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value, { kandidatenVon }) : []));
     const fehler = computed(() => (scharf.value ? pruefe(felder.value, werte.value) : []));
     const bereit = computed(() => !!scharf.value && fehler.value.length === 0);
     // FACHGRENZEN (K10, Fabios E5): was über der üblichen Grenze liegt, sperrt
@@ -230,6 +255,10 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         regeln.value = k.regeln;
         katalogBefunde.value = k.befunde;
         katalogStand.value = k.stand;
+        // Die Bibliothek gehört zum Katalog (V3): sie wird mit ihm geladen und
+        // mit ihm neu gelesen, wenn jemand eine Vorlage sichert oder löscht.
+        try { vorlagen.value = await ladeVorlagen(quelle); }
+        catch (fehler) { console.warn('cde: vorlagen laden', fehler?.message ?? fehler); }
     }
 
     // ── Zuordnen: was bedeuten die Namen dieses Exporteurs? ────────────────
@@ -512,7 +541,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const werkzeug = GRUPPEN[b.gruppe]?.einstieg === 'werkzeug';
         if (!werkzeug && !subjekt && einordnung.value && !moeglich.value.some(p => p.id === id)) return false;
         scharfId.value = id;
-        werte.value = { ...(b.vorbelegung?.(subjekt ?? bauteil.value ?? {}) ?? {}) };
+        werte.value = { ...(b.vorbelegung?.(subjekt ?? bauteil.value ?? {}, { kandidatenVon }) ?? {}) };
         belegeWerkzeug(`bearbeitung:${id}`, () => abbrechen());
         return true;
     }
@@ -768,7 +797,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const subjektWirksam = (gid) => {
             if (!subjekte.has(gid)) {
                 subjekte.set(gid, subjektVon?.(gid)
-                    ?? subjektAusStand(gid, { wirksamerStand: ae0.wirksamerStand, rahmen: rahmenWirksam }));
+                    ?? subjektAusStand(gid, { wirksamerStand: ae0.wirksamerStand, rahmen: rahmenWirksam,
+                                              historie: ae0.historischerStand?.('erzeugt') ?? null }));
             }
             return subjekte.get(gid);
         };
@@ -780,6 +810,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const aus = werteAus(kommando, {
             subjektVon: subjektWirksam,
             bauplanVon: (gid) => ae0.wirksamerStand('erzeugt').get(gid) ?? null,
+            kandidatenVon,
             knotenVon: (gid) => eigeneKnoten.get(gid) ?? knotenVon?.(gid) ?? null,
             rahmen: rahmenWirksam,
             kennungsgeber,
@@ -936,7 +967,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
-        ladeProfile, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
+        ladeProfile, vorlagen, kandidatenVon, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
         // Teil XXIV, K1: der Kommandoweg — auch ohne Oberfläche.
         fuehreAus, rahmen, setzeRahmen,

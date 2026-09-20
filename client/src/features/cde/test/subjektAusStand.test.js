@@ -229,7 +229,10 @@ describe('Das Subjekt aus dem Stand ist das Subjekt des Viewers (Fixture aus dem
         return Object.is(a, b) || a === b ? [] : [`${pfad}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`];
     }
 
-    for (const [rolle, gid, felderSoll] of [['Haltung', F.gids.H1, 16], ['Schacht', F.gids.S1, 14]]) {
+    // 16/14 bei der Aufnahme, 17/15 seit Teil XXV (V3): der Erdbau-Stand kommt
+    // jetzt aus dem Journal statt aus dem Viewer. Dass er DASSELBE ist, prüft
+    // der Feldvergleich unten — die Fixture hält den Viewer-Wert fest.
+    for (const [rolle, gid, felderSoll] of [['Haltung', F.gids.H1, 17], ['Schacht', F.gids.S1, 15]]) {
         it(`${rolle}: alle ${felderSoll} Felder des Subjekts gleich denen des Viewers`, () => {
             const s = JSON.parse(JSON.stringify(subjektAusStand(gid, { wirksamerStand, rahmen, netz })));
             const felder = Object.keys(s);
@@ -241,7 +244,11 @@ describe('Das Subjekt aus dem Stand ist das Subjekt des Viewers (Fixture aus dem
                 // unsymmetrischen Querschnitts nicht als 2 × Sohlabstand geraten
                 // wird. Additiv — jeder ALTE Wert muss weiter stimmen. Geprüft
                 // in `kostenprobe.test.js`.
-                .filter(z => !/\.profilhoehe:/.test(z));
+                .filter(z => !/\.profilhoehe:/.test(z))
+                // Ebenso nach der Aufnahme dazugekommen, aber NICHT von hier:
+                // `erdbauStandVon` nennt seit Durchstich 2 (S2, `00d0ee0`) die
+                // Operationen des Stapels. Beide Seiten rufen dieselbe Funktion.
+                .filter(z => !/^erdbau\.operationen:/.test(z));
             expect(aus).toEqual([]);
         });
     }
