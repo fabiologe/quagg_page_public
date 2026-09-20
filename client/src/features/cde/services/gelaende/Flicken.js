@@ -24,7 +24,7 @@
  * Anzeige selbst.
  */
 import { flickenRaster, hoeheImRaster, rasterKnoten } from '../geometrie/SurfaceOps.js';
-import { feinheitFuer, formeNach, wirkbereichVon } from './Operationen.js';
+import { feinheitFuer, formeNach, wirkbereichVon, mitVorherigen } from './Operationen.js';
 
 /** Weltbox → grobe Zellbox (Knotenindizes), nach aussen auf ganze Zellen. */
 function _zellbox(grob, b) {
@@ -97,8 +97,9 @@ export async function anzeigeFlicken(ur, stand, ops = [], { zelle, budget, feine
     const { k } = feinheitFuer(ur, ops, { zelle, budget });
     if (k < 2) return leer();                        // die Anzeige ist schon so fein
     const boxen = [];
-    for (const op of ops) {
-        const b = wirkbereichVon(ur, op?.art, op?.parameter ?? {});
+    // Wie bei der Formung: je Operation nur, was VOR ihr liegt (Durchstich 2).
+    for (const { op, ctx } of mitVorherigen(ops)) {
+        const b = wirkbereichVon(ur, op?.art, op?.parameter ?? {}, { ctx });
         const z = b ? _zellbox(ur, b) : null;
         if (z) boxen.push(rand > 0 ? _geweitet(z, ur, rand) : z);
     }

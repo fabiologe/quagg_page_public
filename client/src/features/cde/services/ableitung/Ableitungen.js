@@ -24,7 +24,7 @@
  *
  * Rein: kein Vue, keine Engine, kein three. Importiert nur nach unten.
  */
-import { GELAENDE_OPS, aufGelaende, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, lagelistenVon, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon } from '../gelaende/Operationen.js';
+import { GELAENDE_OPS, aufGelaende, cutTypAus, feinheitAus, feinheitFuer, fillTypAus, formeNach, lagelistenVon, massenAus, punktlistenVon, verschiebeOperationen, wirkbereichVon, mitVorherigen } from '../gelaende/Operationen.js';
 import { anzeigeFlicken } from '../gelaende/Flicken.js';
 import { ANZEIGE_URNETZ_MAX, anzeigeNetz } from '../gelaende/Anzeigenetz.js';
 import { innenEcken } from '../gelaende/Innenecken.js';
@@ -619,8 +619,11 @@ const _liste = (q) => (q == null ? [] : (Array.isArray(q) ? q : [q]));
  */
 function _erdbauKorridor(raster, operationen) {
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const op of operationen ?? []) {
-        const b = wirkbereichVon(raster, op?.art, op?.parameter ?? {});
+    // Je Operation der Kontext derer, die vor ihr liegen — sonst fände eine
+    // Auffüllung „bis zur Fläche" ihr Ziel hier nicht, und der Korridor wäre
+    // zu klein (Durchstich 2).
+    for (const { op, ctx } of mitVorherigen(operationen ?? [])) {
+        const b = wirkbereichVon(raster, op?.art, op?.parameter ?? {}, { ctx });
         if (!b) return null;                     // eine Operation ohne Grenze ⇒ kein Korridor
         minX = Math.min(minX, b.minX); maxX = Math.max(maxX, b.maxX);
         minZ = Math.min(minZ, b.minZ); maxZ = Math.max(maxZ, b.maxZ);

@@ -693,8 +693,50 @@ function _tiefsteIn(raster, h) {
  *                          kann eine eigene hereinreichen
  * @returns {{minX,maxX,minZ,maxZ}|null}  null = nicht eingrenzbar (alles)
  */
-export function wirkbereichVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
-    const w = ops[art]?.wirkbereich?.(raster, parameter ?? {});
+/**
+ * Die FLÄCHEN-AUSKUNFT über eine Liste von Operationen: „gibt es die Operation,
+ * und stellt sie eine Fläche her?" — gefragt wird nur, was VOR der jeweiligen
+ * Operation liegt (Durchstich 2, E3). Diese eine Funktion baut den Kontext für
+ * alle, die eine Liste durchgehen: die Formung, der Wirkbereich, die Feinheit
+ * und die Flicken der Anzeige. Zwei Nachbauten liefen sonst auseinander, und
+ * dann rechnete der Korridor mit einer anderen Zielhöhe als die Formung.
+ */
+export function mitVorherigen(liste = [], { vorherige = [], ops = GELAENDE_OPS } = {}) {
+    const gesehen = [...(vorherige ?? [])];
+    const aus = [];
+    for (const op of liste ?? []) {
+        const davor = [...gesehen];
+        aus.push({ op, ctx: { flaecheAn: (id) => _flaecheAus(davor, id, ops) } });
+        gesehen.push(op);
+    }
+    return aus;
+}
+function _flaecheAus(liste, id, ops = GELAENDE_OPS) {
+    const op = id ? liste.findLast(o => o?.id === id) ?? null : null;
+    return op ? { gefunden: true, an: flaecheVon(op, { ops }) } : { gefunden: false, an: null };
+}
+
+/**
+ * Die ZIELHÖHEN einer Operation über ihrer Hülle: `{min, max}` — oder null,
+ * wenn es keine gibt. Eine eigene Höhe ergibt min = max; eine Fläche wird an
+ * den Ecken und in der Mitte der Hülle abgetastet (für eine Ebene ist das
+ * genau, für eine gekippte Fläche über der Hülle ebenfalls).
+ */
+function _zielhoehen(raster, p, feld, ctx, huelle) {
+    const soll = sollhoeheVon(p, { art: 'bereich', feld }, { raster, flaecheAn: ctx?.flaecheAn });
+    if (soll.grund) return null;
+    const orte = [[huelle.minX, huelle.minZ], [huelle.maxX, huelle.minZ], [huelle.minX, huelle.maxZ], [huelle.maxX, huelle.maxZ],
+                  [(huelle.minX + huelle.maxX) / 2, (huelle.minZ + huelle.maxZ) / 2]];
+    let min = Infinity, max = -Infinity;
+    for (const [x, z] of orte) {
+        const h = soll.an(x, z, 0);
+        if (Number.isFinite(h)) { min = Math.min(min, h); max = Math.max(max, h); }
+    }
+    return Number.isFinite(min) ? { min, max } : null;
+}
+
+export function wirkbereichVon(raster, art, parameter = {}, { ops = GELAENDE_OPS, ctx = null } = {}) {
+    const w = ops[art]?.wirkbereich?.(raster, parameter ?? {}, ctx);
     if (!w?.huelle) return null;
     const rand = RAND_MINDEST_M + Math.max(0, w.saum ?? 0);
     return {
@@ -798,11 +840,11 @@ export function wirkflaecheVon(raster, art, parameter = {}, { ops = GELAENDE_OPS
  * Das SCHMALSTE, was diese Operation auflösen muss (m) — oder null, wenn sie
  * keine feine Form hat (dann entscheidet allein die Fläche).
  */
-export function kennweiteVon(raster, art, parameter = {}, { ops = GELAENDE_OPS } = {}) {
+export function kennweiteVon(raster, art, parameter = {}, { ops = GELAENDE_OPS, ctx = null } = {}) {
     const p = parameter ?? {};
     const neigung = Math.max(0, Number(p.boeschung ?? p.neigung) || 0);
-    const box = wirkbereichVon(raster, art, p, { ops });
-    const masse = (ops[art]?.kennweiten?.(raster, p, { box, neigung }) ?? [])
+    const box = wirkbereichVon(raster, art, p, { ops, ctx });
+    const masse = (ops[art]?.kennweiten?.(raster, p, { box, neigung, ctx }) ?? [])
         .map(Number).filter(z => Number.isFinite(z) && z > 0);
     return masse.length ? Math.min(...masse) : null;
 }
@@ -820,15 +862,15 @@ export function kennweiteVon(raster, art, parameter = {}, { ops = GELAENDE_OPS }
  *   `k` ist der GANZZAHLIGE Teiler der groben Zelle — nur so liegen feines
  *   und grobes Gitter aufeinander (Teil XXI, P1b).
  */
-export function feinheitFuer(raster, ops = [], { zelle = 0.5, budget = 160000 } = {}) {
+export function feinheitFuer(raster, ops = [], { zelle = 0.5, budget = 160000, vorherige = [] } = {}) {
     const grob = Number(raster?.cell) || 1;
     if (!raster?.heights?.length || !ops.length) return feinheitAus({ grob, flaeche: 0, zelle, budget });
     let flaeche = 0;
     let kennweite = Infinity;
-    for (const op of ops) {
+    for (const { op, ctx } of mitVorherigen(ops, { vorherige })) {
         const f = wirkflaecheVon(raster, op?.art, op?.parameter ?? {});
         if (Number.isFinite(f)) flaeche += Math.max(0, f);
-        const w = kennweiteVon(raster, op?.art, op?.parameter ?? {});
+        const w = kennweiteVon(raster, op?.art, op?.parameter ?? {}, { ctx });
         if (Number.isFinite(w) && w > 0) kennweite = Math.min(kennweite, w);
     }
     return feinheitAus({ grob, flaeche, kennweite: Number.isFinite(kennweite) ? kennweite : null, zelle, budget });
@@ -936,17 +978,22 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 // wohnen in den Ableitungen, und ein Import von dort wäre ein Griff nach oben.
 
 /** Die Hülle eines Umrisses mit dem Saum, den eine Böschung zur Zielhöhe wirft. */
-function _wbUmrissZuZiel(raster, p) {
+function _wbUmrissZuZiel(raster, p, ctx = null) {
     const huelle = _huelleXZ(p.umriss);
     if (!huelle) return null;
     const neigung = Math.max(0, Number(p.neigung) || 0);
     const oben = _hoechsteIn(raster, huelle);
     const unten = _tiefsteIn(raster, huelle);
-    const ziel = Number(p.hoehe);
+    // DIE ZIELHÖHE — die eigene oder die einer Fläche, auf die sie zeigt. Ohne
+    // auflösbares Ziel bleibt der Saum 0 (wie bei einer fehlenden Höhe seit je):
+    // ein Bereich, der ganz fehlt, brächte den Korridor zum Erliegen und liesse
+    // den Vorgang still auf dem groben Raster rechnen.
+    const ziel = _zielhoehen(raster, p, 'hoehe', ctx, huelle);
     // Nach OBEN (Einschnitt) wie nach UNTEN (Damm) — bis Teil XX zählte
     // nur der höchste Punkt, und ein Damm lief über den Bereich hinaus.
-    const spanne = Number.isFinite(ziel)
-        ? Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0, Number.isFinite(unten) ? Math.abs(ziel - unten) : 0)
+    const spanne = ziel
+        ? Math.max(Number.isFinite(oben) ? Math.max(Math.abs(oben - ziel.min), Math.abs(oben - ziel.max)) : 0,
+                   Number.isFinite(unten) ? Math.max(Math.abs(ziel.min - unten), Math.abs(ziel.max - unten)) : 0)
         : 0;
     // Ohne Böschung endet die Fläche am Umriss (Saum null); mit Böschung läuft sie aus.
     return { huelle, saum: spanne * neigung };
@@ -966,14 +1013,15 @@ const _gerinneSohle = (p, st) => (st
     : Math.min(Number(p.sohleAnfang), Number(p.sohleEnde)));
 
 /** Die Kennweite einer Umriss-Operation: wie weit ihre Böschung höchstens ausläuft. */
-function _kwUmriss(raster, p, { neigung }) {
+function _kwUmriss(raster, p, { neigung, ctx = null }) {
     const h = _huelleXZ(p.umriss);
     const oben = h ? _hoechsteIn(raster, h) : null;
     const unten = h ? _tiefsteIn(raster, h) : null;
-    const ziel = Number(p.sohle ?? p.hoehe);
-    if (!(neigung > 0) || !Number.isFinite(ziel)) return [];
-    return [Math.max(Number.isFinite(oben) ? Math.abs(oben - ziel) : 0,
-                     Number.isFinite(unten) ? Math.abs(ziel - unten) : 0) * neigung];
+    // Dasselbe Ziel wie beim Wirkbereich — die Sohle, wo es eine gibt, sonst die Höhe.
+    const ziel = h ? _zielhoehen(raster, p, p.sohle !== undefined ? 'sohle' : 'hoehe', ctx, h) : null;
+    if (!(neigung > 0) || !ziel) return [];
+    return [Math.max(Number.isFinite(oben) ? Math.max(Math.abs(oben - ziel.min), Math.abs(oben - ziel.max)) : 0,
+                     Number.isFinite(unten) ? Math.max(Math.abs(ziel.min - unten), Math.abs(ziel.max - unten)) : 0) * neigung];
 }
 
 /**
@@ -1606,23 +1654,18 @@ export function formeNach(raster, operationen = [], { bereich = null, ganzesRast
     // Gereicht wird die FÄHIGKEIT, nicht die Operation: „gibt es sie, und stellt
     // sie eine Fläche her?" (Teil XXIV-4). Der Auflöser der Sollhöhe kennt damit
     // weder die Registry noch eine Operationsart.
-    const gesehen = [...(vorherige ?? [])];
-    const flaecheAn = (id) => {
-        const op = id ? gesehen.findLast(o => o?.id === id) ?? null : null;
-        return op ? { gefunden: true, an: flaecheVon(op) } : { gefunden: false, an: null };
-    };
-    for (const op of operationen) {
+    for (const { op, ctx } of mitVorherigen(operationen, { vorherige })) {
+        const flaecheAn = ctx.flaecheAn;
         const eintrag = GELAENDE_OPS[op?.art];
         if (!eintrag) { warnungen.push(`unbekannte_operation: ${op?.art ?? '—'}`); continue; }
         const p = op.parameter ?? {};
         // Der Wirkbereich wird je Operation GERECHNET, wenn ihn niemand
         // vorgibt (`ganzesRaster` schaltet ihn ab — für den Zweifelsfall).
-        const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p));
+        const b = ganzesRaster ? null : (bereich ?? wirkbereichVon(stand, op.art, p, { ctx }));
         const vor = stand;
         const r = eintrag.wende(stand, p, { bereich: b, ur, flaecheAn });
         stand = r.raster;
         warnungen.push(...r.warnungen);
-        gesehen.push(op);
         // ABGESCHNITTEN? Wenn am Rand des Bereichs noch etwas passiert ist,
         // reichte er nicht — das darf nicht still bleiben.
         if (b && _randBeruehrt(vor, stand, _zellbereich(vor, b))) {
