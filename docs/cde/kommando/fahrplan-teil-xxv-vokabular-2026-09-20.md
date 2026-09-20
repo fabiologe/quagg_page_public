@@ -121,7 +121,7 @@ Gebaut auf Fabios „lets go mit dem Ausführen des Plans". Je Stufe ein Commit,
 | A6 | Subjektfelder nur vom Viewer | 6 | **3** |
 | A7 | Rechteckkanal = 0 Zeilen | einmalige Probe | Test |
 
-Suite nach V8: 301 Dateien, 3 365 Tests grün.
+Suite nach V8: CDE 301 Dateien / 3 365 Tests grün, ganze Client-Suite 451 Dateien / 4 869 Tests grün (6 übersprungen).
 
 ### Wo es anders kam als geplant
 
