@@ -32,7 +32,7 @@ import { repo } from '../services/RepoFacade.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
-import { erdbauStandVon, rezeptNach } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, operationenMitKennung, rezeptNach } from '../services/Bauteilrezepte.js';
 import { neuerAbleitungslauf } from '../services/ableitung/Ableitungslauf.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
@@ -164,6 +164,68 @@ describe('Ein ALT-JOURNAL (Böschung mit kopierter Höhe) baut wie immer', () =>
             p.rezept === 'erdbau' ? { ...p, parameter: { ...p.parameter, operationen: GOLD.operationen } } : p]));
         expect(stand.get('cde-P-auftrag').parameter.operationen.map(o => o.parameter.hoehe)).toEqual([301, 301]);
         expect(await miss(stand)).toEqual(GOLD.zahlen);
+    });
+});
+
+describe('Bestand: ein Journal von gestern wird umgestellt, sobald es angefasst wird', () => {
+    const GOLD = JSON.parse(readFileSync(PFAD, 'utf8'));
+
+    /** Der Vorgang von heute, dessen Operationen durch die von gestern ersetzt sind. */
+    async function vonGestern(operationen = GOLD.operationen) {
+        expect((await fuehre(PLANUM())).grund).toBe(null);
+        const ae = useAenderungen();
+        for (const gid of ['cde-P-aushub', 'cde-P-auftrag']) {
+            const p = ae.wirksamerStand('erzeugt').get(gid);
+            await ae.eintragen({ art: 'erzeugt', globalId: gid, modell: 'cde',
+                                 nachher: { ...p, parameter: { ...p.parameter, operationen } } });
+        }
+        expect(opsVon('cde-P-auftrag').map(o => o.parameter.hoehe)).toEqual([301, 301]);
+    }
+
+    it('die Planumshöhe gesetzt: aus der Kopie wird ein Verweis, und die Böschung folgt', async () => {
+        await vonGestern();
+        expect((await fuehre(PLANUM_AUF(301.5))).grund).toBe(null);
+        const ops = opsVon('cde-P-auftrag');
+        expect(ops.map(o => o.parameter.hoehe)).toEqual([301.5, undefined]);
+        expect(ops[1].parameter).toMatchObject({ ziel: 'flaeche', flaeche: ops[0].id, neigung: 2 });
+        // Und das Bild: 0,75 m draussen liegt die Böschung jetzt 0,50 m höher.
+        const zahlen = await miss();
+        expect(zahlen.hoeheAn).toEqual([301.5, 301.5, 301.125, 300]);
+    });
+
+    it('eine ABWEICHENDE Böschung bleibt, wie sie ist — sie war nie eine Kopie', async () => {
+        const eigen = JSON.parse(JSON.stringify(GOLD.operationen));
+        eigen[1].parameter.hoehe = 300.8;                       // von Hand tiefer gelegt
+        await fuehre(PLANUM());
+        const ae = useAenderungen();
+        for (const gid of ['cde-P-aushub', 'cde-P-auftrag']) {
+            const p = ae.wirksamerStand('erzeugt').get(gid);
+            await ae.eintragen({ art: 'erzeugt', globalId: gid, modell: 'cde', nachher: { ...p, parameter: { ...p.parameter, operationen: eigen } } });
+        }
+        expect((await fuehre(PLANUM_AUF(301.5))).grund).toBe(null);
+        const ops = opsVon('cde-P-auftrag');
+        expect(ops.map(o => o.parameter.hoehe)).toEqual([301.5, 300.8]);   // unangetastet
+        expect(ops[1].parameter.ziel).toBeUndefined();
+    });
+
+    it('auch ein Journal von VOR K2b (Operationen ohne Kennung) wird umgestellt', async () => {
+        const ohneKennung = GOLD.operationen.map(({ id: _weg, ...rest }) => JSON.parse(JSON.stringify(rest)));
+        await vonGestern(ohneKennung);
+        expect(opsVon('cde-P-auftrag').every(o => !o.id)).toBe(true);
+        // Ohne gespeicherte Kennung spricht ein Kommando sie über die aus ihrem
+        // INHALT abgeleitete an (`op-alt-…`, K2b) — dieselbe Liste, die auch die
+        // Adresse des Werkzeugs liefert.
+        const altId = operationenMitKennung(opsVon('cde-P-auftrag'))[0].id;
+        expect(altId).toMatch(/^op-alt-/);
+        expect((await fuehre(kommando('erdbau-mass-setzen', {
+            ziel: ['cde-P-auftrag'], werte: { op: { operation: altId }, feld: 'hoehe', wert: 301.5 },
+        }))).grund).toBe(null);
+        const ops = opsVon('cde-P-auftrag');
+        // Beide haben jetzt eine Kennung (aus ihrem Inhalt abgeleitet), und der
+        // Verweis zeigt auf die, die gespeichert wird.
+        expect(ops[0].id).toBeTruthy();
+        expect(ops[1].parameter.flaeche).toBe(ops[0].id);
+        expect(ops.map(o => o.parameter.hoehe)).toEqual([301.5, undefined]);
     });
 });
 

@@ -106,6 +106,15 @@ export function sollhoeheVon(p, { art, feld }, { raster = null, ur = null, flaec
 }
 
 /**
+ * Die Parameter, mit denen eine Operation auf die FLÄCHE einer anderen zeigt.
+ * Wer einen Verweis SCHREIBT, fragt hier — sonst stünde die Schreibweise einer
+ * Zielart wieder an drei Stellen im Katalog.
+ */
+export function verweisAufFlaeche(id) {
+    return { ziel: 'flaeche', flaeche: id };
+}
+
+/**
  * Wie eine Operation in ihrer eigenen Warnung heisst. Nur Text — der Satz
  * „… liegt im Stapel nicht vor dieser Auffüllung" stand so schon da, und eine
  * Warnung, die sich ändert, wäre eine Änderung am Verhalten.

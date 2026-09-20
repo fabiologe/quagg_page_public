@@ -35,7 +35,7 @@
  * Stelle und wird nirgends noch einmal entschieden.
  */
 
-import { formeNach, verschiebeOperationen } from './gelaende/Operationen.js';
+import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
@@ -562,6 +562,11 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
         const alt = bisher[j] && !bisher[j].id ? bisherMitKennung[j].id : null;
         return { ...op, id: alt ?? neueOperationsId() };
     });
+    // EINE KOPIE WIRD EIN VERWEIS (Teil XXIV-4): wird ein Vorgang neu
+    // geschrieben, bekommt eine Operation, die bisher die Höhe ihrer
+    // Vorgängerin kopiert hat, einen Verweis auf deren Fläche. Nur beim
+    // Anfassen — ein Journal, das niemand schreibt, bleibt, wie es ist.
+    if (bestehend) operationen = kopienAlsVerweise(bisherMitKennung, operationen);
     // `vorgaenge` trägt nur die Anzeige (Stufe 1): die Reihenfolge der
     // Erdbau-Vorgänge — eine Entscheidung, nichts Gerechnetes.
     // `auflockerung` gehört dem VORGANG, nicht einer Operation: sie ändert

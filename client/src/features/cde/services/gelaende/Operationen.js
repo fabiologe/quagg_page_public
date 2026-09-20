@@ -35,7 +35,7 @@ import { nnAusWelt } from '../Hoehenbezug.js';
 import { AUFLOCKERUNG, AUFLOCKERUNG_FELD, auflockerungOder } from './Grabenregeln.js';
 import { regeltabelle } from '../regeln/Regelwerk.js';
 import { boeschungsFussEcken, gerinneEcken } from './Eckmasse.js';
-import { ZIELARTEN, ZIEL_VORGABE, eigeneHoehe, sollhoeheVon, zielMerkmale, zielart } from './Sollhoehe.js';
+import { ZIELARTEN, ZIEL_VORGABE, eigeneHoehe, sollhoeheVon, verweisAufFlaeche, zielMerkmale, zielart } from './Sollhoehe.js';
 
 /**
  * Was „Auffüllen" je ZIEL im Formular verlangt und in die Operation schreibt —
@@ -960,6 +960,9 @@ function _randBeruehrt(vorher, nachher, a, eps = 0.01) {
 //   kennhoehen(p)                     → [{art, hoehe}]: ebene Kanten, die sie herstellt
 //   flaeche(p)                        → ((x, z) → y) oder null: die Sollfläche, die sie herstellt —
 //                                     Ziel einer Auffüllung „bis zur Fläche" (Durchstich 2)
+//   zielAusVorgaenger                 darf sie der Operation DIREKT DAVOR folgen? Dann wird eine
+//                                     kopierte Höhe beim nächsten Schreiben ein Verweis
+//                                     (`kopienAlsVerweise`, Teil XXIV-4)
 //   innen                             {feld, titel, richtung, gilt(p)}: ihr innerer Ring
 //   lagefelder                        Punktlisten OHNE Höhe (die Achse des Gerinnes — ihre Höhe
 //                                     kommt aus Sohle Anfang/Ende)
@@ -1283,7 +1286,7 @@ export const GELAENDE_OPS = Object.freeze({
                 // Planum ändert — gemessen: Planum 101,50, Böschung weiter 101,00.
                 if (Number.isFinite(n) && n > 0) {
                     ops.push({ art: 'boeschung', parameter: id
-                        ? { umriss, ziel: 'flaeche', flaeche: id, neigung: n }
+                        ? { umriss, ...verweisAufFlaeche(id), neigung: n }
                         : { umriss, hoehe, neigung: n } });
                 }
                 return { titel: 'Planum', ops };
@@ -1319,6 +1322,9 @@ export const GELAENDE_OPS = Object.freeze({
     },
     boeschung: {
         titel: 'Böschung anschliessen', wende: boeschung,
+        // Sie gehört zu dem Planum, das vor ihr steht: eine kopierte Höhe wird
+        // beim nächsten Schreiben ein Verweis auf dessen Fläche.
+        zielAusVorgaenger: true,
         hoehenfelder: ['hoehe'],
         wirkbereich: _wbUmrissZuZiel,
         wirkflaeche: _RING_UMRISS,
@@ -1695,3 +1701,42 @@ export function flaecheVon(op, { ops = GELAENDE_OPS } = {}) {
     const f = ops[op?.art]?.flaeche?.(op?.parameter ?? {}) ?? null;
     return typeof f === 'function' ? f : null;
 }
+
+/**
+ * EINE KOPIE WIRD EIN VERWEIS (Teil XXIV-4).
+ *
+ * „Planum herstellen" schrieb bis heute zwei Operationen mit je einer Kopie
+ * derselben Höhe; wer das Planum änderte, liess die Böschung stehen. Neue
+ * Vorgänge tragen den Verweis von Anfang an. Ein Journal von gestern wird
+ * umgestellt, SOBALD es ohnehin neu geschrieben wird — wer es nicht anfasst,
+ * behält es Byte für Byte.
+ *
+ * Umgeschrieben wird nur, was zweifelsfrei eine Kopie IST: die Operation darf
+ * ihrer Vorgängerin folgen (`zielAusVorgaenger`), sie trägt ihre Höhe
+ * unverändert aus dem alten Stand, die Vorgängerin ist dieselbe wie damals und
+ * stellt eine Fläche her, beide haben denselben Umriss, und die Fläche lag
+ * GENAU auf der kopierten Höhe. Eine absichtlich abweichende Böschung bleibt
+ * damit, wie sie ist.
+ *
+ * @param {Array} alt  die Operationen, wie sie im Journal stehen (mit Kennung)
+ * @param {Array} neu  die Operationen, wie sie geschrieben werden (mit Kennung)
+ */
+export function kopienAlsVerweise(alt = [], neu = [], { ops = GELAENDE_OPS } = {}) {
+    return (neu ?? []).map((op, i) => {
+        if (i === 0 || !ops[op?.art]?.zielAusVorgaenger) return op;
+        const p = op.parameter ?? {};
+        const altOp = (alt ?? [])[i], altDavor = (alt ?? [])[i - 1], neuDavor = neu[i - 1];
+        if (!eigeneHoehe(p) || !Number.isFinite(p.hoehe)) return op;                    // trägt keine Kopie
+        if (altOp?.art !== op.art || altOp?.parameter?.hoehe !== p.hoehe) return op;    // von Hand geändert
+        if (!neuDavor?.id || !altDavor?.id || neuDavor.id !== altDavor.id) return op;   // andere Vorgängerin
+        const an = flaecheVon(altDavor, { ops });
+        if (!an || !_gleicheUmrisse(p.umriss, altDavor.parameter?.umriss)) return op;
+        const q = (p.umriss ?? [])[0];
+        if (!q || Math.abs(an(Number(q.x) || 0, Number(q.z) || 0) - p.hoehe) > 1e-9) return op;
+        const { hoehe: _kopie, ...rest } = p;
+        return { ...op, parameter: { ...rest, ...verweisAufFlaeche(neuDavor.id) } };
+    });
+}
+const _gleicheUmrisse = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((p, i) => Math.abs((Number(p?.x) || 0) - (Number(b[i]?.x) || 0)) < 1e-9
+                      && Math.abs((Number(p?.z) || 0) - (Number(b[i]?.z) || 0)) < 1e-9);
