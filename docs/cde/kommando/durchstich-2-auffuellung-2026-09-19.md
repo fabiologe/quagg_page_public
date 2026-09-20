@@ -161,3 +161,56 @@ Nicht bestanden, ehrlich:
 - **Innerhalb eines Vorgangs gibt es Zustandskopien** (Planum und Böschung tragen je ihre Höhe). Die erste Änderung per Kommando hat das sichtbar gemacht, nicht der Test des Abnahmefalls.
 
 Die Verdrahtung (Kontext für Operationen, Adressierung über den Vorgang hinaus) ist jetzt einmal da. Eine weitere *Zielfläche* ist deshalb eine Deklaration. Eine weitere *Operation mit Ziel* und eine Böschung, die ihrem Planum folgt, wären weiterhin Kernarbeit.
+
+---
+
+## Nachtrag (2026-09-20): der Auflöser und die Böschung
+
+Fabios zwei Folgeaufträge aus Teil 3 — der gemeinsame Auflöser („Wo es mehr Kern war", Punkt 1) und Befund 1 (die Böschung folgt dem Planum nicht). Gebaut in neun Commits (`9561102` … `63114b6`), je Schritt einer. Nicht gebaut, nicht gepusht, kein Neustart.
+
+### Der Auflöser „Sollhöhe am Ort" (Paket A)
+
+`services/gelaende/Sollhoehe.js` ist ein Blatt: es kennt weder die Registry noch eine einzelne Operation. Die Fläche einer anderen Operation reicht `formeNach` als Fähigkeit herein (`flaecheAn`) — sonst wäre es ein Kreis und ein Griff nach oben (W1). Die Tabelle `ZIELARTEN` nennt je Ziel drei Eigenschaften: `mitBoeschung`, `rueckverfuellung`, `eigenesFeld`.
+
+| | vorher | nachher |
+|---|---|---|
+| Codezeilen in `Operationen.js`, die eine Zielart beim Namen nennen | **16** | **0** |
+| Operationen, die „bis zur Fläche" können | 1 (`schuettung`) | **5** (`schuettung`, `grube`, `planum`, `boeschung`, `baugrube`) |
+| **Zeilen, die `grube()` dafür gebraucht hat** | — | **7 geändert, davon 4 neu** — keine nennt eine Zielart |
+
+Die Zahl 7 ist der von Fabio verlangte Beweis: Signatur (Kontext), zwei Zeilen Auflöser statt der Sohlenprüfung, `soll.mitBoeschung &&` an der Neigung, zwei Zeilen in der Schleife. Gemessen wird die Zählgröße mit
+
+```
+grep -nE "ziel === '|ziel !== '|\.ziel \?\? '|ziel = '|ziel: '" services/gelaende/Operationen.js | grep -vE "^[0-9]+: *(\*|//)"
+```
+
+**Verhaltensneutral, nachgewiesen:** `test/fixtures/sollhoehe-vorher.json` friert 21 Szenarien mit dem Code von VOR dem Umbau ein (Summe, gewichtete Summe, Kleinstes, Grösstes, veränderte Knoten, Löcher, zwölf Proben, Warnliste wörtlich) — danach bitgleich. Kein Erwartungswert wurde angepasst.
+
+**Nicht geglättet** (jede Eigenheit mit Grund im Code): drei verschiedene Neigungsklemmen; die Reihenfolge der Frühausstiege je Operation; eine unbekannte Zielart rechnet `wende` wie „Höhe", ein Leser, der eine Zahl braucht (Krone, innerer Ring), zählt sie nicht als Höhe; `mitBoeschung` fragen nur die, deren RAND ausläuft (Grube, Schüttung) — bei Böschung und Baugrube IST die Böschung die Operation. Neu ist allein, dass eine nicht endliche Zielhöhe den Knoten überspringt, statt NaN ins Raster zu schreiben.
+
+### Die Böschung folgt dem Planum (Paket B)
+
+„Planum herstellen" schreibt die Böschung als `{ziel: 'flaeche', flaeche: 'op-P'}` — derselbe Mechanismus wie „Auffüllen bis zur Fläche", kein neuer. Dafür nennt das Planum seine Kennung schon in `ausEingabe`: `formwerkzeugFuer` (L3) reicht `neueKennung: neueOperationsId` in den Kontext; die Quelle ist dieselbe wie überall (E2).
+
+**Die Zahl** (Gelände eben 300,00 m NN, Planum 10 × 10 m auf 301,00, Böschung 1 : 2, Höhenversatz 300): ein Knoten 0,75 m ausserhalb des Rands liegt auf 301,00 − 0,75/2 = **300,625**. Nach „Planumshöhe 301,50" auf **301,125** — 0,50 m höher, wie das Planum, mit EINEM Kommando. Vorher blieb er auf 300,625, und am Rand stand eine Stufe von 0,875 m.
+
+**Alte Journale:** eine Böschung ohne `ziel` liest der Auflöser als „Höhe" — dieselbe Rechnung wie immer. Bewiesen gegen `test/fixtures/boeschung-vorher.json` (Massen 144,214237 m³, Feinheit, Bild), erzeugt mit dem Code von vor der Kur. Umgestellt wird ein Journal erst, wenn es ohnehin neu geschrieben wird (`kopienAlsVerweise` in `ableitungsSchritte`, wo alle Neuschreibungen zusammenlaufen) — und nur, was zweifelsfrei eine Kopie ist (fünf Bedingungen, jede einzeln geprüft). Auch ein Journal von vor K2b (Operationen ohne Kennung) wird umgestellt; der Verweis zeigt dann auf die aus dem Inhalt abgeleitete Kennung, die mitgespeichert wird.
+
+**Eine Auslieferung, Schreibstufe 5** („Operationen verweisen aufeinander"): ein älterer Client läse eine Böschung ohne Höhe als `boeschung_ohne_hoehe` — er zeigte das Planum ohne Böschung, mit falschen Massen und falschem IFC, und diese Warnung sieht niemand. Jeder Tab ab 2026-09-18 16:05 liest ein Stufe-5-Journal nur (Banner), der Server-Wächter (R9) hält ältere ab. Preis, offen benannt: bis zum Neuladen kann ein solcher Tab im Lesemodus falsche Massen zeigen — dieselbe Klasse wie bei Stufe 4.
+
+**Was die Probe gefunden hat:** „Kopie und Verweis rechnen dasselbe" war zuerst rot. `wirkflaecheVon` bekam den Kontext nicht und rechnete beim Verweis mit Saum 0 — eine 47-fach kleinere Wirkfläche und damit ein anderer Korridor (0,5 m statt 1 m), also andere Massen. Genau der stille Zahlensprung, der in Teil 1 als grösstes Risiko benannt war. Behoben; die Probe ist jetzt der Wächter davor.
+
+**Zwei überflüssige Bedingungen** sind beim Gegenprobieren aufgefallen (die Höhenprobe deckt sie ab) und wieder herausgeflogen.
+
+### Trägt noch etwas dieselbe Sorte Kopie?
+
+| Stelle | Urteil |
+|---|---|
+| `bauwerksgrube.leite` (`ableitung/Ableitungen.js:1342`) baut dasselbe Paar Planum + Böschung | **Keine Kopie, die altern kann:** beide Höhen kommen je Lauf aus derselben Variablen und werden nie gespeichert. Nicht umgebaut. |
+| Die Böschung kopiert weiterhin den **Umriss** des Planums | **Schlafend:** das Planum hat keine `punktfelder`, es ist heute nicht ziehbar. Sobald es das wird, entsteht derselbe Fehler am Umriss — dann gehört der Umriss ebenso an die Vorgängerin. |
+| Der Anzeige-Bauplan trägt `vorgaenge[].titel` (`Bearbeitungen.js:1102`, gelesen in `Bezuege.js:252`, wo die gespeicherte Kopie die abgeleitete schlägt) | **Kopie, die altern kann:** wird ein Vorgang umbenannt, steht in der Anzeige der alte Titel, bis der nächste Vorgang die Liste neu schreibt. Kosmetisch, nicht gebaut. |
+| `quellBasis`, Prüfmasse, `raster.cell` | **Keine Kopie, sondern Pfänder** des Drei-Wege-Vergleichs (so entschieden, U8). |
+
+### Was das für das Urteil von Teil 3 heisst
+
+Zwei der drei Punkte aus „Nicht bestanden, ehrlich" sind eingelöst: die Nehmerseite der Zielart ist nicht mehr Code je Operation (eine zweite Operation kostet 7 Zeilen, keine davon fachlich), und die Zustandskopie innerhalb eines Vorgangs ist für das Paar Planum/Böschung weg. Offen bleibt der dritte: **der Stapel hat weiterhin keine eine Faltfunktion.** Es gibt jetzt einen gemeinsamen Helfer für den KONTEXT (`mitVorherigen`, benutzt von Formung, Wirkbereich, Feinheit und Flicken), aber `formeNach` wird weiterhin an fünf Stellen gerufen, jede mit ihrem eigenen Ur und ihrem eigenen Bereich.
