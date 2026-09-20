@@ -307,10 +307,12 @@ export function gerinne(raster, { achse, stationen, sohlbreite, boeschung = 1.5,
  * Planum: innerhalb des Umrisses auf Sollhöhe — Aushub UND Auftrag.
  * Der Umriss ist ein Grundriss-Polygon aus {x,z}- oder [x,y,z]-Punkten.
  */
-export function planum(raster, { umriss, hoehe } = {}, { bereich = null } = {}) {
+export function planum(raster, parameter = {}, { bereich = null, ur = null, flaecheAn = null } = {}) {
+    const { umriss } = parameter;
     const warnungen = [];
     if (!Array.isArray(umriss) || umriss.length < 3) return { raster, warnungen: ['planum_ohne_umriss'] };
-    if (!Number.isFinite(hoehe)) return { raster, warnungen: ['planum_ohne_hoehe'] };
+    const soll = sollhoeheVon(parameter, { art: 'planum', feld: 'hoehe' }, { raster, ur, flaecheAn });
+    if (soll.grund) return { raster, warnungen: [soll.grund] };
     const poly = umriss.map(p => { const q = _xz(p); return [q.x, q.z]; });
 
     const neu = _kopie(raster);
@@ -322,7 +324,9 @@ export function planum(raster, { umriss, hoehe } = {}, { bereich = null } = {}) 
             const i = ix * nz + iz;
             if (!Number.isFinite(heights[i])) continue;
             const k = rasterKnoten(raster, ix, iz);
-            if (punktInPolygon(k.x, k.z, poly)) heights[i] = hoehe;
+            if (!punktInPolygon(k.x, k.z, poly)) continue;
+            const hoehe = soll.an(k.x, k.z, i);
+            if (Number.isFinite(hoehe)) heights[i] = hoehe;
         }
     }
     return { raster: neu, warnungen };
@@ -336,10 +340,15 @@ export function planum(raster, { umriss, hoehe } = {}, { bereich = null } = {}) 
  * Gelände erreicht, endet ihr Einfluss von selbst. Innerhalb tut sie
  * nichts — das ist die Arbeit des Planums.
  */
-export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}, { bereich = null } = {}) {
+export function boeschung(raster, parameter = {}, { bereich = null, ur = null, flaecheAn = null } = {}) {
+    const { umriss, neigung = 1.5 } = parameter;
     const warnungen = [];
     if (!Array.isArray(umriss) || umriss.length < 3) return { raster, warnungen: ['boeschung_ohne_umriss'] };
-    if (!Number.isFinite(hoehe)) return { raster, warnungen: ['boeschung_ohne_hoehe'] };
+    // WOHIN SIE ANSCHLIESST: die eigene Höhe — oder die FLÄCHE des Planums, zu
+    // dem sie gehört (Teil XXIV-4, Paket B). Eine Kopie der Planumshöhe wäre
+    // beim nächsten Ändern des Planums falsch.
+    const soll = sollhoeheVon(parameter, { art: 'boeschung', feld: 'hoehe' }, { raster, ur, flaecheAn });
+    if (soll.grund) return { raster, warnungen: [soll.grund] };
     const poly = umriss.map(p => { const q = _xz(p); return [q.x, q.z]; });
     const n = Math.max(0.1, neigung);
 
@@ -366,6 +375,8 @@ export function boeschung(raster, { umriss, hoehe, neigung = 1.5 } = {}, { berei
             if (!Number.isFinite(h)) continue;
             const k = rasterKnoten(raster, ix, iz);
             if (punktInPolygon(k.x, k.z, poly)) continue;         // innen: Sache des Planums
+            const hoehe = soll.an(k.x, k.z, i);
+            if (!Number.isFinite(hoehe)) continue;
             const d = abstandZumRand(k.x, k.z);
             if (h > hoehe) heights[i] = Math.min(h, hoehe + d / n);   // Einschnitt
             else if (h < hoehe) heights[i] = Math.max(h, hoehe - d / n); // Damm
@@ -563,7 +574,8 @@ export function zellenIntegral(raster, wertAn, nimm) {
  * Graben daneben wieder auffüllen. (Ein früherer Entwurf war rund; ein
  * `radius` wird noch als Quadrat der Seite 2·r gelesen.)
  */
-export function baugrube(raster, { mitte, laenge, breite, radius, richtung = null, sohle, neigung = 0 } = {}, { bereich = null } = {}) {
+export function baugrube(raster, parameter = {}, { bereich = null, ur = null, flaecheAn = null } = {}) {
+    const { mitte, laenge, breite, radius, richtung = null, neigung = 0 } = parameter;
     const warnungen = [];
     const m = mitte ? _xz(mitte) : null;
     if (!m || !Number.isFinite(m.x) || !Number.isFinite(m.z)) return { raster, warnungen: ['baugrube_ohne_mitte'] };
@@ -571,7 +583,8 @@ export function baugrube(raster, { mitte, laenge, breite, radius, richtung = nul
     if (!(L > 0) && Number.isFinite(radius) && radius > 0) { L = 2 * radius; B = 2 * radius; }
     if (!(B > 0) && L > 0) B = L;
     if (!(L > 0) || !(B > 0)) return { raster, warnungen: ['baugrube_ohne_mass'] };
-    if (!Number.isFinite(sohle)) return { raster, warnungen: ['baugrube_ohne_sohle'] };
+    const soll = sollhoeheVon(parameter, { art: 'baugrube', feld: 'sohle' }, { raster, ur, flaecheAn });
+    if (soll.grund) return { raster, warnungen: [soll.grund] };
     const n = Math.max(0, Number(neigung) || 0);
     // Die Richtung: Einheitsvektor im Grundriss; ohne Angabe liegt die Länge auf Ost.
     let ux = 1, uz = 0;
@@ -598,6 +611,8 @@ export function baugrube(raster, { mitte, laenge, breite, radius, richtung = nul
             const v = -dx * uz + dz * ux;
             const du = Math.max(0, Math.abs(u) - a), dv = Math.max(0, Math.abs(v) - b);
             const d = Math.hypot(du, dv);                          // Abstand zum Rechteckrand (0 = innen)
+            const sohle = soll.an(k.x, k.z, i);
+            if (!Number.isFinite(sohle)) continue;
             let ziel;
             if (d === 0) ziel = sohle;
             else if (n > 0) ziel = sohle + d / n;                   // Böschung steigt mit 1:n
