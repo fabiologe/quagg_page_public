@@ -166,7 +166,11 @@ const FACHWOERTER_ERLAUBT = {};
  * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
  * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
  */
-const HOOKS_MAX = { anwenden: 33, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln (neu, geplant)
+const HOOKS_MAX = { anwenden: 34, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5
+// V5 (Teil XXV) bringt einen Hook DAZU — und nimmt dafür Store-Code weg:
+// „Vorgang entfernen“ war `useBearbeitung.entferneVorgang` mit Systembeleg und
+// ist jetzt ein Katalogwerkzeug. Die Rechnung selbst blieb, wo sie war
+// (`Bauteilrezepte.vorgangEntfernenSchritte`); der Hook ruft sie nur.
 
 /**
  * W7 — die Rückführung aus dem Audit „Bearbeitungsstruktur" (2026-09-18).
@@ -208,6 +212,9 @@ const RUECKFUEHRUNG = {
         'strang-umbenennen', 'linie-umkehren',
         // A2: der Eckenzug fragt das Rezept nach `punktlisten` — jedes Rezept, das sie hat.
         'erdbau-stuetzpunkt-verschieben',
+        // V5: hängt an der KLAMMER eines Vorgangs (`ableitung`), an keinem Namen;
+        // die Teile kommen aus dem Kandidaten-Auföser.
+        'vorgang-entfernen',
     ],
 };
 const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 3, handgeschrieben: 0 };

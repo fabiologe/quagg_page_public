@@ -33,7 +33,7 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId } from './Bauteilrezepte.js';
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -2402,6 +2402,54 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 globalId: el.globalId,
                 parameter: { ...plan.parameter, punkte: punkte.map((p, k) => (k === i ? neu : p)) },
             });
+        },
+    },
+    {
+        /**
+         * VORGANG ENTFERNEN (Teil XXV, V5) — eine ganze Erdbau-Ableitung
+         * zurücknehmen: Aushub, Auftrag und neues DGM, und die Anzeige ohne
+         * diesen Vorgang neu schreiben. War er ihr letzter, fällt auch sie
+         * weg und das ausgeblendete Ur-Gelände kommt wieder zum Vorschein.
+         *
+         * Bis hierher war das `useBearbeitung.entferneVorgang`: Store-Code mit
+         * einem Systembeleg (O4) — obwohl es eine NUTZERABSICHT ist, keine
+         * Buchhaltung. Jetzt ist es ein Katalogwerkzeug wie jedes andere, und
+         * sein Beleg ist das Kommando.
+         *
+         * Das Ziel ist EIN Teil der Ableitung; welche anderen dazugehören,
+         * sagt der Kandidaten-Auföser (`vorgang:teile`, V3). Die Rechnung
+         * bleibt, wo sie war (`Bauteilrezepte.vorgangEntfernenSchritte`) —
+         * sie bekommt die Teile als Stand, nicht das Modell.
+         *
+         * `eigeneOberflaeche`: sein Formular ist der Abschnitt „Eigenbau" der
+         * Bauwerksstruktur, nicht die Werkzeugleiste.
+         */
+        id: 'vorgang-entfernen',
+        titel: 'Vorgang entfernen',
+        icon: 'delete',
+        gruppe: 'gelaende',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        eigeneOberflaeche: true,
+        art: 'erzeugt',
+        felder: [],
+        vorbelegung: () => ({}),
+        warumNicht: (el, _werte, { kandidatenVon = null } = {}) => {
+            if (!el?.stand?.bauplan?.ableitung) return `${el?.name || el?.globalId || 'Das Bauteil'}: gehört zu keinem Vorgang.`;
+            return (kandidatenVon?.('vorgang:teile', el) ?? []).length ? null : 'Diesen Vorgang gibt es nicht mehr.';
+        },
+        anwenden: (el, _werte, { kandidatenVon = null } = {}) => {
+            const ableitung = el?.stand?.bauplan?.ableitung;
+            if (!ableitung) return null;
+            const teile = kandidatenVon?.('vorgang:teile', el) ?? [];
+            if (!teile.length) return null;
+            // Die Teile als Stand — dieselbe reine Regel wie bisher, nur mit
+            // dem Ausschnitt, der sie angeht.
+            const stand = new Map(teile.map(t => [t.id, t.bauplan]));
+            const geloescht = new Map(teile.filter(t => t.verdecktesUr).map(t => [t.verdecktesUr, true]));
+            const schritte = vorgangEntfernenSchritte(stand, ableitung, { geloescht });
+            return schritte.length ? schritte : null;
         },
     },
     {

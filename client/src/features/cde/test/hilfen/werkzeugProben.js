@@ -190,6 +190,9 @@ const NEU = [
     { id: 'erdbau-stuetzpunkt-verschieben', el: eigen(AUSHUB), werte: [{ op: 0, feld: 'umriss', index: 1, ost: 81, nord: -61, hoehe: 100.2 },
                                                                    { op: 0, feld: 'umriss', index: 2, ost: 80, nord: -75, hoehe: 99.5, bezug: 'innen' }] },
     { id: 'erdbau-mass-setzen', el: eigen(AUSHUB), werte: [{ op: 1, feld: 'sohlbreite', wert: 2 }, { op: 1, feld: 'boeschung', wert: 2 }] },
+    // Den ganzen Vorgang zurücknehmen (V5): das Ziel ist EIN Teil, die übrigen
+    // kommen aus dem Kontext (`vorgang:teile`).
+    { id: 'vorgang-entfernen', el: eigen(AUSHUB), werte: [{}], kandidaten: KANDIDATEN },
     { id: 'aussparung-ableiten', el: { ...SCHACHT_G, koerperQuellen: [{ globalId: 'cde-PL1', name: 'PL1' }] }, werte: [{ werkzeug: 'cde-PL1' }] },
 ];
 

@@ -198,7 +198,10 @@ describe('4 — jeder Systemvorgang trägt genau einen Beleg', () => {
         expect(ae.wirksamerStand('kg').size).toBe(0);
     });
 
-    it('Vorgang entfernen', async () => {
+    // SEIT TEIL XXV (V5) KEIN SYSTEMBELEG MEHR: „Vorgang entfernen" ist ein
+    // Katalogwerkzeug, und sein Beleg ist das Kommando. Ein Systembeleg ist
+    // ein Nachweis für etwas ohne Nutzerabsicht — das Entfernen ist eine.
+    it('Vorgang entfernen — ein KOMMANDO, kein Systembeleg', async () => {
         const ae = useAenderungen();
         const b = useBearbeitung();
         const gelaende = { globalId: 'DGM-1', modelId: 'netz.ifc', localId: 42, name: 'Urgelände', hoehenversatz: 300,
@@ -208,8 +211,20 @@ describe('4 — jeder Systemvorgang trägt genau einen Beleg', () => {
         for (const s of schritte) await ae.eintragen({ ...s, wer: 'fabio' });
         const ableitung = schritte.find(s => s.nachher?.rezept === 'erdbau').nachher.ableitung;
         b.modusSetzen(true);
-        const beleg = einBeleg(await b.entferneVorgang(ableitung, { wer: 'fabio' }), 'vorgang-entfernen');
-        expect(beleg.werte).toEqual({ ableitung });
+        const geschrieben = await b.entferneVorgang(ableitung, { wer: 'fabio' });
+        const liste = (Array.isArray(geschrieben) ? geschrieben : [geschrieben]).filter(Boolean);
+        expect(liste.length).toBeGreaterThan(0);
+        expect(new Set(liste.map(e => e.vorgang)).size).toBe(1);        // EIN Vorgang
+        const mitBeleg = liste.filter(e => e.kommando);
+        expect(mitBeleg).toHaveLength(1);
+        expect(mitBeleg[0]).toBe(liste[0]);                             // am ERSTEN Eintrag
+        const beleg = mitBeleg[0].kommando;
+        expect(beleg).toMatchObject({ schema: KOMMANDO_SCHEMA, werkzeug: 'vorgang-entfernen' });
+        expect(beleg.id).toBe(liste[0].vorgang);
+        // Das Ziel ist EIN Teil der Ableitung; die übrigen fand das Werkzeug.
+        expect(beleg.ziel).toHaveLength(1);
+        expect(liste.map(e => e.globalId)).toContain(beleg.ziel[0]);
+        expect(liste.length).toBeGreaterThan(1);
     });
 });
 

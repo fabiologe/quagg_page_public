@@ -17,6 +17,13 @@
  *   eigene:flaeche          eigene Bauteile mit geschlossenem Umriss, ohne
  *                           das Subjekt selbst — mit ihren Punkten
  *   vorlage:gleichesRezept  Vorlagen der Bibliothek zum Rezept des Subjekts
+ *   vorgang:teile           die Bauteile DESSELBEN Erdbau-Vorgangs: seine Teile
+ *                           und die Anzeige, die ihn in ihrer Vorgangsliste
+ *                           führt — samt Bauplan (Teil XXV, V5)
+ *
+ * `vorgang:teile` ist bewusst eng: die Klammer kommt aus dem Bauplan des
+ * SUBJEKTS, nicht aus einer Suche über alles. Ein Werkzeug sieht damit die
+ * Teile seines eigenen Vorgangs — nicht das Modell.
  *
  * Ein Kandidat ist immer `{id, titel, …}`: `id` ist, was im Kommando steht
  * (eine GlobalId oder eine Vorlagen-Id), `titel` ist, was im Formular steht.
@@ -25,12 +32,13 @@
  * kommt über `wirksamerStand`; was aus der Bibliothek kommt, reicht der
  * Aufrufer herein.
  */
-import { rezeptNach } from '../Bauteilrezepte.js';
+import { istAnzeigeform, rezeptNach } from '../Bauteilrezepte.js';
 import { verdeckteAus } from '../CdeAchsen.js';
 
 export const KANDIDATENARTEN = Object.freeze({
     'eigene:flaeche': 'eine andere eigene Fläche',
     'vorlage:gleichesRezept': 'eine Vorlage aus der Bibliothek',
+    'vorgang:teile': 'die Bauteile desselben Erdbau-Vorgangs',
 });
 
 /**
@@ -45,6 +53,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
     return (art, el) => {
         if (art === 'eigene:flaeche') return _eigeneFlaechen(wirksamerStand, el);
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
+        if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
         return [];
     };
 }
@@ -73,4 +82,38 @@ function _vorlagen(vorlagen, el) {
     return (vorlagen ?? [])
         .filter(v => v?.rezept === rezept)
         .map(v => ({ id: v.id, titel: v.name || v.id, rezept: v.rezept, vorgaben: v.vorgaben ?? {} }));
+}
+
+/**
+ * Die Bauteile desselben Erdbau-Vorgangs wie das Subjekt (Teil XXV, V5).
+ *
+ * Zwei Sorten, und beide braucht „Vorgang entfernen":
+ *   teil     ein Bauteil der Klammer (Aushub, Auftrag, neues DGM)
+ *   anzeige  das Anzeige-Bauteil, das den Vorgang in `parameter.vorgaenge`
+ *            führt — es überlebt, wenn noch andere Vorgänge darin stehen
+ *
+ * `verdecktesUr` nennt das ausgeblendete Ur-Gelände der Anzeige: wird sie
+ * zurückgenommen, kommt es wieder zum Vorschein.
+ */
+function _vorgangsteile(wirksamerStand, el) {
+    const ableitung = el?.stand?.bauplan?.ableitung ?? null;
+    if (!ableitung || typeof wirksamerStand !== 'function') return [];
+    const erzeugt = wirksamerStand('erzeugt');
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const aus = [];
+    for (const [globalId, plan] of erzeugt) {
+        // „Anzeige" ist keine Namensfrage: der Katalog sagt, ob ein Bauplan
+        // eine Anzeigeform ist (W3 — Rezeptnamen bleiben im Katalog).
+        const anzeige = istAnzeigeform(plan);
+        if (plan?.ableitung === ableitung && !anzeige) {
+            aus.push({ id: globalId, titel: plan.name || globalId, rolle: 'teil', bauplan: plan });
+            continue;
+        }
+        if (!anzeige) continue;
+        if (!(plan.parameter?.vorgaenge ?? []).some(v => v?.ableitung === ableitung)) continue;
+        const ur = plan.parameter?.quellen?.gelaende ?? null;
+        aus.push({ id: globalId, titel: plan.name || globalId, rolle: 'anzeige', bauplan: plan,
+                   ...(ur && verdeckt.has(ur) ? { verdecktesUr: ur } : {}) });
+    }
+    return aus;
 }

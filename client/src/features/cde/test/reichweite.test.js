@@ -38,12 +38,13 @@ import { PROBEN_ALLE, VORLAGEN, WELT } from './hilfen/werkzeugProben.js';
 
 /**
  * Der Stand (63 Werkzeuge). Steigt `ausgefuehrt`, fällt `offen`.
- *   2026-09-19, gemessen:  38 / 23 / 2
- *   2026-09-20, nach V3:   40 / 23 / 0
+ *   2026-09-19, gemessen:  38 / 23 / 2  (63 Werkzeuge)
+ *   2026-09-20, nach V3:   40 / 23 / 0  (63)
+ *   2026-09-20, nach V5:   41 / 23 / 0  (64 — „Vorgang entfernen" kam dazu)
  */
 const HEUTE = Object.freeze({
-    werkzeuge: 63,
-    ausgefuehrt: 40,
+    werkzeuge: 64,
+    ausgefuehrt: 41,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

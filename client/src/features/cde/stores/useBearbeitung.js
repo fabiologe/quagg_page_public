@@ -29,10 +29,10 @@ import { ladeKatalog } from '../services/katalog/Katalog.js';
 import { katalogSchreibe } from '../services/katalog/Katalogablage.js';
 import { eingebauteRollen, pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { useAenderungen } from './useAenderungen.js';
-import { modellVon, operationenMitKennung, rezeptNach, vorgangEntfernenSchritte, zufallsKennung } from '../services/Bauteilrezepte.js';
+import { istAnzeigeform, modellVon, operationenMitKennung, rezeptNach, zufallsKennung } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
 import { befundeFuer, befundeFuerWerte } from '../services/Befunde.js';
-import { istErzeugen, kommandoAusZustand, mitHoehenversatz, pruefeKommando, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { KOMMANDO_SCHEMA, istErzeugen, kommandoAusZustand, mitHoehenversatz, neueKommandoId, pruefeKommando, rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { werteAus } from '../services/kommando/Auswertung.js';
 import { systemBeleg } from '../services/kommando/Beleg.js';
 import { standVon, subjektAusStand } from '../services/kommando/Subjekt.js';
@@ -929,7 +929,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     /**
      * „Vorgang entfernen" (Abnahme 2026-09-12, A6) — durch DIESE Engstelle, nicht
      * daneben: Modus an, sonst ein Grund; die Einträge rechnet
-     * `vorgangEntfernenSchritte` rein aus dem Stand, geschrieben wird EIN Vorgang.
+     * das Werkzeug `vorgang-entfernen` rechnet, geschrieben wird EIN Vorgang.
      *
      * @returns {Promise<Array|object|null>} das Geschriebene (für `wendeEintragAn`), sonst null
      */
@@ -943,21 +943,25 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
                 : 'Bearbeiten ist aus — oben einschalten (oder E), dann entfernen.';
             return null;
         }
+        // SEIT TEIL XXV (V5) EIN KATALOGWERKZEUG. Das Ziel ist EIN Teil der
+        // Ableitung — welche anderen dazugehören, sagt der Kandidaten-Auföser
+        // (`vorgang:teile`). Der Beleg ist damit das Kommando und kein
+        // Systembeleg mehr: „Vorgang entfernen" ist eine Nutzerabsicht.
         const aenderungen = useAenderungen();
-        const schritte = vorgangEntfernenSchritte(aenderungen.wirksamerStand('erzeugt'), ableitung,
-                                                  { geloescht: aenderungen.wirksamerStand('geloescht') });
-        if (!schritte.length) {
+        // Ein TEIL der Klammer, keine Anzeigeform — was eine ist, sagt der
+        // Katalog (W3: Rezeptnamen bleiben dort).
+        const ziel = [...aenderungen.wirksamerStand('erzeugt')]
+            .find(([, plan]) => plan?.ableitung === ableitung && !istAnzeigeform(plan))?.[0] ?? null;
+        if (!ziel) {
             letzterGrund.value = 'Diesen Vorgang gibt es nicht mehr.';
             return null;
         }
-        // Ganz oder gar nicht (Teil XXIV, K2), mit Beleg (O4) — der Vorgang
-        // heisst wie sein Beleg, auch wenn er nur einen Eintrag hat.
-        const beleg = systemBeleg('vorgang-entfernen', { ziel: schritte.map(s => s.globalId), werte: { ableitung }, wer });
-        const { ok, eintraege: geschrieben, grund } = await aenderungen.eintragenVorgang(
-            schritte.map(s => ({ ...s, wer })),
-            { vorgang: beleg.id, vorgangTitel: schritte.length > 1 ? 'Vorgang entfernen' : undefined, kommando: beleg });
-        if (!ok) { letzterGrund.value = grund; return null; }
-        return geschrieben.length > 1 ? geschrieben : (geschrieben[0] ?? null);
+        const erg = await fuehreAus({
+            schema: KOMMANDO_SCHEMA, id: neueKommandoId(), werkzeug: 'vorgang-entfernen',
+            ziel: [ziel], wer, wann: new Date().toISOString(),
+        });
+        if (!erg.ausgefuehrt) { letzterGrund.value = erg.grund ?? ''; return null; }
+        return erg.mehrteilig ? erg.eintraege : (erg.eintraege[0] ?? null);
     }
 
     return {
