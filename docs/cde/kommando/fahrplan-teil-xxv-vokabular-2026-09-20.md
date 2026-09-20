@@ -135,8 +135,27 @@ Suite nach V8: CDE 301 Dateien / 3 365 Tests grün, ganze Client-Suite 451 Datei
 
 **Drei eingefrorene Vergleiche mussten nachziehen**, jeder benannt und begründet: der Goldstandard vor A4 und die Viewer-Fixture tragen das additive `profilhoehe` aus; die Fixture trägt zusätzlich `erdbau.operationen` aus, das NICHT von hier kommt, sondern von Durchstich 2 (S2). Und der Goldstandard der Werkzeuge hielt einen Fehler fest — „H-{n:03}" als Name —, die zwei Werte sind korrigiert.
 
+### V9 — die Browserprobe, der Build, der Push (2026-09-20)
+
+**Die Browserprobe fand sofort einen Fehler, den kein Test sah.** Beim ersten Lauf blieb die Seite schwarz: `ReferenceError: Cannot access 'VORLAGEN_KEY' before initialization`. V8 hatte einen Importkreis gebaut — die Katalogablage holte ihren Schlüssel aus `Bibliothek.js`, während die Bibliothek über die Ablage schreibt. Vitest lädt in anderer Reihenfolge und hat ihn nie gesehen; in einem Test verdeckte eine Attrappe den Rest. Behoben (der Schlüssel gehört der Ablage), dazu **Wächter W10: kein Importkreis**, mit Gegenprobe.
+
+Danach lief sie durch, auf `:3001`, Projekt 42069, ohne eine Zeile Code im Projekt zu ändern:
+
+| | gemessen |
+|---|---|
+| Bordstein registriert | Schema `ok`, Werkzeug `bordstein-zeichnen` erscheint als siebtes in der Leiste |
+| Formular | fünf Felder mit Vorgaben, Oberkante aus dem Gelände vorbelegt (247,428 m NN), `bereit` |
+| gezeichnet | Bauplan `bordstein`, Achse von (0\|0) nach (10\|0) |
+| **Körper** | **z von −0,150 bis 0,000** — der Stein liegt neben der Linie, links in Zeichenrichtung; Höhe 0,30 m |
+| Flächen vereinigen | keine Liste am Subjekt, der Auflöser bietet genau die andere Fläche an |
+| Tauschen | Bibliothek aus dem Katalog geladen (4 Vorlagen), angeboten wird nur `schacht-dn1000` — die zum Rezept |
+| aufgeräumt | 4 Vorgänge entfernt, Journal von 42069 wieder leer (0 Commits, 0 Schritte), Konsole leer |
+
+**Build:** `npm run build` wörtlich, atomar über `dist_neu` (das Skript tauscht selbst). Vorher geprüft: Platte 6 GB frei, 3,4 GB RAM verfügbar, Arbeitsbaum sauber, alle 48 Dateien neuer als der alte Build sind committet. Live seit 10:16 UTC: `CdeView-DyFVpNUk.js`, Schreibstufe 5, `polygon` und `versatzU` drin, die Entwicklerkonsole nicht. Kein Backend-Commit seit dem letzten Neustart, also kein `pm2 restart`.
+
+**Push:** 27 Commits, `e56a968 → d0b635d`. Vorher auf Geheimnisse und Projektdaten geprüft — die beiden neuen Fixtures sind synthetisch, die A64-Dateien liegen ohnehin seit Januar im öffentlichen Repo.
+
 ### Was offen bleibt
 
-- **Browserprobe**: nicht gelaufen. Die Geometrie ist an den gebauten Körpern gemessen (Testebene), die Oberfläche nicht. Offen bleibt damit: zeigt das Formular die Kandidaten, erscheint das Zeichenwerkzeug eines Bibliotheksrezepts, rendert der versetzte Körper.
-- **Build und Push**: nicht gemacht. Der Build geht live, und parallel lief Teil XXIV-4 in denselben Dateien; beides gehört auf Zuruf.
 - **V5** wie oben.
+- Der Build liefert auch **Durchstich 2 und Teil XXIV-4** der Parallelsitzung aus, darunter **Journal-Schreibstufe 5**. Das ist dort ausdrücklich so vorgesehen (Leser und Schreiber in EINER Auslieferung, Preis benannt) — aber es ist deren Entscheidung, nicht meine, und ein Tab von gestern liest ab jetzt nur noch.
