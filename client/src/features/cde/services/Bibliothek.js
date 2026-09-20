@@ -22,6 +22,7 @@
  */
 import { rezeptNach } from './Bauteilrezepte.js';
 import { pruefeEintrag } from './katalog/Katalogschema.js';
+import { ablageFuer, katalogSchreibe } from './katalog/Katalogablage.js';
 
 export const REPO_KEY = 'bauteil-vorlagen';
 
@@ -75,25 +76,21 @@ export async function ladeVorlagen(repo) {
 export async function speichereVorlage(repo, vorlage, { ebene = 'projekt' } = {}) {
     const pruefung = pruefeVorlage(vorlage);
     if (!pruefung.ok) return pruefung;
-    const ziel = ebene === 'buero' ? repo?.buero : repo;
-    if (!ziel) return { ok: false, grund: 'Die Büroablage ist hier nicht verbunden.' };
-    const bisher = _gueltige(await ziel.get(REPO_KEY));
     const id = vorlage.id || `v-${Date.now().toString(36)}`;
-    const neu = [...bisher.filter(v => v.id !== id), { ...vorlage, id }];
-    const geschrieben = await ziel.set(REPO_KEY, JSON.parse(JSON.stringify(neu)));
-    return geschrieben === false
-        ? { ok: false, grund: 'Sichern fehlgeschlagen.' }
-        : { ok: true, grund: null, id };
+    // Durch den EINEN Schreibweg (Teil XXV, V8) — dort setzt der
+    // Katalogverlauf später an (E4).
+    const r = await katalogSchreibe('vorlage', ablageFuer(repo, ebene),
+        (bisher) => [..._gueltige(bisher).filter(v => v.id !== id), { ...vorlage, id }], { ebene });
+    return r.ok ? { ok: true, grund: null, id } : { ok: false, grund: r.grund };
 }
 
 /** Eine selbst angelegte Vorlage entfernen — Eingebautes bleibt. */
 export async function loescheVorlage(repo, id, { ebene = 'projekt' } = {}) {
-    const ziel = ebene === 'buero' ? repo?.buero : repo;
-    if (!ziel) return false;
-    const bisher = _gueltige(await ziel.get(REPO_KEY));
-    if (!bisher.some(v => v.id === id)) return false;
-    await ziel.set(REPO_KEY, JSON.parse(JSON.stringify(bisher.filter(v => v.id !== id))));
-    return true;
+    const r = await katalogSchreibe('vorlage', ablageFuer(repo, ebene), (bisher) => {
+        const liste = _gueltige(bisher);
+        return liste.some(v => v.id === id) ? liste.filter(v => v.id !== id) : null;
+    }, { ebene });
+    return r.ok && r.geaendert;
 }
 
 /**
@@ -212,20 +209,14 @@ export async function speichereRezept(repo, deklaration, { ebene = 'projekt' } =
     const { herkunft, ...d } = deklaration ?? {};
     const { ok, fehler } = pruefeEintrag('rezept', d);
     if (!ok) return { ok: false, grund: fehler.join(' ') };
-    const ziel = ebene === 'buero' ? repo?.buero : repo;
-    if (!ziel) return { ok: false, grund: 'Die Büroablage ist hier nicht verbunden.' };
-    const bisher = (await ziel.get(REZEPTE_KEY)) ?? [];
-    const neu = [...(Array.isArray(bisher) ? bisher : []).filter(x => x?.id !== d.id), d];
-    const geschrieben = await ziel.set(REZEPTE_KEY, JSON.parse(JSON.stringify(neu)));
-    return geschrieben === false ? { ok: false, grund: 'Sichern fehlgeschlagen.' } : { ok: true, grund: null, id: d.id };
+    const r = await katalogSchreibe('rezept', ablageFuer(repo, ebene),
+        (bisher) => [...(Array.isArray(bisher) ? bisher : []).filter(x => x?.id !== d.id), d], { ebene });
+    return r.ok ? { ok: true, grund: null, id: d.id } : { ok: false, grund: r.grund };
 }
 
 /** Eine Rezept-Deklaration entfernen. Bauteile im Journal bleiben — sie melden dann „Rezept fehlt". */
 export async function loescheRezept(repo, id, { ebene = 'projekt' } = {}) {
-    const ziel = ebene === 'buero' ? repo?.buero : repo;
-    if (!ziel) return false;
-    const bisher = (await ziel.get(REZEPTE_KEY)) ?? [];
-    if (!Array.isArray(bisher) || !bisher.some(x => x?.id === id)) return false;
-    await ziel.set(REZEPTE_KEY, JSON.parse(JSON.stringify(bisher.filter(x => x?.id !== id))));
-    return true;
+    const r = await katalogSchreibe('rezept', ablageFuer(repo, ebene), (bisher) => (
+        Array.isArray(bisher) && bisher.some(x => x?.id === id) ? bisher.filter(x => x?.id !== id) : null), { ebene });
+    return r.ok && r.geaendert;
 }

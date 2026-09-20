@@ -482,6 +482,30 @@ describe('W9 — was ein Werkzeug vom Bauteil liest, liefert der Stand', () => {
         }
     });
 
+    it('Katalogdaten gehen durch EINEN Schreibweg (V8)', () => {
+        // Vorlagen, Rezepte, Typprofile, Bauformregeln und das Regelwerk wurden
+        // an sechs Stellen in zwei Dateien geschrieben, jede mit eigener
+        // Fehlerbehandlung — und keine hinterlässt eine Spur (E4 nennt dafür
+        // einen eigenen Verlauf, F7 steht seit dem Abgleich). Ab hier ist es
+        // eine Naht: `katalog/Katalogablage.js`.
+        const schluessel = ['bauteil-vorlagen', 'bauteil-rezepte', 'typprofile', 'bauformregeln', 'regelwerk'];
+        const treffer = [];
+        for (const d of DATEIEN) {
+            if (d.pfad.startsWith('test/') || d.pfad === 'services/katalog/Katalogablage.js') continue;
+            // `REPO_KEY` heisst in drei Modulen verschieden (Journal, Ansicht,
+            // Bibliothek) — er zählt nur, wo die Datei eine Katalogquelle holt.
+            const ausKatalog = /from '.*(Bibliothek|bauform\/Typprofile|bauform\/Bauformregeln)\.js'/.test(d.text);
+            for (const zeile of d.text.split('\n')) {
+                if (!/\.set\s*\(/.test(zeile)) continue;
+                const wortlaut = schluessel.some(k => zeile.includes(`'${k}'`));
+                const konstante = /\.set\s*\((TYP_KEY|REGEL_KEY|REZEPTE_KEY|REGELWERK_KEY)\b/.test(zeile)
+                    || (ausKatalog && /\.set\s*\(REPO_KEY\b/.test(zeile));
+                if (wortlaut || konstante) treffer.push(`${d.pfad}: ${zeile.trim().slice(0, 60)}`);
+            }
+        }
+        expect(treffer).toEqual([]);                               // vorher: 6
+    });
+
     it('kein Produktionsweg schreibt einen Einzelschritt OHNE Beleg (V6)', () => {
         // `useAenderungen.eintragen` schreibt EINEN Schritt ohne Kommando und
         // ohne Systembeleg. Seit R2 geht jeder Schreibweg der Produktion über

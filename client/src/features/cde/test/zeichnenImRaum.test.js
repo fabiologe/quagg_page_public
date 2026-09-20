@@ -17,6 +17,9 @@ import { provideViewerApi } from '../composables/viewerApi.js';
 import { ausGruppe, eingabeArt, nachId } from '../services/Bearbeitungen.js';
 
 vi.mock('../services/Bibliothek.js', () => ({
+    // Den Repo-Schlüssel braucht die Katalogablage (Teil XXV, V8): sie hält die
+    // Schlüssel an EINER Stelle, statt sie ein zweites Mal zu schreiben.
+    REPO_KEY: 'bauteil-vorlagen',
     ladeVorlagen: vi.fn(async () => [
         { id: 'v1', name: 'Schacht DN 1000', rezept: 'schacht', herkunft: 'eingebaut', vorgaben: { dn: 1000 } },
     ]),

@@ -26,6 +26,7 @@ import { EINGEBAUTE_PROFILE, REPO_KEY as TYP_KEY, profilFuer } from '../services
 import { entwurfFuer, profilAusEntwurf } from '../services/bauform/Typprofilentwurf.js';
 import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugRollen } from '../services/Bearbeitungen.js';
 import { ladeKatalog } from '../services/katalog/Katalog.js';
+import { katalogSchreibe } from '../services/katalog/Katalogablage.js';
 import { eingebauteRollen, pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { useAenderungen } from './useAenderungen.js';
 import { modellVon, operationenMitKennung, rezeptNach, vorgangEntfernenSchritte, zufallsKennung } from '../services/Bauteilrezepte.js';
@@ -239,11 +240,11 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         const p = pruefeEintrag('typprofil', { kategorie: e.kategorie, ...profil }, { rollen });
         if (!p.ok) return { ok: false, grund: p.fehler.join(' ') };
         const imProjekt = !!(await ziel.get?.(TYP_KEY));
-        const ebene = imProjekt ? ziel : ziel.buero;
-        if (!ebene) return { ok: false, grund: 'Die Büroablage ist hier nicht verbunden.' };
-        const bisher = (await ebene.get(TYP_KEY)) ?? {};
-        const geschrieben = await ebene.set(TYP_KEY, JSON.parse(JSON.stringify({ ...bisher, [e.kategorie]: profil })));
-        if (geschrieben === false) return { ok: false, grund: 'Sichern fehlgeschlagen.' };
+        // Durch den EINEN Schreibweg für Katalogdaten (Teil XXV, V8).
+        const r = await katalogSchreibe('typprofil', imProjekt ? ziel : ziel.buero,
+            (bisher) => ({ ...bisher, [e.kategorie]: profil }),
+            { ebene: imProjekt ? 'projekt' : 'buero' });
+        if (!r.ok) return { ok: false, grund: r.grund };
         await ladeProfile(ziel);
         return { ok: true, grund: null, ebene: imProjekt ? 'projekt' : 'buero' };
     }
@@ -325,11 +326,10 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             ? [...ohneAlte, regelAus({ category, name, bauform, art, propertyName, psetName })]
             : ohneAlte;
         regeln.value = neu;
-        try {
-            await ziel.set(REGEL_KEY, JSON.parse(JSON.stringify(neu)));
-        } catch (fehler) {
-            console.warn('cde: bauformregel sichern', fehler?.message ?? fehler);
-        }
+        // Ebenso durch den einen Schreibweg (V8); er wirft nie, sondern nennt
+        // den Grund — die Regel gilt in der Sitzung auch dann schon.
+        const r = await katalogSchreibe('bauformregel', ziel, () => neu);
+        if (!r.ok) console.warn('cde: bauformregel sichern', r.grund);
         return neu;
     }
 
