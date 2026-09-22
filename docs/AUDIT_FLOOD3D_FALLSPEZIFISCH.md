@@ -493,3 +493,22 @@ BetaTest10, Vite 3003, Chrome headless), nichts übernommen:
 |---|---|---|---|---|
 | `neun_linien.dxf` (synthetisch, 2,5 Mio / 5,4 Mio — fremde Welt) | „Meters (×1)" aus der Zeichnung | Vorschlag aus der Datei (2 500 000,2 / 5 400 000,2), Drehung 0 | angehakt (vorher: nur bei Gelände-Netz) | `AUSLAUF_rohr` Querschnitt → Ablaufrohr; `SCHACHT_deckel` **Draufsicht → ignorieren** mit Hinweis |
 | `Nacktes_Becken_EP1.dxf` (Betriebsdatei, Welt des Falls) | dito | **Verortung des Falls**: Offset ≈ 2,579 Mio / 5,459 Mio (auf den Zentimeter vorbelegt), **Drehung 315,3°** | angehakt | `AUSLAUF_rohr` Querschnitt → Ablaufrohr |
+
+### E6 gebaut (2026-09-22) — Maßstab
+
+Sechs Commits (E6a/b `80fd21b`, E6c `952ca9e`, E6d `aada464`, E6e
+`2376af2`, E6f), alles im Worktree, noch nicht übernommen.
+
+| # | vorher | nachher |
+|---|---|---|
+| G2/I4 `laplace_fuellen`: 400 Jacobi-Schritte, immer „stufenfrei ergänzt" | Fehler 12 m 0 · 50 m 0,17 m · 100 m 0,59 m · 300 m 2,49 m | Rot-Schwarz-SOR, Schwelle am Spektralradius, `info`: **0,01 mm · 0,19 mm · 0,34 mm · 2,8 mm**; Bericht nennt Schritte und Reständerung oder „NICHT konvergiert" |
+| I11 Rasterweite: vier Rückfälle (0,5 / 0,5 / 1,0 / 0,25), Zellgröße der Datei ignoriert | nacktes Becken 0,5 m, 2-m-Raster 0,5 m (16×) | `RASTERWEITE_VORGABE` + `rasterweite_aus_daten`: halber Stützpunktabstand (TIN 0,944 → **0,472**, Linien **1,13**), Rasterdatei ihre Zelle (**2 m**), Deckel 4 Mio Knoten; Schema = Kern (Test) |
+| G12 Operationen über das ganze Raster (Knoten × Segmente) | 1 Mio Knoten: channel_carve 0,30 s, embankment 0,20, bruchkante 0,28 | im Fenster: **0,01–0,02 s**, identische Knoten; Wächter gegen die Rechnung über alles |
+| G11/C3 Zellzahl: Regel zählte das Hintergrundnetz, Panel 5 m² je Bauwerk „geeicht an BetaTest06" | 40-m-Wand Stufe 4 ~4 000 Zellen; Stufe-3-Gelände bei 0,1 m stumm | `meshgen.zellen_schaetzung` für Regel, `maxGlobalCells` und Panel (Router liefert sie mit): **~250 000**; 10,1 Mio → **Fehler „bricht STILL ab"**; Vitest misst die JS-Formel an der Backend-Fixture (< 1 %) |
+| C12 Anzeige in voller Rasterauflösung | 500 m: 1 002 001 Knoten je Vorschau | Ausdünnung Schritt 3: **111 556**; Rechnung/Sculpt voll |
+| C6 Vorlagen in der Gebietsmitte | Mitte auf der Böschung / im Phantom | am **Blickpunkt** der Kamera (`store.blickpunkt`), Höhen vom Gelände dort, am Rand hineingerückt |
+| P13 Wassertiefe = Volumen / ganze Fläche, nur `inflow_constant` | Mulde 20 × 20 m, 10 m³: 0,025 m; Spiegel unter Sohle stumm | Speicherkurve: **> 0,1 m in der Senke**; Ganglinien zählen; Hinweis „startet trocken" |
+| P14 Rezepte fest +y, Gebietsmitte, 0,4 × 0,6 × 0,6 m | Zulauf von Norden: Endschwelle oberstrom | `_Rahmen` nach dem Zulaufrand, Maße aus Becken und Zelle (1-m-Zelle: Störkörper 0,4 → **2,0 m**), Mitte = Blickpunkt |
+| P15 stumme `except`, Rohr irgendwo = Anschluss, y⁺ immer | Kasten 6,5 m vom Rohr: Warnung | drei Befunde statt Schweigen; Rohr muss auf zwei Zellen heran: **Fehler**, 0,5 m: Warnung; y⁺ nur mit Sohlschub-Kriterium |
+
+Tests: Backend 845 + 1 übersprungen, Client 400.
