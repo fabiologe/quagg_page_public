@@ -1,0 +1,480 @@
+{
+ "schaetzung": {
+  "boxen": 73728,
+  "deckel": 8000000,
+  "flaechen": {
+   "becken_1": 133.72,
+   "dl_1": 86.05,
+   "pfeiler_1": 42.0,
+   "rechen_1": 5.0,
+   "terrain": 432.0,
+   "wand_becken": 27.0
+  },
+  "flaechenschalen": 27155,
+  "gesamt": 115470,
+  "hintergrund": 14587,
+  "schale": 3,
+  "unter_gelaende": 0.4724
+ },
+ "spec": {
+  "boundaries": [
+   {
+    "face": null,
+    "gruppe": null,
+    "herkunft": null,
+    "id": "zulauf",
+    "import_ref": null,
+    "patch": "inlet",
+    "q": 0.5,
+    "type": "inflow_constant",
+    "window": null
+   },
+   {
+    "face": null,
+    "gruppe": null,
+    "herkunft": null,
+    "id": "ablauf",
+    "import_ref": null,
+    "level": 94.9,
+    "patch": "outlet",
+    "type": "outflow_fixed_level",
+    "window": null
+   },
+   {
+    "face": null,
+    "gruppe": null,
+    "herkunft": null,
+    "id": "atmo",
+    "import_ref": null,
+    "patch": "atmosphere",
+    "type": "atmosphere",
+    "window": null
+   }
+  ],
+  "domain": {
+   "extent": [
+    0.0,
+    0.0,
+    24.0,
+    18.0
+   ],
+   "z_max": 100.0,
+   "z_min": 92.0
+  },
+  "evaluation": {
+   "force_patches": [
+    "wand_becken"
+   ],
+   "gauges": [
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "pegel_becken",
+     "import_ref": null,
+     "point": [
+      12.0,
+      14.0
+     ]
+    }
+   ],
+   "laubkarten": null,
+   "sections": [
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "qs_zulauf",
+     "import_ref": null,
+     "polyline": [
+      [
+       4.0,
+       2.0
+      ],
+      [
+       4.0,
+       16.0
+      ]
+     ]
+    },
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "qs_ablauf",
+     "import_ref": null,
+     "polyline": [
+      [
+       20.0,
+       2.0
+      ],
+      [
+       20.0,
+       16.0
+      ]
+     ]
+    }
+   ],
+   "targets": [
+    {
+     "at": "pegel_becken",
+     "gruppe": null,
+     "herkunft": null,
+     "id": "einstau",
+     "import_ref": null,
+     "kind": "max_level",
+     "limit_max": 96.8
+    },
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "sohlschub_becken",
+     "import_ref": null,
+     "kind": "min_bed_shear",
+     "limit_min": 0.001,
+     "region": "r01"
+    }
+   ],
+   "verweilzeit": false
+  },
+  "mesh": {
+   "base_cell": 0.5,
+   "boundary_layers": {
+    "expansion_ratio": 1.2,
+    "n_layers": 3,
+    "patches": [
+     "wand_becken"
+    ]
+   },
+   "refinements": [
+    {
+     "extent": [
+      4.0,
+      6.0,
+      94.0,
+      12.0,
+      12.0,
+      97.0
+     ],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "r01",
+     "import_ref": null,
+     "level": 2,
+     "type": "box"
+    },
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "r02",
+     "import_ref": null,
+     "level": 3,
+     "target": "wand_becken",
+     "type": "surface"
+    },
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "r03",
+     "import_ref": null,
+     "level": 1,
+     "target": "becken_1",
+     "type": "surface"
+    }
+   ]
+  },
+  "meta": {
+   "conventions": {
+    "force_sign": "outward_normal",
+    "length_unit": "m",
+    "level_reference": "absolute"
+   },
+   "crs": null,
+   "id": "test-stufe3",
+   "nachweis": {
+    "bearbeiter": "",
+    "lastfall": "",
+    "regelwerk": []
+   },
+   "title": "PreProzessing-Abnahmefall",
+   "transform": null,
+   "vertical_datum": "DHHN2016"
+  },
+  "solver": {
+   "abbruch": null,
+   "application": "interFoam",
+   "end_time": 60.0,
+   "initial_level": 94.9,
+   "max_alpha_co": 0.3,
+   "max_co": 0.5,
+   "turbulence": "kOmegaSST",
+   "vorfuellungen": [],
+   "write_interval_fields": 5.0,
+   "write_interval_series": 0.1
+  },
+  "structures": [
+   {
+    "alignment": {
+     "kind": "polyline",
+     "points": [
+      [
+       8.0,
+       3.0,
+       98.0
+      ],
+      [
+       8.0,
+       8.0,
+       98.0
+      ]
+     ]
+    },
+    "aus_kanten": [],
+    "batter_deg": 0.0,
+    "edits": [],
+    "gruppe": null,
+    "height": 2.0,
+    "herkunft": null,
+    "id": "wand_becken",
+    "import_ref": null,
+    "material": null,
+    "material_ks": null,
+    "patch": "wand_becken",
+    "thickness": 0.5,
+    "type": "wall",
+    "wirkung": "bauteil"
+   },
+   {
+    "edits": [],
+    "footprint": [
+     [
+      10.0,
+      12.0
+     ],
+     [
+      14.0,
+      12.0
+     ],
+     [
+      14.0,
+      17.0
+     ],
+     [
+      10.0,
+      17.0
+     ]
+    ],
+    "gruppe": null,
+    "herkunft": null,
+    "id": "becken_1",
+    "import_ref": null,
+    "invert_level": 95.0,
+    "invert_slope": 0.0,
+    "invert_slope_dir": null,
+    "material": null,
+    "material_ks": null,
+    "patch": "becken_1",
+    "type": "basin",
+    "wall_height": 2.0,
+    "wall_thickness": 0.3,
+    "wirkung": "bauteil"
+   },
+   {
+    "axis": [
+     [
+      4.0,
+      4.0,
+      94.5
+     ],
+     [
+      4.0,
+      14.0,
+      94.3
+     ]
+    ],
+    "bohr_ueberstand": 0.5,
+    "durchstoesst_gelaende": false,
+    "edits": [],
+    "gruppe": null,
+    "herkunft": null,
+    "id": "dl_1",
+    "import_ref": null,
+    "material": null,
+    "material_ks": null,
+    "patch": "dl_1",
+    "profile": {
+     "diameter": 1.2,
+     "height": null,
+     "kind": "circular",
+     "wandstaerke": 0.15,
+     "width": null
+    },
+    "rolle": null,
+    "type": "culvert",
+    "wirkung": "bauteil"
+   },
+   {
+    "base_level": 94.0,
+    "center": null,
+    "edits": [],
+    "footprint": [
+     [
+      18.0,
+      10.0
+     ],
+     [
+      20.0,
+      10.0
+     ],
+     [
+      20.0,
+      13.0
+     ],
+     [
+      18.0,
+      13.0
+     ]
+    ],
+    "gruppe": null,
+    "herkunft": null,
+    "id": "pfeiler_1",
+    "import_ref": null,
+    "length": null,
+    "material": null,
+    "material_ks": null,
+    "patch": "pfeiler_1",
+    "rotation_deg": 0.0,
+    "shape": "polygon",
+    "top_level": 97.0,
+    "type": "pier",
+    "width": null,
+    "wirkung": "bauteil"
+   },
+   {
+    "approach_angle_deg": 90.0,
+    "bar_depth": 0.06,
+    "bar_shape": "rechteck",
+    "bar_spacing": 0.02,
+    "bar_thickness": 0.008,
+    "edits": [],
+    "gruppe": null,
+    "herkunft": null,
+    "id": "rechen_1",
+    "import_ref": null,
+    "material": null,
+    "material_ks": null,
+    "patch": "rechen_1",
+    "plane_polygon": [
+     [
+      6.0,
+      8.0,
+      94.6
+     ],
+     [
+      6.0,
+      10.0,
+      94.6
+     ],
+     [
+      6.0,
+      10.0,
+      96.6
+     ],
+     [
+      6.0,
+      8.0,
+      96.6
+     ]
+    ],
+    "resistance": {
+     "blockage_ratio": 0.3,
+     "cw": null,
+     "d": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "f": [
+      120.0,
+      0.0,
+      0.0
+     ],
+     "flaechendichte": null,
+     "kind": "rechen",
+     "korngroesse": null,
+     "model": "darcy_forchheimer",
+     "porositaet": null
+    },
+    "type": "screen",
+    "wirkung": "bauteil",
+    "zonen_tiefe": null
+   }
+  ],
+  "terrain": {
+   "base": {
+    "aussenhoehe": null,
+    "koerper": null,
+    "original": null,
+    "original_abbildung": null,
+    "resolution": 0.5,
+    "source": "flat:96.0"
+   },
+   "belagskarte": null,
+   "erdkoerper": "auto",
+   "erdkoerper_ueberstand": null,
+   "erdkoerper_unterkante": null,
+   "kanten": [],
+   "material": "erde",
+   "material_ks": null,
+   "operations": [
+    {
+     "bottom_width": 2.0,
+     "depth": 1.5,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "t01",
+     "import_ref": null,
+     "invert_end": 94.6,
+     "invert_start": 94.8,
+     "polyline": [
+      [
+       2.0,
+       9.0
+      ],
+      [
+       22.0,
+       9.0
+      ]
+     ],
+     "side_slope": 1.5,
+     "type": "channel_carve"
+    },
+    {
+     "gruppe": null,
+     "herkunft": null,
+     "id": "t02",
+     "import_ref": null,
+     "level": 96.5,
+     "polygon": [
+      [
+       16.0,
+       2.0
+      ],
+      [
+       22.0,
+       2.0
+      ],
+      [
+       22.0,
+       7.0
+      ],
+      [
+       16.0,
+       7.0
+      ]
+     ],
+     "type": "pad"
+    }
+   ],
+   "sculpt": null,
+   "sculpt_stand": null
+  }
+ }
+}

@@ -24,7 +24,14 @@ export function dauerText(stunden) {
 
 // --- abgeleitete Größen des Falls ----------------------------------------
 
-export function kennwerte(spec, meshPreview = null, previewStale = false) {
+// `schaetzung`: die Zellschätzung des Servers (meshgen.zellen_schaetzung,
+// mit dem letzten Speichern geliefert) — sie kennt den Anteil des Gebiets
+// unter dem Gelände und die ECHTEN Oberflächen der gebauten Bauwerke. Die
+// Rechnung hier ist dieselbe Formel; ohne Serverdaten gelten Pauschalen
+// (20 % unter Gelände, 5 m² je Bauwerksfläche), damit die Zahl auch beim
+// Tippen sofort da ist. Ein Test hält beide Seiten an derselben Fixture.
+export function kennwerte(spec, meshPreview = null, previewStale = false,
+  schaetzung = null) {
   const d = spec?.domain
   const m = spec?.mesh
   const s = spec?.solver
@@ -51,17 +58,19 @@ export function kennwerte(spec, meshPreview = null, previewStale = false) {
   // sieht nach Wahrheit aus und ändert sich nicht, wenn man an der
   // Grundzelle dreht.
   const gemessen = meshPreview?.cells != null && !previewStale
-  const grundzellen = (breite / m.base_cell) * (tiefe / m.base_cell)
-                      * (hoehe / m.base_cell) * 0.8
+  // Hintergrundnetz wie meshgen.cell_counts (aufgerundete Zellzahlen je
+  // Richtung), abzüglich des Anteils unter dem Gelände
+  const unterGelaende = schaetzung?.unter_gelaende ?? 0.2
+  const grundzellen = Math.ceil(breite / m.base_cell) * Math.ceil(tiefe / m.base_cell)
+                      * Math.ceil(hoehe / m.base_cell) * (1 - unterGelaende)
   // Verfeinerung ist der eigentliche Kostentreiber, und sie fehlte hier
   // ganz — daher lag die Schätzung 11-fach daneben.
   //
-  // Modell: snappyHexMesh verfeinert eine SCHALE um die Fläche (rund drei
-  // Zelllagen der feinsten Stufe), Boxen dagegen ihr ganzes Volumen.
-  // Geeicht am gemessenen Netz des Falls Rentrisch_BetaTest06
-  // (Grundzelle 0,2 m, Gelände Stufe 3, zwei Boxen Stufe 2 -> 943.370
-  // Zellen); das Modell trifft das auf wenige Prozent.
-  const SCHALE = 3
+  // Modell (dasselbe wie meshgen.zellen_schaetzung): snappyHexMesh
+  // verfeinert eine SCHALE um die Fläche (drei Zelllagen der feinsten
+  // Stufe), Boxen dagegen ihr ganzes Volumen. Am gemessenen Netz des Falls
+  // Rentrisch_BetaTest06 (943.370 Zellen) trifft es auf wenige Prozent.
+  const SCHALE = schaetzung?.schale ?? 3
   let zusatz = 0
   for (const r of m.refinements ?? []) {
     const lvl = r.level ?? 0
@@ -72,14 +81,18 @@ export function kennwerte(spec, meshPreview = null, previewStale = false) {
       const vol = Math.abs((bx1 - bx0) * (by1 - by0) * (bz1 - bz0))
       zusatz += vol / zelle ** 3
     } else {
-      // Geländefläche = Grundfläche des Gebiets; Bauwerksflächen sind
-      // dagegen klein, dafür steht eine bescheidene Annahme
-      const flaecheR = r.target === 'terrain' ? breite * tiefe : 5
+      // Geländefläche = Grundfläche des Gebiets; Bauwerksflächen kommen
+      // vom Server (Oberfläche des gebauten Körpers) — ohne ihn blieb
+      // bis 2026-09-22 nur die Pauschale 5 m², eine 40-m-Wand auf Stufe 4
+      // ergab ~4 000 statt ~250 000 Zellen (Audit C3)
+      const flaecheR = r.target === 'terrain' ? breite * tiefe
+        : (schaetzung?.flaechen?.[r.target] ?? 5)
       zusatz += (flaecheR / zelle ** 2) * SCHALE
     }
   }
   const zellen = gemessen ? meshPreview.cells
     : Math.round(grundzellen + zusatz)
+  const zellenQuelle = gemessen ? 'gemessen' : schaetzung ? 'server' : 'pauschal'
   // Wie lange der Lauf VORAUSSICHTLICH rechnet — dieselbe Regel wie
   // core/foamfields.py::schaetzdauer. Beim Leerlauf ist `end_time` nur die
   // Obergrenze; mit ihr zu schätzen hieße, für eine großzügige Reserve
@@ -109,7 +122,7 @@ export function kennwerte(spec, meshPreview = null, previewStale = false) {
   const stunden = (zellen * schritte) / durchsatz / kerne / 3600
   const ausgaben = s.write_interval_fields > 0
     ? Math.floor(dauer / s.write_interval_fields) + 1 : 0
-  return { breite, tiefe, hoehe, flaeche, zellen, q, wassertiefe,
+  return { breite, tiefe, hoehe, flaeche, zellen, zellenQuelle, q, wassertiefe,
     stunden, ausgaben, dt, dauer, feinsteZelle, maxStufe, feinstesAus,
     gemessen }
 }
@@ -162,8 +175,9 @@ export const ABBRUCH_VORGABE = Object.freeze({
 // --- Einordnung je Feld ---------------------------------------------------
 // { text, level } — level: '' | 'warn' | 'bad'
 
-export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
-  const k = kennwerte(spec, meshPreview, previewStale)
+export function hinweis(pfad, spec, meshPreview = null, previewStale = false,
+  schaetzung = null) {
+  const k = kennwerte(spec, meshPreview, previewStale, schaetzung)
   if (!k) return null
   const s = spec.solver
   const d = spec.domain
@@ -358,7 +372,9 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false) {
     }
 
     case 'mesh.base_cell': {
-      const herkunft = k.gemessen ? 'gemessen' : 'geschätzt'
+      const herkunft = k.gemessen ? 'gemessen'
+        : k.zellenQuelle === 'server' ? 'geschätzt, Flächen vom Server'
+          : 'geschätzt, pauschal'
       const zellenText = `${int(k.zellen)} Zellen (${herkunft}), `
         + `${dauerText(k.stunden)} auf 8 Kernen.`
       // Die feinste Zelle ist die Zahl, die wirklich zählt — sie bestimmt

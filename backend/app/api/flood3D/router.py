@@ -48,6 +48,14 @@ from .core.store import (lauf_reservieren, manifest_schreiben,
                          read_manifest, run_paths, runs_root)
 from .core.terrain import TerrainField
 from .core.validate import validate_case
+
+
+def _validiert(spec: CaseSpec, d: Path) -> dict:
+    """Befunde plus die Zellschätzung des fertigen Netzes — eine Rechnung
+    (meshgen.zellen_schaetzung) für Prüfregel, Router und Panel (E6d)."""
+    netz: dict = {}
+    befunde = validate_case(spec, d, netz=netz)
+    return {"validation": befunde, "netz_schaetzung": netz or None}
 # Das Laufwerk fährt und bewacht die Läufe (Registries, RunPod-Thread,
 # Wächter) — der Router bleibt die HTTP-Schicht davor. Importrichtung:
 # Router → laufwerk, nie umgekehrt.
@@ -1180,7 +1188,7 @@ async def case_import_reapply(case_id: str, import_id: str,
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "report": info["report"],
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
+            **_validiert(spec, d),
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
@@ -1242,7 +1250,7 @@ async def case_import_apply(case_id: str, import_id: str,
     spec.to_yaml(d / "case.yaml")
     return {"ok": True, "report": info["report"],
             "spec": spec.model_dump(mode="json", exclude_none=True),
-            "validation": validate_case(spec, d),
+            **_validiert(spec, d),
 
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
@@ -1273,7 +1281,7 @@ def _mutation(case_id: str, wirken, fehlertext: str) -> dict:
         meldungen = [meldungen] if meldungen else []
     return {"ok": True, "meldungen": meldungen, "geaendert": geaendert,
             "spec": nachher,
-            "validation": validate_case(spec, d),
+            **_validiert(spec, d),
             "netz_stale": _preview_stand(spec, d)["stale"]}
 
 
@@ -1613,7 +1621,7 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     Fenster, Öffnungslagen), damit der Editor sie nicht spiegeln muss.
     Genutzt von /preview (Entwurf), PUT (Speichern) und GET /geometry.
     """
-    out: dict = {"validation": validate_case(spec, d), "solids": [],
+    out: dict = {**_validiert(spec, d), "solids": [],
                  "terrain": None, "terrain_solid": None,
                  # Ob das gespeicherte Vorschaunetz noch zu DIESEM Stand
                  # steht — der Editor rät das nicht mehr selbst.

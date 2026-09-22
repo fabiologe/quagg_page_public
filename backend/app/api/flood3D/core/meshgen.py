@@ -97,6 +97,69 @@ def netz_zerlegung_dict(ranks: int) -> str:
         location="system")
 
 
+# Deckel von snappyHexMesh (castellatedMeshControls.maxGlobalCells): darüber
+# bricht es die Verfeinerung STILL ab und das Netz ist gröber als
+# eingestellt. Die Schätzung unten misst gegen genau diese Zahl.
+MAX_GLOBAL_CELLS = 8_000_000
+# Zelllagen der feinsten Stufe, die snappy um eine verfeinerte Fläche legt
+SCHALE = 3
+
+
+def zellen_schaetzung(spec: CaseSpec, terrain=None,
+                      solids: dict | None = None) -> dict:
+    """
+    Geschätzte Zellzahl des fertigen Netzes — DIE Rechnung, mit der die
+    Prüfregel (validate._pruefe_verfeinerungen), der Deckel des
+    snappyHexMeshDict und die Live-Schätzung im Simulationspanel
+    (utils/simHints.js) arbeiten:
+
+        Hintergrund   nx·ny·nz, abzüglich des Anteils unter dem Gelände
+        Boxen         Volumen / Zelle³ je Verfeinerungsbox
+        Flächen       SCHALE Zelllagen × Fläche / Zelle² je Flächen-
+                      verfeinerung — Gelände = Grundfläche des Gebiets,
+                      Bauwerk = Oberfläche seines gebauten Körpers
+
+    Bis 2026-09-22 zählte die Prüfung nur das Hintergrundnetz, und das
+    Panel setzte jede Bauwerksfläche pauschal mit 5 m² an — eine 40-m-Wand
+    auf Stufe 4 ergab ~4 000 statt ~250 000 Zellen (Audit G11, C3). Ohne
+    `terrain`/`solids` gelten die alten Pauschalen (20 % unter Gelände,
+    5 m²), damit die Zahl weiter live beim Tippen entsteht.
+    """
+    nx, ny, nz = cell_counts(spec)
+    x0, y0, x1, y1 = spec.domain.extent
+    hoehe = max(spec.domain.z_max - spec.domain.z_min, 1e-9)
+    unter = 0.2
+    if terrain is not None and getattr(terrain, "z", None) is not None:
+        import numpy as np
+        anteil = (np.asarray(terrain.z, dtype=float) - spec.domain.z_min) / hoehe
+        unter = float(np.mean(np.clip(anteil, 0.0, 1.0)))
+    hintergrund = nx * ny * nz * (1.0 - unter)
+    flaechen: dict[str, float] = {"terrain": (x1 - x0) * (y1 - y0)}
+    for s in spec.structures:
+        netz = (solids or {}).get(s.patch)
+        flaechen[s.patch] = (float(netz.area) if netz is not None
+                             and len(netz.faces) else 5.0)
+    boxen = 0.0
+    schalen = 0.0
+    base = spec.mesh.base_cell
+    for r in spec.mesh.refinements:
+        stufe = int(r.level or 0)
+        if stufe <= 0:
+            continue
+        zelle = base / 2 ** stufe
+        if r.type == "box":
+            bx0, by0, bz0, bx1, by1, bz1 = r.extent
+            boxen += abs((bx1 - bx0) * (by1 - by0) * (bz1 - bz0)) / zelle ** 3
+        else:
+            schalen += SCHALE * flaechen.get(r.target, 5.0) / zelle ** 2
+    return {"hintergrund": int(round(hintergrund)),
+            "unter_gelaende": round(unter, 4),
+            "boxen": int(round(boxen)), "flaechenschalen": int(round(schalen)),
+            "flaechen": {k: round(v, 2) for k, v in flaechen.items()},
+            "gesamt": int(round(hintergrund + boxen + schalen)),
+            "deckel": MAX_GLOBAL_CELLS, "schale": SCHALE}
+
+
 def cell_counts(spec: CaseSpec) -> tuple[int, int, int]:
     x0, y0, x1, y1 = spec.domain.extent
     c = spec.mesh.base_cell
@@ -382,7 +445,7 @@ geometry
 castellatedMeshControls
 {{
     maxLocalCells       2000000;
-    maxGlobalCells      8000000;
+    maxGlobalCells      {MAX_GLOBAL_CELLS};
     minRefinementCells  10;
     maxLoadUnbalance    0.10;
     nCellsBetweenLevels 2;

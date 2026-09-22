@@ -353,7 +353,8 @@ const spec = computed(() => store.spec)
 // des konkreten Falls (Zellzahl, Rechenzeit, Datenmenge) statt allgemeiner
 // Merksätze. Rot = so lässt der Lauf sich nicht starten.
 const Hinweis = (props) => {
-  const h1 = hinweis(props.pfad, spec.value, store.meshPreview, store.meshPreviewStale)
+  const h1 = hinweis(props.pfad, spec.value, store.meshPreview, store.meshPreviewStale,
+    store.netzSchaetzung)
   if (!h1) return null
   // Kinder eines nativen Elements muessen Text/Array sein — eine Funktion
   // waere ein Slot-Objekt und bliebe leer

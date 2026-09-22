@@ -56,6 +56,9 @@ export const usePreStore = defineStore('flood3d-pre', {
     staende: [],
     staendeLoading: false,
     validation: [],
+    // Zellschätzung des fertigen Netzes vom Server (dieselbe Rechnung wie
+    // die Prüfregel) — das Panel rechnet damit statt mit Pauschalen
+    netzSchaetzung: null,
     terrain: null,        // { x0, y0, resolution, dims, z: Float32Array }
     // Serverseitig aufgelöste Regeln aus der Geometrie-Antwort:
     // { bcFaces, fenster, oeffnungen } — siehe uebernehmeGeometrie
@@ -267,6 +270,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         }
         this.spec = res.spec
         this.validation = res.validation
+        if (res.netz_schaetzung !== undefined) this.netzSchaetzung = res.netz_schaetzung
         this.dirty = false
         if (this.meshPreview && res.netz_stale !== undefined) {
           this.meshPreviewStale = res.netz_stale
@@ -493,6 +497,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     // statt die Szene zu leeren.
     uebernehmeGeometrie(p, { entwurf = false } = {}) {
       this.validation = p.validation
+      if (p.netz_schaetzung !== undefined) this.netzSchaetzung = p.netz_schaetzung
       // Ob das Netz veraltet ist, sagt der Server (Netz-Hash) — eine
       // Änderung, die kein Netzelement berührt, entwertet es nicht
       if (this.meshPreview && p.netz_stale !== undefined) {

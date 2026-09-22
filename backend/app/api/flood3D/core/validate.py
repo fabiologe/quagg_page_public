@@ -167,6 +167,10 @@ class _Kontext:
     outflows: list
     patch_zu_id: dict
     solids: dict = field(default_factory=dict)
+    # Zellschätzung des fertigen Netzes (meshgen.zellen_schaetzung), von
+    # _pruefe_verfeinerungen gefüllt — validate_case reicht sie über `netz`
+    # an den Router weiter, das Panel rechnet damit
+    netz: dict = field(default_factory=dict)
 
 
 def _kontext_bauen(spec: CaseSpec,
@@ -194,10 +198,19 @@ def _kontext_bauen(spec: CaseSpec,
     return ctx, befunde
 
 
-def validate_case(spec: CaseSpec, base_dir: str | Path = ".") -> list[dict]:
+def validate_case(spec: CaseSpec, base_dir: str | Path = ".", *,
+                  netz: dict | None = None) -> list[dict]:
+    """
+    Alle Prüffamilien über EINEN Kontext. `netz` (optional, wird gefüllt)
+    bekommt die Zellschätzung des fertigen Netzes, die die
+    Verfeinerungsregel ohnehin rechnet — der Router gibt sie dem Panel mit,
+    statt dass es sie mit Pauschalen nachbaut (E6d).
+    """
     ctx, findings = _kontext_bauen(spec, Path(base_dir))
     for pruefung in _PRUEFUNGEN:
         findings.extend(pruefung(spec, ctx))
+    if netz is not None:
+        netz.update(ctx.netz)
     order = {"fehler": 0, "warnung": 1, "hinweis": 2}
     return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
 
@@ -1227,11 +1240,29 @@ def _pruefe_verfeinerungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                            f"der freien Oberfläche ({level:g} m) vertikal nicht",
                            fix=kur("box_auf_spiegel", refinement=r.id)))
 
-        nx, ny, nz = cell_counts(spec)
-        if nx * ny * nz > 4_000_000:
+        # Die Zellzahl des FERTIGEN Netzes — bis 2026-09-22 zählte die Regel
+        # nur das Hintergrundnetz, und snappy brach die Verfeinerung über
+        # maxGlobalCells still ab (Audit G11). Dieselbe Rechnung wie im
+        # Panel (meshgen.zellen_schaetzung); der Router gibt sie mit.
+        from .meshgen import zellen_schaetzung
+        s = zellen_schaetzung(spec, ctx.terrain, ctx.solids)
+        ctx.netz = s
+        def tsd(n: int) -> str:
+            return f"{n:,}".replace(",", " ")
+        text = (f"geschätzt {tsd(s['gesamt'])} Zellen (Hintergrund "
+                f"{tsd(s['hintergrund'])}, Boxen {tsd(s['boxen'])}, "
+                f"Flächenschalen {tsd(s['flaechenschalen'])})")
+        if s["gesamt"] > s["deckel"]:
+            f(_finding("mesh", "fehler",
+                       f"Netz {text} — über dem Deckel maxGlobalCells "
+                       f"{s['deckel'] / 1e6:.0f} Mio: snappyHexMesh bricht die "
+                       "Verfeinerung dann STILL ab, das Netz wäre gröber als "
+                       "eingestellt. Basiszelle vergröbern oder Verfeinerungen "
+                       "zurücknehmen."))
+        elif s["gesamt"] > 4_000_000:
             f(_finding("mesh", "warnung",
-                       f"Hintergrundnetz hat bereits {nx * ny * nz:,} Zellen "
-                       "— Laufzeit und Kosten prüfen, Basiszelle vergröbern"))
+                       f"Netz {text} — Laufzeit und Kosten prüfen, Basiszelle "
+                       "vergröbern"))
 
     if spec.mesh.boundary_layers:
         fehlend = (set(spec.mesh.boundary_layers.patches)

@@ -6,9 +6,16 @@
  * stand 0,2 m, 85.331 Zellen und 7 h. Gerechnet wurden 943.370 Zellen und
  * 47 h. Beide Zahlen dürfen so nicht mehr entstehen.
  */
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import { hinweis, kennwerte } from '../utils/simHints'
+
+// vom Backend geschrieben (tests/test_netz_schaetzung.py): dieselbe Spec und
+// die Schätzung von meshgen.zellen_schaetzung — beide Seiten EINE Rechnung
+const FIXTURE = JSON.parse(readFileSync(
+  new URL('./fixtures/netz_schaetzung.json', import.meta.url), 'utf8'))
 
 const fall = (extra = {}) => ({
   domain: { extent: [1.63, 1, 13.37, 14], z_min: 223.7, z_max: 226.6 },
@@ -75,5 +82,26 @@ describe('Netz-Kennwerte', () => {
     expect(k.zellen).toBeLessThan(1050000)
     expect(k.stunden).toBeGreaterThan(10)        // gemessen ~30 h auf 8 Kernen
     expect(k.stunden).toBeLessThan(90)
+  })
+
+  // E6d (Audit C3): Panel und Prüfregel rechnen dieselbe Zahl
+  it('trifft mit den Serverdaten die Schätzung des Backends', () => {
+    const { spec, schaetzung } = FIXTURE
+    const k = kennwerte(spec, null, false, schaetzung)
+    expect(k.zellenQuelle).toBe('server')
+    expect(Math.abs(k.zellen - schaetzung.gesamt) / schaetzung.gesamt).toBeLessThan(0.01)
+  })
+
+  it('nimmt die echte Bauwerksfläche statt der Pauschale 5 m²', () => {
+    const wand = fall({ mesh: { base_cell: 0.2, refinements: [
+      { id: 'f', type: 'surface', target: 'wand_40m', level: 4 }] } })
+    const pauschal = kennwerte(wand)
+    const echt = kennwerte(wand, null, false,
+      { unter_gelaende: 0.2, schale: 3, flaechen: { wand_40m: 240 } })   // 40 m × 3 m × 2 Seiten
+    expect(pauschal.zellenQuelle).toBe('pauschal')
+    expect(echt.zellen - pauschal.zellen).toBeGreaterThan(200000)        // ~4 000 → ~250 000
+    expect(hinweis('mesh.base_cell', wand, null, false,
+      { unter_gelaende: 0.2, schale: 3, flaechen: { wand_40m: 240 } }).text)
+      .toMatch(/Flächen vom Server/)
   })
 })
