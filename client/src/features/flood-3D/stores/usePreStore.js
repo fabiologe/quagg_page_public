@@ -60,6 +60,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     // die Prüfregel) — das Panel rechnet damit statt mit Pauschalen
     netzSchaetzung: null,
     terrain: null,        // { x0, y0, resolution, dims, z: Float32Array }
+    blickpunkt: null,     // [x, y] des Kamera-Blickpunkts (editor/kamera.js)
     // Serverseitig aufgelöste Regeln aus der Geometrie-Antwort:
     // { bcFaces, fenster, oeffnungen } — siehe uebernehmeGeometrie
     aufgeloest: { bcFaces: {}, fenster: {}, oeffnungen: {} },

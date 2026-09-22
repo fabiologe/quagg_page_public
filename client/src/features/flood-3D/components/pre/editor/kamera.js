@@ -85,5 +85,27 @@ export function erzeugeKamera({ store, holeCamera, holeControls }) {
     }
   }
 
-  return { gebiet, einpassen, grenzenAnwenden }
+  // Der Blickpunkt (controls.target) wandert in den Store: dort setzt
+  // ObjectTreePanel neue Vorlagen ab — wo der Nutzer hinschaut, nicht in
+  // der Gebietsmitte (Audit C6). Höchstens einmal je Bild geschrieben.
+  function blickpunktVerfolgen() {
+    const controls = holeControls()
+    if (!controls?.addEventListener) return false
+    let angefragt = false
+    const schreiben = () => {
+      angefragt = false
+      const t = controls.target
+      store.blickpunkt = [Number(t.x.toFixed(2)), Number(t.y.toFixed(2))]
+    }
+    controls.addEventListener('change', () => {
+      if (angefragt) return
+      angefragt = true
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(schreiben)
+      else schreiben()
+    })
+    schreiben()
+    return true
+  }
+
+  return { gebiet, einpassen, grenzenAnwenden, blickpunktVerfolgen }
 }

@@ -536,6 +536,7 @@ function makeControls() {
   const oldTarget = controls?.target.clone()
   controls?.dispose()
   controls = new OrbitControls(camera, renderer.domElement)
+  kamera.blickpunktVerfolgen()          // Vorlagen landen am Blickpunkt (C6)
   controls.enableDamping = true
   controls.dampingFactor = 0.12                   // straffer Stopp, wenig Nachlauf
   controls.rotateSpeed = 0.9

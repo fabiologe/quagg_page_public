@@ -491,7 +491,7 @@ function add(kind, name) {
     // Vorlagen sind im Bezugsraum notiert (Gelände 95 m, Grundriss um 20 m).
     // Ohne Umrechnung landet jede Vorlage in einem importierten Fall weit
     // neben oder unter dem Gelände.
-    else vorlageAnpassen(obj, store.spec, (x, y) => store.gelaendeZ(x, y))
+    else vorlageAnpassen(obj, store.spec, (x, y) => store.gelaendeZ(x, y), store.blickpunkt)
     if (obj.kind) {
       const fehlt = fehlendeBausteine(store.spec, obj.kind)
       if (fehlt.length) {

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 
 import base64
+import math
 import hashlib
 import json
 import os
@@ -1614,6 +1615,19 @@ def _draft_solid_schluessel(s, spec: CaseSpec) -> str | None:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+# Obergrenze der Geländeknoten, die der Editor als Fläche zeichnet — darüber
+# wird das Raster für die Anzeige mit ganzzahligem Schritt ausgedünnt
+ANZEIGE_KNOTEN_MAX = 250_000
+
+
+def anzeige_schritt(shape: tuple[int, int]) -> int:
+    """Kleinster ganzzahliger Schritt, mit dem shape unter ANZEIGE_KNOTEN_MAX bleibt."""
+    n = int(shape[0]) * int(shape[1])
+    if n <= ANZEIGE_KNOTEN_MAX:
+        return 1
+    return int(math.ceil(math.sqrt(n / ANZEIGE_KNOTEN_MAX)))
+
+
 def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     """
     DIE eine Geometrie-Antwort: Gelände, Bauwerkskörper, Erdkörper, Prüfung
@@ -1629,10 +1643,17 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
     if spec.terrain is not None and spec.domain is not None:
         try:
             t = TerrainField.from_spec(spec.terrain, spec.domain, d)
+            # Für die ANZEIGE ausgedünnt: der Editor baut aus jedem Knoten
+            # ein Dreieckspaar, 500 × 500 m bei 0,5 m sind 1 Mio Knoten und
+            # ~5 MB je Griffzug (Audit C12). Schritt s, bis die Knoten unter
+            # ANZEIGE_KNOTEN_MAX liegen; Rechnung und Sculpt bleiben auf
+            # dem vollen Raster (der Sculpt-Endpunkt tastet Patches um).
+            s = anzeige_schritt(t.z.shape)
+            z = t.z[::s, ::s]
             out["terrain"] = {
-                "x0": t.x0, "y0": t.y0, "resolution": t.resolution,
-                "dims": list(t.z.shape),
-                "z_b64": base64.b64encode(t.z.astype("<f4").tobytes()).decode(),
+                "x0": t.x0, "y0": t.y0, "resolution": t.resolution * s,
+                "dims": list(z.shape), "ausduennung": s,
+                "z_b64": base64.b64encode(z.astype("<f4").tobytes()).decode(),
                 # Wo die Vermessung aufhört (terrain.lade_basis): der Editor
                 # färbt die Ebene anders, das Panel zeigt die Außenhöhe
                 "aussenhoehe": t.aussenhoehe,
@@ -1642,14 +1663,14 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
             if t.gemessen is not None and not t.gemessen.all():
                 import numpy as _np
                 out["terrain"]["gemessen_b64"] = base64.b64encode(
-                    _np.packbits(t.gemessen.ravel()).tobytes()).decode()
+                    _np.packbits(t.gemessen[::s, ::s].ravel()).tobytes()).decode()
             # Wo der Pinsel nicht ankommt (eigene Sollhöhen halten dort die
             # Höhe) — der Editor sperrt den Cursor dort sichtbar, statt den
             # Strich nach dem Speichern verschwinden zu lassen
             sperre = t.pinsel_sperre()
             if sperre:
                 out["terrain"]["pinsel_sperre_b64"] = base64.b64encode(
-                    sperre["ebene"].tobytes()).decode()
+                    sperre["ebene"][::s, ::s].tobytes()).decode()
                 out["terrain"]["pinsel_sperre_ops"] = sperre["ops"]
             out["terrain_solid"] = _koerper_vorschau(spec, t, d, out)
         except Exception as e:

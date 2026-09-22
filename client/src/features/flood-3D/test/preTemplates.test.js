@@ -35,6 +35,43 @@ describe('vorlageAnpassen — Grundriss', () => {
   })
 })
 
+// E6e (Audit C6): die Vorlage kommt dorthin, wo der Nutzer hinschaut — und
+// ihre Höhen hängen am Gelände an DIESEM Ort, nicht in der Gebietsmitte
+describe('vorlageAnpassen — Blickpunkt', () => {
+  const pad = () => ({ type: 'pad', polygon: [[10, 10], [20, 10], [20, 20], [10, 20]],
+    level: 95.0 })
+  const mitteVon = (obj) => {
+    const xs = obj.polygon.map((p) => p[0])
+    const ys = obj.polygon.map((p) => p[1])
+    return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]
+  }
+
+  it('landet am Blickpunkt statt in der Gebietsmitte', () => {
+    const obj = pad()
+    vorlageAnpassen(obj, fall([0, 0, 100, 80]), flach(220), [70, 30])
+    expect(mitteVon(obj)).toEqual([70, 30])                     // vorher [50, 40]
+  })
+
+  it('nimmt die Geländehöhe am Blickpunkt', () => {
+    const obj = pad()
+    const gelaende = (x, y) => (x > 60 ? 230 : 210)               // Stufe im Gelände
+    vorlageAnpassen(obj, fall([0, 0, 100, 80]), gelaende, [70, 30])
+    expect(obj.level).toBe(230)                                   // Gebietsmitte: 210
+  })
+
+  it('rückt am Rand ins Gebiet und fällt ohne Blickpunkt auf die Mitte zurück', () => {
+    const amRand = pad()
+    vorlageAnpassen(amRand, fall([0, 0, 100, 80]), flach(220), [99, 79])
+    expect(mitteVon(amRand)).toEqual([95, 75])                    // 10 m breit: 5 m Rand
+    const draussen = pad()
+    vorlageAnpassen(draussen, fall([0, 0, 100, 80]), flach(220), [500, 500])
+    expect(mitteVon(draussen)).toEqual([50, 40])
+    const ohne = pad()
+    vorlageAnpassen(ohne, fall([0, 0, 100, 80]), flach(220), null)
+    expect(mitteVon(ohne)).toEqual([50, 40])
+  })
+})
+
 describe('vorlageAnpassen — skalare Längenmaße', () => {
   it('schrumpft Radien mit dem Grundriss', () => {
     // Vorlage spannt 10 m auf, Gebiet gibt nur 4 m Platz -> s = 0,4

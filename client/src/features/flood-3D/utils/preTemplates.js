@@ -254,7 +254,12 @@ function punktlisten(obj) {
   return raus
 }
 
-export function vorlageAnpassen(obj, spec, gelaendeZ) {
+// `mitte`: wohin die Vorlage kommt — der Blickpunkt der Kamera (dort schaut
+// der Nutzer hin), ohne ihn die Gebietsmitte. Bis 2026-09-22 landete jede
+// Vorlage in der Gebietsmitte, und die konnte auf der Böschung oder im
+// erfundenen Gelände liegen (Audit C6); die Höhen hängen am Gelände an
+// DIESEM Ort. Ragt die Vorlage dort über das Gebiet, wird sie hineingerückt.
+export function vorlageAnpassen(obj, spec, gelaendeZ, mitte = null) {
   const dom = spec?.domain
   if (!dom) return obj
   const [x0, y0, x1, y1] = dom.extent
@@ -272,8 +277,13 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
   const by = ys.length ? [Math.min(...ys), Math.max(...ys)] : [0, 0]
   const mx = (bx[0] + bx[1]) / 2
   const my = (by[0] + by[1]) / 2
-  const cx = (x0 + x1) / 2
-  const cy = (y0 + y1) / 2
+  const innen = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi
+  let cx = (x0 + x1) / 2
+  let cy = (y0 + y1) / 2
+  if (mitte && innen(mitte[0], x0, x1) && innen(mitte[1], y0, y1)) {
+    cx = mitte[0]
+    cy = mitte[1]
+  }
   // nur verkleinern, nie vergrößern: eine 20-m-Wand passt nicht in ein
   // 9-m-Becken, umgekehrt soll die Vorlage ihre Maße behalten
   let spanne = Math.max(bx[1] - bx[0], by[1] - by[0])
@@ -287,6 +297,12 @@ export function vorlageAnpassen(obj, spec, gelaendeZ) {
   }
   const platz = 0.5 * Math.min(x1 - x0, y1 - y0)
   const s = spanne > platz && spanne > 0 ? platz / spanne : 1
+  // am Blickpunkt darf die Vorlage nicht über den Gebietsrand ragen:
+  // hineinrücken, so weit ihr (verkleinerter) Grundriss es braucht
+  const halbX = ((bx[1] - bx[0]) * s) / 2
+  const halbY = ((by[1] - by[0]) * s) / 2
+  cx = Math.min(Math.max(cx, x0 + halbX), x1 - halbX)
+  cy = Math.min(Math.max(cy, y0 + halbY), y1 - halbY)
   const r2 = (v) => Number(v.toFixed(2))
   const ort = (px, py) => [r2(cx + (px - mx) * s), r2(cy + (py - my) * s)]
 
