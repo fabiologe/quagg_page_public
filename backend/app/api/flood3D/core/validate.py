@@ -36,43 +36,66 @@ from .solids import (build_solids, check_solid, gelaende_mit_aushub,
 from .terrain import TerrainField
 
 
-def _flaechen_zelle(mesh, patch: str) -> float:
-    """
-    Zellgröße an einer Bauwerksfläche: die Basiszelle, je Verfeinerungsstufe
-    halbiert. Jede Prüfung auf „wird das aufgelöst?" muss hiermit messen und
-    nicht mit der blanken Basiszelle — sonst warnt sie weiter, obwohl der
-    Nutzer genau das getan hat, was sie empfiehlt, und die angebotene Kur
-    kann den Befund nie beseitigen.
-    """
-    stufe = max((r.level for r in mesh.refinements
-                 if r.type == "surface" and r.target == patch), default=0)
-    return mesh.base_cell / 2 ** stufe
+from .meshgen import box_stufe, flaechen_zelle, zelle_am_ort
+
+# Die Messung der örtlichen Zellgröße wohnt seit E5a in meshgen — Regel
+# UND Kur messen damit (validate darf kur nicht importieren lassen). Hier
+# bleiben die alten Namen für die Regeln.
+_flaechen_zelle = flaechen_zelle
+_box_stufe = box_stufe
+_lokale_zelle = zelle_am_ort
 
 
-def _box_stufe(spec: CaseSpec, punkt) -> int:
-    """Höchste Verfeinerungsstufe der Boxen, die den Punkt enthalten."""
-    stufe = 0
-    for r in spec.mesh.refinements:
-        if r.type != "box":
-            continue
-        bx0, by0, bz0, bx1, by1, bz1 = r.extent
-        if (min(bx0, bx1) <= punkt[0] <= max(bx0, bx1)
-                and min(by0, by1) <= punkt[1] <= max(by0, by1)
-                and (len(punkt) < 3
-                     or min(bz0, bz1) <= punkt[2] <= max(bz0, bz1))):
-            stufe = max(stufe, r.level)
-    return stufe
+def _bauwerk_mitte(s, solids: dict | None) -> list[float] | None:
+    """
+    Ort, an dem die Auflösung eines Bauwerks gemessen wird: Rohrachse (mit
+    Höhe) bzw. Mitte des Grundrisses. Dort zählt auch der
+    Verfeinerungsquader, den die Kur legt — die Regel maß bis 2026-09-22
+    nur beim Durchlass an einem Punkt, bei jedem Aushub dagegen die
+    Flächenverfeinerung des ganzen Geländes (Audit P2).
+    """
+    if s.type == "culvert" and getattr(s, "axis", None):
+        m = np.asarray(s.axis, dtype=float).mean(axis=0)
+        return [round(float(v), 3) for v in m]
+    pk = _plan_punkte(s, solids)
+    if not len(pk):
+        return None
+    m = pk.mean(axis=0)
+    return [round(float(m[0]), 3), round(float(m[1]), 3)]
 
 
-def _lokale_zelle(spec: CaseSpec, patch: str, punkt=None) -> float:
-    """
-    Örtliche Zellgröße an einer Fläche: eine Verfeinerungsbox über der
-    Stelle zählt genauso wie eine Flächenverfeinerung.
-    """
-    zelle = _flaechen_zelle(spec.mesh, patch)
-    if punkt is not None:
-        zelle = min(zelle, spec.mesh.base_cell / 2 ** _box_stufe(spec, punkt))
-    return zelle
+def _kleinstes_mass(s) -> tuple[float | None, str]:
+    """Kleinste Abmessung eines Bauwerks, die das Netz auflösen muss."""
+    if s.type == "wall":
+        return s.thickness, "Wanddicke"
+    if s.type == "basin":
+        return s.wall_thickness, "Beckenwanddicke"
+    if s.type == "culvert":
+        if s.profile.diameter:
+            return s.profile.diameter, "Durchlassdurchmesser"
+        if s.profile.width and s.profile.height:
+            return min(s.profile.width, s.profile.height), "lichte Durchlassweite"
+        return None, ""
+    if s.type == "schacht":
+        return s.width, "lichte Schachtweite"
+    if s.type == "graben":
+        return s.profile.width, "Grabensohlbreite"
+    # Bis 2026-09-22 kannte die Regel nur die fünf Typen oben — pier, weir
+    # und kammer prüfte niemand (Audit P5)
+    if s.type == "pier":
+        if s.width:
+            return s.width, "Pfeilerbreite"
+        pk = _plan_punkte(s)
+        if len(pk) >= 2:
+            return float(np.ptp(pk, axis=0).min()), "Pfeilerbreite"
+        return None, ""
+    if s.type == "weir":
+        return s.crest_width, "Kronenbreite des Wehrs"
+    if s.type == "kammer":
+        pk = _plan_punkte(s)
+        if len(pk) >= 2:
+            return float(np.ptp(pk, axis=0).min()), "lichte Kammerweite"
+    return None, ""
 
 
 def _erwarteter_spiegel(spec) -> tuple[float, str] | None:
@@ -1018,39 +1041,26 @@ def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     gewachsen, terrain = ctx.gewachsen, ctx.terrain
 
     for s in spec.structures:
-        min_dim, label = None, ""
-        if s.type == "wall":
-            min_dim, label = s.thickness, "Wanddicke"
-        elif s.type == "basin":
-            min_dim, label = s.wall_thickness, "Beckenwanddicke"
-        elif s.type == "culvert":
-            if s.profile.diameter:
-                min_dim, label = s.profile.diameter, "Durchlassdurchmesser"
-            elif s.profile.width and s.profile.height:
-                min_dim = min(s.profile.width, s.profile.height)
-                label = "lichte Durchlassweite"
-        elif s.type == "schacht":
-            min_dim, label = s.width, "lichte Schachtweite"
-        elif s.type == "graben":
-            min_dim, label = s.profile.width, "Grabensohlbreite"
+        min_dim, label = _kleinstes_mass(s)
+        if min_dim is None:
+            continue
+        aushub = ist_aushub(s, gewachsen)
         # Ausgehobene Körper werden nicht als eigene Fläche vernetzt —
         # aufgelöst werden muss trotzdem der HOHLRAUM, und der liegt in
         # der Geländefläche
-        if min_dim is not None and ist_aushub(s, gewachsen):
+        if aushub:
             label += " (Hohlraum im Gelände)"
-        mitte = None
-        if s.type == "culvert" and s.axis:
-            a = np.asarray(s.axis, dtype=float)
-            mitte = a.mean(axis=0)
+        # Ort der Messung — derselbe, an dem die Kur nachmisst
+        mitte = _bauwerk_mitte(s, ctx.solids)
         # Ein Aushub hat keine eigene Fläche: seine Wandungen gehören zur
         # Geländefläche, dort greift auch die Verfeinerung
-        flaeche = "terrain" if ist_aushub(s, gewachsen) else s.patch
+        flaeche = "terrain" if aushub else s.patch
         # Ein Durchlass-Querschnitt braucht mindestens ZWEI Zellen (wie
         # die Aussparungs-Prüfung) — mit einer einzigen Zelle über die
         # lichte Weite bleibt vom Rohrinneren nichts Durchströmbares
         schwelle = 2 if s.type == "culvert" else 1
-        if min_dim is not None and min_dim < schwelle * _lokale_zelle(
-                spec, flaeche, mitte):
+        zelle = _lokale_zelle(spec, flaeche, mitte)
+        if min_dim < schwelle * zelle:
             zusatz = {}
             if s.type == "culvert" and getattr(s, "durchstoesst_gelaende",
                                                False):
@@ -1060,14 +1070,33 @@ def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                 zusatz = {"auch": "terrain"}
             f(_finding(s.id, "fehler",
                        f"{label} {min_dim:g} m wird von der lokalen "
-                       f"Zellgröße {_lokale_zelle(spec, flaeche, mitte):g} m "
+                       f"Zellgröße {zelle:g} m "
                        "nicht aufgelöst — Verfeinerungsstufe erhöhen oder "
                        "Abmessung prüfen",
-                       # struktur mitgeben: bei einem Aushub soll die
-                       # Kur einen Quader um DIESES Bauwerk anlegen
-                       # statt das ganze Gelände zu verfeinern
+                       # struktur + punkt + schwelle mitgeben: die Kur legt
+                       # bei einem Aushub einen Quader um DIESES Bauwerk
+                       # und misst am selben Punkt mit derselben Schwelle
+                       # nach, bevor sie Erfolg meldet
                        fix=kur("verfeinerung_erhoehen", patch=flaeche,
-                               mass=min_dim, struktur=s.id, **zusatz)))
+                               mass=min_dim, struktur=s.id, punkt=mitte,
+                               schwelle=schwelle, **zusatz)))
+        # Die Rohrschale (Vorgabe 0,15 m) prüfte bis 2026-09-22 niemand
+        # gegen die Zelle: bei 1-m-Basiszelle ist sie 0,15 Zellen dick, der
+        # Vernetzer schließt sie nicht sicher (Audit P5). Eine Zelle über
+        # die Wandung genügt — deshalb Faktor 1, nicht die Faustregel 4.
+        if s.type == "culvert":
+            wand = float(getattr(s.profile, "wandstaerke", 0.0) or 0.0)
+            zelle_rohr = _lokale_zelle(spec, s.patch, mitte)
+            if wand and wand < zelle_rohr:
+                f(_finding(s.id, "warnung",
+                           f"Rohrschale {wand:g} m ist dünner als die "
+                           f"Zellgröße {zelle_rohr:g} m am Rohr — der "
+                           "Vernetzer schließt die Wandung dann nicht sicher "
+                           "(Leck ins Erdreich). Am Rohr verfeinern oder die "
+                           "Schale dicker machen.",
+                           fix=kur("verfeinerung_erhoehen", patch=s.patch,
+                                   mass=wand, struktur=s.id, punkt=mitte,
+                                   schwelle=1, faktor=1)))
 
     # Rohr im Erdreich: DER Klassiker. Das Gelände ist ein Höhenfeld
     # (ein z je x/y) und hat keinen Tunnel — was darunter liegt, räumt
@@ -1360,15 +1389,20 @@ def _fenster_pruefen(spec: CaseSpec, b, f) -> None:
                            fix=kur("anschluesse_herstellen")))
                 return
             if spec.mesh is not None and cv.profile.kind == "circular":
-                mitte = np.asarray(cv.axis, dtype=float).mean(axis=0)
-                zelle = _lokale_zelle(spec, cv.patch, mitte)
+                # gemessen an der Mündung auf der Randfläche — dort legt
+                # die Kur ihren Quader und misst mit derselben Funktion nach
+                from .casebuilder import fenster_mitte
+                punkt = (fenster_mitte(spec, b)
+                         or tuple(np.asarray(cv.axis, dtype=float).mean(axis=0)))
+                zelle = _lokale_zelle(spec, cv.patch, punkt)
                 if 2 * zelle <= cv.profile.diameter < 4 * zelle:
                     f(_finding(b.id, "warnung",
                                f"Rohrinneres ({cv.profile.diameter:g} m) "
                                f"wird mit weniger als 4 Zellen "
                                f"({zelle:g} m) aufgelöst",
-                               fix=kur("box_ans_fenster",
-                                       boundary=b.id, level=2)))
+                               fix=kur("box_ans_fenster", boundary=b.id,
+                                       patch=cv.patch,
+                                       mass=cv.profile.diameter, faktor=4)))
     e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
     r = resolve_window(spec, b)
     if r is None:
@@ -1392,14 +1426,10 @@ def _fenster_pruefen(spec: CaseSpec, b, f) -> None:
         if zlo is not None and zhi is not None:
             min_dim = min(min_dim, zhi - zlo)
         # Fenstermitte auf der Randfläche — dort zählt die örtliche
-        # Zellgröße, nicht die Basiszelle
-        mitte_e = (lo + hi) / 2
-        mitte_z = ((zlo + zhi) / 2 if zlo is not None and zhi is not None
-                   else (spec.domain.z_min + spec.domain.z_max) / 2)
-        punkt = ((x0 if face == "x_min" else x1, mitte_e, mitte_z)
-                 if face.startswith("x")
-                 else (mitte_e, y0 if face == "y_min" else y1, mitte_z))
-        zelle = _lokale_zelle(spec, b.patch, punkt)
+        # Zellgröße, nicht die Basiszelle; die Kur misst am selben Punkt
+        # (casebuilder.fenster_mitte) mit derselben Funktion nach
+        from .casebuilder import fenster_mitte
+        zelle = _lokale_zelle(spec, b.patch, fenster_mitte(spec, b))
         if min_dim < 2 * zelle:
             f(_finding(b.id, "warnung",
                        f"Fensteröffnung ist {min_dim:g} m klein — "
@@ -1407,7 +1437,7 @@ def _fenster_pruefen(spec: CaseSpec, b, f) -> None:
                        "Zellgröße); die Öffnung wird im Netz kaum "
                        "aufgelöst",
                        fix=kur("box_ans_fenster", boundary=b.id,
-                               level=2)))
+                               patch=b.patch, mass=min_dim, faktor=2)))
     if zlo is not None and zhi is not None and zlo >= zhi:
         f(_finding(b.id, "fehler",
                    "Fenster-Unterkante liegt über der Oberkante"))

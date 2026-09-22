@@ -138,27 +138,109 @@ def blockmesh_dict(spec: CaseSpec) -> str:
     return foam_file("blockMeshDict", body, location="system")
 
 
-def _bauwerk_bboxen(spec: CaseSpec) -> list[tuple[float, float, float, float]]:
-    """Grundriss-Hüllen aller Bauwerke — grob, aber billig (kein trimesh)."""
-    boxen = []
+def bauwerk_bbox(s, solids: dict | None = None
+                 ) -> tuple[float, float, float, float] | None:
+    """
+    Grundriss-Hülle EINES Bauwerks (x0, y0, x1, y1) — grob, aber billig
+    (kein trimesh): Achse, Kronenlinie, Grundriss, Rechenebene, Trasse,
+    Mitte ± halbe Breite. Ein importierter Körper trägt seine Lage nur in
+    der STL: mit `solids` (gebaute Netze je Patch) sein Hüllquader, sonst
+    None — ehrlich, statt zu raten.
+
+    Bis 2026-09-22 lief die Kur „Verfeinerung erhöhen" über eine LISTE
+    dieser Hüllen per zip(spec.structures, …): fehlte einem Bauwerk der
+    Grundriss, verrutschte das zip, und der Quader landete um das nächste
+    Bauwerk — Erfolg gemeldet für das falsche (Audit P3).
+    """
+    pts: list[tuple[float, float]] = []
+    for feld in ("axis", "crest_polyline", "footprint", "plane_polygon"):
+        pts += [(p[0], p[1]) for p in (getattr(s, feld, None) or [])]
+    al = getattr(s, "alignment", None)
+    if al is not None:
+        pts += [(p[0], p[1]) for p in al.points]
+    c = getattr(s, "center", None)
+    if c is not None:
+        r = max(getattr(s, "width", 0) or 0,
+                getattr(s, "length", 0) or 0) / 2 or 0.5
+        pts += [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r)]
+    if not pts and solids is not None:
+        netz = solids.get(getattr(s, "patch", None))
+        if netz is not None and len(netz.vertices):
+            lo, hi = netz.bounds
+            return (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]))
+    if not pts:
+        return None
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _bauwerk_bboxen(spec: CaseSpec) -> dict[str, tuple[float, float, float, float]]:
+    """Grundriss-Hüllen je Bauwerkskennung — nur die, die einen Grundriss haben."""
+    boxen = {}
     for s in spec.structures:
-        pts: list[tuple[float, float]] = []
-        for feld in ("axis", "crest_polyline", "footprint", "plane_polygon"):
-            pts += [(p[0], p[1]) for p in (getattr(s, feld, None) or [])]
-        al = getattr(s, "alignment", None)
-        if al is not None:
-            pts += [(p[0], p[1]) for p in al.points]
-        c = getattr(s, "center", None)
-        if c is not None:
-            r = max(getattr(s, "width", 0) or 0,
-                    getattr(s, "length", 0) or 0) / 2 or 0.5
-            pts += [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r)]
-        if not pts:
-            continue
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-        boxen.append((min(xs), min(ys), max(xs), max(ys)))
+        b = bauwerk_bbox(s)
+        if b is not None:
+            boxen[s.id] = b
     return boxen
+
+
+# --------------------------------------------------------------------------
+# Örtliche Zellgröße — DIE Messung, mit der Prüfregel und Kur arbeiten
+# (E5a). Vorher lag sie in validate.py, und die Kuren rechneten daneben:
+# die Regel maß die Flächenverfeinerung, die Kur legte einen Quader, der
+# Befund blieb wortgleich stehen (Audit P2); die Fensterregel bekam einen
+# festen level=2 und die Kur hängte je Klick eine neue Box an (Audit P8).
+# --------------------------------------------------------------------------
+
+def flaechen_zelle(mesh, patch: str) -> float:
+    """
+    Zellgröße an einer Bauwerksfläche: die Basiszelle, je Verfeinerungsstufe
+    halbiert. Jede Prüfung auf „wird das aufgelöst?" muss hiermit messen und
+    nicht mit der blanken Basiszelle — sonst warnt sie weiter, obwohl der
+    Nutzer genau das getan hat, was sie empfiehlt.
+    """
+    stufe = max((r.level for r in mesh.refinements
+                 if r.type == "surface" and r.target == patch), default=0)
+    return mesh.base_cell / 2 ** stufe
+
+
+def box_stufe(spec: CaseSpec, punkt) -> int:
+    """Höchste Verfeinerungsstufe der Boxen, die den Punkt enthalten."""
+    stufe = 0
+    for r in spec.mesh.refinements:
+        if r.type != "box":
+            continue
+        bx0, by0, bz0, bx1, by1, bz1 = r.extent
+        if (min(bx0, bx1) <= punkt[0] <= max(bx0, bx1)
+                and min(by0, by1) <= punkt[1] <= max(by0, by1)
+                and (len(punkt) < 3
+                     or min(bz0, bz1) <= punkt[2] <= max(bz0, bz1))):
+            stufe = max(stufe, r.level)
+    return stufe
+
+
+def zelle_am_ort(spec: CaseSpec, patch: str, punkt=None) -> float:
+    """
+    Örtliche Zellgröße an einer Fläche: eine Verfeinerungsbox über der
+    Stelle zählt genauso wie eine Flächenverfeinerung.
+    """
+    zelle = flaechen_zelle(spec.mesh, patch)
+    if punkt is not None:
+        zelle = min(zelle, spec.mesh.base_cell / 2 ** box_stufe(spec, punkt))
+    return zelle
+
+
+def stufe_fuer(base_cell: float, mass: float, faktor: float = 4.0) -> int:
+    """
+    Verfeinerungsstufe, die `mass` mit mindestens `faktor` Zellen auflöst
+    (Deckel 5, mindestens 1). Vorher dreimal kopiert: rezepte, die Kur
+    „Verfeinerung erhöhen" und ein fester level=2 der Fensterregel.
+    """
+    stufe = 0
+    while mass < faktor * base_cell / 2 ** stufe and stufe < 5:
+        stufe += 1
+    return max(stufe, 1)
 
 
 def location_in_mesh(spec: CaseSpec, terrain_sample) -> tuple[float, float, float]:
@@ -176,7 +258,7 @@ def location_in_mesh(spec: CaseSpec, terrain_sample) -> tuple[float, float, floa
     """
     x0, y0, x1, y1 = spec.domain.extent
     rand = spec.mesh.base_cell if spec.mesh else 0.25
-    boxen = _bauwerk_bboxen(spec)
+    boxen = list(_bauwerk_bboxen(spec).values())
 
     def frei(px, py) -> bool:
         return not any(bx0 - rand <= px <= bx1 + rand

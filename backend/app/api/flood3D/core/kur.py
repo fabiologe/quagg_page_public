@@ -90,19 +90,32 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     die Kur dort einen Verfeinerungsquader um das Bauwerk an; das Gelände
     bleibt grob (2026-08-12).
     """
+    from .meshgen import stufe_fuer, zelle_am_ort
+
     patch = args["patch"]
     mass = float(args["mass"])
-    zelle = spec.mesh.base_cell
-    stufe = 0
-    while mass < 4 * zelle / 2 ** stufe and stufe < 5:
-        stufe += 1
-    stufe = max(stufe, 1)
+    # faktor: Zellen über das Maß, die die Kur anstrebt (Faustregel 4; die
+    # Rohrschale braucht 1); schwelle + punkt: Kriterium und Ort der REGEL,
+    # mit denen die Kur nachmisst, bevor sie Erfolg meldet
+    faktor = float(args.get("faktor", 4))
+    schwelle = float(args.get("schwelle", 1))
+    punkt = args.get("punkt")
+    stufe = stufe_fuer(spec.mesh.base_cell, mass, faktor)
     struktur = args.get("struktur")
     if patch == "terrain" and struktur:
         box = _box_um_bauwerk(spec, struktur, stufe)
-        if box:
-            return box
-    meldung = _refine_surface(spec, patch, stufe)
+        if box is None:
+            # Kein Grundriss im Schema (importierter Körper): das ganze
+            # Gelände zu verfeinern wäre die falsche Kur (Stufe 3 fürs
+            # Gelände = 47 h, siehe oben) — ehrlich sagen statt tun.
+            return (f"„{struktur}“ hat keinen Grundriss im Schema — ein "
+                    "Verfeinerungsquader lässt sich nicht automatisch legen. "
+                    "Quader von Hand um das Bauwerk setzen (Werkzeug "
+                    "„Verfeinerung“); das ganze Gelände zu verfeinern wäre "
+                    "die falsche Kur.")
+        meldung = box
+    else:
+        meldung = _refine_surface(spec, patch, stufe)
     # Zweite Fläche in EINEM Zug: die Tunnelwand einer Rohrbohrung liegt
     # im terrain-Patch — der Befund am Durchlass ist erst beseitigt, wenn
     # Rohrschale UND Erdkörper gleich fein aufgelöst sind. Fürs Gelände
@@ -112,19 +125,29 @@ def _verfeinerung_erhoehen(spec: CaseSpec, args: dict, base_dir=None) -> str:
         zusatz = (_box_um_bauwerk(spec, struktur, stufe)
                   if auch == "terrain" and struktur else None)
         meldung += "; " + (zusatz or _refine_surface(spec, auch, stufe))
+    # Nachmessung mit der Funktion der Regel — sonst meldet die Kur Erfolg
+    # und der Befund steht weiter (Audit P2)
+    if punkt is not None:
+        zelle = zelle_am_ort(spec, patch, punkt)
+        if mass < schwelle * zelle:
+            meldung += (f" — reicht NICHT: am Bauwerk bleibt die Zelle "
+                        f"{zelle:g} m (Stufe 5 ist der Deckel); Abmessung "
+                        "prüfen oder Basiszelle verkleinern")
     return meldung
 
 
 def _box_um_bauwerk(spec: CaseSpec, struktur_id: str, stufe: int) -> str | None:
-    """Verfeinerungsquader um EIN Bauwerk (Grundriss + zwei Zellen Rand)."""
+    """
+    Verfeinerungsquader um EIN Bauwerk (Grundriss + zwei Zellen Rand).
+    None, wenn das Bauwerk keinen Grundriss im Schema hat — bis 2026-09-22
+    lief hier ein zip über eine Hüllenliste, die solche Bauwerke übersprang:
+    der Quader landete um das NÄCHSTE Bauwerk (Audit P3).
+    """
     from .casespec import RefineBox
-    from .meshgen import _bauwerk_bboxen
+    from .meshgen import bauwerk_bbox
 
-    treffer = None
-    for s, box in zip(spec.structures, _bauwerk_bboxen(spec)):
-        if s.id == struktur_id:
-            treffer = box
-            break
+    s = next((x for x in spec.structures if x.id == struktur_id), None)
+    treffer = bauwerk_bbox(s) if s is not None else None
     if treffer is None:
         return None
     rand = 2 * spec.mesh.base_cell
@@ -163,8 +186,9 @@ def _box_ans_fenster(spec: CaseSpec, args: dict, base_dir=None) -> str:
     Rand ringsum und zwei Zellen tief ins Gebiet — genug, damit die
     Öffnung im Netz ankommt, ohne das ganze Gebiet zu verfeinern.
     """
-    from .casebuilder import _bc_face, resolve_window
+    from .casebuilder import _bc_face, fenster_mitte, resolve_window
     from .casespec import RefineBox
+    from .meshgen import stufe_fuer, zelle_am_ort
 
     b = next((x for x in spec.boundaries if x.id == args["boundary"]), None)
     if b is None:
@@ -173,8 +197,14 @@ def _box_ans_fenster(spec: CaseSpec, args: dict, base_dir=None) -> str:
     face = _bc_face(spec, b)
     if r is None or face is None or face == "z_max":
         return f"Für „{b.id}“ lässt sich kein Fenster auflösen"
-    stufe = int(args.get("level", 2))
     zelle = spec.mesh.base_cell
+    # Stufe aus dem MASS der Regel (Öffnung bzw. Rohrinneres) und ihrem
+    # Faktor — bis 2026-09-22 stand hier ein fester level=2, egal wie klein
+    # die Öffnung war (Audit P8)
+    mass = args.get("mass")
+    faktor = float(args.get("faktor", 2))
+    stufe = (stufe_fuer(zelle, float(mass), faktor) if mass
+             else int(args.get("level", 2)))
     rand = 2 * zelle
     tiefe = max(4 * zelle, 0.5)
     x0, y0, x1, y1 = spec.domain.extent
@@ -191,18 +221,38 @@ def _box_ans_fenster(spec: CaseSpec, args: dict, base_dir=None) -> str:
         ext = (lo, y1 - tiefe, zlo, hi, y1, zhi)
     ext = (max(ext[0], x0), max(ext[1], y0), max(ext[2], spec.domain.z_min),
            min(ext[3], x1), min(ext[4], y1), min(ext[5], spec.domain.z_max))
-    ids = {x.id for x in spec.mesh.refinements}
+    ext = tuple(round(float(v), 3) for v in ext)
+    # Die Box des Fensters heißt fein_<id>: gibt es sie, wird sie ANGEHOBEN
+    # — bis 2026-09-22 hängte jeder Klick eine neue Box _2, _3 an, und der
+    # Befund blieb (Audit P8)
     neu = f"fein_{b.id}"
-    n = 2
-    while neu in ids:
-        neu = f"fein_{b.id}_{n}"
-        n += 1
-    spec.mesh.refinements.append(
-        RefineBox(id=neu, type="box",
-                  extent=tuple(round(float(v), 3) for v in ext), level=stufe,
-                  herkunft="kur"))
-    return (f"Verfeinerungsbox „{neu}“ um die Öffnung von „{b.id}“ gelegt "
-            f"(Stufe {stufe}, entspricht {zelle / 2 ** stufe:g} m Zellgröße)")
+    vorhanden = next((x for x in spec.mesh.refinements
+                      if x.id == neu and x.type == "box"), None)
+    if vorhanden is not None:
+        if vorhanden.level >= stufe:
+            meldung = (f"Die Verfeinerungsbox „{neu}“ um die Öffnung von "
+                       f"„{b.id}“ steht schon auf Stufe {vorhanden.level}")
+        else:
+            alt = vorhanden.level
+            vorhanden.level = stufe
+            vorhanden.extent = ext
+            meldung = (f"Verfeinerungsbox „{neu}“ um die Öffnung von „{b.id}“ "
+                       f"von Stufe {alt} auf {stufe} angehoben")
+    else:
+        spec.mesh.refinements.append(
+            RefineBox(id=neu, type="box", extent=ext, level=stufe,
+                      herkunft="kur"))
+        meldung = (f"Verfeinerungsbox „{neu}“ um die Öffnung von „{b.id}“ "
+                   f"gelegt (Stufe {stufe}, entspricht {zelle / 2 ** stufe:g} m "
+                   "Zellgröße)")
+    # Nachmessung mit der Funktion der Regel, am selben Punkt
+    punkt = fenster_mitte(spec, b)
+    if mass and punkt is not None:
+        z = zelle_am_ort(spec, args.get("patch") or b.patch, punkt)
+        if float(mass) < faktor * z:
+            meldung += (f" — reicht NICHT: an der Öffnung bleibt die Zelle "
+                        f"{z:g} m (Stufe 5 ist der Deckel)")
+    return meldung
 
 
 def _box_auf_spiegel(spec: CaseSpec, args: dict, base_dir=None) -> str:

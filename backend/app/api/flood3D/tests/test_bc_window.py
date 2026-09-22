@@ -276,10 +276,11 @@ def test_stutzen_ueber_gelaende_ohne_befund():
     # gilt für Stutzen bestimmungsgemäß nicht
     spec = _spec_mit_stutzen()
     assert not _messages(spec, "zulauf")
-    # Ø 2,5 m löst die (gewollte) Nennweiten-Warnung aus — hier geht es
-    # nur um die „hängt in der Luft"-Regel, die schweigen muss
+    # Ø 2,5 m löst die (gewollte) Nennweiten-Warnung aus, die Schale 0,15 m
+    # bei 0,5-m-Zelle die (gewollte) Rohrschalen-Warnung (E5a) — hier geht
+    # es nur um die „hängt in der Luft"-Regel, die schweigen muss
     assert not [m for m in _messages(spec, "stutzen_1")
-                if "ungewöhnlich" not in m]
+                if "ungewöhnlich" not in m and "Rohrschale" not in m]
 
 
 def test_stutzen_endet_vor_dem_rand():
@@ -294,10 +295,22 @@ def test_stutzen_kleines_rohr_warnung():
     assert any("weniger als 4 Zellen" in m
                for m in _messages(spec, "zulauf"))
     # der Befund trägt seine Kur: Verfeinerungsbox ans Fenster
+    from ..core.kur import anwenden
     from ..core.validate import validate_case
     kuren = [b.get("fix") for b in validate_case(spec, ".")
              if b["object_id"] == "zulauf" and b.get("fix")]
-    assert any(k["aktion"] == "box_ans_fenster" for k in kuren), kuren
+    fix = next((k for k in kuren if k["aktion"] == "box_ans_fenster"), None)
+    assert fix, kuren
+    # E5a (Audit P8): die Kur beseitigt den Befund — Stufe aus dem Maß,
+    # nicht fest 2 — und ein zweiter Klick legt keine zweite Box an
+    n = len(spec.mesh.refinements)
+    text = anwenden(spec, fix["aktion"], dict(fix["args"]), ".")
+    assert "reicht NICHT" not in text
+    assert not any("weniger als 4 Zellen" in m for m in _messages(spec, "zulauf"))
+    assert len(spec.mesh.refinements) == n + 1
+    text = anwenden(spec, fix["aktion"], dict(fix["args"]), ".")
+    assert "schon" in text and len(spec.mesh.refinements) == n + 1
+    assert not any(r.id.startswith("fein_zulauf_") for r in spec.mesh.refinements)
 
 
 # ---- Polygon-Fenster (frei gezeichneter Querschnitt) ---------------------

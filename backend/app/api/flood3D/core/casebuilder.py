@@ -687,6 +687,28 @@ def resolve_window(spec: CaseSpec, b) -> dict | None:
             "zlo": w.z_min, "zhi": w.z_max}
 
 
+def fenster_mitte(spec: CaseSpec, b) -> tuple[float, float, float] | None:
+    """
+    Mitte der Öffnung auf der Randfläche — der EINE Ort, an dem die Regel
+    („weniger als 2 Zellen") und die Kur („Quader ans Fenster") die
+    örtliche Zellgröße messen (E5a, Audit P8). None ohne Fenster oder auf
+    der Deckelfläche.
+    """
+    face = _bc_face(spec, b)
+    r = resolve_window(spec, b)
+    if face is None or r is None or spec.domain is None or face == "z_max":
+        return None
+    x0, y0, x1, y1 = spec.domain.extent
+    lo, hi = float(r["lo"]), float(r["hi"])
+    zlo, zhi = r.get("zlo"), r.get("zhi")
+    mitte_e = (lo + hi) / 2
+    mitte_z = ((float(zlo) + float(zhi)) / 2 if zlo is not None and zhi is not None
+               else (spec.domain.z_min + spec.domain.z_max) / 2)
+    if face.startswith("x"):
+        return (x0 if face == "x_min" else x1, mitte_e, mitte_z)
+    return (mitte_e, y0 if face == "y_min" else y1, mitte_z)
+
+
 def fenster_flaeche(spec: CaseSpec, b) -> float | None:
     """
     Analytische Fläche in m², auf die flowRateInletVelocity den

@@ -99,6 +99,93 @@ def test_box_ausserhalb_des_gebiets_wird_beschnitten():
     assert box.extent[0] == pytest.approx(0.0)
 
 
+# ---- E5a: Regel und Kur messen dieselbe Zelle (Audit P2, P3, P5) ----------
+
+def test_quader_landet_um_das_richtige_bauwerk():
+    """
+    P3: die Hüllenliste übersprang Bauwerke ohne Grundriss (jeder
+    importierte Körper), das zip mit spec.structures verrutschte — der
+    Quader landete um das NÄCHSTE Bauwerk, Erfolg wurde für das falsche
+    gemeldet.
+    """
+    from ..core.kur import _box_um_bauwerk
+
+    spec = build_spec_stage3()
+    spec.structures.insert(0, cs.StructImported(
+        id="koerper_0", type="imported", patch="koerper_0",
+        source="derived/koerper_0.stl", role="bauwerk"))
+    text = _box_um_bauwerk(spec, "wand_becken", 2)
+    assert text and "wand_becken" in text
+    box = next(r for r in spec.mesh.refinements if r.id == "fein_wand_becken")
+    x0, y0, _, x1, y1, _ = box.extent
+    for px, py, _ in [(8, 3, 98.0), (8, 8, 98.0)]:      # die Trasse der Wand
+        assert x0 <= px <= x1 and y0 <= py <= y1
+    # ohne Grundriss im Schema: ehrlich None statt eines fremden Quaders
+    assert _box_um_bauwerk(spec, "koerper_0", 2) is None
+    text = anwenden(spec, "verfeinerung_erhoehen",
+                    {"patch": "terrain", "mass": 0.3, "struktur": "koerper_0"})
+    assert "keinen Grundriss" in text
+    assert not any(r.type == "surface" and r.target == "terrain"
+                   for r in spec.mesh.refinements)
+
+
+@pytest.mark.parametrize("fall", ["A", "B"])
+def test_aushub_wird_mit_einem_quader_aufgeloest(tmp_path, fall):
+    """
+    P2: die Regel maß die FLÄCHENverfeinerung des Geländes, die Kur legte
+    einen QUADER — der Befund blieb wortgleich stehen, weg nur durch
+    Verfeinern des ganzen Geländes. Jetzt messen beide am Grundrissmittel-
+    punkt des Bauwerks: ein Klick, der Befund ist weg, das Gelände bleibt
+    grob, ein zweiter Klick ändert nichts.
+    """
+    if fall == "A":
+        spec, base_dir = build_spec_stage3(), "."
+        schacht = cs.StructSchacht(
+            id="schacht_1", type="schacht", patch="schacht_1",
+            center=(20.0, 15.0), width=0.4, invert_level=93.0, top_level=96.0)
+    else:
+        from .synthetic_case import build_spec_tal, tal_hoehe
+        spec, base_dir = build_spec_tal(tmp_path), tmp_path
+        oben = float(tal_hoehe(40.0, 40.0)) - 0.1
+        schacht = cs.StructSchacht(
+            id="schacht_1", type="schacht", patch="schacht_1",
+            center=(40.0, 40.0), width=1.0, invert_level=oben - 3.0,
+            top_level=oben)
+    spec.structures.append(schacht)
+    vorher = len(spec.mesh.refinements)
+    meldung = _kur_wirkt(spec, "lichte Schachtweite", "schacht_1", base_dir)
+    assert "reicht NICHT" not in meldung
+    assert len(spec.mesh.refinements) == vorher + 1
+    box = next(r for r in spec.mesh.refinements if r.id == "fein_schacht_1")
+    assert box.type == "box"
+    assert not any(r.type == "surface" and r.target == "terrain"
+                   for r in spec.mesh.refinements), "das Gelände bleibt grob"
+    text = anwenden(spec, "verfeinerung_erhoehen",
+                    {"patch": "terrain", "mass": schacht.width,
+                     "struktur": "schacht_1", "punkt": list(schacht.center),
+                     "schwelle": 1}, base_dir)
+    assert "schon" in text and len(spec.mesh.refinements) == vorher + 1
+
+
+def test_rohrschale_unter_einer_zelle_bekommt_ihre_kur():
+    """P5: die Rohrschale (0,15 m) prüfte niemand gegen die Zelle."""
+    spec = build_spec_stage3()
+    # die Box r01 deckte dl_1 mit Stufe 2 ab (0,125 m < 0,15) — ohne sie
+    # ist die Zelle am Rohr 0,5 m, die Schale 0,3 Zellen dick
+    spec.mesh.refinements = [r for r in spec.mesh.refinements if r.id != "r01"]
+    meldung = _kur_wirkt(spec, "Rohrschale", "dl_1")
+    assert "reicht NICHT" not in meldung
+    stufen = {r.target: r.level for r in spec.mesh.refinements
+              if r.type == "surface"}
+    assert stufen["dl_1"] == 2            # eine Zelle über die Schale: 0,125 m
+
+
+def test_stage3_bleibt_ohne_schalenbefund():
+    """Die Box r01 (Stufe 2) über dl_1 genügt — kein neuer Befund am Abnahmefall."""
+    spec = build_spec_stage3()
+    assert _befund(spec, "Rohrschale", "dl_1") is None
+
+
 def test_stutzen_vor_dem_rand_wird_angeschlossen():
     spec = build_spec_stage3()
     dl = next(s for s in spec.structures if s.id == "dl_1")

@@ -75,11 +75,8 @@ def _zelle(spec: CaseSpec) -> float:
 
 def _stufe_fuer(spec: CaseSpec, mass: float) -> int:
     """Verfeinerungsstufe, die `mass` mit mindestens vier Zellen auflöst."""
-    zelle = _zelle(spec)
-    stufe = 0
-    while mass < 4 * zelle / 2 ** stufe and stufe < 5:
-        stufe += 1
-    return max(stufe, 1)
+    from .meshgen import stufe_fuer
+    return stufe_fuer(_zelle(spec), mass)
 
 
 def _rechteck(cx: float, cy: float, b: float, l: float) -> list:
