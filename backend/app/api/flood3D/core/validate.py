@@ -434,6 +434,150 @@ def _pruefe_gebietshoehe(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     return befunde
 
 
+def _bauwerke_ausserhalb(spec: CaseSpec, extent) -> list[str]:
+    """Welche Objekte über ein KANDIDATEN-Gebiet hinausragen würden."""
+    from .anschluss import gebietslage
+    probe = spec.model_copy(deep=True)
+    probe.domain.extent = tuple(extent)
+    return [l["id"] for l in gebietslage(probe) if l["anteil"] > 1e-6]
+
+
+def _pruefe_gelaendeabdeckung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Deckt die Vermessung das Gebiet? Außerhalb steht eine Ebene auf der
+    Außenhöhe (terrain.lade_basis) — das ist kein Gelände, sondern die
+    Abwesenheit von Gelände, und der Bearbeiter muss es wissen. Bis zum
+    2026-09-21 meldete hier niemand etwas, während 92 % eines Gebiets
+    erfunden waren. Regel und Kur `gebiet_auf_vermessung` messen mit
+    DERSELBEN Funktion (TerrainField.abdeckung), damit die Kur den Befund
+    auch beseitigt.
+    """
+    befunde: list[dict] = []
+    f = befunde.append
+    feld = ctx.gewachsen
+    if feld is None or spec.domain is None or spec.terrain is None:
+        return befunde
+    a = feld.abdeckung()
+    if a is None or a["aussenhoehe"] is None:
+        return befunde
+    ebene = f"{a['aussenhoehe']:.2f} m"
+    herkunft = ("automatisch: höchste gemessene Randzelle" if a["auto"]
+                else "im Fall gesetzt: höchster Randpunkt der Vermessung "
+                     "beim Import oder von Hand")
+
+    if not a["ueberlappt"]:
+        f(_finding("terrain", "fehler",
+                   "Höhenraster und Gebiet überlappen sich nicht — das ganze "
+                   f"Gelände im Modell ist eine Ebene auf {ebene}, nichts "
+                   "davon ist vermessen. Lage des Imports prüfen (Einheit, "
+                   "Offset) oder das Gebiet über die Vermessung legen."))
+        return befunde
+
+    if a["ausserhalb"] > 0.05:
+        raender = ", ".join(f"{k} {v:.0%}" for k, v in a["je_rand"].items()
+                            if v > 0.5)
+        fix = None
+        draussen: list[str] = []
+        if a["huelle"] is not None:
+            draussen = _bauwerke_ausserhalb(spec, a["huelle"])
+            if not draussen:
+                fix = kur("gebiet_auf_vermessung")
+        f(_finding("terrain", "warnung",
+                   f"{a['ausserhalb']:.0%} des Gebiets liegen außerhalb der "
+                   "Vermessung — dort steht keine gemessene Höhe, sondern "
+                   f"eine Ebene auf {ebene} ({herkunft})."
+                   + (f" Gebietsränder überwiegend auf der Ebene: {raender}."
+                      if raender else "")
+                   + (f" Das Gebiet auf die Vermessung zu setzen würde "
+                      f"{', '.join(draussen[:3])} hinauslegen — Gebiet von "
+                      "Hand wählen oder das Gelände erweitern."
+                      if draussen else ""),
+                   fix=fix))
+    if a["innen"] > 0.05:
+        f(_finding("terrain", "hinweis",
+                   f"Innerhalb der Vermessung sind {a['innen']:.0%} der Fläche "
+                   "nicht gemessen (Ecken eines gedrehten TIN, Löcher) — auch "
+                   f"dort gilt die Ebene auf {ebene}."))
+    if a["auto"] and a["ungemessen"] > 0.0 and 0 < a["stuetzung"] < 3:
+        lo, hi = a["rand"] or (a["aussenhoehe"], a["aussenhoehe"])
+        f(_finding("terrain", "hinweis",
+                   f"Die Außenhöhe {ebene} stützt sich nur auf "
+                   f"{a['stuetzung']} Randzelle(n) der Vermessung (Rand "
+                   f"{lo:.2f} … {hi:.2f} m) — ein Ausreißer? Im Gelände-Panel "
+                   "lässt sie sich setzen."))
+
+    # Ein schief gedrehtes Raster ohne eine einzige NODATA-Zelle stammt von
+    # vor dem 2026-09-22: damals schrieb das Drehen den geklemmten Randwert
+    # bis in die Ecken. Aus dem Original neu abgetastet trägt es NODATA —
+    # Regel und Kur messen dieselbe Zahl.
+    ab = spec.terrain.base.original_abbildung
+    schief = ab is not None and abs(((ab.rotation_deg + 45) % 90) - 45) > 1e-6
+    if spec.terrain.base.original and schief and a["quelle_nodata"] == 0:
+        f(_finding("terrain", "hinweis",
+                   "Das Höhenraster ist eine schiefe Abtastung des Originals "
+                   "ohne eine einzige NODATA-Zelle — es stammt von vor dem "
+                   "22.09.2026 und trägt den damals fortgeschriebenen "
+                   "Randwert als schrägen Streifen in sich. Aus dem Original "
+                   "neu abtasten.",
+                   fix=kur("gelaende_neu_abtasten")))
+    return befunde
+
+
+def _import_referenziert(spec: CaseSpec, import_id: str) -> str | None:
+    """Erstes Objekt, das aus diesem Import stammt — None, wenn keines."""
+    t = spec.terrain
+    if t is not None and import_id in (t.base.source or "") + (t.base.original or ""):
+        return "terrain"
+    listen = [spec.structures, spec.evaluation.sections,
+              spec.solver.vorfuellungen]
+    if t is not None:
+        listen += [t.kanten, t.operations]
+    for liste in listen:
+        for o in liste:
+            r = getattr(o, "import_ref", None)
+            if r is not None and r.import_id == import_id:
+                return o.id
+    return None
+
+
+def _pruefe_importablage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Importe, deren abgelegte Netze noch in Landeskoordinaten mit einfacher
+    Genauigkeit liegen (vor dem 2026-09-22): float32 rastert dort auf 0,25
+    bzw. 0,5 m, ein Becken-TIN verlor so bis 76 cm Höhe (Audit I3). Regel
+    und Kur messen dieselbe Zahl — nach dem Neu-Ableiten aus der Rohdatei
+    trägt das Manifest `stl_ursprung`.
+    """
+    import json
+    befunde: list[dict] = []
+    wurzel = Path(ctx.base_dir) / "imports"
+    if not wurzel.is_dir():
+        return befunde
+    for imp in sorted(wurzel.iterdir()):
+        mf = imp / "manifest.json"
+        if not mf.is_file() or not (imp / "anwendung.json").is_file():
+            continue
+        try:
+            m = json.loads(mf.read_text())
+        except Exception:
+            continue
+        if "stl_ursprung" in m or not m.get("offset_suggest"):
+            continue
+        if not any(c.get("kind") == "mesh" for c in m.get("candidates", [])):
+            continue
+        obj = _import_referenziert(spec, imp.name)
+        if obj is None:
+            continue
+        befunde.append(_finding(
+            obj, "hinweis",
+            f"Import „{m.get('filename', imp.name)}“ liegt in "
+            "Landeskoordinaten und wurde vor dem 22.09.2026 abgelegt — seine "
+            "Netze tragen dort nur einfache Genauigkeit (Raster 0,25 / 0,5 m, "
+            "Höhenfehler bis 0,76 m gemessen). Aus der Rohdatei neu ableiten.",
+            fix=kur("import_neu_ableiten_roh", import_id=imp.name)))
+    return befunde
+
+
 def _pruefe_geometrie(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     """
     Bauwerkskörper bauen und prüfen. Füllt als Zwischenergebnis
@@ -1860,6 +2004,8 @@ _PRUEFUNGEN = [
     _pruefe_vorfuellungen,
     _pruefe_aushub,
     _pruefe_gebietshoehe,
+    _pruefe_gelaendeabdeckung,
+    _pruefe_importablage,
     _pruefe_geometrie,
     _pruefe_gelaendekanten,
     _pruefe_bauwerksparameter,

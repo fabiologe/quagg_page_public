@@ -15,6 +15,8 @@ Auswertung oder den Anschluss an das, was ohnehin schon dasteht.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from .casespec import CaseSpec
 
 # Beschriftung des Knopfes je Aktion
@@ -31,6 +33,9 @@ KUR_LABELS = {
     "durchstoss_ein": "Durch das Gelände bohren",
     "verweis_entfernen": "Verweis ins Leere entfernen",
     "erdkoerper_auto": "Erdkörper wieder automatisch",
+    "gebiet_auf_vermessung": "Gebiet auf die Vermessung setzen",
+    "gelaende_neu_abtasten": "Gelände aus dem Original neu abtasten",
+    "import_neu_ableiten_roh": "Import aus der Rohdatei neu ableiten",
     # ohne Prüfbefund — beschriftet die Gizmo-Aktion im Mutationsvertrag
     "drehen": "Modell drehen",
 }
@@ -305,6 +310,77 @@ def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict, base_dir=None) -> str:
             "das Gelände passt jetzt hinein")
 
 
+def _gebiet_auf_vermessung(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    """
+    Das Gebiet auf den Hüllquader der gemessenen Höhen setzen. Misst mit
+    TerrainField.abdeckung — derselben Funktion wie die Regel. Verkleinert
+    nur, was ohnehin Ebene war; läge danach ein Bauwerk draußen, geschieht
+    nichts — das wäre eine fachliche Entscheidung, keine Reparatur.
+    """
+    from .anschluss import gebietslage
+    from .terrain import TerrainField
+
+    if spec.terrain is None:
+        return "Ohne Gelände gibt es keine Vermessung, auf die das Gebiet passt"
+    feld = TerrainField.from_spec(spec.terrain, spec.domain, base_dir or ".")
+    a = feld.abdeckung()
+    if a is None or not a["ueberlappt"] or a["huelle"] is None:
+        return ("Höhenraster und Gebiet überlappen sich nicht — zu klären ist "
+                "die Lage des Imports, nicht das Gebiet")
+    if a["ausserhalb"] <= 1e-9:
+        return "Das Gebiet liegt bereits ganz innerhalb der Vermessung"
+    probe = spec.model_copy(deep=True)
+    probe.domain.extent = a["huelle"]
+    draussen = [l["id"] for l in gebietslage(probe) if l["anteil"] > 1e-6]
+    if draussen:
+        return ("Gebiet nicht verkleinert: " + ", ".join(draussen[:4])
+                + " läge(n) dann außerhalb — Gebiet von Hand wählen")
+    alt = spec.domain.extent
+    spec.domain.extent = a["huelle"]
+    n = a["huelle"]
+    return (f"Gebiet von ({alt[0]:g}, {alt[1]:g}) … ({alt[2]:g}, {alt[3]:g}) "
+            f"auf die Vermessung gesetzt: ({n[0]:g}, {n[1]:g}) … "
+            f"({n[2]:g}, {n[3]:g}) — {a['ausserhalb']:.0%} Ebene weniger")
+
+
+def _gelaende_neu_abtasten(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    """
+    Das aktuelle Höhenraster aus dem ORIGINAL neu abtasten — kettenfrei über
+    die gespeicherte Abbildung. Ohne `original` ist die Quelle selbst das
+    Original, dann gibt es nichts zu heilen.
+    """
+    from .rotate import terrain_neu_abtasten
+
+    if spec.terrain is None or spec.terrain.base.original is None:
+        return "Das Höhenraster ist bereits das Original — nichts abzutasten"
+    name = terrain_neu_abtasten(spec, base_dir or ".")
+    if not name:
+        return "Ohne Modellgebiet lässt sich kein Raster abtasten"
+    spec.terrain.base.source = name
+    return (f"Gelände aus dem Original neu abgetastet ({name}) — außerhalb "
+            "der Vermessung steht jetzt NODATA statt des alten Randwerts")
+
+
+def _import_neu_ableiten_roh(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    """
+    Einen Import aus seiner ROHDATEI neu zerlegen und mit der gespeicherten
+    Anwendung neu übernehmen. Der gewöhnliche Reapply nimmt die abgelegten
+    Kandidaten-Netze — und genau die sind bei Importen von vor dem
+    2026-09-22 verdorben (float32 in Landeskoordinaten, Audit I3).
+    """
+    from .importer import import_neu_ableiten, import_neu_analysieren
+
+    import_id = str(args.get("import_id") or "")
+    d = Path(base_dir or ".")
+    if not import_id or not (d / "imports" / import_id / "anwendung.json").is_file():
+        raise ValueError("Import ohne gespeicherte Anwendung — nichts neu "
+                         "abzuleiten")
+    import_neu_analysieren(d, import_id)
+    info = import_neu_ableiten(spec, d, import_id)
+    return ("Import aus der Rohdatei neu abgeleitet — "
+            + " · ".join(info.get("report") or [])[:400])
+
+
 def _durchstoss_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Am vergrabenen Durchlass das Bohren einschalten. Das Gelände wird
@@ -407,6 +483,9 @@ _KUREN = {
     "ins_gebiet": _ins_gebiet,
     "durchstoss_ein": _durchstoss_ein,
     "verweis_entfernen": _verweis_entfernen,
+    "gebiet_auf_vermessung": _gebiet_auf_vermessung,
+    "gelaende_neu_abtasten": _gelaende_neu_abtasten,
+    "import_neu_ableiten_roh": _import_neu_ableiten_roh,
 }
 
 

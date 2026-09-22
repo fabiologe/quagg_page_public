@@ -177,6 +177,12 @@ class TerrainBase(_Model):
     # ein Stück mehr.
     original: str | None = None
     original_abbildung: CrsTransform | None = None
+    # Was außerhalb der Vermessung gilt: eine waagerechte Ebene auf dieser
+    # Höhe (m NHN). None = automatisch, die höchste gemessene Randzelle des
+    # Rasters (terrain.randkrone) — die Krone, nicht die Öffnung. Ein
+    # gesetzter Wert übersteuert das; die Prüfung meldet, wie viel Gebiet
+    # auf dieser Ebene liegt.
+    aussenhoehe: float | None = None
 
 
 class OpChannelCarve(_Objekt):
@@ -1521,9 +1527,24 @@ class CaseSpec(_Model):
         # Reihenfolge erhalten, Doppelte raus
         return list(dict.fromkeys(namen))
 
+    def _hash_daten(self) -> dict:
+        """
+        Der Inhalt, über den die Hashes laufen. Ein NEUES Feld darf, solange
+        es leer ist, keinen Hash ändern — sonst gilt mit dem nächsten Deploy
+        jede gespeicherte Netzvorschau als veraltet, obwohl sich am Netz
+        nichts getan hat. `exclude_none` wäre zu grob: es nähme auch bewusst
+        geleerte Altfelder heraus, deren Fehlen heute zum Hash gehört.
+        """
+        daten = self.model_dump(mode="json")
+        base = (daten.get("terrain") or {}).get("base") or {}
+        for neu in ("aussenhoehe",):
+            if base.get(neu) is None:
+                base.pop(neu, None)
+        return daten
+
     def case_hash(self) -> str:
         """Hash über den fachlichen Inhalt, für das Laufmanifest (Spez. 4.4)."""
-        blob = json.dumps(self.model_dump(mode="json"), sort_keys=True)
+        blob = json.dumps(self._hash_daten(), sort_keys=True)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
     def geometrie_hash(self) -> str:
@@ -1536,14 +1557,14 @@ class CaseSpec(_Model):
         Bauwerks mit verschiedenen Zu- und Abflüssen haben denselben
         Geometrie-Hash und verschiedene Fall-Hashes — genau so soll es sein.
         """
-        daten = self.model_dump(mode="json")
+        daten = self._hash_daten()
         teil = {k: daten.get(k) for k in GEOMETRIE_TEILE}
         return hashlib.sha256(
             json.dumps(teil, sort_keys=True).encode()).hexdigest()[:16]
 
     def netz_hash(self) -> str:
         """Hash über alles, was die Vernetzung bestimmt — und sonst nichts."""
-        daten = self.model_dump(mode="json")
+        daten = self._hash_daten()
         teil = {k: daten.get(k) for k in GEOMETRIE_TEILE}
         # Von den Rändern nur, was der Vernetzer sieht (NETZ_RAND_FELDER):
         # eine geänderte Zuflussmenge ist kein anderes Netz.

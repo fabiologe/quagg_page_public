@@ -1623,7 +1623,16 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
                 "x0": t.x0, "y0": t.y0, "resolution": t.resolution,
                 "dims": list(t.z.shape),
                 "z_b64": base64.b64encode(t.z.astype("<f4").tobytes()).decode(),
+                # Wo die Vermessung aufhört (terrain.lade_basis): der Editor
+                # färbt die Ebene anders, das Panel zeigt die Außenhöhe
+                "aussenhoehe": t.aussenhoehe,
+                "aussenhoehe_auto": t.aussenhoehe_auto,
+                "rand": list(t.rand) if t.rand else None,
             }
+            if t.gemessen is not None and not t.gemessen.all():
+                import numpy as _np
+                out["terrain"]["gemessen_b64"] = base64.b64encode(
+                    _np.packbits(t.gemessen.ravel()).tobytes()).decode()
             out["terrain_solid"] = _koerper_vorschau(spec, t, d, out)
         except Exception as e:
             # Audit P2-8: die Szene blieb still leer/alt, während build_case

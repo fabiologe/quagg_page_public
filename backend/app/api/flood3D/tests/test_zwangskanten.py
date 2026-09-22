@@ -129,11 +129,13 @@ def test_zwangskanten_decken_mehr_ab_als_die_gewoehnliche_vermaschung(tmp_path):
     assert mit["coverage"] > ohne["coverage"] + 0.5
 
 
-def test_ausserhalb_des_aeussersten_rings_wird_waagerecht_ergaenzt(tmp_path):
+def test_ausserhalb_des_aeussersten_rings_bleibt_ungemessen(tmp_path):
     """
-    Ein runder Ring füllt sein Hüllrechteck nicht aus. Was übrig bleibt,
-    ist nicht gemessen — dort steht eine EBENE auf der höchsten gemessenen
-    Höhe, keine erfundene Wölbung.
+    Ein runder Ring füllt sein Hüllrechteck nicht aus. Was übrig bleibt, ist
+    nicht gemessen — in der DATEI bleibt es NODATA (bis 2026-09-21 wurde es
+    mit der höchsten Höhe vollgeschrieben, und die Prüfung konnte nie mehr
+    sagen, wo die Vermessung aufhört); im MODELL steht dort die Ebene auf
+    der Außenhöhe, der Krone des Rings, keine erfundene Wölbung.
     """
     winkel = np.linspace(0, 2 * np.pi, 33)
     kreis = np.column_stack([20 + 12 * np.cos(winkel), 20 + 12 * np.sin(winkel),
@@ -144,8 +146,19 @@ def test_ausserhalb_des_aeussersten_rings_wird_waagerecht_ergaenzt(tmp_path):
     z = _lesen(asc)
     assert info["coverage"] < 0.85, "die Ecken liegen ausserhalb des Kreises"
     assert np.nanmax(z) == pytest.approx(100.0)
-    ecke = z[:6, :6]                      # Hüllrechteck-Ecke
-    assert np.nanmax(ecke) - np.nanmin(ecke) < 1e-6, "dort ist es eben"
+    assert np.isnan(z[:6, :6]).all(), "die Hüllrechteck-Ecke ist NODATA"
+    assert info["aussenhoehe"] == pytest.approx(100.0)
+
+    from ..core.casespec import Domain, Terrain, TerrainBase
+    from ..core.terrain import TerrainField
+    f = TerrainField.from_spec(
+        Terrain(base=TerrainBase(source="g.asc", resolution=0.25)),
+        Domain(extent=(8, 8, 32, 32), z_min=90, z_max=110), tmp_path)
+    ecke = f.z[:6, :6]
+    assert np.max(ecke) - np.min(ecke) < 1e-6, "im Modell ist es dort eben"
+    assert ecke[0, 0] == pytest.approx(100.0)
+    assert not f.gemessen[0, 0] and f.gemessen[48, 48], "und als ungemessen markiert"
+    assert f.aussenhoehe == pytest.approx(100.0) and f.aussenhoehe_auto
 
 
 def test_offene_kante_kann_keine_flaeche_begrenzen(tmp_path):

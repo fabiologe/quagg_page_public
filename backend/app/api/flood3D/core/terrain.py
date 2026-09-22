@@ -221,24 +221,68 @@ def _sample_bilinear(src_z, src_x0, src_y0, src_res, x, y):
 
 
 # --------------------------------------------------------------------------
-# Basisquellen
+# Basisquellen — und was außerhalb der Vermessung gilt
 # --------------------------------------------------------------------------
+#
+# Ein Höhenraster deckt selten genau das Gebiet: importiert wird die
+# Vermessung, das Gebiet zieht der Bearbeiter danach von Hand größer. Bis zum
+# 2026-09-21 klemmte das Abtasten jede Koordinate außerhalb des Rasters auf
+# den Randwert. Eine tiefe Stelle am Rasterrand (Auslaufscharte, offene
+# TIN-Spitze) wurde dadurch als Rinne bis an den Gebietsrand fortgeschrieben
+# — das Phantom-Gerinne, +72 % Rückhaltevolumen in einem Fall, den niemand
+# so gezeichnet hatte. Jetzt gilt EINE Regel: was nicht gemessen ist (NODATA
+# in der Datei, außerhalb des Rasters), liegt auf einer waagerechten Ebene,
+# der AUSSENHÖHE. Sie ist im Fall setzbar (TerrainBase.aussenhoehe); sonst
+# ist sie die höchste gemessene RANDzelle — die Krone, nicht die Öffnung:
+# eine Ebene erfindet keine Form, und oben liegt sie im Einstaunachweis auf
+# der sicheren Seite. Wer das Feld liest, sieht an `gemessen`, wo die
+# Vermessung aufhört; die Prüfung meldet den Anteil.
 
-def _load_base(source: str, base_dir: Path, xx, yy) -> np.ndarray:
-    if source.startswith("flat:"):
-        return np.full(xx.shape, float(source.split(":", 1)[1]))
-    path = (base_dir / source) if not Path(source).is_absolute() else Path(source)
-    if not path.exists():
-        raise FileNotFoundError(f"Geländebasis nicht gefunden: {path}")
-    if path.suffix.lower() == ".asc":
-        return _load_esri_ascii(path, xx, yy)
-    if path.suffix.lower() == ".xyz":
-        return _load_xyz(path, xx, yy)
-    raise ValueError(f"Nicht unterstützte Geländebasis: {path.suffix} "
-                     "(unterstützt: flat:<z>, .asc, .xyz)")
+RAND_TOLERANZ = 0.10        # m: Randzellen so nah unter der Krone stützen sie
+RASTER_SAUM = 0.5           # Zellen: eine halbe Zelle über die äußersten
+                            # Knoten hinaus gilt noch als „im Raster" — die
+                            # Zellfläche, nicht der Knotenkamm. Sonst bekäme
+                            # jedes aus dem Gelände abgeleitete Gebiet einen
+                            # Saum aus Ebene, weil Gebiet und Rasterkopf auf
+                            # cm bzw. mm gerundet sind.
 
 
-def _load_esri_ascii(path: Path, xx, yy) -> np.ndarray:
+@dataclass
+class Basis:
+    """Ein Basisgelände auf dem Zielgitter, mit seiner Herkunft."""
+    z: np.ndarray                   # Höhe je Knoten; ungemessen = aussenhoehe
+    gemessen: np.ndarray            # bool je Knoten
+    aussenhoehe: float | None       # wirksame Ebene; None nur bei flat:
+    auto: bool                      # True = abgeleitet, False = im Fall gesetzt
+    rand: tuple[float, float] | None    # (min, max) der gemessenen Randzellen
+    stuetzung: int                  # Randzellen ≤ RAND_TOLERANZ unter der Krone
+    quelle_nodata: int              # NODATA-Zellen in der Quelldatei
+
+
+def randkrone(z: np.ndarray, gemessen: np.ndarray) -> dict | None:
+    """
+    Die Randzellen der Vermessung und ihre Krone. Randzelle = gemessene Zelle
+    mit einem nicht gemessenen 4-Nachbarn oder am Rasterrand. Die Außenhöhe
+    ist ihr MAXIMUM: erklärbar, auf der sicheren Seite, und bei einem
+    lückenlosen Altraster genau der bisherige Randwert. Der Median schiede
+    aus — an einem offen vermessenen Becken liegen die meisten Randknoten
+    unter der Krone, er träfe die Öffnung. `stuetzung` sagt, auf wie vielen
+    Zellen das Maximum ruht; ein Ausreißer fällt daran auf.
+    """
+    gemessen = np.asarray(gemessen, dtype=bool)
+    if not gemessen.any():
+        return None
+    p = np.pad(gemessen, 1, constant_values=False)
+    nachbar_frei = (~p[:-2, 1:-1] | ~p[2:, 1:-1] | ~p[1:-1, :-2] | ~p[1:-1, 2:])
+    zr = np.asarray(z, dtype=float)[gemessen & nachbar_frei]
+    krone = float(zr.max())
+    return {"krone": krone, "rand_min": float(zr.min()), "rand_max": krone,
+            "stuetzung": int((zr >= krone - RAND_TOLERANZ).sum()),
+            "randzellen": int(zr.size)}
+
+
+def _roh_esri_ascii(path: Path) -> tuple[dict, np.ndarray]:
+    """Kopf und Daten (Süd nach Nord), NODATA als NaN — ohne jede Füllung."""
     header: dict[str, float] = {}
     rows: list[np.ndarray] = []
     with open(path) as f:
@@ -253,32 +297,119 @@ def _load_esri_ascii(path: Path, xx, yy) -> np.ndarray:
                 rows.append(np.array(parts, dtype=float))
     z = np.vstack(rows)[::-1]     # ASCII-Grid ist von Nord nach Süd notiert
     nodata = header.get("nodata_value")
-    if nodata is not None and np.any(z == nodata):
-        # Fehlstellen von der NÄCHSTEN bekannten Höhe fortführen. Der
-        # Mittelwert aller Zellen war hier lange der Standard — bei einem
-        # Becken mit tiefer Sohle und hohem Rand entstand daraus mitten im
-        # Modell ein Plateau auf mittlerer Höhe.
-        luecke = z == nodata
-        z = (naechste_hoehe(z, ~luecke) if not luecke.all()
-             else np.zeros_like(z))
-    x0 = header["xllcorner"] + header["cellsize"] / 2
-    y0 = header["yllcorner"] + header["cellsize"] / 2
-    return _sample_bilinear(z, x0, y0, header["cellsize"], xx, yy)
+    if nodata is not None:
+        z = np.where(z == nodata, np.nan, z)
+    res = header["cellsize"]
+    return {"x0": header["xllcorner"] + res / 2,
+            "y0": header["yllcorner"] + res / 2, "res": res}, z
 
 
-def _load_xyz(path: Path, xx, yy) -> np.ndarray:
+def _roh_xyz(path: Path) -> tuple[dict, np.ndarray]:
+    """Punktliste als Raster; Zellen ohne Punkt bleiben NaN."""
     data = np.loadtxt(path)
     res = float(np.median(np.diff(np.unique(data[:, 0]))) or 1.0)
     x0, y0 = data[:, 0].min(), data[:, 1].min()
     nx = int(round((data[:, 0].max() - x0) / res)) + 1
     ny = int(round((data[:, 1].max() - y0) / res)) + 1
-    z = np.full((ny, nx), np.nan)
+    z = np.full((max(ny, 2), max(nx, 2)), np.nan)
     i = np.round((data[:, 0] - x0) / res).astype(int)
     j = np.round((data[:, 1] - y0) / res).astype(int)
     z[j, i] = data[:, 2]
-    if np.isnan(z).any():
-        z = np.where(np.isnan(z), np.nanmean(z), z)
-    return _sample_bilinear(z, x0, y0, res, xx, yy)
+    return {"x0": float(x0), "y0": float(y0), "res": res}, z
+
+
+def _roh(path: Path) -> tuple[dict, np.ndarray]:
+    suffix = path.suffix.lower()
+    if suffix == ".asc":
+        return _roh_esri_ascii(path)
+    if suffix == ".xyz":
+        return _roh_xyz(path)
+    raise ValueError(f"Nicht unterstützte Geländebasis: {path.suffix} "
+                     "(unterstützt: flat:<z>, .asc, .xyz)")
+
+
+def raster_zellflaeche(path: Path) -> tuple[float, float, float, float]:
+    """Zellfläche (x0, y0, x1, y1) eines Rasters — eine halbe Zelle über die
+    äußersten Knoten hinaus, wie RASTER_SAUM sie rechnet."""
+    lage, roh = _roh(Path(path))
+    ny, nx = roh.shape
+    r = lage["res"]
+    return (lage["x0"] - r / 2, lage["y0"] - r / 2,
+            lage["x0"] + (nx - 1) * r + r / 2, lage["y0"] + (ny - 1) * r + r / 2)
+
+
+def _lage_auf_gitter(gemessen: np.ndarray, x0: float, y0: float, res: float,
+                     x, y) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Je Zielknoten: liegt er in der Zellfläche des Rasters (`innen`), und
+    stehen alle vier Quellzellen seiner bilinearen Abtastung auf gemessenem
+    Grund (`vier`)? Die Wand zwischen gemessen und Ebene ist damit höchstens
+    eine Quellzelle breit, und ein Knoten am Übergang gilt als ungemessen —
+    er trägt schon einen Anteil Ebene.
+    """
+    ny, nx = gemessen.shape
+    # auf 9 Dezimalen gerundet: ein Gebiet, das die Kur auf die (auf mm
+    # gerundete) Hülle setzt, legt seine Knoten 1e-15 neben die alten — an
+    # einer Zellgrenze kippte int() sonst in die Nachbarzelle
+    fx = np.round((np.asarray(x, dtype=float) - x0) / res, 9)
+    fy = np.round((np.asarray(y, dtype=float) - y0) / res, 9)
+    innen = ((fx >= -RASTER_SAUM) & (fx <= nx - 1 + RASTER_SAUM)
+             & (fy >= -RASTER_SAUM) & (fy <= ny - 1 + RASTER_SAUM))
+    i0 = np.clip(fx, 0, nx - 1.001).astype(int)
+    j0 = np.clip(fy, 0, ny - 1.001).astype(int)
+    vier = (gemessen[j0, i0] & gemessen[j0, i0 + 1]
+            & gemessen[j0 + 1, i0] & gemessen[j0 + 1, i0 + 1])
+    return innen, vier
+
+
+def lade_basis(source: str, base_dir: Path, xx, yy,
+               aussenhoehe: float | None = None) -> Basis:
+    """
+    Das Basisgelände auf dem Zielgitter (xx, yy). Alles, was Gelände liest,
+    kommt hier durch — `from_spec`, „Bereich ersetzen", das Drehen —, damit
+    es nur EINE Antwort auf „was steht außerhalb der Vermessung?" gibt.
+    """
+    form = np.shape(xx)
+    if source.startswith("flat:"):
+        z = np.full(form, float(source.split(":", 1)[1]))
+        return Basis(z=z, gemessen=np.ones(form, dtype=bool), aussenhoehe=None,
+                     auto=True, rand=None, stuetzung=0, quelle_nodata=0)
+    path = (base_dir / source) if not Path(source).is_absolute() else Path(source)
+    if not path.exists():
+        raise FileNotFoundError(f"Geländebasis nicht gefunden: {path}")
+    lage, roh = _roh(path)
+    gemessen_roh = ~np.isnan(roh)
+    kr = randkrone(roh, gemessen_roh)
+    if kr is None:
+        raise ValueError("Höhenraster ohne eine einzige gemessene Zelle: "
+                         f"{path.name}")
+    auto = aussenhoehe is None
+    hoehe = kr["krone"] if auto else float(aussenhoehe)
+    # NODATA erst füllen, dann abtasten — -9999 darf nie in die Bilinearität
+    gefuellt = np.where(gemessen_roh, roh, hoehe)
+    z = _sample_bilinear(gefuellt, lage["x0"], lage["y0"], lage["res"], xx, yy)
+    innen, vier = _lage_auf_gitter(gemessen_roh, lage["x0"], lage["y0"],
+                                   lage["res"], xx, yy)
+    # außerhalb der Zellfläche gilt nicht der geklemmte Randwert, sondern die
+    # Ebene — DAS ist die Kur gegen das Phantom-Gerinne
+    z = np.where(innen, z, hoehe)
+    return Basis(z=z, gemessen=innen & vier, aussenhoehe=hoehe, auto=auto,
+                 rand=(kr["rand_min"], kr["rand_max"]),
+                 stuetzung=kr["stuetzung"],
+                 quelle_nodata=int((~gemessen_roh).sum()))
+
+
+def _load_base(source: str, base_dir: Path, xx, yy) -> np.ndarray:
+    """Nur die Höhen — für Aufrufer, die die Maske nicht brauchen."""
+    return lade_basis(source, base_dir, xx, yy).z
+
+
+def _load_esri_ascii(path: Path, xx, yy) -> np.ndarray:
+    return lade_basis(str(path), Path("."), xx, yy).z
+
+
+def _load_xyz(path: Path, xx, yy) -> np.ndarray:
+    return lade_basis(str(path), Path("."), xx, yy).z
 
 
 # --------------------------------------------------------------------------
@@ -298,6 +429,14 @@ class TerrainField:
     # „Bereich ersetzen"
     _base_dir: Path = field(default_factory=lambda: Path("."), repr=False,
                             compare=False)
+    # Wo die Vermessung aufhört (lade_basis): bool je Knoten. None nur, wenn
+    # das Feld ohne Basis gebaut wurde (Messungen, Tests).
+    gemessen: np.ndarray | None = field(default=None, repr=False, compare=False)
+    aussenhoehe: float | None = None        # wirksame Ebene außerhalb
+    aussenhoehe_auto: bool = True           # abgeleitet oder im Fall gesetzt
+    rand: tuple[float, float] | None = None  # (min, max) der Randzellen
+    stuetzung: int = 0
+    quelle_nodata: int = 0                  # NODATA-Zellen in der Quelldatei
 
     @classmethod
     def from_spec(cls, terrain: Terrain, domain: Domain,
@@ -307,8 +446,12 @@ class TerrainField:
         nx = int(round((x1 - x0) / res)) + 1
         ny = int(round((y1 - y0) / res)) + 1
         xx, yy = np.meshgrid(x0 + np.arange(nx) * res, y0 + np.arange(ny) * res)
-        z = _load_base(terrain.base.source, Path(base_dir), xx, yy)
-        field = cls(x0=x0, y0=y0, resolution=res, z=z.astype(float))
+        basis = lade_basis(terrain.base.source, Path(base_dir), xx, yy,
+                           terrain.base.aussenhoehe)
+        field = cls(x0=x0, y0=y0, resolution=res, z=basis.z.astype(float),
+                    gemessen=basis.gemessen, aussenhoehe=basis.aussenhoehe,
+                    aussenhoehe_auto=basis.auto, rand=basis.rand,
+                    stuetzung=basis.stuetzung, quelle_nodata=basis.quelle_nodata)
         field._ops = list(terrain.operations)
         field._base_dir = Path(base_dir)
         if terrain.sculpt:
@@ -333,6 +476,41 @@ class TerrainField:
     def sample(self, x, y):
         return _sample_bilinear(self.z, self.x0, self.y0, self.resolution,
                                 np.asarray(x, dtype=float), np.asarray(y, dtype=float))
+
+    def abdeckung(self) -> dict | None:
+        """
+        DIE Messfunktion für Regel und Kur „Gelände außerhalb der Vermessung":
+        `ausserhalb` = Anteil der Knoten außerhalb des Hüllquaders der
+        gemessenen Knoten — den bringt die Kur „Gebiet auf die Vermessung
+        setzen" auf null; `innen` = ungemessene Knoten innerhalb des
+        Hüllquaders (Ecken eines gedrehten TIN, Löcher — die bleiben, wie
+        das Gebiet auch liegt); `je_rand` = Anteil je Gebietsseite. None,
+        wenn das Feld ohne Basis gebaut wurde.
+        """
+        g = self.gemessen
+        if g is None:
+            return None
+        seiten = {"x_min": g[:, 0], "x_max": g[:, -1],
+                  "y_min": g[0, :], "y_max": g[-1, :]}
+        aus = {"ueberlappt": bool(g.any()), "ungemessen": float((~g).mean()),
+               "je_rand": {k: float((~v).mean()) for k, v in seiten.items()},
+               "aussenhoehe": self.aussenhoehe, "auto": self.aussenhoehe_auto,
+               "rand": self.rand, "stuetzung": self.stuetzung,
+               "quelle_nodata": self.quelle_nodata}
+        if not g.any():
+            aus.update(ausserhalb=1.0, innen=0.0, huelle=None)
+            return aus
+        jj, ii = np.nonzero(g)
+        i0, i1 = int(ii.min()), int(ii.max())
+        j0, j1 = int(jj.min()), int(jj.max())
+        box = np.zeros_like(g)
+        box[j0:j1 + 1, i0:i1 + 1] = True
+        r = self.resolution
+        aus.update(ausserhalb=float((~box).mean()),
+                   innen=float((box & ~g).mean()),
+                   huelle=(round(self.x0 + i0 * r, 3), round(self.y0 + j0 * r, 3),
+                           round(self.x0 + i1 * r, 3), round(self.y0 + j1 * r, 3)))
+        return aus
 
     # -- Operationsstapel (Spez. 6.2) --
 
@@ -457,9 +635,9 @@ class TerrainField:
         Regelfall (ohne `polygon`): von der Bezugskante aus mit `gefaelle`
         nach außen fortführen, bis an den Gebietsrand. Das ist die Antwort
         auf die Frage, was hinter der Böschungsoberkante passiert — ohne
-        diese Operation steht dort, was der Import aus der NÄCHSTEN
-        gemessenen Höhe fortgeführt hat, und das kann jede Welle des
-        Aufmaßes bis über den Gebietsdeckel tragen.
+        diese Operation steht dort, was die Basis hergibt: innerhalb der
+        Vermessung deren Höhen, außerhalb die Ebene auf der Außenhöhe
+        (lade_basis).
 
         Mit `polygon`: zwischen Bezugskante und diesem Rahmen linear
         überblenden — für den Fall, dass die Ränder von Hand gesetzt werden.
@@ -553,8 +731,13 @@ class TerrainField:
     def _op_replace_region(self, op):
         xx, yy = self.mesh_xy()
         mask = _polygon_mask(xx, yy, op.polygon)
-        replacement = _load_base(op.source, self._base_dir, xx, yy)
-        self.z = np.where(mask, replacement, self.z)
+        # nur, wo das Zusatzraster wirklich gemessen ist — sonst stünde im
+        # Polygon dessen Ebene (oder früher: sein geklemmter Randwert)
+        ersatz = lade_basis(op.source, self._base_dir, xx, yy)
+        ersetzen = mask & ersatz.gemessen
+        self.z = np.where(ersetzen, ersatz.z, self.z)
+        if self.gemessen is not None:
+            self.gemessen = self.gemessen | ersetzen
 
     def _op_set_level(self, op):
         xx, yy = self.mesh_xy()

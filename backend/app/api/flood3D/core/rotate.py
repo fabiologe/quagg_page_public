@@ -128,40 +128,65 @@ def _terrain_drehen(spec: CaseSpec, base_dir: Path, grad: float,
     if spec.terrain is None or spec.terrain.base.source.startswith("flat:"):
         return None
     from .casespec import transform_drehung
-    from .terrain import _load_base
+    from .importer import _asc_schreiben, derived_pfad
+    from .terrain import lade_basis, raster_zellflaeche
 
     base = spec.terrain.base
     original = base.original or base.source
     abbildung = transform_drehung(base.original_abbildung, float(grad),
                                   (float(mitte[0]), float(mitte[1])))
+    th = math.radians(abbildung.rotation_deg)
+    c_, s_ = math.cos(th), math.sin(th)
+    tx, ty = abbildung.translation
 
+    # Das neue Raster deckt das neue Gebiet UND den Hüllquader der gedrehten
+    # Vermessung, gefluchtet auf das Gebietsgitter: wer das Gebiet später
+    # vergrößert, findet dort noch Messdaten statt Ebene. Was im Original
+    # NODATA ist oder außerhalb liegt, bleibt auch hier NODATA — sonst käme
+    # aus jeder schiefen Drehung ein Saum aus geklemmtem Randwert (das
+    # Phantom-Gerinne, Stufe 2).
     res = base.resolution
     x0, y0, x1, y1 = neues_extent
-    nx = max(2, int(round((x1 - x0) / res)) + 1)
-    ny = max(2, int(round((y1 - y0) / res)) + 1)
-    xx, yy = np.meshgrid(x0 + np.arange(nx) * res, y0 + np.arange(ny) * res)
+    ox0, oy0, ox1, oy1 = raster_zellflaeche(Path(base_dir) / original)
+    ecken = np.array([[ox0, oy0], [ox1, oy0], [ox1, oy1], [ox0, oy1]])
+    gedreht = ecken @ np.array([[c_, s_], [-s_, c_]]) + np.array([tx, ty])
+    bx0, by0 = gedreht.min(axis=0)
+    bx1, by1 = gedreht.max(axis=0)
+    gx0 = x0 - math.ceil(max(x0 - bx0, 0.0) / res) * res
+    gy0 = y0 - math.ceil(max(y0 - by0, 0.0) / res) * res
+    gx1 = x1 + math.ceil(max(bx1 - x1, 0.0) / res) * res
+    gy1 = y1 + math.ceil(max(by1 - y1, 0.0) / res) * res
+    nx = max(2, int(round((gx1 - gx0) / res)) + 1)
+    ny = max(2, int(round((gy1 - gy0) / res)) + 1)
+    xx, yy = np.meshgrid(gx0 + np.arange(nx) * res, gy0 + np.arange(ny) * res)
     # Rückabbildung neu → original: Inverse von p' = R·p + t
-    th = math.radians(abbildung.rotation_deg)
     ci, si = math.cos(-th), math.sin(-th)
-    dx = xx - abbildung.translation[0]
-    dy = yy - abbildung.translation[1]
-    z = np.asarray(_load_base(original, Path(base_dir),
-                              ci * dx - si * dy, si * dx + ci * dy),
-                   dtype=float)
+    dx = xx - tx
+    dy = yy - ty
+    basis = lade_basis(original, Path(base_dir),
+                       ci * dx - si * dy, si * dx + ci * dy, base.aussenhoehe)
+    z = np.where(basis.gemessen, basis.z, np.nan)
     base.original = original
     base.original_abbildung = abbildung
 
-    from .importer import derived_pfad
-    stempel = abs(hash((round(x0, 3), round(y0, 3), nx, ny))) % 10 ** 8
+    stempel = abs(hash((round(gx0, 3), round(gy0, 3), nx, ny))) % 10 ** 8
     ziel = derived_pfad(Path(base_dir), f"gelaende_gedreht_{stempel}.asc")
-    name = ziel.relative_to(base_dir).as_posix()
-    zeilen = [f"ncols {nx}", f"nrows {ny}",
-              f"xllcorner {x0 - res / 2:.3f}", f"yllcorner {y0 - res / 2:.3f}",
-              f"cellsize {res:g}", "nodata_value -9999"]
-    for row in z[::-1]:
-        zeilen.append(" ".join(f"{v:.3f}" for v in row))
-    ziel.write_text("\n".join(zeilen))
-    return name
+    _asc_schreiben(z, ziel, gx0, gy0, res)
+    return ziel.relative_to(base_dir).as_posix()
+
+
+def terrain_neu_abtasten(spec: CaseSpec, base_dir: str | Path = ".") -> str | None:
+    """
+    Das aktuelle Höhenraster ohne Drehung neu aus dem Original abtasten —
+    dieselbe Abbildung, dieselbe Datei-Logik wie beim Drehen. Heilt Raster,
+    die vor dem 2026-09-22 gedreht wurden: sie tragen den damals geklemmten
+    Randwert als schrägen Streifen in sich, und die Datei weiß nichts davon.
+    """
+    if spec.domain is None:
+        return None
+    x0, y0, x1, y1 = spec.domain.extent
+    mitte = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
+    return _terrain_drehen(spec, Path(base_dir), 0.0, mitte, spec.domain.extent)
 
 
 # --------------------------------------------------------------------------

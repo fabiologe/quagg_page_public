@@ -431,8 +431,11 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
             pts = [tuple(e.dxf.vtx0), tuple(e.dxf.vtx1),
                    tuple(e.dxf.vtx2), tuple(e.dxf.vtx3)]
             merger.add_face(pts[:3])
-            # 3DFACE darf ein Viereck sein: vtx3 != vtx2 -> zweites Dreieck
-            if tuple(pts[3]) != tuple(pts[2]):
+            # 3DFACE darf ein Viereck sein -> zweites Dreieck. Ein Dreieck
+            # schreibt AutoCAD mit vtx3 == vtx2, BricsCAD mit vtx3 == vtx0
+            # (Audit I14: 243 Flächen wurden 486 „Dreiecke", die Hälfte
+            # entartet, und die Prüfung meldete „Beckenwände")
+            if tuple(pts[3]) not in (tuple(pts[2]), tuple(pts[0])):
                 merger.add_face([pts[0], pts[2], pts[3]])
         elif t in ("MESH", "POLYFACE"):
             merger = tri_per_layer.setdefault(layer, MeshVertexMerger())
@@ -685,10 +688,8 @@ def _raster_transformieren(roh: bytes, unit: float,
     return buf.getvalue().encode("utf-8"), bbox
 
 
-def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
-    """Datei analysieren, Kandidaten-Meshes ablegen, Manifest zurückgeben."""
-    if not SAFE_FILENAME.match(filename):
-        raise ValueError(f"Unsicherer Dateiname: {filename!r}")
+def _analysieren(data: bytes, filename: str) -> list[dict]:
+    """Die Datei nach ihrer Endung in Kandidaten zerlegen."""
     ext = filename.rsplit(".", 1)[-1].lower()
     if ext == "dxf":
         cands = analyze_dxf(data, filename)
@@ -702,21 +703,37 @@ def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
     if not cands:
         raise ValueError("Keine verwertbare Geometrie gefunden — enthält die "
                          "Datei 3DFACE/POLYFACE/MESH-Flächen oder Polylinien?")
+    return cands
 
-    import_id = f"imp-{uuid.uuid4().hex[:8]}"
-    imp_dir = case_dir / "imports" / import_id
-    imp_dir.mkdir(parents=True)
-    (imp_dir / filename).write_bytes(data)
 
-    # globale Lage-/Einheiten-Verdachte über alle Mesh-Kandidaten
-    los, his = [], []
+def _kandidaten_ablegen(cands: list[dict], imp_dir: Path, import_id: str,
+                        filename: str, created: float) -> dict:
+    """
+    Kandidaten-Dateien und Manifest schreiben — für den ersten Import und
+    für das Neu-Zerlegen aus der Rohdatei (import_neu_analysieren).
+
+    Netze liegen als STL und damit in einfacher Genauigkeit. In
+    Landeskoordinaten (2,58 Mio / 5,46 Mio) ist ein float32-Schritt 0,25
+    bzw. 0,5 m — ein 12-m-Becken-TIN verlor so bis 76 cm Höhe und 25 cm
+    Lage, ohne dass es jemand sah (Audit I3). Deshalb werden alle Netze
+    eines Imports um EINEN gemeinsamen, ganzzahligen Ursprung verschoben
+    abgelegt (`stl_ursprung` im Manifest); load_mesh rechnet ihn in
+    doppelter Genauigkeit zurück. Ein gemeinsamer Ursprung, damit die
+    Körper eines Imports zueinander liegen bleiben.
+    """
+    los = [c["stats"]["bbox"][0] for c in cands if c.get("_mesh") is not None]
+    his = [c["stats"]["bbox"][1] for c in cands if c.get("_mesh") is not None]
+    ursprung = np.zeros(3)
+    if los:
+        lo = np.min(np.asarray(los, dtype=float), axis=0)
+        ursprung = np.array([math.floor(lo[0]), math.floor(lo[1]), 0.0])
+
     for i, c in enumerate(cands):
         c["id"] = f"k{i}"
         mesh = c.pop("_mesh", None)
         if mesh is not None:
+            mesh.apply_translation(-ursprung)
             mesh.export(imp_dir / f"{c['id']}.stl")
-            los.append(c["stats"]["bbox"][0])
-            his.append(c["stats"]["bbox"][1])
         kreis = c.pop("_kreis", None)
         if kreis is not None:
             (imp_dir / f"{c['id']}.kreis.json").write_text(json.dumps(kreis))
@@ -728,10 +745,11 @@ def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
             (imp_dir / f"{c['id']}.json").write_text(json.dumps(poly))
 
     manifest = {"import_id": import_id, "filename": filename,
-                "created": time.time(), "candidates": cands}
+                "created": created, "candidates": cands,
+                "stl_ursprung": [float(ursprung[0]), float(ursprung[1])]}
     if los:
-        lo = np.min(np.asarray(los), axis=0)
-        hi = np.max(np.asarray(his), axis=0)
+        lo = np.min(np.asarray(los, dtype=float), axis=0)
+        hi = np.max(np.asarray(his, dtype=float), axis=0)
         span = hi - lo
         manifest["bbox"] = [[round(float(v), 3) for v in lo],
                             [round(float(v), 3) for v in hi]]
@@ -742,6 +760,34 @@ def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
     (imp_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False))
     return manifest
+
+
+def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
+    """Datei analysieren, Kandidaten-Meshes ablegen, Manifest zurückgeben."""
+    if not SAFE_FILENAME.match(filename):
+        raise ValueError(f"Unsicherer Dateiname: {filename!r}")
+    cands = _analysieren(data, filename)
+    import_id = f"imp-{uuid.uuid4().hex[:8]}"
+    imp_dir = case_dir / "imports" / import_id
+    imp_dir.mkdir(parents=True)
+    (imp_dir / filename).write_bytes(data)
+    return _kandidaten_ablegen(cands, imp_dir, import_id, filename, time.time())
+
+
+def import_neu_analysieren(case_dir: Path, import_id: str) -> dict:
+    """
+    Die Kandidaten eines Imports aus der ROHDATEI neu zerlegen — in
+    dasselbe Verzeichnis, unter denselben Kennungen (k0, k1, … folgen der
+    Reihenfolge in der Datei), die gespeicherte Anwendung bleibt gültig.
+    Nötig, wenn die abgelegten Netze selbst verdorben sind: vor dem
+    2026-09-22 lagen sie in Landeskoordinaten als float32.
+    """
+    imp_dir = case_dir / "imports" / import_id
+    alt = json.loads((imp_dir / "manifest.json").read_text())
+    filename = alt["filename"]
+    cands = _analysieren((imp_dir / filename).read_bytes(), filename)
+    return _kandidaten_ablegen(cands, imp_dir, import_id, filename,
+                               float(alt.get("created") or time.time()))
 
 
 # --------------------------------------------------------------------------
@@ -833,32 +879,19 @@ def rasterize_tin_to_asc(mesh: trimesh.Trimesh, out_path: Path,
     z = _raster_aus_dreiecken(v, f, xx, yy)
 
     # Was der Hüllquader mehr umfasst als das TIN (Ecken, Ränder), ist NICHT
-    # gemessen. Blieben diese Zellen NODATA, füllte der Leser sie mit dem
-    # MITTELWERT aller Höhen — mitten im Becken entstand daraus ein Plateau
-    # von über einem Meter. Gefüllt wird deshalb WAAGERECHT auf der höchsten
-    # gemessenen Höhe: eine Ebene erfindet keine Form, und dass sie oben
-    # liegt, ist im Einstaunachweis die sichere Seite — Wasser verlässt das
-    # Modell nicht über eine Senke, die niemand vermessen hat.
+    # gemessen — und bleibt in der Datei NODATA. Was dort im Modell steht,
+    # entscheidet EINE Stelle beim Lesen (terrain.lade_basis): eine Ebene auf
+    # der Außenhöhe. Die Datei mit der höchsten Höhe vollzuschreiben, wie es
+    # bis 2026-09-21 geschah, warf genau die Information weg, die die
+    # Prüfung braucht, um „hier ist nichts vermessen" zu melden.
     aus_tin = float(np.mean(~np.isnan(z)))
-    luecke = np.isnan(z)
-    if luecke.any() and not luecke.all():
-        z = np.asarray(z, dtype=float).copy()
-        z[luecke] = float(np.nanmax(z))
-
-    nodata = -9999.0
-    grid = np.where(np.isnan(z), nodata, z)
-    lines = [f"ncols {nx}", f"nrows {ny}",
-             f"xllcorner {x0 - resolution / 2:.3f}",
-             f"yllcorner {y0 - resolution / 2:.3f}",
-             f"cellsize {resolution:g}", f"nodata_value {nodata:g}"]
-    for row in grid[::-1]:                     # ESRI: von Nord nach Süd
-        lines.append(" ".join(f"{val:.3f}" for val in row))
-    out_path.write_text("\n".join(lines))
+    _asc_schreiben(z, out_path, float(x0), float(y0), resolution)
     return {"nx": nx, "ny": ny,
             "extent": [round(float(x0), 3), round(float(y0), 3),
                        round(float(x1), 3), round(float(y1), 3)],
             "senkrecht_verworfen": verworfen,
-            "coverage": round(aus_tin, 3)}
+            "coverage": round(aus_tin, 3),
+            "aussenhoehe": _randkrone_tin(mesh)}
 
 
 def _verdichten(pts: np.ndarray, schritt: float) -> np.ndarray:
@@ -916,6 +949,78 @@ def _asc_schreiben(z: np.ndarray, out_path: Path, x0: float, y0: float,
     for row in grid[::-1]:                     # ESRI: von Nord nach Süd
         zeilen.append(" ".join(f"{v:.3f}" for v in row))
     out_path.write_text("\n".join(zeilen))
+
+
+# Die Außenhöhe — die Ebene außerhalb der Vermessung — kommt beim Import aus
+# den RANDPUNKTEN der Vermessung: der Krone des TIN-Rands bzw. der äußersten
+# Linien. Die zellbasierte Ableitung des Lesers (terrain.randkrone) ist nur
+# der Rückfall für fertige Raster und Altfälle: ein Zellmittelpunkt trifft
+# den Kronenknoten selten, an einem Betriebsfall lag sie 18 cm unter der
+# Zeichnungskrone und stützte sich auf zwei Zellen.
+
+def _randkrone_punkte(pts: np.ndarray, resolution: float) -> float | None:
+    """Höchster Punkt auf der konvexen Hülle der Stützpunkte (n,3)."""
+    import shapely
+    p = np.asarray(pts, dtype=float)
+    if len(p) < 3:
+        return float(p[:, 2].max()) if len(p) else None
+    huelle = shapely.MultiPoint(p[:, :2]).convex_hull
+    if huelle.geom_type != "Polygon":
+        return float(p[:, 2].max())
+    am_rand = shapely.distance(huelle.exterior,
+                               shapely.points(p[:, 0], p[:, 1])) <= resolution / 2
+    return round(float(p[am_rand, 2].max()), 3) if am_rand.any() \
+        else round(float(p[:, 2].max()), 3)
+
+
+def _randkrone_tin(mesh: trimesh.Trimesh) -> float | None:
+    """Höchster Knoten auf dem offenen Rand eines Netzes (Kanten mit nur
+    einem Dreieck); ohne offenen Rand der höchste Knoten überhaupt."""
+    v = np.asarray(mesh.vertices, dtype=float)
+    if not len(v):
+        return None
+    kanten, anzahl = np.unique(np.sort(np.asarray(mesh.edges), axis=1),
+                               axis=0, return_counts=True)
+    rand = np.unique(kanten[anzahl == 1])
+    return round(float(v[rand, 2].max() if len(rand) else v[:, 2].max()), 3)
+
+
+def _gelaende_setzen(spec, case_dir: Path, quelle: str, res: float,
+                     koerper: str | None = None,
+                     aussenhoehe: float | None = None) -> None:
+    """
+    Die Geländebasis eines Falls neu setzen — an EINER Stelle, damit beim
+    Neuaufbau nichts verloren geht, was zum Fall und nicht zur Datei gehört:
+    Vermessungskanten, Operationen, Material und eine von Hand gesetzte
+    Außenhöhe. `original`/`original_abbildung` beginnen neu — die neue
+    Datei IST das Original. Ausnahme: das Neu-Ableiten DESSELBEN Imports
+    in einem gedrehten Fall (die neue Datei ist das bisherige Original) —
+    dann bleibt die Abbildung, und das gedrehte Raster wird aus der neuen
+    Datei neu abgetastet. Vorher warf ein Reapply die Drehung des Geländes
+    weg, während Bauwerke und Ränder gedreht blieben (Audit I5).
+    """
+    from .casespec import Terrain, TerrainBase
+    alt = spec.terrain
+    if aussenhoehe is None and alt is not None:
+        aussenhoehe = alt.base.aussenhoehe
+    base = TerrainBase(source=quelle, resolution=res, koerper=koerper,
+                       aussenhoehe=aussenhoehe)
+    gedreht = (alt is not None and alt.base.original == quelle
+               and alt.base.original_abbildung is not None)
+    if gedreht:
+        base.original = quelle
+        base.original_abbildung = alt.base.original_abbildung
+        base.source = alt.base.source
+    spec.terrain = Terrain(
+        base=base,
+        kanten=(alt.kanten if alt else []),
+        operations=(alt.operations if alt else []),
+        material=(alt.material if alt else "erde"))
+    if gedreht:
+        from .rotate import terrain_neu_abtasten
+        neu = terrain_neu_abtasten(spec, case_dir)
+        if neu:
+            spec.terrain.base.source = neu
 
 
 def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
@@ -1016,15 +1121,8 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
     f = np.arange(len(ecken)).reshape(-1, 3)
     z = _raster_aus_dreiecken(ecken, f, xx, yy)
     abdeckung = float(np.mean(~np.isnan(z)))
-    luecke = np.isnan(z)
-    if luecke.any() and not luecke.all():
-        # Außerhalb des äußersten Rings ist nichts vermessen. Waagerecht auf
-        # der höchsten gemessenen Höhe: eine Ebene erfindet keine Form, und
-        # oben liegt sie auf der sicheren Seite — Wasser verlässt das Modell
-        # nicht über eine Senke, die niemand aufgenommen hat.
-        z = z.copy()
-        z[luecke] = float(np.nanmax(z))
-
+    # Außerhalb des äußersten Rings ist nichts vermessen — das bleibt in der
+    # Datei NODATA; die Ebene darüber setzt der Leser (terrain.lade_basis).
     _asc_schreiben(z, out_path, float(x0), float(y0), resolution)
     return {"nx": nx, "ny": ny,
             "extent": [round(float(x0), 3), round(float(y0), 3),
@@ -1033,7 +1131,8 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
             "n_ringe": len(polys),
             **({"vermaschung_fehlgeschlagen": vermaschung_fehlgeschlagen}
                if vermaschung_fehlgeschlagen else {}),
-            "coverage": round(abdeckung, 3)}
+            "coverage": round(abdeckung, 3),
+            "aussenhoehe": _randkrone_punkte(alle, resolution)}
 
 
 def tin_from_lines(linien: list, out_path: Path, resolution: float,
@@ -1073,6 +1172,22 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
     z = np.ma.filled(LinearTriInterpolator(tri, v[:, 2])(xx, yy), np.nan)
     aus_maschen = float(np.mean(~np.isnan(z)))
 
+    # Die Stützpunkte selbst sind immer gemessen — auch wenn kein Dreieck
+    # die Kantengrenze überlebt (zwei Linien weit auseinander). Ohne sie
+    # hätte die Ergänzung keinen festen Knoten; das Raster blieb dann leer
+    # und die Datei bestand aus „nan nan nan" (Audit I4).
+    si = np.clip(np.round((v[:, 0] - x0) / resolution).astype(int), 0, nx - 1)
+    sj = np.clip(np.round((v[:, 1] - y0) / resolution).astype(int), 0, ny - 1)
+    frei = np.isnan(z[sj, si])
+    z[sj[frei], si[frei]] = v[frei, 2]
+
+    # Die Vermessung endet an der konvexen Hülle der Stützpunkte. Eine halbe
+    # Zelle Puffer, damit ein Knoten haarscharf auf der Hüllkante (die
+    # Rasterränder liegen GENAU auf den äußersten Punkten) nicht herausfällt.
+    import shapely
+    huelle = shapely.contains_xy(
+        shapely.MultiPoint(v[:, :2]).convex_hull.buffer(0.5 * resolution),
+        xx, yy)
     luecke = np.isnan(z)
     if luecke.any():
         # Außerhalb der Dreiecksmaschen war bisher „nimm die Höhe des
@@ -1086,18 +1201,18 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
         from .terrain import laplace_fuellen
         z = laplace_fuellen(z, ~luecke)
 
-    zeilen = [f"ncols {nx}", f"nrows {ny}",
-              f"xllcorner {x0 - resolution / 2:.3f}",
-              f"yllcorner {y0 - resolution / 2:.3f}",
-              f"cellsize {resolution:g}", "nodata_value -9999"]
-    for row in z[::-1]:                            # ESRI: Nord nach Süd
-        zeilen.append(" ".join(f"{val:.3f}" for val in row))
-    out_path.write_text("\n".join(zeilen))
+    # Außerhalb der Hülle ist nichts gemessen — das bleibt NODATA; die Ebene
+    # darüber setzt der Leser (terrain.lade_basis). Innen bleibt bitgleich.
+    z = np.where(huelle, z, np.nan)
+    _asc_schreiben(z, out_path, float(x0), float(y0), resolution)
     return {"nx": nx, "ny": ny, "n_punkte": int(len(v)),
             "max_kante": round(float(grenze), 2),
             "extent": [round(float(x0), 3), round(float(y0), 3),
                        round(float(x1), 3), round(float(y1), 3)],
-            "coverage": round(aus_maschen, 3)}
+            "coverage": round(aus_maschen, 3),
+            "innen_ergaenzt": round(float(np.mean(luecke & huelle)), 3),
+            "ausserhalb": round(float(np.mean(~huelle)), 3),
+            "aussenhoehe": _randkrone_punkte(v, resolution)}
 
 
 # --------------------------------------------------------------------------
@@ -1303,10 +1418,19 @@ def apply_import(spec, case_dir: Path, import_id: str,
     terrain_bbox = None
     gelaende_gesetzt = False
 
+    # Ablage-Ursprung der Netze (Quelleinheit, siehe _kandidaten_ablegen);
+    # Importe von vor dem 2026-09-22 haben keinen — dort liegt das STL noch
+    # in Landeskoordinaten
+    stl_ursprung = np.asarray(manifest.get("stl_ursprung") or [0.0, 0.0],
+                              dtype=float)
+
     def load_mesh(cid: str) -> trimesh.Trimesh:
-        # Reihenfolge: erst skalieren (mm -> m), dann verschieben — der
-        # Offset wird in der ZIELeinheit angegeben (Editor zeigt ihn so an)
+        # Reihenfolge: erst den Ablage-Ursprung zurück (Quelleinheit), dann
+        # skalieren (mm -> m), dann verschieben — der Offset wird in der
+        # ZIELeinheit angegeben (Editor zeigt ihn so an)
         m = trimesh.load(imp_dir / f"{cid}.stl", force="mesh")
+        if stl_ursprung.any():
+            m.apply_translation([stl_ursprung[0], stl_ursprung[1], 0.0])
         if unit_factor != 1.0:
             m.apply_scale(unit_factor)
         m.apply_translation(-off)
@@ -1366,14 +1490,10 @@ def apply_import(spec, case_dir: Path, import_id: str,
                               "Vermaschung verwendet.")
         if info is None:
             info = tin_from_lines(linien, asc, res)
-        ops = spec.terrain.operations if spec.terrain else []
         # Die Vermessungskanten müssen den Neuaufbau überleben — sie sind
         # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
-        vk = spec.terrain.kanten if spec.terrain else []
-        mat = spec.terrain.material if spec.terrain else "erde"
-        spec.terrain = Terrain(base=TerrainBase(source=_rel(case_dir, asc),
-                                                resolution=res),
-                               kanten=vk, operations=ops, material=mat)
+        _gelaende_setzen(spec, case_dir, _rel(case_dir, asc), res,
+                         aussenhoehe=info.get("aussenhoehe"))
         nonlocal terrain_bbox
         e = info["extent"]
         zs = np.concatenate([li[:, 2] for li in linien])
@@ -1390,8 +1510,10 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 "wurde kein Stützpunkt hinzuerfunden, alle liegen auf den "
                 "Kanten."
                 + (f" Die restlichen {1 - info['coverage']:.0%} liegen "
-                   "außerhalb des äußersten Rings und werden waagerecht auf "
-                   "der höchsten gemessenen Höhe ergänzt."
+                   "außerhalb des äußersten Rings — dort ist nichts "
+                   "vermessen; im Modell steht dort eine Ebene auf "
+                   f"{info['aussenhoehe']:.2f} m (Außenhöhe, im "
+                   "Gelände-Panel änderbar)."
                    if info["coverage"] < 0.999 else ""))
         else:
             report.append(
@@ -1399,11 +1521,13 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
                 f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
                 f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
-                f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge). Die "
-                f"übrigen {1 - info['coverage']:.0%} werden stufenfrei "
-                "ergänzt — dort ist nichts gemessen, das Gelände dazwischen "
-                "ist die glatteste Fläche durch die bekannten Höhen und "
-                "keine Aussage der Vermessung.")
+                f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge), "
+                f"{info['innen_ergaenzt']:.0%} dazwischen werden stufenfrei "
+                "ergänzt — die glatteste Fläche durch die bekannten Höhen, "
+                f"keine Aussage der Vermessung. {info['ausserhalb']:.0%} des "
+                "Rasters liegen außerhalb der Vermessung; im Modell steht "
+                f"dort eine Ebene auf {info['aussenhoehe']:.2f} m "
+                "(Außenhöhe, im Gelände-Panel änderbar).")
 
     # ---- Gelände AUS den Linien -----------------------------------------
     # Vermessungsdaten kommen oft ohne TIN: nur Bruch-, Böschungs- und
@@ -1485,15 +1609,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                            f"({off[0]:g}, {off[1]:g}) angewandt"
                            if unit_factor != 1.0 or off[0] or off[1] else "")
             if role == "gelaende":
-                from .casespec import Terrain, TerrainBase
                 res = spec.terrain.base.resolution if spec.terrain else 0.5
-                ops = spec.terrain.operations if spec.terrain else []
-                mat = spec.terrain.material if spec.terrain else "erde"
-                spec.terrain = Terrain(
-                    base=TerrainBase(source=_rel(case_dir, ziel),
-                                     resolution=res),
-                    kanten=(spec.terrain.kanten if spec.terrain else []),
-                    operations=ops, material=mat)
+                _gelaende_setzen(spec, case_dir, _rel(case_dir, ziel), res)
                 report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
                               f"({c['stats'].get('format')}){umgerechnet}")
                 if raster_bbox is not None:
@@ -1534,14 +1651,8 @@ def apply_import(spec, case_dir: Path, import_id: str,
                 info = rasterize_tin_to_asc(m, asc, res)
                 m.export(derived_pfad(case_dir,
                                       f"gelaende_{import_id}_tin.stl"))
-            from .casespec import Terrain, TerrainBase
-            ops = spec.terrain.operations if spec.terrain else []
-            mat = spec.terrain.material if spec.terrain else "erde"
-            spec.terrain = Terrain(
-                base=TerrainBase(source=_rel(case_dir, asc), resolution=res,
-                                 koerper=koerper_name),
-                kanten=(spec.terrain.kanten if spec.terrain else []),
-                operations=ops, material=mat)
+            _gelaende_setzen(spec, case_dir, _rel(case_dir, asc), res,
+                             koerper_name, aussenhoehe=info.get("aussenhoehe"))
             if koerper_name:
                 report.append(
                     f"Geländekörper „{c['name']}“ übernommen: "
@@ -1564,9 +1675,11 @@ def apply_import(spec, case_dir: Path, import_id: str,
                              "ein Höhenraster kann keine senkrechte Wand "
                              "abbilden" if senk else "")
                           + f"; die übrigen {1 - info['coverage']:.0%} "
-                          "liegen außerhalb des TIN und werden waagerecht "
-                          "auf der höchsten gemessenen Höhe ergänzt — dort "
-                          "ist nichts vermessen")
+                          "liegen außerhalb des TIN — dort ist nichts "
+                          "vermessen; im Modell steht dort eine Ebene auf "
+                          f"{info['aussenhoehe']:.2f} m (Außenhöhe = höchster "
+                          "Randpunkt der Vermessung, im Gelände-Panel "
+                          "änderbar)")
             if senk > 0.3 * (c["stats"]["n_triangles"] or 1):
                 report.append(
                     f"ACHTUNG: {senk} von {c['stats']['n_triangles']} "
@@ -1736,6 +1849,13 @@ def apply_import(spec, case_dir: Path, import_id: str,
         "terrain_from_lines": terrain_from_lines,
         "rotation_deg": float(rotation_deg or 0.0),
     }, ensure_ascii=False, indent=1))
+    # Der Bericht bleibt beim Import liegen. Im Dialog stand er 1,8 Sekunden
+    # — und genau dort stand der einzige Satz, der sagte, dass das Gelände
+    # außerhalb der Vermessung erfunden ist. Neben der Anwendung, nicht in
+    # ihr: die Anwendung ist Eingabe und muss reproduzierbar bleiben.
+    (imp_dir / "bericht.json").write_text(json.dumps(
+        {"report": report, "created": time.time()},
+        ensure_ascii=False, indent=1))
 
     return {"report": report}
 
