@@ -576,15 +576,50 @@ def _import_referenziert(spec: CaseSpec, import_id: str) -> str | None:
     return None
 
 
+def _import_koordinaten(spec: CaseSpec, import_id: str) -> float:
+    """
+    Größter Betrag einer x/y-Koordinate der Objekte aus diesem Import
+    (Rohrachsen, Kanten, Querschnitte). In Landeskoordinaten liegt er im
+    Millionenbereich — dieselbe Zahl, an der der Importer den
+    Offset-Vorschlag festmacht (OFFSET_SUSPECT).
+    """
+    groesst = 0.0
+    punkte: list = []
+    for s in spec.structures:
+        r = getattr(s, "import_ref", None)
+        if r is not None and r.import_id == import_id and getattr(s, "axis", None):
+            punkte += list(s.axis)
+    if spec.terrain is not None:
+        for k in spec.terrain.kanten:
+            if k.import_ref is not None and k.import_ref.import_id == import_id:
+                punkte += list(k.polyline)
+    for q in spec.evaluation.sections:
+        r = getattr(q, "import_ref", None)
+        if r is not None and r.import_id == import_id:
+            punkte += list(q.polyline)
+    for p in punkte:
+        groesst = max(groesst, abs(float(p[0])), abs(float(p[1])))
+    return groesst
+
+
 def _pruefe_importablage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     """
-    Importe, deren abgelegte Netze noch in Landeskoordinaten mit einfacher
-    Genauigkeit liegen (vor dem 2026-09-22): float32 rastert dort auf 0,25
-    bzw. 0,5 m, ein Becken-TIN verlor so bis 76 cm Höhe (Audit I3). Regel
-    und Kur messen dieselbe Zahl — nach dem Neu-Ableiten aus der Rohdatei
-    trägt das Manifest `stl_ursprung`.
+    Zwei Altlasten von Importen, beide mit derselben Kur (aus der Rohdatei
+    neu ableiten) und je einer Messzahl, die nach der Kur verschwindet:
+
+    1. Abgelegte Netze in Landeskoordinaten mit einfacher Genauigkeit (vor
+       dem 2026-09-22): float32 rastert dort auf 0,25 bzw. 0,5 m, ein
+       Becken-TIN verlor so bis 76 cm Höhe (Audit I3). Messzahl: das
+       Manifest trägt kein `stl_ursprung`.
+    2. Übernahme OHNE Offset bei einer Datei in Landeskoordinaten: die
+       Objekte liegen im Millionenbereich neben einem lokalen Gebiet (drei
+       Importe eines Betriebsfalls, Audit I2). Messzahl: die Koordinaten
+       der Objekte (`_import_koordinaten`); die Kur wendet die Verortung
+       des Falls an (importer._verortung_ergaenzen).
     """
     import json
+
+    from .importer import OFFSET_SUSPECT
     befunde: list[dict] = []
     wurzel = Path(ctx.base_dir) / "imports"
     if not wurzel.is_dir():
@@ -595,22 +630,32 @@ def _pruefe_importablage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             continue
         try:
             m = json.loads(mf.read_text())
+            a = json.loads((imp / "anwendung.json").read_text())
         except Exception:
-            continue
-        if "stl_ursprung" in m or not m.get("offset_suggest"):
-            continue
-        if not any(c.get("kind") == "mesh" for c in m.get("candidates", [])):
             continue
         obj = _import_referenziert(spec, imp.name)
         if obj is None:
             continue
-        befunde.append(_finding(
-            obj, "hinweis",
-            f"Import „{m.get('filename', imp.name)}“ liegt in "
-            "Landeskoordinaten und wurde vor dem 22.09.2026 abgelegt — seine "
-            "Netze tragen dort nur einfache Genauigkeit (Raster 0,25 / 0,5 m, "
-            "Höhenfehler bis 0,76 m gemessen). Aus der Rohdatei neu ableiten.",
-            fix=kur("import_neu_ableiten_roh", import_id=imp.name)))
+        name = m.get("filename", imp.name)
+        if ("stl_ursprung" not in m and m.get("offset_suggest")
+                and any(c.get("kind") == "mesh" for c in m.get("candidates", []))):
+            befunde.append(_finding(
+                obj, "hinweis",
+                f"Import „{name}“ liegt in Landeskoordinaten und wurde vor "
+                "dem 22.09.2026 abgelegt — seine Netze tragen dort nur "
+                "einfache Genauigkeit (Raster 0,25 / 0,5 m, Höhenfehler bis "
+                "0,76 m gemessen). Aus der Rohdatei neu ableiten.",
+                fix=kur("import_neu_ableiten_roh", import_id=imp.name)))
+        weit = _import_koordinaten(spec, imp.name)
+        if not a.get("offset") and weit > OFFSET_SUSPECT:
+            befunde.append(_finding(
+                obj, "warnung",
+                f"Import „{name}“ wurde ohne Offset übernommen — seine Objekte "
+                f"liegen in Landeskoordinaten (bis {weit:,.0f}), das Gebiet "
+                "ist lokal. Aus der Rohdatei neu ableiten: dann gilt die "
+                "Verortung des Falls (Offset, Drehung, Einheit des ersten "
+                "Imports).".replace(",", " "),
+                fix=kur("import_neu_ableiten_roh", import_id=imp.name)))
     return befunde
 
 

@@ -171,6 +171,48 @@ def test_erster_import_ohne_offset_nimmt_den_vorschlag(tmp_path):
     assert spec.meta.transform.translation[0] == pytest.approx(-m["offset_suggest"][0], abs=0.01)
 
 
+def test_altimport_ohne_offset_wird_geheilt(tmp_path):
+    """
+    So lag es vor dem 22.09.2026: Anwendung `offset: null`, die Objekte in
+    Gauß-Krüger neben einem lokalen Gebiet. Regel und Kur messen dieselbe
+    Zahl — die Koordinaten der Objekte dieses Imports.
+    """
+    from ..core import kur
+    from ..core.validate import validate_case
+
+    spec = _fall(tmp_path)
+    b = fx.nacktes_becken()
+    m1 = analyze_file(b["dxf"], "becken.dxf", tmp_path)
+    apply_import(spec, tmp_path, m1["import_id"], _rollen(m1),
+                 offset=list(m1["offset_suggest"]), derive_domain=True)
+    n = fx.neun_linien()
+    m2 = analyze_file(n["dxf"], "linien.dxf", tmp_path)
+    apply_import(spec, tmp_path, m2["import_id"],
+                 _rollen(m2, AUSLAUF_linie_linie="querschnitt"),
+                 offset=None, terrain_from_lines=False)
+    # den Altzustand nachstellen: Anwendung ohne Offset, Objekte in GK
+    pfad = tmp_path / "imports" / m2["import_id"] / "anwendung.json"
+    a = json.loads(pfad.read_text())
+    a["offset"] = None
+    pfad.write_text(json.dumps(a))
+    ox, oy = fx.GK_URSPRUNG
+    rohr = _rohr_aus(spec, m2["import_id"])
+    rohr.axis = [(p[0] + ox, p[1] + oy, p[2]) for p in rohr.axis]
+
+    def angeboten():
+        return [x for x in validate_case(spec, tmp_path)
+                if "ohne Offset" in x["message"]
+                and ((x.get("fix") or {}).get("args") or {}).get("import_id")
+                == m2["import_id"]]
+
+    hin = angeboten()
+    assert len(hin) == 1 and hin[0]["severity"] == "warnung"
+    kur.anwenden(spec, "import_neu_ableiten_roh", {"import_id": m2["import_id"]}, tmp_path)
+    assert angeboten() == []
+    assert max(abs(v) for p in _rohr_aus(spec, m2["import_id"]).axis for v in p[:2]) < 100.0
+    assert json.loads(pfad.read_text())["offset"] is not None
+
+
 def test_lokale_datei_bleibt_unberuehrt(tmp_path):
     spec = _fall(tmp_path)
     m = analyze_file(_dxf_dach(6, 12.0, 1.0, ursprung=(3.0, 4.0)), "lokal.dxf", tmp_path)
