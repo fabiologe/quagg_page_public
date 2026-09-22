@@ -29,14 +29,13 @@ Was gemessen wird (je Fall):
                         beim Import verloren gegangen.
     pinsel_wirkungslos  Anteil der Fläche, auf dem ein Pinselstrich keine
                         Wirkung hätte, weil eine Sollhöhen-Operation ihn
-                        überschreibt — einmal mit der heutigen Reihenfolge
-                        (Pinsel vor allen Operationen), einmal mit der
-                        geplanten (nach den aus Kanten abgeleiteten, vor
-                        den eigenen).
+                        überschreibt — `jetzt` fragt das Werkzeug selbst,
+                        `vorher` stellt die Reihenfolge von vor dem
+                        2026-09-22 nach (Pinsel vor dem ganzen Stapel).
     sculpt_dz_unter_abgeleitet
-                        größter Pinselhub, der heute unter einer
-                        abgeleiteten Fläche liegt und dort unsichtbar ist —
-                        er würde beim Umschalten der Reihenfolge sichtbar.
+                        größter Pinselhub, der unter einer abgeleiteten
+                        Fläche lag und dort unsichtbar war — seit der neuen
+                        Reihenfolge wirkt er (Kur „Striche verwerfen").
 """
 from __future__ import annotations
 
@@ -47,8 +46,8 @@ from pathlib import Path
 import numpy as np
 
 from ..core.casespec import CaseSpec
-from ..core.sculpt import _SOLLHOEHEN_TYPEN, lade_ebene
-from ..core.terrain import TerrainField, randkrone
+from ..core.sculpt import lade_ebene
+from ..core.terrain import SOLLHOEHEN_TYPEN, TerrainField, randkrone
 
 PLATEAU_TOLERANZ = 0.10     # m: ab hier gilt ein Außenknoten als „darunter"
 PINSEL_PROBE = 1.0          # m: Testhub des gedachten Pinselstrichs
@@ -119,16 +118,27 @@ def gelaende_aussen(spec: CaseSpec, base_dir: Path, raster: dict) -> dict:
 
 def pinsel_wirkung(spec: CaseSpec, base_dir: Path) -> dict:
     """
-    Ein gedachter Pinselhub von 1 m über dem ganzen Gebiet — wie viel davon
-    überlebt die Operationen? Gemessen für die heutige Einfügestelle des
-    Pinsels (vor allen Operationen) und für die geplante (nach den aus
-    Kanten abgeleiteten, vor den eigenen; `kanten.verknuepfen` legt die
-    abgeleiteten immer VOR die eigenen).
+    Ein gedachter Pinselhub von 1 m — wie viel davon überlebt die
+    Operationen?
+
+    `jetzt` fragt das Werkzeug selbst (TerrainField.pinsel_sperre), misst
+    also die ECHTE Schnittstelle und nicht eine Nachbildung. `vorher` stellt
+    zum Vergleich die Reihenfolge von vor dem 2026-09-22 nach (Pinsel vor
+    dem ganzen Stapel) — die Zahl, an der die Etappe gemessen wird.
     """
     t = spec.terrain
     ops = list(t.operations)
     abgeleitet = [o for o in ops if getattr(o, "aus_kanten", None)]
     eigene = [o for o in ops if not getattr(o, "aus_kanten", None)]
+
+    feld = TerrainField.from_spec(t, spec.domain, base_dir)
+    sperre = feld.pinsel_sperre(PINSEL_PROBE, PINSEL_SCHWELLE)
+    eigene_soll = [o for o in eigene if o.type in SOLLHOEHEN_TYPEN]
+    if sperre is not None:
+        jetzt = sperre["anteil"]
+    else:
+        # None heißt „nichts sperrt" — oder „zu groß für die Maske"
+        jetzt = 0.0 if not eigene_soll else None
 
     basis_t = t.model_copy(deep=True)
     basis_t.operations = []
@@ -145,29 +155,20 @@ def pinsel_wirkung(spec: CaseSpec, base_dir: Path) -> dict:
         return f.z
 
     ref = lauf(basis.z, ops)
-    heute = np.abs(lauf(basis.z + PINSEL_PROBE, ops) - ref) < PINSEL_SCHWELLE
-
-    nach_abgeleitet = lauf(basis.z, abgeleitet)
-    ref_e3 = lauf(nach_abgeleitet, eigene)
-    geplant = (np.abs(lauf(nach_abgeleitet + PINSEL_PROBE, eigene) - ref_e3)
-               < PINSEL_SCHWELLE)
-    # wo die abgeleiteten Operationen allein den Hub schlucken
-    unter_abgeleitet = (np.abs(lauf(basis.z + PINSEL_PROBE, abgeleitet)
-                               - nach_abgeleitet) < PINSEL_SCHWELLE)
+    vorher = np.abs(lauf(basis.z + PINSEL_PROBE, ops) - ref) < PINSEL_SCHWELLE
 
     aus = {
         "ops": len(ops), "ops_abgeleitet": len(abgeleitet),
-        "ops_eigene_sollhoehe": sum(1 for o in eigene
-                                    if o.type in _SOLLHOEHEN_TYPEN),
-        "pinsel_wirkungslos_heute": float(heute.mean()),
-        "pinsel_wirkungslos_geplant": float(geplant.mean()),
+        "ops_eigene_sollhoehe": len(eigene_soll),
+        "pinsel_wirkungslos_vorher": float(vorher.mean()),
+        "pinsel_wirkungslos_jetzt": jetzt,
         "sculpt_dz_unter_abgeleitet": None,
     }
     if t.sculpt:
-        dz = lade_ebene(t, spec.domain, Path(base_dir))
-        aus["sculpt_dz_unter_abgeleitet"] = (
-            float(np.abs(dz[unter_abgeleitet]).max())
-            if unter_abgeleitet.any() else 0.0)
+        # was unter einer abgeleiteten Fläche lag und jetzt wirkt
+        from ..core.sculpt import sichtbar_geworden
+        info = sichtbar_geworden(spec, Path(base_dir))
+        aus["sculpt_dz_unter_abgeleitet"] = info["max_dz"] if info else 0.0
     return aus
 
 
@@ -210,8 +211,8 @@ _SPALTEN = [
     ("phantom_knoten", "Phantom-Knoten", "{}"),
     ("phantom_m3", "Phantom m³", "{:.1f}"),
     ("nodata_zellen", "NODATA", "{}"),
-    ("pinsel_wirkungslos_heute", "Pinsel tot heute", "{:.0%}"),
-    ("pinsel_wirkungslos_geplant", "Pinsel tot geplant", "{:.0%}"),
+    ("pinsel_wirkungslos_vorher", "Pinsel tot vorher", "{:.0%}"),
+    ("pinsel_wirkungslos_jetzt", "Pinsel tot jetzt", "{:.0%}"),
     ("sculpt_dz_unter_abgeleitet", "dz unter abgeleitet", "{:.2f}"),
 ]
 

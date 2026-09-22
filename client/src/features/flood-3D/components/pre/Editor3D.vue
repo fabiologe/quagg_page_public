@@ -99,8 +99,12 @@
               :class="{ active: sculpt.modus.value === m.id }" :title="m.hint"
               @click="sculpt.modus.value = m.id">{{ m.label }}</button>
       <span class="f3d-toolbar-sep"></span>
-      <label class="f3d-small">Ø
-        <input type="range" min="0.5" max="25" step="0.5"
+      <!-- Radius, nicht Durchmesser: der Regler hiess „Ø" und malte doppelt
+           so breit. Die Grenzen folgen dem Gebiet — feste 0,5 … 25 m waren
+           in einem 2-m-Schacht sinnlos und in 500 m zu fein. -->
+      <label class="f3d-small">Radius
+        <input type="range" :min="pinselGrenzen.min" :max="pinselGrenzen.max"
+               :step="pinselGrenzen.min"
                v-model.number="sculpt.radius.value" />
         <span class="f3d-mono">{{ sculpt.radius.value.toFixed(1) }} m</span>
       </label>
@@ -115,12 +119,14 @@
                 sculpt.form.value === 'kreis' ? 'quadrat' : 'kreis'">
         {{ sculpt.form.value === 'kreis' ? '◯' : '▢' }}
       </button>
-      <button class="f3d-tool" :disabled="!sculpt.striche.value"
-              title="Letzten Pinselstrich zurücknehmen (inverses Delta)"
-              @click="sculpt.strichZurueck()">↩ Strich</button>
       <button class="f3d-tool" title="Formen beenden"
               @click="store.sculptAktiv = false">✓ Fertig</button>
-      <span v-if="sculpt.modus.value === 'kante'" class="f3d-muted f3d-small">
+      <span v-if="sculpt.sperreUnterCursor.value" class="f3d-muted f3d-small">
+        ⛔ Hier hält „{{ sculpt.sperreUnterCursor.value }}“ die zugesicherte
+        Höhe — der Pinsel wirkt dort nicht. Strg+Z nimmt den letzten Strich
+        zurück.
+      </span>
+      <span v-else-if="sculpt.modus.value === 'kante'" class="f3d-muted f3d-small">
         Über einer Bruchkante wird der Ring grün — das Gelände wird im
         Pinselbereich AUF ihr Höhenprofil gesetzt.
       </span>
@@ -303,6 +309,13 @@ const sculpt = erzeugeSculpt({
   store, groups, holeScene: () => scene, holeCamera: () => camera,
   holeRenderer: () => renderer, holeControls: () => controls,
   melden: (m, art) => store.melden(m, art) })
+
+// Pinselgrenzen folgen dem Gebiet (editor/sculpt.js) — feste 0,5 … 25 m
+// waren am 12-m-Becken geeicht
+const pinselGrenzen = computed(() => {
+  void store.spec?.domain?.extent
+  return sculpt.grenzen()
+})
 
 // Manning-n aus der Sandrauheit (Strickler: n = k_s^(1/6)/26) — nur als
 // Brücke zur 2D-Welt in der Beschriftung. Gerechnet wird mit k_s.
@@ -852,6 +865,7 @@ onMounted(() => {
       const mProPx = 2 * d * Math.tan((camera.fov * Math.PI / 180) / 2) / h
       return kugel.scale.x * kugel.geometry.parameters.radius / mProPx
     }
+    window.__f3dStore = store
     window.__f3dGrauAnteil = () => {
       const t = store.terrain
       if (!t?.gemessen) return 0

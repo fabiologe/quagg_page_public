@@ -108,65 +108,99 @@ def patch_anwenden(spec, base_dir, patches: list[dict]) -> str:
     _speichern(spec, Path(base_dir), ebene)
     meldung = (f"Gelände geformt: {len(patches)} Strich(e), "
                f"größte Änderung {dz_max:.2f} m.")
-    beruehrt = _sollhoehen_ueberlapp(spec, patches)
-    if beruehrt:
-        meldung += (" Hinweis: der Strich überlappt "
-                    + ", ".join(f"„{b}“" for b in beruehrt)
-                    + " — dort gelten weiter die Sollhöhen der Operation.")
+    verschluckt = _verschluckt(spec, Path(base_dir), patches)
+    if verschluckt:
+        meldung += " " + verschluckt
     return meldung
 
 
-# Operationen, die eine feste Zielhöhe zusichern — der Pinsel wirkt VOR
-# ihnen, dort bleibt seine Wirkung (teils) aus. Relative Operationen
-# (raise_lower, smooth) vertragen sich mit jedem Untergrund.
-_SOLLHOEHEN_TYPEN = {"channel_carve", "pad", "ramp", "embankment",
-                     "replace_region", "set_level", "bruchkante",
-                     "boeschung", "aussenkante"}
-
-
-def _op_bbox(op):
-    """Grobe Grundriss-Hülle einer Operation, mit Wirkungs-Rand."""
-    pts = None
-    rand = 0.0
-    for attr in ("polygon", "polyline"):
-        p = getattr(op, attr, None)
-        if p:
-            pts = np.asarray(p, dtype=float)[:, :2]
-            break
-    if pts is None:
-        return None
-    t = op.type
-    if t == "channel_carve":
-        rand = op.bottom_width / 2 + op.depth * max(op.side_slope, 0.0)
-    elif t == "embankment":
-        rand = op.crest_width / 2
-    elif t == "bruchkante":
-        rand = getattr(op, "breite", 0.0)
-    elif t == "set_level":
-        rand = getattr(op, "blend_width", 0.0) or 0.0
-    return (pts[:, 0].min() - rand, pts[:, 1].min() - rand,
-            pts[:, 0].max() + rand, pts[:, 1].max() + rand)
-
-
-def _sollhoehen_ueberlapp(spec, patches) -> list[str]:
-    x0, y0, res, _, _ = _gitter(spec.terrain, spec.domain)
-    kisten = []
+def _strich_maske(spec, patches) -> np.ndarray:
+    """Welche Rasterknoten der Strich berührt hat."""
+    _, _, _, nx, ny = _gitter(spec.terrain, spec.domain)
+    maske = np.zeros((ny, nx), dtype=bool)
     for p in patches:
-        teil = np.asarray(p["dz"])
+        teil = np.asarray(p["dz"], dtype=float)
         pj, pi = teil.shape
-        kisten.append((x0 + p["i0"] * res, y0 + p["j0"] * res,
-                       x0 + (p["i0"] + pi - 1) * res,
-                       y0 + (p["j0"] + pj - 1) * res))
-    beruehrt = []
-    for op in spec.terrain.operations:
-        if op.type not in _SOLLHOEHEN_TYPEN:
-            continue
-        ob = _op_bbox(op)
-        if ob is None:
-            continue
-        for k in kisten:
-            if not (k[2] < ob[0] or ob[2] < k[0]
-                    or k[3] < ob[1] or ob[3] < k[1]):
-                beruehrt.append(op.id)
-                break
-    return beruehrt
+        i0, j0 = int(p["i0"]), int(p["j0"])
+        maske[j0:j0 + pj, i0:i0 + pi] |= teil != 0.0
+    return maske
+
+
+def _verschluckt(spec, base_dir: Path, patches) -> str:
+    """
+    Wie viel des Strichs kommt NICHT an, und wer hält dort die Höhe?
+
+    Gemessen am fertigen Feld (TerrainField.pinsel_sperre), nicht an
+    Hüllboxen: eine geschlossene Bruchkante „ebnen" sperrt ihre ganze
+    Fläche, ein Gerinne nur seinen Einschnitt. Ohne diese Auskunft sah der
+    Bearbeiter nur, wie sein Strich nach dem Speichern verschwand.
+    """
+    from .terrain import TerrainField
+    try:
+        feld = TerrainField.from_spec(spec.terrain, spec.domain, base_dir)
+        sperre = feld.pinsel_sperre()
+    except Exception:                    # Auskunft, kein Hindernis
+        return ""
+    if not sperre:
+        return ""
+    beruehrt = _strich_maske(spec, patches)
+    if beruehrt.shape != sperre["ebene"].shape:
+        return ""
+    getroffen = beruehrt & (sperre["ebene"] > 0)
+    if not getroffen.any():
+        return ""
+    anteil = float(getroffen.sum()) / float(beruehrt.sum())
+    namen = sorted({sperre["ops"][int(k) - 1]
+                    for k in np.unique(sperre["ebene"][getroffen])})
+    return (f"Auf {anteil:.0%} der bestrichenen Fläche bleibt er ohne "
+            "Wirkung: dort gelten die Sollhöhen von "
+            + ", ".join(f"„{n}“" for n in namen)
+            + " — wer dort formen will, ändert die Operation.")
+
+
+def sichtbar_geworden(spec, base_dir, eps: float = 0.01) -> dict | None:
+    """
+    Striche, die vor dem 2026-09-22 unter einer ABGELEITETEN Operation
+    verschwanden und seit der neuen Reihenfolge wirken.
+
+    Bis dahin lag der Pinsel vor dem ganzen Operationsstapel, also auch vor
+    den aus Vermessungskanten abgeleiteten Böschungen und Sohlen. Wer dort
+    strich, sah nichts — der Strich blieb aber in der Datei stehen. Jetzt
+    wirkt er. Fünf Bestandsfälle tragen solche Striche, bis 1,10 m tief;
+    ohne diese Messung änderte der Umbau ihr Gelände still.
+
+    Rückgabe: Maske, größte Abweichung und Anteil — oder None.
+    """
+    from .terrain import TerrainField
+    t = spec.terrain
+    if t is None or spec.domain is None or not t.sculpt:
+        return None
+    if not any(getattr(o, "aus_kanten", None) for o in t.operations):
+        return None
+
+    ohne = t.model_copy(deep=True)
+    ohne.sculpt = None
+    z_ohne = TerrainField.from_spec(ohne, spec.domain, base_dir).z
+    z_neu = TerrainField.from_spec(t, spec.domain, base_dir).z
+
+    # alte Reihenfolge nachstellen: Pinsel auf die nackte Basis, dann ALLE
+    # Operationen
+    nackt = t.model_copy(deep=True)
+    nackt.operations = []
+    nackt.sculpt = None
+    alt = TerrainField.from_spec(nackt, spec.domain, base_dir)
+    alt.z = alt.z + lade_ebene(t, spec.domain, Path(base_dir))
+    alt._ops = list(t.operations)
+    alt._base_dir = Path(base_dir)
+    for op in t.operations:
+        alt.apply(op)
+
+    war_unsichtbar = np.abs(alt.z - z_ohne) < eps
+    wirkt_jetzt = np.abs(z_neu - z_ohne) >= eps
+    maske = war_unsichtbar & wirkt_jetzt
+    if not maske.any():
+        return None
+    return {"maske": maske,
+            "max_dz": float(np.abs(z_neu - z_ohne)[maske].max()),
+            "anteil": float(maske.mean()),
+            "knoten": int(maske.sum())}

@@ -238,6 +238,19 @@ def _sample_bilinear(src_z, src_x0, src_y0, src_res, x, y):
 # der sicheren Seite. Wer das Feld liest, sieht an `gemessen`, wo die
 # Vermessung aufhört; die Prüfung meldet den Anteil.
 
+# Operationen, die eine feste Zielhöhe ZUSICHERN. Über ihnen wirkt der
+# Pinsel nicht — sie schreiben ihre Sollhöhe, egal was darunter liegt.
+# Relative Operationen (raise_lower, smooth) vertragen jeden Untergrund.
+SOLLHOEHEN_TYPEN = frozenset({
+    "channel_carve", "pad", "ramp", "embankment", "replace_region",
+    "set_level", "bruchkante", "boeschung", "aussenkante"})
+
+# Deckel für die Sperrmaske: sie kostet eine Auswertung des Stapels je
+# Operation. Darüber bleibt es bei der allgemeinen Erklärung im Panel,
+# statt jede Entwurfsvorschau sekundenlang aufzuhalten.
+MAX_SPERRE_OPS = 12
+MAX_SPERRE_KNOTEN = 400_000
+
 RAND_TOLERANZ = 0.10        # m: Randzellen so nah unter der Krone stützen sie
 RASTER_SAUM = 0.5           # Zellen: eine halbe Zelle über die äußersten
                             # Knoten hinaus gilt noch als „im Raster" — die
@@ -437,6 +450,12 @@ class TerrainField:
     rand: tuple[float, float] | None = None  # (min, max) der Randzellen
     stuetzung: int = 0
     quelle_nodata: int = 0                  # NODATA-Zellen in der Quelldatei
+    # Stand nach den abgeleiteten Operationen und dem Pinsel, VOR den von
+    # Hand angelegten — daraus rechnet `pinsel_sperre`, wo ein Strich
+    # ankommt (siehe from_spec)
+    _vor_eigen: np.ndarray | None = field(default=None, repr=False,
+                                          compare=False)
+    _eigen_ops: list = field(default_factory=list, repr=False, compare=False)
 
     @classmethod
     def from_spec(cls, terrain: Terrain, domain: Domain,
@@ -454,15 +473,25 @@ class TerrainField:
                     stuetzung=basis.stuetzung, quelle_nodata=basis.quelle_nodata)
         field._ops = list(terrain.operations)
         field._base_dir = Path(base_dir)
+        # Die aus Vermessungskanten ABGELEITETEN Operationen sind die
+        # Vermessung selbst (kanten.verknuepfen legt sie immer nach vorn):
+        # Böschung, Sohle, Beckenrand — nichts, was jemand zugesichert hat,
+        # sondern das gewachsene Gelände in Operationsform. Der Pinsel
+        # gehört deshalb DAHINTER und weiter VOR die von Hand angelegten
+        # Operationen, deren Sollhöhen (Planum, Gerinnesohle, Dammkrone)
+        # zugesichert bleiben. Bis 2026-09-22 lag er vor allen: in Fällen
+        # aus Vermessungslinien war er damit auf 27–43 % der Fläche
+        # wirkungslos, und der Strich schnappte nach dem Speichern zurück.
+        abgeleitet = [o for o in terrain.operations if getattr(o, "aus_kanten", None)]
+        eigen = [o for o in terrain.operations if not getattr(o, "aus_kanten", None)]
+        for op in abgeleitet:
+            field.apply(op)
         if terrain.sculpt:
-            # Sculpt-Ebene VOR den Operationen: der Pinsel formt das
-            # GEWACHSENE Gelände; die deklarierten Operationen (Gerinne-
-            # Sohle, Planum, Dammkrone …) behalten ihre Sollhöhen
-            # obendrauf. Andersherum verschob jeder Strich die
-            # zugesicherten Höhen — die „Unstimmigkeit" vom 2026-08-06.
             from .sculpt import lade_ebene
             field.z = field.z + lade_ebene(terrain, domain, Path(base_dir))
-        for op in terrain.operations:
+        field._vor_eigen = field.z.copy()
+        field._eigen_ops = eigen
+        for op in eigen:
             field.apply(op)
         return field
 
@@ -511,6 +540,66 @@ class TerrainField:
                    huelle=(round(self.x0 + i0 * r, 3), round(self.y0 + j0 * r, 3),
                            round(self.x0 + i1 * r, 3), round(self.y0 + j1 * r, 3)))
         return aus
+
+    def _stapel(self, z_start: np.ndarray) -> np.ndarray:
+        """Die eigenen Operationen auf ein gegebenes Feld — ohne Nebenwirkung."""
+        f = TerrainField(x0=self.x0, y0=self.y0, resolution=self.resolution,
+                         z=np.array(z_start, dtype=float))
+        f._ops = self._ops                  # die Außenkante sucht hier ihre
+        f._base_dir = self._base_dir        # Bezugskante
+        for op in self._eigen_ops:
+            f.apply(op)
+        return f.z
+
+    def pinsel_sperre(self, probe: float = 1.0,
+                      schwelle: float = 0.5) -> dict | None:
+        """
+        Wo kommt ein Pinselstrich an, und wo nicht?
+
+        Gemessen wird, was von einem Probe-Hub durch die von Hand angelegten
+        Operationen hindurch überlebt: liegt darüber ein Planum, eine
+        Gerinnesohle oder eine Dammkrone, schreibt sie ihre Sollhöhe, und
+        der Strich verschwindet darunter. Das ist gewollt — aber der Editor
+        muss es ZEIGEN, statt den Strich still zurückschnappen zu lassen.
+
+        Die frühere Auskunft waren Hüllboxen der Operationen (sculpt.py):
+        grob nach außen (ein Gerinne sperrte sein ganzes Rechteck) und blind
+        nach innen (eine geschlossene Bruchkante „ebnen" meldete nur ihren
+        Ring). Hier zählt, was das Feld wirklich tut.
+
+        `ebene`: 0 = frei, k = die k-te sperrende Operation (1-basiert, für
+        die Statuszeile). None, wenn nichts sperrt oder der Fall zu groß
+        ist — dann bleibt es bei der allgemeinen Erklärung im Panel.
+        """
+        if self._vor_eigen is None:
+            return None
+        kandidaten = [o for o in self._eigen_ops
+                      if o.type in SOLLHOEHEN_TYPEN]
+        if not kandidaten or len(kandidaten) > MAX_SPERRE_OPS \
+                or self.z.size > MAX_SPERRE_KNOTEN:
+            return None
+        ref = self._stapel(self._vor_eigen)
+        durch = self._stapel(self._vor_eigen + probe) - ref
+        gesperrt = durch < schwelle * probe
+        if not gesperrt.any():
+            return None
+        # je Operation getrennt, damit die Statuszeile sagen kann, WER hält
+        ebene = np.zeros(self.z.shape, dtype=np.int8)
+        ids: list[str] = []
+        alle = self._eigen_ops
+        for op in kandidaten:
+            self._eigen_ops = [op]
+            try:
+                einzeln = (self._stapel(self._vor_eigen + probe)
+                           - self._stapel(self._vor_eigen)) < schwelle * probe
+            finally:
+                self._eigen_ops = alle
+            neu = gesperrt & einzeln & (ebene == 0)
+            if neu.any():
+                ids.append(op.id)
+                ebene[neu] = len(ids)
+        return {"ebene": ebene, "ops": ids,
+                "anteil": float(gesperrt.mean())}
 
     # -- Operationsstapel (Spez. 6.2) --
 

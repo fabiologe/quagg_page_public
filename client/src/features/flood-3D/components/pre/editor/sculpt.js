@@ -17,14 +17,16 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
   const radius = ref(4.0)             // m
   const staerke = ref(0.5)            // 0..1
   const form = ref('kreis')           // kreis | quadrat
-  const striche = ref(0)              // Größe des Rückgängig-Stapels
+
+  // Name der Operation, die unter dem Cursor die Höhe hält (Statuszeile)
+  const sperreUnterCursor = ref(null)
 
   const ray = new THREE.Raycaster()
+  const cursorPos = [0, 0]            // letzte Cursorlage in Weltkoordinaten
   let cursorGrp = null                // Pinselring + Fangmarke
   let strich = null                   // { dz: Float64Array, bbox, wartet }
   let mouseLinksVorher = null         // OrbitControls-Belegung merken
   let letzterTick = 0
-  const stapel = []                   // Strich-Patches für Rückgängig
 
   const mesh = () => groups.terrain?.children?.[0] ?? null
 
@@ -104,6 +106,8 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
 
   function zeigeCursor(cx, cy) {
     if (!cursorGrp) return
+    cursorPos[0] = cx
+    cursorPos[1] = cy
     const ring = cursorGrp.getObjectByName('ring')
     const pos = ring.geometry.attributes.position
     const r = radius.value
@@ -125,10 +129,14 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
       pos.setXYZ(k, cx + x, cy + y, terrainZ(cx + x, cy + y) + 0.06)
     }
     pos.needsUpdate = true
-    // Bruchkanten-Modus: Ring wird grün, sobald eine Kante im Griff ist
+    // Bruchkanten-Modus: Ring wird grün, sobald eine Kante im Griff ist.
+    // Über einer zugesicherten Sollhöhe wird er rot: dort wirkt kein Strich.
     const fang = modus.value === 'kante' ? naechsteKante(cx, cy) : null
+    const name = sperrNameBei(cx, cy)
     ring.material.color.set(
-      modus.value !== 'kante' ? 0xffc832 : (fang ? 0x2fd06e : 0x8a8a8a))
+      name ? 0xe05252
+        : modus.value !== 'kante' ? 0xffc832 : (fang ? 0x2fd06e : 0x8a8a8a))
+    sperreUnterCursor.value = name
     cursorGrp.visible = true
   }
 
@@ -199,6 +207,7 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     const fangKante = modus.value === 'kante' ? naechsteKante(cx, cy) : null
     if (modus.value === 'kante' && !fangKante) return
     let geaendert = false
+    let beruehrtGesperrt = false
     for (let j = j0; j <= j1; j++) {
       for (let i = i0; i <= i1; i++) {
         const x = t.x0 + i * res
@@ -235,6 +244,11 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
           dz = (f.z - z[k]) * wl
         }
         if (dz === 0) continue
+        // Wo eine eigene Sollhöhe hält (Planum, Gerinnesohle), kommt der
+        // Strich nicht an. Ihn dort erst gar nicht zu setzen ist ehrlicher,
+        // als ihn live zu zeigen und nach der Server-Antwort zurück-
+        // schnappen zu lassen — genau das hiess "wird zurückgesetzt".
+        if (gesperrt(k)) { beruehrtGesperrt = true; continue }
         z[k] += dz
         strich.dz[k] += dz
         if (!strich.solid) pos.setZ(k, z[k])
@@ -255,6 +269,40 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
       }
       m.geometry.computeVertexNormals()
     }
+    if (beruehrtGesperrt) sperrHinweis()
+  }
+
+  // ---- Wo der Pinsel nicht ankommt ---------------------------------------
+  // Der Server misst es am fertigen Feld (TerrainField.pinsel_sperre) und
+  // schickt je Rasterknoten die haltende Operation mit; hier wird nur noch
+  // gezeigt und gesagt.
+
+  function gesperrt(k) {
+    const s = store.terrain?.sperre
+    return !!s && s[k] > 0
+  }
+
+  function sperrNameBei(cx, cy) {
+    const g = gitter()
+    const s = store.terrain?.sperre
+    if (!g || !s) return null
+    const { t, nx, ny, res } = g
+    const i = Math.round((cx - t.x0) / res)
+    const j = Math.round((cy - t.y0) / res)
+    if (i < 0 || j < 0 || i >= nx || j >= ny) return null
+    const k = s[j * nx + i]
+    return k > 0 ? (store.terrain.sperreOps?.[k - 1] ?? '—') : null
+  }
+
+  let letzterHinweis = 0
+  function sperrHinweis() {
+    const jetzt = performance.now()
+    if (jetzt - letzterHinweis < 4000) return      // nicht bei jedem Tick
+    letzterHinweis = jetzt
+    const name = sperrNameBei(cursorPos[0], cursorPos[1])
+    melden('Hier hält ' + (name ? `„${name}“` : 'eine Geländeoperation')
+      + ' die zugesicherte Höhe — der Pinsel wirkt dort nicht. Wer die Form '
+      + 'ändern will, ändert die Operation.', 'hinweis')
   }
 
   // ---- Patches (Gitterindizes + dz-Teilfeld) ----------------------------
@@ -275,14 +323,13 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     return { i0, j0, dz }
   }
 
-  function inversesPatch(p) {
-    return { i0: p.i0, j0: p.j0,
-      dz: p.dz.map((zeile) => zeile.map((v) => -v)) }
-  }
-
-  async function sende(patches) {
-    await store.sculptPatches(patches)
-    striche.value = stapel.length
+  // Pinselgrenzen aus dem Gebiet: 4,0 m fest war am 12-m-Becken geeicht
+  // (zwei Drittel seiner Breite je Strich) und im 2-m-Schacht unbrauchbar.
+  function grenzen() {
+    const e = store.spec?.domain?.extent
+    const g = e ? Math.max(e[2] - e[0], e[3] - e[1], 1) : 25
+    return { min: Math.max(Math.round(g / 200 * 20) / 20, 0.05),
+      max: Math.round(g / 3), vorgabe: Math.max(g / 12, 0.1) }
   }
 
   // ---- Pointer-Maschine (von Editor3D aufgerufen) -----------------------
@@ -336,14 +383,13 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     strich = null
     holeControls().enabled = true
     if (patch) {
-      stapel.push(patch)
-      await sende([patch])
+      // EIN Zeitstrahl: der Strich liegt im selben Stapel wie jede
+      // Objektänderung, Strg+Z nimmt zurück, was zuletzt geschah. Der
+      // eigene, unsichtbare Pinselstapel ist weg — er starb ohnehin bei
+      // jedem Phasenwechsel, und Strg+Z traf daneben.
+      store.recordSculpt(patch)
+      await store.sculptPatches([patch])
     }
-  }
-
-  async function strichZurueck() {
-    const p = stapel.pop()
-    if (p) await sende([inversesPatch(p)])
   }
 
   // ---- Aktivierung -------------------------------------------------------
@@ -364,8 +410,9 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     // Linke Maustaste gehört dem Pinsel; Kamera bleibt auf rechts/Mitte
     mouseLinksVorher = controls.mouseButtons.LEFT
     controls.mouseButtons.LEFT = null
-    stapel.length = 0
-    striche.value = 0
+    // Der Pinsel startet in der Größe, die zu DIESEM Fall passt — die feste
+    // Vorgabe 4,0 m deckte in einem 12-m-Becken zwei Drittel der Breite
+    radius.value = Math.round(grenzen().vorgabe * 20) / 20
     return true
   }
 
@@ -380,7 +427,6 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     controls.enabled = true
   }
 
-  return { modus, radius, staerke, form, striche,
-    aktivieren, deaktivieren, strichStart, strichZieh, strichEnde,
-    strichZurueck }
+  return { modus, radius, staerke, form, sperreUnterCursor, grenzen,
+    aktivieren, deaktivieren, strichStart, strichZieh, strichEnde }
 }

@@ -131,7 +131,8 @@ def test_messlatte_misst_den_referenzfall(tmp_path):
     assert m["randspanne"] > 2.0          # geneigtes Tal: der Rand ist keine Ebene
     assert m["phantom_knoten"] >= 0 and m["phantom_m3"] >= 0.0
     assert m["ops"] == 0
-    assert m["pinsel_wirkungslos_heute"] == 0.0
+    assert m["pinsel_wirkungslos_vorher"] == 0.0
+    assert m["pinsel_wirkungslos_jetzt"] == 0.0
 
 
 def test_messlatte_sieht_sollhoehen_operationen(tmp_path):
@@ -145,5 +146,5 @@ def test_messlatte_sieht_sollhoehen_operationen(tmp_path):
     assert m["ops_eigene_sollhoehe"] == 1
     flaeche_gebiet = (TAL_EXTENT[2] - TAL_EXTENT[0]) * (TAL_EXTENT[3] - TAL_EXTENT[1])
     erwartet = 20 * 20 / flaeche_gebiet
-    assert abs(m["pinsel_wirkungslos_heute"] - erwartet) < 0.01
-    assert abs(m["pinsel_wirkungslos_geplant"] - erwartet) < 0.01
+    assert abs(m["pinsel_wirkungslos_vorher"] - erwartet) < 0.01
+    assert abs(m["pinsel_wirkungslos_jetzt"] - erwartet) < 0.01

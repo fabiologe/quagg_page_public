@@ -238,6 +238,43 @@ def _sculpt_drehen(spec, base_dir: Path, c: float, s: float, mitte,
     hinweise.append("Sculpt-Ebene mitgedreht.")
 
 
+def _belag_drehen(spec, base_dir: Path, c: float, s: float, mitte,
+                  neues_extent, hinweise: list[str]) -> None:
+    """
+    Die Belagskarte mitdrehen. Sie trägt KENNUNGEN, keine Höhen: zwischen
+    1 und 3 läge sonst 2, ein Belag, den niemand gemalt hat. Deshalb wird
+    der nächste Nachbar genommen; außerhalb der alten Karte bleibt 0
+    („kein Belag"), wie bei der Sculpt-Ebene.
+    """
+    t = getattr(spec, "terrain", None)
+    if t is None or t.belagskarte is None:
+        return
+    from .belag import gitter_masse, karte_lesen, karte_schreiben
+    try:
+        alt = karte_lesen(t, spec.domain, Path(base_dir))
+    except Exception as e:
+        hinweise.append(f"Belagskarte nicht lesbar ({e}) — nicht gedreht.")
+        return
+    ax0, ay0, res, _, _ = gitter_masse(t, spec.domain)
+    a_ny, a_nx = alt.shape
+    nx0, ny0, nx1, ny1 = neues_extent
+    nx_ = int(round((nx1 - nx0) / res)) + 1
+    ny_ = int(round((ny1 - ny0) / res)) + 1
+    xx, yy = np.meshgrid(nx0 + np.arange(nx_) * res,
+                         ny0 + np.arange(ny_) * res)
+    dx, dy = xx - mitte[0], yy - mitte[1]        # p_alt = R^T (p - m) + m
+    xa = c * dx + s * dy + mitte[0]
+    ya = -s * dx + c * dy + mitte[1]
+    i = np.rint((xa - ax0) / res).astype(int)
+    j = np.rint((ya - ay0) / res).astype(int)
+    drin = (i >= 0) & (i < a_nx) & (j >= 0) & (j < a_ny)
+    neu = np.where(drin, alt[np.clip(j, 0, a_ny - 1), np.clip(i, 0, a_nx - 1)], 0)
+    quelle = t.belagskarte.source or "belagskarte.asc"
+    karte_schreiben(neu.astype(int), nx0, ny0, res, Path(base_dir) / quelle)
+    t.belagskarte.source = quelle
+    hinweise.append("Belagskarte mitgedreht.")
+
+
 def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict:
     """
     Fall um `grad` (gegen den Uhrzeigersinn) um die Gebietsmitte drehen.
@@ -321,6 +358,18 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
     if boxen and not rechtwinklig:
         hinweise.append("Verfeinerungsquader wurden achsparallel umschrieben "
                         "— sie sind dadurch etwas größer als vorher")
+
+    # --- Vermessungskanten und Vorfüllungen
+    # Sie blieben bis 2026-09-22 stehen, während Gelände, Operationen und
+    # Bauwerke sich drehten: die Kante zeigte danach quer durchs Modell,
+    # und „Kanten verknüpfen" zog das Gelände dorthin zurück (Audit I5).
+    for k in (spec.terrain.kanten if spec.terrain else []):
+        k.polyline = _liste(k.polyline, c, s, mitte)
+    for v in (spec.solver.vorfuellungen or []):
+        v.polygon = _liste(v.polygon, c, s, mitte)
+
+    # --- Belagskarte: Kennungen, also nearest, nie interpoliert
+    _belag_drehen(spec, base_dir, c, s, mitte, neues_extent, hinweise)
 
     # --- Auswertung
     for sec in spec.evaluation.sections:

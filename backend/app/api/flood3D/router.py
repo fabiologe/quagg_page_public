@@ -1633,6 +1633,14 @@ def _geometrie_payload(spec: CaseSpec, d: Path, entwurf: bool = False) -> dict:
                 import numpy as _np
                 out["terrain"]["gemessen_b64"] = base64.b64encode(
                     _np.packbits(t.gemessen.ravel()).tobytes()).decode()
+            # Wo der Pinsel nicht ankommt (eigene Sollhöhen halten dort die
+            # Höhe) — der Editor sperrt den Cursor dort sichtbar, statt den
+            # Strich nach dem Speichern verschwinden zu lassen
+            sperre = t.pinsel_sperre()
+            if sperre:
+                out["terrain"]["pinsel_sperre_b64"] = base64.b64encode(
+                    sperre["ebene"].tobytes()).decode()
+                out["terrain"]["pinsel_sperre_ops"] = sperre["ops"]
             out["terrain_solid"] = _koerper_vorschau(spec, t, d, out)
         except Exception as e:
             # Audit P2-8: die Szene blieb still leer/alt, während build_case

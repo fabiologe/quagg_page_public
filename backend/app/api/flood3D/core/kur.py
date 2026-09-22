@@ -36,6 +36,7 @@ KUR_LABELS = {
     "gebiet_auf_vermessung": "Gebiet auf die Vermessung setzen",
     "gelaende_neu_abtasten": "Gelände aus dem Original neu abtasten",
     "import_neu_ableiten_roh": "Import aus der Rohdatei neu ableiten",
+    "striche_verwerfen": "Diese Pinselstriche verwerfen",
     # ohne Prüfbefund — beschriftet die Gizmo-Aktion im Mutationsvertrag
     "drehen": "Modell drehen",
 }
@@ -381,6 +382,28 @@ def _import_neu_ableiten_roh(spec: CaseSpec, args: dict, base_dir=None) -> str:
             + " · ".join(info.get("report") or [])[:400])
 
 
+def _striche_verwerfen(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    """
+    Die Pinselstriche löschen, die die aus der Vermessung abgeleitete
+    Fläche überformen — genau dort, sonst nichts. Misst mit derselben
+    Funktion wie die Regel (sculpt.sichtbar_geworden).
+    """
+    import numpy as np
+
+    from .sculpt import _speichern, lade_ebene, sichtbar_geworden
+
+    d = Path(base_dir or ".")
+    info = sichtbar_geworden(spec, d)
+    if not info:
+        return ("Kein Pinselstrich überformt die abgeleitete Fläche — nichts "
+                "zu verwerfen")
+    dz = lade_ebene(spec.terrain, spec.domain, d)
+    _speichern(spec, d, np.where(info["maske"], 0.0, dz))
+    return (f"{info['knoten']} Rasterknoten zurückgesetzt (bis "
+            f"{info['max_dz']:.2f} m) — dort gilt wieder die Vermessung. "
+            "Striche außerhalb dieser Fläche bleiben.")
+
+
 def _durchstoss_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Am vergrabenen Durchlass das Bohren einschalten. Das Gelände wird
@@ -486,6 +509,7 @@ _KUREN = {
     "gebiet_auf_vermessung": _gebiet_auf_vermessung,
     "gelaende_neu_abtasten": _gelaende_neu_abtasten,
     "import_neu_ableiten_roh": _import_neu_ableiten_roh,
+    "striche_verwerfen": _striche_verwerfen,
 }
 
 

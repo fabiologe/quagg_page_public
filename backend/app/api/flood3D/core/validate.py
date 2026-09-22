@@ -523,6 +523,42 @@ def _pruefe_gelaendeabdeckung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     return befunde
 
 
+def _pruefe_pinsel(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Überformt der Pinsel die Vermessung? Seit dem 2026-09-22 wirkt er NACH
+    den aus Vermessungskanten abgeleiteten Operationen — das ist gewollt
+    (vorher war er in genau diesen Fällen auf einem Drittel der Fläche
+    wirkungslos), heißt aber auch: wo ein Strich liegt, weicht das Gelände
+    von der Vermessung ab. Das gehört in den Bericht, und Striche aus der
+    Zeit davor, die niemand sehen konnte, gehören beseitigt.
+    """
+    befunde: list[dict] = []
+    t = spec.terrain
+    if t is None or not t.sculpt or spec.domain is None:
+        return befunde
+    if not any(getattr(o, "aus_kanten", None) for o in t.operations):
+        return befunde
+    from .sculpt import sichtbar_geworden
+    try:
+        info = sichtbar_geworden(spec, ctx.base_dir)
+    except Exception as e:                  # eine Regel, die ausfällt, sagt es
+        return [_finding("terrain", "hinweis",
+                         "Die Pinselstriche ließen sich nicht gegen die "
+                         f"Vermessung prüfen ({type(e).__name__}: {e}).")]
+    if not info:
+        return befunde
+    flaeche = info["knoten"] * (t.base.resolution ** 2)
+    befunde.append(_finding(
+        "terrain", "hinweis",
+        f"Der Pinsel überformt die aus der Vermessung abgeleitete Fläche auf "
+        f"{flaeche:.0f} m² um bis zu {info['max_dz']:.2f} m. Bis zum "
+        "22.09.2026 wirkte er VOR den abgeleiteten Operationen — Striche aus "
+        "dieser Zeit waren unsichtbar und wirken jetzt. Gewollt? Dann "
+        "stehenlassen; sonst verwerfen.",
+        fix=kur("striche_verwerfen")))
+    return befunde
+
+
 def _import_referenziert(spec: CaseSpec, import_id: str) -> str | None:
     """Erstes Objekt, das aus diesem Import stammt — None, wenn keines."""
     t = spec.terrain
@@ -2005,6 +2041,7 @@ _PRUEFUNGEN = [
     _pruefe_aushub,
     _pruefe_gebietshoehe,
     _pruefe_gelaendeabdeckung,
+    _pruefe_pinsel,
     _pruefe_importablage,
     _pruefe_geometrie,
     _pruefe_gelaendekanten,

@@ -342,3 +342,45 @@ headless Chrome, `scratchpad/probe_e1_e4.js`):
 Nebenfund der Sonde: `window.prompt` (Launch-Passwort) blockiert die Seite
 in headless-Automatisierung vollständig — Dialog-Handler nötig.
 Tests: Backend 769 + 1 übersprungen, Client 379 (Basis 755 / 352).
+
+### E3 gebaut (2026-09-22) — der Pinsel wirkt dort, wo man streicht
+
+Fabios Befund war „viele Bearbeitungsschritte werden beim Gelände-Editieren
+zurückgesetzt". Ursache: die Sculpt-Ebene lag VOR dem ganzen
+Operationsstapel — also auch vor den aus Vermessungskanten ABGELEITETEN
+Operationen. Die sind aber die Vermessung selbst, kein zugesichertes Maß.
+In Fällen aus Linien war der Pinsel damit auf 27–43 % der Fläche
+wirkungslos: der Strich erschien live und schnappte nach der Server-Antwort
+zurück, ohne ein Wort.
+
+| Größe | vorher | nachher |
+|---|---|---|
+| Pinsel wirkungslos (Beta07, BetaTest06, g0) | 40 % | **0 %** |
+| Pinsel wirkungslos (BetaTest08 / 04 / TESTTXT_01 / 03) | 43 / 39 / 38 / 27 % | **0 %** |
+| Sperre = nur eigene Sollhöhen (Sonde, angelegtes 5×5-m-Planum in 12×13 m) | — | **16,2 %**, benannt: `sonden_planum_3` |
+| Rückgängig-Stapel für Striche | eigener, unsichtbarer, stirbt beim Phasenwechsel | **ein Zeitstrahl mit den Objektänderungen** |
+| Pinselradius-Regler | fest „Ø" 0,5 … 25 m, Vorgabe 4,0 m (= 8 m breit im 12-m-Becken) | **„Radius", 0,05 … 4 m, Vorgabe 1,1 m** (aus dem Gebiet) |
+
+Neue Reihenfolge: Basis → abgeleitete Operationen → **Pinsel** → eigene
+Operationen. Wo eine eigene Sollhöhe hält, misst der Server es exakt am
+fertigen Feld (`TerrainField.pinsel_sperre`, ein Probe-Hub durch den
+Stapel) statt über Hüllboxen — eine geschlossene Bruchkante „ebnen" sperrt
+ihre Fläche, ein Gerinne nur seinen Einschnitt. Der Editor zeichnet den
+Cursor dort rot, setzt den Strich gar nicht erst und nennt die haltende
+Operation; der Deckel für die Maske ist 12 Operationen / 400 000 Knoten.
+
+Migration: Striche, die vorher unsichtbar unter einer abgeleiteten Fläche
+lagen, wirken jetzt. Fünf Bestandsfälle tragen solche (bis 0,98 m). Die
+neue Prüfregel nennt Fläche und Tiefe, die Kur „Diese Pinselstriche
+verwerfen" räumt genau sie weg (Striche daneben bleiben) — Regel und Kur
+messen mit derselben Funktion (`sculpt.sichtbar_geworden`).
+
+Dazu: der Sculpt-Endpunkt speichert den offenen Entwurf weiterhin (er
+braucht das gespeicherte Gitter), sagt es aber jetzt; die Antwort des
+Servers zum Strich landet in der Meldungsleiste statt im Nichts; und
+`rotate` dreht Vermessungskanten, Vorfüllungen und Belagskarte mit — sie
+blieben stehen, während Gelände und Bauwerke sich drehten (Audit I5).
+
+Die Messlatte fragt für „jetzt" das Werkzeug selbst (`pinsel_sperre`) statt
+einer Nachbildung; „vorher" stellt die alte Reihenfolge nach.
+Tests: Backend 776 + 1 übersprungen, Client 386.

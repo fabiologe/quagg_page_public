@@ -14,6 +14,12 @@ import { aufraeumplan } from '../utils/aufraeumen'
 // Katalog im Fallaufbau (casebuilder.MATERIAL_KS). k_s ist die Größe, die
 // OpenFOAM kennt; das Manning-n daneben ist nur die Brücke in die
 // 2D-Welt (n ≈ k_s^(1/6)/26 nach Strickler).
+// Rückgängig ist beim Pinsel das inverse Patch — es gibt keinen zweiten
+// Mechanismus (die Delta-Datei kennt keine Schnappschüsse)
+const invertiertesPatch = (p) => ({
+  i0: p.i0, j0: p.j0, dz: p.dz.map((zeile) => zeile.map((v) => -v)),
+})
+
 const BELAG_VORLAGE = () => [
   { id: 1, name: 'Beton glatt', ks: 0.0005, farbe: '#9fb3c8' },
   { id: 2, name: 'Beton', ks: 0.002, farbe: '#8695a3' },
@@ -235,10 +241,7 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Phase oder Undo-Verlauf zu verlieren (openCase täte beides).
     async adoptImportedSpec(spec) {
       const snap = this.spec ? JSON.stringify(this.spec) : null
-      if (snap) {
-        this.undoStack.push(snap)
-        this.redoStack = []
-      }
+      if (snap) this._merken({ art: 'spec', snap })
       this.spec = spec
       this.dirty = false
       this.selection = null
@@ -260,8 +263,7 @@ export const usePreStore = defineStore('flood3d-pre', {
       try {
         const res = await aufruf(this.activeCaseId)
         if (undo && res.geaendert !== false && snap) {
-          this.undoStack.push(snap)
-          this.redoStack = []
+          this._merken({ art: 'spec', snap })
         }
         this.spec = res.spec
         this.validation = res.validation
@@ -302,9 +304,21 @@ export const usePreStore = defineStore('flood3d-pre', {
     // Undo-Eintrag: der Spec-Snapshot kann die Delta-Datei nicht
     // zurückdrehen — Rückgängig ist das inverse Patch (editor/sculpt.js)
     async sculptPatches(patches) {
-      return this.serverMutation(
+      // Der Server arbeitet am GESPEICHERTEN Fall: die Patches sind
+      // Gitterindizes, und ein offener Entwurf könnte ein anderes Gitter
+      // haben. serverMutation speichert deshalb vorher — bis 2026-09-22
+      // still, was beim Formen ungefragt die halbfertige Arbeit festschrieb.
+      if (this.dirty) {
+        this.melden('Zum Formen wurden die offenen Änderungen gespeichert — '
+          + 'der Pinsel arbeitet am gespeicherten Gitter.', 'hinweis')
+      }
+      const meldungen = await this.serverMutation(
         (id) => flood3dApi.sculpt(id, patches),
         'Formen fehlgeschlagen', { undo: false })
+      // Was der Server zum Strich zu sagen hat (etwa: hier hält eine
+      // Sollhöhe die Höhe), ging bisher verloren
+      for (const m of meldungen) this.melden(m, 'hinweis')
+      return meldungen
     },
 
     // --- Belagskarte (Oberflächenbeläge des Geländes) -------------------
@@ -496,7 +510,12 @@ export const usePreStore = defineStore('flood3d-pre', {
           // wo die Vermessung aufhört (1 = gemessen); fehlt der Schlüssel,
           // ist alles gemessen — dann steht nirgends die Ebene
           gemessen: p.terrain.gemessen_b64
-            ? b64ToBits(p.terrain.gemessen_b64, n) : null }
+            ? b64ToBits(p.terrain.gemessen_b64, n) : null,
+          // wo der Pinsel nicht ankommt: 0 = frei, k = k-te Operation aus
+          // pinsel_sperre_ops (fehlt der Schlüssel, sperrt nichts)
+          sperre: p.terrain.pinsel_sperre_b64
+            ? new Int8Array(b64Buffer(p.terrain.pinsel_sperre_b64)) : null,
+          sperreOps: p.terrain.pinsel_sperre_ops ?? [] }
       } else if (!entwurf) {
         this.terrain = null
       }
@@ -618,30 +637,64 @@ export const usePreStore = defineStore('flood3d-pre', {
 
     // -- Bearbeitungsverlauf ------------------------------------------------
 
-    recordUndo() {
-      if (!this.spec) return
-      this.undoStack.push(JSON.stringify(this.spec))
+    // EIN Zeitstrahl für alles, was der Bearbeiter tut. Ein Eintrag ist
+    // entweder ein Spec-Schnappschuss oder ein Pinselstrich: der liegt in
+    // der Delta-DATEI neben dem Fall, und ein Spec-Schnappschuss kann sie
+    // nicht zurückdrehen (die Undo-Snapshot-Falle). Bis 2026-09-22 hatte
+    // der Pinsel deshalb einen eigenen, unsichtbaren Stapel — Strg+Z nahm
+    // die letzte OBJEKT-Änderung zurück, nicht den Strich davor.
+    _merken(eintrag) {
+      this.undoStack.push(eintrag)
       if (this.undoStack.length > 100) this.undoStack.shift()
       this.redoStack = []           // neuer Zweig verwirft die Redo-Kette
     },
 
+    recordUndo() {
+      if (!this.spec) return
+      this._merken({ art: 'spec', snap: JSON.stringify(this.spec) })
+    },
+
+    recordSculpt(patch) {
+      this._merken({ art: 'sculpt', patch })
+    },
+
     _restoreSnapshot(snap) {
+      const lebend = this.spec?.terrain
       this.spec = JSON.parse(snap)
+      // Verweis und Stand der Sculpt-Ebene aus dem LEBENDEN Stand behalten:
+      // die Datei dreht nicht mit, und ein alter Stempel zeigte auf einen
+      // Stand, den es nicht mehr gibt
+      if (lebend && this.spec?.terrain) {
+        this.spec.terrain.sculpt = lebend.sculpt
+        this.spec.terrain.sculpt_stand = lebend.sculpt_stand
+      }
       if (this.selection && !this.selectedObject) this.selection = null
       this.dirty = true
       this.scheduleDraftPreview()
     },
 
-    undoEdit() {
-      if (!this.undoStack.length) return
-      this.redoStack.push(JSON.stringify(this.spec))
-      this._restoreSnapshot(this.undoStack.pop())
+    async undoEdit() {
+      const e = this.undoStack.pop()
+      if (!e) return
+      if (e.art === 'sculpt') {
+        this.redoStack.push(e)
+        await this.sculptPatches([invertiertesPatch(e.patch)])
+        return
+      }
+      this.redoStack.push({ art: 'spec', snap: JSON.stringify(this.spec) })
+      this._restoreSnapshot(e.snap)
     },
 
-    redoEdit() {
-      if (!this.redoStack.length) return
-      this.undoStack.push(JSON.stringify(this.spec))
-      this._restoreSnapshot(this.redoStack.pop())
+    async redoEdit() {
+      const e = this.redoStack.pop()
+      if (!e) return
+      if (e.art === 'sculpt') {
+        this.undoStack.push(e)
+        await this.sculptPatches([e.patch])
+        return
+      }
+      this.undoStack.push({ art: 'spec', snap: JSON.stringify(this.spec) })
+      this._restoreSnapshot(e.snap)
     },
 
     startPlatzierung(art, id) {
@@ -735,9 +788,7 @@ export const usePreStore = defineStore('flood3d-pre', {
         }
       }
       if (!list || !snap) return
-      this.undoStack.push(snap)
-      if (this.undoStack.length > 100) this.undoStack.shift()
-      this.redoStack = []
+      this._merken({ art: 'spec', snap })
       // eindeutige ID
       let n = list.length + 1
       while (list.some((o) => o.id === `${template.id}_${n}`)) n++
