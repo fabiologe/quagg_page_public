@@ -537,6 +537,14 @@ async def run_detail(run_id: str):
     paths = _paths(run_id)
     result = _result(paths)
     manifest = read_manifest(paths) or {}
+    # Befunde, die sich erst nach dem Lauf ergeben haben (Altlauf vor der
+    # Ablaufdruck-Korrektur, E7): beim Lesen ergänzt, nie ins Manifest
+    # geschrieben — die Archive bleiben, wie sie sind
+    from .core.evaluate import altlauf_hinweise
+    nachtraeglich = altlauf_hinweise(manifest)
+    if nachtraeglich:
+        manifest = {**manifest,
+                    "befunde": [*(manifest.get("befunde") or []), *nachtraeglich]}
     return {"run_id": run_id,
             "status": (result or {}).get(
                 "status", manifest.get("status", "unbekannt")),

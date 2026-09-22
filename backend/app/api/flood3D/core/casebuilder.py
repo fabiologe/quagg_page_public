@@ -9,10 +9,13 @@ und wird hier erzeugt — forces_<patch>, discharge_<section>, gauge_<gauge>,
 water_volume, residuals. Bricht man ihn, findet das PostProzessing die
 Ergebnisse nicht mehr; test_stage3 prüft die Kopplung.
 
-Bewusste Stufe-3-Vereinfachung: outflow_fixed_level wird als
-Druckrand p_rgh = 0 mit inletOutlet-Alphafeld angesetzt; die exakte
-Wasserspiegelhaltung (prghTotalPressure/Wellenauslass) wird in Stufe 5 an
-echten Rechenläufen abgestimmt und dann hier nachgezogen.
+Ablaufdruck (E7, Audit G1): ein freier Ablauf ist ein Freistrahl — auf
+jeder Wasserfläche des Patches herrscht Luftdruck (prghTotalPressure p0 0),
+unabhängig von hRef und von der absoluten Höhenlage. Bis 2026-09-22 stand
+dort totalPressure p0 0 mit hRef = 0: p_rgh = 0 hieß „Unterwasser auf
+0 m NHN", und der Rand sog mit der ganzen Höhenlage (Gegenlauf: 33 m/s bei
+z = 96, 57 m/s bei z = 296, Zahlen in docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
+Der feste Unterwasserstand bleibt fixedValue rho*g*(L - hRef) mit hRef = L.
 """
 from __future__ import annotations
 
@@ -1211,13 +1214,22 @@ RHO_WASSER = 1000.0
 
 def h_ref(spec: CaseSpec) -> float:
     """
-    Bezugshöhe für p_rgh. Sie wird auf den ERSTEN festen Ablaufpegel gelegt:
-    dann ist der vorzuschreibende Druck dort exakt null und gilt für Wasser
-    UND Luft gleichermaßen. Ohne festen Pegel bleibt sie null (Standard).
+    Bezugshöhe für p_rgh = p - rho*g*(z - hRef). Sie liegt IMMER im Gebiet:
+
+    * auf dem ERSTEN festen Ablaufpegel — dann ist der dort vorzuschreibende
+      Druck exakt null und gilt für Wasser UND Luft gleichermaßen;
+    * sonst auf der Gebietsunterkante. Der freie Ablauf (prghTotalPressure)
+      braucht hRef für das Wasser nicht — nur die Luft auf offenen Flächen
+      spürt rho_Luft*g*(z - hRef), und das bleibt so unter 100 Pa.
+
+    Der alte Rückfall 0.0 war der Audit-Fund G1: bei z = 96 m sog der freie
+    Ablauf mit 96 m Fallhöhe.
     """
     for b in spec.boundaries:
         if b.type == "outflow_fixed_level":
             return float(b.level)
+    if spec.domain is not None:
+        return float(spec.domain.z_min)
     return 0.0
 
 
@@ -1256,7 +1268,13 @@ def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
         alpha[b.patch] = ("        type            inletOutlet;\n"
                           "        inletValue      uniform 0;\n"
                           "        value           uniform 0;\n")
-        p[b.patch] = ("        type            totalPressure;\n"
+        # Atmosphäre: p_rgh = 0 — für die Luft exakt hydrostatisch.
+        # Freier Ablauf: Luftdruck p = 0 auf JEDER Fläche des Patches
+        # (Freistrahl), p_rgh = -rho_Fläche*(g·h - g·hRef) rechnet OpenFOAM
+        # je Fläche selbst. Mit totalPressure stand hier p_rgh = 0 auch auf
+        # den Wasserflächen, und das hieß Unterwasser auf hRef (Audit G1).
+        art = "totalPressure" if b.type == "atmosphere" else "prghTotalPressure"
+        p[b.patch] = (f"        type            {art};\n"
                       "        p0              uniform 0;\n"
                       "        value           uniform 0;\n")
         if b.type == "outflow_constant":

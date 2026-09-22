@@ -164,7 +164,7 @@ gemessen (nur gelesen), I3 und I14 von Hand nachgemessen.
 
 | # | Schwere | Stelle | Entscheidung | Versagt wo |
 |---|---|---|---|---|
-| G1 | **hoch — betrifft Ergebnisse** | `casebuilder.py:1174-1183, 1221-1223` | `outflow_free` = `totalPressure p0 0` auf p_rgh, `hRef = 0`, solange kein fester Pegel existiert. Mit p = p_rgh − ρg(z − hRef) heißt p_rgh = 0 auf einer wassergefüllten Ablauffläche: Unterwasserstand auf **0 m NHN**. Der Sog wächst mit der absoluten Höhenlage: √(2gz) = 6 m/s bei 2 m, 43 m/s bei 95 m, **66 m/s bei 223 m** | Im Code belegt, Folge hergeleitet, **nicht durch Gegenlauf bewiesen**. Dazu passt das Archiv: `Rentrich_BetaTest08_r004` (`outflow_free`, Q = 0,8 m³/s) zeigt im DN800-Auslauf τ_max = 2 443 N/m² (plausibel ~6), Courant-Mittel 0,0017, 760 881 Zeitschritte. `tests/test_audit_luecken.py:70` schreibt `h_ref == 0.0` sogar fest |
+| G1 | **hoch — betrifft Ergebnisse** | `casebuilder.py:1174-1183, 1221-1223` | `outflow_free` = `totalPressure p0 0` auf p_rgh, `hRef = 0`, solange kein fester Pegel existiert. Mit p = p_rgh − ρg(z − hRef) heißt p_rgh = 0 auf einer wassergefüllten Ablauffläche: Unterwasserstand auf **0 m NHN**. Der Sog wächst mit der absoluten Höhenlage: √(2gz) = 6 m/s bei 2 m, 43 m/s bei 95 m, **66 m/s bei 223 m** | **Durch Gegenlauf bewiesen und gebaut (E7, s. u.):** 33 m/s bei z = 96, 57 m/s bei z = 296, danach 6,7 m/s an beiden Höhen. Dazu passt das Archiv: `Rentrich_BetaTest08_r004` (`outflow_free`, Q = 0,8 m³/s) zeigt im DN800-Auslauf τ_max = 2 443 N/m² (plausibel ~6), Courant-Mittel 0,0017, 760 881 Zeitschritte. `tests/test_audit_luecken.py:70` schrieb `h_ref == 0.0` sogar fest |
 | G2 | hoch, still | `terrain.py:113-167` | 400 Jacobi-Schritte unabhängig von der Fläche, keine Rückmeldung über Konvergenz | 12 m: 0,000 m Fehler · 50 m: 0,17 m · 100 m: 0,59 m · 300 m: 2,49 m |
 | G3 | hoch, still | `meshgen.py:30-36`; `casebuilder.py:551-555, 1205-1208` | Zulauf = ganze x_min-Fläche mit α = 1, Ablauf = x_max | BetaTest10: Zulauf 371,5 m² (74 m breit), v = 0,003 m/s, 150 m² davon **über** dem Plateau; das Ablaufrohr endet im Inneren ohne Rand |
 | G4 | mittel, still | `terrain.py:307-308`; `sculpt.py:33-34`; `belag.py:150-151` | `nx = round((x1−x0)/res) + 1` — passt nur bei ganzzahligen Vielfachen | Gebiet 12,2 m / Raster 0,5: die Geländefläche endet 0,20 m vor dem Rand (BetaTest05: 0,16 m) — möglicher Netzleck, nicht gelaufen |
@@ -185,6 +185,8 @@ gemessen (nur gelesen), I3 und I14 von Hand nachgemessen.
 1. **G1 Ablaufdruck** — der einzige Fund, der bereits gerechnete Ergebnisse in
    Frage stellt. Erst mit einem kurzen Gegenlauf belegen (derselbe Fall einmal
    mit `hRef` auf Ablaufhöhe oder `prghPressure p 0`), dann entscheiden.
+   → **E7 (2026-09-22): Gegenlauf gefahren, `prghTotalPressure` gebaut**, Altläufe
+   tragen den Vorbehalt in der Qualitätsansicht.
 2. **Teil 1 + P1 + C2** — Phantomgelände: nicht klemmen, Maske erhalten, Regel
    „x % ohne Geländedaten", Bericht nicht nach 1,8 s wegwerfen.
 3. **I3** — Offset **vor** der STL-Ablage abziehen (oder Kandidaten als
@@ -512,3 +514,54 @@ Sechs Commits (E6a/b `80fd21b`, E6c `952ca9e`, E6d `aada464`, E6e
 | P15 stumme `except`, Rohr irgendwo = Anschluss, y⁺ immer | Kasten 6,5 m vom Rohr: Warnung | drei Befunde statt Schweigen; Rohr muss auf zwei Zellen heran: **Fehler**, 0,5 m: Warnung; y⁺ nur mit Sohlschub-Kriterium |
 
 Tests: Backend 845 + 1 übersprungen, Client 400.
+
+### E7 gebaut (2026-09-22) — G1 Ablaufdruck, erst der Gegenlauf
+
+**Gegenlauf** auf diesem Server im Docker `fabiologe/quagg-foam-local`
+(OpenFOAM v2406, 2 CPUs, je Lauf 1–5 min), über den ECHTEN Weg:
+`bundle_bauen` → `case.zip` → `local_runner.py`, Varianten nur an `0/p_rgh`
+und `constant/hRef` im Paket. Fall: Becken 8 × 3 m, flaches Gelände,
+0,6 m Startwasser (11,65 m³ diskret), kein Zulauf, freier Ablauf über die
+ganze Fläche x_max, 6 s, 5 760 Zellen — einmal bei **z = 96 m**, einmal bei
+**z = 296 m**. Ein Rand ohne Bezug zur Höhenlage muss beides gleich rechnen.
+Ablage: `backend/app/api/flood3D/data/probe_e7/` (gitignored), Auswertung
+`scratchpad/e7_auswerten.py` aus `postProcessing/patchflow_outlet`
+(dieselbe Quelle wie `extract_case`), den Feldern und dem Solver-Log.
+
+| Variante | z | Zeitschritte | Verlust in den ersten 50 ms | Q(1 s) / Q(6 s) | Ablaufspalte: \|U\|max · u_x Wasser · α | 96 ↔ 296 |
+|---|---|---|---|---|---|---|
+| **heute** `totalPressure p0 0`, hRef 0 | 96 | 5 419 | **0,59 m³** | 0,70 / 0,67 | **33,4 m/s** · 4,06 · 0,11 | ΔQ **7,3 %**, Δ\|U\| **23 m/s** |
+| | 296 | 8 980 | 0,68 m³ | 0,64 / 0,60 | **56,7 m/s** · 4,75 · 0,09 | |
+| hRef = Sohle, `totalPressure` | 96 / 296 | 540 / 540 | 0,03 | 0,94 / 0,90 | 2,8 · 2,03 · 0,35 | ΔQ 0,0 %, Δ\|U\| 0,0 |
+| `prghTotalPressure p0 0`, hRef = Sohle | 96 / 296 | 478 / 478 | 0,01 | 0,95 / 0,91 | 5,0 · 1,88 · 0,38 | ΔQ 0,0 %, Δ\|U\| 0,0 |
+| **gebaut:** `prghTotalPressure`, hRef = Gebietsunterkante | 96 | 414 | 0,01 | 0,95 / 0,91 | 6,7 · 1,90 · 0,38 | (≙ Zeile darüber, ΔQ ≤ 0,06 m³/s) |
+
+Lesart: der alte Rand saugt mit √(2g·z) (Torricelli der Höhenlage: 33 und
+57 m/s ≈ 0,75·√(2gz)), die Ablaufzelle läuft trocken (α 0,10), die Ganglinie
+Q bleibt hydraulisch gedeckelt (Ritter-Schwall) und täuscht deshalb
+Plausibilität vor — Geschwindigkeit, Sohlschub und Wasserstand am Ablauf
+sind es nicht (BetaTest08_r004: τ 2 443 N/m², y⁺ 53 360). Beide Kandidaten
+sind höhenunabhängig auf die letzte Stelle; gebaut ist `prghTotalPressure`:
+Luftdruck auf JEDER Wasserfläche (Freistrahl), kein einziger globaler
+Bezug, zwei Abläufe auf verschiedenen Sohlen und ein fester Pegel daneben
+bleiben richtig. hRef liegt jetzt immer im Gebiet (erster fester Pegel,
+sonst `domain.z_min`); es wirkt nur noch auf die Luft offener Flächen
+(ρ_Luft·g·Δz, im Becken 29 Pa → 5–7 m/s Luftzirkulation am Rand, die
+Wasserzahlen ändern sich um < 1 %).
+
+| # | vorher | nachher |
+|---|---|---|
+| G1 `outflow_free`: `totalPressure p0 0`, `h_ref` = 0 ohne festen Pegel; `test_audit_luecken.py:70` schrieb `h_ref == 0.0` fest | Becken bei 96 m: 33 m/s am Rand, 0,59 m³ Anfangsstoß; bei 296 m: 57 m/s, Q um 7 % anders | `prghTotalPressure`, `h_ref` = erster Pegel sonst `domain.z_min`: **6,7 m/s, 0,01 m³, 96 ≡ 296**; Wächter `test_ablaufdruck.py` misst 0/p_rgh und constant/hRef am Fall des Gegenlaufs bei 96 und 296 m |
+| Altläufe ohne Kennzeichnung | r004 zeigt τ 2 443 N/m² als Ergebnis | `evaluate.altlauf_hinweise`: jeder Lauf mit `finished` vor 2026-09-22 bekommt in `GET /runs/{id}` (Qualitätsansicht) den Hinweis „Lauf vor der Korrektur des Ablaufdrucks … neu rechnen" — beim Lesen ergänzt, Archive unverändert |
+
+Nebenfunde, nicht gebaut: `bundle.spec_sichern` wird nirgends aufgerufen —
+`spec_gesichert` in `GET /runs` ist deshalb immer `false`, kein Lauf trägt
+seine Geometrie (darum ist der Altlauf-Hinweis pauschal nach Datum, nicht
+nach Randbedingung). Zwei feste Pegel auf verschiedenen Höhen: der zweite
+bekommt `fixedValue ρg(L₂ − L₁)`, das gilt auch für seine Luftflächen
+(9,8 kPa je Meter Differenz) — Vorbehalt bleibt, solange kein Fall so
+gebaut wird. `QualityPanel.vue` hat für `.f3d-finding` keine eigenen Stile
+(die aus `ValidationPanel.vue` sind scoped) — Befunde dort ohne Farbrand,
+für alle Schweregrade.
+
+Tests: Backend 851 + 1 übersprungen (+6), Client 400 (unverändert).

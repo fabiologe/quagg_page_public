@@ -57,7 +57,12 @@ def test_zweiter_pegel_bekommt_den_hydrostatischen_versatz():
     assert f"{soll:.6g}" in zweiter
 
 
-def test_freier_ablauf_bleibt_unveraendert():
+def test_freier_ablauf_ist_ein_freistrahl_ohne_bezug_zur_hoehenlage():
+    """
+    Bis 2026-09-22 stand hier `totalPressure` und `h_ref == 0.0` als
+    Sollwert festgeschrieben — genau der Audit-Fund G1 (bei z = 96 m sog
+    der Rand mit 33 m/s, bei 296 m mit 57 m/s; test_ablaufdruck.py).
+    """
     spec = build_spec_stage3()
     ab = next(b for b in spec.boundaries if b.type.startswith("outflow"))
     i = spec.boundaries.index(ab)
@@ -66,8 +71,9 @@ def test_freier_ablauf_bleibt_unveraendert():
         face=getattr(ab, "face", None))
     ab = spec.boundaries[i]
     f = initial_fields(spec, Path("."))
-    assert "totalPressure" in f["p_rgh"][f["p_rgh"].index(ab.patch):][:200]
-    assert h_ref(spec) == 0.0
+    block = f["p_rgh"][f["p_rgh"].index(ab.patch):][:200]
+    assert "prghTotalPressure" in block
+    assert h_ref(spec) == pytest.approx(spec.domain.z_min)   # im Gebiet, nie 0
 
 
 # ---- Wandanlauf ----------------------------------------------------------

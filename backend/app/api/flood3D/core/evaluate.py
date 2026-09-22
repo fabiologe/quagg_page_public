@@ -504,6 +504,32 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
     return befunde
 
 
+# Bis zu diesem Zeitpunkt (E7, Audit G1) bezog der freie Ablauf seinen
+# Druck auf hRef = 0 m NHN: ein Becken bei 96 m sog am Rand mit 33 m/s
+# (Gegenlauf 2026-09-22, Zahlen in docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
+# Läufe von davor tragen keine gesicherte Spezifikation (die Archive halten
+# nur Manifest und Bewertung), deshalb gilt der Vorbehalt für jeden Altlauf.
+ABLAUFDRUCK_KORRIGIERT = 1790035200.0        # 2026-09-22 00:00 UTC
+
+
+def altlauf_hinweise(manifest: dict) -> list[dict]:
+    """
+    Befunde, die sich erst NACH dem Lauf ergeben haben — aus dem Datum, nicht
+    aus dem Manifest gerechnet, damit auch archivierte Läufe sie tragen.
+    Schema wie befunde_ableiten; wird beim Lesen ergänzt, nie gespeichert.
+    """
+    ende = manifest.get("finished") or manifest.get("created")
+    if not ende or float(ende) >= ABLAUFDRUCK_KORRIGIERT:
+        return []
+    return [befund(
+        "qualitaet", "hinweis",
+        "Lauf vor der Korrektur des Ablaufdrucks (22.09.2026): ein freier "
+        "Ablauf bezog seinen Druck bis dahin auf 0 m NHN und saugte mit der "
+        "ganzen Höhenlage (Audit G1). Geschwindigkeit, Sohlschub und "
+        "Wasserstand am Ablauf gelten unter Vorbehalt — neu rechnen.",
+        quelle="ablaufdruck")]
+
+
 def evaluate_run(df: pd.DataFrame, spec: CaseSpec, run_id: str,
                  manifest: dict | None = None) -> dict:
     return {
