@@ -621,7 +621,7 @@
    "unit_factor": 1.0
   },
   "derived": {
-   "gelaende_imp-golden_linien.asc": "efa567a55ca9091f"
+   "gelaende_imp-golden_linien.asc": "a7b37e17a24a116d"
   },
   "manifest": {
    "candidates": [
@@ -631,6 +631,7 @@
      "name": "AUSLAUF_linie_linie",
      "role_guess": "querschnitt",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 1.04,
       "n_points": 4,
@@ -644,6 +645,7 @@
      "name": "Bruchkanten_linie_1_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": true,
       "hoehen": true,
       "length": 13.58,
       "n_points": 5,
@@ -657,6 +659,7 @@
      "name": "Bruchkanten_linie_2_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 1.17,
       "n_points": 4,
@@ -670,9 +673,10 @@
      "name": "Bruchkanten_linie_3_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": true,
       "hoehen": true,
-      "length": 31.68,
-      "n_points": 15,
+      "length": 36.12,
+      "n_points": 16,
       "z_max": 225.55,
       "z_min": 225.25
      }
@@ -683,6 +687,7 @@
      "name": "Bruchkanten_linie_4_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 0.22,
       "n_points": 2,
@@ -696,6 +701,7 @@
      "name": "Bruchkanten_linie_5_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 0.22,
       "n_points": 2,
@@ -709,6 +715,7 @@
      "name": "Bruchkanten_linie_6_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 3.3,
       "n_points": 2,
@@ -722,6 +729,7 @@
      "name": "Bruchkanten_linie_7_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 3.3,
       "n_points": 2,
@@ -735,6 +743,7 @@
      "name": "Bruchkanten_linie_8_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 3.3,
       "n_points": 2,
@@ -748,6 +757,7 @@
      "name": "Bruchkanten_linie_9_linie",
      "role_guess": "bruchkante",
      "stats": {
+      "geschlossen": false,
       "hoehen": true,
       "length": 3.3,
       "n_points": 2,
@@ -785,11 +795,11 @@
    ]
   },
   "report": [
-   "Gelände aus 1 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 2 Dreiecke aus 4 Stützpunkten auf 11×11 Raster, Höhen 223.05 … 225.55 m, Abdeckung 37%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. Die restlichen 63% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 223.39 m (Außenhöhe, im Gelände-Panel änderbar).",
+   "Gelände aus 2 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 21 Dreiecke aus 19 Stützpunkten auf 25×25 Raster, Höhen 223.06 … 225.52 m, Abdeckung 66%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. 6 offene Linie(n) innerhalb des äußersten Rings liegen als Stützzellen im Raster (36 Zellen). 1 offene Linie(n) liegen außerhalb der geschlossenen Kanten und tragen nicht zum Raster bei — als Kanten bleiben sie erhalten. Die restlichen 34% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe, im Gelände-Panel änderbar).",
    "Querschnitt „qs_auslauf_linie“ aus Trasse übernommen",
    "Bruchkante „kante_bruchkanten_linie_1_linie“: 5 Stützpunkte, 223.05 … 223.39 m",
    "Bruchkante „kante_bruchkanten_linie_2_linie“: 4 Stützpunkte, 225.25 … 225.45 m",
-   "Bruchkante „kante_bruchkanten_linie_3_linie“: 15 Stützpunkte, 225.25 … 225.55 m",
+   "Bruchkante „kante_bruchkanten_linie_3_linie“: 16 Stützpunkte, 225.25 … 225.55 m",
    "Bruchkante „kante_bruchkanten_linie_4_linie“: 2 Stützpunkte, 225.26 … 225.27 m",
    "Bruchkante „kante_bruchkanten_linie_5_linie“: 2 Stützpunkte, 225.25 … 225.26 m",
    "Bruchkante „kante_bruchkanten_linie_6_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
@@ -798,8 +808,8 @@
    "Bruchkante „kante_bruchkanten_linie_9_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
    "Rohrmündung „auslauf_rohr_rohr“: DN1600, Achse (2500012.00, 5400006.00, 224.05), Sohle 223.250 m, Richtung (1.000, 0.000); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
    "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 6 eigene unangetastet",
-   "Domäne aus Gelände abgeleitet: (2500003.6, 5400003.6, 2500008.4, 5400008.4), z 222.55…227.55",
-   "Anfangswasserspiegel auf 223.05 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
+   "Domäne aus Gelände abgeleitet: (2500000.2, 5400000.2, 2500011.8, 5400011.8), z 222.56…227.52",
+   "Anfangswasserspiegel auf 223.06 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
   ],
   "spec": {
    "boundaries": [
@@ -838,13 +848,13 @@
    ],
    "domain": {
     "extent": [
-     2500003.6,
-     5400003.6,
-     2500008.4,
-     5400008.4
+     2500000.2,
+     5400000.2,
+     2500011.8,
+     5400011.8
     ],
-    "z_max": 227.55,
-    "z_min": 222.55
+    "z_max": 227.52,
+    "z_min": 222.56
    },
    "evaluation": {
     "force_patches": [
@@ -1013,7 +1023,7 @@
     "abbruch": null,
     "application": "interFoam",
     "end_time": 60.0,
-    "initial_level": 223.05,
+    "initial_level": 223.06,
     "max_alpha_co": 0.3,
     "max_co": 0.5,
     "turbulence": "kOmegaSST",
@@ -1258,7 +1268,7 @@
    ],
    "terrain": {
     "base": {
-     "aussenhoehe": 223.39,
+     "aussenhoehe": 225.55,
      "koerper": null,
      "original": null,
      "original_abbildung": null,
@@ -1427,6 +1437,11 @@
         2500010.101,
         5400001.899,
         225.294
+       ],
+       [
+        2500011.8,
+        5400006.0,
+        225.4
        ]
       ],
       "quelle": "Bruchkanten_linie_3_linie",
@@ -1747,6 +1762,11 @@
         2500010.101,
         5400001.899,
         225.294
+       ],
+       [
+        2500011.8,
+        5400006.0,
+        225.4
        ]
       ],
       "type": "bruchkante"

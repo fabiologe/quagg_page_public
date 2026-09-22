@@ -167,6 +167,45 @@ def test_offene_kante_kann_keine_flaeche_begrenzen(tmp_path):
         tin_aus_ringen([("linie", offen)], tmp_path / "g.asc", 0.25)
 
 
+# ---- Offene Linien im Ring (Audit I1, Etappe E2b) --------------------------
+
+def test_offene_linie_im_ring_liegt_als_stuetzzellen_im_raster(tmp_path):
+    """
+    Eine Böschungslinie oder ein Auslaufquerschnitt ist Vermessung wie der
+    Ring — nur nicht geschlossen. Bis 2026-09-22 fiel mit dem ersten Ring
+    jede offene Linie aus dem Raster. Jetzt liegt sie als Stützzellen
+    darin: auf der Linie gilt ihre Höhe, daneben weiter die Vermaschung.
+    """
+    asc = tmp_path / "g.asc"
+    scharte = np.array([(20.0, 4.0, 96.2), (20.0, 14.0, 96.2)])
+    info = tin_aus_ringen([("rand", _ring(4, 36, 100.0)),
+                           ("sohle", _ring(14, 26, 96.0))], asc, 0.25,
+                          offene=[scharte])
+    z = _lesen(asc)
+    X, Y = _gitter(z)
+    auf = (np.abs(X - 20.0) < 0.01) & (Y > 4.5) & (Y < 13.5)
+    assert np.allclose(z[auf], 96.2), "auf der Linie gilt ihre Höhe"
+    # eine Zelle daneben läuft die Böschung weiter: Rand y=4 (100 m) ->
+    # Sohle y=14 (96 m), bei y=9 also 98 m
+    daneben = (np.abs(X - 21.0) < 0.01) & (np.abs(Y - 9.0) < 0.01)
+    assert z[daneben].mean() == pytest.approx(98.0, abs=0.1)
+    assert info["linien_eingebrannt"] == 1 and info["linien_ausserhalb"] == 0
+    assert info["zellen_eingebrannt"] >= 35
+    assert info["z_min"] == pytest.approx(96.0)
+    assert info["z_max"] == pytest.approx(100.0)
+
+
+def test_offene_linie_ausserhalb_des_rings_traegt_nichts_bei(tmp_path):
+    """Außerhalb des äußersten Rings ist nichts vermascht — gezählt, nicht eingebrannt."""
+    ringe = [("rand", _ring(4, 36, 100.0)), ("sohle", _ring(14, 26, 96.0))]
+    ohne = tin_aus_ringen(ringe, tmp_path / "a.asc", 0.25)
+    weit = np.array([(50.0, 4.0, 90.0), (50.0, 36.0, 90.0)])
+    mit = tin_aus_ringen(ringe, tmp_path / "b.asc", 0.25, offene=[weit])
+    assert mit["linien_ausserhalb"] == 1 and mit["linien_eingebrannt"] == 0
+    assert mit["extent"] == ohne["extent"]
+    assert (tmp_path / "a.asc").read_bytes() == (tmp_path / "b.asc").read_bytes()
+
+
 # ---- Das TIN wird gelesen, nicht neu vermascht ---------------------------
 
 def test_dreiecke_werden_genommen_wie_sie_sind():

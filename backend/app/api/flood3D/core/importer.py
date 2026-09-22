@@ -156,18 +156,48 @@ def analyze_stl_obj(data: bytes, filename: str) -> list[dict]:
     return cands
 
 
-def _dxf_polyline_points(e) -> list[list[float]]:
+def _dxf_polyline_points(e) -> tuple[list[list[float]], bool]:
     """
-    Stützpunkte MIT Höhe. Die Höhe ist der ganze Wert einer Böschungs-
-    oder Bruchkante — sie wegzuwerfen macht aus Vermessungsdaten eine
-    beliebige Grundrisslinie. LWPOLYLINE trägt eine gemeinsame Höhe
-    (elevation), die echte 3D-POLYLINE eine je Stützpunkt.
+    Stützpunkte MIT Höhe, dazu das closed-Flag. Die Höhe ist der ganze
+    Wert einer Böschungs- oder Bruchkante — sie wegzuwerfen macht aus
+    Vermessungsdaten eine beliebige Grundrisslinie. LWPOLYLINE trägt eine
+    gemeinsame Höhe (elevation), die echte 3D-POLYLINE eine je Stützpunkt.
+
+    Das Flag: ein Beckenrand aus dem CAD ist als Polylinie GESCHLOSSEN
+    gezeichnet, wiederholt seinen Anfangspunkt aber nicht — bis 2026-09-22
+    wurde das Flag nie gelesen, der Rand zählte als offene Linie, und aus
+    neun Linien blieb nur die Sohle als Ring übrig (Audit I1).
     """
     if e.dxftype() == "LWPOLYLINE":
         z = float(getattr(e.dxf, "elevation", 0.0) or 0.0)
-        return [[float(p[0]), float(p[1]), z] for p in e.get_points("xy")]
-    return [[float(v.dxf.location.x), float(v.dxf.location.y),
-             float(v.dxf.location.z)] for v in e.vertices]
+        return ([[float(p[0]), float(p[1]), z] for p in e.get_points("xy")],
+                bool(e.closed))
+    return ([[float(v.dxf.location.x), float(v.dxf.location.y),
+              float(v.dxf.location.z)] for v in e.vertices],
+            bool(e.is_closed))
+
+
+def _ist_ring(pts) -> bool:
+    """
+    DIE Ringprüfung: der Anfangspunkt wird am Ende wiederholt (im
+    Grundriss, 1e-6). Dieselbe Regel wie `Vermessungskante.geschlossen`
+    (casespec); hier der einzige Ort im Importer.
+    """
+    a, b = pts[0], pts[-1]
+    return abs(float(a[0]) - float(b[0])) < 1e-6 and \
+        abs(float(a[1]) - float(b[1])) < 1e-6
+
+
+def _ring_schliessen(pts: list[list[float]]) -> list[list[float]]:
+    """
+    Eine Polylinie mit closed-Flag so schreiben, wie der Rest des Systems
+    einen Ring erkennt: Anfangspunkt am Ende wiederholt. Einmal hier, damit
+    Ringerkennung, Kanten (`geschlossen`) und Zwangskanten keine zweite
+    Definition brauchen.
+    """
+    if len(pts) >= 3 and not _ist_ring(pts):
+        return pts + [list(pts[0])]
+    return pts
 
 
 # Import-Rollen, die zu einer VERMESSUNGSKANTE werden, und die Rolle, die
@@ -479,7 +509,9 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
             except Exception:               # noqa: BLE001
                 unbekannt["CIRCLE"] = unbekannt.get("CIRCLE", 0) + 1
         elif t in ("LWPOLYLINE", "POLYLINE"):
-            pts = _dxf_polyline_points(e)
+            pts, geschlossen = _dxf_polyline_points(e)
+            if geschlossen:
+                pts = _ring_schliessen(pts)
             if len(pts) >= 2:
                 lines_per_layer.setdefault(layer, []).append(pts)
         elif t == "LINE":
@@ -543,7 +575,10 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
                           if arr.shape[1] > 2 else None,
                           "z_max": round(float(arr[:, 2].max()), 2)
                           if arr.shape[1] > 2 else None,
-                          "hoehen": bool(hat_z)},
+                          "hoehen": bool(hat_z),
+                          # ein Ring (closed-Flag oder wiederholter Anfang)
+                          # wird bei der Übernahme zur GRENZE der Vermaschung
+                          "geschlossen": bool(len(pts) >= 4 and _ist_ring(pts))},
                 "_polyline": pts,
             })
     for t, n in unbekannt.items():
@@ -1023,11 +1058,51 @@ def _gelaende_setzen(spec, case_dir: Path, quelle: str, res: float,
             spec.terrain.base.source = neu
 
 
-def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
+def _stuetzzellen_einbrennen(z: np.ndarray, linien: list, innen,
+                             x0: float, y0: float, resolution: float) -> dict:
+    """
+    Offene Linien als gemessene Stützzellen ins Raster legen — verdichtet
+    auf eine halbe Zelle, jede Zelle bekommt die Höhe der Linie. Nur
+    innerhalb der shapely-Fläche `innen` (der äußerste Ring): außerhalb ist
+    nichts vermascht, dort trüge eine einzelne Zellreihe nichts bei. Zählt
+    Linien und Zellen für den Bericht.
+    """
+    import shapely
+
+    ny, nx = z.shape
+    linien_innen = linien_aussen = 0
+    zellen: set[tuple[int, int]] = set()
+    for li in linien:
+        li = np.asarray(li, dtype=float)
+        if len(li) < 2:
+            continue
+        p = _verdichten(li, 0.5 * resolution)
+        drin = shapely.contains_xy(innen, p[:, 0], p[:, 1])
+        if not drin.any():
+            linien_aussen += 1
+            continue
+        p = p[drin]
+        si = np.clip(np.round((p[:, 0] - x0) / resolution).astype(int), 0, nx - 1)
+        sj = np.clip(np.round((p[:, 1] - y0) / resolution).astype(int), 0, ny - 1)
+        z[sj, si] = p[:, 2]
+        linien_innen += 1
+        zellen.update(zip(sj.tolist(), si.tolist()))
+    return {"linien_eingebrannt": linien_innen,
+            "linien_ausserhalb": linien_aussen,
+            "zellen_eingebrannt": len(zellen)}
+
+
+def tin_aus_ringen(ringe: list, out_path: Path, resolution: float,
+                   offene: list = ()) -> dict:
     """
     Gelände aus GESCHLOSSENEN Vermessungskanten — mit Zwangskanten.
 
     `ringe`: [(kennung, (n,3)-Array), …], jeder Ring geschlossen.
+    `offene`: die übrigen Linien derselben Vermessung (Böschungslinien,
+    ein Auslaufquerschnitt). Innerhalb des äußersten Rings liegen sie als
+    Stützzellen im Raster; außerhalb tragen sie nichts bei und werden
+    gezählt. Bis 2026-09-22 fielen mit dem ersten Ring ALLE offenen Linien
+    aus dem Raster (Audit I1).
 
     Der Unterschied zur gewöhnlichen Delaunay (`tin_from_lines`): dort wird
     über die Punktwolke vermascht und hinterher weggeschnitten, was zu weit
@@ -1078,10 +1153,13 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
         return min(kand)[1] if kand else None
 
     kinder: dict[str, list[str]] = {k: [] for k in polys}
+    wurzeln: list[str] = []               # die äußersten Ringe
     for kid in polys:
         e = eltern(kid)
         if e is not None:
             kinder[e].append(kid)
+        else:
+            wurzeln.append(kid)
 
     dreiecke: list[np.ndarray] = []
     vermaschung_fehlgeschlagen: list[str] = []
@@ -1120,6 +1198,9 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
     ecken = np.vstack(dreiecke)
     f = np.arange(len(ecken)).reshape(-1, 3)
     z = _raster_aus_dreiecken(ecken, f, xx, yy)
+    eingebrannt = _stuetzzellen_einbrennen(
+        z, list(offene), shapely.unary_union([polys[k] for k in wurzeln]),
+        float(x0), float(y0), resolution)
     abdeckung = float(np.mean(~np.isnan(z)))
     # Außerhalb des äußersten Rings ist nichts vermessen — das bleibt in der
     # Datei NODATA; die Ebene darüber setzt der Leser (terrain.lade_basis).
@@ -1132,6 +1213,9 @@ def tin_aus_ringen(ringe: list, out_path: Path, resolution: float) -> dict:
             **({"vermaschung_fehlgeschlagen": vermaschung_fehlgeschlagen}
                if vermaschung_fehlgeschlagen else {}),
             "coverage": round(abdeckung, 3),
+            "z_min": round(float(np.nanmin(z)), 3),
+            "z_max": round(float(np.nanmax(z)), 3),
+            **eingebrannt,
             "aussenhoehe": _randkrone_punkte(alle, resolution)}
 
 
@@ -1212,6 +1296,8 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
             "coverage": round(aus_maschen, 3),
             "innen_ergaenzt": round(float(np.mean(luecke & huelle)), 3),
             "ausserhalb": round(float(np.mean(~huelle)), 3),
+            "z_min": round(float(np.nanmin(z)), 3),
+            "z_max": round(float(np.nanmax(z)), 3),
             "aussenhoehe": _randkrone_punkte(v, resolution)}
 
 
@@ -1516,15 +1602,14 @@ def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
     # gewöhnliche Delaunay nicht, sie kennt die Ringe gar nicht. Mit
     # Zwangskanten wird jeder Ring zur Grenze und der nächstinnere zum
     # Loch, und es entsteht kein einziger neuer Stützpunkt.
+    ist_ring = [len(li) >= 4 and _ist_ring(li) for li in linien]
     ringe = [(re.sub(r"[^a-z0-9_]", "_", u.by_id[d["candidate"]]["name"].lower()),
-              li) for d, li in zip(ent, linien)
-             if len(li) >= 4
-             and abs(li[0][0] - li[-1][0]) < 1e-6
-             and abs(li[0][1] - li[-1][1]) < 1e-6]
+              li) for d, li, r in zip(ent, linien, ist_ring) if r]
+    offene = [li for li, r in zip(linien, ist_ring) if not r]
     info, ueber_ringe = None, False
     if ringe:
         try:
-            info = tin_aus_ringen(ringe, asc, res)
+            info = tin_aus_ringen(ringe, asc, res, offene=offene)
             ueber_ringe = True
         except Exception as e:
             u.report.append(f"Vermaschung über die geschlossenen Kanten "
@@ -1536,20 +1621,30 @@ def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
     # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
     _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, asc), res,
                      aussenhoehe=info.get("aussenhoehe"))
+    # Hüllquader und Höhenspanne aus dem RASTER — nicht aus den Linien:
+    # der Bericht nannte sonst „223,05 … 225,56 m" zu einer Platte auf
+    # Sohlniveau, weil der Beckenrand gar nicht im Raster war (Audit I1).
     e = info["extent"]
-    zs = np.concatenate([li[:, 2] for li in linien])
-    u.terrain_bbox = np.array([[e[0], e[1], float(zs.min())],
-                               [e[2], e[3], float(zs.max())]])
+    z_lo, z_hi = float(info["z_min"]), float(info["z_max"])
+    u.terrain_bbox = np.array([[e[0], e[1], z_lo], [e[2], e[3], z_hi]])
     if ueber_ringe:
+        n_innen = info.get("linien_eingebrannt", 0)
+        n_aussen = info.get("linien_ausserhalb", 0)
         u.report.append(
             f"Gelände aus {info['n_ringe']} geschlossenen Kanten mit "
             f"ZWANGSKANTEN vermascht: {info['n_dreiecke']} Dreiecke aus "
             f"{info['n_punkte']} Stützpunkten auf "
-            f"{info['nx']}×{info['ny']} Raster, Höhen {zs.min():.2f} … "
-            f"{zs.max():.2f} m, Abdeckung {info['coverage']:.0%}. Jeder "
+            f"{info['nx']}×{info['ny']} Raster, Höhen {z_lo:.2f} … "
+            f"{z_hi:.2f} m, Abdeckung {info['coverage']:.0%}. Jeder "
             "Ring ist eine Grenze und der nächstinnere sein Loch — es "
             "wurde kein Stützpunkt hinzuerfunden, alle liegen auf den "
             "Kanten."
+            + (f" {n_innen} offene Linie(n) innerhalb des äußersten Rings "
+               "liegen als Stützzellen im Raster "
+               f"({info['zellen_eingebrannt']} Zellen)." if n_innen else "")
+            + (f" {n_aussen} offene Linie(n) liegen außerhalb der "
+               "geschlossenen Kanten und tragen nicht zum Raster bei — als "
+               "Kanten bleiben sie erhalten." if n_aussen else "")
             + (f" Die restlichen {1 - info['coverage']:.0%} liegen "
                "außerhalb des äußersten Rings — dort ist nichts "
                "vermessen; im Modell steht dort eine Ebene auf "
@@ -1560,7 +1655,7 @@ def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
         u.report.append(
             f"Gelände aus {len(linien)} Kanten vermascht: "
             f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
-            f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
+            f"Raster, Höhen {z_lo:.2f} … {z_hi:.2f} m. "
             f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
             f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge), "
             f"{info['innen_ergaenzt']:.0%} dazwischen werden stufenfrei "
