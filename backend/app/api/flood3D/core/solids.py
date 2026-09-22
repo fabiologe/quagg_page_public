@@ -185,6 +185,27 @@ def umriss_teile(poly) -> list:
     return list(poly.geoms) if poly.geom_type == "MultiPolygon" else [poly]
 
 
+def boden_unter(mesh: trimesh.Trimesh, terrain) -> np.ndarray | None:
+    """
+    Geländehöhen im GRUNDRISS eines Körpers: entlang seines Umrisses und in
+    der Mitte. DIE Abtastung für „hängt in der Luft", „verschwindet unter
+    dem Gelände", den Spalt (validate._gelaendelage) und den
+    Geländeanschluss — bis 2026-09-22 prüften die ersten beiden Regeln die
+    vier Ecken des Hüllquaders, und ein Wehr quer im 3-m-Flussschlauch
+    „verschwand unter dem Gelände", weil seine Ecken auf der Böschung
+    lagen (Audit P10). None ohne Umriss oder Gelände.
+    """
+    poly = grundriss(mesh)
+    if poly is None or terrain is None:
+        return None
+    rand = np.vstack([np.asarray(teil.exterior.coords, dtype=float)
+                      for teil in umriss_teile(poly)])
+    mitte = np.asarray(poly.representative_point().coords, dtype=float)
+    xs = np.concatenate([rand[:, 0], mitte[:, 0]])
+    ys = np.concatenate([rand[:, 1], mitte[:, 1]])
+    return np.asarray(terrain.sample(xs, ys), dtype=float)
+
+
 def gelaende_anschluss(mesh: trimesh.Trimesh, e, terrain
                        ) -> trimesh.Trimesh:
     """

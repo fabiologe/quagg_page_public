@@ -450,16 +450,26 @@ def test_rohrmund_im_erdreich_wird_gewarnt():
                 if "Rohrmund" in f["message"]]
 
 
-def test_ungewoehnliche_nennweite_wird_gewarnt():
-    """DN800 als Radius importiert ergibt 1,60 m — das riecht nach Import."""
+def test_ungewoehnliche_nennweite_wird_am_zufluss_gewarnt():
+    """
+    DN800 als Radius importiert ergibt 1,60 m — das riecht nach Import.
+    Seit E5c (Audit P7) misst die Regel nicht mehr in festen Metern (die
+    1,5-m-Schwelle stand am DN800 des Testfalls), sondern am Zufluss, der
+    durch das Rohr soll: 0,05 m³/s durch 2 m² sind 0,025 m/s — ein Rohr,
+    das für seinen Zufluss viel zu groß ist. DN800 ist es nicht.
+    """
     spec = _damm_fall(True)
+    zulauf = next(b for b in spec.boundaries if b.id == "zulauf")
+    zulauf.window = cs.BcWindow(follow="dn800")
+    zulauf.q = 0.05
     spec.structures[0].profile.diameter = 1.6
     assert [f for f in validate_case(spec, ".")
-            if f["object_id"] == "dn800" and "ungewöhnlich" in f["message"]
+            if f["object_id"] == "dn800" and "sehr groß" in f["message"]
             and "Kreisradius" in f["message"]]
     spec.structures[0].profile.diameter = 0.8
     assert not [f for f in validate_case(spec, ".")
-                if f["object_id"] == "dn800" and "ungewöhnlich" in f["message"]]
+                if f["object_id"] == "dn800"
+                and ("sehr groß" in f["message"] or "ungewöhnlich" in f["message"])]
 
 
 def test_rechteckdurchlass_bohrt_durch_den_erdkoerper():

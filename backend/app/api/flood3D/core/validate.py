@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -713,10 +715,16 @@ def _pruefe_geometrie(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             f(_finding(patch, "fehler", problem, fix=fix))
         if terrain is not None and len(mesh.vertices):
             lo, hi = mesh.bounds
-            xs = np.clip([lo[0], hi[0]], *_xr(spec))
-            ys = np.clip([lo[1], hi[1]], *_yr(spec))
-            ground = terrain.sample(np.array([xs[0], xs[1], xs[0], xs[1]]),
-                                    np.array([ys[0], ys[0], ys[1], ys[1]]))
+            # Gelände im GRUNDRISS des Körpers (Umriss + Mitte), nicht an
+            # den vier Ecken des Hüllquaders (Audit P10) — dieselbe
+            # Abtastung wie der Spalt unten und der Geländeanschluss
+            from .solids import boden_unter
+            ground = boden_unter(mesh, terrain)
+            if ground is None:
+                xs = np.clip([lo[0], hi[0]], *_xr(spec))
+                ys = np.clip([lo[1], hi[1]], *_yr(spec))
+                ground = terrain.sample(np.array([xs[0], xs[1], xs[0], xs[1]]),
+                                        np.array([ys[0], ys[0], ys[1], ys[1]]))
             # Stutzen/Durchlässe dürfen frei ragen (Rohrmündung überm
             # Gelände = Freistrahl, Halterung liegt außerhalb des Modells)
             if (struct_types.get(patch) != "culvert"
@@ -836,21 +844,49 @@ def _pruefe_durchlass(st, spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     befunde: list[dict] = []
     f = befunde.append
 
-    # Ungewöhnliche Nennweite — der Klassiker ist ein Import, bei dem
-    # Kreisradius und Durchmesser verwechselt wurden: aus DN800 wird 1,60 m.
-    # Beim Kreis deshalb schon ab 1,5 m warnen; Rechteck-/Maulprofile bis
-    # 2 m sind gängige Rahmendurchlässe.
+    # Nennweite BEZOGEN statt in festen Metern: bis 2026-09-22 galt ein
+    # Kreis über 1,5 m als „ungewöhnlich" — die Schwelle stand am DN800 des
+    # Testfalls, DN2000, DN150 und Rahmen 3 × 1,5 bekamen dieselbe Warnung
+    # (Audit P7). Maßstab ist der Zufluss, der durch das Rohr soll: hängt
+    # ein Zulauf mit Volumenstrom daran, ergibt Q/A die Rohrgeschwindigkeit
+    # — dieselbe 3-m/s-Schwelle wie Q → U am Fenster. Ohne Zufluss bleibt
+    # nur die Frage, ob das Rohr überhaupt ins Gebiet passt.
     pr = st.profile
-    masse = ([pr.diameter] if pr.kind == "circular"
-             else [pr.width, pr.height])
-    gross = 1.5 if pr.kind == "circular" else 2.0
-    for mass in masse:
-        if mass is not None and (mass > gross or mass < 0.2):
+    if pr.kind == "circular" and pr.diameter:
+        flaeche = math.pi * pr.diameter ** 2 / 4
+        nenn = pr.diameter
+    elif pr.width and pr.height:
+        flaeche = pr.width * pr.height
+        nenn = max(pr.width, pr.height)
+    else:
+        flaeche, nenn = 0.0, None
+    zulauf = next((b for b in spec.boundaries
+                   if getattr(b, "window", None) is not None
+                   and b.window.follow == st.id
+                   and b.type == "inflow_constant" and getattr(b, "q", None)),
+                  None)
+    if zulauf is not None and flaeche > 0:
+        v = float(zulauf.q) / flaeche
+        if v > 3.0:
             f(_finding(st.id, "warnung",
-                       f"Nennweite {mass:g} m ist für einen Durchlass "
-                       "ungewöhnlich — aus einem Import übernommen? "
-                       "(Kreisradius vs. Durchmesser prüfen)"))
-            break
+                       f"Zufluss {zulauf.q:g} m³/s durch {flaeche:.2f} m² "
+                       f"Rohrquerschnitt → {v:.1f} m/s im Rohr — strahlartig. "
+                       "Nennweite prüfen (Kreisradius vs. Durchmesser? aus "
+                       "einem Import übernommen?) oder Zufluss prüfen."))
+        elif v < 0.05:
+            f(_finding(st.id, "hinweis",
+                       f"Zufluss {zulauf.q:g} m³/s durch {flaeche:.2f} m² "
+                       f"Rohrquerschnitt → nur {v:.3f} m/s im Rohr — das Rohr "
+                       "ist für diesen Zufluss sehr groß. Nennweite prüfen "
+                       "(Kreisradius vs. Durchmesser?)."))
+    elif nenn is not None and spec.domain is not None:
+        x0, y0, x1, y1 = spec.domain.extent
+        kurz = min(x1 - x0, y1 - y0)
+        if kurz > 0 and nenn > kurz / 3:
+            f(_finding(st.id, "hinweis",
+                       f"Nennweite {nenn:g} m ist mehr als ein Drittel der "
+                       f"kürzeren Gebietsseite ({kurz:g} m) — passt das Rohr "
+                       "ins Modell? (Kreisradius vs. Durchmesser prüfen)"))
 
     # Rohrmund im Erdreich: die Bohrung endet bohr_ueberstand hinter dem
     # Achsende — liegt das Gelände dort noch über dem Rohrscheitel, steckt
@@ -1111,27 +1147,25 @@ def _pruefe_netzaufloesung(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             if s.type != "culvert" or len(s.axis) < 2:
                 continue
             a = np.asarray(s.axis, dtype=float)
-            laengen = np.linalg.norm(np.diff(a[:, :2], axis=0), axis=1)
-            if laengen.sum() < 1e-6:
+            laenge = float(np.linalg.norm(np.diff(a[:, :2], axis=0), axis=1).sum())
+            if laenge < 1e-6:
                 continue
-            # entlang der Achse abtasten
-            stuetz = np.linspace(0, 1, 41)
-            strecke = np.concatenate([[0], np.cumsum(laengen)])
-            strecke = strecke / strecke[-1]
-            pkt = np.column_stack([np.interp(stuetz, strecke, a[:, k])
-                                   for k in range(3)])
             # Maßstab ist die ACHSE: liegt sie unter dem Gelände, ist
             # mehr als der halbe Querschnitt im Erdreich und der
-            # Vernetzer räumt das Rohrinnere weg
-            gelaende = terrain.sample(pkt[:, 0], pkt[:, 1])
-            verschuettet = gelaende > pkt[:, 2]
-            anteil = float(np.mean(verschuettet))
-            if anteil < 0.15 or getattr(s, "durchstoesst_gelaende", False):
+            # Vernetzer räumt das Rohrinnere weg. Gemessen wird die
+            # längste verschüttete STRECKE in Metern (ab zwei Zellen
+            # trennt der Vernetzer), nicht der Anteil der Rohrlänge
+            # (Audit P4: 200 m Rohr unter 10 m Damm = 5 % blieben stumm)
+            from .anschluss import verschuettete_strecke
+            zelle = _lokale_zelle(spec, s.patch, _bauwerk_mitte(s, ctx.solids))
+            strecke_m = verschuettete_strecke(a, terrain, 0.5 * zelle)
+            if strecke_m < 2 * zelle or getattr(s, "durchstoesst_gelaende", False):
                 continue
+            anteil = strecke_m / laenge
             schwer = "fehler" if s.id in gefolgt else "warnung"
             f(_finding(s.id, schwer,
-                       f"Die Rohrachse liegt auf {anteil * 100:.0f} % "
-                       "ihrer Länge unter dem Gelände. Ein Höhenfeld "
+                       f"Die Rohrachse liegt auf {strecke_m:.1f} m am Stück "
+                       f"({anteil:.0%} ihrer Länge) unter dem Gelände. Ein Höhenfeld "
                        "kann keinen Tunnel haben — der Vernetzer räumt "
                        "das Rohrinnere weg, die Mündung bekommt keine "
                        "einzige Fläche. Abhilfe: am Durchlass "
@@ -1620,7 +1654,7 @@ def _pruefe_randabstand(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     for s in spec.structures:
         if s.id in gekoppelt or s.type == "screen":
             continue
-        pkte = _plan_punkte(s, ctx.solids)
+        pkte = _sperr_punkte(s, ctx.solids)
         if len(pkte) < 2:
             continue
         px, py = pkte[:, 0], pkte[:, 1]
@@ -2284,22 +2318,41 @@ def _plan_punkte(struct, solids: dict | None = None) -> np.ndarray:
     return np.zeros((0, 2))
 
 
+def _sperr_punkte(s, solids: dict | None) -> np.ndarray:
+    """
+    Grundriss für die SPERRBREITE eines Bauwerks quer zur Randfläche: der
+    Umriss des gebauten Körpers (mit Wandung), sonst die Planpunkte; beim
+    Rohr ohne gebauten Körper die Achse ± Außenradius. Bis 2026-09-22
+    zählte beim Rohr die Achse allein — „3,2 m je Breite" für ein 1,9-m-
+    Rohr längs, 0 m (übersprungen) für eines quer zum Rand (Audit P12).
+    """
+    netz = (solids or {}).get(getattr(s, "patch", None))
+    if netz is not None and len(netz.vertices):
+        poly = grundriss(netz)
+        if poly is not None:
+            from .solids import umriss_teile
+            return np.vstack([np.asarray(t.exterior.coords, dtype=float)[:, :2]
+                              for t in umriss_teile(poly)])
+    pk = _plan_punkte(s, solids)
+    if s.type == "culvert" and len(pk):
+        pr = s.profile
+        quer = (pr.diameter if pr.kind == "circular"
+                else max(pr.width or 0.0, pr.height or 0.0))
+        r = float(quer or 0.0) / 2 + float(getattr(pr, "wandstaerke", 0.0) or 0.0)
+        pk = np.vstack([pk - r, pk + r])
+    return pk
+
+
 def _gelaendelage(mesh, terrain) -> tuple[float | None, float | None]:
     """
     (Spalt unter dem Körper, Übertiefe unter Gelände) in Metern.
     Bezug ist das Gelände im GRUNDRISS des Körpers, nicht der Hüllquader —
     sonst meldet jede schräg stehende Wand einen Spalt, den es nicht gibt.
     """
-    poly = grundriss(mesh)
-    if poly is None:
+    from .solids import boden_unter
+    boden = boden_unter(mesh, terrain)
+    if boden is None:
         return None, None
-    from .solids import umriss_teile
-    rand = np.vstack([np.asarray(teil.exterior.coords, dtype=float)
-                      for teil in umriss_teile(poly)])
-    mitte = np.asarray(poly.representative_point().coords, dtype=float)
-    xs = np.concatenate([rand[:, 0], mitte[:, 0]])
-    ys = np.concatenate([rand[:, 1], mitte[:, 1]])
-    boden = terrain.sample(xs, ys)
     unterkante = float(mesh.bounds[0][2])
     spalt = unterkante - float(np.min(boden))
     return (spalt if spalt > 0 else None,

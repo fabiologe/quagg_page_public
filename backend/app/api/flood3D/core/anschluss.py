@@ -20,6 +20,8 @@ sie wird nur bis an die Gebietsfläche verlängert bzw. gekürzt.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from .casespec import CaseSpec
@@ -461,6 +463,35 @@ def gebiet_umschliesst_fenster(spec: CaseSpec) -> list[str]:
                 f"Gebietsdeckel von {alt:g} auf {spec.domain.z_max:g} m "
                 f"angehoben — die Öffnung „{b.id}“ ragte darüber")
     return meldungen
+
+
+def verschuettete_strecke(achse, terrain, schritt: float,
+                          deckel: int = 4000) -> float:
+    """
+    Längste zusammenhängende Strecke (m), auf der eine Rohrachse UNTER dem
+    Gelände liegt — abgetastet im Abstand `schritt` (halbe örtliche Zelle).
+    Das Maß der Regel „Rohr im Erdreich": ab zwei Zellen trennt der
+    Vernetzer das Rohr. Bis 2026-09-22 zählte der ANTEIL der Rohrlänge an
+    41 Stützpunkten — ein 200-m-Rohr unter einem 10-m-Damm (5 %) blieb
+    stumm und verlor dort trotzdem sein Inneres (Audit P4).
+    """
+    a = np.asarray(achse, dtype=float)
+    if len(a) < 2:
+        return 0.0
+    laengen = np.linalg.norm(np.diff(a[:, :2], axis=0), axis=1)
+    L = float(laengen.sum())
+    if L < 1e-6:
+        return 0.0
+    n = int(min(max(41, math.ceil(L / max(schritt, 1e-3)) + 1), deckel))
+    t = np.linspace(0.0, 1.0, n)
+    strecke = np.concatenate([[0.0], np.cumsum(laengen)]) / L
+    pkt = np.column_stack([np.interp(t, strecke, a[:, k]) for k in range(3)])
+    unter = np.asarray(terrain.sample(pkt[:, 0], pkt[:, 1])) > pkt[:, 2]
+    best = lauf = 0
+    for u in unter:
+        lauf = lauf + 1 if u else 0
+        best = max(best, lauf)
+    return best * L / (n - 1)
 
 
 def rollen_ohne_rand(spec: CaseSpec) -> list[dict]:
