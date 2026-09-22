@@ -565,3 +565,21 @@ gebaut wird. `QualityPanel.vue` hat für `.f3d-finding` keine eigenen Stile
 für alle Schweregrade.
 
 Tests: Backend 851 + 1 übersprungen (+6), Client 400 (unverändert).
+
+### Auslieferung E6 + E7 (2026-09-22, 18:13)
+
+Fast-Forward in den Live-Checkout (`cde-verbundexport` 3ccd0bb → d45bfe1,
+sieben Commits, nur flood-3D und dieses Dokument; das CDE-WIP dort blieb
+unberührt, nichts im Client war neuer als der Build von 15:31). Live-Suite
+mit der Produktions-venv 851 + 1 grün, Client-Tests 400 grün.
+`pm2 restart quagg-api` — die API antwortete nach ~26 s (parallel lief der
+Build). `npm run build` mit temporärer 3-G-Swapdatei (Swap wieder voll,
+danach abgebaut): `dist/index.html` 18:13:24, `Flood3DPreMain-DR2qHb4L.js`
+trägt `blickpunktVerfolgen`/`netzSchaetzung`, quagg-engineering.org 200.
+
+Nachgeprüft am echten Archivlauf über die laufende API (nur gelesen):
+`GET /FastAPI/flood3d/runs/Rentrich_BetaTest08_r004` liefert jetzt drei
+Befunde — y⁺ 53 360, Viz-Volumen 34 %, **„Lauf vor der Korrektur des
+Ablaufdrucks … neu rechnen"** — und `manifest.json` auf der Platte enthält
+das Wort `ablaufdruck` 0-mal. Keine Browserprobe der E6-Client-Teile
+(Blickpunkt, Zellschätzung im Panel) — offen, wenn gewünscht.
