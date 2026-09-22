@@ -639,17 +639,30 @@ def _dxf_kandidaten(doc, entfernt: dict,
 
     for layer, kreise in sorted(kreise_per_layer.items()):
         for i, (mitte, r, n) in enumerate(kreise, 1):
-            cands.append({
+            # Ein Kreis ist nur dann ein Rohrquerschnitt, wenn seine Ebene
+            # STEHT (Achse etwa waagerecht). In der Draufsicht (Achse
+            # senkrecht) ist er ein Schachtdeckel, ein Baum, eine Signatur.
+            # Bis 2026-09-22 wurde jeder Kreis ein Ablaufrohr — ein
+            # senkrechter Stutzen, zwei Durchmesser lang (Audit I10).
+            querschnitt = abs(float(n[2])) < 0.5
+            c = {
                 "name": f"{layer}_rohr_{i}" if len(kreise) > 1 else f"{layer}_rohr",
                 "kind": "kreis",
-                "role_guess": _kreis_rolle(layer),
+                "role_guess": _kreis_rolle(layer) if querschnitt else "ignorieren",
                 "stats": {"durchmesser": round(2 * r, 3),
                           "mitte": [round(v, 3) for v in mitte],
                           "achse": [round(v, 4) for v in n],
+                          "lage": "querschnitt" if querschnitt else "draufsicht",
                           "sohle": round(mitte[2] - r, 3),
                           "scheitel": round(mitte[2] + r, 3)},
                 "_kreis": {"mitte": list(mitte), "radius": r, "achse": list(n)},
-            })
+            }
+            if not querschnitt:
+                c["hint"] = ("Kreis in der Draufsicht (Achse senkrecht) — ein "
+                             "Schachtdeckel, Baum oder eine Signatur, kein "
+                             "Rohrquerschnitt. Als Rohr nur übernehmen, wenn "
+                             "es wirklich eine senkrechte Mündung ist.")
+            cands.append(c)
 
     for layer, n in sorted(acis_layers.items()):
         cands.append({

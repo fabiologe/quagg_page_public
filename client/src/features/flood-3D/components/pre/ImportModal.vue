@@ -152,6 +152,12 @@
                       aus Kreisradius
                       {{ fmt((c.stats.durchmesser / 2) * unitFactor) }} m
                     </div>
+                    <!-- Nur ein STEHENDER Kreis ist ein Rohrquerschnitt; in
+                         der Draufsicht ist er Deckel, Baum oder Signatur -->
+                    <div v-if="c.stats.lage" class="f3d-muted f3d-small">
+                      {{ c.stats.lage === 'draufsicht' ? 'Draufsicht (Achse senkrecht)'
+                        : 'Querschnitt (Achse waagerecht)' }}
+                    </div>
                   </template>
                   <template v-else>{{ c.stats.n_solids }} Körper</template>
                 </td>

@@ -417,13 +417,22 @@ def test_kreis_wird_zur_rohrmuendung():
                            dxfattribs={"layer": "AUSLAUF",
                                        "extrusion": (1, 0, 0)})
     kreis.dxf.center = kreis.ocs().from_wcs((2.0, 1.5, 9.5))
+    # und ein Kreis in der DRAUFSICHT (Achse senkrecht): ein Schachtdeckel
+    msp.add_circle((1.0, 1.0, 10.0), radius=0.5,
+                   dxfattribs={"layer": "SCHACHT"})
     cands, _ = analyze_dxf(doc_bytes(doc), "x.dxf")
-    rohr = next(c for c in cands if c["kind"] == "kreis")
+    rohr = next(c for c in cands if c["kind"] == "kreis" and "AUSLAUF" in c["name"])
     assert rohr["role_guess"] == "ablaufrohr"
+    assert rohr["stats"]["lage"] == "querschnitt"
     assert rohr["stats"]["durchmesser"] == pytest.approx(0.8)
     np.testing.assert_allclose(rohr["stats"]["mitte"], [2.0, 1.5, 9.5], atol=1e-6)
     assert rohr["stats"]["sohle"] == pytest.approx(9.1)
     assert rohr["stats"]["scheitel"] == pytest.approx(9.9)
+    # der Deckel wird KEIN Rohr (bis 2026-09-22: senkrechter Stutzen, Audit I10)
+    deckel = next(c for c in cands if c["kind"] == "kreis" and "SCHACHT" in c["name"])
+    assert deckel["role_guess"] == "ignorieren"
+    assert deckel["stats"]["lage"] == "draufsicht"
+    assert "Draufsicht" in deckel["hint"]
 
 
 def doc_bytes(doc) -> bytes:

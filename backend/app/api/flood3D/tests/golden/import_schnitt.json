@@ -80,6 +80,7 @@
        0.0
       ],
       "durchmesser": 1.6,
+      "lage": "querschnitt",
       "mitte": [
        2500009.005,
        5400009.005,
@@ -617,6 +618,10 @@
     {
      "candidate": "k10",
      "role": "ablaufrohr"
+    },
+    {
+     "candidate": "k11",
+     "role": "ablaufrohr"
     }
    ],
    "derive_domain": true,
@@ -636,7 +641,7 @@
     [
      2500000.2,
      5400000.2,
-     223.05
+     222.75
     ],
     [
      2500012.8,
@@ -797,6 +802,7 @@
        0.0
       ],
       "durchmesser": 1.6,
+      "lage": "querschnitt",
       "mitte": [
        2500012.0,
        5400006.0,
@@ -804,6 +810,29 @@
       ],
       "scheitel": 224.85,
       "sohle": 223.25
+     }
+    },
+    {
+     "hint": "Kreis in der Draufsicht (Achse senkrecht) — ein Schachtdeckel, Baum oder eine Signatur, kein Rohrquerschnitt. Als Rohr nur übernehmen, wenn es wirklich eine senkrechte Mündung ist.",
+     "id": "k11",
+     "kind": "kreis",
+     "name": "SCHACHT_deckel_rohr",
+     "role_guess": "ignorieren",
+     "stats": {
+      "achse": [
+       0.0,
+       0.0,
+       1.0
+      ],
+      "durchmesser": 1.2,
+      "lage": "draufsicht",
+      "mitte": [
+       2500003.0,
+       5400009.0,
+       223.35
+      ],
+      "scheitel": 223.95,
+      "sohle": 222.75
      }
     }
    ],
@@ -838,9 +867,10 @@
    "Bruchkante „kante_bruchkanten_linie_8_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
    "Bruchkante „kante_bruchkanten_linie_9_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
    "Rohrmündung „auslauf_rohr_rohr“: DN1600, Achse (11.80, 5.80, 224.05), Sohle 223.250 m, Richtung (1.000, 0.000); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
-   "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 6 eigene unangetastet",
+   "Rohrmündung „schacht_deckel_rohr“: DN1200, Achse (2.80, 8.80, 223.35), Sohle 222.750 m, Richtung (0.000, 0.000); als 2.40 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
+   "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 7 eigene unangetastet",
    "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
-   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 14.35, 11.6), z 222.56…227.52 — einschließlich 1 Rohr(en) aus diesem Import",
+   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 14.35, 11.6), z 220.9…227.58 — einschließlich 2 Rohr(en) aus diesem Import",
    "Anfangswasserspiegel auf 223.06 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
   ],
   "spec": {
@@ -885,8 +915,8 @@
      14.35,
      11.6
     ],
-    "z_max": 227.52,
-    "z_min": 222.56
+    "z_max": 227.58,
+    "z_min": 220.9
    },
    "evaluation": {
     "force_patches": [
@@ -1295,6 +1325,43 @@
      "patch": "auslauf_rohr_rohr",
      "profile": {
       "diameter": 1.6,
+      "height": null,
+      "kind": "circular",
+      "wandstaerke": 0.15,
+      "width": null
+     },
+     "rolle": "ablauf",
+     "type": "culvert",
+     "wirkung": "bauteil"
+    },
+    {
+     "axis": [
+      [
+       2.8,
+       8.8,
+       222.15
+      ],
+      [
+       2.8,
+       8.8,
+       224.55
+      ]
+     ],
+     "bohr_ueberstand": 0.5,
+     "durchstoesst_gelaende": false,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": "import",
+     "id": "schacht_deckel_rohr",
+     "import_ref": {
+      "import_id": "imp-golden",
+      "kandidat": "k11"
+     },
+     "material": null,
+     "material_ks": null,
+     "patch": "schacht_deckel_rohr",
+     "profile": {
+      "diameter": 1.2,
       "height": null,
       "kind": "circular",
       "wandstaerke": 0.15,

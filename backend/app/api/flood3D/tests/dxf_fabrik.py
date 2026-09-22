@@ -188,6 +188,10 @@ def neun_linien(ursprung: tuple[float, float] = GK_URSPRUNG) -> dict:
     mitte_wcs = (cx + 6.0, cy, SCHARTE + ROHR_RADIUS)
     msp.add_circle(OCS(Vec3(extrusion)).from_wcs(Vec3(mitte_wcs)), ROHR_RADIUS,
                    dxfattribs={"layer": "AUSLAUF_rohr", "extrusion": extrusion})
+    # Ein Schachtdeckel in der DRAUFSICHT (Achse senkrecht) — wie ihn jeder
+    # Lageplan trägt; kein Rohrquerschnitt
+    deckel = (cx - 3.0, cy + 3.0, SOHLE + 0.3)
+    msp.add_circle(deckel, 0.6, dxfattribs={"layer": "SCHACHT_deckel"})
 
     buf = io.StringIO()
     doc.write(buf)
@@ -198,6 +202,7 @@ def neun_linien(ursprung: tuple[float, float] = GK_URSPRUNG) -> dict:
         "sohle": np.array(sohle),
         "rohr": {"mitte": mitte_wcs, "radius": ROHR_RADIUS,
                  "achse": extrusion},
+        "deckel": {"mitte": deckel, "radius": 0.6},
         "n_linien": 10,
     }
 

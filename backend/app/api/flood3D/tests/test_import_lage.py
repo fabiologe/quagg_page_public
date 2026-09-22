@@ -200,3 +200,37 @@ def test_gebiet_umfasst_das_rohr_mit_wandung(tmp_path):
     assert any("einschließlich 1 Rohr" in r for r in info["report"])
     # trockener Start bleibt am Gelände, nicht an der Rohrsohle
     assert spec.solver.initial_level == pytest.approx(0.0, abs=0.01)
+
+
+# ---- I10: Kreis → Rohr nur als Querschnitt ---------------------------------
+
+def _rohre_aus(spec, import_id):
+    return [s for s in spec.structures
+            if s.type == "culvert" and getattr(s, "import_ref", None)
+            and s.import_ref.import_id == import_id]
+
+
+def test_kreis_in_der_draufsicht_wird_kein_rohr(tmp_path):
+    """
+    Der Nachbau trägt einen Schachtdeckel (Achse senkrecht) und einen
+    Rohrquerschnitt (Achse waagerecht). Mit der Rollenvermutung des Dialogs
+    entsteht genau EIN Rohr; wer es besser weiß, darf den Deckel trotzdem
+    zum Rohr erklären. Und die Dialogwahl „zulaufrohr" wird `rolle: zulauf`.
+    """
+    n = fx.neun_linien()
+    spec = _fall(tmp_path)
+    m = analyze_file(n["dxf"], "linien.dxf", tmp_path)
+    deckel = next(c for c in m["candidates"] if "SCHACHT" in c["name"])
+    assert deckel["role_guess"] == "ignorieren" and deckel["stats"]["lage"] == "draufsicht"
+    vermutet = [{"candidate": c["id"], "role": c["role_guess"]} for c in m["candidates"]]
+    apply_import(spec, tmp_path, m["import_id"], vermutet, terrain_from_lines=True)
+    rohre = _rohre_aus(spec, m["import_id"])
+    assert len(rohre) == 1 and rohre[0].rolle == "ablauf"          # vorher 2
+
+    # Nutzer weiß es besser: Deckel als Zulaufrohr, Auslauf als Zulaufrohr
+    fest = [{"candidate": c["id"],
+             "role": "zulaufrohr" if c["kind"] == "kreis" else c["role_guess"]}
+            for c in m["candidates"]]
+    apply_import(spec, tmp_path, m["import_id"], fest, terrain_from_lines=True)
+    rohre = _rohre_aus(spec, m["import_id"])
+    assert len(rohre) == 2 and {r.rolle for r in rohre} == {"zulauf"}
