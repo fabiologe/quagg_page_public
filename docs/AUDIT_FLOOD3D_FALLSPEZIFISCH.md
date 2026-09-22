@@ -68,7 +68,7 @@ fort und bleibt unsichtbar. Das nackte Becken ist der erste Fall mit
 Vermessung**.
 
 **Nebenfund `Rentrich_BetaTest09`:** Das Raster liegt noch in Gauß-Krüger
-(xll 2 579 361,8), das Gebiet lokal (2…14). 100 % des Gebiets entstehen aus
+(xll ≈ 2,579 Mio), das Gebiet lokal (2…14). 100 % des Gebiets entstehen aus
 einem einzigen geklemmten Eckpixel. Das Klemmen **versteckt** eine komplette
 Fehlverortung — ohne Klemmen wäre das Gelände sichtbar leer gewesen.
 
@@ -492,4 +492,4 @@ BetaTest10, Vite 3003, Chrome headless), nichts übernommen:
 | Datei | Einheit | Lage | Gebiet ableiten | Kreise |
 |---|---|---|---|---|
 | `neun_linien.dxf` (synthetisch, 2,5 Mio / 5,4 Mio — fremde Welt) | „Meters (×1)" aus der Zeichnung | Vorschlag aus der Datei (2 500 000,2 / 5 400 000,2), Drehung 0 | angehakt (vorher: nur bei Gelände-Netz) | `AUSLAUF_rohr` Querschnitt → Ablaufrohr; `SCHACHT_deckel` **Draufsicht → ignorieren** mit Hinweis |
-| `Nacktes_Becken_EP1.dxf` (Betriebsdatei, Welt des Falls) | dito | **Verortung des Falls**: Offset 2 579 366,56 / 5 459 067,3, **Drehung 315,3°** vorbelegt | angehakt | `AUSLAUF_rohr` Querschnitt → Ablaufrohr |
+| `Nacktes_Becken_EP1.dxf` (Betriebsdatei, Welt des Falls) | dito | **Verortung des Falls**: Offset ≈ 2,579 Mio / 5,459 Mio (auf den Zentimeter vorbelegt), **Drehung 315,3°** | angehakt | `AUSLAUF_rohr` Querschnitt → Ablaufrohr |
