@@ -685,38 +685,73 @@ class TerrainField:
         return {"ebene": ebene, "ops": ids,
                 "anteil": float(gesperrt.mean())}
 
+    # -- Fenster: eine Operation rechnet nur dort, wo sie wirken kann --
+    # Bis 2026-09-22 rechnete jede Operation über das GANZE Raster (Abstand
+    # jedes Knotens zu jedem Segment): 12 m 0,01 s, 74 m 0,21 s, 500 m
+    # 9,6 s — je Operation, bei jeder Entwurfsvorschau (Audit G12). Die
+    # Außenkante bleibt die Ausnahme, sie wirkt bestimmungsgemäß überall.
+
+    def _fenster(self, punkte, rand: float) -> tuple[slice, slice]:
+        """Zeilen-/Spaltenfenster des Rasters um die Punkte (+ rand)."""
+        p = np.asarray(punkte, dtype=float)
+        ny, nx = self.z.shape
+        if p.size == 0:
+            return slice(0, 0), slice(0, 0)
+        p = p.reshape(-1, p.shape[-1])[:, :2]
+        r = self.resolution
+        i0 = max(int(np.floor((p[:, 0].min() - rand - self.x0) / r)), 0)
+        i1 = min(int(np.ceil((p[:, 0].max() + rand - self.x0) / r)) + 1, nx)
+        j0 = max(int(np.floor((p[:, 1].min() - rand - self.y0) / r)), 0)
+        j1 = min(int(np.ceil((p[:, 1].max() + rand - self.y0) / r)) + 1, ny)
+        return slice(j0, max(j1, j0)), slice(i0, max(i1, i0))
+
+    def _ausschnitt(self, punkte, rand: float):
+        """Fenster, Koordinaten und Höhen darin — zurück über _einsetzen."""
+        js, is_ = self._fenster(punkte, rand)
+        xx, yy = self.mesh_xy()
+        return js, is_, xx[js, is_], yy[js, is_], self.z[js, is_]
+
+    def _einsetzen(self, js, is_, z_neu) -> None:
+        """Fensterhöhen in eine KOPIE des Feldes setzen — nie in Slices
+        eines Arrays, das ein anderer noch hält (_vor_eigen, Sculpt)."""
+        z = self.z.copy()
+        z[js, is_] = z_neu
+        self.z = z
+
     # -- Operationsstapel (Spez. 6.2) --
 
     def apply(self, op) -> None:
         getattr(self, f"_op_{op.type}")(op)
 
     def _op_channel_carve(self, op):
-        xx, yy = self.mesh_xy()
+        n = max(op.side_slope, 1e-6)
+        js, is_, xx, yy, z = self._ausschnitt(
+            op.polyline, op.bottom_width / 2 + op.depth * n + self.resolution)
         dist, s = _dist_and_param_to_polyline(xx, yy, op.polyline)
         invert = op.invert_start + (op.invert_end - op.invert_start) * s
-        n = max(op.side_slope, 1e-6)
         z_target = invert + np.maximum(0.0, dist - op.bottom_width / 2) / n
         influence = dist <= op.bottom_width / 2 + op.depth * n
-        self.z = np.where(influence, np.minimum(self.z, z_target), self.z)
+        self._einsetzen(js, is_, np.where(influence, np.minimum(z, z_target), z))
 
     def _op_bruchkante(self, op):
-        xx, yy = self.mesh_xy()
         poly = np.asarray(op.polyline, dtype=float)
+        js, is_, xx, yy, z = self._ausschnitt(poly, op.breite + self.resolution)
         dist, s = _dist_and_param_to_polyline(xx, yy, poly[:, :2])
         z_linie = _z_entlang(poly, s)
         # linear ausblenden: auf der Linie voll, an der Wirkungsbreite null
         w = np.clip(1.0 - dist / max(op.breite, 1e-6), 0.0, 1.0)
-        ziel = self.z * (1 - w) + z_linie * w
+        ziel = z * (1 - w) + z_linie * w
         if op.modus == "absenken":
-            self.z = np.minimum(self.z, ziel)
+            neu = np.minimum(z, ziel)
         elif op.modus == "anheben":
-            self.z = np.maximum(self.z, ziel)
+            neu = np.maximum(z, ziel)
         elif op.modus in ("ebnen", "fuellen"):
-            self._kante_flaechig(op, poly, xx, yy, ziel, w)
+            neu = self._kante_flaechig(op, poly, xx, yy, ziel, w)
         else:
-            self.z = ziel
+            neu = ziel
+        self._einsetzen(js, is_, neu)
 
-    def _kante_flaechig(self, op, poly, xx, yy, ziel, w):
+    def _kante_flaechig(self, op, poly, xx, yy, ziel, w) -> np.ndarray:
         """
         Die Fläche INNERHALB einer geschlossenen Bruchkante herstellen.
 
@@ -731,15 +766,15 @@ class TerrainField:
                      einer geneigten Kante und schließt bündig an.
 
         Die Kante selbst wird in beiden Fällen wie gewohnt eingezogen,
-        damit der Übergang nach außen stufenfrei bleibt.
+        damit der Übergang nach außen stufenfrei bleibt. Rechnet im
+        Fenster der Operation und gibt dessen neue Höhen zurück.
         """
         ring = poly[:, :2]
         if np.linalg.norm(ring[0] - ring[-1]) > 1e-9:
             ring = np.vstack([ring, ring[:1]])          # gedanklich schließen
-        innen = _polygon_mask(xx, yy, ring)
+        innen = _polygon_mask(xx, yy, ring) if xx.size else np.zeros(xx.shape, bool)
         if not innen.any():
-            self.z = ziel                                # zu klein: wie ziehen
-            return
+            return ziel                                  # zu klein: wie ziehen
 
         if op.modus == "ebnen":
             # z = a*x + b*y + c über die Stützpunkte, kleinste Quadrate.
@@ -747,8 +782,7 @@ class TerrainField:
             a = np.column_stack([poly[:, 0], poly[:, 1], np.ones(len(poly))])
             koef, *_ = np.linalg.lstsq(a, poly[:, 2], rcond=None)
             flaeche = koef[0] * xx + koef[1] * yy + koef[2]
-            self.z = np.where(innen, flaeche, ziel)
-            return
+            return np.where(innen, flaeche, ziel)
 
         # fuellen: die KANTE ist der feste Rand, das Innere wird daraus
         # stufenfrei ergänzt. Der Kantenschlauch muss mindestens eine
@@ -757,10 +791,9 @@ class TerrainField:
         schlauch = self._kantenschlauch(op, xx, yy)
         frei = innen & ~schlauch
         if not frei.any():
-            self.z = ziel
-            return
+            return ziel
         start = np.where(schlauch, self._z_auf_kante(poly, xx, yy), ziel)
-        self.z = laplace_fuellen(start, ~frei)
+        return laplace_fuellen(start, ~frei)
 
     def _kantenschlauch(self, op, xx, yy):
         dist, _ = _dist_and_param_to_polyline(xx, yy, np.asarray(
@@ -773,10 +806,11 @@ class TerrainField:
         return _z_entlang(poly, s)
 
     def _op_boeschung(self, op):
-        xx, yy = self.mesh_xy()
         ok = np.asarray(op.oberkante, dtype=float)
         uk = np.asarray(_gleichlaeufig(op.oberkante, op.unterkante),
                         dtype=float)
+        js, is_, xx, yy, z = self._ausschnitt(
+            np.vstack([ok[:, :2], uk[:, :2]]), op.kanten_breite + self.resolution)
         d_o, s_o = _dist_and_param_to_polyline(xx, yy, ok[:, :2])
         d_u, s_u = _dist_and_param_to_polyline(xx, yy, uk[:, :2])
         z_o = _z_entlang(ok, s_o)
@@ -789,17 +823,18 @@ class TerrainField:
         # Knoten GENAU auf einer Kante zählt contains_points als außen —
         # dort bliebe sonst die alte Höhe als Stufe stehen. Eine halbe
         # Rasterweite Toleranz beidseitig räumt das ab.
-        band = (_polygon_mask(xx, yy, rand)
+        band = ((_polygon_mask(xx, yy, rand) if xx.size else np.zeros(xx.shape, bool))
                 | (d_o <= self.resolution / 2)
                 | (d_u <= self.resolution / 2))
-        self.z = np.where(band, flaeche, self.z)
+        neu = np.where(band, flaeche, z)
         # optional greifen die Kanten selbst noch etwas nach außen
         if op.kanten_breite > 0:
             for linie in (ok, uk):
                 dist, s = _dist_and_param_to_polyline(xx, yy, linie[:, :2])
                 w = np.clip(1.0 - dist / op.kanten_breite, 0.0, 1.0)
                 w = np.where(band, 0.0, w)      # innen gilt die Regelfläche
-                self.z = self.z * (1 - w) + _z_entlang(linie, s) * w
+                neu = neu * (1 - w) + _z_entlang(linie, s) * w
+        self._einsetzen(js, is_, neu)
 
     def _op_aussenkante(self, op):
         """
@@ -816,7 +851,7 @@ class TerrainField:
         überblenden — für den Fall, dass die Ränder von Hand gesetzt werden.
 
         Innerhalb der Bezugskante bleibt das Gelände unangetastet, dort
-        liegt die Vermessung.
+        liegt die Vermessung. Wirkt bestimmungsgemäß auf dem GANZEN Raster.
         """
         innen = self._bezugskante(op)
         if innen is None:
@@ -856,11 +891,14 @@ class TerrainField:
         return None
 
     def _op_pad(self, op):
-        xx, yy = self.mesh_xy()
-        self.z = np.where(_polygon_mask(xx, yy, op.polygon), op.level, self.z)
+        js, is_, xx, yy, z = self._ausschnitt(op.polygon, self.resolution)
+        if not xx.size:
+            return
+        self._einsetzen(js, is_, np.where(_polygon_mask(xx, yy, op.polygon),
+                                          op.level, z))
 
     def _op_raise_lower(self, op):
-        xx, yy = self.mesh_xy()
+        js, is_, xx, yy, z = self._ausschnitt([op.center], op.radius + self.resolution)
         r = np.hypot(xx - op.center[0], yy - op.center[1]) / max(op.radius, 1e-6)
         if op.falloff == "constant":
             f = (r <= 1).astype(float)
@@ -868,21 +906,31 @@ class TerrainField:
             f = np.clip(1 - r, 0, 1)
         else:                      # smooth
             f = np.clip(1 - r**2, 0, 1) ** 2
-        self.z = self.z + op.strength * f
+        self._einsetzen(js, is_, z + op.strength * f)
 
     def _op_smooth(self, op):
-        xx, yy = self.mesh_xy()
+        # der Glättungskern greift k Zellen über die Maske hinaus — das
+        # Fenster nimmt ihn mit, damit die Glättung dieselbe bleibt
+        k = max(1, int(round(op.radius / self.resolution / 2)))
+        if op.polygon:
+            punkte, rand = op.polygon, (k + 1) * self.resolution
+        else:
+            punkte, rand = [op.center], op.radius + (k + 1) * self.resolution
+        js, is_, xx, yy, z = self._ausschnitt(punkte, rand)
+        if not xx.size:
+            return
         if op.polygon:
             mask = _polygon_mask(xx, yy, op.polygon)
         else:
             mask = np.hypot(xx - op.center[0], yy - op.center[1]) <= op.radius
-        k = max(1, int(round(op.radius / self.resolution / 2)))
-        blurred = _box_blur(self.z, k)
+        blurred = _box_blur(z, k)
         w = np.clip(op.strength, 0, 1) * mask
-        self.z = self.z * (1 - w) + blurred * w
+        self._einsetzen(js, is_, z * (1 - w) + blurred * w)
 
     def _op_ramp(self, op):
-        xx, yy = self.mesh_xy()
+        js, is_, xx, yy, z = self._ausschnitt(op.polygon, self.resolution)
+        if not xx.size:
+            return
         mask = _polygon_mask(xx, yy, op.polygon)
         d = np.asarray(op.direction, dtype=float)
         d = d / (np.linalg.norm(d) or 1.0)
@@ -892,38 +940,48 @@ class TerrainField:
             return
         t = (proj - p.min()) / max(p.max() - p.min(), 1e-9)
         levels = op.level_start + (op.level_end - op.level_start) * np.clip(t, 0, 1)
-        self.z = np.where(mask, levels, self.z)
+        self._einsetzen(js, is_, np.where(mask, levels, z))
 
     def _op_embankment(self, op):
-        xx, yy = self.mesh_xy()
-        dist, _ = _dist_and_param_to_polyline(xx, yy, op.polyline)
         n = max(op.side_slope, 1e-6)
+        # die Schüttung reicht so weit, bis ihre Böschung das Gelände trifft
+        reichweite = (op.crest_width / 2
+                      + max(op.crest_level - float(np.min(self.z)), 0.0) * n
+                      + self.resolution)
+        js, is_, xx, yy, z = self._ausschnitt(op.polyline, reichweite)
+        dist, _ = _dist_and_param_to_polyline(xx, yy, op.polyline)
         z_target = op.crest_level - np.maximum(0.0, dist - op.crest_width / 2) / n
-        self.z = np.maximum(self.z, z_target)
+        self._einsetzen(js, is_, np.maximum(z, z_target))
 
     def _op_replace_region(self, op):
-        xx, yy = self.mesh_xy()
+        js, is_, xx, yy, z = self._ausschnitt(op.polygon, self.resolution)
+        if not xx.size:
+            return
         mask = _polygon_mask(xx, yy, op.polygon)
         # nur, wo das Zusatzraster wirklich gemessen ist — sonst stünde im
         # Polygon dessen Ebene (oder früher: sein geklemmter Randwert)
         ersatz = lade_basis(op.source, self._base_dir, xx, yy)
         ersetzen = mask & ersatz.gemessen
-        self.z = np.where(ersetzen, ersatz.z, self.z)
+        self._einsetzen(js, is_, np.where(ersetzen, ersatz.z, z))
         if self.gemessen is not None:
-            self.gemessen = self.gemessen | ersetzen
+            g = self.gemessen.copy()
+            g[js, is_] = g[js, is_] | ersetzen
+            self.gemessen = g
 
     def _op_set_level(self, op):
-        xx, yy = self.mesh_xy()
+        js, is_, xx, yy, z = self._ausschnitt(op.polygon, op.blend_width + self.resolution)
+        if not xx.size:
+            return
         mask = _polygon_mask(xx, yy, op.polygon)
-        z_new = np.where(mask, op.level, self.z)
+        z_new = np.where(mask, op.level, z)
         if op.blend_width > 0:
             ring = shapely.Polygon(op.polygon).exterior
             pts = shapely.points(xx.ravel(), yy.ravel())
             d = shapely.distance(pts, ring).reshape(xx.shape)
             w = np.clip(1 - d / op.blend_width, 0, 1)
             outside = ~mask
-            z_new = np.where(outside, self.z * (1 - w) + op.level * w, z_new)
-        self.z = z_new
+            z_new = np.where(outside, z * (1 - w) + op.level * w, z_new)
+        self._einsetzen(js, is_, z_new)
 
     # -- Tessellierung: die eine Codestelle für Vorschau und Rechnung --
 
