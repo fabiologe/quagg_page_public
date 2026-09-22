@@ -1353,495 +1353,552 @@ def import_objekte_entfernen(spec, import_id: str) -> int:
     return n
 
 
-def apply_import(spec, case_dir: Path, import_id: str,
-                 decisions: list[dict], unit_factor: float = 1.0,
-                 offset: list[float] | None = None,
-                 derive_domain: bool = False,
-                 terrain_from_lines: bool | None = None,
-                 rotation_deg: float = 0.0) -> dict:
+# Rollen, die aus einem NETZ einen Bauwerkskörper machen (StructImported)
+_SOLID_ROLLEN = ("wand", "pfeiler", "wehr", "becken", "bauwerk")
+
+
+def _p3(arr) -> list:
+    return [[round(float(q[0]), 3), round(float(q[1]), 3),
+             round(float(q[2]), 3)] for q in arr]
+
+
+class _Uebernahme:
     """
-    Deklarierte Kandidaten in den Fall übernehmen. decisions:
-    [{candidate, role, patch?, material?}] — gültige Rollen: siehe
-    utils/importRollen.js (Client) bzw. KANTEN_ROLLEN + solid_roles hier,
-    plus gelaende, gelaende_koerper, zusatzraster, zulaufrohr/ablaufrohr,
-    querschnitt, ignorieren.
-    Rückgabe: geänderte Spec (als dict) + Bericht.
+    Zustand EINER Übernahme (apply_import): was jeder Schritt braucht und
+    was die Schritte einander weiterreichen (Bericht, Gelände-Hüllquader,
+    vergebene Kennungen). Vorher steckte das in inneren Funktionen mit
+    `nonlocal` in einer 480-Zeilen-Funktion, in die jede Import-Reparatur
+    hineingreifen musste (E2a, Audit W3-P1.2).
     """
-    from .casespec import (ImportRef, Section, StructImported,
-                          Vermessungskante, transform_import)
 
-    imp_dir = case_dir / "imports" / import_id
-    manifest = json.loads((imp_dir / "manifest.json").read_text())
-    by_id = {c["id"]: c for c in manifest["candidates"]}
+    def __init__(self, spec, case_dir: Path, import_id: str,
+                 unit_factor: float, offset: list[float] | None,
+                 rotation_deg: float) -> None:
+        self.spec = spec
+        self.case_dir = case_dir
+        self.import_id = import_id
+        self.imp_dir = case_dir / "imports" / import_id
+        self.manifest = json.loads((self.imp_dir / "manifest.json").read_text())
+        self.by_id = {c["id"]: c for c in self.manifest["candidates"]}
+        self.unit_factor = unit_factor
+        self.off = np.asarray([offset[0], offset[1], 0.0] if offset else [0, 0, 0],
+                              dtype=float)
+        # Modell drehen: das Rechengebiet ist ein achsparalleler Quader. Liegt
+        # das Bauwerk schräg im Landeskoordinatensystem, verschenkt man damit
+        # Fläche und schneidet an den falschen Stellen ab. Deshalb wird beim
+        # Import EINMAL alles in ein lokales System gedreht, in dem das
+        # Bauwerk gerade steht — danach passt der Quader eng darum.
+        self.rot = math.radians(rotation_deg or 0.0)
+        self._c, self._s = math.cos(self.rot), math.sin(self.rot)
+        # Ablage-Ursprung der Netze (Quelleinheit, siehe _kandidaten_ablegen);
+        # Importe von vor dem 2026-09-22 haben keinen — dort liegt das STL
+        # noch in Landeskoordinaten
+        self.stl_ursprung = np.asarray(
+            self.manifest.get("stl_ursprung") or [0.0, 0.0], dtype=float)
+        self.report: list[str] = []
+        self.terrain_bbox = None
+        self.gelaende_gesetzt = False
+        self.existing: set[str] = set()
+        self.vorhandene_ops: set[str] = set()
+        self.vorhandene_kanten: set[str] = set()
+        self.vorhandene_qs: set[str] = set()
 
-    def ref(cid: str) -> ImportRef:
-        return ImportRef(import_id=import_id, kandidat=cid)
+    def bestand_erfassen(self) -> None:
+        """Vergebene Kennungen — NACH dem Ersetzen des alten Standes."""
+        spec = self.spec
+        self.existing = {s.id for s in spec.structures}
+        self.vorhandene_ops = {o.id for o in (spec.terrain.operations
+                                              if spec.terrain else [])}
+        self.vorhandene_ops |= {r.id for r in (spec.mesh.refinements
+                                               if spec.mesh else [])}
+        self.vorhandene_kanten = {k.id for k in (spec.terrain.kanten
+                                  if spec.terrain else [])}
+        self.vorhandene_qs = {x.id for x in spec.evaluation.sections}
 
+    def ref(self, cid: str):
+        from .casespec import ImportRef
+        return ImportRef(import_id=self.import_id, kandidat=cid)
+
+    def aufloesung(self, rueckfall: float) -> float:
+        return (self.spec.terrain.base.resolution if self.spec.terrain
+                else rueckfall)
+
+    def drehen(self, pkte: np.ndarray) -> np.ndarray:
+        """(n,2) oder (n,3) um die z-Achse durch den Ursprung drehen."""
+        if not self.rot:
+            return pkte
+        a = np.array(pkte, dtype=float, copy=True)
+        x, y = a[..., 0].copy(), a[..., 1].copy()
+        a[..., 0] = self._c * x - self._s * y
+        a[..., 1] = self._s * x + self._c * y
+        return a
+
+    def load_mesh(self, cid: str) -> trimesh.Trimesh:
+        # Reihenfolge: erst den Ablage-Ursprung zurück (Quelleinheit), dann
+        # skalieren (mm -> m), dann verschieben — der Offset wird in der
+        # ZIELeinheit angegeben (Editor zeigt ihn so an)
+        m = trimesh.load(self.imp_dir / f"{cid}.stl", force="mesh")
+        if self.stl_ursprung.any():
+            m.apply_translation([self.stl_ursprung[0], self.stl_ursprung[1], 0.0])
+        if self.unit_factor != 1.0:
+            m.apply_scale(self.unit_factor)
+        m.apply_translation(-self.off)
+        if self.rot:
+            m.apply_transform(trimesh.transformations.rotation_matrix(
+                self.rot, [0, 0, 1]))
+        return m
+
+    def linie_laden(self, c: dict) -> np.ndarray:
+        pts = json.loads((self.imp_dir / f"{c['id']}.json").read_text())
+        arr = np.asarray(pts, dtype=float)
+        if arr.shape[1] < 3:                      # alte Importe ohne Höhe
+            arr = np.column_stack([arr, np.zeros(len(arr))])
+        arr = arr * self.unit_factor
+        return self.drehen(arr - self.off)
+
+
+def _uebernahme_vorbereiten(spec, case_dir: Path, import_id: str,
+                            decisions: list[dict], unit_factor: float,
+                            offset: list[float] | None,
+                            rotation_deg: float) -> _Uebernahme:
+    u = _Uebernahme(spec, case_dir, import_id, unit_factor, offset, rotation_deg)
     # Re-Apply ERSETZT: alles, was aus diesem Import stammt, fliegt vorher
     # raus. Zweimal Übernehmen (andere Rolle, andere Auflösung) erzeugt
     # damit keine _2-Duplikate mehr, sondern den neu abgeleiteten Stand.
     ersetzt = import_objekte_entfernen(spec, import_id)
-    off = np.asarray([offset[0], offset[1], 0.0] if offset else [0, 0, 0],
-                     dtype=float)
-    # Modell drehen: das Rechengebiet ist ein achsparalleler Quader. Liegt
-    # das Bauwerk schräg im Landeskoordinatensystem, verschenkt man damit
-    # Fläche und schneidet an den falschen Stellen ab. Deshalb wird beim
-    # Import EINMAL alles in ein lokales System gedreht, in dem das
-    # Bauwerk gerade steht — danach passt der Quader eng darum.
-    rot = math.radians(rotation_deg or 0.0)
-    _c, _s = math.cos(rot), math.sin(rot)
     # Ein fertiges Raster lässt sich nicht drehen, ohne es neu abzutasten —
     # das gehört nicht in den Import. Ehrlich ablehnen statt still ignorieren
     # (sonst liegen Raster und gedrehte Körper desselben Imports schief
     # zueinander und niemand merkt es).
-    if rot and any(by_id.get(d.get("candidate"), {}).get("kind") == "raster"
-                   and d.get("role") != "ignorieren" for d in decisions):
+    if u.rot and any(u.by_id.get(d.get("candidate"), {}).get("kind") == "raster"
+                     and d.get("role") != "ignorieren" for d in decisions):
         raise ValueError(
             "Drehung beim Import ist für fertige Höhenraster (.asc/.xyz) "
             "nicht möglich — ein Raster müsste dafür neu abgetastet werden. "
             "Ohne Drehwinkel importieren und den Fall danach über „Modell "
             "drehen“ ausrichten, oder das Gelände als TIN/Kanten liefern.")
-
-    def drehen(pkte: np.ndarray) -> np.ndarray:
-        """(n,2) oder (n,3) um die z-Achse durch den Ursprung drehen."""
-        if not rot:
-            return pkte
-        a = np.array(pkte, dtype=float, copy=True)
-        x, y = a[..., 0].copy(), a[..., 1].copy()
-        a[..., 0] = _c * x - _s * y
-        a[..., 1] = _s * x + _c * y
-        return a
-    report: list[str] = []
     if ersetzt:
-        report.append(f"{ersetzt} Objekte aus früherem Übernehmen dieses "
-                      "Imports ersetzt — kein Duplikat angelegt.")
-    terrain_bbox = None
-    gelaende_gesetzt = False
+        u.report.append(f"{ersetzt} Objekte aus früherem Übernehmen dieses "
+                        "Imports ersetzt — kein Duplikat angelegt.")
+    u.bestand_erfassen()
+    return u
 
-    # Ablage-Ursprung der Netze (Quelleinheit, siehe _kandidaten_ablegen);
-    # Importe von vor dem 2026-09-22 haben keinen — dort liegt das STL noch
-    # in Landeskoordinaten
-    stl_ursprung = np.asarray(manifest.get("stl_ursprung") or [0.0, 0.0],
-                              dtype=float)
 
-    def load_mesh(cid: str) -> trimesh.Trimesh:
-        # Reihenfolge: erst den Ablage-Ursprung zurück (Quelleinheit), dann
-        # skalieren (mm -> m), dann verschieben — der Offset wird in der
-        # ZIELeinheit angegeben (Editor zeigt ihn so an)
-        m = trimesh.load(imp_dir / f"{cid}.stl", force="mesh")
-        if stl_ursprung.any():
-            m.apply_translation([stl_ursprung[0], stl_ursprung[1], 0.0])
-        if unit_factor != 1.0:
-            m.apply_scale(unit_factor)
-        m.apply_translation(-off)
-        if rot:
-            m.apply_transform(trimesh.transformations.rotation_matrix(
-                rot, [0, 0, 1]))
-        return m
-
-    solid_roles = {"wand": "wand", "pfeiler": "pfeiler", "wehr": "wehr",
-                   "becken": "becken", "bauwerk": "bauwerk"}
-    existing = {s.id for s in spec.structures}
-    vorhandene_ops = {o.id for o in (spec.terrain.operations
-                                     if spec.terrain else [])}
-    vorhandene_ops |= {r.id for r in (spec.mesh.refinements
-                                      if spec.mesh else [])}
-    vorhandene_kanten = {k.id for k in (spec.terrain.kanten
-                         if spec.terrain else [])}
-    vorhandene_qs = {x.id for x in spec.evaluation.sections}
-
-    def linie_laden(c) -> np.ndarray:
-        pts = json.loads((imp_dir / f"{c['id']}.json").read_text())
-        arr = np.asarray(pts, dtype=float)
-        if arr.shape[1] < 3:                      # alte Importe ohne Höhe
-            arr = np.column_stack([arr, np.zeros(len(arr))])
-        arr = arr * unit_factor
-        return drehen(arr - off)
-
-    def _p3(arr) -> list:
-        return [[round(float(q[0]), 3), round(float(q[1]), 3),
-                 round(float(q[2]), 3)] for q in arr]
-
-    def gelaende_aus_linien(ent: list) -> None:
-        from .casespec import Terrain, TerrainBase
-        res = spec.terrain.base.resolution if spec.terrain else 0.5
-        linien = [linie_laden(by_id[d["candidate"]]) for d in ent]
-        asc = derived_pfad(case_dir, f"gelaende_{import_id}_linien.asc")
-
-        # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
-        # eine Sohle in einem Beckenrand, gehört die Fläche dazwischen
-        # vermascht und die quer durchs Becken NICHT — das entscheidet eine
-        # gewöhnliche Delaunay nicht, sie kennt die Ringe gar nicht. Mit
-        # Zwangskanten wird jeder Ring zur Grenze und der nächstinnere zum
-        # Loch, und es entsteht kein einziger neuer Stützpunkt.
-        ringe = [(re.sub(r"[^a-z0-9_]", "_", by_id[d["candidate"]]["name"].lower()),
-                  li) for d, li in zip(ent, linien)
-                 if len(li) >= 4
-                 and abs(li[0][0] - li[-1][0]) < 1e-6
-                 and abs(li[0][1] - li[-1][1]) < 1e-6]
-        info, ueber_ringe = None, False
-        if ringe:
-            try:
-                info = tin_aus_ringen(ringe, asc, res)
-                ueber_ringe = True
-            except Exception as e:
-                report.append(f"Vermaschung über die geschlossenen Kanten "
-                              f"nicht möglich ({e}) — gewöhnliche "
-                              "Vermaschung verwendet.")
-        if info is None:
-            info = tin_from_lines(linien, asc, res)
-        # Die Vermessungskanten müssen den Neuaufbau überleben — sie sind
-        # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
-        _gelaende_setzen(spec, case_dir, _rel(case_dir, asc), res,
-                         aussenhoehe=info.get("aussenhoehe"))
-        nonlocal terrain_bbox
-        e = info["extent"]
-        zs = np.concatenate([li[:, 2] for li in linien])
-        terrain_bbox = np.array([[e[0], e[1], float(zs.min())],
-                                 [e[2], e[3], float(zs.max())]])
-        if ueber_ringe:
-            report.append(
-                f"Gelände aus {info['n_ringe']} geschlossenen Kanten mit "
-                f"ZWANGSKANTEN vermascht: {info['n_dreiecke']} Dreiecke aus "
-                f"{info['n_punkte']} Stützpunkten auf "
-                f"{info['nx']}×{info['ny']} Raster, Höhen {zs.min():.2f} … "
-                f"{zs.max():.2f} m, Abdeckung {info['coverage']:.0%}. Jeder "
-                "Ring ist eine Grenze und der nächstinnere sein Loch — es "
-                "wurde kein Stützpunkt hinzuerfunden, alle liegen auf den "
-                "Kanten."
-                + (f" Die restlichen {1 - info['coverage']:.0%} liegen "
-                   "außerhalb des äußersten Rings — dort ist nichts "
-                   "vermessen; im Modell steht dort eine Ebene auf "
-                   f"{info['aussenhoehe']:.2f} m (Außenhöhe, im "
-                   "Gelände-Panel änderbar)."
-                   if info["coverage"] < 0.999 else ""))
-        else:
-            report.append(
-                f"Gelände aus {len(linien)} Kanten vermascht: "
-                f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
-                f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
-                f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
-                f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge), "
-                f"{info['innen_ergaenzt']:.0%} dazwischen werden stufenfrei "
-                "ergänzt — die glatteste Fläche durch die bekannten Höhen, "
-                f"keine Aussage der Vermessung. {info['ausserhalb']:.0%} des "
-                "Rasters liegen außerhalb der Vermessung; im Modell steht "
-                f"dort eine Ebene auf {info['aussenhoehe']:.2f} m "
-                "(Außenhöhe, im Gelände-Panel änderbar).")
-
-    # ---- Gelände AUS den Linien -----------------------------------------
-    # Vermessungsdaten kommen oft ohne TIN: nur Bruch-, Böschungs- und
-    # Sohlkanten. Dann bilden genau diese Linien das Gelände. Ohne
-    # Basisgelände ist das der einzig sinnvolle Weg — eine Kante allein
-    # hätte sonst nichts, was sie verändern könnte.
+def _linien_fuer_gelaende(u: _Uebernahme, decisions: list[dict],
+                          terrain_from_lines: bool | None) -> list[dict]:
+    """
+    Vermessungsdaten kommen oft ohne TIN: nur Bruch-, Böschungs- und
+    Sohlkanten. Dann bilden genau diese Linien das Gelände. Ohne
+    Basisgelände ist das der einzig sinnvolle Weg — eine Kante allein
+    hätte sonst nichts, was sie verändern könnte. Liefert die Linien-
+    Entscheidungen, aus denen das Gelände entsteht — oder nichts.
+    """
     hat_gelaende_mesh = any(d.get("role") in ("gelaende", "gelaende_koerper")
                             for d in decisions)
     linien_ent = [d for d in decisions
-                  if by_id.get(d["candidate"], {}).get("kind") == "polyline"
+                  if u.by_id.get(d["candidate"], {}).get("kind") == "polyline"
                   and d.get("role") in GELAENDE_KANTEN]
     aus_linien = terrain_from_lines
     if aus_linien is None:
-        aus_linien = (not hat_gelaende_mesh and spec.terrain is None
+        aus_linien = (not hat_gelaende_mesh and u.spec.terrain is None
                       and bool(linien_ent))
+    return linien_ent if (aus_linien and linien_ent) else []
 
-    if aus_linien and linien_ent:
-        gelaende_aus_linien(linien_ent)
 
-    for d in decisions:
-        c = by_id.get(d["candidate"])
-        role = d.get("role", "ignorieren")
-        if c is None or role == "ignorieren":
-            continue
-        if c["kind"] == "acis":
-            report.append(c.get("hint", "ACIS übersprungen"))
-            continue
+def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
+    res = u.aufloesung(0.5)
+    linien = [u.linie_laden(u.by_id[d["candidate"]]) for d in ent]
+    asc = derived_pfad(u.case_dir, f"gelaende_{u.import_id}_linien.asc")
 
-        if c["kind"] == "kreis":
-            # Rohrmündung -> Stutzen als Durchlass. Die Achse folgt der
-            # Kreisnormalen; die Länge ist bewusst kurz (zwei Durchmesser):
-            # was VOR der Mündung passiert, entscheidet sich dort, das
-            # Rohrinnere trägt dazu nichts bei.
-            from .casespec import CulvertProfile, StructCulvert
-            k = json.loads((imp_dir / f"{c['id']}.kreis.json").read_text())
-            mitte = drehen((np.asarray(k["mitte"], dtype=float)
-                            * unit_factor) - off)
-            n = drehen(np.asarray(k["achse"], dtype=float))
-            n = n / (np.linalg.norm(n) or 1.0)
-            d = 2 * k["radius"] * unit_factor
-            halb = d                      # je Seite ein Durchmesser
-            sid = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())[:40]
-            n_ = 2
-            while sid in existing:
-                sid = f"{sid[:36]}_{n_}"
-                n_ += 1
-            existing.add(sid)
-            # Was der Layer über den Zweck sagt, bleibt am Objekt: `role`
-            # trägt hier bereits die Wahl aus dem Dialog, die die
-            # Namensvermutung `role_guess` überschreibt.
-            rolle = {"zulaufrohr": "zulauf", "ablaufrohr": "ablauf"}.get(role)
-            spec.structures.append(StructCulvert(
-                id=sid, type="culvert", patch=sid,
-                axis=[tuple(np.round(mitte - n * halb, 3)),
-                      tuple(np.round(mitte + n * halb, 3))],
-                profile=CulvertProfile(kind="circular", diameter=round(d, 3)),
-                rolle=rolle, material=None,
-                herkunft="import", import_ref=ref(c["id"])))
-            report.append(
-                f"Rohrmündung „{sid}“: DN{d * 1000:.0f}, Achse "
-                f"({mitte[0]:.2f}, {mitte[1]:.2f}, {mitte[2]:.2f}), "
-                f"Sohle {mitte[2] - d / 2:.3f} m, Richtung "
-                f"({n[0]:.3f}, {n[1]:.3f}); als {halb * 2:.2f} m langer "
-                "Stutzen eingebaut"
-                + (f", laut Layer ein {rolle.capitalize()} — "
-                   "„⚯ Anschlüsse herstellen“ koppelt ihn an den passenden "
-                   "Rand" if rolle else " — Randbedingung noch zuordnen"))
-            continue
+    # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
+    # eine Sohle in einem Beckenrand, gehört die Fläche dazwischen
+    # vermascht und die quer durchs Becken NICHT — das entscheidet eine
+    # gewöhnliche Delaunay nicht, sie kennt die Ringe gar nicht. Mit
+    # Zwangskanten wird jeder Ring zur Grenze und der nächstinnere zum
+    # Loch, und es entsteht kein einziger neuer Stützpunkt.
+    ringe = [(re.sub(r"[^a-z0-9_]", "_", u.by_id[d["candidate"]]["name"].lower()),
+              li) for d, li in zip(ent, linien)
+             if len(li) >= 4
+             and abs(li[0][0] - li[-1][0]) < 1e-6
+             and abs(li[0][1] - li[-1][1]) < 1e-6]
+    info, ueber_ringe = None, False
+    if ringe:
+        try:
+            info = tin_aus_ringen(ringe, asc, res)
+            ueber_ringe = True
+        except Exception as e:
+            u.report.append(f"Vermaschung über die geschlossenen Kanten "
+                            f"nicht möglich ({e}) — gewöhnliche "
+                            "Vermaschung verwendet.")
+    if info is None:
+        info = tin_from_lines(linien, asc, res)
+    # Die Vermessungskanten müssen den Neuaufbau überleben — sie sind
+    # das, WAS gezeichnet wurde, nicht eine Folge der Geländebasis
+    _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, asc), res,
+                     aussenhoehe=info.get("aussenhoehe"))
+    e = info["extent"]
+    zs = np.concatenate([li[:, 2] for li in linien])
+    u.terrain_bbox = np.array([[e[0], e[1], float(zs.min())],
+                               [e[2], e[3], float(zs.max())]])
+    if ueber_ringe:
+        u.report.append(
+            f"Gelände aus {info['n_ringe']} geschlossenen Kanten mit "
+            f"ZWANGSKANTEN vermascht: {info['n_dreiecke']} Dreiecke aus "
+            f"{info['n_punkte']} Stützpunkten auf "
+            f"{info['nx']}×{info['ny']} Raster, Höhen {zs.min():.2f} … "
+            f"{zs.max():.2f} m, Abdeckung {info['coverage']:.0%}. Jeder "
+            "Ring ist eine Grenze und der nächstinnere sein Loch — es "
+            "wurde kein Stützpunkt hinzuerfunden, alle liegen auf den "
+            "Kanten."
+            + (f" Die restlichen {1 - info['coverage']:.0%} liegen "
+               "außerhalb des äußersten Rings — dort ist nichts "
+               "vermessen; im Modell steht dort eine Ebene auf "
+               f"{info['aussenhoehe']:.2f} m (Außenhöhe, im "
+               "Gelände-Panel änderbar)."
+               if info["coverage"] < 0.999 else ""))
+    else:
+        u.report.append(
+            f"Gelände aus {len(linien)} Kanten vermascht: "
+            f"{info['n_punkte']} Stützpunkte auf {info['nx']}×{info['ny']} "
+            f"Raster, Höhen {zs.min():.2f} … {zs.max():.2f} m. "
+            f"{info['coverage']:.0%} der Fläche liegen zwischen den Kanten "
+            f"(Dreiecke bis {info['max_kante']:g} m Kantenlänge), "
+            f"{info['innen_ergaenzt']:.0%} dazwischen werden stufenfrei "
+            "ergänzt — die glatteste Fläche durch die bekannten Höhen, "
+            f"keine Aussage der Vermessung. {info['ausserhalb']:.0%} des "
+            "Rasters liegen außerhalb der Vermessung; im Modell steht "
+            f"dort eine Ebene auf {info['aussenhoehe']:.2f} m "
+            "(Außenhöhe, im Gelände-Panel änderbar).")
 
-        if c["kind"] == "raster":
-            roh = (imp_dir / f"{c['id']}.grid").read_bytes()
-            name = re.sub(r"[^A-Za-z0-9_.-]", "_", c["name"])[:40]
-            ziel = derived_pfad(case_dir, f"{name}.asc")
-            # Einheit/Offset gelten für ALLE Kandidaten eines Imports gleich —
-            # sonst liegen Raster und Bauwerkskörper zueinander verschoben.
-            roh, raster_bbox = _raster_transformieren(roh, unit_factor, off)
-            ziel.write_bytes(roh)
-            umgerechnet = (f"; Einheit ×{unit_factor:g}, Offset "
-                           f"({off[0]:g}, {off[1]:g}) angewandt"
-                           if unit_factor != 1.0 or off[0] or off[1] else "")
-            if role == "gelaende":
-                res = spec.terrain.base.resolution if spec.terrain else 0.5
-                _gelaende_setzen(spec, case_dir, _rel(case_dir, ziel), res)
-                report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
-                              f"({c['stats'].get('format')}){umgerechnet}")
-                if raster_bbox is not None:
-                    terrain_bbox = raster_bbox
-                if gelaende_gesetzt:
-                    report.append(
-                        "ACHTUNG: mehrere Layer als Gelände gewählt — "
+
+def _rohr_aus_kreis(u: _Uebernahme, c: dict, role: str) -> None:
+    # Rohrmündung -> Stutzen als Durchlass. Die Achse folgt der
+    # Kreisnormalen; die Länge ist bewusst kurz (zwei Durchmesser):
+    # was VOR der Mündung passiert, entscheidet sich dort, das
+    # Rohrinnere trägt dazu nichts bei.
+    from .casespec import CulvertProfile, StructCulvert
+    k = json.loads((u.imp_dir / f"{c['id']}.kreis.json").read_text())
+    mitte = u.drehen((np.asarray(k["mitte"], dtype=float)
+                      * u.unit_factor) - u.off)
+    n = u.drehen(np.asarray(k["achse"], dtype=float))
+    n = n / (np.linalg.norm(n) or 1.0)
+    d = 2 * k["radius"] * u.unit_factor
+    halb = d                      # je Seite ein Durchmesser
+    sid = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())[:40]
+    n_ = 2
+    while sid in u.existing:
+        sid = f"{sid[:36]}_{n_}"
+        n_ += 1
+    u.existing.add(sid)
+    # Was der Layer über den Zweck sagt, bleibt am Objekt: `role`
+    # trägt hier bereits die Wahl aus dem Dialog, die die
+    # Namensvermutung `role_guess` überschreibt.
+    rolle = {"zulaufrohr": "zulauf", "ablaufrohr": "ablauf"}.get(role)
+    u.spec.structures.append(StructCulvert(
+        id=sid, type="culvert", patch=sid,
+        axis=[tuple(np.round(mitte - n * halb, 3)),
+              tuple(np.round(mitte + n * halb, 3))],
+        profile=CulvertProfile(kind="circular", diameter=round(d, 3)),
+        rolle=rolle, material=None,
+        herkunft="import", import_ref=u.ref(c["id"])))
+    u.report.append(
+        f"Rohrmündung „{sid}“: DN{d * 1000:.0f}, Achse "
+        f"({mitte[0]:.2f}, {mitte[1]:.2f}, {mitte[2]:.2f}), "
+        f"Sohle {mitte[2] - d / 2:.3f} m, Richtung "
+        f"({n[0]:.3f}, {n[1]:.3f}); als {halb * 2:.2f} m langer "
+        "Stutzen eingebaut"
+        + (f", laut Layer ein {rolle.capitalize()} — "
+           "„⚯ Anschlüsse herstellen“ koppelt ihn an den passenden "
+           "Rand" if rolle else " — Randbedingung noch zuordnen"))
+
+
+def _gelaende_aus_raster(u: _Uebernahme, c: dict, role: str) -> None:
+    roh = (u.imp_dir / f"{c['id']}.grid").read_bytes()
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", c["name"])[:40]
+    ziel = derived_pfad(u.case_dir, f"{name}.asc")
+    # Einheit/Offset gelten für ALLE Kandidaten eines Imports gleich —
+    # sonst liegen Raster und Bauwerkskörper zueinander verschoben.
+    roh, raster_bbox = _raster_transformieren(roh, u.unit_factor, u.off)
+    ziel.write_bytes(roh)
+    off = u.off
+    umgerechnet = (f"; Einheit ×{u.unit_factor:g}, Offset "
+                   f"({off[0]:g}, {off[1]:g}) angewandt"
+                   if u.unit_factor != 1.0 or off[0] or off[1] else "")
+    if role == "gelaende":
+        res = u.aufloesung(0.5)
+        _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, ziel), res)
+        u.report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
+                        f"({c['stats'].get('format')}){umgerechnet}")
+        if raster_bbox is not None:
+            u.terrain_bbox = raster_bbox
+        if u.gelaende_gesetzt:
+            u.report.append(
+                "ACHTUNG: mehrere Layer als Gelände gewählt — "
+                f"„{c['name']}“ ersetzt das vorherige. Für zwei "
+                "Zustände (Bestand/Planung) zwei Fälle anlegen.")
+        u.gelaende_gesetzt = True
+    else:
+        u.report.append(
+            f"Zusatzraster „{ziel.name}“ liegt jetzt im Fall — in "
+            f"einer Operation „Bereich ersetzen“ auswählbar"
+            f"{umgerechnet}")
+
+
+def _gelaende_aus_netz(u: _Uebernahme, c: dict, role: str) -> None:
+    from .solids import oberseite
+
+    m = u.load_mesh(c["id"])
+    res = u.aufloesung(1.0)
+    asc = derived_pfad(u.case_dir, f"gelaende_{u.import_id}.asc")
+    koerper_name = None
+    if role == "gelaende_koerper":
+        # Volumenkörper: er selbst geht an den Vernetzer, das
+        # Höhenraster wird aus seiner OBERSEITE abgeleitet (Boden
+        # und senkrechte Wände liegen im Grundriss darüber und
+        # machten die Vermaschung sonst unbrauchbar).
+        if not m.is_watertight:
+            m.fill_holes()
+            m.fix_normals()
+        koerper_name = _rel(u.case_dir, derived_pfad(
+            u.case_dir, f"gelaendekoerper_{u.import_id}.stl"))
+        m.export(u.case_dir / koerper_name)
+        info = rasterize_tin_to_asc(oberseite(m), asc, res)
+    else:
+        info = rasterize_tin_to_asc(m, asc, res)
+        m.export(derived_pfad(u.case_dir,
+                              f"gelaende_{u.import_id}_tin.stl"))
+    _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, asc), res,
+                     koerper_name, aussenhoehe=info.get("aussenhoehe"))
+    if koerper_name:
+        u.report.append(
+            f"Geländekörper „{c['name']}“ übernommen: "
+            f"{len(m.faces)} Dreiecke, "
+            f"{'geschlossen' if m.is_watertight else 'NICHT geschlossen'}"
+            f", Volumen {abs(m.volume):.1f} m³. Der Vernetzer bekommt "
+            "diesen Körper; das Höhenraster daneben stammt aus seiner "
+            "Oberseite und trägt Prüfung, Fensterlage und Anzeige.")
+    u.terrain_bbox = m.bounds
+    if u.gelaende_gesetzt:
+        u.report.append("ACHTUNG: mehrere Layer als Gelände gewählt — "
                         f"„{c['name']}“ ersetzt das vorherige. Für zwei "
                         "Zustände (Bestand/Planung) zwei Fälle anlegen.")
-                gelaende_gesetzt = True
-            else:
-                report.append(
-                    f"Zusatzraster „{ziel.name}“ liegt jetzt im Fall — in "
-                    f"einer Operation „Bereich ersetzen“ auswählbar"
-                    f"{umgerechnet}")
-            continue
+    u.gelaende_gesetzt = True
+    senk = info.get("senkrecht_verworfen") or 0
+    u.report.append(f"Gelände „{c['name']}“: {c['stats']['n_triangles']} "
+                    f"Dreiecke auf {info['nx']}×{info['ny']} Raster "
+                    f"(Abdeckung {info['coverage']:.0%})"
+                    + (f"; {senk} senkrechte Dreiecke übersprungen — "
+                       "ein Höhenraster kann keine senkrechte Wand "
+                       "abbilden" if senk else "")
+                    + f"; die übrigen {1 - info['coverage']:.0%} "
+                    "liegen außerhalb des TIN — dort ist nichts "
+                    "vermessen; im Modell steht dort eine Ebene auf "
+                    f"{info['aussenhoehe']:.2f} m (Außenhöhe = höchster "
+                    "Randpunkt der Vermessung, im Gelände-Panel "
+                    "änderbar)")
+    if senk > 0.3 * (c["stats"]["n_triangles"] or 1):
+        u.report.append(
+            f"ACHTUNG: {senk} von {c['stats']['n_triangles']} "
+            f"Dreiecken stehen senkrecht — das sind Beckenwände "
+            "oder Mauern. Ein Höhenraster hat je Punkt genau eine "
+            "Höhe und kann sie nicht abbilden; zwischen Ober- und "
+            "Unterkante rechnet es eine Schräge. Für senkrechte "
+            "Wände denselben Layer als „Gelände als Volumenkörper“ "
+            "einlesen oder die Kanten als Mauerkrone/Beckenrand "
+            "zuordnen.")
 
-        if role in ("gelaende", "gelaende_koerper"):
-            from .solids import oberseite
 
-            m = load_mesh(c["id"])
-            res = spec.terrain.base.resolution if spec.terrain else 1.0
-            asc = derived_pfad(case_dir, f"gelaende_{import_id}.asc")
-            koerper_name = None
-            if role == "gelaende_koerper":
-                # Volumenkörper: er selbst geht an den Vernetzer, das
-                # Höhenraster wird aus seiner OBERSEITE abgeleitet (Boden
-                # und senkrechte Wände liegen im Grundriss darüber und
-                # machten die Vermaschung sonst unbrauchbar).
-                if not m.is_watertight:
-                    m.fill_holes()
-                    m.fix_normals()
-                koerper_name = _rel(case_dir, derived_pfad(
-                    case_dir, f"gelaendekoerper_{import_id}.stl"))
-                m.export(case_dir / koerper_name)
-                info = rasterize_tin_to_asc(oberseite(m), asc, res)
-            else:
-                info = rasterize_tin_to_asc(m, asc, res)
-                m.export(derived_pfad(case_dir,
-                                      f"gelaende_{import_id}_tin.stl"))
-            _gelaende_setzen(spec, case_dir, _rel(case_dir, asc), res,
-                             koerper_name, aussenhoehe=info.get("aussenhoehe"))
-            if koerper_name:
-                report.append(
-                    f"Geländekörper „{c['name']}“ übernommen: "
-                    f"{len(m.faces)} Dreiecke, "
-                    f"{'geschlossen' if m.is_watertight else 'NICHT geschlossen'}"
-                    f", Volumen {abs(m.volume):.1f} m³. Der Vernetzer bekommt "
-                    "diesen Körper; das Höhenraster daneben stammt aus seiner "
-                    "Oberseite und trägt Prüfung, Fensterlage und Anzeige.")
-            terrain_bbox = m.bounds
-            if gelaende_gesetzt:
-                report.append("ACHTUNG: mehrere Layer als Gelände gewählt — "
-                              f"„{c['name']}“ ersetzt das vorherige. Für zwei "
-                              "Zustände (Bestand/Planung) zwei Fälle anlegen.")
-            gelaende_gesetzt = True
-            senk = info.get("senkrecht_verworfen") or 0
-            report.append(f"Gelände „{c['name']}“: {c['stats']['n_triangles']} "
-                          f"Dreiecke auf {info['nx']}×{info['ny']} Raster "
-                          f"(Abdeckung {info['coverage']:.0%})"
-                          + (f"; {senk} senkrechte Dreiecke übersprungen — "
-                             "ein Höhenraster kann keine senkrechte Wand "
-                             "abbilden" if senk else "")
-                          + f"; die übrigen {1 - info['coverage']:.0%} "
-                          "liegen außerhalb des TIN — dort ist nichts "
-                          "vermessen; im Modell steht dort eine Ebene auf "
-                          f"{info['aussenhoehe']:.2f} m (Außenhöhe = höchster "
-                          "Randpunkt der Vermessung, im Gelände-Panel "
-                          "änderbar)")
-            if senk > 0.3 * (c["stats"]["n_triangles"] or 1):
-                report.append(
-                    f"ACHTUNG: {senk} von {c['stats']['n_triangles']} "
-                    f"Dreiecken stehen senkrecht — das sind Beckenwände "
-                    "oder Mauern. Ein Höhenraster hat je Punkt genau eine "
-                    "Höhe und kann sie nicht abbilden; zwischen Ober- und "
-                    "Unterkante rechnet es eine Schräge. Für senkrechte "
-                    "Wände denselben Layer als „Gelände als Volumenkörper“ "
-                    "einlesen oder die Kanten als Mauerkrone/Beckenrand "
-                    "zuordnen.")
+def _koerper_aus_netz(u: _Uebernahme, c: dict, d: dict, role: str) -> None:
+    from .casespec import StructImported
 
-        elif role in solid_roles and c.get("kind") == "mesh":
-            base = re.sub(r"[^a-z0-9_]", "_", (d.get("patch")
-                                               or c["name"]).lower()) or "import"
-            sid = base
-            n = 2
-            while sid in existing:
-                sid = f"{base}_{n}"
-                n += 1
-            existing.add(sid)
-            m = load_mesh(c["id"])
-            stl_name = _rel(case_dir,
-                            derived_pfad(case_dir, f"import_{sid}.stl"))
-            m.export(case_dir / stl_name)
-            # Vorbelegung aus der Rolle: ohne Material rechnet der Solver
-            # eine hydraulisch GLATTE Wand — für ein Betonbauteil die
-            # falsche Seite der Unsicherheit. „bauwerk" bleibt offen, da
-            # sagt die Rolle nichts über die Oberfläche.
-            werkstoff = d.get("material") or (
-                "beton" if role in ("wand", "pfeiler", "wehr", "becken")
-                else None)
-            spec.structures.append(StructImported(
-                id=sid, type="imported", patch=sid, source=stl_name,
-                role=role, material=werkstoff,
-                herkunft="import", import_ref=ref(c["id"])))
-            report.append(f"{role} „{sid}“: {c['stats']['n_triangles']} "
-                          f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}"
-                          + (f"; Material {werkstoff} vorbelegt"
-                             if werkstoff and not d.get("material") else ""))
+    base = re.sub(r"[^a-z0-9_]", "_", (d.get("patch")
+                                       or c["name"]).lower()) or "import"
+    sid = base
+    n = 2
+    while sid in u.existing:
+        sid = f"{base}_{n}"
+        n += 1
+    u.existing.add(sid)
+    m = u.load_mesh(c["id"])
+    stl_name = _rel(u.case_dir,
+                    derived_pfad(u.case_dir, f"import_{sid}.stl"))
+    m.export(u.case_dir / stl_name)
+    # Vorbelegung aus der Rolle: ohne Material rechnet der Solver
+    # eine hydraulisch GLATTE Wand — für ein Betonbauteil die
+    # falsche Seite der Unsicherheit. „bauwerk" bleibt offen, da
+    # sagt die Rolle nichts über die Oberfläche.
+    werkstoff = d.get("material") or (
+        "beton" if role in ("wand", "pfeiler", "wehr", "becken")
+        else None)
+    u.spec.structures.append(StructImported(
+        id=sid, type="imported", patch=sid, source=stl_name,
+        role=role, material=werkstoff,
+        herkunft="import", import_ref=u.ref(c["id"])))
+    u.report.append(f"{role} „{sid}“: {c['stats']['n_triangles']} "
+                    f"Dreiecke{'' if c['stats']['watertight'] else ' (NICHT wasserdicht!)'}"
+                    + (f"; Material {werkstoff} vorbelegt"
+                       if werkstoff and not d.get("material") else ""))
 
-        elif role == "querschnitt":
-            arr = linie_laden(c)
-            sid = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())
-            sid = re.sub(r"_linie(_\d+)?$", r"\1", sid) or sid
-            if not sid.startswith("qs"):        # Layer heißt oft schon QS_…
-                sid = f"qs_{sid}"
-            # zweimal dieselbe Datei importiert -> sonst zwei Querschnitte
-            # mit identischer Kennung, die sich gegenseitig verdecken
-            sid = _kanten_id(sid, "qs", vorhandene_qs)
-            spec.evaluation.sections.append(Section(
-                id=sid[:40],
-                polyline=[[round(float(p[0]), 2), round(float(p[1]), 2)]
-                          for p in arr],
-                herkunft="import", import_ref=ref(c["id"])))
-            report.append(f"Querschnitt „{sid}“ aus Trasse übernommen")
 
-        # Linienrollen greifen nur für POLYLINIEN — „becken"/„wand"
-        # gibt es auch als Mesh-Rolle (Körper aus dem CAD)
-        elif role in LINIEN_OBJEKT_ROLLEN and c.get("kind") == "polyline":
-            arr = linie_laden(c)
-            basis = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())[:36] or role
-            sid = basis
-            n_ = 2
-            while sid in existing or sid in vorhandene_ops:
-                sid = f"{basis}_{n_}"
-                n_ += 1
-            existing.add(sid)
-            vorhandene_ops.add(sid)
-            neu_objekte = _linien_objekt(spec, case_dir, role, arr, sid)
-            if neu_objekte is None:
-                report.append(f"„{c['name']}“ übersprungen: für die Rolle "
-                              f"„{role}“ braucht es mindestens "
-                              f"{3 if role in ('planum', 'becken', 'verfeinerung', 'koerper', 'vorfuellung') else 2} Punkte")
-                continue
-            for ziel, obj in neu_objekte:
-                obj.herkunft = "import"
-                obj.import_ref = ref(c["id"])
-                ziel.append(obj)
-            report.append(f"{role} „{sid}“ aus der Linie übernommen — "
-                          "Maße sind Vorbelegungen, im Panel änderbar")
+def _querschnitt_aus_linie(u: _Uebernahme, c: dict) -> None:
+    from .casespec import Section
 
-        elif role in KANTEN_ROLLEN:
-            # Die Linie wird als VERMESSUNGSKANTE übernommen, mit ihrer
-            # Rolle. Was daraus für das Gelände folgt (Böschung zwischen
-            # Sohle und Beckenrand, ebene Sohle), leitet core/kanten.py
-            # anschließend aus Rolle UND Lage ab — früher wurde hier
-            # sofort eine Operation erzeugt und die Bedeutung ging
-            # verloren, und Ober-/Unterkante wurden über den LAYERNAMEN
-            # gepaart statt über ihre Lage zueinander.
-            if spec.terrain is None:
-                report.append(f"„{c['name']}“ übersprungen: es gibt noch kein "
-                              "Gelände, das die Kante verändern könnte")
-                continue
-            arr = linie_laden(c)
-            sid = _kanten_id(c["name"], "kante", vorhandene_kanten)
-            spec.terrain.kanten.append(Vermessungskante(
-                id=sid, polyline=_p3(arr), rolle=KANTEN_ROLLEN[role],
-                breite=1.0, quelle=c["name"],
-                herkunft="import", import_ref=ref(c["id"])))
-            vorhandene_kanten.add(sid)
-            report.append(
-                f"{ROLLEN_TEXT[role]} „{sid}“: {len(arr)} Stützpunkte, "
-                f"{arr[:, 2].min():.2f} … {arr[:, 2].max():.2f} m")
+    arr = u.linie_laden(c)
+    sid = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())
+    sid = re.sub(r"_linie(_\d+)?$", r"\1", sid) or sid
+    if not sid.startswith("qs"):        # Layer heißt oft schon QS_…
+        sid = f"qs_{sid}"
+    # zweimal dieselbe Datei importiert -> sonst zwei Querschnitte
+    # mit identischer Kennung, die sich gegenseitig verdecken
+    sid = _kanten_id(sid, "qs", u.vorhandene_qs)
+    u.spec.evaluation.sections.append(Section(
+        id=sid[:40],
+        polyline=[[round(float(p[0]), 2), round(float(p[1]), 2)]
+                  for p in arr],
+        herkunft="import", import_ref=u.ref(c["id"])))
+    u.report.append(f"Querschnitt „{sid}“ aus Trasse übernommen")
 
-    # ---- Aus den Kanten das Gelände ableiten ----------------------------
-    # Früher wurden Ober- und Unterkante hier über den LAYERNAMEN gepaart
-    # (`_paar_schluessel`). Hießen die Layer „BK_oben" und
-    # „Boeschung_unten", fiel die Paarung aus und beide wurden einzelne
-    # Bruchkanten. Jetzt entscheidet die LAGE, und die Rolle bleibt am
-    # Objekt erhalten — nachträglich änderbar.
-    if spec.terrain is not None and spec.terrain.kanten:
-        from .kanten import verknuepfen
-        report.extend(verknuepfen(spec))
 
-    if rotation_deg or offset or unit_factor != 1.0:
-        neu = transform_import(unit_factor, offset, rotation_deg or 0.0)
-        alt = spec.meta.transform
-        if alt is None:
-            spec.meta.transform = neu
-            report.append(
-                f"Verortung gespeichert: Drehung {neu.rotation_deg:g}°, "
-                f"Verschiebung ({neu.translation[0]:g}, "
-                f"{neu.translation[1]:g}), Einheit ×{unit_factor:g} — "
-                "die Rückverortung in Landeskoordinaten ist damit "
-                "rechnerisch möglich")
-        elif (alt.rotation_deg != neu.rotation_deg
-              or alt.translation != neu.translation):
-            report.append(
-                "ACHTUNG: Lage-Parameter weichen vom ersten Import ab — "
-                "die gespeicherte Verortung bezieht sich weiterhin auf den "
-                "ersten Import. Gleiche Einheit/Offset/Drehung für alle "
-                "Importe eines Falls verwenden.")
+def _objekt_aus_linie(u: _Uebernahme, c: dict, role: str) -> None:
+    arr = u.linie_laden(c)
+    basis = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())[:36] or role
+    sid = basis
+    n_ = 2
+    while sid in u.existing or sid in u.vorhandene_ops:
+        sid = f"{basis}_{n_}"
+        n_ += 1
+    u.existing.add(sid)
+    u.vorhandene_ops.add(sid)
+    neu_objekte = _linien_objekt(u.spec, u.case_dir, role, arr, sid)
+    if neu_objekte is None:
+        u.report.append(f"„{c['name']}“ übersprungen: für die Rolle "
+                        f"„{role}“ braucht es mindestens "
+                        f"{3 if role in ('planum', 'becken', 'verfeinerung', 'koerper', 'vorfuellung') else 2} Punkte")
+        return
+    for ziel, obj in neu_objekte:
+        obj.herkunft = "import"
+        obj.import_ref = u.ref(c["id"])
+        ziel.append(obj)
+    u.report.append(f"{role} „{sid}“ aus der Linie übernommen — "
+                    "Maße sind Vorbelegungen, im Panel änderbar")
 
-    if derive_domain and terrain_bbox is not None:
-        from .casespec import Domain
-        lo, hi = terrain_bbox
-        dz = max(hi[2] - lo[2], 1.0)
-        spec.domain = Domain(
-            extent=(round(float(lo[0]), 2), round(float(lo[1]), 2),
-                    round(float(hi[0]), 2), round(float(hi[1]), 2)),
-            z_min=round(float(lo[2] - 0.5), 2),
-            z_max=round(float(hi[2] + max(2.0, 0.5 * dz)), 2))
-        report.append(f"Domäne aus Gelände abgeleitet: {spec.domain.extent}, "
-                      f"z {spec.domain.z_min}…{spec.domain.z_max}")
-        # Der Anfangswasserspiegel stammt aus der alten Höhenlage und läge
-        # sonst außerhalb des neuen Gebiets (Prüfung würde sofort meckern) —
-        # auf trockenen Start setzen und das offen sagen.
-        lvl = spec.solver.initial_level
-        if lvl is None or not (spec.domain.z_min < lvl < spec.domain.z_max):
-            # tiefster Geländepunkt = trockener Start und sicher INNERHALB
-            # des Gebiets (validate verlangt echte Ungleichungen)
-            neu = round(float(lo[2]), 2)
-            spec.solver.initial_level = neu
-            report.append(f"Anfangswasserspiegel auf {neu} m gesetzt "
-                          "(tiefster Geländepunkt, trockener Start) — der "
-                          f"bisherige Wert ({lvl}) lag außerhalb des neuen "
-                          "Gebiets")
 
+def _kante_aus_linie(u: _Uebernahme, c: dict, role: str) -> None:
+    # Die Linie wird als VERMESSUNGSKANTE übernommen, mit ihrer
+    # Rolle. Was daraus für das Gelände folgt (Böschung zwischen
+    # Sohle und Beckenrand, ebene Sohle), leitet core/kanten.py
+    # anschließend aus Rolle UND Lage ab — früher wurde hier
+    # sofort eine Operation erzeugt und die Bedeutung ging
+    # verloren, und Ober-/Unterkante wurden über den LAYERNAMEN
+    # gepaart statt über ihre Lage zueinander.
+    from .casespec import Vermessungskante
+
+    if u.spec.terrain is None:
+        u.report.append(f"„{c['name']}“ übersprungen: es gibt noch kein "
+                        "Gelände, das die Kante verändern könnte")
+        return
+    arr = u.linie_laden(c)
+    sid = _kanten_id(c["name"], "kante", u.vorhandene_kanten)
+    u.spec.terrain.kanten.append(Vermessungskante(
+        id=sid, polyline=_p3(arr), rolle=KANTEN_ROLLEN[role],
+        breite=1.0, quelle=c["name"],
+        herkunft="import", import_ref=u.ref(c["id"])))
+    u.vorhandene_kanten.add(sid)
+    u.report.append(
+        f"{ROLLEN_TEXT[role]} „{sid}“: {len(arr)} Stützpunkte, "
+        f"{arr[:, 2].min():.2f} … {arr[:, 2].max():.2f} m")
+
+
+def _kandidat_uebernehmen(u: _Uebernahme, d: dict) -> None:
+    """Eine Entscheidung des Dialogs auf ihren Kandidaten anwenden."""
+    c = u.by_id.get(d["candidate"])
+    role = d.get("role", "ignorieren")
+    if c is None or role == "ignorieren":
+        return
+    if c["kind"] == "acis":
+        u.report.append(c.get("hint", "ACIS übersprungen"))
+        return
+    if c["kind"] == "kreis":
+        _rohr_aus_kreis(u, c, role)
+        return
+    if c["kind"] == "raster":
+        _gelaende_aus_raster(u, c, role)
+        return
+    if role in ("gelaende", "gelaende_koerper"):
+        _gelaende_aus_netz(u, c, role)
+    elif role in _SOLID_ROLLEN and c.get("kind") == "mesh":
+        _koerper_aus_netz(u, c, d, role)
+    elif role == "querschnitt":
+        _querschnitt_aus_linie(u, c)
+    # Linienrollen greifen nur für POLYLINIEN — „becken"/„wand"
+    # gibt es auch als Mesh-Rolle (Körper aus dem CAD)
+    elif role in LINIEN_OBJEKT_ROLLEN and c.get("kind") == "polyline":
+        _objekt_aus_linie(u, c, role)
+    elif role in KANTEN_ROLLEN:
+        _kante_aus_linie(u, c, role)
+
+
+def _lage_pruefen(u: _Uebernahme, unit_factor: float,
+                  offset: list[float] | None, rotation_deg: float) -> None:
+    from .casespec import transform_import
+
+    if not (rotation_deg or offset or unit_factor != 1.0):
+        return
+    neu = transform_import(unit_factor, offset, rotation_deg or 0.0)
+    alt = u.spec.meta.transform
+    if alt is None:
+        u.spec.meta.transform = neu
+        u.report.append(
+            f"Verortung gespeichert: Drehung {neu.rotation_deg:g}°, "
+            f"Verschiebung ({neu.translation[0]:g}, "
+            f"{neu.translation[1]:g}), Einheit ×{unit_factor:g} — "
+            "die Rückverortung in Landeskoordinaten ist damit "
+            "rechnerisch möglich")
+    elif (alt.rotation_deg != neu.rotation_deg
+          or alt.translation != neu.translation):
+        u.report.append(
+            "ACHTUNG: Lage-Parameter weichen vom ersten Import ab — "
+            "die gespeicherte Verortung bezieht sich weiterhin auf den "
+            "ersten Import. Gleiche Einheit/Offset/Drehung für alle "
+            "Importe eines Falls verwenden.")
+
+
+def _gebiet_ableiten(u: _Uebernahme) -> None:
+    from .casespec import Domain
+
+    spec = u.spec
+    lo, hi = u.terrain_bbox
+    dz = max(hi[2] - lo[2], 1.0)
+    spec.domain = Domain(
+        extent=(round(float(lo[0]), 2), round(float(lo[1]), 2),
+                round(float(hi[0]), 2), round(float(hi[1]), 2)),
+        z_min=round(float(lo[2] - 0.5), 2),
+        z_max=round(float(hi[2] + max(2.0, 0.5 * dz)), 2))
+    u.report.append(f"Domäne aus Gelände abgeleitet: {spec.domain.extent}, "
+                    f"z {spec.domain.z_min}…{spec.domain.z_max}")
+    # Der Anfangswasserspiegel stammt aus der alten Höhenlage und läge
+    # sonst außerhalb des neuen Gebiets (Prüfung würde sofort meckern) —
+    # auf trockenen Start setzen und das offen sagen.
+    lvl = spec.solver.initial_level
+    if lvl is None or not (spec.domain.z_min < lvl < spec.domain.z_max):
+        # tiefster Geländepunkt = trockener Start und sicher INNERHALB
+        # des Gebiets (validate verlangt echte Ungleichungen)
+        neu = round(float(lo[2]), 2)
+        spec.solver.initial_level = neu
+        u.report.append(f"Anfangswasserspiegel auf {neu} m gesetzt "
+                        "(tiefster Geländepunkt, trockener Start) — der "
+                        f"bisherige Wert ({lvl}) lag außerhalb des neuen "
+                        "Gebiets")
+
+
+def _anwendung_schreiben(u: _Uebernahme, decisions: list[dict],
+                         unit_factor: float, offset: list[float] | None,
+                         derive_domain: bool, terrain_from_lines: bool | None,
+                         rotation_deg: float) -> None:
     # Die ANWENDUNG gehört zu den Rohdaten: mit ihr ist jede Ableitung in
     # derived/ reproduzierbar (Wegwerf-Test) und ein Re-Apply braucht keine
     # erneute Deklaration im Dialog.
-    (imp_dir / "anwendung.json").write_text(json.dumps({
+    (u.imp_dir / "anwendung.json").write_text(json.dumps({
         "decisions": decisions,
         "unit_factor": unit_factor,
         "offset": [float(offset[0]), float(offset[1])] if offset else None,
@@ -1853,11 +1910,60 @@ def apply_import(spec, case_dir: Path, import_id: str,
     # — und genau dort stand der einzige Satz, der sagte, dass das Gelände
     # außerhalb der Vermessung erfunden ist. Neben der Anwendung, nicht in
     # ihr: die Anwendung ist Eingabe und muss reproduzierbar bleiben.
-    (imp_dir / "bericht.json").write_text(json.dumps(
-        {"report": report, "created": time.time()},
+    (u.imp_dir / "bericht.json").write_text(json.dumps(
+        {"report": u.report, "created": time.time()},
         ensure_ascii=False, indent=1))
 
-    return {"report": report}
+
+def apply_import(spec, case_dir: Path, import_id: str,
+                 decisions: list[dict], unit_factor: float = 1.0,
+                 offset: list[float] | None = None,
+                 derive_domain: bool = False,
+                 terrain_from_lines: bool | None = None,
+                 rotation_deg: float = 0.0) -> dict:
+    """
+    Deklarierte Kandidaten in den Fall übernehmen. decisions:
+    [{candidate, role, patch?, material?}] — gültige Rollen: siehe
+    utils/importRollen.js (Client) bzw. KANTEN_ROLLEN + _SOLID_ROLLEN hier,
+    plus gelaende, gelaende_koerper, zusatzraster, zulaufrohr/ablaufrohr,
+    querschnitt, ignorieren.
+    Rückgabe: geänderte Spec (als dict) + Bericht.
+
+    Die Schritte in ihrer Reihenfolge — jeder eine Funktion, der Zustand
+    dazwischen in `_Uebernahme` (tests/test_import_schnitt.py hält den
+    Stand golden):
+      vorbereiten -> Gelände aus Linien -> je Kandidat übernehmen ->
+      Kanten verknüpfen -> Lage prüfen -> Gebiet ableiten -> Anwendung
+      und Bericht schreiben.
+    """
+    u = _uebernahme_vorbereiten(spec, case_dir, import_id, decisions,
+                                unit_factor, offset, rotation_deg)
+
+    linien_ent = _linien_fuer_gelaende(u, decisions, terrain_from_lines)
+    if linien_ent:
+        _gelaende_aus_linien(u, linien_ent)
+
+    for d in decisions:
+        _kandidat_uebernehmen(u, d)
+
+    # ---- Aus den Kanten das Gelände ableiten ----------------------------
+    # Früher wurden Ober- und Unterkante hier über den LAYERNAMEN gepaart
+    # (`_paar_schluessel`). Hießen die Layer „BK_oben" und
+    # „Boeschung_unten", fiel die Paarung aus und beide wurden einzelne
+    # Bruchkanten. Jetzt entscheidet die LAGE, und die Rolle bleibt am
+    # Objekt erhalten — nachträglich änderbar.
+    if spec.terrain is not None and spec.terrain.kanten:
+        from .kanten import verknuepfen
+        u.report.extend(verknuepfen(spec))
+
+    _lage_pruefen(u, unit_factor, offset, rotation_deg)
+
+    if derive_domain and u.terrain_bbox is not None:
+        _gebiet_ableiten(u)
+
+    _anwendung_schreiben(u, decisions, unit_factor, offset, derive_domain,
+                         terrain_from_lines, rotation_deg)
+    return {"report": u.report}
 
 
 def import_neu_ableiten(spec, case_dir: Path, import_id: str,

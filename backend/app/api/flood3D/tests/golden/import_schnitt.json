@@ -1,0 +1,1922 @@
+{
+ "becken": {
+  "anwendung": {
+   "decisions": [
+    {
+     "candidate": "k0",
+     "role": "gelaende"
+    },
+    {
+     "candidate": "k1",
+     "role": "ablaufrohr"
+    }
+   ],
+   "derive_domain": true,
+   "offset": [
+    2499999.99,
+    5399999.99
+   ],
+   "rotation_deg": 0.0,
+   "terrain_from_lines": null,
+   "unit_factor": 1.0
+  },
+  "derived": {
+   "gelaende_imp-golden.asc": "ae656f411c45fd8d",
+   "gelaende_imp-golden_tin.stl": "01dfab124405e860"
+  },
+  "manifest": {
+   "bbox": [
+    [
+     2499999.99,
+     5399999.99,
+     223.05
+    ],
+    [
+     2500012.01,
+     5400012.01,
+     225.55
+    ]
+   ],
+   "candidates": [
+    {
+     "id": "k0",
+     "kind": "mesh",
+     "name": "3D_FL",
+     "role_guess": "gelaende",
+     "stats": {
+      "bbox": [
+       [
+        2499999.99,
+        5399999.99,
+        223.05
+       ],
+       [
+        2500012.01,
+        5400012.01,
+        225.55
+       ]
+      ],
+      "n_triangles": 162,
+      "span_xy": [
+       12.02,
+       12.02
+      ],
+      "watertight": false,
+      "z_range": [
+       223.05,
+       225.55
+      ]
+     }
+    },
+    {
+     "id": "k1",
+     "kind": "kreis",
+     "name": "AUSLAUF_rohr",
+     "role_guess": "ablaufrohr",
+     "stats": {
+      "achse": [
+       0.7071,
+       0.7071,
+       0.0
+      ],
+      "durchmesser": 1.6,
+      "mitte": [
+       2500009.005,
+       5400009.005,
+       224.05
+      ],
+      "scheitel": 224.85,
+      "sohle": 223.25
+     }
+    }
+   ],
+   "filename": "becken.dxf",
+   "import_id": "imp-golden",
+   "offset_suggest": [
+    2499999.99,
+    5399999.99
+   ],
+   "stl_ursprung": [
+    2499999.0,
+    5399999.0
+   ],
+   "unit_suspect": false
+  },
+  "report": [
+   "Gelände „3D_FL“: 162 Dreiecke auf 26×26 Raster (Abdeckung 44%); die übrigen 56% liegen außerhalb des TIN — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe = höchster Randpunkt der Vermessung, im Gelände-Panel änderbar)",
+   "Rohrmündung „auslauf_rohr“: DN1600, Achse (9.02, 9.02, 224.05), Sohle 223.250 m, Richtung (0.707, 0.707); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
+   "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
+   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 12.02, 12.02), z 222.55…227.55",
+   "Anfangswasserspiegel auf 223.05 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
+  ],
+  "spec": {
+   "boundaries": [
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "zulauf",
+     "import_ref": null,
+     "patch": "inlet",
+     "q": 0.5,
+     "type": "inflow_constant",
+     "window": null
+    },
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "ablauf",
+     "import_ref": null,
+     "level": 94.9,
+     "patch": "outlet",
+     "type": "outflow_fixed_level",
+     "window": null
+    },
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "atmo",
+     "import_ref": null,
+     "patch": "atmosphere",
+     "type": "atmosphere",
+     "window": null
+    }
+   ],
+   "domain": {
+    "extent": [
+     0.0,
+     0.0,
+     12.02,
+     12.02
+    ],
+    "z_max": 227.55,
+    "z_min": 222.55
+   },
+   "evaluation": {
+    "force_patches": [
+     "wand_becken"
+    ],
+    "gauges": [
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "pegel_becken",
+      "import_ref": null,
+      "point": [
+       12.0,
+       14.0
+      ]
+     }
+    ],
+    "laubkarten": null,
+    "sections": [
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "qs_zulauf",
+      "import_ref": null,
+      "polyline": [
+       [
+        4.0,
+        2.0
+       ],
+       [
+        4.0,
+        16.0
+       ]
+      ]
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "qs_ablauf",
+      "import_ref": null,
+      "polyline": [
+       [
+        20.0,
+        2.0
+       ],
+       [
+        20.0,
+        16.0
+       ]
+      ]
+     }
+    ],
+    "targets": [
+     {
+      "at": "pegel_becken",
+      "gruppe": null,
+      "herkunft": null,
+      "id": "einstau",
+      "import_ref": null,
+      "kind": "max_level",
+      "limit_max": 96.8
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "sohlschub_becken",
+      "import_ref": null,
+      "kind": "min_bed_shear",
+      "limit_min": 0.001,
+      "region": "r01"
+     }
+    ],
+    "verweilzeit": false
+   },
+   "mesh": {
+    "base_cell": 0.5,
+    "boundary_layers": {
+     "expansion_ratio": 1.2,
+     "n_layers": 3,
+     "patches": [
+      "wand_becken"
+     ]
+    },
+    "refinements": [
+     {
+      "extent": [
+       4.0,
+       6.0,
+       94.0,
+       12.0,
+       12.0,
+       97.0
+      ],
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r01",
+      "import_ref": null,
+      "level": 2,
+      "type": "box"
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r02",
+      "import_ref": null,
+      "level": 3,
+      "target": "wand_becken",
+      "type": "surface"
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r03",
+      "import_ref": null,
+      "level": 1,
+      "target": "becken_1",
+      "type": "surface"
+     }
+    ]
+   },
+   "meta": {
+    "conventions": {
+     "force_sign": "outward_normal",
+     "length_unit": "m",
+     "level_reference": "absolute"
+    },
+    "crs": null,
+    "id": "test-stufe3",
+    "nachweis": {
+     "bearbeiter": "",
+     "lastfall": "",
+     "regelwerk": []
+    },
+    "title": "PreProzessing-Abnahmefall",
+    "transform": {
+     "rotation_deg": 0.0,
+     "translation": [
+      -2499999.99,
+      -5399999.99
+     ],
+     "unit_factor": 1.0
+    },
+    "vertical_datum": "DHHN2016"
+   },
+   "solver": {
+    "abbruch": null,
+    "application": "interFoam",
+    "end_time": 60.0,
+    "initial_level": 223.05,
+    "max_alpha_co": 0.3,
+    "max_co": 0.5,
+    "turbulence": "kOmegaSST",
+    "vorfuellungen": [],
+    "write_interval_fields": 5.0,
+    "write_interval_series": 0.1
+   },
+   "structures": [
+    {
+     "alignment": {
+      "kind": "polyline",
+      "points": [
+       [
+        8.0,
+        3.0,
+        98.0
+       ],
+       [
+        8.0,
+        8.0,
+        98.0
+       ]
+      ]
+     },
+     "aus_kanten": [],
+     "batter_deg": 0.0,
+     "edits": [],
+     "gruppe": null,
+     "height": 2.0,
+     "herkunft": null,
+     "id": "wand_becken",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "wand_becken",
+     "thickness": 0.5,
+     "type": "wall",
+     "wirkung": "bauteil"
+    },
+    {
+     "edits": [],
+     "footprint": [
+      [
+       10.0,
+       12.0
+      ],
+      [
+       14.0,
+       12.0
+      ],
+      [
+       14.0,
+       17.0
+      ],
+      [
+       10.0,
+       17.0
+      ]
+     ],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "becken_1",
+     "import_ref": null,
+     "invert_level": 95.0,
+     "invert_slope": 0.0,
+     "invert_slope_dir": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "becken_1",
+     "type": "basin",
+     "wall_height": 2.0,
+     "wall_thickness": 0.3,
+     "wirkung": "bauteil"
+    },
+    {
+     "axis": [
+      [
+       4.0,
+       4.0,
+       94.5
+      ],
+      [
+       4.0,
+       14.0,
+       94.3
+      ]
+     ],
+     "bohr_ueberstand": 0.5,
+     "durchstoesst_gelaende": false,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "dl_1",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "dl_1",
+     "profile": {
+      "diameter": 1.2,
+      "height": null,
+      "kind": "circular",
+      "wandstaerke": 0.15,
+      "width": null
+     },
+     "rolle": null,
+     "type": "culvert",
+     "wirkung": "bauteil"
+    },
+    {
+     "base_level": 94.0,
+     "center": null,
+     "edits": [],
+     "footprint": [
+      [
+       18.0,
+       10.0
+      ],
+      [
+       20.0,
+       10.0
+      ],
+      [
+       20.0,
+       13.0
+      ],
+      [
+       18.0,
+       13.0
+      ]
+     ],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "pfeiler_1",
+     "import_ref": null,
+     "length": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "pfeiler_1",
+     "rotation_deg": 0.0,
+     "shape": "polygon",
+     "top_level": 97.0,
+     "type": "pier",
+     "width": null,
+     "wirkung": "bauteil"
+    },
+    {
+     "approach_angle_deg": 90.0,
+     "bar_depth": 0.06,
+     "bar_shape": "rechteck",
+     "bar_spacing": 0.02,
+     "bar_thickness": 0.008,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "rechen_1",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "rechen_1",
+     "plane_polygon": [
+      [
+       6.0,
+       8.0,
+       94.6
+      ],
+      [
+       6.0,
+       10.0,
+       94.6
+      ],
+      [
+       6.0,
+       10.0,
+       96.6
+      ],
+      [
+       6.0,
+       8.0,
+       96.6
+      ]
+     ],
+     "resistance": {
+      "blockage_ratio": 0.3,
+      "cw": null,
+      "d": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "f": [
+       120.0,
+       0.0,
+       0.0
+      ],
+      "flaechendichte": null,
+      "kind": "rechen",
+      "korngroesse": null,
+      "model": "darcy_forchheimer",
+      "porositaet": null
+     },
+     "type": "screen",
+     "wirkung": "bauteil",
+     "zonen_tiefe": null
+    },
+    {
+     "axis": [
+      [
+       7.884,
+       7.884,
+       224.05
+      ],
+      [
+       10.146,
+       10.146,
+       224.05
+      ]
+     ],
+     "bohr_ueberstand": 0.5,
+     "durchstoesst_gelaende": false,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": "import",
+     "id": "auslauf_rohr",
+     "import_ref": {
+      "import_id": "imp-golden",
+      "kandidat": "k1"
+     },
+     "material": null,
+     "material_ks": null,
+     "patch": "auslauf_rohr",
+     "profile": {
+      "diameter": 1.6,
+      "height": null,
+      "kind": "circular",
+      "wandstaerke": 0.15,
+      "width": null
+     },
+     "rolle": "ablauf",
+     "type": "culvert",
+     "wirkung": "bauteil"
+    }
+   ],
+   "terrain": {
+    "base": {
+     "aussenhoehe": 225.55,
+     "koerper": null,
+     "original": null,
+     "original_abbildung": null,
+     "resolution": 0.5,
+     "source": "derived/gelaende_imp-golden.asc"
+    },
+    "belagskarte": null,
+    "erdkoerper": "auto",
+    "erdkoerper_ueberstand": null,
+    "erdkoerper_unterkante": null,
+    "kanten": [],
+    "material": "erde",
+    "material_ks": null,
+    "operations": [],
+    "sculpt": null,
+    "sculpt_stand": null
+   }
+  }
+ },
+ "linien": {
+  "anwendung": {
+   "decisions": [
+    {
+     "candidate": "k0",
+     "role": "querschnitt"
+    },
+    {
+     "candidate": "k1",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k2",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k3",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k4",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k5",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k6",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k7",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k8",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k9",
+     "role": "bruchkante"
+    },
+    {
+     "candidate": "k10",
+     "role": "ablaufrohr"
+    }
+   ],
+   "derive_domain": true,
+   "offset": null,
+   "rotation_deg": 0.0,
+   "terrain_from_lines": true,
+   "unit_factor": 1.0
+  },
+  "derived": {
+   "gelaende_imp-golden_linien.asc": "efa567a55ca9091f"
+  },
+  "manifest": {
+   "candidates": [
+    {
+     "id": "k0",
+     "kind": "polyline",
+     "name": "AUSLAUF_linie_linie",
+     "role_guess": "querschnitt",
+     "stats": {
+      "hoehen": true,
+      "length": 1.04,
+      "n_points": 4,
+      "z_max": 225.5,
+      "z_min": 225.25
+     }
+    },
+    {
+     "id": "k1",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_1_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 13.58,
+      "n_points": 5,
+      "z_max": 223.39,
+      "z_min": 223.05
+     }
+    },
+    {
+     "id": "k2",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_2_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 1.17,
+      "n_points": 4,
+      "z_max": 225.45,
+      "z_min": 225.25
+     }
+    },
+    {
+     "id": "k3",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_3_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 31.68,
+      "n_points": 15,
+      "z_max": 225.55,
+      "z_min": 225.25
+     }
+    },
+    {
+     "id": "k4",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_4_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 0.22,
+      "n_points": 2,
+      "z_max": 225.27,
+      "z_min": 225.26
+     }
+    },
+    {
+     "id": "k5",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_5_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 0.22,
+      "n_points": 2,
+      "z_max": 225.26,
+      "z_min": 225.25
+     }
+    },
+    {
+     "id": "k6",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_6_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 3.3,
+      "n_points": 2,
+      "z_max": 225.45,
+      "z_min": 223.35
+     }
+    },
+    {
+     "id": "k7",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_7_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 3.3,
+      "n_points": 2,
+      "z_max": 225.45,
+      "z_min": 223.35
+     }
+    },
+    {
+     "id": "k8",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_8_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 3.3,
+      "n_points": 2,
+      "z_max": 225.45,
+      "z_min": 223.35
+     }
+    },
+    {
+     "id": "k9",
+     "kind": "polyline",
+     "name": "Bruchkanten_linie_9_linie",
+     "role_guess": "bruchkante",
+     "stats": {
+      "hoehen": true,
+      "length": 3.3,
+      "n_points": 2,
+      "z_max": 225.45,
+      "z_min": 223.35
+     }
+    },
+    {
+     "id": "k10",
+     "kind": "kreis",
+     "name": "AUSLAUF_rohr_rohr",
+     "role_guess": "ablaufrohr",
+     "stats": {
+      "achse": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "durchmesser": 1.6,
+      "mitte": [
+       2500012.0,
+       5400006.0,
+       224.05
+      ],
+      "scheitel": 224.85,
+      "sohle": 223.25
+     }
+    }
+   ],
+   "filename": "linien.dxf",
+   "import_id": "imp-golden",
+   "stl_ursprung": [
+    0.0,
+    0.0
+   ]
+  },
+  "report": [
+   "Gelände aus 1 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 2 Dreiecke aus 4 Stützpunkten auf 11×11 Raster, Höhen 223.05 … 225.55 m, Abdeckung 37%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. Die restlichen 63% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 223.39 m (Außenhöhe, im Gelände-Panel änderbar).",
+   "Querschnitt „qs_auslauf_linie“ aus Trasse übernommen",
+   "Bruchkante „kante_bruchkanten_linie_1_linie“: 5 Stützpunkte, 223.05 … 223.39 m",
+   "Bruchkante „kante_bruchkanten_linie_2_linie“: 4 Stützpunkte, 225.25 … 225.45 m",
+   "Bruchkante „kante_bruchkanten_linie_3_linie“: 15 Stützpunkte, 225.25 … 225.55 m",
+   "Bruchkante „kante_bruchkanten_linie_4_linie“: 2 Stützpunkte, 225.26 … 225.27 m",
+   "Bruchkante „kante_bruchkanten_linie_5_linie“: 2 Stützpunkte, 225.25 … 225.26 m",
+   "Bruchkante „kante_bruchkanten_linie_6_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
+   "Bruchkante „kante_bruchkanten_linie_7_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
+   "Bruchkante „kante_bruchkanten_linie_8_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
+   "Bruchkante „kante_bruchkanten_linie_9_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
+   "Rohrmündung „auslauf_rohr_rohr“: DN1600, Achse (2500012.00, 5400006.00, 224.05), Sohle 223.250 m, Richtung (1.000, 0.000); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
+   "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 6 eigene unangetastet",
+   "Domäne aus Gelände abgeleitet: (2500003.6, 5400003.6, 2500008.4, 5400008.4), z 222.55…227.55",
+   "Anfangswasserspiegel auf 223.05 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
+  ],
+  "spec": {
+   "boundaries": [
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "zulauf",
+     "import_ref": null,
+     "patch": "inlet",
+     "q": 0.5,
+     "type": "inflow_constant",
+     "window": null
+    },
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "ablauf",
+     "import_ref": null,
+     "level": 94.9,
+     "patch": "outlet",
+     "type": "outflow_fixed_level",
+     "window": null
+    },
+    {
+     "face": null,
+     "gruppe": null,
+     "herkunft": null,
+     "id": "atmo",
+     "import_ref": null,
+     "patch": "atmosphere",
+     "type": "atmosphere",
+     "window": null
+    }
+   ],
+   "domain": {
+    "extent": [
+     2500003.6,
+     5400003.6,
+     2500008.4,
+     5400008.4
+    ],
+    "z_max": 227.55,
+    "z_min": 222.55
+   },
+   "evaluation": {
+    "force_patches": [
+     "wand_becken"
+    ],
+    "gauges": [
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "pegel_becken",
+      "import_ref": null,
+      "point": [
+       12.0,
+       14.0
+      ]
+     }
+    ],
+    "laubkarten": null,
+    "sections": [
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "qs_zulauf",
+      "import_ref": null,
+      "polyline": [
+       [
+        4.0,
+        2.0
+       ],
+       [
+        4.0,
+        16.0
+       ]
+      ]
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "qs_ablauf",
+      "import_ref": null,
+      "polyline": [
+       [
+        20.0,
+        2.0
+       ],
+       [
+        20.0,
+        16.0
+       ]
+      ]
+     },
+     {
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "qs_auslauf_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k0"
+      },
+      "polyline": [
+       [
+        2500012.4,
+        5400005.5
+       ],
+       [
+        2500012.5,
+        5400005.8
+       ],
+       [
+        2500012.6,
+        5400006.2
+       ],
+       [
+        2500012.7,
+        5400006.5
+       ]
+      ]
+     }
+    ],
+    "targets": [
+     {
+      "at": "pegel_becken",
+      "gruppe": null,
+      "herkunft": null,
+      "id": "einstau",
+      "import_ref": null,
+      "kind": "max_level",
+      "limit_max": 96.8
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "sohlschub_becken",
+      "import_ref": null,
+      "kind": "min_bed_shear",
+      "limit_min": 0.001,
+      "region": "r01"
+     }
+    ],
+    "verweilzeit": false
+   },
+   "mesh": {
+    "base_cell": 0.5,
+    "boundary_layers": {
+     "expansion_ratio": 1.2,
+     "n_layers": 3,
+     "patches": [
+      "wand_becken"
+     ]
+    },
+    "refinements": [
+     {
+      "extent": [
+       4.0,
+       6.0,
+       94.0,
+       12.0,
+       12.0,
+       97.0
+      ],
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r01",
+      "import_ref": null,
+      "level": 2,
+      "type": "box"
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r02",
+      "import_ref": null,
+      "level": 3,
+      "target": "wand_becken",
+      "type": "surface"
+     },
+     {
+      "gruppe": null,
+      "herkunft": null,
+      "id": "r03",
+      "import_ref": null,
+      "level": 1,
+      "target": "becken_1",
+      "type": "surface"
+     }
+    ]
+   },
+   "meta": {
+    "conventions": {
+     "force_sign": "outward_normal",
+     "length_unit": "m",
+     "level_reference": "absolute"
+    },
+    "crs": null,
+    "id": "test-stufe3",
+    "nachweis": {
+     "bearbeiter": "",
+     "lastfall": "",
+     "regelwerk": []
+    },
+    "title": "PreProzessing-Abnahmefall",
+    "transform": null,
+    "vertical_datum": "DHHN2016"
+   },
+   "solver": {
+    "abbruch": null,
+    "application": "interFoam",
+    "end_time": 60.0,
+    "initial_level": 223.05,
+    "max_alpha_co": 0.3,
+    "max_co": 0.5,
+    "turbulence": "kOmegaSST",
+    "vorfuellungen": [],
+    "write_interval_fields": 5.0,
+    "write_interval_series": 0.1
+   },
+   "structures": [
+    {
+     "alignment": {
+      "kind": "polyline",
+      "points": [
+       [
+        8.0,
+        3.0,
+        98.0
+       ],
+       [
+        8.0,
+        8.0,
+        98.0
+       ]
+      ]
+     },
+     "aus_kanten": [],
+     "batter_deg": 0.0,
+     "edits": [],
+     "gruppe": null,
+     "height": 2.0,
+     "herkunft": null,
+     "id": "wand_becken",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "wand_becken",
+     "thickness": 0.5,
+     "type": "wall",
+     "wirkung": "bauteil"
+    },
+    {
+     "edits": [],
+     "footprint": [
+      [
+       10.0,
+       12.0
+      ],
+      [
+       14.0,
+       12.0
+      ],
+      [
+       14.0,
+       17.0
+      ],
+      [
+       10.0,
+       17.0
+      ]
+     ],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "becken_1",
+     "import_ref": null,
+     "invert_level": 95.0,
+     "invert_slope": 0.0,
+     "invert_slope_dir": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "becken_1",
+     "type": "basin",
+     "wall_height": 2.0,
+     "wall_thickness": 0.3,
+     "wirkung": "bauteil"
+    },
+    {
+     "axis": [
+      [
+       4.0,
+       4.0,
+       94.5
+      ],
+      [
+       4.0,
+       14.0,
+       94.3
+      ]
+     ],
+     "bohr_ueberstand": 0.5,
+     "durchstoesst_gelaende": false,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "dl_1",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "dl_1",
+     "profile": {
+      "diameter": 1.2,
+      "height": null,
+      "kind": "circular",
+      "wandstaerke": 0.15,
+      "width": null
+     },
+     "rolle": null,
+     "type": "culvert",
+     "wirkung": "bauteil"
+    },
+    {
+     "base_level": 94.0,
+     "center": null,
+     "edits": [],
+     "footprint": [
+      [
+       18.0,
+       10.0
+      ],
+      [
+       20.0,
+       10.0
+      ],
+      [
+       20.0,
+       13.0
+      ],
+      [
+       18.0,
+       13.0
+      ]
+     ],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "pfeiler_1",
+     "import_ref": null,
+     "length": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "pfeiler_1",
+     "rotation_deg": 0.0,
+     "shape": "polygon",
+     "top_level": 97.0,
+     "type": "pier",
+     "width": null,
+     "wirkung": "bauteil"
+    },
+    {
+     "approach_angle_deg": 90.0,
+     "bar_depth": 0.06,
+     "bar_shape": "rechteck",
+     "bar_spacing": 0.02,
+     "bar_thickness": 0.008,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": null,
+     "id": "rechen_1",
+     "import_ref": null,
+     "material": null,
+     "material_ks": null,
+     "patch": "rechen_1",
+     "plane_polygon": [
+      [
+       6.0,
+       8.0,
+       94.6
+      ],
+      [
+       6.0,
+       10.0,
+       94.6
+      ],
+      [
+       6.0,
+       10.0,
+       96.6
+      ],
+      [
+       6.0,
+       8.0,
+       96.6
+      ]
+     ],
+     "resistance": {
+      "blockage_ratio": 0.3,
+      "cw": null,
+      "d": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "f": [
+       120.0,
+       0.0,
+       0.0
+      ],
+      "flaechendichte": null,
+      "kind": "rechen",
+      "korngroesse": null,
+      "model": "darcy_forchheimer",
+      "porositaet": null
+     },
+     "type": "screen",
+     "wirkung": "bauteil",
+     "zonen_tiefe": null
+    },
+    {
+     "axis": [
+      [
+       2500010.4,
+       5400006.0,
+       224.05
+      ],
+      [
+       2500013.6,
+       5400006.0,
+       224.05
+      ]
+     ],
+     "bohr_ueberstand": 0.5,
+     "durchstoesst_gelaende": false,
+     "edits": [],
+     "gruppe": null,
+     "herkunft": "import",
+     "id": "auslauf_rohr_rohr",
+     "import_ref": {
+      "import_id": "imp-golden",
+      "kandidat": "k10"
+     },
+     "material": null,
+     "material_ks": null,
+     "patch": "auslauf_rohr_rohr",
+     "profile": {
+      "diameter": 1.6,
+      "height": null,
+      "kind": "circular",
+      "wandstaerke": 0.15,
+      "width": null
+     },
+     "rolle": "ablauf",
+     "type": "culvert",
+     "wirkung": "bauteil"
+    }
+   ],
+   "terrain": {
+    "base": {
+     "aussenhoehe": 223.39,
+     "koerper": null,
+     "original": null,
+     "original_abbildung": null,
+     "resolution": 0.5,
+     "source": "derived/gelaende_imp-golden_linien.asc"
+    },
+    "belagskarte": null,
+    "erdkoerper": "auto",
+    "erdkoerper_ueberstand": null,
+    "erdkoerper_unterkante": null,
+    "kanten": [
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_1_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k1"
+      },
+      "polyline": [
+       [
+        2500008.4,
+        5400006.0,
+        223.22
+       ],
+       [
+        2500006.0,
+        5400008.4,
+        223.05
+       ],
+       [
+        2500003.6,
+        5400006.0,
+        223.22
+       ],
+       [
+        2500006.0,
+        5400003.6,
+        223.39
+       ],
+       [
+        2500008.4,
+        5400006.0,
+        223.22
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_1_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_2_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k2"
+      },
+      "polyline": [
+       [
+        2500011.6,
+        5400005.6,
+        225.25
+       ],
+       [
+        2500011.9,
+        5400005.8,
+        225.45
+       ],
+       [
+        2500012.1,
+        5400006.2,
+        225.45
+       ],
+       [
+        2500011.8,
+        5400006.4,
+        225.25
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_2_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_3_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k3"
+      },
+      "polyline": [
+       [
+        2500011.8,
+        5400006.0,
+        225.4
+       ],
+       [
+        2500011.359,
+        5400008.22,
+        225.539
+       ],
+       [
+        2500010.101,
+        5400010.101,
+        225.506
+       ],
+       [
+        2500008.22,
+        5400011.359,
+        225.343
+       ],
+       [
+        2500006.0,
+        5400011.8,
+        225.25
+       ],
+       [
+        2500003.78,
+        5400011.359,
+        225.343
+       ],
+       [
+        2500001.899,
+        5400010.101,
+        225.506
+       ],
+       [
+        2500000.641,
+        5400008.22,
+        225.539
+       ],
+       [
+        2500000.2,
+        5400006.0,
+        225.4
+       ],
+       [
+        2500000.641,
+        5400003.78,
+        225.261
+       ],
+       [
+        2500001.899,
+        5400001.899,
+        225.294
+       ],
+       [
+        2500003.78,
+        5400000.641,
+        225.457
+       ],
+       [
+        2500006.0,
+        5400000.2,
+        225.55
+       ],
+       [
+        2500008.22,
+        5400000.641,
+        225.457
+       ],
+       [
+        2500010.101,
+        5400001.899,
+        225.294
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_3_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_4_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k4"
+      },
+      "polyline": [
+       [
+        2500011.6,
+        5400005.6,
+        225.26
+       ],
+       [
+        2500011.7,
+        5400005.4,
+        225.27
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_4_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_5_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k5"
+      },
+      "polyline": [
+       [
+        2500011.8,
+        5400006.4,
+        225.25
+       ],
+       [
+        2500011.7,
+        5400006.6,
+        225.26
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_5_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_6_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k6"
+      },
+      "polyline": [
+       [
+        2500007.836,
+        5400007.546,
+        223.35
+       ],
+       [
+        2500010.36,
+        5400009.672,
+        225.45
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_6_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_7_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k7"
+      },
+      "polyline": [
+       [
+        2500004.401,
+        5400007.79,
+        223.35
+       ],
+       [
+        2500002.202,
+        5400010.251,
+        225.45
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_7_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_8_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k8"
+      },
+      "polyline": [
+       [
+        2500004.258,
+        5400004.349,
+        223.35
+       ],
+       [
+        2500001.862,
+        5400002.08,
+        225.45
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_8_linie",
+      "rolle": "frei"
+     },
+     {
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_9_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k9"
+      },
+      "polyline": [
+       [
+        2500007.124,
+        5400003.88,
+        223.35
+       ],
+       [
+        2500008.671,
+        5400000.964,
+        225.45
+       ]
+      ],
+      "quelle": "Bruchkanten_linie_9_linie",
+      "rolle": "frei"
+     }
+    ],
+    "material": "erde",
+    "material_ks": null,
+    "operations": [
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_1_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_1_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k1"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500008.4,
+        5400006.0,
+        223.22
+       ],
+       [
+        2500006.0,
+        5400008.4,
+        223.05
+       ],
+       [
+        2500003.6,
+        5400006.0,
+        223.22
+       ],
+       [
+        2500006.0,
+        5400003.6,
+        223.39
+       ],
+       [
+        2500008.4,
+        5400006.0,
+        223.22
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_2_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_2_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k2"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500011.6,
+        5400005.6,
+        225.25
+       ],
+       [
+        2500011.9,
+        5400005.8,
+        225.45
+       ],
+       [
+        2500012.1,
+        5400006.2,
+        225.45
+       ],
+       [
+        2500011.8,
+        5400006.4,
+        225.25
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_3_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_3_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k3"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500011.8,
+        5400006.0,
+        225.4
+       ],
+       [
+        2500011.359,
+        5400008.22,
+        225.539
+       ],
+       [
+        2500010.101,
+        5400010.101,
+        225.506
+       ],
+       [
+        2500008.22,
+        5400011.359,
+        225.343
+       ],
+       [
+        2500006.0,
+        5400011.8,
+        225.25
+       ],
+       [
+        2500003.78,
+        5400011.359,
+        225.343
+       ],
+       [
+        2500001.899,
+        5400010.101,
+        225.506
+       ],
+       [
+        2500000.641,
+        5400008.22,
+        225.539
+       ],
+       [
+        2500000.2,
+        5400006.0,
+        225.4
+       ],
+       [
+        2500000.641,
+        5400003.78,
+        225.261
+       ],
+       [
+        2500001.899,
+        5400001.899,
+        225.294
+       ],
+       [
+        2500003.78,
+        5400000.641,
+        225.457
+       ],
+       [
+        2500006.0,
+        5400000.2,
+        225.55
+       ],
+       [
+        2500008.22,
+        5400000.641,
+        225.457
+       ],
+       [
+        2500010.101,
+        5400001.899,
+        225.294
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_4_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_4_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k4"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500011.6,
+        5400005.6,
+        225.26
+       ],
+       [
+        2500011.7,
+        5400005.4,
+        225.27
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_5_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_5_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k5"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500011.8,
+        5400006.4,
+        225.25
+       ],
+       [
+        2500011.7,
+        5400006.6,
+        225.26
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_6_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_6_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k6"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500007.836,
+        5400007.546,
+        223.35
+       ],
+       [
+        2500010.36,
+        5400009.672,
+        225.45
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_7_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_7_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k7"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500004.401,
+        5400007.79,
+        223.35
+       ],
+       [
+        2500002.202,
+        5400010.251,
+        225.45
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_8_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_8_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k8"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500004.258,
+        5400004.349,
+        223.35
+       ],
+       [
+        2500001.862,
+        5400002.08,
+        225.45
+       ]
+      ],
+      "type": "bruchkante"
+     },
+     {
+      "aus_kanten": [
+       "kante_bruchkanten_linie_9_linie"
+      ],
+      "breite": 1.0,
+      "gruppe": null,
+      "herkunft": "import",
+      "id": "kante_bruchkanten_linie_9_linie",
+      "import_ref": {
+       "import_id": "imp-golden",
+       "kandidat": "k9"
+      },
+      "modus": "ziehen",
+      "polyline": [
+       [
+        2500007.124,
+        5400003.88,
+        223.35
+       ],
+       [
+        2500008.671,
+        5400000.964,
+        225.45
+       ]
+      ],
+      "type": "bruchkante"
+     }
+    ],
+    "sculpt": null,
+    "sculpt_stand": null
+   }
+  }
+ }
+}
