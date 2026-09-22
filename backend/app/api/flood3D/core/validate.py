@@ -333,8 +333,11 @@ def _pruefe_vorfuellungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             ys = np.array([p[1] for p in v.polygon])
             try:
                 zmin = float(np.min(ctx.gewachsen.sample(xs, ys)))
-            except Exception:               # noqa: BLE001
+            except Exception as e:          # eine Regel, die ausfällt, sagt es
                 zmin = None
+                f(_finding(v.id, "hinweis",
+                           f"Vorfüllung „{v.id}“: das Gelände unter dem Polygon "
+                           f"ließ sich nicht abtasten ({type(e).__name__}: {e})."))
             if zmin is not None and v.level <= zmin:
                 f(_finding(v.id, "warnung",
                            f"Vorfüllung „{v.id}“: Spiegel {v.level:g} m "
@@ -417,11 +420,12 @@ def _pruefe_aushub(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             lagen.append((s, deckel, boden))
         if not lagen or any(bo <= de + 1e-6 for _, de, bo in lagen):
             continue                    # irgendwo offen, alles gut
-        # rundum zu — nur ein Durchlass oder ein Randfenster kann noch
-        # eine Verbindung herstellen
-        angeschlossen = any(
-            c.type == "culvert" and getattr(c, "durchstoesst_gelaende", False)
-            for c in spec.structures)
+        # rundum zu — nur ein Durchlass, der diesen Verbund erreicht, kann
+        # noch eine Verbindung herstellen. Bis 2026-09-22 zählte ein
+        # gebohrtes Rohr IRGENDWO im Fall und stufte jeden verschlossenen
+        # Hohlraum herab (Audit P15); jetzt muss seine Achse bis auf zwei
+        # Basiszellen an den Grundriss des Verbunds heranreichen.
+        angeschlossen = _rohr_erreicht(spec, gruppe)
         erster, deckel, boden = max(lagen, key=lambda l: l[1])
         mit = [x.id for x, _, _ in lagen if x.id != erster.id]
         f(_finding(erster.id, "warnung" if angeschlossen else "fehler",
@@ -669,7 +673,12 @@ def _pruefe_importablage(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
         try:
             m = json.loads(mf.read_text())
             a = json.loads((imp / "anwendung.json").read_text())
-        except Exception:
+        except Exception as e:              # nicht stumm überspringen (P15)
+            befunde.append(_finding(
+                "imports", "warnung",
+                f"Import „{imp.name}“: Manifest oder Anwendung nicht lesbar "
+                f"({type(e).__name__}: {e}) — Neu-Ableiten und Reapply gehen "
+                "für diesen Import nicht mehr."))
             continue
         obj = _import_referenziert(spec, imp.name)
         if obj is None:
@@ -1400,24 +1409,36 @@ def _pruefe_solver(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                    "Viewer sehr wenig"))
 
     # Auflösbarkeit der Wassertiefe: der häufigste Grund für einen Lauf,
-    # in dem "man nichts sieht". Grobe Abschätzung aus Zulaufmenge, Dauer
-    # und Gebietsfläche gegen die Zellgröße gehalten.
+    # in dem "man nichts sieht". Bis 2026-09-22: Zulaufmenge (nur konstante
+    # Zuläufe) über die GANZE Gebietsfläche verteilt, ein waagerechter
+    # Spiegel — bei 74 × 50 m ergab 1 m³/s eine „Tiefe" von 0,016 m statt
+    # ~0,4 m im Becken (Audit P13). Jetzt: das Wasser sammelt sich nach der
+    # Speicherkurve des Geländes, Ganglinien zählen mit.
     if spec.domain is not None and spec.mesh is not None:
         x0, y0, x1, y1 = spec.domain.extent
         flaeche = max((x1 - x0) * (y1 - y0), 1e-9)
-        q_ges = sum(b.q for b in spec.boundaries
-                    if b.type == "inflow_constant")
-        zulauf_volumen = q_ges * spec.solver.end_time
-        # Startwasser: Spiegel über der tiefsten Geländehöhe
+        zulauf_volumen = _zulauf_volumen(spec, ctx.base_dir)
+        lvl = spec.solver.initial_level
         start_tiefe = 0.0
-        if spec.solver.initial_level is not None and terrain is not None:
-            start_tiefe = max(0.0, spec.solver.initial_level
-                              - float(np.min(terrain.z)))
-        tiefe = start_tiefe + zulauf_volumen / flaeche
+        if lvl is not None and terrain is not None:
+            tiefste = float(np.min(terrain.z))
+            if lvl < tiefste - 1e-6:
+                f(_finding("solver", "hinweis",
+                           f"Anfangswasserspiegel {lvl:g} m liegt unter dem "
+                           f"tiefsten Gelände ({tiefste:.3f} m) — der Lauf "
+                           "startet trocken. Gewollt? Sonst den Spiegel über "
+                           "die Sohle heben."))
+            start_tiefe = max(0.0, lvl - tiefste)
+        if terrain is not None:
+            tiefe, woher = (_tiefe_aus_speicherkurve(terrain, lvl, zulauf_volumen),
+                            "aus der Speicherkurve des Geländes")
+        else:
+            tiefe, woher = start_tiefe + zulauf_volumen / flaeche, "über die Gebietsfläche"
         cell = spec.mesh.base_cell
-        if q_ges > 0 and tiefe < 2 * cell:
+        if zulauf_volumen > 0 and tiefe < 2 * cell:
             f(_finding("solver", "warnung",
-                       f"Zu erwartende Wassertiefe rund {tiefe:.3f} m — die "
+                       f"Zu erwartende Wassertiefe rund {tiefe:.3f} m "
+                       f"({woher}) — die "
                        f"Basiszelle ist {cell:g} m. Bei weniger als zwei "
                        "Zellen Wassertiefe bildet der Solver keine "
                        "Wasseroberfläche ab (im Ergebnis ist dann nur die "
@@ -1425,6 +1446,56 @@ def _pruefe_solver(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                        "Netz, längere Simulationsdauer, mehr Zufluss, "
                        "kleineres Gebiet oder ein Anfangswasserspiegel."))
     return befunde
+
+
+def _zulauf_volumen(spec: CaseSpec, base_dir) -> float:
+    """
+    Zulaufvolumen bis end_time: konstante Zuläufe q·T plus die Fläche
+    unter jeder Ganglinie (bis 2026-09-22 zählten nur konstante). Eine
+    unlesbare Ganglinie meldet die Ganglinienregel selbst.
+    """
+    v = sum(float(b.q) for b in spec.boundaries
+            if b.type == "inflow_constant") * float(spec.solver.end_time)
+    for b in spec.boundaries:
+        if b.type != "inflow_hydrograph":
+            continue
+        try:
+            import pandas as pd
+            df = pd.read_csv(Path(base_dir) / b.source)
+            t = df[b.column_time].to_numpy(float)
+            q = df[b.column_q].to_numpy(float)
+            m = t <= float(spec.solver.end_time)
+            if m.sum() >= 2:
+                v += float(np.trapezoid(q[m], t[m]))
+        except Exception:                   # noqa: BLE001 — siehe Docstring
+            continue
+    return v
+
+
+def _tiefe_aus_speicherkurve(terrain, lvl: float | None, volumen: float) -> float:
+    """
+    Wassertiefe über dem tiefsten Punkt, wenn `volumen` zum Startwasser
+    (Spiegel `lvl`, sonst leer) hinzukommt — Spiegel h mit
+    V(h) = Σ max(h − z, 0)·res², per Halbierung. Das ist der Spiegel einer
+    Senke, nicht die Höhe eines Wasserfilms über dem ganzen Gebiet.
+    """
+    z = np.asarray(terrain.z, dtype=float)
+    a = float(terrain.resolution) ** 2
+    tiefste = float(np.min(z))
+
+    def V(h: float) -> float:
+        return float(np.sum(np.clip(h - z, 0.0, None))) * a
+
+    h0 = max(lvl, tiefste) if lvl is not None else tiefste
+    ziel = V(h0) + max(volumen, 0.0)
+    lo, hi = tiefste, float(np.max(z)) + ziel / max(z.size * a, 1e-9) + 1.0
+    for _ in range(60):
+        mitte = 0.5 * (lo + hi)
+        if V(mitte) < ziel:
+            lo = mitte
+        else:
+            hi = mitte
+    return max(0.5 * (lo + hi) - tiefste, 0.0)
 
 
 def _pruefe_fenster(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
@@ -1902,7 +1973,13 @@ def _pruefe_rauheit(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     # hier überhaupt arbeitet. Kein Fehlbedienen, sondern die normale Folge
     # grober Vernetzung — aber es entscheidet, wie eine τ-Zahl zu lesen
     # ist, und stand bisher nirgends.
-    if kandidaten:
+    # Der Satz gehört nur in Fälle, die die Sohlschubspannung wirklich
+    # auswerten (Kriterium max_/min_bed_shear) — bei jeder Zelle über
+    # 6,7 mm stand er sonst in JEDEM Fall und wurde nicht mehr gelesen
+    # (Audit P15).
+    sohlschub = any(getattr(t, "kind", "") in ("max_bed_shear", "min_bed_shear")
+                    for t in spec.evaluation.targets)
+    if kandidaten and sohlschub:
         feinste = min(_feinste_zelle_am_patch(spec, st, ctx)
                       for _, st, _ in kandidaten)
         # y+ = (Δy/2)·u_τ/ν mit u_τ ≈ 0,05·U (Reibungsbeiwert-Faustformel)
@@ -2083,8 +2160,12 @@ def _pruefe_rechen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             _, f_eff = _screen_resistance(s)
             xi = max(f_eff) * tiefe / max(
                 (1.0 - min(s.resistance.blockage_ratio, 0.95)) ** 2, 1e-6)
-        except Exception:                    # noqa: BLE001
+        except Exception as e:               # nicht stumm auf 0 (P15)
             xi = 0.0
+            f(_finding(s.id, "hinweis",
+                       f"Widerstandszone „{s.id}“: der Verlustbeiwert ließ sich "
+                       f"nicht berechnen ({type(e).__name__}: {e}) — die "
+                       "Dichtheitsprüfung der Zone entfällt."))
         if xi > 50:
             gemeinsam = (f"Die Zone ist mit ξ ≈ {xi:.0f} praktisch dicht — "
                          "das Wasser geht darüber, nicht hindurch. ")
@@ -2347,6 +2428,33 @@ def _plan_punkte(struct, solids: dict | None = None) -> np.ndarray:
     if mitte is not None:
         return np.asarray([mitte], dtype=float)[:, :2]
     return np.zeros((0, 2))
+
+
+def _rohr_erreicht(spec: CaseSpec, gruppe: list) -> bool:
+    """Reicht ein gebohrter Durchlass mit seiner Achse bis auf zwei
+    Basiszellen an den Grundriss eines Aushub-Verbunds heran?"""
+    import shapely
+
+    grenze = 2 * (spec.mesh.base_cell if spec.mesh else 1.0)
+    teile = []
+    for s in gruppe:
+        pk = _plan_punkte(s)
+        if len(pk) >= 3:
+            teile.append(shapely.Polygon(pk).buffer(0))
+        elif len(pk):
+            teile.append(shapely.MultiPoint(pk).buffer(grenze))
+    if not teile:
+        return False
+    umriss = shapely.union_all(teile)
+    for c in spec.structures:
+        if c.type != "culvert" or not getattr(c, "durchstoesst_gelaende", False):
+            continue
+        if len(c.axis) < 2:
+            continue
+        achse = shapely.LineString(np.asarray(c.axis, dtype=float)[:, :2])
+        if achse.distance(umriss) <= grenze:
+            return True
+    return False
 
 
 def _sperr_punkte(s, solids: dict | None) -> np.ndarray:

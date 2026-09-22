@@ -171,6 +171,53 @@ class _Bauplan:
 # Rezepte
 # --------------------------------------------------------------------------
 
+def _richtung(spec: CaseSpec) -> tuple[float, float]:
+    """
+    Fließrichtung des Falls: vom ersten Zulaufrand ins Gebiet (x_min → +x,
+    y_max → −y, …), ohne Zulauf +y. Bis 2026-09-22 stand jedes Rezept fest
+    in +y — bei Zulauf von Westen stand der Pegel „oberstrom" neben dem
+    Bauwerk und die Endschwelle quer zur Strömung falsch (Audit P14).
+    """
+    from .casebuilder import _bc_face
+
+    for b in spec.boundaries:
+        if b.type in ("inflow_hydrograph", "inflow_constant"):
+            face = _bc_face(spec, b)
+            return {"x_min": (1.0, 0.0), "x_max": (-1.0, 0.0),
+                    "y_min": (0.0, 1.0), "y_max": (0.0, -1.0)}.get(face, (0.0, 1.0))
+    return (0.0, 1.0)
+
+
+class _Rahmen:
+    """
+    Lokales Achsenkreuz eines Rezepts um (cx, cy): v läuft MIT der
+    Strömung, u quer dazu (rechts). Alle Rezepte notieren ihre Geometrie
+    in (u, v) und bekommen so dieselbe Anordnung in jeder Fließrichtung.
+    """
+
+    def __init__(self, spec: CaseSpec, cx: float, cy: float) -> None:
+        self.cx, self.cy = float(cx), float(cy)
+        self.ey = _richtung(spec)
+        self.ex = (self.ey[1], -self.ey[0])
+
+    def punkt(self, u: float, v: float) -> tuple[float, float]:
+        return (round(self.cx + u * self.ex[0] + v * self.ey[0], 3),
+                round(self.cy + u * self.ex[1] + v * self.ey[1], 3))
+
+    def rechteck(self, b: float, l: float, v0: float = 0.0) -> list:
+        """Grundriss b quer × l längs, Mitte bei v0 auf der Achse."""
+        return [self.punkt(-b / 2, v0 - l / 2), self.punkt(b / 2, v0 - l / 2),
+                self.punkt(b / 2, v0 + l / 2), self.punkt(-b / 2, v0 + l / 2)]
+
+    def kasten(self, b: float, l: float, z0: float, z1: float,
+               rand: float, v0: float = 0.0) -> tuple:
+        pts = self.rechteck(b + 2 * rand, l + 2 * rand, v0)
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return (round(min(xs), 3), round(min(ys), 3), round(z0, 3),
+                round(max(xs), 3), round(max(ys), 3), round(z1, 3))
+
+
 def _drosselschacht(p: _Bauplan, args: dict, base_dir) -> None:
     """
     Kammer mit Trennwand und Drosselöffnung. Die Drossel ist die Stelle, an
@@ -179,6 +226,7 @@ def _drosselschacht(p: _Bauplan, args: dict, base_dir) -> None:
     """
     spec = p.spec
     cx, cy = _mitte(spec, args)
+    R = _Rahmen(spec, cx, cy)
     tiefe = float(args.get("tiefe", 2.5))
     weite = float(args.get("weite", 2.0))
     laenge = float(args.get("laenge", 3.0))
@@ -194,16 +242,16 @@ def _drosselschacht(p: _Bauplan, args: dict, base_dir) -> None:
     kammer_id = p.neu("drosselkammer")
     p.struktur(StructKammer(
         id=kammer_id, type="kammer", patch=kammer_id,
-        footprint=_rechteck(cx, cy, weite, laenge),
+        footprint=R.rechteck(weite, laenge),
         invert_level=sohle, top_level=round(gz, 3),
         wall_thickness=wand, wirkung="aushub"))
 
     wand_id = p.neu("drosselwand")
+    a, b = R.punkt(-weite / 2, 0.0), R.punkt(weite / 2, 0.0)
     p.struktur(StructWall(
         id=wand_id, type="wall", patch=wand_id,
         alignment=Alignment(kind="polyline", points=[
-            (round(cx - weite / 2, 3), round(cy, 3), round(gz, 3)),
-            (round(cx + weite / 2, 3), round(cy, 3), round(gz, 3))]),
+            (a[0], a[1], round(gz, 3)), (b[0], b[1], round(gz, 3))]),
         # bis auf die AUSHUBSOHLE, nicht auf die lichte Sohle — sonst
         # klafft unter der Wand eine Fuge von einer Wandstärke, durch die
         # der Solver das Wasser rechnet
@@ -216,12 +264,12 @@ def _drosselschacht(p: _Bauplan, args: dict, base_dir) -> None:
     stufe = _stufe_fuer(spec, oeffnung)
     p.flaeche(wand_id, stufe)
     rand = 4 * _zelle(spec)
-    p.box((cx - weite / 2 - rand, cy - laenge / 2 - rand, sohle - rand,
-           cx + weite / 2 + rand, cy + laenge / 2 + rand, gz + rand),
+    p.box(R.kasten(weite, laenge, sohle - rand, gz + rand, rand),
           level=max(stufe - 1, 1), stamm=f"fein_{kammer_id}")
 
     # Der Pegel gehört OBERSTROM der Drosselwand — dort staut es ein
-    pegel = p.pegel("pegel_drosselkammer", cx, cy - laenge / 4)
+    px, py = R.punkt(0.0, -laenge / 4)
+    pegel = p.pegel("pegel_drosselkammer", px, py)
     p.kriterium(TargetMaxLevel(
         id=p.neu("einstau_drossel"), kind="max_level",
         at=pegel, limit_max=round(gz, 2)))
@@ -240,6 +288,7 @@ def _trennbauwerk(p: _Bauplan, args: dict, base_dir) -> None:
     """Kammer mit Trennwand und Streichwehr — die Aufteilung ist der Nachweis."""
     spec = p.spec
     cx, cy = _mitte(spec, args)
+    R = _Rahmen(spec, cx, cy)
     tiefe = float(args.get("tiefe", 2.0))
     weite = float(args.get("weite", 4.0))
     laenge = float(args.get("laenge", 6.0))
@@ -253,18 +302,18 @@ def _trennbauwerk(p: _Bauplan, args: dict, base_dir) -> None:
     kammer_id = p.neu("trennkammer")
     p.struktur(StructKammer(
         id=kammer_id, type="kammer", patch=kammer_id,
-        footprint=_rechteck(cx, cy, weite, laenge),
+        footprint=R.rechteck(weite, laenge),
         invert_level=sohle, top_level=round(gz, 3),
         wall_thickness=wand, wirkung="aushub"))
 
     wehr_id = p.neu("streichwehr")
     krone = round(sohle + schwelle, 3)
+    # Streichwehr LÄNGS der Strömung an der rechten Kammerwand
+    w0 = R.punkt(weite / 2 - wand, -laenge / 2 + wand)
+    w1 = R.punkt(weite / 2 - wand, laenge / 2 - wand)
     p.struktur(StructWeir(
         id=wehr_id, type="weir", patch=wehr_id,
-        crest_polyline=[(round(cx + weite / 2 - wand, 3),
-                         round(cy - laenge / 2 + wand, 3), krone),
-                        (round(cx + weite / 2 - wand, 3),
-                         round(cy + laenge / 2 - wand, 3), krone)],
+        crest_polyline=[(w0[0], w0[1], krone), (w1[0], w1[1], krone)],
         crest_width=round(wand, 3), slope_upstream=0.0, slope_downstream=0.0,
         # Fuß auf der Aushubsohle, nicht auf der lichten Sohle
         profile_type="scharfkantig", base_level=round(sohle - wand, 3)))
@@ -272,14 +321,12 @@ def _trennbauwerk(p: _Bauplan, args: dict, base_dir) -> None:
     stufe = _stufe_fuer(spec, wand)
     p.flaeche(wehr_id, stufe)
     # Zähler = was über die Schwelle geht, Nenner = was ankommt
-    entlastung = p.querschnitt(
-        "qs_entlastung",
-        [(cx + weite / 2 - wand, cy - laenge / 2 + wand),
-         (cx + weite / 2 - wand, cy + laenge / 2 - wand)])
+    entlastung = p.querschnitt("qs_entlastung", [w0, w1])
+    rand = 2 * _zelle(spec)
     zulauf = p.querschnitt(
         "qs_zulauf_trenn",
-        [(cx - weite / 2, cy - laenge / 2 - 1.0),
-         (cx + weite / 2, cy - laenge / 2 - 1.0)])
+        [R.punkt(-weite / 2, -laenge / 2 - rand),
+         R.punkt(weite / 2, -laenge / 2 - rand)])
     p.kriterium(TargetDischargeRatio(
         id=p.neu("aufteilung"), kind="discharge_ratio",
         of=entlastung, to=zulauf, limit_max=0.35))
@@ -296,6 +343,8 @@ def _tosbecken(p: _Bauplan, args: dict, base_dir) -> None:
     """Aushub mit Endschwelle und Störkörpern — der Wechselsprung soll drin bleiben."""
     spec = p.spec
     cx, cy = _mitte(spec, args)
+    R = _Rahmen(spec, cx, cy)
+    zelle = _zelle(spec)
     tiefe = float(args.get("tiefe", 1.2))
     weite = float(args.get("weite", 4.0))
     laenge = float(args.get("laenge", 10.0))
@@ -309,45 +358,51 @@ def _tosbecken(p: _Bauplan, args: dict, base_dir) -> None:
     becken_id = p.neu("tosbecken")
     p.struktur(StructKammer(
         id=becken_id, type="kammer", patch=becken_id,
-        footprint=_rechteck(cx, cy, weite, laenge),
+        footprint=R.rechteck(weite, laenge),
         invert_level=sohle, top_level=round(gz, 3),
         wall_thickness=0.0, wirkung="aushub"))
+
+    # Maße folgen dem Becken und der Zelle, nicht festen Metern (Audit
+    # P14: 0,4 × 0,6 × 0,6 m Störkörper, ±1,0 m Rand — bei 2-m-Zellen
+    # unsichtbar, bei 0,1 m viel zu grob)
+    kronenbreite = max(0.4, 2 * zelle)
+    sk = max(weite / 10, 2 * zelle)                  # Störkörper quadratisch
+    sk_hoehe = max(tiefe / 2, 2 * zelle)
 
     wehr_id = p.neu("endschwelle")
     krone = round(sohle + schwelle, 3)
     # eine halbe Kronenbreite INNERHALB des Beckens: genau auf der
     # Aushubkante stünde die Schwelle zur Hälfte im gewachsenen Boden
-    y_schwelle = round(cy + laenge / 2 - 0.4, 3)
+    v_schwelle = laenge / 2 - kronenbreite / 2
+    s0, s1 = R.punkt(-weite / 2, v_schwelle), R.punkt(weite / 2, v_schwelle)
     p.struktur(StructWeir(
         id=wehr_id, type="weir", patch=wehr_id,
-        crest_polyline=[(round(cx - weite / 2, 3), y_schwelle, krone),
-                        (round(cx + weite / 2, 3), y_schwelle, krone)],
-        crest_width=0.4, slope_upstream=1.0, slope_downstream=1.0,
-        profile_type="trapez", base_level=sohle))
+        crest_polyline=[(s0[0], s0[1], krone), (s1[0], s1[1], krone)],
+        crest_width=round(kronenbreite, 3), slope_upstream=1.0,
+        slope_downstream=1.0, profile_type="trapez", base_level=sohle))
 
     # Störkörper versetzt im ersten Drittel — dort steht der Wechselsprung
     anzahl = int(args.get("stoerkoerper", 3))
     for i in range(max(anzahl, 0)):
-        x = cx - weite / 2 + weite * (i + 0.5) / max(anzahl, 1)
-        sk = p.neu(f"stoerkoerper_{i + 1}")
+        u = -weite / 2 + weite * (i + 0.5) / max(anzahl, 1)
+        sk_id = p.neu(f"stoerkoerper_{i + 1}")
         p.struktur(StructPier(
-            id=sk, type="pier", patch=sk, shape="rechteck",
-            center=(round(x, 3), round(cy - laenge / 4, 3)),
-            width=0.4, length=0.6, base_level=sohle,
-            top_level=round(sohle + 0.6, 3)))
+            id=sk_id, type="pier", patch=sk_id, shape="rechteck",
+            center=R.punkt(u, -laenge / 4),
+            width=round(sk, 3), length=round(sk, 3), base_level=sohle,
+            top_level=round(sohle + sk_hoehe, 3)))
 
     # Box bis über den erwarteten Wasserspiegel ziehen — sonst liegt die
     # freie Oberfläche außerhalb der Verfeinerung
-    oben_box = gz + 0.5
+    rand = 2 * zelle
+    oben_box = gz + rand
     if spec.solver.initial_level is not None:
-        oben_box = max(oben_box, spec.solver.initial_level + 2 * _zelle(spec))
-    unten_box = min(sohle - 0.5, spec.domain.z_min)
+        oben_box = max(oben_box, spec.solver.initial_level + rand)
+    unten_box = min(sohle - rand, spec.domain.z_min)
     if spec.solver.initial_level is not None:
-        unten_box = min(unten_box, spec.solver.initial_level - 2 * _zelle(spec))
-    p.box((cx - weite / 2 - 1.0, cy - laenge / 2 - 1.0,
-           max(unten_box, spec.domain.z_min),
-           cx + weite / 2 + 1.0, cy + laenge / 2 + 1.0,
-           min(oben_box, spec.domain.z_max)),
+        unten_box = min(unten_box, spec.solver.initial_level - rand)
+    p.box(R.kasten(weite, laenge, max(unten_box, spec.domain.z_min),
+                   min(oben_box, spec.domain.z_max), rand),
           level=2, stamm=f"fein_{becken_id}")
     p.kriterium(TargetMaxBedShear(
         id=p.neu("sohlschub_tosbecken"), kind="max_bed_shear",
@@ -357,12 +412,16 @@ def _tosbecken(p: _Bauplan, args: dict, base_dir) -> None:
             "Verfeinerungsbox über der Sohle ist zugleich die Auswerteregion.")
     p.sagen("Ob der Wechselsprung im Becken bleibt, zeigt die Froude-Zahl im "
             "Längsschnitt; die Beckenlänge notfalls danach anpassen.")
+    p.sagen(f"Störkörper {sk:g} × {sk:g} × {sk_hoehe:g} m und Endschwelle "
+            f"{kronenbreite:g} m breit — aus Beckenbreite und Zelle "
+            f"({zelle:g} m) abgeleitet, im Panel änderbar.")
 
 
 def _absturz(p: _Bauplan, args: dict, base_dir) -> None:
     """Kaskade aus Stufenaushüben — je Stufe ein Becken."""
     spec = p.spec
     cx, cy = _mitte(spec, args)
+    R = _Rahmen(spec, cx, cy)
     stufen = max(int(args.get("stufen", 3)), 1)
     hoehe = float(args.get("stufenhoehe", 0.5))
     tiefe = float(args.get("beckentiefe", 0.4))
@@ -375,21 +434,22 @@ def _absturz(p: _Bauplan, args: dict, base_dir) -> None:
     # Jede Stufe ist bis zur GELÄNDEOBERFLÄCHE offen — eine Kaskade ist eine
     # Rinne mit Stufen, kein Tunnel. Nur die Sohle steigt ab; ein bis zur
     # Stufenoberkante gedeckelter Aushub wäre ein verschlossener Kasten und
-    # würde vom Vernetzer ersatzlos entfernt.
+    # würde vom Vernetzer ersatzlos entfernt. Die Stufen fallen MIT der
+    # Strömung ab.
     for i in range(stufen):
         oben = round(gz - i * hoehe, 3)
-        y = cy - (stufen - 1) * laenge / 2 + i * laenge
+        v = -(stufen - 1) * laenge / 2 + i * laenge
         sid = p.neu(f"absturz_{i + 1}")
         p.struktur(StructKammer(
             id=sid, type="kammer", patch=sid,
-            footprint=_rechteck(cx, y, weite, laenge),
+            footprint=R.rechteck(weite, laenge, v0=v),
             invert_level=round(oben - tiefe, 3), top_level=round(gz, 3),
             wall_thickness=0.0, wirkung="aushub"))
 
     gesamt = stufen * hoehe
-    p.box((cx - weite / 2 - 1.0, cy - stufen * laenge / 2 - 1.0,
-           gz - gesamt - tiefe - 0.5, cx + weite / 2 + 1.0,
-           cy + stufen * laenge / 2 + 1.0, gz + 0.5),
+    rand = 2 * _zelle(spec)
+    p.box(R.kasten(weite, stufen * laenge, gz - gesamt - tiefe - rand,
+                   gz + rand, rand),
           level=2, stamm="fein_absturz")
     p.kriterium(TargetMaxBedShear(
         id=p.neu("sohlschub_absturz"), kind="max_bed_shear",

@@ -181,6 +181,50 @@ def test_verfeinerungsboxen_bleiben_im_gebiet(name):
         assert bz1 <= spec.domain.z_max + 1e-6
 
 
+# ---- E6f (Audit P14): Rezepte folgen der Fließrichtung, der Zelle und dem
+# Blickpunkt statt festen Metern in +y aus der Gebietsmitte
+
+def test_tosbecken_folgt_der_zulaufrichtung():
+    spec = _fall()
+    zulauf = next(b for b in spec.boundaries if b.type.startswith("inflow"))
+    zulauf.face = "y_max"                                 # Zulauf von Norden → Strömung −y
+    rezepte.einsetzen(spec, "tosbecken", {}, ".")
+    schwelle = next(s for s in spec.structures if s.id.startswith("endschwelle"))
+    sk = [s for s in spec.structures if s.id.startswith("stoerkoerper")]
+    assert sk and schwelle.crest_polyline[0][1] < min(s.center[1] for s in sk)
+    spec2 = _fall()
+    zulauf2 = next(b for b in spec2.boundaries if b.type.startswith("inflow"))
+    zulauf2.face = "x_min"                                # Zulauf von Westen → +x
+    rezepte.einsetzen(spec2, "tosbecken", {}, ".")
+    schwelle2 = next(s for s in spec2.structures if s.id.startswith("endschwelle"))
+    sk2 = [s for s in spec2.structures if s.id.startswith("stoerkoerper")]
+    assert schwelle2.crest_polyline[0][0] > max(s.center[0] for s in sk2)
+
+
+def test_tosbecken_masse_folgen_der_zelle():
+    spec = _fall()
+    spec.mesh.base_cell = 1.0
+    rezepte.einsetzen(spec, "tosbecken", {}, ".")
+    sk = next(s for s in spec.structures if s.id.startswith("stoerkoerper"))
+    assert sk.width >= 2.0                                # vorher fest 0,4 m
+    schwelle = next(s for s in spec.structures if s.id.startswith("endschwelle"))
+    assert schwelle.crest_width >= 2.0                    # vorher fest 0,4 m
+    box = next(r for r in spec.mesh.refinements if r.id.startswith("fein_tosbecken"))
+    becken = next(s for s in spec.structures if s.id.startswith("tosbecken"))
+    xs = [p[0] for p in becken.footprint]
+    assert box.extent[0] <= min(xs) - 2.0 + 1e-6           # Rand zwei Zellen, vorher 1,0 m
+
+
+def test_rezept_am_blickpunkt():
+    spec = _fall()
+    rezepte.einsetzen(spec, "drosselschacht", {"center": [5.0, 6.0]}, ".")
+    kammer = next(s for s in spec.structures if s.id.startswith("drosselkammer"))
+    xs = [p[0] for p in kammer.footprint]
+    ys = [p[1] for p in kammer.footprint]
+    assert (min(xs) + max(xs)) / 2 == pytest.approx(5.0, abs=0.01)
+    assert (min(ys) + max(ys)) / 2 == pytest.approx(6.0, abs=0.01)
+
+
 def test_unbekanntes_rezept_wird_abgelehnt():
     with pytest.raises(ValueError, match="Unbekanntes Rezept"):
         rezepte.einsetzen(_fall(), "gibtsnicht", {}, ".")

@@ -210,7 +210,9 @@ async function neuAnlegen() {
   const [art, ...rest] = neuWahl.value.split(':')
   const name = rest.join(':')
   if (art === 'rezept') {
-    for (const z of await store.rezeptEinsetzen(name)) {
+    // am Blickpunkt einsetzen, wie eine Vorlage (Audit P14/C6)
+    const args = store.blickpunkt ? { center: store.blickpunkt } : {}
+    for (const z of await store.rezeptEinsetzen(name, args)) {
       store.melden(z, z.startsWith('ACHTUNG') ? 'hinweis' : 'erfolg')
     }
   } else {
