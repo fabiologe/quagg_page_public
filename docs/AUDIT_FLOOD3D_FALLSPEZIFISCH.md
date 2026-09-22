@@ -384,3 +384,62 @@ blieben stehen, während Gelände und Bauwerke sich drehten (Audit I5).
 Die Messlatte fragt für „jetzt" das Werkzeug selbst (`pinsel_sperre`) statt
 einer Nachbildung; „vorher" stellt die alte Reihenfolge nach.
 Tests: Backend 776 + 1 übersprungen, Client 386.
+
+### E2-Rest gebaut (2026-09-22) — der Import kennt die Datei, nicht den Testfall
+
+Fünf Teiletappen, je ein Commit (E2a `d9a0a8b` … E2e `4af3e5d`), dazu die
+Regel „Import ohne Offset". Gemessen am Nachbau `dxf_fabrik.neun_linien`
+(neun Linien mit closed-Flag, Rohrkreis, Schachtdeckel, Gauß-Krüger) und an
+einer **Kopie** von Rentrich_BetaTest09 — nie am Fall selbst.
+
+**E2a — Schnitt.** `apply_import` (507 Zeilen, innere Funktionen mit
+`nonlocal`) → `_Uebernahme` + je Schritt eine Funktion (vorbereiten, Gelände
+aus Linien, je Kandidat, Kanten verknüpfen, Lage prüfen, Gebiet ableiten,
+Anwendung schreiben); längste Funktion im Block < 66 Zeilen. Wächter
+`tests/test_import_schnitt.py` hält den vollen Stand beider Fabriken golden
+(`tests/golden/import_schnitt.json`: Spec-Dump, `derived/*`, Bericht,
+Anwendung) — fehlt die Datei, schreibt der Test sie und fällt einmal; jede
+Etappe, die den Import absichtlich ändert, löscht sie und committet den
+neuen Stand. Der Golden ist damit auch das Protokoll der Etappen.
+
+| Größe (Nachbau BetaTest09 = `neun_linien`) | vorher | nachher |
+|---|---|---|
+| geschlossene Kanten / Dreiecke (I1) | 1 / 2 | **2 / 21** |
+| Raster aus den Linien | 11 × 11, Abdeckung 37 % | **25 × 25, 66 %** |
+| Höhen im Raster (der Bericht nannte 223,05 … 225,55) | 223,05 … 223,38 (Sohlplatte) | **223,06 … 225,52** |
+| offene Linien im Raster | keine (mit dem ersten Ring fielen alle heraus) | 6 als Stützzellen (36 Zellen), 1 außerhalb genannt |
+| Manifest ohne Netz: `bbox` / `offset_suggest` / `unit_suspect` (I2) | fehlen | **vorhanden**, Vorschlag (2 500 000,2 / 5 400 000,2) |
+| Einheit (I7) | Spannweite > 5 000 → still mm | **`$INSUNITS` der Zeichnung** (6 = m, 4 = mm); Verdacht nur ohne Einheit, als Frage |
+| Übernahme ohne Offset | Gebiet in Gauß-Krüger (2 500 003 … 2 500 008) | **Verortung des Falls bzw. Vorschlag angewandt**, Gebiet (0, 0) … (14,35, 11,6) |
+| Gebiet aus dem Gelände (I12) | nackte Gelände-Bbox, Rohr gekappt | **mit Rohren samt Wandung**, z_min unter der Rohrsohle |
+| Kreise in der Draufsicht, die Rohr werden (I10) | 1 (Schachtdeckel → senkrechter Stutzen) | **0** (`stats.lage`, Rolle wählbar) |
+| XYZ-Import (I8) | Bytes unter `.asc`, Leser `KeyError 'cellsize'` | **→ ESRI-ASCII**, Gelände lädt |
+| Punktwolke 20 000 Punkte auf 500 m (G10) | 771 Mio Zellen, 6,2 GB | **Ablehnung „kein Raster"**; Altleser Deckel 50 Mio |
+| Rasterweite aus einer 2-m-Rasterdatei (I11-Teil) | fest 0,5 m (16-fach überabgetastet) | **2 m aus der Datei**, Deckel 4 Mio Knoten |
+
+**Kopie Rentrich_BetaTest09** (fünf Importe derselben DXF, Gelände aus dem
+letzten, drei ohne Offset; die Regel `_pruefe_importablage` bietet jetzt für
+jeden davon die Kur `import_neu_ableiten_roh` an; angewandt wurden alle vier
+angebotenen, danach `gebiet_auf_vermessung` aus E1a):
+
+| Größe | vorher | nach 4 Kuren | nach der 5. |
+|---|---|---|---|
+| Gebietsknoten außerhalb der Vermessung | **100 %** | 11 % | **0 %** |
+| Raster und Gebiet überlappen | nein | ja | ja |
+| Modellgelände | eben auf 223,38 (Sohlplatte) | 223,07 … 225,57 (Krone) | dito |
+| Rohre in verschiedenen Koordinatenwelten (lokal / gedreht-GK / GK) | 3 | **1** | 1 |
+| Vermessungskanten außerhalb des Gebiets | 9 von 9 | 5 von 27 | 23 (das enge Gebiet schneidet den Beckenrand — Nutzerentscheidung) |
+| Befunde „fehler" | 14 | **5** | 9 |
+
+Die gespeicherte Verortung (Drehung 70,6°, aus „Modell drehen") setzt die
+Rohdatei richtig in die lokale Welt — `lokal_nach_welt(t, 0, 0)` liefert den
+Import-Offset. Die Restfehler sind E5-Themen (viermal „1,6 m bei 1-m-Zelle"
+= P2/P5, Zulauffenster über den Rand = P11) und Querschnitte außerhalb des
+Gebiets (die Zeichnung hat sie außerhalb des Beckenrands).
+
+Zwei Fallen für die Nachwelt: `ezdxf.new()` schreibt `$INSUNITS = 6` (Meter)
+— eine Test-DXF „in mm" braucht das Flag ausdrücklich. Und das Gebiet
+bekommt beim Ableiten KEINEN Rand von einer Basiszelle (Fahrplan sah ihn
+vor): die Abdeckungsregel aus E1a misst genau diesen Rand als „außerhalb der
+Vermessung" und würde ihn bei 12 m Gebiet mit 27 % melden.
+Tests: Backend 797 + 1 übersprungen, Client 395.
