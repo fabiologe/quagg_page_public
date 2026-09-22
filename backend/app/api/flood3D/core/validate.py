@@ -1211,13 +1211,41 @@ def _pruefe_verfeinerungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
 
 
 def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
-    """Hydraulik und Randbedingungen: Anzahl der Ränder, Q → U am Zulauf."""
+    """
+    Hydraulik und Randbedingungen: Anzahl der Ränder, Q → U am Zulauf.
+
+    Bis 2026-09-22 verlangte die Regel GENAU einen Zuflussrand — der Fallbau
+    schreibt aber alle Zuläufe in einer Schleife (casebuilder.initial_fields),
+    und zwei auf verschiedenen Flächen vernetzt meshgen ohne Weiteres; zwei
+    auf derselben Fläche meldet die Fensterprüfung mit Kur. Ein Becken mit
+    zwei Zulaufrohren und ein Leerlauf ohne Zulauf waren gesperrt (Audit P9).
+    """
+    from .anschluss import rollen_ohne_rand
+    from .casebuilder import _bc_face, fenster_flaeche
+
     befunde: list[dict] = []
     f = befunde.append
-    if len(ctx.inflows) != 1:
-        f(_finding("boundaries", "fehler",
-                   f"Genau ein Zuflussrand erforderlich, definiert sind "
-                   f"{len(ctx.inflows)}"))
+    if not ctx.inflows:
+        # Ohne Zulauf trägt nur Startwasser den Lauf (Leerlauf) — dieselbe
+        # Bedingung wie in _pruefe_leerlauf
+        startwasser = (spec.solver.initial_level is not None
+                       or bool(spec.solver.vorfuellungen))
+        if startwasser:
+            f(_finding("boundaries", "hinweis",
+                       "Kein Zuflussrand — der Lauf lebt vom Startwasser "
+                       "(Leerlauf). Gewollt? Sonst einen Zulauf anlegen."))
+        else:
+            f(_finding("boundaries", "fehler",
+                       "Kein Zuflussrand und kein Startwasser (Anfangs"
+                       "wasserspiegel oder Vorfüllung) — es gäbe nichts zu "
+                       "rechnen."))
+    elif len(ctx.inflows) > 1:
+        liste = ", ".join(f"„{b.id}“ ({_bc_face(spec, b) or '?'})"
+                          for b in ctx.inflows)
+        f(_finding("boundaries", "hinweis",
+                   f"{len(ctx.inflows)} Zuläufe: {liste}. Jeder bekommt "
+                   "seinen Volumenstrom; zwei auf derselben Fläche meldet "
+                   "die Fensterprüfung."))
     if not ctx.outflows:
         f(_finding("boundaries", "fehler", "Kein Abflussrand definiert"))
 
@@ -1225,13 +1253,28 @@ def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     # gleichmäßig über die Fensterfläche, und alpha = 1 füllt das ganze
     # Fenster mit Wasser. Die resultierende Geschwindigkeit stand bisher
     # nirgends — dabei entscheidet sie, ob der Zulauf als ruhige Anströmung
-    # oder als Strahl ins Modell schießt (Audit P1-5).
+    # oder als Strahl ins Modell schießt (Audit P1-5). Ohne Fenster ist die
+    # Fläche die ganze Gebietsseite ÜBER dem Gelände — das gehört gesagt,
+    # ein Zulauf ist selten 74 m breit (Audit G3).
     if spec.domain is not None:
-        from .casebuilder import fenster_flaeche
+        koppelbar = {e["rand"] for e in rollen_ohne_rand(spec)
+                     if e["koppelbar"] and e["rolle"] == "zulauf"}
         for b in ctx.inflows:
+            if getattr(b, "window", None) is None:
+                face = _bc_face(spec, b) or "?"
+                x0, y0, x1, y1 = spec.domain.extent
+                breite = (y1 - y0) if face.startswith("x") else (x1 - x0)
+                flaeche = fenster_flaeche(spec, b, ctx.terrain)
+                f(_finding(b.id, "hinweis",
+                           f"Zulauf „{b.id}“ ist die ganze Seite {face}: "
+                           f"{breite:.0f} m breit, rund {flaeche or 0:.0f} m² "
+                           "über dem Gelände. Fenster setzen oder an ein "
+                           "Rohr koppeln.",
+                           fix=(kur("anschluesse_herstellen")
+                                if b.id in koppelbar else None)))
             if b.type != "inflow_constant" or not b.q:
                 continue
-            flaeche = fenster_flaeche(spec, b)
+            flaeche = fenster_flaeche(spec, b, ctx.terrain)
             if flaeche and flaeche > 0:
                 u = float(b.q) / flaeche
                 f(_finding(b.id, "warnung" if u > 3.0 else "hinweis",
@@ -1243,6 +1286,31 @@ def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                            + (" Das ist strahlartig schnell — Fenster "
                               "vergrößern oder Zufluss prüfen."
                               if u > 3.0 else "")))
+    return befunde
+
+
+def _pruefe_rollen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
+    """
+    Rohre mit Rolle (Zulauf/Ablauf laut Zeichnungslayer) müssen an ihrem
+    Rand hängen — sonst rechnet der Lauf mit der ganzen Gebietsseite und
+    das Rohr steht als Stummel im Inneren. Regel und Kur lesen dieselbe
+    Liste (anschluss.rollen_ohne_rand); die Kur wird nur angeboten, wenn
+    sie koppeln kann (Audit P11).
+    """
+    from .anschluss import rollen_ohne_rand
+
+    befunde: list[dict] = []
+    for e in rollen_ohne_rand(spec):
+        rolle = "Zulauf" if e["rolle"] == "zulauf" else "Ablauf"
+        befunde.append(_finding(
+            e["id"], "warnung",
+            f"„{e['id']}“ trägt die Rolle {rolle}, hängt aber an keinem Rand "
+            f"({e['face']} in {e['abstand']:g} m)."
+            + (" „Anschlüsse herstellen“ koppelt es an den Rand."
+               if e["koppelbar"] else
+               " Achse bis zum Rand ziehen (Griffe) oder den Rand an das "
+               "Rohr legen; erst dann lässt es sich koppeln."),
+            fix=kur("anschluesse_herstellen") if e["koppelbar"] else None))
     return befunde
 
 
@@ -2128,6 +2196,7 @@ _PRUEFUNGEN = [
     _pruefe_netzaufloesung,
     _pruefe_verfeinerungen,
     _pruefe_raender,
+    _pruefe_rollen,
     _pruefe_solver,
     _pruefe_fenster,
     _pruefe_ganglinien,

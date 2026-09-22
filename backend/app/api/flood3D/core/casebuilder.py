@@ -709,14 +709,17 @@ def fenster_mitte(spec: CaseSpec, b) -> tuple[float, float, float] | None:
     return (mitte_e, y0 if face == "y_min" else y1, mitte_z)
 
 
-def fenster_flaeche(spec: CaseSpec, b) -> float | None:
+def fenster_flaeche(spec: CaseSpec, b, terrain=None) -> float | None:
     """
     Analytische Fläche in m², auf die flowRateInletVelocity den
     Volumenstrom verteilt: das Fenster der Randbedingung, ohne Fenster die
-    volle Gebietsseite. Die vernetzte Fläche ist eine Treppe aus ganzen
-    Randflächen und kann davon abweichen — als Näherung für die
-    resultierende Eintrittsgeschwindigkeit reicht die analytische Form
-    (Audit P1-5: Q/A war vorher nirgends ausgewiesen).
+    Gebietsseite ÜBER dem Gelände (mit `terrain`, einem TerrainField) —
+    das ist die Fläche, die der Vernetzer als Patch übrig lässt; bis
+    2026-09-22 zählte die volle Seite bis z_min, bei einem Betriebsfall
+    371 m² statt der Fläche über der Ebene (Audit G3). Die vernetzte Fläche
+    ist eine Treppe aus ganzen Randflächen und kann davon abweichen — als
+    Näherung für die resultierende Eintrittsgeschwindigkeit reicht die
+    analytische Form (Audit P1-5: Q/A war vorher nirgends ausgewiesen).
     """
     face = _bc_face(spec, b)
     if face is None or spec.domain is None:
@@ -725,7 +728,20 @@ def fenster_flaeche(spec: CaseSpec, b) -> float | None:
     e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
     r = resolve_window(spec, b)
     if r is None:
-        return (e1 - e0) * (spec.domain.z_max - spec.domain.z_min)
+        if terrain is None or face == "z_max":
+            return (e1 - e0) * (spec.domain.z_max - spec.domain.z_min)
+        zelle = spec.mesh.base_cell if spec.mesh else 1.0
+        n = max(2, int(math.ceil((e1 - e0) / zelle)) + 1)
+        s = np.linspace(e0, e1, n)
+        if face.startswith("x"):
+            xs = np.full(n, x0 if face == "x_min" else x1)
+            ys = s
+        else:
+            xs = s
+            ys = np.full(n, y0 if face == "y_min" else y1)
+        boden = np.clip(np.asarray(terrain.sample(xs, ys), dtype=float),
+                        spec.domain.z_min, spec.domain.z_max)
+        return float(np.trapezoid(spec.domain.z_max - boden, s))
     if r["shape"] == "kreis":
         return math.pi * r["d"] ** 2 / 4
     if r["shape"] == "polygon":

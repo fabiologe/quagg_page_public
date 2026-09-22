@@ -557,7 +557,7 @@ Die Validierung läuft fortlaufend und ist der eigentliche Mehrwert gegenüber a
 
 **Hydraulik und Randbedingungen**
 
-- Genau ein Zuflussrand und mindestens ein Abflussrand definiert
+- Mindestens ein Zuflussrand (oder Startwasser für einen Leerlauf) und mindestens ein Abflussrand definiert; mehrere Zuläufe auf verschiedenen Flächen sind zulässig
 - Zuflussrand liegt unterhalb der erwarteten Wasserspiegellage
 - Abflussrand liegt nicht im Nahfeld des zu untersuchenden Bauwerks
 - Zuflussganglinie ist zeitlich lückenlos und deckt die Simulationsdauer ab

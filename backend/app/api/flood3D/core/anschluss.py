@@ -463,6 +463,51 @@ def gebiet_umschliesst_fenster(spec: CaseSpec) -> list[str]:
     return meldungen
 
 
+def rollen_ohne_rand(spec: CaseSpec) -> list[dict]:
+    """
+    DIE Messung für Rohre mit Rolle (Zulauf/Ablauf aus dem Zeichnungslayer),
+    die an keinem Rand hängen: je Rohr der nächste Gebietsrand, der Abstand
+    des Achsendes und ob `kopplung_ableiten` es koppeln würde (Abstand
+    binnen zwei Basiszellen UND ein passender Rand ohne festes Fenster).
+    Prüfregel und Kur „Anschlüsse herstellen" lesen dieselbe Liste; nach
+    der Kur ist das Rohr gefolgt und fehlt hier (Audit P11: ein
+    Ablaufrohr 29 m im Inneren, der Importbericht versprach die Kopplung,
+    die Kur meldete „stimmig").
+    """
+    from .casebuilder import _bc_face, _culvert_end
+
+    aus: list[dict] = []
+    if spec.domain is None:
+        return aus
+    grenze = 2 * (spec.mesh.base_cell if spec.mesh else 1.0)
+    schon = {w.follow for b in spec.boundaries
+             if (w := getattr(b, "window", None)) is not None and w.follow}
+    seiten = ("x_min", "x_max", "y_min", "y_max")
+    for cv in spec.structures:
+        if cv.type != "culvert" or cv.rolle not in ("zulauf", "ablauf"):
+            continue
+        if cv.id in schon or len(cv.axis) < 2:
+            continue
+        d, face = min((_culvert_end(spec, fl, cv)[0], fl) for fl in seiten)
+        rand = None
+        for b in spec.boundaries:
+            art = ("zulauf" if b.type.startswith("inflow")
+                   else "ablauf" if b.type.startswith("outflow") else None)
+            w = getattr(b, "window", None)
+            fest = w is not None and (w.follow or w.span is not None
+                                      or w.center is not None)
+            if art == cv.rolle and not fest:
+                bf = _bc_face(spec, b)
+                if bf is None or bf == "z_max" or bf == face:
+                    rand = b.id
+                    break
+        aus.append({"id": cv.id, "rolle": cv.rolle, "face": face,
+                    "abstand": round(float(d), 2),
+                    "koppelbar": bool(d <= grenze and rand is not None),
+                    "rand": rand})
+    return aus
+
+
 def kopplung_ableiten(spec: CaseSpec) -> list[str]:
     """
     Welches Bauwerk an welchem Rand liegt, ist messbar — bisher wurde es nur
@@ -497,7 +542,12 @@ def kopplung_ableiten(spec: CaseSpec) -> list[str]:
 
     for b in spec.boundaries:
         w = getattr(b, "window", None)
-        if w is None or w.follow or w.span is not None or w.center is not None:
+        # Ein Rand OHNE Fenster (die ganze Gebietsseite) wird genauso
+        # gekoppelt wie ein Fenster ohne Bezug — bis 2026-09-22 sprang die
+        # Schleife über ihn hinweg, und ein importiertes Ablaufrohr hing
+        # nie an seinem Rand (Audit P11)
+        if w is not None and (w.follow or w.span is not None
+                              or w.center is not None):
             continue
         art = ("zulauf" if b.type.startswith("inflow")
                else "ablauf" if b.type.startswith("outflow") else None)
@@ -532,12 +582,18 @@ def kopplung_ableiten(spec: CaseSpec) -> list[str]:
                 "Hand entschieden werden")
             continue
         d, kennung, was = treffer[0]
-        w.follow = kennung
+        if w is None:
+            from .casespec import BcWindow
+            b.window = BcWindow(follow=kennung)
+            grund = "Der Rand war die ganze Gebietsseite."
+        else:
+            w.follow = kennung
+            grund = "Das Fenster war ohne Bezug nicht auflösbar."
         schon.add(kennung)
         meldungen.append(
             f"Rand „{b.id}“ an {was} „{kennung}“ gekoppelt — dessen Ende "
             f"liegt {d:.2f} m von der Gebietsfläche entfernt (Grenze "
-            f"{grenze:.2f} m). Das Fenster war ohne Bezug nicht auflösbar.")
+            f"{grenze:.2f} m). {grund}")
     return meldungen
 
 
