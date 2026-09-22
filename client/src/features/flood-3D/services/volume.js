@@ -17,6 +17,15 @@ export function b64ToBuffer(b64) {
   return bytes.buffer
 }
 
+// Gepackte Bits (numpy.packbits: höchstwertiges Bit zuerst) als Uint8Array
+// aus 0/1 — die Maske „gemessen" des Geländes reist so acht Knoten je Byte
+export function b64ToBits(b64, n) {
+  const bytes = new Uint8Array(b64ToBuffer(b64))
+  const out = new Uint8Array(n)
+  for (let i = 0; i < n; i++) out[i] = (bytes[i >> 3] >> (7 - (i & 7))) & 1
+  return out
+}
+
 export async function fetchGeometry(runId) {
   const res = await fetch(`${BASE}/runs/${runId}/geometry`)
   if (!res.ok) throw new Error(`geometry ${runId}: ${res.statusText}`)

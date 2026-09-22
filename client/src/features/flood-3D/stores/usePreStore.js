@@ -5,7 +5,7 @@
 // neu vom Server geladen werden muss.
 import { defineStore } from 'pinia'
 import { flood3dApi, launchPasswortSichern } from '../services/api'
-import { b64ToBuffer as b64Buffer } from '../services/volume'
+import { b64ToBuffer as b64Buffer, b64ToBits } from '../services/volume'
 import { KIND_PATHS } from '../utils/kindPfade'
 import { setzeSchema } from '../utils/feldTypen'
 import { aufraeumplan } from '../utils/aufraeumen'
@@ -490,8 +490,13 @@ export const usePreStore = defineStore('flood3d-pre', {
       }
       this.previewStale = false
       if (p.terrain) {
+        const n = p.terrain.dims[0] * p.terrain.dims[1]
         this.terrain = { ...p.terrain,
-          z: new Float32Array(b64Buffer(p.terrain.z_b64)) }
+          z: new Float32Array(b64Buffer(p.terrain.z_b64)),
+          // wo die Vermessung aufhört (1 = gemessen); fehlt der Schlüssel,
+          // ist alles gemessen — dann steht nirgends die Ebene
+          gemessen: p.terrain.gemessen_b64
+            ? b64ToBits(p.terrain.gemessen_b64, n) : null }
       } else if (!entwurf) {
         this.terrain = null
       }

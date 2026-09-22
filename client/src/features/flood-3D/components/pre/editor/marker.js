@@ -5,6 +5,7 @@
 // nur noch gezeichnet.
 import * as THREE from 'three'
 import { zonenTiefe } from '../../../utils/widerstand'
+import { istAblauf, istZulauf } from '../../../utils/typRegister'
 
 // Widerstandszonen nach Art einfärben — man muss im Bild erkennen, ob
 // dieser Kasten ein Rechen oder ein Buschstreifen ist.
@@ -16,7 +17,10 @@ const ZONEN_FARBE = {
 }
 
 export function erzeugeMarker({ store, groups, selectable, holeScene,
-  clearGroup, terrainZ }) {
+  clearGroup, terrainZ, massstab }) {
+// Klickziele sind Zylinder mit lokaler Achse y: der Maßstab skaliert nur
+// ihren Radius (6 px), die Länge bleibt das Segment
+const KLICKZIEL = { px: 6, basis: 0.35, modus: 'radial' }
 // Eigene Einträge in `selectable` beim Neuaufbau wieder AUSTRAGEN: die
 // Marker-Ebene wird auch für sich allein neu gebaut (Spec-Watcher) — ohne
 // Austragen sammelten sich verwaiste Meshes an alten Positionen an, die
@@ -55,6 +59,7 @@ function buildMarkers() {
       kante.userData = { kind: 'domain', id: 'domain' }
       groups.markers.add(kante)
       merken(kante)
+      massstab?.anmelden(kante, { px: 5, basis: 0.25, modus: 'radial' })
     }
   }
 
@@ -107,6 +112,7 @@ function buildMarkers() {
         ziel.userData = { kind: 'terrain_op', id: op.id }
         groups.markers.add(ziel)
         merken(ziel)
+        massstab?.anmelden(ziel, KLICKZIEL)
       }
     }
     // Kein Füllband zwischen Ober- und Unterkante mehr: Stützpunkt i der
@@ -142,6 +148,7 @@ function buildMarkers() {
       ziel.userData = { kind: 'kante', id: k.id }
       groups.markers.add(ziel)
       merken(ziel)
+      massstab?.anmelden(ziel, KLICKZIEL)
     }
   }
 
@@ -154,6 +161,7 @@ function buildMarkers() {
     m.userData = { kind: 'gauge', id: g.id }
     groups.markers.add(m)
     merken(m)
+    massstab?.anmelden(m, { px: 6, basis: 0.35 })
     const stab = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2),
       new THREE.MeshBasicMaterial({ color: 0xd55181 }))
     stab.rotation.x = Math.PI / 2
@@ -185,6 +193,7 @@ function buildMarkers() {
       ziel.userData = { kind: 'section', id: sec.id }
       groups.markers.add(ziel)
       merken(ziel)
+      massstab?.anmelden(ziel, KLICKZIEL)
     }
   }
 
@@ -347,10 +356,10 @@ function buildMarkers() {
     const faces = store.aufgeloest?.bcFaces ?? {}
     for (const b of spec.boundaries ?? []) {
       const face = faces[b.id]
-      const color = ['inflow_hydrograph', 'inflow_constant'].includes(b.type)
-        ? colors.inflow
-        : ['outflow_fixed_level', 'outflow_free'].includes(b.type)
-          ? colors.outflow : null
+      // Typregister statt Stringliste: die Drossel (outflow_constant) hatte
+      // hier bis 2026-09-22 keinen Marker — und damit kein Klickziel
+      const color = istZulauf(b.type) ? colors.inflow
+        : istAblauf(b.type) ? colors.outflow : null
       if (!face || !faceGeo[face] || color == null) continue
       const fg = faceGeo[face]
       // Fenster liegen um `inset` INNERHALB der Randfläche — koplanare

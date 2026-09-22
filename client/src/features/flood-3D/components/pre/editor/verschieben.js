@@ -59,8 +59,8 @@ export function bcRahmenPunkte(domain, face, lo, w) {
 }
 
 export function erzeugeVerschieben({ store, groups, holeScene, holeRenderer,
-  holeControls, planePick, zugriff, achsen, coords, endDrag }) {
-  const { objectZable, translateObject } = zugriff
+  holeControls, planePick, zugriff, achsen, coords, endDrag, fangAn }) {
+  const { objectZable, translateObject, begrenzeDelta } = zugriff
   const { showAxisGuides, highlightAxis, axisHint, fmtDelta, updateDragDelta,
     dragScreenInit, gestureSnap } = achsen
 
@@ -107,12 +107,23 @@ export function erzeugeVerschieben({ store, groups, holeScene, holeRenderer,
       const wy = hit.y - objectDrag.start[1]
       dx = snap.lock === 'y' ? 0 : wx
       dy = snap.lock === 'x' ? 0 : wy
-      // Ganzes Objekt rastet in Zellraster-Schritten (Alt = frei)
-      if (!e.altKey) {
+      // Ganzes Objekt rastet in Zellraster-Schritten (Alt = frei, der
+      // Fang-Umschalter dauerhaft)
+      if (!e.altKey && (fangAn?.() ?? true)) {
         const g = store.spec?.mesh?.base_cell ?? 0.5
         dx = _r2(Math.round(dx / g) * g)
         dy = _r2(Math.round(dy / g) * g)
       }
+    }
+    // Schon im Zug ans Gebiet begrenzen — nicht erst beim Loslassen: dort
+    // sprang das Objekt still zurück, und niemand sah, warum
+    let anschlag = ''
+    if (begrenzeDelta && snap.lock !== 'z') {
+      const [bx, by] = begrenzeDelta(store.selection?.kind,
+        store.selectedObject, dx, dy)
+      if (bx !== dx || by !== dy) anschlag = ' · stößt an den Gebietsrand'
+      dx = bx
+      dy = by
     }
     objectDrag.mesh.position.set(objectDrag.basePos.x + dx,
       objectDrag.basePos.y + dy, objectDrag.basePos.z + dz)
@@ -126,7 +137,7 @@ export function erzeugeVerschieben({ store, groups, holeScene, holeRenderer,
     coords.value = (snap.lock === 'z'
       ? `Δz = ${fmtDelta(dz)}`
       : `Δx = ${dx.toFixed(2)}  Δy = ${dy.toFixed(2)} m`)
-      + ` (verschieben${axisHint()}${zNote})`
+      + ` (verschieben${axisHint()}${zNote}${anschlag})`
     updateDragDelta(e, dx, dy, dz, snap.lock)
   }
 

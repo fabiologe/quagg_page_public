@@ -5,22 +5,13 @@ import * as THREE from 'three'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 
 export function erzeugeSzene({ store, groups, selectable, holeScene,
-  solverHint }) {
+  solverHint, beimLeeren }) {
 const SOLID_COLORS = [0x3987e5, 0xd95926, 0x199e70, 0xc98500, 0xd55181,
   0x9085e9, 0xe66767]
+// Geländehöhe an einem Punkt — EINE Rechnung im Store (gelaendeZ); die
+// Kopien hier und im Pinsel liefen bis 2026-09-22 nebeneinander her
 function terrainZ(x, y) {
-  const t = store.terrain
-  if (!t) return 0
-  const [ny, nx] = t.dims
-  const fx = Math.min(nx - 1.001, Math.max(0, (x - t.x0) / t.resolution))
-  const fy = Math.min(ny - 1.001, Math.max(0, (y - t.y0) / t.resolution))
-  const i = Math.floor(fx)
-  const j = Math.floor(fy)
-  const dx = fx - i
-  const dy = fy - j
-  const z = t.z
-  return z[j * nx + i] * (1 - dx) * (1 - dy) + z[j * nx + i + 1] * dx * (1 - dy)
-    + z[(j + 1) * nx + i] * (1 - dx) * dy + z[(j + 1) * nx + i + 1] * dx * dy
+  return store.gelaendeZ(x, y)
 }
 
 // --- Aufbau ---------------------------------------------------------------
@@ -28,6 +19,7 @@ function terrainZ(x, y) {
 function clearGroup(name) {
   const g = groups[name]
   if (!g) return
+  beimLeeren?.(g)               // Maßstab-Register: entsorgte Meshes austragen
   g.traverse((o) => {
     o.geometry?.dispose?.()
     if (o.material) (Array.isArray(o.material) ? o.material : [o.material])
@@ -94,6 +86,9 @@ function buildTerrain() {
   const span = Math.max(zMax - zMin, 0.01)
   const cLow = new THREE.Color(0x3d5240)
   const cHigh = new THREE.Color(0xb8a577)
+  // Außerhalb der Vermessung steht eine Ebene, kein Gelände — grau, damit
+  // niemand eine erfundene Fläche für gemessen hält
+  const cEbene = new THREE.Color(0x6f6b66)
   const c = new THREE.Color()
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
@@ -104,7 +99,8 @@ function buildTerrain() {
       pos[k * 3] = x
       pos[k * 3 + 1] = y
       pos[k * 3 + 2] = z
-      c.lerpColors(cLow, cHigh, (z - zMin) / span)
+      if (t.gemessen && !t.gemessen[k]) c.copy(cEbene)
+      else c.lerpColors(cLow, cHigh, (z - zMin) / span)
       col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b
     }
   }

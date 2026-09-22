@@ -46,6 +46,15 @@ describe('fangePunkt', () => {
       snapPunkte: [[3.6, 7.7]] })   // Abstand ≈ 0,43 > 0,3
     expect(f.gefangen).toBe(false)
   })
+  it('das Raster hängt am Gebietsursprung, nicht am Weltursprung', () => {
+    // Gebiet beginnt bei 12,43 / 7,81 (importierte CAD-Lage): ein Punkt auf
+    // dem Netzraster darf beim Anfassen nicht auf 12,00 springen
+    const f = fangePunkt(12.43, 8.31, { lock: null, raster, snapPunkte: [],
+      ursprung: [12.43, 7.81, 30, 30] })
+    expect(f).toEqual({ x: 12.43, y: 8.31, gefangen: false })
+    expect(fangePunkt(12.6, 8.0, { lock: null, raster, snapPunkte: [],
+      ursprung: [12.43, 7.81, 30, 30] })).toEqual({ x: 12.43, y: 7.81, gefangen: false })
+  })
   it('Achsen-Lock: nur die bewegte Koordinate rastet, kein Punktfang', () => {
     expect(fangePunkt(3.18, 7.62, { lock: 'x', raster,
       snapPunkte: [[3.2, 7.6]] })).toEqual({ x: 3, y: 7.62, gefangen: false })

@@ -1,0 +1,7055 @@
+{
+  "$defs": {
+    "Abbruch": {
+      "additionalProperties": false,
+      "description": "Wann ein Lauf VOR `end_time` endet — für den Leerlauf-Fall.\n\nEin Leerlauf endet nicht zu einer bekannten Zeit, sondern in einem\nZustand: das Becken ist leer, oder es stehen nur noch Restpfützen, die\nnicht mehr ablaufen. Gemessen wird das als STAGNATION des Restvolumens\n\n    |V(t) − V(t − fenster_s)|  <  schwelle · V_start\n\nweil das beide Enden desselben Vorgangs fängt — und weil ein tropfender\nAuslass den Lauf so nicht künstlich am Leben hält.\n\n`mindest_abfall` ist die Anlaufsperre: am Anfang steht das Wasser still,\nbevor der Auslass anspringt — ohne diese Sperre endet der Lauf bei t≈0.\nStagnation zählt deshalb erst, NACHDEM das Volumen einmal um diesen\nAnteil gefallen ist.\n\n`end_time` bleibt in jedem Fall die harte Obergrenze: das Kriterium kann\neinen Lauf nur früher beenden, nie verlängern.",
+      "properties": {
+        "art": {
+          "const": "stagnation",
+          "default": "stagnation",
+          "title": "Art",
+          "type": "string"
+        },
+        "fenster_s": {
+          "default": 30.0,
+          "exclusiveMinimum": 0,
+          "title": "Fenster S",
+          "type": "number"
+        },
+        "schwelle": {
+          "default": 0.01,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Schwelle",
+          "type": "number"
+        },
+        "mindest_abfall": {
+          "default": 0.05,
+          "exclusiveMaximum": 1,
+          "minimum": 0,
+          "title": "Mindest Abfall",
+          "type": "number"
+        },
+        "erwartete_dauer_s": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Erwartete Dauer S"
+        }
+      },
+      "title": "Abbruch",
+      "type": "object"
+    },
+    "Alignment": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "polyline",
+          "default": "polyline",
+          "title": "Kind",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "Alignment",
+      "type": "object"
+    },
+    "BcAtmosphere": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "atmosphere",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type"
+      ],
+      "title": "BcAtmosphere",
+      "type": "object"
+    },
+    "BcInflowConstant": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "inflow_constant",
+          "title": "Type",
+          "type": "string"
+        },
+        "q": {
+          "title": "Q",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type",
+        "q"
+      ],
+      "title": "BcInflowConstant",
+      "type": "object"
+    },
+    "BcInflowHydrograph": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "inflow_hydrograph",
+          "title": "Type",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "column_time": {
+          "default": "t",
+          "title": "Column Time",
+          "type": "string"
+        },
+        "column_q": {
+          "default": "Q",
+          "title": "Column Q",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type",
+        "source"
+      ],
+      "title": "BcInflowHydrograph",
+      "type": "object"
+    },
+    "BcOutflowConstant": {
+      "additionalProperties": false,
+      "description": "Ablauf mit VORGEGEBENEM Durchfluss — die Drossel. Für die Frage, was\nVOR dem Rohr passiert (Anströmung, Einlaufwirbel, Verlusthöhe), ist das\ndie richtige Randbedingung: der Drosselabfluss ist die Bemessungsgröße,\ndie Rohrhydraulik dahinter interessiert nicht. Das Fenster muss dabei\neingestaut sein, sonst zieht die Randbedingung auch Luft ab.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "outflow_constant",
+          "title": "Type",
+          "type": "string"
+        },
+        "q": {
+          "title": "Q",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type",
+        "q"
+      ],
+      "title": "BcOutflowConstant",
+      "type": "object"
+    },
+    "BcOutflowFixedLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "outflow_fixed_level",
+          "title": "Type",
+          "type": "string"
+        },
+        "level": {
+          "title": "Level",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type",
+        "level"
+      ],
+      "title": "BcOutflowFixedLevel",
+      "type": "object"
+    },
+    "BcOutflowFree": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "face": {
+          "anyOf": [
+            {
+              "enum": [
+                "x_min",
+                "x_max",
+                "y_min",
+                "y_max",
+                "z_max"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BcWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "outflow_free",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "patch",
+        "type"
+      ],
+      "title": "BcOutflowFree",
+      "type": "object"
+    },
+    "BcWindow": {
+      "additionalProperties": false,
+      "description": "Fenster auf der Randfläche: der Zu-/Ablauf wirkt nicht auf der ganzen\nGebietsseite, sondern nur in diesem Rechteck. Entweder fest über\nspan = [von, bis] entlang der Kante (y-Werte auf x-Flächen, x-Werte auf\ny-Flächen), oder mit follow = id einer channel_carve-Geländeoperation:\ndann leitet sich das Fenster aus dem Gerinnequerschnitt am Gebietsrand\nab (Öffnungsbreite Sohle + Böschungen, Sohlhöhe bis Einschnittkante)\nund wandert mit dem Gerinne mit. z_min/z_max überschreiben die\nAutomatik; ohne Angabe gilt beim span-Fenster die volle Gebietshöhe.\nDer Rest der Fläche wird Wand (topoSet-faceSet + createPatch,\nPatch randwand_<id>).\n\nFormen (shape): rechteck nutzt span + z_min/z_max; kreis (Rohrmündung)\nnutzt center/z_center/diameter — frei in der Höhe, auch über dem\nGelände (Freistrahl); trapez (Gerinnequerschnitt) nutzt center,\nbottom_width, top_width, z_min (Sohle) und z_max (Oberkante).\nAlle Formen entstehen als Face-Auswahl auf dem Gebietsrand und sind\ndaher in Zellauflösung treppig — Netzverfeinerung am Fenster glättet.",
+      "properties": {
+        "shape": {
+          "default": "rechteck",
+          "enum": [
+            "rechteck",
+            "kreis",
+            "trapez",
+            "polygon"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "span": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span"
+        },
+        "follow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Follow"
+        },
+        "z_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Z Min"
+        },
+        "z_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Z Max"
+        },
+        "center": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Center"
+        },
+        "z_center": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Z Center"
+        },
+        "diameter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diameter"
+        },
+        "bottom_width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bottom Width"
+        },
+        "top_width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top Width"
+        },
+        "points": {
+          "anyOf": [
+            {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Points"
+        }
+      },
+      "title": "BcWindow",
+      "type": "object"
+    },
+    "Belag": {
+      "additionalProperties": false,
+      "description": "Ein Oberflächenbelag der Geländekarte.\n\n`ks` ist die äquivalente Sandrauheit in METERN — das ist die Größe,\ndie OpenFOAM kennt; einen Materialnamen gibt es dort nicht. Zur\nBrücke in die 2D-Welt: Manning-n ≈ ks^(1/6)/26 (Strickler), also\n0,002 m Beton ≈ 0,014 und 0,03 m Erde ≈ 0,021.",
+      "properties": {
+        "id": {
+          "maximum": 99,
+          "minimum": 1,
+          "title": "Id",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ks": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Ks",
+          "type": "number"
+        },
+        "farbe": {
+          "default": "#888888",
+          "title": "Farbe",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ks"
+      ],
+      "title": "Belag",
+      "type": "object"
+    },
+    "Belagskarte": {
+      "additionalProperties": false,
+      "description": "Welcher Belag wo auf dem Gelände liegt.\n\nGespeichert als Raster mit Belag-Kennungen (ESRI-ASCII, wie das\nHöhenraster) — das ist die Form, die zum Pinsel passt. Beim\nFallaufbau wird daraus je Belag ein eigener NETZ-PATCH mit eigener\nRauheit (core/belag.py): in OpenFOAM hängt die Rauheit an der\nWandfläche und wird je Patch als eine Zahl geschrieben, nicht je\nZelle.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "belaege": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Belag"
+          },
+          "title": "Belaege",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "Belagskarte",
+      "type": "object"
+    },
+    "BoundaryLayers": {
+      "additionalProperties": false,
+      "properties": {
+        "patches": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Patches",
+          "type": "array"
+        },
+        "n_layers": {
+          "default": 3,
+          "title": "N Layers",
+          "type": "integer"
+        },
+        "expansion_ratio": {
+          "default": 1.2,
+          "title": "Expansion Ratio",
+          "type": "number"
+        }
+      },
+      "title": "BoundaryLayers",
+      "type": "object"
+    },
+    "Conventions": {
+      "additionalProperties": false,
+      "properties": {
+        "length_unit": {
+          "const": "m",
+          "default": "m",
+          "title": "Length Unit",
+          "type": "string"
+        },
+        "force_sign": {
+          "const": "outward_normal",
+          "default": "outward_normal",
+          "title": "Force Sign",
+          "type": "string"
+        },
+        "level_reference": {
+          "const": "absolute",
+          "default": "absolute",
+          "title": "Level Reference",
+          "type": "string"
+        }
+      },
+      "title": "Conventions",
+      "type": "object"
+    },
+    "Crs": {
+      "additionalProperties": false,
+      "description": "Bezugssystem als Dokumentation des Nachweises (steht im Ergebnis).\nDie Verortung des lokalen Systems steht in `Meta.transform` — ein\nzweiter, nie angewandter Ursprung mit Drehung hat nur Verwirrung\ngestiftet.",
+      "properties": {
+        "epsg": {
+          "title": "Epsg",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "epsg"
+      ],
+      "title": "Crs",
+      "type": "object"
+    },
+    "CrsTransform": {
+      "additionalProperties": false,
+      "description": "DIE eine Abbildung Landeskoordinaten (Meter) → lokales Fallsystem:\np_lokal = R(rotation_deg) @ p_welt + translation. Gilt für Import UND\nnachträgliches Drehen (Komposition über `transform_drehung`).\n`unit_factor` dokumentiert nur die Einheit der Quelldatei (mm → 0.001)\n— in p_welt ist er bereits verrechnet. Rückverortung über\n`lokal_nach_welt` / `welt_nach_lokal`.",
+      "properties": {
+        "unit_factor": {
+          "default": 1.0,
+          "title": "Unit Factor",
+          "type": "number"
+        },
+        "rotation_deg": {
+          "default": 0.0,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "translation": {
+          "default": [
+            0.0,
+            0.0
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation",
+          "type": "array"
+        }
+      },
+      "title": "CrsTransform",
+      "type": "object"
+    },
+    "CulvertProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "circular",
+            "rectangular",
+            "arch"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "diameter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diameter"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "wandstaerke": {
+          "default": 0.15,
+          "exclusiveMinimum": 0.0,
+          "maximum": 0.5,
+          "title": "Wandstaerke",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "CulvertProfile",
+      "type": "object"
+    },
+    "Domain": {
+      "additionalProperties": false,
+      "properties": {
+        "extent": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Extent",
+          "type": "array"
+        },
+        "z_min": {
+          "title": "Z Min",
+          "type": "number"
+        },
+        "z_max": {
+          "title": "Z Max",
+          "type": "number"
+        }
+      },
+      "required": [
+        "extent",
+        "z_min",
+        "z_max"
+      ],
+      "title": "Domain",
+      "type": "object"
+    },
+    "EditAufGebiet": {
+      "additionalProperties": false,
+      "description": "Auf das Modellgebiet zuschneiden. Importierte CAD-Körper ragen fast\nimmer über den Rand hinaus; snappyHexMesh quittiert das mit\nzerrissenen Flächen.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "auf_gebiet",
+          "default": "auf_gebiet",
+          "title": "Type",
+          "type": "string"
+        },
+        "rand": {
+          "default": 0.0,
+          "title": "Rand",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "EditAufGebiet",
+      "type": "object"
+    },
+    "EditAussparung": {
+      "additionalProperties": false,
+      "description": "Durchgehende Öffnung: Rohrdurchführung, Schütz, Entleerung.\nLage entweder über `station` (Abstand entlang der Bauwerksachse; beim\nBecken entlang des Umfangs) oder über `point` — Letzteres ist der Weg\nfür importierte Körper, die keine Achse haben. `z` ist die\nMITTELhöhe der Öffnung.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "aussparung",
+          "default": "aussparung",
+          "title": "Type",
+          "type": "string"
+        },
+        "shape": {
+          "default": "kreis",
+          "enum": [
+            "kreis",
+            "rechteck"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "station": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Station"
+        },
+        "point": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Direction"
+        },
+        "z": {
+          "default": 0.0,
+          "title": "Z",
+          "type": "number"
+        },
+        "diameter": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diameter"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "radius": {
+          "default": 0.0,
+          "title": "Radius",
+          "type": "number"
+        },
+        "vertikal": {
+          "default": false,
+          "title": "Vertikal",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "EditAussparung",
+      "type": "object"
+    },
+    "EditGelaende": {
+      "additionalProperties": false,
+      "description": "Anschluss an das Gelände. Ein Körper, der über dem Gelände endet, lässt\nWasser darunter durchlaufen (der Vernetzer baut dort brav Zellen); ein\nKörper, der tief in den Boden reicht, kostet nur Dreiecke und macht\nschlechte Zellen. Beides erledigt dieser Schritt:\n`einbinden` zieht den Körper bis unter das Gelände herunter, `kappen`\nschneidet das Übertiefe weg, `auto` macht beides. Bezug ist das\nNIEDRIGSTE Gelände unter dem Körper — nur so bleibt nirgends ein Spalt.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "gelaende",
+          "default": "gelaende",
+          "title": "Type",
+          "type": "string"
+        },
+        "modus": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "einbinden",
+            "kappen"
+          ],
+          "title": "Modus",
+          "type": "string"
+        },
+        "einbindetiefe": {
+          "default": 0.3,
+          "title": "Einbindetiefe",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "EditGelaende",
+      "type": "object"
+    },
+    "EditHeilen": {
+      "additionalProperties": false,
+      "description": "Löcher schließen und Normalen richten. Für importierte Netze, die\nnicht wasserdicht sind — ohne das lehnt die Prüfung sie ab.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "heilen",
+          "default": "heilen",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "EditHeilen",
+      "type": "object"
+    },
+    "EditSchnitt": {
+      "additionalProperties": false,
+      "description": "Abschneiden an einer waagerechten oder senkrechten Ebene — z. B.\n„alles über 100,50 m weg\" (Kronenhöhe kappen) oder ein importierter\nKörper, der seitlich aus dem Modell ragt.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "schnitt",
+          "default": "schnitt",
+          "title": "Type",
+          "type": "string"
+        },
+        "achse": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Achse",
+          "type": "string"
+        },
+        "position": {
+          "title": "Position",
+          "type": "number"
+        },
+        "behalten": {
+          "default": "unter",
+          "enum": [
+            "unter",
+            "ueber"
+          ],
+          "title": "Behalten",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "position"
+      ],
+      "title": "EditSchnitt",
+      "type": "object"
+    },
+    "EditTransform": {
+      "additionalProperties": false,
+      "description": "Verschieben, um z drehen, skalieren — Einpassen von Importen.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "transform",
+          "default": "transform",
+          "title": "Type",
+          "type": "string"
+        },
+        "verschieben": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Verschieben",
+          "type": "array"
+        },
+        "drehen_deg": {
+          "default": 0.0,
+          "title": "Drehen Deg",
+          "type": "number"
+        },
+        "skalieren": {
+          "default": 1.0,
+          "title": "Skalieren",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "EditTransform",
+      "type": "object"
+    },
+    "Evaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "sections": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Section"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "gauges": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Gauge"
+          },
+          "title": "Gauges",
+          "type": "array"
+        },
+        "force_patches": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Force Patches",
+          "type": "array"
+        },
+        "targets": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "discharge_ratio": "#/$defs/TargetDischargeRatio",
+                "head_difference": "#/$defs/TargetHeadDifference",
+                "kurzschluss": "#/$defs/TargetKurzschluss",
+                "massenbilanz": "#/$defs/TargetMassenbilanz",
+                "max_bed_shear": "#/$defs/TargetMaxBedShear",
+                "max_force": "#/$defs/TargetMaxForce",
+                "max_level": "#/$defs/TargetMaxLevel",
+                "min_bed_shear": "#/$defs/TargetMinBedShear",
+                "overfall_cd": "#/$defs/TargetOverfallCd",
+                "verweilzeit_min": "#/$defs/TargetVerweilzeitMin"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TargetMassenbilanz"
+              },
+              {
+                "$ref": "#/$defs/TargetKurzschluss"
+              },
+              {
+                "$ref": "#/$defs/TargetVerweilzeitMin"
+              },
+              {
+                "$ref": "#/$defs/TargetDischargeRatio"
+              },
+              {
+                "$ref": "#/$defs/TargetMaxLevel"
+              },
+              {
+                "$ref": "#/$defs/TargetMaxForce"
+              },
+              {
+                "$ref": "#/$defs/TargetMinBedShear"
+              },
+              {
+                "$ref": "#/$defs/TargetMaxBedShear"
+              },
+              {
+                "$ref": "#/$defs/TargetHeadDifference"
+              },
+              {
+                "$ref": "#/$defs/TargetOverfallCd"
+              }
+            ]
+          },
+          "title": "Targets",
+          "type": "array"
+        },
+        "laubkarten": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LaubkartenParameter"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verweilzeit": {
+          "default": false,
+          "title": "Verweilzeit",
+          "type": "boolean"
+        }
+      },
+      "title": "Evaluation",
+      "type": "object"
+    },
+    "Gauge": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "point": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Point",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "point"
+      ],
+      "title": "Gauge",
+      "type": "object"
+    },
+    "GrabenProfil": {
+      "additionalProperties": false,
+      "description": "Querschnitt eines Grabens; `height` ist die Höhe über der Sohle.",
+      "properties": {
+        "kind": {
+          "default": "trapez",
+          "enum": [
+            "rechteck",
+            "trapez",
+            "kreis",
+            "maul"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "width": {
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "side_slope": {
+          "default": 1.5,
+          "title": "Side Slope",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width"
+      ],
+      "title": "GrabenProfil",
+      "type": "object"
+    },
+    "ImportRef": {
+      "additionalProperties": false,
+      "description": "Verweis auf den Rohdaten-Kandidaten unter imports/<import_id>/.",
+      "properties": {
+        "import_id": {
+          "title": "Import Id",
+          "type": "string"
+        },
+        "kandidat": {
+          "title": "Kandidat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "import_id",
+        "kandidat"
+      ],
+      "title": "ImportRef",
+      "type": "object"
+    },
+    "LaubkartenParameter": {
+      "additionalProperties": false,
+      "description": "Die Schwellen, mit denen die Laubkarten ausgewertet werden.\n\nSie gehören in den Fall, weil sie die AUSSAGE sind: „3 % kritische\nFläche\" ist ohne die Ablagerungsschwelle keine Angabe, sondern eine\nZahl. Gespeichert wandern sie mit Geometrie-Ständen und stehen im\nBericht.\n\nτ_krit steht bewusst NICHT hier — es hat schon ein Zuhause, das\nNachweiskriterium `min_bed_shear` (limit_min). Zwei Speicherorte für\ndieselbe Zahl wären eine Doppelquelle.\n\nGerechnet werden die Karten im Browser; der Server hält die Werte nur\nfest. Deshalb ist das auch KEIN Nachweiskriterium: die Prüfung liefe\nhier nie, und die Nachweisübersicht würde eine behaupten.",
+      "properties": {
+        "ablagerung_ab": {
+          "default": 2.0,
+          "exclusiveMinimum": 0,
+          "title": "Ablagerung Ab",
+          "type": "number"
+        },
+        "spuel_min": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Spuel Min",
+          "type": "number"
+        },
+        "nass_tiefe": {
+          "default": 0.01,
+          "exclusiveMinimum": 0,
+          "maximum": 1.0,
+          "title": "Nass Tiefe",
+          "type": "number"
+        },
+        "ruhe_v": {
+          "default": 0.3,
+          "exclusiveMinimum": 0,
+          "maximum": 10.0,
+          "title": "Ruhe V",
+          "type": "number"
+        }
+      },
+      "title": "LaubkartenParameter",
+      "type": "object"
+    },
+    "Mesh": {
+      "additionalProperties": false,
+      "properties": {
+        "base_cell": {
+          "title": "Base Cell",
+          "type": "number"
+        },
+        "refinements": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "box": "#/$defs/RefineBox",
+                "surface": "#/$defs/RefineSurface"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/RefineBox"
+              },
+              {
+                "$ref": "#/$defs/RefineSurface"
+              }
+            ]
+          },
+          "title": "Refinements",
+          "type": "array"
+        },
+        "boundary_layers": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundaryLayers"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "base_cell"
+      ],
+      "title": "Mesh",
+      "type": "object"
+    },
+    "Meta": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "title": "Title",
+          "type": "string"
+        },
+        "crs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Crs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vertical_datum": {
+          "default": "DHHN2016",
+          "title": "Vertical Datum",
+          "type": "string"
+        },
+        "conventions": {
+          "$ref": "#/$defs/Conventions",
+          "default": {
+            "length_unit": "m",
+            "force_sign": "outward_normal",
+            "level_reference": "absolute"
+          }
+        },
+        "nachweis": {
+          "$ref": "#/$defs/Nachweis",
+          "default": {
+            "regelwerk": [],
+            "bearbeiter": "",
+            "lastfall": ""
+          }
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrsTransform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Meta",
+      "type": "object"
+    },
+    "Nachweis": {
+      "additionalProperties": false,
+      "properties": {
+        "regelwerk": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Regelwerk",
+          "type": "array"
+        },
+        "bearbeiter": {
+          "default": "",
+          "title": "Bearbeiter",
+          "type": "string"
+        },
+        "lastfall": {
+          "default": "",
+          "title": "Lastfall",
+          "type": "string"
+        }
+      },
+      "title": "Nachweis",
+      "type": "object"
+    },
+    "OpAussenkante": {
+      "additionalProperties": false,
+      "description": "Die Höhe am Rand des Modellgebiets. Außerhalb der äußersten\nVermessungslinie ist nichts gemessen — dort führt der Import die\nNÄCHSTGELEGENE bekannte Höhe fort. Das ist ein Notbehelf: die\nAußenkante folgt dadurch jeder Welle der Oberkante, obwohl da in\nWirklichkeit nur „Gelände läuft weiter\" steht.\n\nDiese Operation setzt stattdessen eine bestimmte Außenkante — im\nRegelfall vier Eckpunkte am Gebietsrand, jeder mit eigener Höhe — und\nblendet zwischen der inneren Bezugskante und ihr linear über. Damit\nentscheidet der Bearbeiter, wie das Gelände nach außen ausläuft,\nstatt es dem Zufall der nächsten Messung zu überlassen.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "aussenkante",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "items": {
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        },
+        "gefaelle": {
+          "default": 0.0,
+          "title": "Gefaelle",
+          "type": "number"
+        },
+        "innen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Innen"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "OpAussenkante",
+      "type": "object"
+    },
+    "OpBoeschung": {
+      "additionalProperties": false,
+      "description": "Böschung aus Ober- UND Unterkante (beide mit Höhe je Stützpunkt).\nZwischen den Linien entsteht die Regelfläche: jeder Punkt bekommt die\nHöhe, die sich aus dem Abstandsverhältnis zu beiden Kanten ergibt.\nDas ist der Normalfall in Vermessungsdaten — die Neigung muss dann\nnicht geraten werden, sie steckt in den Daten.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "boeschung",
+          "title": "Type",
+          "type": "string"
+        },
+        "oberkante": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Oberkante",
+          "type": "array"
+        },
+        "unterkante": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Unterkante",
+          "type": "array"
+        },
+        "kanten_breite": {
+          "default": 0.0,
+          "title": "Kanten Breite",
+          "type": "number"
+        },
+        "aus_kanten": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aus Kanten",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "oberkante",
+        "unterkante"
+      ],
+      "title": "OpBoeschung",
+      "type": "object"
+    },
+    "OpBruchkante": {
+      "additionalProperties": false,
+      "description": "Bruchkante mit Höhe je Stützpunkt — so kommen Böschungs-, Mauer- und\nSohlkanten aus der Vermessung (3D-Polylinie im DXF).\n\n`modus` bestimmt die Wirkung. Die ersten drei wirken auf einen Schlauch\nder Breite `breite` um die LINIE; die letzten beiden füllen die FLÄCHE\ninnerhalb einer geschlossenen Kante und brauchen deshalb eine solche:\n\n    ziehen    Gelände auf die Kante ziehen, in beide Richtungen\n    absenken  nur abgraben (Sohl-, Grabenkanten)\n    anheben   nur aufschütten (Dammkronen, Mauern)\n    ebnen     innen eine EBENE — die Ausgleichsebene durch die\n              Kantenhöhen. Für Planum, Beckensohle, Parkfläche: innen\n              ist es garantiert eben, ohne jeden Höhensprung.\n    fuellen   innen stufenfrei aus der Kante ergänzen (Fläche\n              geringster Krümmung). Anders als `ebnen` folgt sie einer\n              geneigten oder unregelmäßigen Kante und schließt am Rand\n              bündig an.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "bruchkante",
+          "title": "Type",
+          "type": "string"
+        },
+        "polyline": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polyline",
+          "type": "array"
+        },
+        "breite": {
+          "default": 1.0,
+          "title": "Breite",
+          "type": "number"
+        },
+        "modus": {
+          "default": "ziehen",
+          "enum": [
+            "ziehen",
+            "absenken",
+            "anheben",
+            "ebnen",
+            "fuellen"
+          ],
+          "title": "Modus",
+          "type": "string"
+        },
+        "aus_kanten": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aus Kanten",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polyline"
+      ],
+      "title": "OpBruchkante",
+      "type": "object"
+    },
+    "OpChannelCarve": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "channel_carve",
+          "title": "Type",
+          "type": "string"
+        },
+        "polyline": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polyline",
+          "type": "array"
+        },
+        "invert_start": {
+          "title": "Invert Start",
+          "type": "number"
+        },
+        "invert_end": {
+          "title": "Invert End",
+          "type": "number"
+        },
+        "bottom_width": {
+          "title": "Bottom Width",
+          "type": "number"
+        },
+        "depth": {
+          "title": "Depth",
+          "type": "number"
+        },
+        "side_slope": {
+          "title": "Side Slope",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polyline",
+        "invert_start",
+        "invert_end",
+        "bottom_width",
+        "depth",
+        "side_slope"
+      ],
+      "title": "OpChannelCarve",
+      "type": "object"
+    },
+    "OpEmbankment": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "embankment",
+          "title": "Type",
+          "type": "string"
+        },
+        "polyline": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polyline",
+          "type": "array"
+        },
+        "crest_level": {
+          "title": "Crest Level",
+          "type": "number"
+        },
+        "crest_width": {
+          "title": "Crest Width",
+          "type": "number"
+        },
+        "side_slope": {
+          "title": "Side Slope",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polyline",
+        "crest_level",
+        "crest_width",
+        "side_slope"
+      ],
+      "title": "OpEmbankment",
+      "type": "object"
+    },
+    "OpPad": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "pad",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polygon",
+          "type": "array"
+        },
+        "level": {
+          "title": "Level",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polygon",
+        "level"
+      ],
+      "title": "OpPad",
+      "type": "object"
+    },
+    "OpRaiseLower": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "raise_lower",
+          "title": "Type",
+          "type": "string"
+        },
+        "center": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center",
+          "type": "array"
+        },
+        "radius": {
+          "title": "Radius",
+          "type": "number"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        },
+        "falloff": {
+          "default": "smooth",
+          "enum": [
+            "smooth",
+            "linear",
+            "constant"
+          ],
+          "title": "Falloff",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "center",
+        "radius",
+        "strength"
+      ],
+      "title": "OpRaiseLower",
+      "type": "object"
+    },
+    "OpRamp": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "ramp",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polygon",
+          "type": "array"
+        },
+        "level_start": {
+          "title": "Level Start",
+          "type": "number"
+        },
+        "level_end": {
+          "title": "Level End",
+          "type": "number"
+        },
+        "direction": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Direction",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polygon",
+        "level_start",
+        "level_end",
+        "direction"
+      ],
+      "title": "OpRamp",
+      "type": "object"
+    },
+    "OpReplaceRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "replace_region",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polygon",
+          "type": "array"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polygon",
+        "source"
+      ],
+      "title": "OpReplaceRegion",
+      "type": "object"
+    },
+    "OpSetLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "set_level",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polygon",
+          "type": "array"
+        },
+        "level": {
+          "title": "Level",
+          "type": "number"
+        },
+        "blend_width": {
+          "default": 0.0,
+          "title": "Blend Width",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "polygon",
+        "level"
+      ],
+      "title": "OpSetLevel",
+      "type": "object"
+    },
+    "OpSmooth": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "smooth",
+          "title": "Type",
+          "type": "string"
+        },
+        "center": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center",
+          "type": "array"
+        },
+        "radius": {
+          "title": "Radius",
+          "type": "number"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Polygon"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "center",
+        "radius",
+        "strength"
+      ],
+      "title": "OpSmooth",
+      "type": "object"
+    },
+    "RefineBox": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "box",
+          "title": "Type",
+          "type": "string"
+        },
+        "extent": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Extent",
+          "type": "array"
+        },
+        "level": {
+          "title": "Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "extent",
+        "level"
+      ],
+      "title": "RefineBox",
+      "type": "object"
+    },
+    "RefineSurface": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "surface",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "level": {
+          "title": "Level",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "level"
+      ],
+      "title": "RefineSurface",
+      "type": "object"
+    },
+    "ScreenResistance": {
+      "additionalProperties": false,
+      "description": "Der Widerstand einer Zone. `model` ist das OpenFOAM-Modell (davon gibt\nes genau eines), `kind` die fachliche Art — sie bestimmt, aus welchen\nFeldern der Fallaufbau d und f ableitet (casebuilder._screen_widerstand).\n\nExplizit gesetzte d/f haben immer Vorrang; das ist der Weg für einen\ngemessenen oder aus dem Regelwerk übernommenen Beiwert.",
+      "properties": {
+        "model": {
+          "const": "darcy_forchheimer",
+          "default": "darcy_forchheimer",
+          "title": "Model",
+          "type": "string"
+        },
+        "kind": {
+          "default": "rechen",
+          "enum": [
+            "rechen",
+            "steinschuettung",
+            "bewuchs",
+            "manuell"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "d": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "D",
+          "type": "array"
+        },
+        "f": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "F",
+          "type": "array"
+        },
+        "blockage_ratio": {
+          "default": 0.0,
+          "title": "Blockage Ratio",
+          "type": "number"
+        },
+        "korngroesse": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Korngroesse"
+        },
+        "porositaet": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Porositaet"
+        },
+        "flaechendichte": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flaechendichte"
+        },
+        "cw": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cw"
+        }
+      },
+      "title": "ScreenResistance",
+      "type": "object"
+    },
+    "Section": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "polyline": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polyline",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "polyline"
+      ],
+      "title": "Section",
+      "type": "object"
+    },
+    "Solver": {
+      "additionalProperties": false,
+      "properties": {
+        "application": {
+          "const": "interFoam",
+          "default": "interFoam",
+          "title": "Application",
+          "type": "string"
+        },
+        "end_time": {
+          "title": "End Time",
+          "type": "number"
+        },
+        "max_co": {
+          "default": 0.5,
+          "title": "Max Co",
+          "type": "number"
+        },
+        "max_alpha_co": {
+          "default": 0.3,
+          "title": "Max Alpha Co",
+          "type": "number"
+        },
+        "turbulence": {
+          "default": "kOmegaSST",
+          "enum": [
+            "kOmegaSST",
+            "kEpsilon",
+            "laminar"
+          ],
+          "title": "Turbulence",
+          "type": "string"
+        },
+        "write_interval_fields": {
+          "default": 10.0,
+          "title": "Write Interval Fields",
+          "type": "number"
+        },
+        "write_interval_series": {
+          "default": 0.1,
+          "title": "Write Interval Series",
+          "type": "number"
+        },
+        "initial_level": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Initial Level"
+        },
+        "vorfuellungen": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Vorfuellung"
+          },
+          "title": "Vorfuellungen",
+          "type": "array"
+        },
+        "abbruch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Abbruch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "end_time"
+      ],
+      "title": "Solver",
+      "type": "object"
+    },
+    "StructBasin": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "basin",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "footprint": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Footprint",
+          "type": "array"
+        },
+        "invert_level": {
+          "title": "Invert Level",
+          "type": "number"
+        },
+        "invert_slope": {
+          "default": 0.0,
+          "title": "Invert Slope",
+          "type": "number"
+        },
+        "invert_slope_dir": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invert Slope Dir"
+        },
+        "wall_height": {
+          "title": "Wall Height",
+          "type": "number"
+        },
+        "wall_thickness": {
+          "title": "Wall Thickness",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "footprint",
+        "invert_level",
+        "wall_height",
+        "wall_thickness"
+      ],
+      "title": "StructBasin",
+      "type": "object"
+    },
+    "StructCulvert": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "culvert",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "axis": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Axis",
+          "type": "array"
+        },
+        "profile": {
+          "$ref": "#/$defs/CulvertProfile"
+        },
+        "durchstoesst_gelaende": {
+          "default": false,
+          "title": "Durchstoesst Gelaende",
+          "type": "boolean"
+        },
+        "bohr_ueberstand": {
+          "default": 0.5,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Bohr Ueberstand",
+          "type": "number"
+        },
+        "rolle": {
+          "anyOf": [
+            {
+              "enum": [
+                "zulauf",
+                "ablauf"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rolle"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "axis",
+        "profile"
+      ],
+      "title": "StructCulvert",
+      "type": "object"
+    },
+    "StructGraben": {
+      "additionalProperties": false,
+      "description": "Profilsweep entlang einer Achse: Graben, Stauraumkanal, Zulaufrinne.\nz je Achspunkt ist die SOHLHÖHE — das Gefälle steckt damit in der Achse\nund muss nicht getrennt angegeben werden.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "graben",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "axis": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Axis",
+          "type": "array"
+        },
+        "profile": {
+          "$ref": "#/$defs/GrabenProfil"
+        },
+        "wall_thickness": {
+          "default": 0.0,
+          "title": "Wall Thickness",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "axis",
+        "profile"
+      ],
+      "title": "StructGraben",
+      "type": "object"
+    },
+    "StructImported": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "imported",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "role": {
+          "default": "bauwerk",
+          "enum": [
+            "wand",
+            "pfeiler",
+            "wehr",
+            "becken",
+            "bauwerk"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "insert_point": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Insert Point",
+          "type": "array"
+        },
+        "rotation_deg": {
+          "default": 0.0,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "source"
+      ],
+      "title": "StructImported",
+      "type": "object"
+    },
+    "StructKammer": {
+      "additionalProperties": false,
+      "description": "Kammer mit freiem Grundriss (Drossel-, Trenn-, Verteilerbauwerk,\nStauraum). Der Grundriss ist die LICHTE Innenkante.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "kammer",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "footprint": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Footprint",
+          "type": "array"
+        },
+        "invert_level": {
+          "title": "Invert Level",
+          "type": "number"
+        },
+        "top_level": {
+          "title": "Top Level",
+          "type": "number"
+        },
+        "invert_slope": {
+          "default": 0.0,
+          "title": "Invert Slope",
+          "type": "number"
+        },
+        "wall_thickness": {
+          "default": 0.0,
+          "title": "Wall Thickness",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "footprint",
+        "invert_level",
+        "top_level"
+      ],
+      "title": "StructKammer",
+      "type": "object"
+    },
+    "StructPier": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "pier",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "shape": {
+          "default": "polygon",
+          "enum": [
+            "polygon",
+            "rechteck",
+            "rund",
+            "tropfen"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "footprint": {
+          "default": [],
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Footprint",
+          "type": "array"
+        },
+        "center": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Center"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "rotation_deg": {
+          "default": 0.0,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "base_level": {
+          "title": "Base Level",
+          "type": "number"
+        },
+        "top_level": {
+          "title": "Top Level",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "base_level",
+        "top_level"
+      ],
+      "title": "StructPier",
+      "type": "object"
+    },
+    "StructSchacht": {
+      "additionalProperties": false,
+      "description": "Senkrechter Schacht (Straßenablauf, Kontrollschacht, Pumpensumpf).",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "schacht",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "shape": {
+          "default": "rund",
+          "enum": [
+            "rund",
+            "rechteck"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "center": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center",
+          "type": "array"
+        },
+        "width": {
+          "title": "Width",
+          "type": "number"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "rotation_deg": {
+          "default": 0.0,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "invert_level": {
+          "title": "Invert Level",
+          "type": "number"
+        },
+        "top_level": {
+          "title": "Top Level",
+          "type": "number"
+        },
+        "wall_thickness": {
+          "default": 0.0,
+          "title": "Wall Thickness",
+          "type": "number"
+        },
+        "wirkung": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "center",
+        "width",
+        "invert_level",
+        "top_level"
+      ],
+      "title": "StructSchacht",
+      "type": "object"
+    },
+    "StructScreen": {
+      "additionalProperties": false,
+      "description": "Eine WIDERSTANDSZONE — im Regelfall ein Rechen, mit `resistance.kind`\naber auch eine Steinschüttung oder ein Bewuchsfeld.\n\nSie bekommt bewusst KEIN Bauteil im Netz: die Stäbe (bzw. Steine,\nStämme) werden nicht aufgelöst. Aus `plane_polygon` und `zonen_tiefe`\nwird ein Kasten, daraus eine cellZone (topoSet), und darauf legt der\nFallaufbau eine Darcy-Forchheimer-Quelle (constant/fvOptions).\n\nDie Ebene ist die ANSTRÖMSEITE, die Zone wächst von ihr aus nach\nhinten — bei einer Steinschüttung ist `zonen_tiefe` damit schlicht die\nBauwerksdicke, beim Rechen eine Rechengröße (Vorbelegung 0,15 m).",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "screen",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "plane_polygon": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Plane Polygon",
+          "type": "array"
+        },
+        "zonen_tiefe": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Zonen Tiefe"
+        },
+        "bar_spacing": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bar Spacing"
+        },
+        "bar_thickness": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bar Thickness"
+        },
+        "bar_depth": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.06,
+          "title": "Bar Depth"
+        },
+        "bar_shape": {
+          "default": "rechteck",
+          "enum": [
+            "rechteck",
+            "rund",
+            "tropfen"
+          ],
+          "title": "Bar Shape",
+          "type": "string"
+        },
+        "approach_angle_deg": {
+          "default": 90.0,
+          "title": "Approach Angle Deg",
+          "type": "number"
+        },
+        "resistance": {
+          "$ref": "#/$defs/ScreenResistance"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "plane_polygon",
+        "resistance"
+      ],
+      "title": "StructScreen",
+      "type": "object"
+    },
+    "StructWall": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "wall",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "alignment": {
+          "$ref": "#/$defs/Alignment"
+        },
+        "height": {
+          "title": "Height",
+          "type": "number"
+        },
+        "thickness": {
+          "title": "Thickness",
+          "type": "number"
+        },
+        "batter_deg": {
+          "default": 0.0,
+          "title": "Batter Deg",
+          "type": "number"
+        },
+        "aus_kanten": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aus Kanten",
+          "type": "array"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "alignment",
+        "height",
+        "thickness"
+      ],
+      "title": "StructWall",
+      "type": "object"
+    },
+    "StructWeir": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "weir",
+          "title": "Type",
+          "type": "string"
+        },
+        "patch": {
+          "title": "Patch",
+          "type": "string"
+        },
+        "crest_polyline": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Crest Polyline",
+          "type": "array"
+        },
+        "crest_width": {
+          "title": "Crest Width",
+          "type": "number"
+        },
+        "slope_upstream": {
+          "title": "Slope Upstream",
+          "type": "number"
+        },
+        "slope_downstream": {
+          "title": "Slope Downstream",
+          "type": "number"
+        },
+        "profile_type": {
+          "default": "trapez",
+          "enum": [
+            "trapez",
+            "breitkronig",
+            "scharfkantig",
+            "rundkronig"
+          ],
+          "title": "Profile Type",
+          "type": "string"
+        },
+        "base_level": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Level"
+        },
+        "aus_kanten": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aus Kanten",
+          "type": "array"
+        },
+        "wirkung": {
+          "default": "bauteil",
+          "enum": [
+            "auto",
+            "bauteil",
+            "aushub"
+          ],
+          "title": "Wirkung",
+          "type": "string"
+        },
+        "edits": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "auf_gebiet": "#/$defs/EditAufGebiet",
+                "aussparung": "#/$defs/EditAussparung",
+                "gelaende": "#/$defs/EditGelaende",
+                "heilen": "#/$defs/EditHeilen",
+                "schnitt": "#/$defs/EditSchnitt",
+                "transform": "#/$defs/EditTransform"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/EditAussparung"
+              },
+              {
+                "$ref": "#/$defs/EditSchnitt"
+              },
+              {
+                "$ref": "#/$defs/EditAufGebiet"
+              },
+              {
+                "$ref": "#/$defs/EditTransform"
+              },
+              {
+                "$ref": "#/$defs/EditHeilen"
+              },
+              {
+                "$ref": "#/$defs/EditGelaende"
+              }
+            ]
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "material": {
+          "anyOf": [
+            {
+              "enum": [
+                "stahl",
+                "beton_glatt",
+                "beton",
+                "mauerwerk",
+                "holz",
+                "erde",
+                "steinschuettung"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "patch",
+        "crest_polyline",
+        "crest_width",
+        "slope_upstream",
+        "slope_downstream"
+      ],
+      "title": "StructWeir",
+      "type": "object"
+    },
+    "TargetDischargeRatio": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "discharge_ratio",
+          "title": "Kind",
+          "type": "string"
+        },
+        "of": {
+          "title": "Of",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        },
+        "limit_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Min"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "of",
+        "to"
+      ],
+      "title": "TargetDischargeRatio",
+      "type": "object"
+    },
+    "TargetHeadDifference": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "head_difference",
+          "title": "Kind",
+          "type": "string"
+        },
+        "upstream": {
+          "title": "Upstream",
+          "type": "string"
+        },
+        "downstream": {
+          "title": "Downstream",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "upstream",
+        "downstream"
+      ],
+      "title": "TargetHeadDifference",
+      "type": "object"
+    },
+    "TargetKurzschluss": {
+      "additionalProperties": false,
+      "description": "t10/τ aus der Tracer-Durchbruchskurve — unter 0,3 läuft ein Teil des\nZuflusses praktisch direkt durch (Absetzwirkung zählt ihn nicht mit).",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "kurzschluss",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limit_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.3,
+          "title": "Limit Min"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "TargetKurzschluss",
+      "type": "object"
+    },
+    "TargetMassenbilanz": {
+      "additionalProperties": false,
+      "description": "|Speicheränderung|/Zufluss am Laufende — die 2 %/10 %-Ampel des\nBilanzpanels als benanntes Kriterium (0.02 = eingeschwungen).",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "massenbilanz",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.02,
+          "title": "Limit Max"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "TargetMassenbilanz",
+      "type": "object"
+    },
+    "TargetMaxBedShear": {
+      "additionalProperties": false,
+      "description": "Sohlensicherung: τ_max ≤ τ_zulässig (Steinklasse/Material).",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "max_bed_shear",
+          "title": "Kind",
+          "type": "string"
+        },
+        "region": {
+          "title": "Region",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "region"
+      ],
+      "title": "TargetMaxBedShear",
+      "type": "object"
+    },
+    "TargetMaxForce": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "max_force",
+          "title": "Kind",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "component": {
+          "default": "magnitude",
+          "enum": [
+            "x",
+            "y",
+            "z",
+            "magnitude"
+          ],
+          "title": "Component",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "at"
+      ],
+      "title": "TargetMaxForce",
+      "type": "object"
+    },
+    "TargetMaxLevel": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "max_level",
+          "title": "Kind",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "at"
+      ],
+      "title": "TargetMaxLevel",
+      "type": "object"
+    },
+    "TargetMinBedShear": {
+      "additionalProperties": false,
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "min_bed_shear",
+          "title": "Kind",
+          "type": "string"
+        },
+        "region": {
+          "title": "Region",
+          "type": "string"
+        },
+        "limit_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Min"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "region"
+      ],
+      "title": "TargetMinBedShear",
+      "type": "object"
+    },
+    "TargetOverfallCd": {
+      "additionalProperties": false,
+      "description": "Überfallbeiwert eines Wehrs: C_d = Q / (2/3·√(2g)·b·h^1.5) aus dem\nDurchfluss über den Querschnitt, dem Oberwasserstand am Pegel und\nKronenhöhe/-länge des Wehrs. Ohne Grenzwerte informativ.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "overfall_cd",
+          "title": "Kind",
+          "type": "string"
+        },
+        "weir": {
+          "title": "Weir",
+          "type": "string"
+        },
+        "section": {
+          "title": "Section",
+          "type": "string"
+        },
+        "gauge": {
+          "title": "Gauge",
+          "type": "string"
+        },
+        "limit_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Max"
+        },
+        "limit_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Min"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "weir",
+        "section",
+        "gauge"
+      ],
+      "title": "TargetOverfallCd",
+      "type": "object"
+    },
+    "TargetVerweilzeitMin": {
+      "additionalProperties": false,
+      "description": "Mindest-Verweilzeit t50 (s) aus der Durchbruchskurve.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "verweilzeit_min",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limit_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Min"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "TargetVerweilzeitMin",
+      "type": "object"
+    },
+    "Terrain": {
+      "additionalProperties": false,
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/TerrainBase"
+        },
+        "belagskarte": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Belagskarte"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kanten": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Vermessungskante"
+          },
+          "title": "Kanten",
+          "type": "array"
+        },
+        "operations": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "aussenkante": "#/$defs/OpAussenkante",
+                "boeschung": "#/$defs/OpBoeschung",
+                "bruchkante": "#/$defs/OpBruchkante",
+                "channel_carve": "#/$defs/OpChannelCarve",
+                "embankment": "#/$defs/OpEmbankment",
+                "pad": "#/$defs/OpPad",
+                "raise_lower": "#/$defs/OpRaiseLower",
+                "ramp": "#/$defs/OpRamp",
+                "replace_region": "#/$defs/OpReplaceRegion",
+                "set_level": "#/$defs/OpSetLevel",
+                "smooth": "#/$defs/OpSmooth"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/OpChannelCarve"
+              },
+              {
+                "$ref": "#/$defs/OpPad"
+              },
+              {
+                "$ref": "#/$defs/OpRaiseLower"
+              },
+              {
+                "$ref": "#/$defs/OpSmooth"
+              },
+              {
+                "$ref": "#/$defs/OpRamp"
+              },
+              {
+                "$ref": "#/$defs/OpEmbankment"
+              },
+              {
+                "$ref": "#/$defs/OpReplaceRegion"
+              },
+              {
+                "$ref": "#/$defs/OpSetLevel"
+              },
+              {
+                "$ref": "#/$defs/OpBruchkante"
+              },
+              {
+                "$ref": "#/$defs/OpBoeschung"
+              },
+              {
+                "$ref": "#/$defs/OpAussenkante"
+              }
+            ]
+          },
+          "title": "Operations",
+          "type": "array"
+        },
+        "material": {
+          "default": "erde",
+          "enum": [
+            "stahl",
+            "beton_glatt",
+            "beton",
+            "mauerwerk",
+            "holz",
+            "erde",
+            "steinschuettung"
+          ],
+          "title": "Material",
+          "type": "string"
+        },
+        "material_ks": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Ks"
+        },
+        "erdkoerper_unterkante": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Erdkoerper Unterkante"
+        },
+        "erdkoerper_ueberstand": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Erdkoerper Ueberstand"
+        },
+        "erdkoerper": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "an",
+            "aus"
+          ],
+          "title": "Erdkoerper",
+          "type": "string"
+        },
+        "sculpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sculpt"
+        },
+        "sculpt_stand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sculpt Stand"
+        }
+      },
+      "required": [
+        "base"
+      ],
+      "title": "Terrain",
+      "type": "object"
+    },
+    "TerrainBase": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "resolution": {
+          "default": 0.25,
+          "title": "Resolution",
+          "type": "number"
+        },
+        "koerper": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Koerper"
+        },
+        "original": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original"
+        },
+        "original_abbildung": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrsTransform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "aussenhoehe": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aussenhoehe"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "TerrainBase",
+      "type": "object"
+    },
+    "Vermessungskante": {
+      "additionalProperties": false,
+      "description": "Eine Linie aus der Zeichnung, mit ihrer Bedeutung im Bauwerk.\n\n`rolle` sagt, WAS die Linie ist; die Geländeoperationen, die daraus\nfolgen, werden abgeleitet und tragen `aus_kanten` mit den Kennungen,\naus denen sie entstanden sind. Wer eine abgeleitete Operation von Hand\nändern will, löst sie ab (`aus_kanten` leeren) — dann fasst die\nAbleitung sie nicht mehr an.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "polyline": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polyline",
+          "type": "array"
+        },
+        "rolle": {
+          "default": "frei",
+          "enum": [
+            "frei",
+            "sohle",
+            "beckenrand",
+            "boeschung_ok",
+            "boeschung_uk",
+            "krone",
+            "mauer",
+            "wehrkrone"
+          ],
+          "title": "Rolle",
+          "type": "string"
+        },
+        "breite": {
+          "default": 1.0,
+          "title": "Breite",
+          "type": "number"
+        },
+        "quelle": {
+          "default": "",
+          "title": "Quelle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "polyline"
+      ],
+      "title": "Vermessungskante",
+      "type": "object"
+    },
+    "Vorfuellung": {
+      "additionalProperties": false,
+      "description": "Teilbereich, der mit Wasser auf EIGENER Höhe startet — ein Becken\nbeginnt vorgefüllt, der Rest des Gebiets folgt `initial_level` (bzw.\nstartet trocken). Gesetzt wird das über setFields: das Polygon wird\nals Prisma bis zur Höhe extrudiert und surfaceToCell setzt alpha=1.\nReihenfolge zählt: spätere Bereiche überschreiben frühere.",
+      "properties": {
+        "herkunft": {
+          "anyOf": [
+            {
+              "enum": [
+                "manuell",
+                "import",
+                "kur",
+                "rezept"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Herkunft"
+        },
+        "import_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gruppe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gruppe"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "vorfuellung",
+          "default": "vorfuellung",
+          "title": "Type",
+          "type": "string"
+        },
+        "polygon": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Polygon",
+          "type": "array"
+        },
+        "level": {
+          "title": "Level",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "polygon",
+        "level"
+      ],
+      "title": "Vorfuellung",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "$ref": "#/$defs/Meta"
+    },
+    "domain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Domain"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "terrain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Terrain"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "structures": {
+      "default": [],
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "basin": "#/$defs/StructBasin",
+            "culvert": "#/$defs/StructCulvert",
+            "graben": "#/$defs/StructGraben",
+            "imported": "#/$defs/StructImported",
+            "kammer": "#/$defs/StructKammer",
+            "pier": "#/$defs/StructPier",
+            "schacht": "#/$defs/StructSchacht",
+            "screen": "#/$defs/StructScreen",
+            "wall": "#/$defs/StructWall",
+            "weir": "#/$defs/StructWeir"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/StructWall"
+          },
+          {
+            "$ref": "#/$defs/StructScreen"
+          },
+          {
+            "$ref": "#/$defs/StructCulvert"
+          },
+          {
+            "$ref": "#/$defs/StructWeir"
+          },
+          {
+            "$ref": "#/$defs/StructPier"
+          },
+          {
+            "$ref": "#/$defs/StructBasin"
+          },
+          {
+            "$ref": "#/$defs/StructImported"
+          },
+          {
+            "$ref": "#/$defs/StructSchacht"
+          },
+          {
+            "$ref": "#/$defs/StructKammer"
+          },
+          {
+            "$ref": "#/$defs/StructGraben"
+          }
+        ]
+      },
+      "title": "Structures",
+      "type": "array"
+    },
+    "mesh": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Mesh"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "boundaries": {
+      "default": [],
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "atmosphere": "#/$defs/BcAtmosphere",
+            "inflow_constant": "#/$defs/BcInflowConstant",
+            "inflow_hydrograph": "#/$defs/BcInflowHydrograph",
+            "outflow_constant": "#/$defs/BcOutflowConstant",
+            "outflow_fixed_level": "#/$defs/BcOutflowFixedLevel",
+            "outflow_free": "#/$defs/BcOutflowFree"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/BcInflowHydrograph"
+          },
+          {
+            "$ref": "#/$defs/BcInflowConstant"
+          },
+          {
+            "$ref": "#/$defs/BcOutflowFixedLevel"
+          },
+          {
+            "$ref": "#/$defs/BcOutflowFree"
+          },
+          {
+            "$ref": "#/$defs/BcOutflowConstant"
+          },
+          {
+            "$ref": "#/$defs/BcAtmosphere"
+          }
+        ]
+      },
+      "title": "Boundaries",
+      "type": "array"
+    },
+    "solver": {
+      "$ref": "#/$defs/Solver"
+    },
+    "evaluation": {
+      "$ref": "#/$defs/Evaluation",
+      "default": {
+        "sections": [],
+        "gauges": [],
+        "force_patches": [],
+        "targets": [],
+        "laubkarten": null,
+        "verweilzeit": false
+      }
+    }
+  },
+  "required": [
+    "meta",
+    "solver"
+  ],
+  "title": "CaseSpec",
+  "type": "object"
+}

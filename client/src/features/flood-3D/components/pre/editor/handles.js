@@ -26,8 +26,13 @@ export function umrissZuege(loops, closed, n) {
 // Fang beim Griff-Zug (rein rechenbar): Stützpunkte ANDERER Objekte
 // gewinnen vorm Zellraster; nur die tatsächlich bewegte Koordinate rastet
 // (Führungslinien bleiben exakt).
-export function fangePunkt(x, y, { lock, raster, snapPunkte }) {
+export function fangePunkt(x, y, { lock, raster, snapPunkte, ursprung }) {
   const g = raster ?? 0.5
+  // Das Raster ist am GEBIETSURSPRUNG verankert, nicht am Weltursprung: das
+  // echte Netz beginnt bei x0/y0 (meshgen), und ein importierter CAD-Punkt
+  // bei 12,43 sprang sonst beim Anfassen auf 12,00 (Audit C7)
+  const ux = ursprung?.[0] ?? 0
+  const uy = ursprung?.[1] ?? 0
   if (!lock) {
     let best = null
     let bd = g * 0.6
@@ -37,8 +42,8 @@ export function fangePunkt(x, y, { lock, raster, snapPunkte }) {
     }
     if (best) return { x: best[0], y: best[1], gefangen: true }
   }
-  if (lock !== 'y') x = _r2(Math.round(x / g) * g)
-  if (lock !== 'x') y = _r2(Math.round(y / g) * g)
+  if (lock !== 'y') x = _r2(ux + Math.round((x - ux) / g) * g)
+  if (lock !== 'x') y = _r2(uy + Math.round((y - uy) / g) * g)
   return { x, y, gefangen: false }
 }
 
@@ -53,7 +58,7 @@ export function gebietAusPunkten(punkte) {
 export function erzeugeHandles({ store, groups, holeScene, holeRenderer,
   holeControls, terrainZ, clearGroup, planePick, pickHandle, zugriff,
   achsen, rotGizmo, imFremdenZug, koerperZuschnitt, endDrag, coords,
-  zModus }) {
+  zModus, massstab, fangAn, melden }) {
   const { handleAccess, collectSnapPoints, clampDomain, clampMarge } = zugriff
   const { showAxisGuides, highlightAxis, axisHint, fmtDelta, updateDragDelta,
     dragScreenInit, gestureSnap } = achsen
@@ -96,6 +101,11 @@ export function erzeugeHandles({ store, groups, holeScene, holeRenderer,
       grab.position.copy(m.position)
       grab.userData = { handleIdx: idx }
       groups.handles.add(ring, m, grab)
+      // Pixelgrößen: r ist nur die Basisgeometrie, sichtbar werden 7 px
+      // Kugel, 9,5 px Ring, 17 px Greifzone — in jedem Gebiet gleich
+      massstab?.anmelden(m, { px: 7, basis: r })
+      massstab?.anmelden(ring, { px: 9.5, basis: r * 1.35 })
+      massstab?.anmelden(grab, { px: 17, basis: r * 2.4 })
       positions.push(m.position.clone())
     })
 
@@ -145,6 +155,8 @@ export function erzeugeHandles({ store, groups, holeScene, holeRenderer,
         grabPlus.position.copy(mid)
         grabPlus.userData = { insertAfter: i }
         groups.handles.add(plus, grabPlus)
+        massstab?.anmelden(plus, { px: 4, basis: r * 0.55 })
+        massstab?.anmelden(grabPlus, { px: 12, basis: r * 1.7 })
       }
     }
     holeScene().add(groups.handles)
@@ -231,24 +243,32 @@ export function erzeugeHandles({ store, groups, holeScene, holeRenderer,
     }
     let x = _r2(dragging.anchor[0] + dx)
     let y = _r2(dragging.anchor[1] + dy)
-    // Fang: Alt = ganz frei, wie bei den Achsen
+    // Fang: Alt = ganz frei, wie bei den Achsen; der Umschalter in der
+    // Werkzeugleiste schaltet ihn dauerhaft ab
     let caught = ''
-    if (!e.altKey && snap.lock !== 'z') {
+    const fangen = !e.altKey && (fangAn?.() ?? true)
+    if (fangen && snap.lock !== 'z') {
       if (!snap.lock && !dragging.snapPts) {
         dragging.snapPts = collectSnapPoints()
       }
       const fang = fangePunkt(x, y, { lock: snap.lock,
         raster: store.spec?.mesh?.base_cell ?? 0.5,
-        snapPunkte: dragging.snapPts })
+        snapPunkte: dragging.snapPts,
+        ursprung: store.spec?.domain?.extent })
       x = fang.x
       y = fang.y
       if (fang.gefangen) caught = ' · ⌖ Punktfang'
+    } else if (!fangen && snap.lock !== 'z') {
+      caught = ' · Fang aus'
     }
     // Ans Modellgebiet klemmen: außerhalb liegende Punkte crashen den Solver
     // (Domain-Ecken dürfen das Gebiet natürlich vergrößern, Randfenster
-    // klemmen selbst entlang ihrer Kante)
+    // klemmen selbst entlang ihrer Kante). Die Klemme SAGT es — vorher
+    // blieb der Griff stumm am Rand kleben (Audit E4b).
     if (!['domain', 'boundary'].includes(store.selection?.kind)) {
+      const frei = [x, y]
       ;[x, y] = clampDomain([x, y], clampMarge(store.selectedObject))
+      if (x !== frei[0] || y !== frei[1]) caught += ' · am Gebietsrand'
     }
     for (const part of dragging.parts) {
       part.position.set(x, y, dragging.zBase + dz)
@@ -305,7 +325,12 @@ export function erzeugeHandles({ store, groups, holeScene, holeRenderer,
     const acc = handleAccess(store.selection.kind, store.selectedObject)
     if (!acc?.remove) return
     const clone = JSON.parse(JSON.stringify(store.selectedObject))
-    if (acc.remove(clone, h.userData.handleIdx) === false) return
+    if (acc.remove(clone, h.userData.handleIdx) === false) {
+      // vorher still — der Nutzer drückte Entf und nichts geschah
+      melden?.('Weniger Ecken gehen nicht: ein Polygon braucht drei, eine '
+        + 'Linie zwei Stützpunkte.', 'hinweis')
+      return
+    }
     store.updateObject(store.selection.kind, store.selection.id, clone)
     buildHandles()
   }

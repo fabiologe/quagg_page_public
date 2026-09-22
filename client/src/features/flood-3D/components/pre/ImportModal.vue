@@ -420,7 +420,16 @@ async function apply() {
       })
     report.value = res.report
     await store.adoptImportedSpec(res.spec)
-    setTimeout(close, 1800)      // Bericht kurz stehen lassen
+    // Der Bericht bleibt stehen, bis der Dialog geschlossen wird — und was
+    // darin warnt oder die Außenhöhe nennt, geht in die Meldungsleiste, wo
+    // es danach noch lesbar ist. Bis 2026-09-21 schloss der Dialog nach
+    // 1,8 s; genau dort stand der einzige Satz, dass das Gelände außerhalb
+    // der Vermessung erfunden ist. Der Bericht liegt außerdem beim Import
+    // (imports/<id>/bericht.json).
+    for (const r of res.report ?? []) {
+      if (r.startsWith('ACHTUNG')) store.melden(r, 'warnung')
+      else if (r.includes('Außenhöhe')) store.melden(r, 'hinweis')
+    }
   } catch (e) {
     error.value = e.message
   } finally {

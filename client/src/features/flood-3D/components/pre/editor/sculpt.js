@@ -97,17 +97,9 @@ export function erzeugeSculpt({ store, groups, holeScene, holeCamera,
     cursorGrp = null
   }
 
+  // EINE Geländehöhen-Rechnung: die im Store (gelaendeZ)
   function terrainZ(x, y) {
-    const g = gitter()
-    if (!g) return 0
-    const { t, nx, ny } = g
-    const fx = Math.min(nx - 1.001, Math.max(0, (x - t.x0) / t.resolution))
-    const fy = Math.min(ny - 1.001, Math.max(0, (y - t.y0) / t.resolution))
-    const i = Math.floor(fx); const j = Math.floor(fy)
-    const dx = fx - i; const dy = fy - j
-    const z = t.z
-    return z[j * nx + i] * (1 - dx) * (1 - dy) + z[j * nx + i + 1] * dx * (1 - dy)
-      + z[(j + 1) * nx + i] * (1 - dx) * dy + z[(j + 1) * nx + i + 1] * dx * dy
+    return store.gelaendeZ(x, y)
   }
 
   function zeigeCursor(cx, cy) {

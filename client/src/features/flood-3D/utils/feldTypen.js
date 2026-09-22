@@ -275,6 +275,10 @@ export const OPTIONAL_ZAHLEN = {
   // verschwände das Feld, sobald es leer ist — und eine Steinschüttung
   // ließe sich nie bemaßen.
   screen: ['zonen_tiefe'],
+  // null heißt „automatisch: höchste gemessene Randzelle" — die Ebene, die
+  // außerhalb der Vermessung gilt (terrain.lade_basis). Sie muss setzbar
+  // sein, sonst bleibt ein Ausreißer am Rand die Höhe des halben Gebiets.
+  terrain: ['aussenhoehe'],
 }
 
 export function widgetFor(key, v, typ) {
@@ -416,6 +420,7 @@ export const TYP_LABELS = {
     erdkoerper: 'Erdkörper (Volumen statt Höhenfläche)',
     erdkoerper_unterkante: 'Sohle des Erdkörpers (m NHN, leer = automatisch)',
     erdkoerper_ueberstand: 'Überstand über den Gebietsrand (m, leer = 2 Zellen)',
+    aussenhoehe: 'Außenhöhe — Ebene außerhalb der Vermessung (m NHN, leer = höchste Randzelle)',
   },
   // Aushub-Grundtypen: die Maße sind LICHT, die Wandstärke kommt außen
   // herum dazu (beim Aushub gräbt der Bagger sie mit aus)

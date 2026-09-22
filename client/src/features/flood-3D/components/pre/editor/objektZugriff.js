@@ -3,6 +3,8 @@
 // die Fang-Punkte. Reine Daten-/Store-Logik ohne three.js — deshalb als
 // eigenes Modul test- und lesbar. Erweitert wird hier (Registry-Zweige),
 // nicht im Editor.
+import { RAND_MIT_FENSTER } from '../../../utils/typRegister'
+
 export function erzeugeObjektZugriff({ store, holeGroups }) {
 const _r2 = (v) => Number(v.toFixed(2))
 
@@ -407,6 +409,20 @@ function handleAccess(kind, obj) {
         writeZ: (o, i, dz) => { o.axis[i][2] = _r2(o.axis[i][2] + dz) },
       }
     }
+    if (obj.type === 'graben') {
+      // Achse wie beim Durchlass: z je Achspunkt ist die Sohle — bis
+      // 2026-09-22 fiel der Graben hier durch und hatte keine Griffe
+      return {
+        points: obj.axis.map((q) => [q[0], q[1]]),
+        closed: false,
+        zJePunkt: true,
+        zAt: (i) => obj.axis[i][2] + 0.6,
+        insert: _insert3d((o) => o.axis),
+        remove: (o, i) => _removeAt(o.axis, i, 2),
+        write: (o, i, p) => { o.axis[i] = [p[0], p[1], o.axis[i][2]] },
+        writeZ: (o, i, dz) => { o.axis[i][2] = _r2(o.axis[i][2] + dz) },
+      }
+    }
     if (obj.type === 'weir') {
       return {
         points: obj.crest_polyline.map((q) => [q[0], q[1]]),
@@ -540,8 +556,7 @@ function handleAccess(kind, obj) {
     // ENTLANG der Gebietskante (die Querkoordinate wird verworfen — die
     // Y/X-Führungslinie rastet von selbst). Ohne Fenster sitzen die
     // Handles an den Kantenenden; sie hineinziehen ERZEUGT das Fenster.
-    if (!['inflow_hydrograph', 'inflow_constant', 'outflow_fixed_level',
-      'outflow_free'].includes(obj.type)) return null
+    if (!RAND_MIT_FENSTER.includes(obj.type)) return null
     // Gekoppeltes Fenster hat keine eigenen Handles — Lage ändert man,
     // indem man das Gerinne zieht (oder die Kopplung im Panel löst)
     if (obj.window?.follow) return null
@@ -687,5 +702,6 @@ function handleAccess(kind, obj) {
 
 
   return { _r2, transformEdit, importPos, translateObject, objectZable,
-    collectSnapPoints, handleAccess, clampDomain, clampMarge }
+    collectSnapPoints, handleAccess, clampDomain, clampMarge,
+    begrenzeDelta: _begrenzeDelta }
 }

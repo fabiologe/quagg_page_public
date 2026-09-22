@@ -61,6 +61,17 @@
         {{ store.belagAktiv ? '✓ Belag beenden' : '🎨 Belag malen' }}
       </button>
     </div>
+    <p v-if="draft.type === 'terrain' && store.terrain?.aussenhoehe != null"
+       class="f3d-muted f3d-small">
+      Außerhalb der Vermessung (in der Szene grau) gilt eine Ebene auf
+      <strong>{{ store.terrain.aussenhoehe.toFixed(2) }} m</strong>
+      {{ store.terrain.aussenhoehe_auto
+        ? '— automatisch: die höchste gemessene Randzelle'
+        : '— im Fall gesetzt: höchster Randpunkt der Vermessung beim Import, oder von Hand' }}<template v-if="store.terrain.rand">;
+      Rand der Vermessung {{ store.terrain.rand[0].toFixed(2) }} …
+      {{ store.terrain.rand[1].toFixed(2) }} m</template>.
+      Die Höhe lässt sich unten bei „Außenhöhe" setzen.
+    </p>
     <p v-if="hilfe && draft.type === 'terrain'" class="f3d-muted f3d-small">
       Ohne Belagskarte gilt das Material oben für das ganze Gelände. Mit
       ihr trägt jede gemalte Fläche ihre eigene Rauheit — in OpenFOAM ist
@@ -108,7 +119,10 @@
              v-model.number="draft[field.key]" class="f3d-num f3d-grow" />
       <input v-else-if="field.widget === 'zahl_optional'" type="number"
              step="any" :min="feldMinimum(field.key) ?? undefined"
-             class="f3d-num f3d-grow" placeholder="automatisch"
+             class="f3d-num f3d-grow"
+             :placeholder="field.key === 'aussenhoehe' && store.terrain?.aussenhoehe != null
+               ? `automatisch: ${store.terrain.aussenhoehe.toFixed(2)}`
+               : 'automatisch'"
              :value="draft[field.key] ?? ''"
              @change="setzeOptional(field.key, $event.target.value)" />
       <select v-else-if="field.widget === 'raster'" v-model="draft[field.key]"
@@ -351,6 +365,7 @@ import {
   referenzListe, widgetFor, zahlenNamen,
 } from '../../utils/feldTypen'
 import { TYPE_LABELS } from '../../utils/preTemplates'
+import { RAND_MIT_FENSTER } from '../../utils/typRegister'
 import {
   ART_NAME, ZONEN_ARTEN, ZONEN_VORLAGEN, beiwerte, fugenweite,
   verlustbeiwert, vorlageAnwenden, zonenArtGewechselt, zonenName, zonenTiefe,
@@ -571,8 +586,7 @@ watch(() => [store.selection, store.selectedObject], () => {
 // draft UND jsonDrafts — apply() lässt sonst den alten Textarea-Stand
 // gewinnen. Vorlagen mit brauchbaren Startwerten, Feintuning über das
 // JSON-Feld oder die Handles im 3D.
-const isFlowBc = computed(() => ['inflow_hydrograph', 'inflow_constant',
-  'outflow_fixed_level', 'outflow_free'].includes(draft.value?.type))
+const isFlowBc = computed(() => RAND_MIT_FENSTER.includes(draft.value?.type))
 // Seite der Randbedingung: die SERVER-Auflösung, sonst face, sonst die
 // Vorbelegung nach Typ (meshgen._assign_faces)
 const SEITEN_RUNDE = ['x_min', 'y_min', 'x_max', 'y_max']

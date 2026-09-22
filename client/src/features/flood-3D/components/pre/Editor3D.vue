@@ -25,10 +25,24 @@
               @click="zModus = zModus === 'kante' ? 'ecke' : 'kante'">
         {{ zModus === 'kante' ? '▬ Kante' : '· Ecke' }}
       </button>
+      <!-- Fang sichtbar und abschaltbar: das Raster hängt am Gebiets-
+           ursprung, die Zelle ist die Basiszelle des Netzes -->
+      <button class="f3d-tool" :class="{ active: fangAktiv }"
+              :title="fangAktiv
+                ? `Fang an: Ecken rasten auf das Netzraster (${store.spec?.mesh?.base_cell ?? 0.5} m ab Gebietsursprung) und auf Stützpunkte anderer Objekte — Alt = je Zug frei, Klick schaltet aus`
+                : 'Fang aus: Ecken bleiben, wo der Zeiger sie loslässt — Klick schaltet ein'"
+              @click="fangAktiv = !fangAktiv">
+        {{ fangAktiv ? '⌗ Fang' : '⌗̸ Fang' }}
+      </button>
       <span class="f3d-toolbar-sep"></span>
       <button class="f3d-tool" :class="{ active: topView }"
               title="Koordinatentreue Draufsicht" @click="toggleTopView">
         Draufsicht
+      </button>
+      <button class="f3d-tool"
+              title="Alles zeigen: die Kamera auf Gelände und Gebiet einpassen"
+              @click="kamera.einpassen(topView)">
+        ⤢ Alles
       </button>
       <button class="f3d-tool" :class="{ active: meshView }"
               title="Vernetzte Oberfläche der Netzvorschau (Solver-Zellen)"
@@ -202,6 +216,8 @@ import { erzeugeMarker, baueFokusMarke, fokusRadius } from './editor/marker'
 import { erzeugeAchsen } from './editor/achsen'
 import { erzeugePick } from './editor/pick'
 import { erzeugeHandles } from './editor/handles'
+import { erzeugeMassstab } from './editor/massstab'
+import { brauchtNeuEinpassen, erzeugeKamera, lage } from './editor/kamera'
 import { erzeugeVerschieben } from './editor/verschieben'
 import { erzeugeStanz } from './editor/stanz'
 import { erzeugeNetzAnsicht } from './editor/netzAnsicht'
@@ -256,7 +272,7 @@ let camera = null
 let controls = null
 let resizeObs = null
 let rafId = 0
-let fitted = false
+let eingepasst = null          // Gebiet, auf das die Kamera zuletzt eingepasst wurde
 let downPos = null
 let lastHoverCheck = 0         // Hover-Raycasts drosseln (Frame-Budget)
 let lastMove = null            // letztes pointermove-Event (für Entf-Löschen)
@@ -268,11 +284,19 @@ const groups = { terrain: null, solids: null, markers: null,
 const selectable = []          // Meshes mit userData { kind, id }
 let highlighted = null
 
+// Bildschirm-Maßstab (Griffe und Klickziele in Pixeln statt Metern) und
+// Kamera (Einpassen, Grenzen aus dem Gebiet) — editor/massstab.js, kamera.js
+const massstab = erzeugeMassstab({
+  holeCamera: () => camera, holeRenderer: () => renderer,
+  holeGebiet: () => store.spec?.domain?.extent })
+const kamera = erzeugeKamera({
+  store, holeCamera: () => camera, holeControls: () => controls })
+
 // Szenenaufbau — geschnitten nach editor/szene.js
 const { terrainZ, clearGroup, buildTerrain, buildTerrainSolid,
   buildSolids } = erzeugeSzene({
   store, groups, selectable, holeScene: () => scene,
-  solverHint })
+  solverHint, beimLeeren: (g) => massstab.abmelden(g) })
 
 // Gelände formen (Pinsel) — geschnitten nach editor/sculpt.js
 const sculpt = erzeugeSculpt({
@@ -294,7 +318,8 @@ const belagPinsel = erzeugeBelagPinsel({
 
 // Marker-Ebene — geschnitten nach editor/marker.js
 const { buildMarkers } = erzeugeMarker({
-  store, groups, selectable, holeScene: () => scene, clearGroup, terrainZ })
+  store, groups, selectable, holeScene: () => scene, clearGroup, terrainZ,
+  massstab })
 
 // Trefferermittlung (Strahlen, Boden-/Griff-/Objekt-Picks) — editor/pick.js
 const { ray, planePick, groundPick, pickHandle, pickSelectable,
@@ -303,9 +328,12 @@ const { ray, planePick, groundPick, pickHandle, pickSelectable,
 
 // Objektzugriff (Griffe, Verschieben, Fangpunkte) — geschnitten nach
 // editor/objektZugriff.js; hier nur noch die Anbindung
-const { translateObject, objectZable,
+const { translateObject, objectZable, begrenzeDelta,
   collectSnapPoints, handleAccess, clampDomain, clampMarge } =
   erzeugeObjektZugriff({ store, holeGroups: () => groups })
+
+// Raster-/Punktfang beim Ziehen: dauerhaft abschaltbar (Alt = je Zug)
+const fangAktiv = ref(true)
 
 // Achsenführung/Δ-Anzeige — geschnitten nach editor/achsen.js
 const achsen = erzeugeAchsen({
@@ -362,15 +390,16 @@ const handles = erzeugeHandles({
   zugriff: { handleAccess, collectSnapPoints, clampDomain, clampMarge },
   achsen, rotGizmo: () => rot,
   imFremdenZug: () => verschieben.objektZugAktiv() || rotAktiv(),
-  koerperZuschnitt, endDrag: _endDrag, coords, zModus })
+  koerperZuschnitt, endDrag: _endDrag, coords, zModus, massstab,
+  fangAn: () => fangAktiv.value, melden: (m, art) => store.melden(m, art) })
 const { buildHandles } = handles
 
 // Ganzes Objekt und Randbedingungs-Fenster verschieben — editor/verschieben.js
 const verschieben = erzeugeVerschieben({
   store, groups, holeScene: () => scene, holeRenderer: () => renderer,
   holeControls: () => controls, planePick,
-  zugriff: { objectZable, translateObject }, achsen, coords,
-  endDrag: _endDrag })
+  zugriff: { objectZable, translateObject, begrenzeDelta }, achsen, coords,
+  endDrag: _endDrag, fangAn: () => fangAktiv.value })
 
 // Stanzen + Bearbeitungs-Marker ziehen — editor/stanz.js
 const stanz = erzeugeStanz({
@@ -390,23 +419,6 @@ watch(() => store.platzierung, (p) => {
 
 watch(() => [store.selection, store.selectedObject], buildHandles,
   { deep: false })
-
-function fitCamera() {
-  const t = store.terrain
-  if (!t || !camera) return
-  const [ny, nx] = t.dims
-  const w = (nx - 1) * t.resolution
-  const h = (ny - 1) * t.resolution
-  const cx = t.x0 + w / 2
-  const cy = t.y0 + h / 2
-  let zMid = 0
-  for (let i = 0; i < t.z.length; i += 7) zMid += t.z[i]
-  zMid /= Math.ceil(t.z.length / 7)
-  controls.target.set(cx, cy, zMid)
-  camera.position.set(cx, cy - Math.max(w, h) * 1.1, zMid + Math.max(w, h) * 0.75)
-  camera.up.set(0, 0, 1)
-  controls.update()
-}
 
 // --- Modusverwaltung ------------------------------------------------------
 
@@ -457,16 +469,14 @@ function toggleTopView() {
       target: controls.target.clone(),
       up: camera.up.clone(),
     }
-    const t = store.terrain
-    const [ny, nx] = t ? t.dims : [10, 10]
-    const w = t ? (nx - 1) * t.resolution : 100
-    const h = t ? (ny - 1) * t.resolution : 100
-    const cx = (t ? t.x0 : 0) + w / 2
-    const cy = (t ? t.y0 : 0) + h / 2
+    // Mitte und Größe aus Gelände oder Gebiet — die feste 95 (Demo-Höhe)
+    // legte die Draufsicht bei 224 m Gelände UNTER die Oberfläche
+    const l = lage(store.terrain, store.spec?.domain)
+      ?? { cx: savedCam.target.x, cy: savedCam.target.y, groesse: 100 }
     camera.up.set(0, 1, 0)
-    camera.position.set(cx, cy, (savedCam.target.z || 95) + Math.max(w, h) * 1.2)
+    camera.position.set(l.cx, l.cy, savedCam.target.z + l.groesse * 1.2)
     makeControls()                       // Up-Achse gewechselt -> Controls neu
-    controls.target.set(cx, cy, savedCam.target.z || 95)
+    controls.target.set(l.cx, l.cy, savedCam.target.z)
   } else if (savedCam) {
     camera.up.copy(savedCam.up)
     camera.position.copy(savedCam.pos)
@@ -519,9 +529,8 @@ function makeControls() {
   controls.zoomToCursor = false                   // Pivot bleibt stabil
   controls.screenSpacePanning = false             // Schwenken in der Geländeebene
   controls.maxPolarAngle = Math.PI / 2 - 0.04     // nicht unter den Horizont
-  controls.minDistance = 2
-  controls.maxDistance = 600
   controls.enableRotate = !topView.value
+  kamera.grenzenAnwenden()          // near/far, min-/maxDistance aus dem Gebiet
   if (oldTarget) controls.target.copy(oldTarget)
   // Nach jedem Schwenk: Drehpunkt ins Modellgebiet einspannen
   controls.addEventListener('end', () => {
@@ -808,6 +817,7 @@ onMounted(() => {
   const animate = () => {
     rafId = requestAnimationFrame(animate)
     controls.update()
+    massstab.aktualisieren()        // Griffe/Marker auf ihre Pixelgröße
     renderer.render(scene, camera)
   }
   animate()
@@ -828,6 +838,27 @@ onMounted(() => {
         return [c.userData.handleIdx, Number(w.x.toFixed(2)),
           Number(w.y.toFixed(2)), Number(w.z.toFixed(2))]
       })
+    // Sonden für die Nachprüfung des Maßstabs (E4a) und der Ebene (E1a):
+    // sichtbarer Griffradius in Pixeln, Anteil grauer Geländeknoten
+    window.__f3dGriffPx = () => {
+      const kugel = (groups.handles?.children ?? []).find((c) =>
+        c.userData.handleIdx != null && c.material?.opacity !== 0
+        && c.geometry?.parameters?.radius)
+      if (!kugel) return null
+      const w = new THREE.Vector3()
+      kugel.getWorldPosition(w)
+      const d = w.distanceTo(camera.position)
+      const h = renderer.domElement.clientHeight
+      const mProPx = 2 * d * Math.tan((camera.fov * Math.PI / 180) / 2) / h
+      return kugel.scale.x * kugel.geometry.parameters.radius / mProPx
+    }
+    window.__f3dGrauAnteil = () => {
+      const t = store.terrain
+      if (!t?.gemessen) return 0
+      let n = 0
+      for (let i = 0; i < t.gemessen.length; i++) if (!t.gemessen[i]) n++
+      return n / t.gemessen.length
+    }
   }
 
   rebuild()
@@ -844,9 +875,13 @@ function rebuild() {
   buildTerrain()
   buildSolids()
   buildMarkers()
-  if (!fitted && store.terrain) {
-    fitCamera()
-    fitted = true
+  kamera.grenzenAnwenden()
+  // Neu einpassen, wenn das Gebiet ein anderes ist (Neufall -> Import,
+  // Stand laden) — nicht bei jedem Griffzug am Gebietsrand
+  const gebiet = kamera.gebiet()
+  if (brauchtNeuEinpassen(eingepasst, gebiet)
+      && kamera.einpassen(topView.value)) {
+    eingepasst = gebiet
   }
 }
 
