@@ -68,6 +68,47 @@ def test_messrauschen_haelt_den_lauf_nicht_ewig_am_leben():
     assert stagnation_erreicht(zeiten, v, k)[0] is False
 
 
+def test_drossel_mit_grossem_becken_laeuft_bis_es_leer_ist():
+    """
+    E5d (Audit P6): 4 800 m³ mit einer 0,1-m³/s-Drossel verlieren je 30 s
+    3 m³ = 0,06 % von V_start — unter der 1-%-Schwelle. Das alte Kriterium
+    erklärte den Lauf nach der Anlaufsperre (t ≈ 2 400 s) für fertig,
+    während 95 % noch standen.
+    """
+    import math
+
+    dt = 10.0
+    n = 5000                                             # bis 50 000 s
+    volumen = [max(4800.0 - 0.1 * dt * i, 0.0) for i in range(n)]
+    zeiten = [i * dt for i in range(n)]
+    k = Kriterium(fenster_s=30, schwelle=0.01, mindest_abfall=0.05)
+    j = 300                                              # t = 3 000 s, 93,75 % stehen
+    assert stagnation_erreicht(zeiten[:j], volumen[:j], k)[0] is False
+    j = 4000                                             # t = 40 000 s, 16,7 % stehen
+    assert stagnation_erreicht(zeiten[:j], volumen[:j], k)[0] is False
+    fertig, grund = stagnation_erreicht(zeiten, volumen, k)   # leer seit 48 000 s
+    assert fertig is True
+    assert "0.0%" in grund and "schnellsten Phase" in grund
+    assert not math.isnan(float(volumen[-1]))
+
+
+def test_dn800_abklingen_endet_wie_bisher():
+    """
+    Der geeichte Fall: 150 m³ laufen über einen freien DN800 exponentiell
+    ab. Das absolute Maß (1 % von V_start je 10 s) griff bei V < 9,8 m³,
+    t ≈ 164 s — die Rate liegt dort schon unter 10 % der schnellsten
+    Phase, der Lauf endet wie bisher (± ein Fenster).
+    """
+    import math
+
+    volumen = [150.0 * math.exp(-t / 60.0) for t in range(600)]
+    zeiten = list(range(600))
+    k = Kriterium(fenster_s=10, schwelle=0.01, mindest_abfall=0.05)
+    ende = next(j for j in range(20, 600)
+                if stagnation_erreicht(zeiten[:j], volumen[:j], k)[0])
+    assert 154 <= ende <= 176, ende
+
+
 def test_leere_oder_kaputte_reihe_kippt_nichts():
     k = Kriterium()
     assert stagnation_erreicht([], [], k) == (False, None)

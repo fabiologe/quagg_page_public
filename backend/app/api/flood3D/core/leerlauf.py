@@ -20,6 +20,25 @@ class Kriterium:
     fenster_s: float = 30.0
     schwelle: float = 0.01          # Anteil von V_start je Fenster
     mindest_abfall: float = 0.05    # Anlaufsperre
+    # Abnahme im Fenster gegen die schnellste Abnahme der Reihe — der
+    # dimensionslose Teil des Kriteriums (siehe stagnation_erreicht, 3)
+    rate_anteil: float = 0.10
+
+
+def _groesste_fensterrate(zeiten, volumen, fenster_s: float) -> float:
+    """
+    Schnellste Abnahme (m³/s), die die Reihe je über EIN Fenster zeigte —
+    der Maßstab, an dem die Abnahme im aktuellen Fenster gemessen wird.
+    """
+    best = 0.0
+    i = 0
+    for j in range(len(zeiten)):
+        while i < j and zeiten[j] - zeiten[i + 1] >= fenster_s:
+            i += 1
+        dt = zeiten[j] - zeiten[i]
+        if dt >= fenster_s and dt > 0:
+            best = max(best, (volumen[i] - volumen[j]) / dt)
+    return best
 
 
 def stagnation_erreicht(zeiten, volumen, k: Kriterium
@@ -47,6 +66,14 @@ def stagnation_erreicht(zeiten, volumen, k: Kriterium
     2. **Vollständiges Fenster.** Gemessen wird nur, wenn die Reihe
        wirklich über ``fenster_s`` zurückreicht; sonst maße man den
        Anlauf mit und bekäme eine zufällige Antwort.
+    3. **Rate gegen die eigene Geschichte.** ``schwelle · V_start`` je
+       Fenster ist ein absolutes Volumen: 4 800 m³ mit einer 0,1-m³/s-
+       Drossel verlieren je 30 s nur 3 m³ = 0,06 % — unter der 1-%-Schwelle,
+       und der Lauf galt nach der Anlaufsperre als fertig, während 95 %
+       noch standen (Audit P6, geeicht war das an 100–200 m³ mit freiem
+       DN800). Deshalb zusätzlich: die Abnahme im Fenster muss unter
+       ``rate_anteil`` der schnellsten Abnahme liegen, die die Reihe je
+       über ein Fenster zeigte — dimensionslos, ohne Bezug zur Beckengröße.
     """
     if len(zeiten) < 2 or len(zeiten) != len(volumen):
         return False, None
@@ -74,12 +101,22 @@ def stagnation_erreicht(zeiten, volumen, k: Kriterium
     if aenderung >= k.schwelle * v_start:
         return False, None
 
+    # (3) Rate gegen die eigene Geschichte: läuft es noch so schnell ab wie
+    # in der schnellsten Phase, ist nichts stagniert — egal wie klein die
+    # Änderung gegen das Startvolumen aussieht
+    rate_jetzt = aenderung / k.fenster_s
+    rate_max = _groesste_fensterrate(zeiten, volumen, k.fenster_s)
+    if rate_max > 0 and rate_jetzt > k.rate_anteil * rate_max:
+        return False, None
+
     rest = v_jetzt / v_start
     return True, (
         f"Leerlauf beendet bei t = {t_jetzt:g} s: das Restvolumen hat sich "
         f"über {k.fenster_s:g} s nur noch um {aenderung:.4g} m³ bewegt "
         f"({aenderung / v_start:.2%} des Startvolumens, Grenze "
-        f"{k.schwelle:.2%}). Es stehen noch {rest:.1%} von "
+        f"{k.schwelle:.2%}; Abnahme {rate_jetzt:.3g} m³/s gegen "
+        f"{rate_max:.3g} m³/s in der schnellsten Phase, Grenze "
+        f"{k.rate_anteil:.0%}). Es stehen noch {rest:.1%} von "
         f"{v_start:.4g} m³ — abgelaufen ist, was ablaufen kann.")
 
 

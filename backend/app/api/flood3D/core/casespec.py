@@ -1158,6 +1158,12 @@ class Abbruch(_Model):
     Stagnation zählt deshalb erst, NACHDEM das Volumen einmal um diesen
     Anteil gefallen ist.
 
+    Dazu misst der Wächter die Abnahme im Fenster gegen die schnellste
+    Abnahme der Reihe (leerlauf.Kriterium.rate_anteil, 10 %): ein großes
+    Becken mit einer Drossel verliert je Fenster nur Bruchteile eines
+    Prozents von V_start und läuft trotzdem mit voller Rate — das absolute
+    Maß allein erklärte es für fertig (Audit P6).
+
     `end_time` bleibt in jedem Fall die harte Obergrenze: das Kriterium kann
     einen Lauf nur früher beenden, nie verlängern.
     """
