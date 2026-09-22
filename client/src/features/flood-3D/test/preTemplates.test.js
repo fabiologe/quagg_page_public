@@ -63,9 +63,12 @@ describe('vorlageAnpassen — Blickpunkt', () => {
     const amRand = pad()
     vorlageAnpassen(amRand, fall([0, 0, 100, 80]), flach(220), [99, 79])
     expect(mitteVon(amRand)).toEqual([95, 75])                    // 10 m breit: 5 m Rand
+    // Blickpunkt NEBEN dem Gebiet: an den nächsten Platz im Gebiet, nicht
+    // in die Mitte (bis 2026-09-22 sprang die Vorlage 42 m weit weg —
+    // Browserprobe; der Server rückt Rezepte seit E7a ebenso hinein)
     const draussen = pad()
-    vorlageAnpassen(draussen, fall([0, 0, 100, 80]), flach(220), [500, 500])
-    expect(mitteVon(draussen)).toEqual([50, 40])
+    vorlageAnpassen(draussen, fall([0, 0, 100, 80]), flach(220), [120, 500])
+    expect(mitteVon(draussen)).toEqual([95, 75])
     const ohne = pad()
     vorlageAnpassen(ohne, fall([0, 0, 100, 80]), flach(220), null)
     expect(mitteVon(ohne)).toEqual([50, 40])

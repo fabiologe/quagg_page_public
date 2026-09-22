@@ -277,10 +277,13 @@ export function vorlageAnpassen(obj, spec, gelaendeZ, mitte = null) {
   const by = ys.length ? [Math.min(...ys), Math.max(...ys)] : [0, 0]
   const mx = (bx[0] + bx[1]) / 2
   const my = (by[0] + by[1]) / 2
-  const innen = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi
   let cx = (x0 + x1) / 2
   let cy = (y0 + y1) / 2
-  if (mitte && innen(mitte[0], x0, x1) && innen(mitte[1], y0, y1)) {
+  // Der Blickpunkt darf NEBEN dem Gebiet liegen — die Klemme unten rückt
+  // die Vorlage an den nächsten Platz im Gebiet. Bis 2026-09-22 fiel sie
+  // in diesem Fall auf die Gebietsmitte zurück: ein Schwenk um 5 m über
+  // den Rand hinaus ließ die Wand 42 m entfernt erscheinen (Browserprobe).
+  if (mitte && Number.isFinite(mitte[0]) && Number.isFinite(mitte[1])) {
     cx = mitte[0]
     cy = mitte[1]
   }

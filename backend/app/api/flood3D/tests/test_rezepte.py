@@ -215,6 +215,76 @@ def test_tosbecken_masse_folgen_der_zelle():
     assert box.extent[0] <= min(xs) - 2.0 + 1e-6           # Rand zwei Zellen, vorher 1,0 m
 
 
+# ---- E7a: der Blickpunkt darf neben dem Gebiet liegen ---------------------
+# Seit E6e schickt der Client den Blickpunkt der Kamera als `center` mit;
+# der verlässt das Gebiet beim ersten Schwenk. Gemessen am 2026-09-22
+# (Kopie BetaTest10, Browsersonde): ein Rezept 15 m neben dem Gebiet legte
+# 3 bis 14 Befunde an — bis hin zu „18,8 Mio Zellen" aus einem verdrehten
+# Verfeinerungsquader. Der Bauplan rückt jetzt als Ganzes hinein.
+
+AUSSEN = [(45.0, 40.0), (-100.0, -100.0), (0.0, 15.0), (30.0, 30.0)]
+_DRAUSSEN = ("außerhalb", "hinaus", "nicht vollständig im Modellgebiet")
+
+
+@pytest.mark.parametrize("name", ALLE)
+@pytest.mark.parametrize("center", AUSSEN)
+def test_rezept_bleibt_im_gebiet(name, center):
+    spec = _fall()
+    zeilen = rezepte.einsetzen(spec, name, {"center": center}, ".")
+    x0, y0, x1, y1 = spec.domain.extent
+    for s in spec.structures:
+        for x, y in _punkte(s):
+            assert x0 - 1e-6 <= x <= x1 + 1e-6, f"{s.id}: x = {x}"
+            assert y0 - 1e-6 <= y <= y1 + 1e-6, f"{s.id}: y = {y}"
+    for g in spec.evaluation.gauges:
+        assert x0 <= g.point[0] <= x1 and y0 <= g.point[1] <= y1
+    befunde = [b for b in validate_case(spec, ".")
+               if b["severity"] in ("fehler", "warnung")
+               and b["object_id"] != "solver"]
+    assert not [b for b in befunde if b["severity"] == "fehler"], \
+        [b["message"] for b in befunde]
+    assert not [b for b in befunde
+                if any(w in b["message"] for w in _DRAUSSEN)], \
+        [b["message"] for b in befunde]
+    assert any("hineingerückt" in z for z in zeilen), \
+        "das Zurückrücken muss dastehen, sonst wundert sich der Nutzer"
+
+
+def _punkte(s):
+    """XY-Punkte eines Bauwerks samt seinem Aufmaß (Weite, Dicke …)."""
+    pkte = []
+    for feld in rezepte._XY_LISTEN:
+        pkte += [(float(p[0]), float(p[1])) for p in (getattr(s, feld, None) or [])]
+    for feld in rezepte._XY_PUNKTE:
+        p = getattr(s, feld, None)
+        if p is not None:
+            pkte.append((float(p[0]), float(p[1])))
+    a = getattr(s, "alignment", None)
+    if a is not None:
+        pkte += [(float(p[0]), float(p[1])) for p in a.points]
+    h = rezepte._aufmass(s)
+    return [(x + sx * h, y + sy * h) for x, y in pkte for sx, sy in ((-1, -1), (1, 1))]
+
+
+def test_verfeinerungsquader_wird_erst_nach_dem_ruecken_beschnitten():
+    """
+    Zuerst schneiden, dann schieben gab aus einem weit draußen gebauten
+    Quader einen Kasten über das halbe Gebiet — die Netzschätzung sprang
+    auf 18,8 Mio Zellen (Fehler „bricht STILL ab").
+    """
+    spec = _fall()
+    rezepte.einsetzen(spec, "absturz", {"center": (-100.0, -100.0)}, ".")
+    x0, y0, x1, y1 = spec.domain.extent
+    for r in spec.mesh.refinements:
+        if r.type != "box":
+            continue
+        bx0, by0, _, bx1, by1, _ = r.extent
+        assert bx1 > bx0 and by1 > by0, f"{r.id}: verdrehter Quader {r.extent}"
+        assert (bx1 - bx0) <= (x1 - x0) and (by1 - by0) <= (y1 - y0)
+    from ..core.meshgen import zellen_schaetzung
+    assert zellen_schaetzung(spec)["gesamt"] < 1_000_000
+
+
 def test_rezept_am_blickpunkt():
     spec = _fall()
     rezepte.einsetzen(spec, "drosselschacht", {"center": [5.0, 6.0]}, ".")

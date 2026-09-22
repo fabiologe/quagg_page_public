@@ -577,6 +577,31 @@ Build). `npm run build` mit temporärer 3-G-Swapdatei (Swap wieder voll,
 danach abgebaut): `dist/index.html` 18:13:24, `Flood3DPreMain-DR2qHb4L.js`
 trägt `blickpunktVerfolgen`/`netzSchaetzung`, quagg-engineering.org 200.
 
+### Browserprobe E6 (2026-09-22, 19:0x) — und was sie gefunden hat
+
+An einer **Kopie** von BetaTest10 (Mini-Backend 8002, Vite 3003, Chrome
+headless, `scratchpad/probe_e6*.js`), nichts gespeichert:
+
+| geprüft | Ergebnis |
+|---|---|
+| G11/C3 Zellschätzung aus dem Server | Panel: „9.133 Zellen (geschätzt, Flächen vom Server)" — die API liefert zu diesem Fall `netz_schaetzung.gesamt` = **9 133**, gleiche Zahl |
+| C12 Ausdünnung | `terrain.ausduennung` steht im Payload, hier **1** (101 × 149 Knoten, keine Ausdünnung nötig — richtig) |
+| C6 Blickpunkt folgt der Kamera | vor dem Schwenk [11, −7] (Gebietsmitte), nach dem Schwenk **[38,2, −24,3]** |
+| C6 Vorlage am Blickpunkt (INNEN) | Wand landet auf **[18,31, −11,88]** = exakt der Blickpunkt, 8,8 m neben der Gebietsmitte |
+| C6 Vorlage bei Blickpunkt **außerhalb** | **Fund:** Wand sprang in die Gebietsmitte, 42 m vom Blick entfernt |
+| Rezept bei Blickpunkt außerhalb | **Fund:** `_mitte` nahm den Punkt ungeprüft — das ganze Rezept lag draußen |
+
+Die beiden Funde stammen aus E6e selbst (vorher schickte der Client nie
+einen Punkt) und waren seit 18:13 live. Abgestellt (E7a, `rezepte.py`,
+`preTemplates.js`):
+
+| # | vorher | nachher |
+|---|---|---|
+| Rezept an einem Punkt außerhalb des Gebiets (30 × 30 m, Punkt 15 m daneben) | Befunde je Rezept **3 / 5 / 4 / 3 / 14 / 7**, darunter „liegt vollständig außerhalb"; ein Verfeinerungsquader wurde VOR dem Rücken beschnitten und danach verschoben → **18,8 Mio Zellen**, Fehler „bricht STILL ab" | `_plan_ins_gebiet` rückt den FERTIGEN Bauplan als Ganzes hinein (Aufmaß je Objekt: Weite, Dicke, Durchmesser), Quader erst danach beschneiden: **kein Fehler, kein „außerhalb"-Befund an keinem der vier Außenpunkte**, nur noch die ehrliche Warnung „Nur 0,3 m bis zum Rand „zulauf"", plus Meldung „um 7,0 m hineingerückt" |
+| Vorlage bei Blickpunkt außerhalb | Gebietsmitte (42 m weg) | nächster Platz im Gebiet: Browserprobe **7,7 m** vom Blickpunkt, 32,4 m von der Mitte |
+
+Tests: Backend **876** + 1 übersprungen (+25 Rezeptfälle), Client 400.
+
 Nachgeprüft am echten Archivlauf über die laufende API (nur gelesen):
 `GET /FastAPI/flood3d/runs/Rentrich_BetaTest08_r004` liefert jetzt drei
 Befunde — y⁺ 53 360, Viz-Volumen 34 %, **„Lauf vor der Korrektur des

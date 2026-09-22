@@ -63,10 +63,127 @@ def _gelaende_z(spec: CaseSpec, base_dir, x: float, y: float,
 
 
 def _mitte(spec: CaseSpec, args: dict) -> tuple[float, float]:
+    """
+    Wo das Rezept hinkommt: der übergebene Punkt (Blickpunkt des Nutzers),
+    sonst die Gebietsmitte. Der Punkt darf AUSSERHALB liegen — der fertige
+    Bauplan wird anschließend als Ganzes ins Gebiet gerückt
+    (`_plan_ins_gebiet`); hier zu klemmen brächte nichts, weil jedes Rezept
+    um seine Mitte herum baut.
+    """
     if args.get("center"):
-        return float(args["center"][0]), float(args["center"][1])
+        c = args["center"]
+        if all(math.isfinite(float(v)) for v in c[:2]):
+            return float(c[0]), float(c[1])
     x0, y0, x1, y1 = spec.domain.extent
     return (x0 + x1) / 2, (y0 + y1) / 2
+
+
+# Felder, in denen die Objekte eines Bauplans ihre Lage tragen. Dieselbe
+# Liste führt `rotate.rotate_case` (dort für die Drehung); wächst ein Rezept
+# um ein neues Feld, schlägt `test_rezepte.py::test_rezept_bleibt_im_gebiet`
+# an, weil das Teil dann nicht mitwandert.
+_XY_LISTEN = ("footprint", "axis", "crest_polyline", "plane_polygon",
+              "polyline", "polygon")
+_XY_PUNKTE = ("center", "insert_point", "point")
+
+
+def _aufmass(o) -> float:
+    """
+    Wie weit ein Objekt über seine notierten Punkte hinausreicht: ein
+    Schacht ist Mittelpunkt + lichte Weite, eine Wand eine Achse + Dicke,
+    ein Rohr eine Achse + Durchmesser. Ohne dieses Aufmaß rückte das
+    Zurückrücken den Mittelpunkt gerade auf den Gebietsrand — und der halbe
+    Schacht lag weiter draußen (gemessen: „ragt zu 50 % hinaus").
+    """
+    halb = 0.0
+    for feld, anteil in (("width", 0.5), ("length", 0.5), ("thickness", 0.5),
+                         ("diameter", 0.5), ("radius", 1.0), ("crest_width", 0.5)):
+        v = getattr(o, feld, None)
+        if v:
+            halb = max(halb, float(v) * anteil)
+    prof = getattr(o, "profile", None)
+    for feld in ("diameter", "width", "height"):
+        v = getattr(prof, feld, None) if prof is not None else None
+        if v:
+            halb = max(halb, float(v) * 0.5)
+    return halb + float(getattr(o, "wall_thickness", 0.0) or 0.0)
+
+
+def _plan_punkte(p) -> list:
+    """Alle XY-Punkte des Bauplans, je Objekt um sein Aufmaß geweitet —
+    ohne die Verfeinerungsquader, die `_Bauplan.box` schon auf das Gebiet
+    beschneidet."""
+    pkte = []
+    for o in (*p.structures, *p.gauges, *p.sections):
+        eigen = []
+        for feld in _XY_LISTEN:
+            eigen += [(float(q[0]), float(q[1]))
+                      for q in (getattr(o, feld, None) or [])]
+        for feld in _XY_PUNKTE:
+            q = getattr(o, feld, None)
+            if q is not None:
+                eigen.append((float(q[0]), float(q[1])))
+        a = getattr(o, "alignment", None)
+        if a is not None:
+            eigen += [(float(q[0]), float(q[1])) for q in a.points]
+        h = _aufmass(o)
+        pkte += [(x + sx * h, y + sy * h) for x, y in eigen
+                 for sx, sy in ((-1, -1), (1, 1))]
+    return pkte
+
+
+def _plan_ins_gebiet(p) -> tuple[float, float]:
+    """
+    Den FERTIGEN Bauplan so weit verschieben, dass er im Modellgebiet
+    liegt; passt er in einer Richtung nicht hinein, wird er darin
+    mittig gesetzt. Rückgabe: die Verschiebung (dx, dy).
+
+    Der Blickpunkt des Nutzers (E6e/C6) kann neben dem Gebiet liegen —
+    ohne dieses Zurückrücken landete das ganze Rezept draußen und die
+    Prüfung meldete 3 bis 14 Befunde an Objekten, die der Knopf gerade
+    selbst angelegt hatte (gemessen 2026-09-22).
+    """
+    x0, y0, x1, y1 = p.spec.domain.extent
+    pkte = _plan_punkte(p)
+    dx = dy = 0.0
+    if pkte:
+        xs = [q[0] for q in pkte]
+        ys = [q[1] for q in pkte]
+
+        def schieben(lo, hi, g0, g1):
+            if hi - lo > g1 - g0:                   # passt nicht: mittig
+                return (g0 + g1) / 2 - (lo + hi) / 2
+            return max(0.0, g0 - lo) - max(0.0, hi - g1)
+
+        dx = schieben(min(xs), max(xs), x0, x1)
+        dy = schieben(min(ys), max(ys), y0, y1)
+
+    def ruecken(q):
+        return (round(q[0] + dx, 3), round(q[1] + dy, 3), *q[2:])
+
+    if dx or dy:
+        for o in (*p.structures, *p.gauges, *p.sections):
+            for feld in _XY_LISTEN:
+                liste = getattr(o, feld, None)
+                if liste:
+                    setattr(o, feld, [ruecken(q) for q in liste])
+            for feld in _XY_PUNKTE:
+                q = getattr(o, feld, None)
+                if q is not None:
+                    setattr(o, feld, ruecken(q))
+            a = getattr(o, "alignment", None)
+            if a is not None:
+                a.points = [ruecken(q) for q in a.points]
+
+    # Die Quader wandern mit und werden ERST JETZT auf das Gebiet
+    # beschnitten (siehe `_Bauplan.box`)
+    for r in p.refinements:
+        if getattr(r, "type", None) != "box":
+            continue
+        bx0, by0, bz0, bx1, by1, bz1 = r.extent
+        r.extent = (round(max(bx0 + dx, x0), 3), round(max(by0 + dy, y0), 3), bz0,
+                    round(min(bx1 + dx, x1), 3), round(min(by1 + dy, y1), 3), bz1)
+    return (dx, dy)
 
 
 def _zelle(spec: CaseSpec) -> float:
@@ -134,17 +251,17 @@ class _Bauplan:
 
     def box(self, extent, level: int, stamm: str) -> None:
         """
-        Verfeinerungsquader, auf das Modellgebiet beschnitten. Ohne den
-        Zuschnitt ragt er über den Rand, sobald das Bauwerk nahe an der
-        Gebietsgrenze sitzt — und die Prüfung meldet einen Fehler an einem
-        Objekt, das das Rezept selbst gerade angelegt hat.
+        Verfeinerungsquader. In der Höhe sofort auf das Gebiet geklemmt; in
+        der Fläche beschneidet ihn `_plan_ins_gebiet`, NACHDEM der Bauplan
+        an seinen Platz gerückt ist. Zuerst schneiden und dann schieben gab
+        aus einem 100 m entfernt gebauten Quader einen verdrehten Kasten
+        über das halbe Gebiet (18,8 Mio Zellen, gemessen 2026-09-22).
         """
         from .casespec import RefineBox
         d = self.spec.domain
-        x0, y0, x1, y1 = d.extent
         gx0, gy0, gz0, gx1, gy1, gz1 = (float(v) for v in extent)
-        geklemmt = (max(gx0, x0), max(gy0, y0), max(gz0, d.z_min),
-                    min(gx1, x1), min(gy1, y1), min(gz1, d.z_max))
+        geklemmt = (gx0, gy0, max(gz0, d.z_min),
+                    gx1, gy1, min(gz1, d.z_max))
         self.refinements.append(RefineBox(
             id=self.neu(stamm), type="box",
             extent=tuple(round(v, 3) for v in geklemmt), level=level))
@@ -599,6 +716,9 @@ def einsetzen(spec: CaseSpec, name: str, args: dict | None = None,
 
     p = _Bauplan(spec)
     eintrag["bauen"](p, args or {}, base_dir)
+    # Der Einsetzpunkt kommt vom Blickpunkt des Nutzers und darf neben dem
+    # Gebiet liegen — der fertige Bauplan rückt als Ganzes hinein
+    dx, dy = _plan_ins_gebiet(p)
 
     # Herkunft UND Gruppe stempeln: die Teile eines Rezepts gehören
     # zusammen — der Baum zeigt sie als EIN Bauwerk, löschbar als Ganzes.
@@ -631,6 +751,11 @@ def einsetzen(spec: CaseSpec, name: str, args: dict | None = None,
     for r in p.regelwerk:
         if r not in spec.meta.nachweis.regelwerk:
             spec.meta.nachweis.regelwerk.append(r)
+
+    if dx or dy:
+        p.meldungen.append(
+            f"Der gewählte Ort liegt nicht (ganz) im Modellgebiet — das "
+            f"Bauwerk wurde um {math.hypot(dx, dy):.1f} m hineingerückt.")
 
     namen = ", ".join(f"„{s.id}“" for s in p.structures)
     kopf = f"{eintrag['label']} eingesetzt: {namen}"
