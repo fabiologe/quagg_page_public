@@ -602,6 +602,14 @@ einen Punkt) und waren seit 18:13 live. Abgestellt (E7a, `rezepte.py`,
 
 Tests: Backend **876** + 1 übersprungen (+25 Rezeptfälle), Client 400.
 
+**PROD seit 2026-09-22, 20:15:** ff-merge (`cde-verbundexport` c811f54 →
+0fc2df4), Live-Suite 876 + 1, Client 400, `pm2 restart quagg-api` (API 200
+nach 26 s), Build mit temporärer 3-G-Swapdatei
+(`Flood3DPreMain-0WMiK6kN.js`, `dist/index.html` 20:15:24), Seite 200.
+Nachgeprüft im Produktions-Tree mit der Produktions-venv: Rezept
+„Tosbecken" an einem Punkt 200 m neben dem Gebiet → „um 245,7 m
+hineingerückt", alle Grundrisspunkte im Gebiet, kein Fehler.
+
 Nachgeprüft am echten Archivlauf über die laufende API (nur gelesen):
 `GET /FastAPI/flood3d/runs/Rentrich_BetaTest08_r004` liefert jetzt drei
 Befunde — y⁺ 53 360, Viz-Volumen 34 %, **„Lauf vor der Korrektur des
