@@ -304,6 +304,7 @@ def _roh_esri_ascii(path: Path) -> tuple[dict, np.ndarray]:
             if not parts:
                 continue
             if parts[0].lower() in ("ncols", "nrows", "xllcorner", "yllcorner",
+                                    "xllcenter", "yllcenter",
                                     "cellsize", "nodata_value"):
                 header[parts[0].lower()] = float(parts[1])
             else:
@@ -313,17 +314,36 @@ def _roh_esri_ascii(path: Path) -> tuple[dict, np.ndarray]:
     if nodata is not None:
         z = np.where(z == nodata, np.nan, z)
     res = header["cellsize"]
-    return {"x0": header["xllcorner"] + res / 2,
-            "y0": header["yllcorner"] + res / 2, "res": res}, z
+    # ESRI erlaubt beide Angaben der Südwest-Zelle: Ecke (corner) oder
+    # Mitte (center) — bis 2026-09-22 endete center im KeyError
+    return {"x0": (header["xllcenter"] if "xllcenter" in header
+                   else header["xllcorner"] + res / 2),
+            "y0": (header["yllcenter"] if "yllcenter" in header
+                   else header["yllcorner"] + res / 2), "res": res}, z
+
+
+# Deckel für den Altleser von Punktlisten: darüber ist es kein regelmäßiges
+# Raster, sondern der Median der x-Abstände hat sich verraten (Audit G10:
+# 20 000 unregelmäßige Punkte auf 500 m -> 771 Mio Zellen, 6,2 GB)
+MAX_XYZ_ZELLEN = 50_000_000
 
 
 def _roh_xyz(path: Path) -> tuple[dict, np.ndarray]:
-    """Punktliste als Raster; Zellen ohne Punkt bleiben NaN."""
+    """
+    Punktliste als Raster; Zellen ohne Punkt bleiben NaN. Nur noch für
+    Altfälle — der Import wandelt XYZ seit 2026-09-22 nach ESRI-ASCII
+    (importer.xyz_zu_asc) und lehnt Punktwolken ehrlich ab.
+    """
     data = np.loadtxt(path)
     res = float(np.median(np.diff(np.unique(data[:, 0]))) or 1.0)
     x0, y0 = data[:, 0].min(), data[:, 1].min()
     nx = int(round((data[:, 0].max() - x0) / res)) + 1
     ny = int(round((data[:, 1].max() - y0) / res)) + 1
+    if nx * ny > MAX_XYZ_ZELLEN:
+        raise ValueError(
+            f"XYZ-Datei {path.name} ergäbe {nx}×{ny} Zellen "
+            f"({nx * ny / 1e6:.0f} Mio) — das ist keine regelmäßige "
+            "Punktliste. Als ASC-Raster liefern oder neu importieren.")
     z = np.full((max(ny, 2), max(nx, 2)), np.nan)
     i = np.round((data[:, 0] - x0) / res).astype(int)
     j = np.round((data[:, 1] - y0) / res).astype(int)

@@ -605,15 +605,88 @@ def test_raster_import_lehnt_drehung_ehrlich_ab(case):
 
 
 def test_xyz_import_liefert_bbox_fuer_domaene(case):
+    """
+    Bis 2026-09-22 prüfte dieser Test nur Bytes und Extent — die XYZ-Bytes
+    lagen unter `.asc`, der Leser scheiterte am Kopf (Audit I8). Jetzt wird
+    das Gelände wirklich geladen: EIN Rasterformat im Kern.
+    """
+    import numpy as np
+    from ..core.terrain import TerrainField
+
     spec, d = case
+    spec.terrain.operations = []          # die Probe soll das Raster sehen
     roh = b"0 0 100\n10 0 101\n0 10 102\n"
     m = analyze_file(roh, "punkte.xyz", d)
+    cid = m["candidates"][0]["id"]
+    info = apply_import(spec, d, m["import_id"],
+                        decisions=[{"candidate": cid, "role": "gelaende"}],
+                        derive_domain=True)
+    text = (d / spec.terrain.base.source).read_text()
+    assert spec.terrain.base.source.endswith(".asc") and text.startswith("ncols")
+    # Gebiet = Zellfläche des Rasters (halbe Zelle über die Knoten hinaus),
+    # dieselbe Konvention wie beim ESRI-Raster — vorher die Punkt-Bbox 0…10
+    assert spec.domain.extent == (-5.0, -5.0, 15.0, 15.0)
+    assert spec.terrain.base.resolution == pytest.approx(10.0)   # aus der Datei
+    assert any("Rasterweite 10 m aus der Datei" in r for r in info["report"])
+    # der Kern-Leser liest die Datei: Zellmitten bei 0 und 10, die leere
+    # Ecke (10, 10) bleibt NODATA
+    from ..core.terrain import _roh
+    lage, z = _roh(d / spec.terrain.base.source)
+    assert (lage["x0"], lage["y0"], lage["res"]) == (0.0, 0.0, 10.0)
+    assert z[0, 0] == 100.0 and z[0, 1] == 101.0 and z[1, 0] == 102.0
+    assert np.isnan(z[1, 1])
+    feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+    assert 100.0 <= float(np.nanmin(feld.z)) and float(np.nanmax(feld.z)) <= 102.0
+
+
+def test_punktwolke_wird_ehrlich_abgelehnt(case):
+    """20 000 unregelmäßige Punkte: kein 771-Mio-Zellen-Raster (Audit G10)."""
+    import numpy as np
+
+    spec, d = case
+    rng = np.random.default_rng(7)
+    pts = rng.uniform(0, 500, size=(20000, 2))
+    roh = "\n".join(f"{x:.3f} {y:.3f} {100 + x / 100:.3f}" for x, y in pts).encode()
+    m = analyze_file(roh, "wolke.xyz", d)
+    cid = m["candidates"][0]["id"]
+    with pytest.raises(ValueError, match="kein Raster"):
+        apply_import(spec, d, m["import_id"],
+                     decisions=[{"candidate": cid, "role": "gelaende"}])
+
+
+def test_xllcenter_wird_gelesen(case):
+    """ESRI erlaubt xllcenter/yllcenter statt xllcorner — bisher KeyError."""
+    import numpy as np
+    from ..core.terrain import TerrainField
+
+    spec, d = case
+    spec.terrain.operations = []          # die Probe soll das Raster sehen
+    roh = (b"ncols 2\nnrows 2\nxllcenter 5\nyllcenter 5\n"
+           b"cellsize 10\nNODATA_value -9999\n"
+           b"102 103\n100 101\n")
+    m = analyze_file(roh, "mitte.asc", d)
     cid = m["candidates"][0]["id"]
     apply_import(spec, d, m["import_id"],
                  decisions=[{"candidate": cid, "role": "gelaende"}],
                  derive_domain=True)
-    assert (d / spec.terrain.base.source).read_bytes() == roh
-    assert spec.domain.extent == (0.0, 0.0, 10.0, 10.0)
+    assert spec.domain.extent == (0.0, 0.0, 20.0, 20.0)
+    from ..core.terrain import _roh
+    lage, z = _roh(d / spec.terrain.base.source)
+    assert (lage["x0"], lage["y0"]) == (5.0, 5.0)                # Zellmitte
+    assert z[0, 0] == 100.0 and z[1, 1] == 103.0
+    # im Modell: am Gebietsrand gilt die Randzelle (halbe Zelle Saum)
+    feld = TerrainField.from_spec(spec.terrain, spec.domain, d)
+    assert float(feld.sample(np.array([0.0]), np.array([0.0]))[0]) == pytest.approx(100.0, abs=0.01)
+    assert float(feld.sample(np.array([20.0]), np.array([20.0]))[0]) == pytest.approx(103.0, abs=0.01)
+
+
+def test_altleser_xyz_bricht_bei_millionen_zellen_ab(tmp_path):
+    from ..core.terrain import _roh_xyz
+
+    p = tmp_path / "alt.xyz"
+    p.write_text("0 0 1\n0.001 0 1\n0.002 0 1\n100000 100000 1\n")
+    with pytest.raises(ValueError, match="Mio"):
+        _roh_xyz(p)
 
 
 # ---- DXF-Vollständigkeit: Blöcke, LINEs, Bögen, Zählregel -----------------

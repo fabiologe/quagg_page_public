@@ -727,9 +727,15 @@ def _raster_transformieren(roh: bytes, unit: float,
         teile = zeile.split()
         if len(teile) == 2 and teile[0].lower() in (
                 "ncols", "nrows", "cellsize", "xllcorner", "yllcorner",
-                "nodata_value"):
+                "xllcenter", "yllcenter", "nodata_value"):
             kopf[teile[0].lower()] = float(teile[1])
             kopf_ende = i + 1
+    # ESRI erlaubt beide Angaben der Südwest-Zelle: Ecke (corner) oder
+    # Mitte (center) — bis 2026-09-22 endete center im KeyError (Audit I8)
+    for achse in ("x", "y"):
+        if f"{achse}llcenter" in kopf and f"{achse}llcorner" not in kopf:
+            kopf[f"{achse}llcorner"] = (kopf[f"{achse}llcenter"]
+                                        - kopf.get("cellsize", 1.0) / 2)
 
     ox = float(off[0]) if off is not None else 0.0
     oy = float(off[1]) if off is not None else 0.0
@@ -1064,8 +1070,8 @@ def _kanten_grenze(pkte: list, schritt: float) -> float:
     return float(max(1.5 * np.median(fremd), 3 * schritt))
 
 
-def _asc_schreiben(z: np.ndarray, out_path: Path, x0: float, y0: float,
-                   resolution: float) -> None:
+def _asc_text(z: np.ndarray, x0: float, y0: float, resolution: float) -> str:
+    """ESRI-ASCII; (x0, y0) ist die MITTE der Südwest-Zelle, NaN = NODATA."""
     nodata = -9999.0
     grid = np.where(np.isnan(z), nodata, z)
     zeilen = [f"ncols {z.shape[1]}", f"nrows {z.shape[0]}",
@@ -1074,7 +1080,56 @@ def _asc_schreiben(z: np.ndarray, out_path: Path, x0: float, y0: float,
               f"cellsize {resolution:g}", f"nodata_value {nodata:g}"]
     for row in grid[::-1]:                     # ESRI: von Nord nach Süd
         zeilen.append(" ".join(f"{v:.3f}" for v in row))
-    out_path.write_text("\n".join(zeilen))
+    return "\n".join(zeilen)
+
+
+def _asc_schreiben(z: np.ndarray, out_path: Path, x0: float, y0: float,
+                   resolution: float) -> None:
+    out_path.write_text(_asc_text(z, x0, y0, resolution))
+
+
+def xyz_zu_asc(roh: bytes) -> tuple[bytes, float]:
+    """
+    XYZ-Punktliste → ESRI-ASCII, wenn die Punkte auf einem regelmäßigen
+    Gitter liegen — sonst ValueError, ehrlich. Bis 2026-09-22 wurden die
+    XYZ-Bytes unter `.asc` abgelegt und der Leser scheiterte am fehlenden
+    Kopf (Audit I8); eine unregelmäßige Punktwolke erriet der Altleser über
+    den Median der x-Abstände zu 771 Mio Zellen (Audit G10). Liefert die
+    Bytes und die Rasterweite der Datei (Quelleinheit).
+    """
+    import io as _io
+
+    arr = np.atleast_2d(np.loadtxt(_io.StringIO(
+        roh.decode("utf-8", errors="replace"))))
+    if arr.shape[1] < 3:
+        raise ValueError("XYZ-Raster hat weniger als drei Spalten — "
+                         "erwartet wird „x y z“ je Zeile.")
+    x, y, z = arr[:, 0], arr[:, 1], arr[:, 2]
+    kein_raster = ("Punktwolke ist kein Raster — als ASC-Raster oder als "
+                   "DXF-Punkte/-TIN liefern")
+    xs, ys = np.unique(x), np.unique(y)
+    if len(xs) < 2 or len(ys) < 2:
+        raise ValueError(f"{kein_raster} (weniger als zwei Spalten oder Zeilen)")
+    rx, ry = float(np.median(np.diff(xs))), float(np.median(np.diff(ys)))
+    res = rx
+    if rx <= 0 or ry <= 0 or abs(rx - ry) > 0.01 * res:
+        raise ValueError(f"{kein_raster} (Punktabstände x {rx:g}, y {ry:g})")
+    x0, y0 = float(xs[0]), float(ys[0])
+    i = np.round((x - x0) / res)
+    j = np.round((y - y0) / res)
+    abseits = ((np.abs(x - (x0 + i * res)) > 0.01 * res)
+               | (np.abs(y - (y0 + j * res)) > 0.01 * res))
+    if abseits.mean() > 0.01:
+        raise ValueError(f"{kein_raster} ({abseits.mean():.0%} der Punkte "
+                         "liegen neben dem Gitter)")
+    nx = int(round((float(xs[-1]) - x0) / res)) + 1
+    ny = int(round((float(ys[-1]) - y0) / res)) + 1
+    if nx * ny > 4 * len(arr):
+        raise ValueError(f"{kein_raster} ({nx}×{ny} Zellen für {len(arr)} "
+                         "Punkte)")
+    grid = np.full((ny, nx), np.nan)
+    grid[j.astype(int), i.astype(int)] = z
+    return _asc_text(grid, x0, y0, res).encode("utf-8"), res
 
 
 # Die Außenhöhe — die Ebene außerhalb der Vermessung — kommt beim Import aus
@@ -1845,10 +1900,45 @@ def _rohr_aus_kreis(u: _Uebernahme, c: dict, role: str) -> None:
            "Rand" if rolle else " — Randbedingung noch zuordnen"))
 
 
+# Deckel für das Knotenraster des Modells aus einer Rasterdatei — darüber
+# wird die Rasterweite vergröbert und das im Bericht gesagt
+MAX_GELAENDE_KNOTEN = 4_000_000
+
+
+def _rasterweite(u: _Uebernahme, zelle: float | None,
+                 bbox: np.ndarray | None) -> tuple[float, str]:
+    """
+    Rasterweite des Modellgeländes aus einer Rasterdatei: die Zellgröße
+    der DATEI (in Zieleinheit) — bis 2026-09-22 wurde sie ignoriert und ein
+    Rückfall von 0,5 m genommen, ein 2-m-Raster also 16-fach überabgetastet
+    (Audit I11). Über MAX_GELAENDE_KNOTEN wird vergröbert, mit Ansage.
+    """
+    if not zelle:
+        return u.aufloesung(0.5), ""
+    res = float(zelle) * u.unit_factor
+    weite = f"; Rasterweite {res:g} m aus der Datei"
+    if bbox is not None:
+        dx = float(bbox[1][0] - bbox[0][0])
+        dy = float(bbox[1][1] - bbox[0][1])
+        knoten = (dx / res + 1) * (dy / res + 1)
+        if knoten > MAX_GELAENDE_KNOTEN:
+            grob = round(math.sqrt(dx * dy / MAX_GELAENDE_KNOTEN), 3)
+            weite = (f"; Rasterweite der Datei {res:g} m ergäbe "
+                     f"{knoten / 1e6:.0f} Mio Knoten — auf {grob:g} m "
+                     f"vergröbert (Deckel {MAX_GELAENDE_KNOTEN / 1e6:.0f} Mio)")
+            res = grob
+    return res, weite
+
+
 def _gelaende_aus_raster(u: _Uebernahme, c: dict, role: str) -> None:
     roh = (u.imp_dir / f"{c['id']}.grid").read_bytes()
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", c["name"])[:40]
     ziel = derived_pfad(u.case_dir, f"{name}.asc")
+    zelle = c["stats"].get("cellsize")
+    if c["stats"].get("format") == "XYZ":
+        # EIN Rasterformat im Kern: XYZ wird hier zu ESRI-ASCII — oder
+        # ehrlich abgelehnt, wenn es kein Raster ist (Audit I8, G10)
+        roh, zelle = xyz_zu_asc(roh)
     # Einheit/Offset gelten für ALLE Kandidaten eines Imports gleich —
     # sonst liegen Raster und Bauwerkskörper zueinander verschoben.
     roh, raster_bbox = _raster_transformieren(roh, u.unit_factor, u.off)
@@ -1858,10 +1948,10 @@ def _gelaende_aus_raster(u: _Uebernahme, c: dict, role: str) -> None:
                    f"({off[0]:g}, {off[1]:g}) angewandt"
                    if u.unit_factor != 1.0 or off[0] or off[1] else "")
     if role == "gelaende":
-        res = u.aufloesung(0.5)
+        res, weite = _rasterweite(u, zelle, raster_bbox)
         _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, ziel), res)
         u.report.append(f"Gelände aus Raster „{ziel.name}“ übernommen "
-                        f"({c['stats'].get('format')}){umgerechnet}")
+                        f"({c['stats'].get('format')}){umgerechnet}{weite}")
         if raster_bbox is not None:
             u.terrain_bbox = raster_bbox
         if u.gelaende_gesetzt:
