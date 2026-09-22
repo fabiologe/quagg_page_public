@@ -39,11 +39,11 @@ def _importieren(d: Path, data: bytes, filename: str, rolle, **kw) -> dict:
     spec = build_spec_stage3()
     spec.terrain.operations = []
     spec.to_yaml(d / "case.yaml")
-    cands = _analysieren(data, filename)
+    cands, info = _analysieren(data, filename)
     imp_dir = d / "imports" / IMPORT_ID
     imp_dir.mkdir(parents=True)
     (imp_dir / filename).write_bytes(data)
-    m = _kandidaten_ablegen(cands, imp_dir, IMPORT_ID, filename, 0.0)
+    m = _kandidaten_ablegen(cands, imp_dir, IMPORT_ID, filename, 0.0, info)
     decisions = [{"candidate": c["id"], "role": rolle(c)}
                  for c in m["candidates"]]
     info = apply_import(spec, d, IMPORT_ID, decisions, **kw)
@@ -62,8 +62,8 @@ def _importieren(d: Path, data: bytes, filename: str, rolle, **kw) -> dict:
 def _becken(d: Path) -> dict:
     b = fx.nacktes_becken()
     m_roles = {"mesh": "gelaende", "kreis": "ablaufrohr"}
-    # Offset aus dem Vorschlag — der existiert heute nur für Netze
-    cands = _analysieren(b["dxf"], "becken.dxf")
+    # Offset aus der Lage des Netzes (wie der Vorschlag vor E2c)
+    cands, _ = _analysieren(b["dxf"], "becken.dxf")
     lo = min((c["stats"]["bbox"][0] for c in cands if c.get("_mesh") is not None),
              key=lambda p: (p[0], p[1]))
     return _importieren(

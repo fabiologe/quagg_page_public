@@ -335,7 +335,7 @@ def test_fremdentitaet_blockiert_den_import_nicht():
     assert entfernt == {"BsysCvDbTinSurface": 1}
     assert "BsysCvDbTinSurface" not in sauber
     # und der Gesamtweg liefert weiterhin die Flächen
-    cands = analyze_dxf(kaputt.encode("utf-8"), "x.dxf")
+    cands, _ = analyze_dxf(kaputt.encode("utf-8"), "x.dxf")
     assert any(c["kind"] == "mesh" for c in cands)
     assert any(c["kind"] == "hinweis" for c in cands)
 
@@ -347,7 +347,7 @@ def test_gelaendelayer_bleibt_ein_kandidat():
     einem Dreieck.
     """
     from ..core.importer import analyze_dxf
-    cands = analyze_dxf(_dxf_bytes(), "x.dxf")
+    cands, _ = analyze_dxf(_dxf_bytes(), "x.dxf")
     gelaende = [c for c in cands if c["role_guess"] == "gelaende"]
     assert len(gelaende) == 1, [c["name"] for c in gelaende]
 
@@ -392,7 +392,7 @@ def test_binaer_dxf_wird_gelesen():
         doc.saveas(p, fmt="bin")
         roh = p.read_bytes()
     assert roh[:18] == b"AutoCAD Binary DXF"
-    cands = analyze_dxf(roh, "bin.dxf")
+    cands, _ = analyze_dxf(roh, "bin.dxf")
     assert any(c["role_guess"] == "gelaende" for c in cands)
     assert any(c["role_guess"] == "bruchkante" for c in cands)
 
@@ -417,7 +417,7 @@ def test_kreis_wird_zur_rohrmuendung():
                            dxfattribs={"layer": "AUSLAUF",
                                        "extrusion": (1, 0, 0)})
     kreis.dxf.center = kreis.ocs().from_wcs((2.0, 1.5, 9.5))
-    cands = analyze_dxf(doc_bytes(doc), "x.dxf")
+    cands, _ = analyze_dxf(doc_bytes(doc), "x.dxf")
     rohr = next(c for c in cands if c["kind"] == "kreis")
     assert rohr["role_guess"] == "ablaufrohr"
     assert rohr["stats"]["durchmesser"] == pytest.approx(0.8)
@@ -676,12 +676,16 @@ def test_nichts_verschwindet_ohne_zahl(tmp_path):
     assert "TEXT" in hinweis[0]["hint"] and "POINT" in hinweis[0]["hint"]
 
 
-def test_rollen_heuristik_erkennt_mm_gelaende(tmp_path):
+@pytest.mark.parametrize("insunits", [4, 0])
+def test_rollen_heuristik_erkennt_mm_gelaende(tmp_path, insunits):
     """mm-Datei: Schwellen sind Meter-Maße — ein 20×20-m-Gelände in mm
-    (20000er-Spannweite) muss trotzdem als EIN Gelände erkannt werden."""
+    (20000er-Spannweite) muss trotzdem als EIN Gelände erkannt werden.
+    Nennt die Zeichnung ihre Einheit ($INSUNITS 4), gilt die; schweigt
+    sie (0), bleibt der Spannweiten-Verdacht — als Frage im Manifest."""
     import ezdxf
 
     doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = insunits       # ezdxf.new schreibt sonst 6 = Meter
     msp = doc.modelspace()
     for i in range(2):
         for j in range(2):
@@ -697,7 +701,10 @@ def test_rollen_heuristik_erkennt_mm_gelaende(tmp_path):
     meshes = [c for c in m["candidates"] if c["kind"] == "mesh"]
     assert len(meshes) == 1, "mm-Gelände darf nicht in Teile zerfallen"
     assert meshes[0]["role_guess"] == "gelaende"
-    assert m["unit_suspect"] is True
+    if insunits == 4:
+        assert m["einheit"]["faktor"] == 0.001 and m["unit_suspect"] is False
+    else:
+        assert m["einheit"] is None and m["unit_suspect"] is True
 
 
 def test_umlaut_dateinamen_sind_erlaubt(tmp_path):

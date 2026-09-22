@@ -93,18 +93,23 @@ _NAME_HINTS = [
 ]
 
 
-def _guess_role(stats: dict, name: str = "") -> str:
+def _guess_role(stats: dict, name: str = "",
+                faktor: float | None = None) -> str:
     low = name.lower()
     for key, role in _NAME_HINTS:
         if key in low:
             return role
     sx, sy = stats["span_xy"]
     dz = stats["z_range"][1] - stats["z_range"][0]
-    # Die Schwellen unten sind METER-Maße. Millimeter-Dateien (BricsCAD-
-    # Normalfall) lägen ohne Umrechnung um den Faktor 10³ daneben — ein
-    # mm-Gelände zerfiele in Ein-Dreieck-Kandidaten, kein Körper träfe
-    # seine Klasse. Derselbe Verdacht wie beim globalen unit_suspect.
-    if max(sx, sy) > UNIT_SUSPECT_SPAN:
+    # Die Schwellen unten sind METER-Maße. Nennt die Zeichnung ihre Einheit
+    # ($INSUNITS, `faktor`), wird damit gerechnet. Sonst der alte Verdacht:
+    # Millimeter-Dateien lägen ohne Umrechnung um den Faktor 10³ daneben —
+    # ein mm-Gelände zerfiele in Ein-Dreieck-Kandidaten, kein Körper träfe
+    # seine Klasse (Audit I7: ein 3-m-Schacht in mm galt als Gelände, ein
+    # 6-km-Fluss in Metern als Millimeter).
+    if faktor:
+        sx, sy, dz = sx * faktor, sy * faktor, dz * faktor
+    elif max(sx, sy) > UNIT_SUSPECT_SPAN:
         sx, sy, dz = sx / 1000.0, sy / 1000.0, dz / 1000.0
     if not stats["watertight"] and sx * sy > 25 and max(sx, sy) > 10:
         return "gelaende"
@@ -118,10 +123,11 @@ def _guess_role(stats: dict, name: str = "") -> str:
     return "bauwerk"
 
 
-def _candidate(name: str, mesh: trimesh.Trimesh) -> dict:
+def _candidate(name: str, mesh: trimesh.Trimesh,
+               faktor: float | None = None) -> dict:
     stats = _mesh_stats(mesh.vertices, mesh.faces, mesh.is_watertight)
     return {"name": name, "kind": "mesh", "stats": stats,
-            "role_guess": _guess_role(stats, name)}
+            "role_guess": _guess_role(stats, name, faktor)}
 
 
 def _split_named(mesh_or_scene) -> list[tuple[str, trimesh.Trimesh]]:
@@ -369,11 +375,31 @@ def _dxf_saeubern(text: str) -> tuple[str, dict]:
     return "\n".join(out) + "\n", raus
 
 
-def analyze_dxf(data: bytes, filename: str) -> list[dict]:
+def dxf_einheit(doc) -> dict | None:
+    """
+    Die Einheit, die die Zeichnung selbst nennt ($INSUNITS: 4 = mm, 5 = cm,
+    6 = m, 1 = Zoll …), als Faktor nach Meter. 0 = die Zeichnung sagt es
+    nicht → None, dann bleibt nur der Verdacht aus der Spannweite. Bis
+    2026-09-22 wurde der Kopf nie gelesen (Audit I7).
+    """
+    from ezdxf import units
+
+    try:
+        code = int(doc.header.get("$INSUNITS", 0) or 0)
+        if code <= 0:
+            return None
+        return {"code": code, "name": units.unit_name(code),
+                "faktor": float(units.conversion_factor(code, 6))}
+    except Exception:                       # noqa: BLE001
+        return None
+
+
+def analyze_dxf(data: bytes, filename: str) -> tuple[list[dict], dict]:
     """
     DXF je LAYER zerlegen: Dreiecks-/Facetten-Entities (3DFACE, POLYFACE,
     MESH) werden zu Mesh-Kandidaten, Polylinien zu Trassen-Kandidaten,
-    3DSOLID zu einem Hinweis-Kandidaten (nicht triangulierbar).
+    3DSOLID zu einem Hinweis-Kandidaten (nicht triangulierbar). Dazu, was
+    die DATEI als Ganzes sagt: ihre Einheit.
     """
     import io
 
@@ -391,7 +417,8 @@ def analyze_dxf(data: bytes, filename: str) -> list[dict]:
             doc = ezdxf.readfile(tmp)
         finally:
             Path(tmp).unlink(missing_ok=True)
-        return _dxf_kandidaten(doc, {})
+        einheit = dxf_einheit(doc)
+        return _dxf_kandidaten(doc, {}, einheit), {"einheit": einheit}
 
     text = data.decode("utf-8", errors="replace")
     entfernt: dict = {}
@@ -403,12 +430,15 @@ def analyze_dxf(data: bytes, filename: str) -> list[dict]:
         if not entfernt:
             raise
         doc = ezdxf.read(io.StringIO(sauber))
-    return _dxf_kandidaten(doc, entfernt)
+    einheit = dxf_einheit(doc)
+    return _dxf_kandidaten(doc, entfernt, einheit), {"einheit": einheit}
 
 
-def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
+def _dxf_kandidaten(doc, entfernt: dict,
+                    einheit: dict | None = None) -> list[dict]:
     from ezdxf.render import MeshVertexMerger
 
+    faktor = einheit["faktor"] if einheit else None
     msp = doc.modelspace()
 
     unbekannt: dict[str, int] = {}
@@ -549,14 +579,14 @@ def _dxf_kandidaten(doc, entfernt: dict) -> list[dict]:
         # Gelände dagegen ist EINE Fläche, auch wenn die Dreiecke keine
         # gemeinsamen Punkte haben (aus TIN-Exporten der Normalfall) —
         # sonst zerfällt ein Layer in Dutzende Ein-Dreieck-Kandidaten.
-        if _guess_role(_mesh_stats(verts, faces, m.is_watertight), layer) \
-                == "gelaende":
+        if _guess_role(_mesh_stats(verts, faces, m.is_watertight), layer,
+                       faktor) == "gelaende":
             teile = [("teil", m)]
         else:
             teile = _split_named(m)
         for name, part in teile:
             label = layer if name == "teil" else f"{layer}_{name.split('_')[-1]}"
-            c = _candidate(label, part)
+            c = _candidate(label, part, faktor)
             c["_mesh"] = part
             cands.append(c)
     for layer, lines in sorted(lines_per_layer.items()):
@@ -651,6 +681,15 @@ def analyze_raster(data: bytes, filename: str) -> list[dict]:
              "ny": int(kopf.get("nrows", 0)) or None,
              "cellsize": kopf.get("cellsize"),
              "kb": round(len(data) / 1024)}
+    # Lage der Datei (Quelleinheit) — damit auch ein Raster in Landes-
+    # koordinaten einen Offset-Vorschlag bekommt (Audit I2)
+    try:
+        _, bbox = _raster_transformieren(data, 1.0, None)
+        if bbox is not None:
+            stats["bbox"] = [[round(float(v), 3) for v in bbox[0]],
+                             [round(float(v), 3) for v in bbox[1]]]
+    except Exception:                       # noqa: BLE001
+        pass                                # unlesbar meldet die Übernahme
     return [{"name": filename.rsplit(".", 1)[0], "kind": "raster",
              "role_guess": "gelaende", "stats": stats, "_raster": data}]
 
@@ -723,11 +762,15 @@ def _raster_transformieren(roh: bytes, unit: float,
     return buf.getvalue().encode("utf-8"), bbox
 
 
-def _analysieren(data: bytes, filename: str) -> list[dict]:
-    """Die Datei nach ihrer Endung in Kandidaten zerlegen."""
+def _analysieren(data: bytes, filename: str) -> tuple[list[dict], dict]:
+    """
+    Die Datei nach ihrer Endung in Kandidaten zerlegen. Dazu, was über die
+    DATEI bekannt ist (`einheit`, nur DXF nennt sie).
+    """
     ext = filename.rsplit(".", 1)[-1].lower()
+    info: dict = {"einheit": None}
     if ext == "dxf":
-        cands = analyze_dxf(data, filename)
+        cands, info = analyze_dxf(data, filename)
     elif ext in ("stl", "obj"):
         cands = analyze_stl_obj(data, filename)
     elif ext in ("asc", "xyz", "txt"):
@@ -738,11 +781,37 @@ def _analysieren(data: bytes, filename: str) -> list[dict]:
     if not cands:
         raise ValueError("Keine verwertbare Geometrie gefunden — enthält die "
                          "Datei 3DFACE/POLYFACE/MESH-Flächen oder Polylinien?")
-    return cands
+    return cands, info
+
+
+def _kandidat_bbox(c: dict) -> np.ndarray | None:
+    """
+    Hüllquader EINES Kandidaten in Quelleinheit, (2,3) oder None. Bis
+    2026-09-22 zählten für Bbox, Offset-Vorschlag und Einheitenverdacht nur
+    Netze — eine Datei aus Linien und Kreisen bekam nichts davon, und drei
+    Importe eines Betriebsfalls landeten in Gauß-Krüger (Audit I2).
+    """
+    if c.get("_mesh") is not None:
+        return np.asarray(c["stats"]["bbox"], dtype=float)
+    if c.get("_polyline") is not None:
+        arr = np.asarray(c["_polyline"], dtype=float)
+        if arr.ndim != 2 or not len(arr):
+            return None
+        if arr.shape[1] < 3:
+            arr = np.column_stack([arr, np.zeros(len(arr))])
+        return np.array([arr.min(axis=0), arr.max(axis=0)])
+    if c.get("_kreis") is not None:
+        m = np.asarray(c["_kreis"]["mitte"], dtype=float)
+        r = float(c["_kreis"]["radius"])
+        return np.array([m - r, m + r])
+    if c.get("_raster") is not None and c["stats"].get("bbox"):
+        return np.asarray(c["stats"]["bbox"], dtype=float)
+    return None
 
 
 def _kandidaten_ablegen(cands: list[dict], imp_dir: Path, import_id: str,
-                        filename: str, created: float) -> dict:
+                        filename: str, created: float,
+                        info: dict | None = None) -> dict:
     """
     Kandidaten-Dateien und Manifest schreiben — für den ersten Import und
     für das Neu-Zerlegen aus der Rohdatei (import_neu_analysieren).
@@ -756,12 +825,15 @@ def _kandidaten_ablegen(cands: list[dict], imp_dir: Path, import_id: str,
     doppelter Genauigkeit zurück. Ein gemeinsamer Ursprung, damit die
     Körper eines Imports zueinander liegen bleiben.
     """
-    los = [c["stats"]["bbox"][0] for c in cands if c.get("_mesh") is not None]
-    his = [c["stats"]["bbox"][1] for c in cands if c.get("_mesh") is not None]
+    # Ablage-Ursprung NUR aus den Netzen (die liegen als float32-STL); die
+    # Lage der Datei dagegen aus allen Kandidatenarten
+    netz_los = [c["stats"]["bbox"][0] for c in cands if c.get("_mesh") is not None]
     ursprung = np.zeros(3)
-    if los:
-        lo = np.min(np.asarray(los, dtype=float), axis=0)
+    if netz_los:
+        lo = np.min(np.asarray(netz_los, dtype=float), axis=0)
         ursprung = np.array([math.floor(lo[0]), math.floor(lo[1]), 0.0])
+    boxen = [b for b in (_kandidat_bbox(c) for c in cands) if b is not None]
+    einheit = (info or {}).get("einheit")
 
     for i, c in enumerate(cands):
         c["id"] = f"k{i}"
@@ -781,17 +853,22 @@ def _kandidaten_ablegen(cands: list[dict], imp_dir: Path, import_id: str,
 
     manifest = {"import_id": import_id, "filename": filename,
                 "created": created, "candidates": cands,
-                "stl_ursprung": [float(ursprung[0]), float(ursprung[1])]}
-    if los:
-        lo = np.min(np.asarray(los, dtype=float), axis=0)
-        hi = np.max(np.asarray(his, dtype=float), axis=0)
+                "stl_ursprung": [float(ursprung[0]), float(ursprung[1])],
+                "einheit": einheit}
+    if boxen:
+        lo = np.min(np.asarray(boxen, dtype=float)[:, 0], axis=0)
+        hi = np.max(np.asarray(boxen, dtype=float)[:, 1], axis=0)
         span = hi - lo
+        # In Metern urteilen, wenn die Zeichnung ihre Einheit nennt; der
+        # Spannweiten-Verdacht bleibt nur für Dateien ohne Einheit
+        f = einheit["faktor"] if einheit else 1.0
         manifest["bbox"] = [[round(float(v), 3) for v in lo],
                             [round(float(v), 3) for v in hi]]
-        manifest["unit_suspect"] = bool(max(span[0], span[1]) > UNIT_SUSPECT_SPAN)
+        manifest["unit_suspect"] = bool(
+            einheit is None and max(span[0], span[1]) > UNIT_SUSPECT_SPAN)
         manifest["offset_suggest"] = (
             [round(float(lo[0]), 3), round(float(lo[1]), 3)]
-            if max(abs(lo[0]), abs(lo[1])) > OFFSET_SUSPECT else None)
+            if max(abs(lo[0]), abs(lo[1])) * f > OFFSET_SUSPECT else None)
     (imp_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False))
     return manifest
@@ -801,12 +878,13 @@ def analyze_file(data: bytes, filename: str, case_dir: Path) -> dict:
     """Datei analysieren, Kandidaten-Meshes ablegen, Manifest zurückgeben."""
     if not SAFE_FILENAME.match(filename):
         raise ValueError(f"Unsicherer Dateiname: {filename!r}")
-    cands = _analysieren(data, filename)
+    cands, info = _analysieren(data, filename)
     import_id = f"imp-{uuid.uuid4().hex[:8]}"
     imp_dir = case_dir / "imports" / import_id
     imp_dir.mkdir(parents=True)
     (imp_dir / filename).write_bytes(data)
-    return _kandidaten_ablegen(cands, imp_dir, import_id, filename, time.time())
+    return _kandidaten_ablegen(cands, imp_dir, import_id, filename,
+                               time.time(), info)
 
 
 def import_neu_analysieren(case_dir: Path, import_id: str) -> dict:
@@ -820,9 +898,9 @@ def import_neu_analysieren(case_dir: Path, import_id: str) -> dict:
     imp_dir = case_dir / "imports" / import_id
     alt = json.loads((imp_dir / "manifest.json").read_text())
     filename = alt["filename"]
-    cands = _analysieren((imp_dir / filename).read_bytes(), filename)
+    cands, info = _analysieren((imp_dir / filename).read_bytes(), filename)
     return _kandidaten_ablegen(cands, imp_dir, import_id, filename,
-                               float(alt.get("created") or time.time()))
+                               float(alt.get("created") or time.time()), info)
 
 
 # --------------------------------------------------------------------------
@@ -1457,16 +1535,20 @@ class _Uebernahme:
     hineingreifen musste (E2a, Audit W3-P1.2).
     """
 
-    def __init__(self, spec, case_dir: Path, import_id: str,
+    def __init__(self, spec, case_dir: Path, import_id: str, manifest: dict,
                  unit_factor: float, offset: list[float] | None,
                  rotation_deg: float) -> None:
         self.spec = spec
         self.case_dir = case_dir
         self.import_id = import_id
         self.imp_dir = case_dir / "imports" / import_id
-        self.manifest = json.loads((self.imp_dir / "manifest.json").read_text())
+        self.manifest = manifest
         self.by_id = {c["id"]: c for c in self.manifest["candidates"]}
+        # die WIRKSAMEN Lage-Parameter (nach _verortung_ergaenzen) — sie
+        # landen in der Anwendung und in der Verortung des Falls
         self.unit_factor = unit_factor
+        self.offset = offset
+        self.rotation_deg = rotation_deg
         self.off = np.asarray([offset[0], offset[1], 0.0] if offset else [0, 0, 0],
                               dtype=float)
         # Modell drehen: das Rechengebiet ist ein achsparalleler Quader. Liegt
@@ -1543,11 +1625,52 @@ class _Uebernahme:
         return self.drehen(arr - self.off)
 
 
+def _verortung_ergaenzen(spec, manifest: dict, unit_factor: float,
+                         offset: list[float] | None, rotation_deg: float
+                         ) -> tuple[float, list[float] | None, float, str | None]:
+    """
+    Fehlt der Offset bei einer Datei in Landeskoordinaten, wird er nicht
+    still auf 0 gesetzt: Liegt der Vorschlag der Datei in der Welt des
+    Falls (`meta.transform` des ersten Imports, binnen OFFSET_SUSPECT), gilt
+    dessen Verortung — Offset, Drehung, Einheit; sonst der Vorschlag der
+    Datei selbst. Bis 2026-09-22 landeten so drei Importe eines
+    Betriebsfalls in Gauß-Krüger neben einem lokalen Gebiet, und vier
+    Rohre lagen in drei Koordinatenwelten (Audit I2). Lokale Dateien (kein
+    Vorschlag) bleiben unberührt. Liefert die wirksamen Parameter und den
+    Satz für den Bericht.
+    """
+    vorschlag = manifest.get("offset_suggest")
+    if offset or not vorschlag:
+        return unit_factor, offset, rotation_deg, None
+    from .casespec import lokal_nach_welt
+
+    s = [float(vorschlag[0]) * unit_factor, float(vorschlag[1]) * unit_factor]
+    t = spec.meta.transform
+    if t is not None:
+        alt = lokal_nach_welt(t, 0.0, 0.0)          # Weltpunkt des Ursprungs
+        if math.dist(alt, s) < OFFSET_SUSPECT:
+            rot = rotation_deg or t.rotation_deg
+            uf = unit_factor if unit_factor != 1.0 else t.unit_factor
+            return (uf, [round(alt[0], 3), round(alt[1], 3)], rot,
+                    "Lage: kein Offset angegeben — die Verortung des ersten "
+                    f"Imports gilt (Offset {alt[0]:.2f}, {alt[1]:.2f}; "
+                    f"Drehung {rot:g}°; Einheit ×{uf:g}).")
+    return (unit_factor, [round(s[0], 3), round(s[1], 3)], rotation_deg,
+            "Lage: die Datei liegt in Landeskoordinaten, kein Offset "
+            f"angegeben — Vorschlag ({s[0]:.2f}, {s[1]:.2f}) angewandt; "
+            "ohne ihn rechneten Viewer und Vernetzer mit 7-stelligen Zahlen.")
+
+
 def _uebernahme_vorbereiten(spec, case_dir: Path, import_id: str,
                             decisions: list[dict], unit_factor: float,
                             offset: list[float] | None,
                             rotation_deg: float) -> _Uebernahme:
-    u = _Uebernahme(spec, case_dir, import_id, unit_factor, offset, rotation_deg)
+    imp_dir = case_dir / "imports" / import_id
+    manifest = json.loads((imp_dir / "manifest.json").read_text())
+    unit_factor, offset, rotation_deg, lage = _verortung_ergaenzen(
+        spec, manifest, unit_factor, offset, rotation_deg)
+    u = _Uebernahme(spec, case_dir, import_id, manifest, unit_factor, offset,
+                    rotation_deg)
     # Re-Apply ERSETZT: alles, was aus diesem Import stammt, fliegt vorher
     # raus. Zweimal Übernehmen (andere Rolle, andere Auflösung) erzeugt
     # damit keine _2-Duplikate mehr, sondern den neu abgeleiteten Stand.
@@ -1566,6 +1689,8 @@ def _uebernahme_vorbereiten(spec, case_dir: Path, import_id: str,
     if ersetzt:
         u.report.append(f"{ersetzt} Objekte aus früherem Übernehmen dieses "
                         "Imports ersetzt — kein Duplikat angelegt.")
+    if lage:
+        u.report.append(lage)
     u.bestand_erfassen()
     return u
 
@@ -1962,7 +2087,24 @@ def _gebiet_ableiten(u: _Uebernahme) -> None:
     from .casespec import Domain
 
     spec = u.spec
-    lo, hi = u.terrain_bbox
+    gel_lo, gel_hi = np.asarray(u.terrain_bbox, dtype=float)
+    lo, hi = gel_lo.copy(), gel_hi.copy()
+    # Mitimportierte Rohre gehören ins Gebiet — mit Wandung. Bis 2026-09-22
+    # war das Gebiet die nackte Gelände-Bbox: ein Rohr unter der Sohle
+    # wurde bei z_min gekappt, ein Stutzen am Rand ragte hinaus (Audit I12).
+    rohre = 0
+    for s in spec.structures:
+        r = getattr(s, "import_ref", None)
+        if s.type != "culvert" or r is None or r.import_id != u.import_id:
+            continue
+        a = np.asarray(s.axis, dtype=float)
+        pr = s.profile
+        quer = (pr.diameter if pr.kind == "circular"
+                else max(pr.width or 0.0, pr.height or 0.0))
+        aussen = float(quer) / 2 + float(pr.wandstaerke or 0.0)
+        lo = np.minimum(lo, a.min(axis=0) - aussen)
+        hi = np.maximum(hi, a.max(axis=0) + aussen)
+        rohre += 1
     dz = max(hi[2] - lo[2], 1.0)
     spec.domain = Domain(
         extent=(round(float(lo[0]), 2), round(float(lo[1]), 2),
@@ -1970,7 +2112,10 @@ def _gebiet_ableiten(u: _Uebernahme) -> None:
         z_min=round(float(lo[2] - 0.5), 2),
         z_max=round(float(hi[2] + max(2.0, 0.5 * dz)), 2))
     u.report.append(f"Domäne aus Gelände abgeleitet: {spec.domain.extent}, "
-                    f"z {spec.domain.z_min}…{spec.domain.z_max}")
+                    f"z {spec.domain.z_min}…{spec.domain.z_max}"
+                    + (f" — einschließlich {rohre} Rohr(en) aus diesem "
+                       "Import" if rohre else ""))
+    lo = gel_lo                                  # trockener Start: Gelände
     # Der Anfangswasserspiegel stammt aus der alten Höhenlage und läge
     # sonst außerhalb des neuen Gebiets (Prüfung würde sofort meckern) —
     # auf trockenen Start setzen und das offen sagen.
@@ -2051,13 +2196,14 @@ def apply_import(spec, case_dir: Path, import_id: str,
         from .kanten import verknuepfen
         u.report.extend(verknuepfen(spec))
 
-    _lage_pruefen(u, unit_factor, offset, rotation_deg)
+    # die WIRKSAMEN Lage-Parameter (ggf. aus der Verortung des Falls ergänzt)
+    _lage_pruefen(u, u.unit_factor, u.offset, u.rotation_deg)
 
     if derive_domain and u.terrain_bbox is not None:
         _gebiet_ableiten(u)
 
-    _anwendung_schreiben(u, decisions, unit_factor, offset, derive_domain,
-                         terrain_from_lines, rotation_deg)
+    _anwendung_schreiben(u, decisions, u.unit_factor, u.offset, derive_domain,
+                         terrain_from_lines, u.rotation_deg)
     return {"report": u.report}
 
 

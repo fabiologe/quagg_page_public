@@ -46,10 +46,14 @@
               <option :value="0.01">Zentimeter → m</option>
               <option :value="0.3048">Fuß → m</option>
             </select>
-            <p v-if="manifest.unit_suspect && unitFactor === 1"
+            <p v-if="manifest.einheit" class="f3d-muted f3d-small">
+              Einheit laut Zeichnung: {{ manifest.einheit.name }}
+              (×{{ manifest.einheit.faktor }})
+            </p>
+            <p v-else-if="manifest.unit_suspect && unitFactor === 1"
                class="f3d-warn f3d-small">
-              ⚠ Ausdehnung {{ fmt(spanX) }} × {{ fmt(spanY) }} — sehr groß für
-              Meter. Millimeter?
+              ⚠ Die Zeichnung nennt keine Einheit. Ausdehnung
+              {{ fmt(spanX) }} × {{ fmt(spanY) }} — Meter oder Millimeter?
             </p>
           </div>
           <div class="f3d-field">
@@ -60,7 +64,12 @@
               <button class="f3d-btn" @click="suggestOffset">Vorschlag</button>
               <button class="f3d-btn" @click="offX = 0; offY = 0">0</button>
             </div>
-            <p v-if="manifest.offset_suggest" class="f3d-muted f3d-small">
+            <p v-if="lageQuelle === 'fall'" class="f3d-muted f3d-small">
+              Landeskoordinaten erkannt — Offset, Drehung und Einheit sind
+              aus der Verortung des Falls vorbelegt (erster Import), damit
+              alles in derselben Welt liegt.
+            </p>
+            <p v-else-if="manifest.offset_suggest" class="f3d-muted f3d-small">
               Landeskoordinaten erkannt — Verschieben empfohlen, sonst
               rechnen Viewer und Vernetzer mit 7-stelligen Zahlen. Der Wert
               wird im Fall gespeichert.
@@ -242,6 +251,7 @@ import { usePreStore } from '../../stores/usePreStore'
 import {
   KANTEN_ROLLEN, MATERIALS, ROLE_LABELS, SOLID_ROLES, rollenFuerKind,
 } from '../../utils/importRollen'
+import { vorbelegung } from '../../utils/importVorbelegung'
 import { fmtFest as fmt } from '../../utils/labels'
 
 const emit = defineEmits(['close'])
@@ -260,6 +270,9 @@ const offY = ref(0)
 const deriveDomain = ref(false)
 const terrainAusLinien = ref(false)
 const rotation = ref(0)
+// woher Offset/Drehung vorbelegt sind: 'fall' (Verortung des ersten
+// Imports), 'datei' (Vorschlag aus den Koordinaten) oder null (lokal)
+const lageQuelle = ref(null)
 // merkt sich, ob der Nutzer das Kästchen selbst gesetzt hat — sonst folgt
 // es der Rollenwahl (Gelände-Layer vorhanden? dann bleibt der maßgeblich)
 const kantenKaestchenGesetzt = ref(false)
@@ -385,9 +398,16 @@ async function upload(file) {
       }
     }
     manifest.value = m
-    if (m.unit_suspect) unitFactor.value = 0.001
-    if (m.offset_suggest) suggestOffset()
-    deriveDomain.value = m.candidates.some((c) => c.role_guess === 'gelaende')
+    // Einheit aus der Zeichnung, Offset/Drehung aus der Verortung des
+    // Falls oder der Datei, Gebiet auch bei Kanten-Dateien — die Regeln
+    // stehen in utils/importVorbelegung.js (geprüft)
+    const v = vorbelegung(m, store.spec?.meta?.transform ?? null)
+    unitFactor.value = v.unitFactor
+    offX.value = v.offX
+    offY.value = v.offY
+    rotation.value = v.rotation
+    deriveDomain.value = v.deriveDomain
+    lageQuelle.value = v.lageQuelle
     kantenKaestchenGesetzt.value = false
   } catch (e) {
     error.value = e.message

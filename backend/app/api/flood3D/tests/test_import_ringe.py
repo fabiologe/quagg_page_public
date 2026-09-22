@@ -20,7 +20,7 @@ from .synthetic_case import build_spec_stage3
 
 
 def _kandidaten(n: dict) -> dict:
-    return {c["name"]: c for c in _analysieren(n["dxf"], "linien.dxf")}
+    return {c["name"]: c for c in _analysieren(n["dxf"], "linien.dxf")[0]}
 
 
 def _lesen(pfad):

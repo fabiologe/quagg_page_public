@@ -90,6 +90,11 @@
      }
     }
    ],
+   "einheit": {
+    "code": 6,
+    "faktor": 1.0,
+    "name": "Meters"
+   },
    "filename": "becken.dxf",
    "import_id": "imp-golden",
    "offset_suggest": [
@@ -106,7 +111,7 @@
    "Gelände „3D_FL“: 162 Dreiecke auf 26×26 Raster (Abdeckung 44%); die übrigen 56% liegen außerhalb des TIN — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe = höchster Randpunkt der Vermessung, im Gelände-Panel änderbar)",
    "Rohrmündung „auslauf_rohr“: DN1600, Achse (9.02, 9.02, 224.05), Sohle 223.250 m, Richtung (0.707, 0.707); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
    "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
-   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 12.02, 12.02), z 222.55…227.55",
+   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 12.02, 12.02), z 222.55…227.55 — einschließlich 1 Rohr(en) aus diesem Import",
    "Anfangswasserspiegel auf 223.05 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
   ],
   "spec": {
@@ -615,15 +620,30 @@
     }
    ],
    "derive_domain": true,
-   "offset": null,
+   "offset": [
+    2500000.2,
+    5400000.2
+   ],
    "rotation_deg": 0.0,
    "terrain_from_lines": true,
    "unit_factor": 1.0
   },
   "derived": {
-   "gelaende_imp-golden_linien.asc": "a7b37e17a24a116d"
+   "gelaende_imp-golden_linien.asc": "8648de07a964bf91"
   },
   "manifest": {
+   "bbox": [
+    [
+     2500000.2,
+     5400000.2,
+     223.05
+    ],
+    [
+     2500012.8,
+     5400011.8,
+     225.55
+    ]
+   ],
    "candidates": [
     {
      "id": "k0",
@@ -787,14 +807,25 @@
      }
     }
    ],
+   "einheit": {
+    "code": 6,
+    "faktor": 1.0,
+    "name": "Meters"
+   },
    "filename": "linien.dxf",
    "import_id": "imp-golden",
+   "offset_suggest": [
+    2500000.2,
+    5400000.2
+   ],
    "stl_ursprung": [
     0.0,
     0.0
-   ]
+   ],
+   "unit_suspect": false
   },
   "report": [
+   "Lage: die Datei liegt in Landeskoordinaten, kein Offset angegeben — Vorschlag (2500000.20, 5400000.20) angewandt; ohne ihn rechneten Viewer und Vernetzer mit 7-stelligen Zahlen.",
    "Gelände aus 2 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 21 Dreiecke aus 19 Stützpunkten auf 25×25 Raster, Höhen 223.06 … 225.52 m, Abdeckung 66%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. 6 offene Linie(n) innerhalb des äußersten Rings liegen als Stützzellen im Raster (36 Zellen). 1 offene Linie(n) liegen außerhalb der geschlossenen Kanten und tragen nicht zum Raster bei — als Kanten bleiben sie erhalten. Die restlichen 34% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe, im Gelände-Panel änderbar).",
    "Querschnitt „qs_auslauf_linie“ aus Trasse übernommen",
    "Bruchkante „kante_bruchkanten_linie_1_linie“: 5 Stützpunkte, 223.05 … 223.39 m",
@@ -806,9 +837,10 @@
    "Bruchkante „kante_bruchkanten_linie_7_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
    "Bruchkante „kante_bruchkanten_linie_8_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
    "Bruchkante „kante_bruchkanten_linie_9_linie“: 2 Stützpunkte, 223.35 … 225.45 m",
-   "Rohrmündung „auslauf_rohr_rohr“: DN1600, Achse (2500012.00, 5400006.00, 224.05), Sohle 223.250 m, Richtung (1.000, 0.000); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
+   "Rohrmündung „auslauf_rohr_rohr“: DN1600, Achse (11.80, 5.80, 224.05), Sohle 223.250 m, Richtung (1.000, 0.000); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
    "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 6 eigene unangetastet",
-   "Domäne aus Gelände abgeleitet: (2500000.2, 5400000.2, 2500011.8, 5400011.8), z 222.56…227.52",
+   "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
+   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 14.35, 11.6), z 222.56…227.52 — einschließlich 1 Rohr(en) aus diesem Import",
    "Anfangswasserspiegel auf 223.06 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
   ],
   "spec": {
@@ -848,10 +880,10 @@
    ],
    "domain": {
     "extent": [
-     2500000.2,
-     5400000.2,
-     2500011.8,
-     5400011.8
+     0.0,
+     0.0,
+     14.35,
+     11.6
     ],
     "z_max": 227.52,
     "z_min": 222.56
@@ -916,20 +948,20 @@
       },
       "polyline": [
        [
-        2500012.4,
-        5400005.5
+        12.2,
+        5.3
        ],
        [
-        2500012.5,
-        5400005.8
+        12.3,
+        5.6
        ],
        [
-        2500012.6,
-        5400006.2
+        12.4,
+        6.0
        ],
        [
-        2500012.7,
-        5400006.5
+        12.5,
+        6.3
        ]
       ]
      }
@@ -1016,7 +1048,14 @@
      "regelwerk": []
     },
     "title": "PreProzessing-Abnahmefall",
-    "transform": null,
+    "transform": {
+     "rotation_deg": 0.0,
+     "translation": [
+      -2500000.2,
+      -5400000.2
+     ],
+     "unit_factor": 1.0
+    },
     "vertical_datum": "DHHN2016"
    },
    "solver": {
@@ -1231,13 +1270,13 @@
     {
      "axis": [
       [
-       2500010.4,
-       5400006.0,
+       10.2,
+       5.8,
        224.05
       ],
       [
-       2500013.6,
-       5400006.0,
+       13.4,
+       5.8,
        224.05
       ]
      ],
@@ -1291,28 +1330,28 @@
       },
       "polyline": [
        [
-        2500008.4,
-        5400006.0,
+        8.2,
+        5.8,
         223.22
        ],
        [
-        2500006.0,
-        5400008.4,
+        5.8,
+        8.2,
         223.05
        ],
        [
-        2500003.6,
-        5400006.0,
+        3.4,
+        5.8,
         223.22
        ],
        [
-        2500006.0,
-        5400003.6,
+        5.8,
+        3.4,
         223.39
        ],
        [
-        2500008.4,
-        5400006.0,
+        8.2,
+        5.8,
         223.22
        ]
       ],
@@ -1330,23 +1369,23 @@
       },
       "polyline": [
        [
-        2500011.6,
-        5400005.6,
+        11.4,
+        5.4,
         225.25
        ],
        [
-        2500011.9,
-        5400005.8,
+        11.7,
+        5.6,
         225.45
        ],
        [
-        2500012.1,
-        5400006.2,
+        11.9,
+        6.0,
         225.45
        ],
        [
-        2500011.8,
-        5400006.4,
+        11.6,
+        6.2,
         225.25
        ]
       ],
@@ -1364,83 +1403,83 @@
       },
       "polyline": [
        [
-        2500011.8,
-        5400006.0,
+        11.6,
+        5.8,
         225.4
        ],
        [
-        2500011.359,
-        5400008.22,
+        11.159,
+        8.02,
         225.539
        ],
        [
-        2500010.101,
-        5400010.101,
+        9.901,
+        9.901,
         225.506
        ],
        [
-        2500008.22,
-        5400011.359,
+        8.02,
+        11.159,
         225.343
        ],
        [
-        2500006.0,
-        5400011.8,
+        5.8,
+        11.6,
         225.25
        ],
        [
-        2500003.78,
-        5400011.359,
+        3.58,
+        11.159,
         225.343
        ],
        [
-        2500001.899,
-        5400010.101,
+        1.699,
+        9.901,
         225.506
        ],
        [
-        2500000.641,
-        5400008.22,
+        0.441,
+        8.02,
         225.539
        ],
        [
-        2500000.2,
-        5400006.0,
+        0.0,
+        5.8,
         225.4
        ],
        [
-        2500000.641,
-        5400003.78,
+        0.441,
+        3.58,
         225.261
        ],
        [
-        2500001.899,
-        5400001.899,
+        1.699,
+        1.699,
         225.294
        ],
        [
-        2500003.78,
-        5400000.641,
+        3.58,
+        0.441,
         225.457
        ],
        [
-        2500006.0,
-        5400000.2,
+        5.8,
+        0.0,
         225.55
        ],
        [
-        2500008.22,
-        5400000.641,
+        8.02,
+        0.441,
         225.457
        ],
        [
-        2500010.101,
-        5400001.899,
+        9.901,
+        1.699,
         225.294
        ],
        [
-        2500011.8,
-        5400006.0,
+        11.6,
+        5.8,
         225.4
        ]
       ],
@@ -1458,13 +1497,13 @@
       },
       "polyline": [
        [
-        2500011.6,
-        5400005.6,
+        11.4,
+        5.4,
         225.26
        ],
        [
-        2500011.7,
-        5400005.4,
+        11.5,
+        5.2,
         225.27
        ]
       ],
@@ -1482,13 +1521,13 @@
       },
       "polyline": [
        [
-        2500011.8,
-        5400006.4,
+        11.6,
+        6.2,
         225.25
        ],
        [
-        2500011.7,
-        5400006.6,
+        11.5,
+        6.4,
         225.26
        ]
       ],
@@ -1506,13 +1545,13 @@
       },
       "polyline": [
        [
-        2500007.836,
-        5400007.546,
+        7.636,
+        7.346,
         223.35
        ],
        [
-        2500010.36,
-        5400009.672,
+        10.16,
+        9.472,
         225.45
        ]
       ],
@@ -1530,13 +1569,13 @@
       },
       "polyline": [
        [
-        2500004.401,
-        5400007.79,
+        4.201,
+        7.59,
         223.35
        ],
        [
-        2500002.202,
-        5400010.251,
+        2.002,
+        10.051,
         225.45
        ]
       ],
@@ -1554,13 +1593,13 @@
       },
       "polyline": [
        [
-        2500004.258,
-        5400004.349,
+        4.058,
+        4.149,
         223.35
        ],
        [
-        2500001.862,
-        5400002.08,
+        1.662,
+        1.88,
         225.45
        ]
       ],
@@ -1578,13 +1617,13 @@
       },
       "polyline": [
        [
-        2500007.124,
-        5400003.88,
+        6.924,
+        3.68,
         223.35
        ],
        [
-        2500008.671,
-        5400000.964,
+        8.471,
+        0.764,
         225.45
        ]
       ],
@@ -1610,28 +1649,28 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500008.4,
-        5400006.0,
+        8.2,
+        5.8,
         223.22
        ],
        [
-        2500006.0,
-        5400008.4,
+        5.8,
+        8.2,
         223.05
        ],
        [
-        2500003.6,
-        5400006.0,
+        3.4,
+        5.8,
         223.22
        ],
        [
-        2500006.0,
-        5400003.6,
+        5.8,
+        3.4,
         223.39
        ],
        [
-        2500008.4,
-        5400006.0,
+        8.2,
+        5.8,
         223.22
        ]
       ],
@@ -1652,23 +1691,23 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500011.6,
-        5400005.6,
+        11.4,
+        5.4,
         225.25
        ],
        [
-        2500011.9,
-        5400005.8,
+        11.7,
+        5.6,
         225.45
        ],
        [
-        2500012.1,
-        5400006.2,
+        11.9,
+        6.0,
         225.45
        ],
        [
-        2500011.8,
-        5400006.4,
+        11.6,
+        6.2,
         225.25
        ]
       ],
@@ -1689,83 +1728,83 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500011.8,
-        5400006.0,
+        11.6,
+        5.8,
         225.4
        ],
        [
-        2500011.359,
-        5400008.22,
+        11.159,
+        8.02,
         225.539
        ],
        [
-        2500010.101,
-        5400010.101,
+        9.901,
+        9.901,
         225.506
        ],
        [
-        2500008.22,
-        5400011.359,
+        8.02,
+        11.159,
         225.343
        ],
        [
-        2500006.0,
-        5400011.8,
+        5.8,
+        11.6,
         225.25
        ],
        [
-        2500003.78,
-        5400011.359,
+        3.58,
+        11.159,
         225.343
        ],
        [
-        2500001.899,
-        5400010.101,
+        1.699,
+        9.901,
         225.506
        ],
        [
-        2500000.641,
-        5400008.22,
+        0.441,
+        8.02,
         225.539
        ],
        [
-        2500000.2,
-        5400006.0,
+        0.0,
+        5.8,
         225.4
        ],
        [
-        2500000.641,
-        5400003.78,
+        0.441,
+        3.58,
         225.261
        ],
        [
-        2500001.899,
-        5400001.899,
+        1.699,
+        1.699,
         225.294
        ],
        [
-        2500003.78,
-        5400000.641,
+        3.58,
+        0.441,
         225.457
        ],
        [
-        2500006.0,
-        5400000.2,
+        5.8,
+        0.0,
         225.55
        ],
        [
-        2500008.22,
-        5400000.641,
+        8.02,
+        0.441,
         225.457
        ],
        [
-        2500010.101,
-        5400001.899,
+        9.901,
+        1.699,
         225.294
        ],
        [
-        2500011.8,
-        5400006.0,
+        11.6,
+        5.8,
         225.4
        ]
       ],
@@ -1786,13 +1825,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500011.6,
-        5400005.6,
+        11.4,
+        5.4,
         225.26
        ],
        [
-        2500011.7,
-        5400005.4,
+        11.5,
+        5.2,
         225.27
        ]
       ],
@@ -1813,13 +1852,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500011.8,
-        5400006.4,
+        11.6,
+        6.2,
         225.25
        ],
        [
-        2500011.7,
-        5400006.6,
+        11.5,
+        6.4,
         225.26
        ]
       ],
@@ -1840,13 +1879,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500007.836,
-        5400007.546,
+        7.636,
+        7.346,
         223.35
        ],
        [
-        2500010.36,
-        5400009.672,
+        10.16,
+        9.472,
         225.45
        ]
       ],
@@ -1867,13 +1906,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500004.401,
-        5400007.79,
+        4.201,
+        7.59,
         223.35
        ],
        [
-        2500002.202,
-        5400010.251,
+        2.002,
+        10.051,
         225.45
        ]
       ],
@@ -1894,13 +1933,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500004.258,
-        5400004.349,
+        4.058,
+        4.149,
         223.35
        ],
        [
-        2500001.862,
-        5400002.08,
+        1.662,
+        1.88,
         225.45
        ]
       ],
@@ -1921,13 +1960,13 @@
       "modus": "ziehen",
       "polyline": [
        [
-        2500007.124,
-        5400003.88,
+        6.924,
+        3.68,
         223.35
        ],
        [
-        2500008.671,
-        5400000.964,
+        8.471,
+        0.764,
         225.45
        ]
       ],
