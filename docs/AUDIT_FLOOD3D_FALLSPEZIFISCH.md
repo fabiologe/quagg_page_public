@@ -443,3 +443,36 @@ bekommt beim Ableiten KEINEN Rand von einer Basiszelle (Fahrplan sah ihn
 vor): die Abdeckungsregel aus E1a misst genau diesen Rand als „außerhalb der
 Vermessung" und würde ihn bei 12 m Gebiet mit 27 % melden.
 Tests: Backend 797 + 1 übersprungen, Client 395.
+
+### E5 gebaut (2026-09-22) — Regel und Kur messen dieselbe Größe
+
+Vier Commits (E5a `779278e`, E5b `45c7a71`, E5c `bcb19ae`, E5d), Muster
+überall: EINE Messfunktion, die Regel UND Kur aufrufen, die Kur misst nach,
+bevor sie Erfolg meldet. Weil `validate.py` `kur.py` importiert, wohnen die
+Messungen in `meshgen` (`zelle_am_ort`, `flaechen_zelle`, `box_stufe`,
+`stufe_fuer`, `bauwerk_bbox`), `casebuilder` (`fenster_mitte`,
+`fenster_flaeche` mit Gelände), `anschluss` (`rollen_ohne_rand`,
+`verschuettete_strecke`) und `solids` (`boden_unter`). Getestet an Fall A
+(Becken, Basis 0,5) UND Fall B (Tal, Basis 2,0), Muster `_kur_wirkt`
+(Befund → Kur → Befund weg → zweiter Aufruf ändert nichts).
+
+| # | vorher | nachher |
+|---|---|---|
+| P2 Aushub: Regel misst Flächenverfeinerung, Kur legt Quader | Kur-Klicks bis der Befund weg ist: ∞ | **1** (Fall A Schacht 0,4 m, Fall B 1,0 m); das Gelände bleibt grob |
+| P3 `zip(structures, Hüllenliste)` verrutscht bei Bauwerken ohne Grundriss | Quader um das falsche Bauwerk | **0**; ohne Grundriss sagt die Kur es, statt das Gelände zu verfeinern |
+| P8 Fensterbox mit festem `level=2`, je Klick eine neue Box | Klicks bis der Befund weg ist: ∞, Boxen: n | **1**, eine Box `fein_<id>`, angehoben statt angehängt |
+| P5 Rohrschale 0,15 m gegen die Zelle | nie geprüft | Warnung + Kur (Faktor 1); BetaTest10-Kopie 0 → **1** (0,15 Zellen); pier/weir/kammer in der Auflösungsregel |
+| P9 „Genau ein Zuflussrand" | Fall B (zwei Zuläufe) gesperrt, Leerlauf gesperrt | Fehler **1 → 0**; `0/U` trägt beide Zulauf-Patches; kein Zulauf nur ohne Startwasser ein Fehler |
+| G3 Zulauf ohne Fenster | volle Seite bis z_min, stumm: 371,5 m² | Fläche **über dem Gelände** 150 m²; Hinweis „ganze Seite x_min, 74 m breit" 0 → **1** |
+| P11 Rohr mit Rolle ohne Rand | nie gekoppelt, Kur „stimmig" | Warnung mit Abstand (BetaTest10 „y_max in 17,8 m", ohne Kur); 0,5 m vor dem Rand: Kur koppelt, `window.follow` gesetzt, Liste leer |
+| P10 Geländelage an vier Hüllquader-Ecken | Wehr quer im Tal „verschwindet" | Umriss + Mitte (`boden_unter`): falsche Warnung **1 → 0** |
+| P4 Rohr im Erdreich = Anteil ≥ 15 % an 41 Punkten | 2-m-Damm über 20-m-Rohr stumm | längste Strecke in m, ½ Zelle Abtastung, ab 2 Zellen: Befund **0 → 1**; 0,4 m streifend 0 |
+| P12 Sperrbreite des Rohrs = Achslänge (längs) / 0 (quer) | quer: übersprungen | Umriss des gebauten Körpers: **1,1 m** (0,8 + Wandung); BetaTest10 schräg 3,2 → 3,3 m |
+| P7 Nennweite > 1,5 m „ungewöhnlich" (am DN800 geeicht) | DN2000, DN150, Rahmen dieselbe Warnung; BetaTest10 1 | am gekoppelten Zufluss: DN150 an 0,8 m³/s (45 m/s) 0 → **1**, DN2000 an 0,8 m³/s **1 → 0**; ungekoppelt nur gegen ⅓ der Gebietsseite |
+| P6 Leerlauf: 1 % von V_start je 30 s | 4 800 m³ / Drossel 0,1: fertig bei 94 % Rest | zusätzlich Rate < 10 % der schnellsten Phase: nicht vor „leer"; DN800-Abklingen endet wie bisher (t ≈ 164 s) |
+
+BetaTest10-Kopie gesamt: Befunde 1 / 5 / 5 (fehler / warnung / hinweis)
+vor E5 → 1 / 4 / 6 nach E5 — die falsche Nennweiten-Warnung ist weg, die
+Rohrschale und das ungekoppelte Ablaufrohr sind neu und richtig, der
+74-m-Zulauf steht jetzt im Bericht. Verschoben nach E6: P13, P14, P15.
+Tests: Backend 816 + 1 übersprungen, Client 395.
