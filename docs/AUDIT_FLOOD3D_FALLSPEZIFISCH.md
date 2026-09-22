@@ -476,3 +476,20 @@ vor E5 → 1 / 4 / 6 nach E5 — die falsche Nennweiten-Warnung ist weg, die
 Rohrschale und das ungekoppelte Ablaufrohr sind neu und richtig, der
 74-m-Zulauf steht jetzt im Bericht. Verschoben nach E6: P13, P14, P15.
 Tests: Backend 816 + 1 übersprungen, Client 395.
+
+### Auslieferung (2026-09-22, 15:31) und Browserprobe
+
+Übernahme per Fast-Forward in den Live-Checkout (`cde-verbundexport`
+89fdf6a → 0df1e2f), Suite mit der Produktions-venv im Live-Tree 816 grün,
+`pm2 restart quagg-api` (Startup ~10 s), `npm run build` mit temporärer
+3-G-Swapdatei (der ständige Swap war voll), Bundle
+`Flood3DPreMain-*.js` trägt den neuen Import-Dialog, quagg-engineering.org
+antwortet 200.
+
+Browserprobe am Import-Dialog (Mini-Backend 8002 auf einer **Kopie** von
+BetaTest10, Vite 3003, Chrome headless), nichts übernommen:
+
+| Datei | Einheit | Lage | Gebiet ableiten | Kreise |
+|---|---|---|---|---|
+| `neun_linien.dxf` (synthetisch, 2,5 Mio / 5,4 Mio — fremde Welt) | „Meters (×1)" aus der Zeichnung | Vorschlag aus der Datei (2 500 000,2 / 5 400 000,2), Drehung 0 | angehakt (vorher: nur bei Gelände-Netz) | `AUSLAUF_rohr` Querschnitt → Ablaufrohr; `SCHACHT_deckel` **Draufsicht → ignorieren** mit Hinweis |
+| `Nacktes_Becken_EP1.dxf` (Betriebsdatei, Welt des Falls) | dito | **Verortung des Falls**: Offset 2 579 366,56 / 5 459 067,3, **Drehung 315,3°** vorbelegt | angehakt | `AUSLAUF_rohr` Querschnitt → Ablaufrohr |
