@@ -201,3 +201,84 @@ def build_spec() -> cs.CaseSpec:
                 cs.TargetMinBedShear(id="sohlschub_becken", kind="min_bed_shear",
                                      region="r01", limit_min=1.0),
             ]))
+
+
+# --------------------------------------------------------------------------
+# Referenzfall B: „Tal" — bewusst anders als der Abnahmefall
+# --------------------------------------------------------------------------
+#
+# Der Abnahmefall oben ist ein kleines, ebenes Becken auf 96 m mit einem
+# Zulauf und Zellen von 0,5 m. Fast jede feste Zahl im Werkzeug passt
+# zufällig zu ihm. Dieser zweite Fall bricht die Annahmen gezielt: groß,
+# geneigt, tief liegend, grobe Zellen, zwei Zuläufe auf verschiedenen
+# Seiten, Gebietskanten mit krummen Nachkommastellen — und ein Höhenraster,
+# das das Gebiet nur zum Teil deckt. Was hier stumm bleibt, würde auch bei
+# einem Kunden stumm bleiben.
+
+TAL_EXTENT = (-3.7, 12.3, 118.9, 92.6)        # 122,6 × 80,3 m
+TAL_RASTER = dict(x0=10.35, y0=20.15, ncols=80, nrows=50, res=1.0)
+TAL_RASTER_DATEI = "derived/gelaende_tal.asc"
+
+
+def tal_hoehe(x, y):
+    """Geneigter Talboden: Gefälle in x, V-förmiges Tal um y = 44,65."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    return 50.0 + 0.03 * (x - TAL_RASTER["x0"]) + 0.04 * np.abs(y - 44.65)
+
+
+def schreibe_tal_raster(case_dir: Path) -> str:
+    """Das Höhenraster des Tals als ESRI-ASCII neben den Fall schreiben."""
+    r = TAL_RASTER
+    xs = r["x0"] + np.arange(r["ncols"]) * r["res"]
+    ys = r["y0"] + np.arange(r["nrows"]) * r["res"]
+    xx, yy = np.meshgrid(xs, ys)
+    z = tal_hoehe(xx, yy)
+    ziel = Path(case_dir) / TAL_RASTER_DATEI
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    zeilen = [f"ncols {r['ncols']}", f"nrows {r['nrows']}",
+              f"xllcorner {r['x0'] - r['res'] / 2:.3f}",
+              f"yllcorner {r['y0'] - r['res'] / 2:.3f}",
+              f"cellsize {r['res']:g}", "nodata_value -9999"]
+    for row in z[::-1]:
+        zeilen.append(" ".join(f"{v:.3f}" for v in row))
+    ziel.write_text("\n".join(zeilen))
+    return TAL_RASTER_DATEI
+
+
+def build_spec_tal(case_dir: Path) -> cs.CaseSpec:
+    """
+    Referenzfall B. Schreibt das Raster nach `case_dir` und gibt die Spec
+    zurück (sie verweist relativ darauf, wie ein importierter Fall).
+    """
+    schreibe_tal_raster(case_dir)
+    return cs.CaseSpec(
+        meta=cs.Meta(id="test-tal", title="Referenzfall B: geneigtes Tal"),
+        domain=cs.Domain(extent=TAL_EXTENT, z_min=46.0, z_max=58.0),
+        terrain=cs.Terrain(
+            base=cs.TerrainBase(source=TAL_RASTER_DATEI, resolution=1.0)),
+        structures=[
+            cs.StructWall(id="leitwand", type="wall", patch="leitwand",
+                          alignment=cs.Alignment(points=[(60.0, 30.0, 55.0),
+                                                         (60.0, 58.0, 55.0)]),
+                          height=3.0, thickness=0.6),
+        ],
+        mesh=cs.Mesh(base_cell=2.0),
+        boundaries=[
+            cs.BcInflowConstant(id="zulauf_west", patch="inlet",
+                                type="inflow_constant", q=8.0, face="x_min"),
+            cs.BcInflowConstant(id="zulauf_nord", patch="inlet_nord",
+                                type="inflow_constant", q=2.0, face="y_max"),
+            cs.BcOutflowFree(id="ablauf", patch="outlet",
+                             type="outflow_free", face="x_max"),
+            cs.BcAtmosphere(id="atmo", patch="atmosphere", type="atmosphere"),
+        ],
+        solver=cs.Solver(application="interFoam", end_time=60.0,
+                         initial_level=49.0,
+                         write_interval_fields=5.0, write_interval_series=0.1),
+        evaluation=cs.Evaluation(
+            sections=[cs.Section(id="qs_tal", polyline=[(80.0, 20.0),
+                                                         (80.0, 70.0)])],
+            gauges=[cs.Gauge(id="pegel_tal", point=(70.0, 45.0))],
+            targets=[cs.TargetMaxLevel(id="einstau_tal", kind="max_level",
+                                       at="pegel_tal", limit_max=54.0)]))
