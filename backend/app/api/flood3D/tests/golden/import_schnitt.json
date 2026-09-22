@@ -21,7 +21,7 @@
    "unit_factor": 1.0
   },
   "derived": {
-   "gelaende_imp-golden.asc": "ae656f411c45fd8d",
+   "gelaende_imp-golden.asc": "db90167ea41b4aa7",
    "gelaende_imp-golden_tin.stl": "01dfab124405e860"
   },
   "manifest": {
@@ -109,7 +109,8 @@
    "unit_suspect": false
   },
   "report": [
-   "Gelände „3D_FL“: 162 Dreiecke auf 26×26 Raster (Abdeckung 44%); die übrigen 56% liegen außerhalb des TIN — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe = höchster Randpunkt der Vermessung, im Gelände-Panel änderbar)",
+   "Rasterweite 0.472 m aus den Daten (typische Dreieckskante 0.94 m).",
+   "Gelände „3D_FL“: 162 Dreiecke auf 27×27 Raster (Abdeckung 45%); die übrigen 55% liegen außerhalb des TIN — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe = höchster Randpunkt der Vermessung, im Gelände-Panel änderbar)",
    "Rohrmündung „auslauf_rohr“: DN1600, Achse (9.02, 9.02, 224.05), Sohle 223.250 m, Richtung (0.707, 0.707); als 3.20 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
    "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
    "Domäne aus Gelände abgeleitet: (0.0, 0.0, 12.02, 12.02), z 222.55…227.55 — einschließlich 1 Rohr(en) aus diesem Import",
@@ -556,7 +557,7 @@
      "koerper": null,
      "original": null,
      "original_abbildung": null,
-     "resolution": 0.5,
+     "resolution": 0.472,
      "source": "derived/gelaende_imp-golden.asc"
     },
     "belagskarte": null,
@@ -634,7 +635,7 @@
    "unit_factor": 1.0
   },
   "derived": {
-   "gelaende_imp-golden_linien.asc": "8648de07a964bf91"
+   "gelaende_imp-golden_linien.asc": "c545e85045a8d89f"
   },
   "manifest": {
    "bbox": [
@@ -855,7 +856,8 @@
   },
   "report": [
    "Lage: die Datei liegt in Landeskoordinaten, kein Offset angegeben — Vorschlag (2500000.20, 5400000.20) angewandt; ohne ihn rechneten Viewer und Vernetzer mit 7-stelligen Zahlen.",
-   "Gelände aus 2 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 21 Dreiecke aus 19 Stützpunkten auf 25×25 Raster, Höhen 223.06 … 225.52 m, Abdeckung 66%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. 6 offene Linie(n) innerhalb des äußersten Rings liegen als Stützzellen im Raster (36 Zellen). 1 offene Linie(n) liegen außerhalb der geschlossenen Kanten und tragen nicht zum Raster bei — als Kanten bleiben sie erhalten. Die restlichen 34% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe, im Gelände-Panel änderbar).",
+   "Gelände aus 2 geschlossenen Kanten mit ZWANGSKANTEN vermascht: 21 Dreiecke aus 19 Stützpunkten auf 12×12 Raster, Höhen 223.07 … 225.45 m, Abdeckung 54%. Jeder Ring ist eine Grenze und der nächstinnere sein Loch — es wurde kein Stützpunkt hinzuerfunden, alle liegen auf den Kanten. 6 offene Linie(n) innerhalb des äußersten Rings liegen als Stützzellen im Raster (18 Zellen). 1 offene Linie(n) liegen außerhalb der geschlossenen Kanten und tragen nicht zum Raster bei — als Kanten bleiben sie erhalten. Die restlichen 46% liegen außerhalb des äußersten Rings — dort ist nichts vermessen; im Modell steht dort eine Ebene auf 225.55 m (Außenhöhe, im Gelände-Panel änderbar).",
+   "Rasterweite 1.132 m aus den Daten (typischer Stützpunktabstand 2.26 m).",
    "Querschnitt „qs_auslauf_linie“ aus Trasse übernommen",
    "Bruchkante „kante_bruchkanten_linie_1_linie“: 5 Stützpunkte, 223.05 … 223.39 m",
    "Bruchkante „kante_bruchkanten_linie_2_linie“: 4 Stützpunkte, 225.25 … 225.45 m",
@@ -870,8 +872,8 @@
    "Rohrmündung „schacht_deckel_rohr“: DN1200, Achse (2.80, 8.80, 223.35), Sohle 222.750 m, Richtung (0.000, 0.000); als 2.40 m langer Stutzen eingebaut, laut Layer ein Ablauf — „⚯ Anschlüsse herstellen“ koppelt ihn an den passenden Rand",
    "9 Operation(en) und 0 Bauteil(e) aus 9 Vermessungskanten abgeleitet, 7 eigene unangetastet",
    "Verortung gespeichert: Drehung 0°, Verschiebung (-2.5e+06, -5.4e+06), Einheit ×1 — die Rückverortung in Landeskoordinaten ist damit rechnerisch möglich",
-   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 14.35, 11.6), z 220.9…227.58 — einschließlich 2 Rohr(en) aus diesem Import",
-   "Anfangswasserspiegel auf 223.06 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
+   "Domäne aus Gelände abgeleitet: (0.0, 0.0, 14.35, 11.6), z 220.9…227.47 — einschließlich 2 Rohr(en) aus diesem Import",
+   "Anfangswasserspiegel auf 223.07 m gesetzt (tiefster Geländepunkt, trockener Start) — der bisherige Wert (94.9) lag außerhalb des neuen Gebiets"
   ],
   "spec": {
    "boundaries": [
@@ -915,7 +917,7 @@
      14.35,
      11.6
     ],
-    "z_max": 227.58,
+    "z_max": 227.47,
     "z_min": 220.9
    },
    "evaluation": {
@@ -1092,7 +1094,7 @@
     "abbruch": null,
     "application": "interFoam",
     "end_time": 60.0,
-    "initial_level": 223.06,
+    "initial_level": 223.07,
     "max_alpha_co": 0.3,
     "max_co": 0.5,
     "turbulence": "kOmegaSST",
@@ -1378,7 +1380,7 @@
      "koerper": null,
      "original": null,
      "original_abbildung": null,
-     "resolution": 0.5,
+     "resolution": 1.132,
      "source": "derived/gelaende_imp-golden_linien.asc"
     },
     "belagskarte": null,

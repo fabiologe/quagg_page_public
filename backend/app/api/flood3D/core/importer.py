@@ -1419,6 +1419,7 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
         shapely.MultiPoint(v[:, :2]).convex_hull.buffer(0.5 * resolution),
         xx, yy)
     luecke = np.isnan(z)
+    glaettung: dict = {}
     if luecke.any():
         # Außerhalb der Dreiecksmaschen war bisher „nimm die Höhe des
         # NÄCHSTEN Stützpunkts". Das ergibt ein Voronoi-Feld: stückweise
@@ -1429,7 +1430,7 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
         # Jetzt wird die Lücke stufenfrei geschlossen: die Fläche mit der
         # geringsten Krümmung durch die bekannten Höhen.
         from .terrain import laplace_fuellen
-        z = laplace_fuellen(z, ~luecke)
+        z = laplace_fuellen(z, ~luecke, info=glaettung)
 
     # Außerhalb der Hülle ist nichts gemessen — das bleibt NODATA; die Ebene
     # darüber setzt der Leser (terrain.lade_basis). Innen bleibt bitgleich.
@@ -1444,7 +1445,18 @@ def tin_from_lines(linien: list, out_path: Path, resolution: float,
             "ausserhalb": round(float(np.mean(~huelle)), 3),
             "z_min": round(float(np.nanmin(z)), 3),
             "z_max": round(float(np.nanmax(z)), 3),
+            "glaettung": glaettung,
             "aussenhoehe": _randkrone_punkte(v, resolution)}
+
+
+def _stuetzpunktabstand(linien: list) -> float | None:
+    """Typischer (Median-)Abstand aufeinanderfolgender Stützpunkte."""
+    stuecke = [np.linalg.norm(np.diff(np.asarray(li, dtype=float)[:, :2],
+                                      axis=0), axis=1)
+               for li in linien if len(li) > 1]
+    alle = np.concatenate(stuecke) if stuecke else np.zeros(0)
+    alle = alle[alle > 1e-6]
+    return float(np.median(alle)) if alle.size else None
 
 
 # --------------------------------------------------------------------------
@@ -1655,10 +1667,6 @@ class _Uebernahme:
         from .casespec import ImportRef
         return ImportRef(import_id=self.import_id, kandidat=cid)
 
-    def aufloesung(self, rueckfall: float) -> float:
-        return (self.spec.terrain.base.resolution if self.spec.terrain
-                else rueckfall)
-
     def drehen(self, pkte: np.ndarray) -> np.ndarray:
         """(n,2) oder (n,3) um die z-Achse durch den Ursprung drehen."""
         if not self.rot:
@@ -1785,8 +1793,16 @@ def _linien_fuer_gelaende(u: _Uebernahme, decisions: list[dict],
 
 
 def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
-    res = u.aufloesung(0.5)
+    from .terrain import rasterweite_aus_daten
+
     linien = [u.linie_laden(u.by_id[d["candidate"]]) for d in ent]
+    # Rasterweite aus den DATEN: der halbe typische Stützpunktabstand —
+    # bis 2026-09-22 fest 0,5 m bzw. die Weite des vorigen Geländes (I11)
+    alle = np.vstack(linien)
+    abstand = _stuetzpunktabstand(linien)
+    res = rasterweite_aus_daten(
+        abstand / 2 if abstand else None,
+        (float(np.ptp(alle[:, 0])), float(np.ptp(alle[:, 1]))))
     asc = derived_pfad(u.case_dir, f"gelaende_{u.import_id}_linien.asc")
 
     # Geschlossene Kanten sind GRENZEN, keine bloßen Punktwolken. Liegt
@@ -1856,7 +1872,25 @@ def _gelaende_aus_linien(u: _Uebernahme, ent: list[dict]) -> None:
             f"keine Aussage der Vermessung. {info['ausserhalb']:.0%} des "
             "Rasters liegen außerhalb der Vermessung; im Modell steht "
             f"dort eine Ebene auf {info['aussenhoehe']:.2f} m "
-            "(Außenhöhe, im Gelände-Panel änderbar).")
+            "(Außenhöhe, im Gelände-Panel änderbar)."
+            + _glaettung_satz(info.get("glaettung")))
+    u.report.append(
+        f"Rasterweite {res:g} m aus den Daten"
+        + (f" (typischer Stützpunktabstand {abstand:.2f} m)." if abstand
+           else " (Vorgabe, kein Stützpunktabstand messbar)."))
+
+
+def _glaettung_satz(g: dict | None) -> str:
+    """Konvergenz der stufenfreien Ergänzung — bis 2026-09-22 stand
+    „stufenfrei ergänzt" auch dann, wenn 400 Schritte nicht reichten."""
+    if not g or not g.get("schritte"):
+        return ""
+    if g.get("konvergiert"):
+        return (f" Die Ergänzung ist nach {g['schritte']} Schritten "
+                f"konvergiert (Reständerung {g['restaenderung'] * 1000:.2f} mm).")
+    return (f" ACHTUNG: die Ergänzung ist nach {g['schritte']} Schritten NICHT "
+            f"konvergiert (Reständerung {g['restaenderung'] * 1000:.1f} mm je "
+            "Schritt) — die Fläche zwischen den Kanten ist dort ungenau.")
 
 
 def _rohr_aus_kreis(u: _Uebernahme, c: dict, role: str) -> None:
@@ -1900,11 +1934,6 @@ def _rohr_aus_kreis(u: _Uebernahme, c: dict, role: str) -> None:
            "Rand" if rolle else " — Randbedingung noch zuordnen"))
 
 
-# Deckel für das Knotenraster des Modells aus einer Rasterdatei — darüber
-# wird die Rasterweite vergröbert und das im Bericht gesagt
-MAX_GELAENDE_KNOTEN = 4_000_000
-
-
 def _rasterweite(u: _Uebernahme, zelle: float | None,
                  bbox: np.ndarray | None) -> tuple[float, str]:
     """
@@ -1913,21 +1942,20 @@ def _rasterweite(u: _Uebernahme, zelle: float | None,
     Rückfall von 0,5 m genommen, ein 2-m-Raster also 16-fach überabgetastet
     (Audit I11). Über MAX_GELAENDE_KNOTEN wird vergröbert, mit Ansage.
     """
-    if not zelle:
-        return u.aufloesung(0.5), ""
-    res = float(zelle) * u.unit_factor
-    weite = f"; Rasterweite {res:g} m aus der Datei"
+    from .terrain import MAX_GELAENDE_KNOTEN, rasterweite_aus_daten
+
+    spann = None
     if bbox is not None:
-        dx = float(bbox[1][0] - bbox[0][0])
-        dy = float(bbox[1][1] - bbox[0][1])
-        knoten = (dx / res + 1) * (dy / res + 1)
-        if knoten > MAX_GELAENDE_KNOTEN:
-            grob = round(math.sqrt(dx * dy / MAX_GELAENDE_KNOTEN), 3)
-            weite = (f"; Rasterweite der Datei {res:g} m ergäbe "
-                     f"{knoten / 1e6:.0f} Mio Knoten — auf {grob:g} m "
-                     f"vergröbert (Deckel {MAX_GELAENDE_KNOTEN / 1e6:.0f} Mio)")
-            res = grob
-    return res, weite
+        spann = (float(bbox[1][0] - bbox[0][0]), float(bbox[1][1] - bbox[0][1]))
+    if not zelle:
+        return rasterweite_aus_daten(None, spann), "; Rasterweite Vorgabe"
+    vorschlag = float(zelle) * u.unit_factor
+    res = rasterweite_aus_daten(vorschlag, spann)
+    if res > vorschlag * 1.001:
+        return res, (f"; Rasterweite der Datei {vorschlag:g} m ergäbe mehr als "
+                     f"{MAX_GELAENDE_KNOTEN / 1e6:.0f} Mio Knoten — auf "
+                     f"{res:g} m vergröbert")
+    return res, f"; Rasterweite {res:g} m aus der Datei"
 
 
 def _gelaende_aus_raster(u: _Uebernahme, c: dict, role: str) -> None:
@@ -1970,8 +1998,26 @@ def _gelaende_aus_raster(u: _Uebernahme, c: dict, role: str) -> None:
 def _gelaende_aus_netz(u: _Uebernahme, c: dict, role: str) -> None:
     from .solids import oberseite
 
+    from .terrain import rasterweite_aus_daten
+
     m = u.load_mesh(c["id"])
-    res = u.aufloesung(1.0)
+    # Rasterweite aus den DATEN: die halbe typische Dreieckskante — bis
+    # 2026-09-22 fest 1,0 m bzw. die Weite des vorigen Geländes (I11)
+    # alle Kanten je Dreieck im GRUNDRISS, nicht die eindeutigen 3D-Längen:
+    # in einem Gitter-TIN sind zwei von drei Kanten Seiten, der Median ist
+    # dann die Seite und nicht die Diagonale — und eine Böschung macht aus
+    # einer 0,94-m-Seite sonst 1,3 m
+    tri = np.asarray(m.triangles, dtype=float)[:, :, :2]
+    kanten = np.concatenate([
+        np.linalg.norm(tri[:, 1] - tri[:, 0], axis=1),
+        np.linalg.norm(tri[:, 2] - tri[:, 1], axis=1),
+        np.linalg.norm(tri[:, 0] - tri[:, 2], axis=1)]) if len(tri) else np.zeros(0)
+    kanten = kanten[kanten > 1e-6]
+    kante = float(np.median(kanten)) if kanten.size else None
+    res = rasterweite_aus_daten(
+        kante / 2 if kante else None,
+        (float(m.bounds[1][0] - m.bounds[0][0]),
+         float(m.bounds[1][1] - m.bounds[0][1])))
     asc = derived_pfad(u.case_dir, f"gelaende_{u.import_id}.asc")
     koerper_name = None
     if role == "gelaende_koerper":
@@ -1992,6 +2038,10 @@ def _gelaende_aus_netz(u: _Uebernahme, c: dict, role: str) -> None:
                               f"gelaende_{u.import_id}_tin.stl"))
     _gelaende_setzen(u.spec, u.case_dir, _rel(u.case_dir, asc), res,
                      koerper_name, aussenhoehe=info.get("aussenhoehe"))
+    u.report.append(
+        f"Rasterweite {res:g} m aus den Daten"
+        + (f" (typische Dreieckskante {kante:.2f} m)." if kante
+           else " (Vorgabe, keine Dreieckskante messbar)."))
     if koerper_name:
         u.report.append(
             f"Geländekörper „{c['name']}“ übernommen: "

@@ -42,6 +42,7 @@ env_spiegeln("FLOOD3D_")
 
 from .core import fields as vol_fields
 from .core.casespec import GEOMETRIE_TEILE, CaseSpec, migriere
+from .core.terrain import RASTERWEITE_VORGABE
 from .core.solids import build_solids
 from .core.store import (lauf_reservieren, manifest_schreiben,
                          read_manifest, run_paths, runs_root)
@@ -935,7 +936,8 @@ def _new_case_template(case_id: str, title: str) -> CaseSpec:
     return CaseSpec(
         meta=cs.Meta(id=case_id, title=title),
         domain=cs.Domain(extent=(0.0, 0.0, 100.0, 100.0), z_min=90.0, z_max=100.0),
-        terrain=cs.Terrain(base=cs.TerrainBase(source="flat:95.0", resolution=0.5)),
+        terrain=cs.Terrain(base=cs.TerrainBase(source="flat:95.0",
+                                               resolution=RASTERWEITE_VORGABE)),
         mesh=cs.Mesh(base_cell=1.0),
         boundaries=[
             cs.BcInflowConstant(id="zulauf", patch="inlet",

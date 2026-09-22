@@ -162,7 +162,9 @@ class Domain(_Model):
 
 class TerrainBase(_Model):
     source: str
-    resolution: float = 0.25
+    # = terrain.RASTERWEITE_VORGABE (ein Test hält beide gleich); der
+    # Import leitet die Rasterweite aus den Daten ab (rasterweite_aus_daten)
+    resolution: float = 0.5
     # Geländekörper: ein geschlossener Volumenkörper (STL) statt der aus
     # dem Raster erzeugten Höhenfläche. Der Vernetzer bekommt dann DIESEN
     # Körper — nur so kann das Gelände Hohlräume haben (Rohr durch den

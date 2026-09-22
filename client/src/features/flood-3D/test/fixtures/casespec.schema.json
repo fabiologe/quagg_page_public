@@ -6655,7 +6655,7 @@
           "type": "string"
         },
         "resolution": {
-          "default": 0.25,
+          "default": 0.5,
           "title": "Resolution",
           "type": "number"
         },

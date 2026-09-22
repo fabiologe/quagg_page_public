@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import math
+
 import numpy as np
 import shapely
 import trimesh
@@ -27,6 +29,34 @@ from .casespec import Domain, Terrain
 # --------------------------------------------------------------------------
 # Geometrie-Helfer
 # --------------------------------------------------------------------------
+
+# Rasterweite des Modellgeländes, wenn keine Daten sie nahelegen (neuer
+# Fall). Bis 2026-09-22 gab es für dieselbe Größe VIER Rückfallwerte
+# (0,5 / 0,5 / 1,0 / 0,25 in Router, Importer und Schema — Audit I11);
+# das Schema (casespec.TerrainBase.resolution) trägt dieselbe Zahl.
+RASTERWEITE_VORGABE = 0.5
+# Deckel für das Knotenraster des Modellgeländes — darüber wird die
+# Rasterweite vergröbert und das im Bericht gesagt
+MAX_GELAENDE_KNOTEN = 4_000_000
+
+
+def rasterweite_aus_daten(vorschlag: float | None,
+                          spannweite: tuple[float, float] | None) -> float:
+    """
+    Rasterweite aus den DATEN eines Imports: `vorschlag` ist der halbe
+    typische Stützpunktabstand eines TIN oder von Linien (feiner löst das
+    Raster nichts mehr auf, was nicht gemessen ist) bzw. die Zellgröße
+    einer Rasterdatei; ohne Vorschlag RASTERWEITE_VORGABE. Nach oben
+    begrenzt, damit das Knotenraster unter MAX_GELAENDE_KNOTEN bleibt —
+    ein 0,1-m-Scan über 500 m ergäbe sonst 25 Mio Knoten.
+    """
+    res = float(vorschlag) if vorschlag and vorschlag > 0 else RASTERWEITE_VORGABE
+    if spannweite is not None:
+        dx, dy = max(float(spannweite[0]), 0.0), max(float(spannweite[1]), 0.0)
+        if (dx / res + 1) * (dy / res + 1) > MAX_GELAENDE_KNOTEN and dx * dy > 0:
+            res = math.sqrt(dx * dy / MAX_GELAENDE_KNOTEN)
+    return round(res, 3)
+
 
 def _polygon_mask(xx: np.ndarray, yy: np.ndarray, polygon: list) -> np.ndarray:
     path = MplPath(np.asarray(polygon))
@@ -111,7 +141,8 @@ def naechste_hoehe(z: np.ndarray, bekannt: np.ndarray) -> np.ndarray:
 
 
 def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
-                    schritte: int = 400, toleranz: float = 1e-4) -> np.ndarray:
+                    schritte: int | None = None, toleranz: float = 1e-4,
+                    info: dict | None = None) -> np.ndarray:
     """
     Freie Rasterknoten stufenfrei aus den festen ergänzen.
 
@@ -127,11 +158,21 @@ def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
     steht dazwischen die volle Höhendifferenz als senkrechte Wand statt
     einer Neigung — genau die „automatischen Höhensprünge" beim Import.
 
+    Gelöst wird mit Rot-Schwarz-Überrelaxation (SOR): die Relaxation ist
+    auf die Fenstergröße abgestimmt, die Schrittzahl wächst mit ihr, und
+    `info` sagt hinterher, ob es konvergiert ist. Bis 2026-09-22 liefen
+    fest 400 Jacobi-Schritte, egal wie groß die Lücke — bei 12 m war der
+    Fehler 0, bei 100 m 0,59 m, bei 300 m 2,49 m, und niemand erfuhr es
+    (Audit G2/I4).
+
     `fest` ist die Maske der bekannten Knoten. Sind keine bekannt, bleibt
     das Feld unverändert.
     """
     z = np.array(z, dtype=float)
     fest = np.asarray(fest, dtype=bool)
+    if info is not None:
+        info.update({"schritte": 0, "restaenderung": 0.0, "konvergiert": True,
+                     "relaxation": 1.0, "fenster": (0, 0)})
     if not fest.any() or fest.all():
         return z
     # Startwert: die Höhe des nächsten bekannten Knotens. Das ist genau das
@@ -154,17 +195,40 @@ def laplace_fuellen(z: np.ndarray, fest: np.ndarray,
     z = z[j0:j1, i0:i1]
     fest = fest[j0:j1, i0:i1]
 
-    for _ in range(max(schritte, 1)):
-        # Rand über 'edge' fortsetzen: am Gebietsrand gilt Neumann
-        # (Ableitung null), das Gelände läuft dort waagerecht aus statt
-        # gegen eine erfundene Höhe zu ziehen
-        p = np.pad(z, 1, mode="edge")
-        mittel = 0.25 * (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:])
-        neu = np.where(fest, z, mittel)
-        aenderung = float(np.max(np.abs(neu - z)))
-        z = neu
-        if aenderung < toleranz:
+    # Optimale Überrelaxation für ein Gitter dieser Größe (Jacobi bräuchte
+    # ~n² Schritte, SOR ~n); die Schrittzahl wächst mit dem Fenster
+    n = max(z.shape)
+    omega = 2.0 / (1.0 + math.sin(math.pi / (n + 1)))
+    if schritte is None:
+        schritte = max(400, 20 * n)
+    jj, ii = np.indices(z.shape)
+    frei_w = ~fest
+    farben = (((jj + ii) % 2 == 0) & frei_w, ((jj + ii) % 2 == 1) & frei_w)
+    # `toleranz` meint den FEHLER, gemessen wird die Änderung je Schritt:
+    # bei geometrischer Konvergenz mit Spektralradius ρ = ω − 1 ist der
+    # Restfehler etwa Änderung / (1 − ρ). Ohne diese Skalierung galt eine
+    # 300-Zellen-Lücke mit 2,3 cm Fehler als konvergiert.
+    schwelle = toleranz * max(1.0 - (omega - 1.0), 1e-3)
+    aenderung = 0.0
+    k = 0
+    for k in range(1, max(schritte, 1) + 1):
+        aenderung = 0.0
+        for farbe in farben:
+            # Rand über 'edge' fortsetzen: am Gebietsrand gilt Neumann
+            # (Ableitung null), das Gelände läuft dort waagerecht aus statt
+            # gegen eine erfundene Höhe zu ziehen
+            p = np.pad(z, 1, mode="edge")
+            mittel = 0.25 * (p[:-2, 1:-1] + p[2:, 1:-1]
+                             + p[1:-1, :-2] + p[1:-1, 2:])
+            delta = np.where(farbe, omega * (mittel - z), 0.0)
+            z = z + delta
+            aenderung = max(aenderung, float(np.max(np.abs(delta))))
+        if aenderung < schwelle:
             break
+    if info is not None:
+        info.update({"schritte": k, "restaenderung": aenderung,
+                     "konvergiert": bool(aenderung < schwelle),
+                     "relaxation": round(omega, 4), "fenster": z.shape})
     aus[j0:j1, i0:i1] = z
     return aus
 

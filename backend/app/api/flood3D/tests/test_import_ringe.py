@@ -68,14 +68,20 @@ def test_neun_linien_ergeben_das_ganze_becken(tmp_path):
     assert "Stützzellen im Raster" in bericht, bericht
 
     z = _lesen(tmp_path / spec.terrain.base.source)
-    assert z.shape == (25, 25)                       # vorher 11 × 11
-    # Zellmitten treffen die Ringknoten nicht exakt — eine halbe Zelle
-    # Interpolation, kein Höhenverlust (vorher: Maximum 223,38, die Sohle)
-    assert np.nanmax(z) == pytest.approx(fx.KRONE, abs=0.05)
-    assert np.nanmin(z) == pytest.approx(fx.SOHLE, abs=0.05)
+    # das Raster umfasst den ganzen Beckenrand (11,6 m) — vorher nur die
+    # Sohle (4,8 m: 11 × 11 bei 0,5 m); die Rasterweite folgt seit E6b den
+    # Daten (halber Stützpunktabstand), daher aus der Spec gerechnet
+    res = spec.terrain.base.resolution
+    erwartet = int(np.ceil(11.6 / res)) + 1
+    assert z.shape == (erwartet, erwartet), (z.shape, res)
+    # Zellmitten treffen die Ringknoten nicht exakt — bei ~1,1 m Zellen
+    # liegt die nächste Zelle bis 0,5 m neben dem Kronenknoten, die Krone
+    # variiert ±0,3 m; kein Höhenverlust (vorher: Maximum 223,38, die Sohle)
+    assert np.nanmax(z) == pytest.approx(fx.KRONE, abs=0.15)
+    assert np.nanmin(z) == pytest.approx(fx.SOHLE, abs=0.15)
     # ein 16-Eck deckt ~72 % seines Hüllquadrats, Randzellen ausgenommen:
-    # gemessen 66 % — vorher 37 % (nur die Sohle)
-    assert float(np.mean(~np.isnan(z))) > 0.6
+    # 66 % bei 0,5-m-Zellen, 54 % bei ~1,1 m — vorher 37 % (nur die Sohle)
+    assert float(np.mean(~np.isnan(z))) > 0.5
     x0, y0, x1, y1 = spec.domain.extent
     assert x1 - x0 > 11.0 and y1 - y0 > 11.0          # vorher 4,8 m
     rand = next(k for k in spec.terrain.kanten if "linie_3" in k.id)

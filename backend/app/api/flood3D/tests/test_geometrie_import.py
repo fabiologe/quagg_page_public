@@ -224,7 +224,8 @@ def test_apply_uebernimmt_gelaende_wand_und_trasse(case):
     # sonst schlägt die Prüfung ("liegt außerhalb") sofort an
     assert spec.domain.z_min < spec.solver.initial_level < spec.domain.z_max
     assert any("Anfangswasserspiegel" in r for r in info["report"])
-    assert len(info["report"]) == 5
+    assert any("Rasterweite" in r for r in info["report"])     # seit E6b
+    assert len(info["report"]) == 6
 
 
 def test_apply_mit_einheiten_und_offset(case):
