@@ -10,11 +10,31 @@
    "terrain": 432.0,
    "wand_becken": 27.0
   },
-  "flaechenschalen": 27155,
-  "gesamt": 115470,
+  "flaechenschalen": 72476,
+  "gesamt": 160791,
   "hintergrund": 14587,
+  "lauf": {
+   "ausgaben": 13,
+   "dauer_s": 60.0,
+   "dt": 0.0031249999999999997,
+   "durchsatz_je_kern": 87686.94540909397,
+   "feinste_zelle": 0.0625,
+   "feinstes_aus": [
+    "wand_becken"
+   ],
+   "kerne": 16,
+   "kernstunden": 9.7796997717184,
+   "max_stufe": 3,
+   "schritte": 19200.0,
+   "stunden": 0.6112312357324
+  },
   "schale": 3,
-  "unter_gelaende": 0.4724
+  "unter_gelaende": 0.4724,
+  "wassertiefe": {
+   "m": 0.716314189618231,
+   "woher": "aus der Speicherkurve des Geländes",
+   "zulauf_m3": 30.0
+  }
  },
  "spec": {
   "boundaries": [

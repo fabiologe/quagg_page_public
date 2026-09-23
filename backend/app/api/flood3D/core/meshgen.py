@@ -105,6 +105,37 @@ MAX_GLOBAL_CELLS = 8_000_000
 SCHALE = 3
 
 
+# Stufen, mit denen snappyHexMesh Flächen verfeinert, wenn der Fall nichts
+# angibt: das Gelände trägt die Strömung, ist aber großflächig (1); ein
+# Bauwerk braucht seine Kanten (2)
+GELAENDE_STUFE = 1
+BAUWERK_STUFE = 2
+
+
+def flaechen_stufen(spec: CaseSpec, has_terrain: bool | None = None,
+                    solid_patches=None) -> dict[str, int]:
+    """
+    Die WIRKSAME Verfeinerungsstufe je Fläche — Angabe im Fall, sonst die
+    Vorgabe. snappy_dict schreibt genau diese Stufen; zellen_schaetzung und
+    runner.laufschaetzung rechnen damit. Bis 2026-09-23 sahen Schätzung und
+    Panel nur die ausdrücklich angelegten Verfeinerungen: Fall K geschätzt
+    10 607 Zellen und feinste Zelle 0,10 m, gebaut 21 000 Zellen mit 0,05 m
+    an der Sohle, Laufzeit 4× zu optimistisch (Fahrplan B3).
+    """
+    angegeben = {r.target: r.level for r in spec.mesh.refinements
+                 if r.type == "surface"}
+    if has_terrain is None:
+        has_terrain = spec.terrain is not None
+    if solid_patches is None:
+        solid_patches = [st.patch for st in spec.structures if st.type != "screen"]
+    out: dict[str, int] = {}
+    if has_terrain:
+        out["terrain"] = int(angegeben.get("terrain", GELAENDE_STUFE))
+    for patch in solid_patches:
+        out[patch] = int(angegeben.get(patch, BAUWERK_STUFE))
+    return out
+
+
 def zellen_schaetzung(spec: CaseSpec, terrain=None,
                       solids: dict | None = None) -> dict:
     """
@@ -144,14 +175,15 @@ def zellen_schaetzung(spec: CaseSpec, terrain=None,
     base = spec.mesh.base_cell
     for r in spec.mesh.refinements:
         stufe = int(r.level or 0)
-        if stufe <= 0:
-            continue
-        zelle = base / 2 ** stufe
-        if r.type == "box":
+        if stufe > 0 and r.type == "box":
+            zelle = base / 2 ** stufe
             bx0, by0, bz0, bx1, by1, bz1 = r.extent
             boxen += abs((bx1 - bx0) * (by1 - by0) * (bz1 - bz0)) / zelle ** 3
-        else:
-            schalen += SCHALE * flaechen.get(r.target, 5.0) / zelle ** 2
+    # Flächen mit ihrer WIRKSAMEN Stufe — auch die Vorgaben, die snappy ohne
+    # Angabe im Fall setzt
+    for name, stufe in flaechen_stufen(spec).items():
+        if stufe > 0:
+            schalen += SCHALE * flaechen.get(name, 5.0) / (base / 2 ** stufe) ** 2
     return {"hintergrund": int(round(hintergrund)),
             "unter_gelaende": round(unter, 4),
             "boxen": int(round(boxen)), "flaechenschalen": int(round(schalen)),
@@ -382,8 +414,7 @@ def snappy_dict(spec: CaseSpec, solid_patches: list[str], has_terrain: bool,
     refinement_surfaces = ""
     refinement_regions = ""
 
-    surface_levels = {r.target: r.level for r in spec.mesh.refinements
-                      if r.type == "surface"}
+    surface_levels = flaechen_stufen(spec, has_terrain, solid_patches)
 
     if has_terrain:
         # Die Sohle ist verfeinerbar wie jede andere Fläche — der

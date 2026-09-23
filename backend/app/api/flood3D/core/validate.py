@@ -211,6 +211,9 @@ def validate_case(spec: CaseSpec, base_dir: str | Path = ".", *,
         findings.extend(pruefung(spec, ctx))
     if netz is not None:
         netz.update(ctx.netz)
+        if ctx.netz.get("gesamt") and spec.mesh is not None and spec.solver is not None:
+            from .runner import laufschaetzung
+            netz["lauf"] = laufschaetzung(spec, int(ctx.netz["gesamt"]))
     order = {"fehler": 0, "warnung": 1, "hinweis": 2}
     return sorted(findings, key=lambda x: (order[x["severity"]], x["object_id"]))
 
@@ -1255,7 +1258,7 @@ def _pruefe_verfeinerungen(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
         # Panel (meshgen.zellen_schaetzung); der Router gibt sie mit.
         from .meshgen import zellen_schaetzung
         s = zellen_schaetzung(spec, ctx.terrain, ctx.solids)
-        ctx.netz = s
+        ctx.netz.update(s)
         def tsd(n: int) -> str:
             return f"{n:,}".replace(",", " ")
         text = (f"geschätzt {tsd(s['gesamt'])} Zellen (Hintergrund "
@@ -1451,6 +1454,10 @@ def _pruefe_solver(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                             "aus der Speicherkurve des Geländes")
         else:
             tiefe, woher = start_tiefe + zulauf_volumen / flaeche, "über die Gebietsfläche"
+        # dieselbe Zahl fürs Panel (B3: der Client rechnete bis 2026-09-23
+        # noch die alte Formel „Volumen über die Gebietsfläche" nach)
+        ctx.netz["wassertiefe"] = {"m": float(tiefe), "woher": woher,
+                                   "zulauf_m3": float(zulauf_volumen)}
         cell = spec.mesh.base_cell
         if zulauf_volumen > 0 and tiefe < 2 * cell:
             f(_finding("solver", "warnung",

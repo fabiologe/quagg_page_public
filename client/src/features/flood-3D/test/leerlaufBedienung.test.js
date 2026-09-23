@@ -87,10 +87,11 @@ describe('Schätzung beim Leerlauf', () => {
       { end_time: 36000 }))
     const ohne = kennwerte(fall({ ...ABBRUCH_VORGABE }, { end_time: 36000 }))
 
+    // Stunden und Ausgaben rechnet seit B3 der Server (runner.laufschaetzung,
+    // Test test_laufschaetzung_leerlauf); hier bleibt die angezeigte Dauer
     expect(lang.dauer).toBe(60)
-    expect(lang.stunden).toBeCloseTo(kurz.stunden, 6)
-    expect(lang.ausgaben).toBe(kurz.ausgaben)
-    expect(ohne.stunden).toBeGreaterThan(100 * kurz.stunden)
+    expect(kurz.dauer).toBe(60)
+    expect(ohne.dauer).toBe(36000)
   })
 })
 

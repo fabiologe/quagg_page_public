@@ -10,9 +10,11 @@
 // Die Prüfung im Backend bleibt maßgeblich; das hier ist die schnelle
 // Rückmeldung beim Tippen.
 
-const f1 = (v) => Number(v).toLocaleString('de-DE', { maximumFractionDigits: 1 })
-const f2 = (v) => Number(v).toLocaleString('de-DE', { maximumFractionDigits: 2 })
-const int = (v) => Math.round(v).toLocaleString('de-DE')
+// null = „Server hat noch nicht geantwortet" → „–" statt „0"
+const leer = (v) => v == null || !Number.isFinite(Number(v))
+const f1 = (v) => (leer(v) ? '–' : Number(v).toLocaleString('de-DE', { maximumFractionDigits: 1 }))
+const f2 = (v) => (leer(v) ? '–' : Number(v).toLocaleString('de-DE', { maximumFractionDigits: 2 }))
+const int = (v) => (leer(v) ? '–' : Math.round(v).toLocaleString('de-DE'))
 
 export function dauerText(stunden) {
   if (!isFinite(stunden) || stunden <= 0) return '–'
@@ -24,12 +26,17 @@ export function dauerText(stunden) {
 
 // --- abgeleitete Größen des Falls ----------------------------------------
 
-// `schaetzung`: die Zellschätzung des Servers (meshgen.zellen_schaetzung,
-// mit dem letzten Speichern geliefert) — sie kennt den Anteil des Gebiets
-// unter dem Gelände und die ECHTEN Oberflächen der gebauten Bauwerke. Die
-// Rechnung hier ist dieselbe Formel; ohne Serverdaten gelten Pauschalen
-// (20 % unter Gelände, 5 m² je Bauwerksfläche), damit die Zahl auch beim
-// Tippen sofort da ist. Ein Test hält beide Seiten an derselben Fixture.
+// Alle Rechengrößen kommen vom Server (Fahrplan B3, 2026-09-23): mit jeder
+// Vorschau/jedem Speichern liefert er `netz_schaetzung` — Zellen
+// (meshgen.zellen_schaetzung, mit den WIRKSAMEN Flächenstufen), die
+// Laufschätzung `lauf` (runner.laufschaetzung: feinste Zelle, Zeitschritt,
+// Dauer, Stunden auf 16 Kernen, Ausgaben) und die `wassertiefe` aus der
+// Speicherkurve des Geländes (validate._pruefe_solver). Bis dahin rechnete
+// dieses Modul alles ein zweites Mal nach — mit 8 statt 16 Kernen, einer
+// anderen Courant-Zahl, der alten Wassertiefen-Formel (Volumen über die
+// Gebietsfläche, Audit P13) und ohne die Standard-Verfeinerung des Geländes
+// (Fall K: 10 607 statt 21 000 Zellen). Solange die Antwort aussteht
+// (350 ms nach dem Tippen), stehen hier `null`-Werte — die Anzeige zeigt „–".
 export function kennwerte(spec, meshPreview = null, previewStale = false,
   schaetzung = null) {
   const d = spec?.domain
@@ -41,90 +48,31 @@ export function kennwerte(spec, meshPreview = null, previewStale = false,
   const tiefe = y1 - y0
   const hoehe = d.z_max - d.z_min
   const flaeche = breite * tiefe
-
-  // FEINSTE Zelle, nicht die Grundzelle: jede Verfeinerungsstufe halbiert.
-  // Ohne das rechnete der Fall unbemerkt mit 0,025 m, während im Panel
-  // 0,2 m stand (gemeldet 2026-08-12) — und der Zeitschritt hängt an
-  // dieser Zahl, nicht an der Einstellung.
-  const stufen = (m.refinements ?? []).map((r) => r.level ?? 0)
-  const maxStufe = stufen.length ? Math.max(0, ...stufen) : 0
-  const feinsteZelle = m.base_cell / 2 ** maxStufe
-  const feinstesAus = (m.refinements ?? [])
-    .filter((r) => (r.level ?? 0) === maxStufe)
-    .map((r) => (r.type === 'surface' ? (r.target ?? 'Fläche') : (r.id ?? 'Box')))
-
-  // Zellzahl: gemessene Zahl nur, solange das Vorschaunetz zum Fall passt.
-  // Ein stehengebliebener Messwert ist schlimmer als eine Schätzung — er
-  // sieht nach Wahrheit aus und ändert sich nicht, wenn man an der
-  // Grundzelle dreht.
+  const lauf = schaetzung?.lauf ?? null
+  // Zellzahl: gemessene Zahl nur, solange das Vorschaunetz zum Fall passt —
+  // ein stehengebliebener Messwert sieht nach Wahrheit aus und ändert sich
+  // nicht, wenn man an der Grundzelle dreht
   const gemessen = meshPreview?.cells != null && !previewStale
-  // Hintergrundnetz wie meshgen.cell_counts (aufgerundete Zellzahlen je
-  // Richtung), abzüglich des Anteils unter dem Gelände
-  const unterGelaende = schaetzung?.unter_gelaende ?? 0.2
-  const grundzellen = Math.ceil(breite / m.base_cell) * Math.ceil(tiefe / m.base_cell)
-                      * Math.ceil(hoehe / m.base_cell) * (1 - unterGelaende)
-  // Verfeinerung ist der eigentliche Kostentreiber, und sie fehlte hier
-  // ganz — daher lag die Schätzung 11-fach daneben.
-  //
-  // Modell (dasselbe wie meshgen.zellen_schaetzung): snappyHexMesh
-  // verfeinert eine SCHALE um die Fläche (drei Zelllagen der feinsten
-  // Stufe), Boxen dagegen ihr ganzes Volumen. Am gemessenen Netz des Falls
-  // Rentrisch_BetaTest06 (943.370 Zellen) trifft es auf wenige Prozent.
-  const SCHALE = schaetzung?.schale ?? 3
-  let zusatz = 0
-  for (const r of m.refinements ?? []) {
-    const lvl = r.level ?? 0
-    if (!lvl) continue
-    const zelle = m.base_cell / 2 ** lvl
-    if (r.type === 'box' && Array.isArray(r.extent) && r.extent.length === 6) {
-      const [bx0, by0, bz0, bx1, by1, bz1] = r.extent
-      const vol = Math.abs((bx1 - bx0) * (by1 - by0) * (bz1 - bz0))
-      zusatz += vol / zelle ** 3
-    } else {
-      // Geländefläche = Grundfläche des Gebiets; Bauwerksflächen kommen
-      // vom Server (Oberfläche des gebauten Körpers) — ohne ihn blieb
-      // bis 2026-09-22 nur die Pauschale 5 m², eine 40-m-Wand auf Stufe 4
-      // ergab ~4 000 statt ~250 000 Zellen (Audit C3)
-      const flaecheR = r.target === 'terrain' ? breite * tiefe
-        : (schaetzung?.flaechen?.[r.target] ?? 5)
-      zusatz += (flaecheR / zelle ** 2) * SCHALE
-    }
+  const zellen = gemessen ? meshPreview.cells : (schaetzung?.gesamt ?? null)
+  const zellenQuelle = gemessen ? 'gemessen' : schaetzung ? 'server' : null
+  // Stunden hängen an der Zellzahl: mit gemessenem Netz die Kernstunden des
+  // Servers auf die gemessene Zahl umlegen (linear, der Durchsatz je Kern
+  // ändert sich dazwischen kaum)
+  let stunden = lauf?.stunden ?? null
+  if (lauf && gemessen && schaetzung?.gesamt > 0) {
+    stunden = lauf.stunden * (meshPreview.cells / schaetzung.gesamt)
   }
-  const zellen = gemessen ? meshPreview.cells
-    : Math.round(grundzellen + zusatz)
-  const zellenQuelle = gemessen ? 'gemessen' : schaetzung ? 'server' : 'pauschal'
-  // Wie lange der Lauf VORAUSSICHTLICH rechnet — dieselbe Regel wie
-  // core/foamfields.py::schaetzdauer. Beim Leerlauf ist `end_time` nur die
-  // Obergrenze; mit ihr zu schätzen hieße, für eine großzügige Reserve
-  // Rechenzeit, Datenmenge und Kosten um Größenordnungen zu hoch
-  // anzugeben.
-  const dauer = s.abbruch?.erwartete_dauer_s ?? s.end_time
-
-  // Zulauf und daraus die erwartete Wassertiefe (wie die Backend-Regel)
   const q = (spec.boundaries ?? [])
     .filter((b) => b.type === 'inflow_constant')
     .reduce((a, b) => a + (b.q ?? 0), 0)
-  const wassertiefe = flaeche > 0 ? (q * dauer) / flaeche : 0
-  // Zeitschritt aus der FEINSTEN Zelle und der eingestellten Courant-Grenze
-  // (vorher: Grundzelle und eine feste 0,3 — dadurch war der Schritt 6-fach
-  // zu groß). 6 m/s ist eine grobe Annahme für die maßgebliche
-  // Geschwindigkeit; sie steckt in derselben Faustformel wie im Backend.
-  const kerne = 8
-  const dt = Math.min(s.max_co ?? 0.5, s.max_alpha_co ?? 0.5) * feinsteZelle / 6.0
-  const schritte = dauer / Math.max(dt, 1e-9)
-  // Durchsatz wie im Backend (core/runner.py durchsatz_je_kern) — beide
-  // Schätzungen müssen dieselbe Größe messen, sonst widersprechen sich
-  // Panel und Netzvorschau. Zwei Messpunkte auf derselben Maschine:
-  // 117.596 Zellen -> 100.000 /Kern-s, 943.370 -> 42.000. Das ist ein
-  // Potenzgesetz mit Exponent 0,42.
-  const durchsatz = Math.max(8000, Math.min(100000,
-    100000 * (zellen / 117596) ** -0.42))
-  const stunden = (zellen * schritte) / durchsatz / kerne / 3600
-  const ausgaben = s.write_interval_fields > 0
-    ? Math.floor(dauer / s.write_interval_fields) + 1 : 0
-  return { breite, tiefe, hoehe, flaeche, zellen, zellenQuelle, q, wassertiefe,
-    stunden, ausgaben, dt, dauer, feinsteZelle, maxStufe, feinstesAus,
-    gemessen }
+  return { breite, tiefe, hoehe, flaeche, zellen, zellenQuelle, q,
+    wassertiefe: schaetzung?.wassertiefe?.m ?? null,
+    wassertiefeWoher: schaetzung?.wassertiefe?.woher ?? null,
+    stunden, kerne: lauf?.kerne ?? null,
+    ausgaben: lauf?.ausgaben ?? null, dt: lauf?.dt ?? null,
+    dauer: lauf?.dauer_s ?? (s.abbruch?.erwartete_dauer_s ?? s.end_time),
+    feinsteZelle: lauf?.feinste_zelle ?? null, maxStufe: lauf?.max_stufe ?? 0,
+    feinstesAus: lauf?.feinstes_aus ?? [], gemessen }
 }
 
 // --- Grenzen je Feld ------------------------------------------------------
@@ -184,7 +132,7 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false,
 
   switch (pfad) {
     case 'solver.end_time': {
-      const t = `Geschätzt ${dauerText(k.stunden)} Rechenzeit auf 8 Kernen `
+      const t = `Geschätzt ${dauerText(k.stunden)} Rechenzeit auf ${k.kerne ?? 16} Kernen `
         + `(${int(k.zellen)} Zellen).`
       if (s.abbruch) {
         // Beim Leerlauf ist das die REISSLEINE, nicht die Dauer: der Lauf
@@ -266,7 +214,7 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false,
           + 'gröber, als der Fall es bräuchte.', level: 'warn' }
       }
       const t = `Grundlage für Kosten-, Datenmengen- und Gitterschätzung: `
-        + `${dauerText(k.stunden)} Rechenzeit, ${k.ausgaben} Feldausgaben. `
+        + `${dauerText(k.stunden)} Rechenzeit, ${int(k.ausgaben)} Feldausgaben. `
         + 'Auf die Abbruchentscheidung hat der Wert keinen Einfluss.'
       if (s.abbruch.erwartete_dauer_s > s.end_time) {
         return { text: `${t} Größer als die Obergrenze — der Lauf würde `
@@ -330,9 +278,10 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false,
             + 'einziger Ausgabezeitpunkt, der Lauf bräche am Ende ab.',
         level: 'bad' }
       }
-      const mb = (k.zellen * 9 * 4) / 1e6
-      const t = `${k.ausgaben} Ausgaben, zusammen grob `
-        + `${f1((mb * k.ausgaben) / 1000)} GB. Aus diesen Zeitpunkten `
+      const gb = k.zellen != null && k.ausgaben != null
+        ? (k.zellen * 9 * 4 * k.ausgaben) / 1e9 : null
+      const t = `${int(k.ausgaben)} Ausgaben, zusammen grob `
+        + `${f1(gb)} GB. Aus diesen Zeitpunkten `
         + 'entstehen die 3D-Ansicht und der Zeitschieber.'
       if (k.ausgaben < 3) {
         return { text: `${t} Für einen Ablauf im Viewer sehr wenig.`,
@@ -373,10 +322,10 @@ export function hinweis(pfad, spec, meshPreview = null, previewStale = false,
 
     case 'mesh.base_cell': {
       const herkunft = k.gemessen ? 'gemessen'
-        : k.zellenQuelle === 'server' ? 'geschätzt, Flächen vom Server'
-          : 'geschätzt, pauschal'
+        : k.zellenQuelle === 'server' ? 'geschätzt vom Server'
+          : 'Schätzung folgt mit der nächsten Prüfung'
       const zellenText = `${int(k.zellen)} Zellen (${herkunft}), `
-        + `${dauerText(k.stunden)} auf 8 Kernen.`
+        + `${dauerText(k.stunden)} auf ${k.kerne ?? 16} Kernen.`
       // Die feinste Zelle ist die Zahl, die wirklich zählt — sie bestimmt
       // Zeitschritt und Auflösung. Ohne diesen Satz rechnete der Fall
       // unbemerkt achtmal feiner als eingestellt.

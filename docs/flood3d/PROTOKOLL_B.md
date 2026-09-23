@@ -9,7 +9,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 |---|---|---|---|---|
 | B1 | Leichen und Kopien | ☑ | 2026-09-23 | (siehe unten) |
 | B2 | Eine Nachlaufkette | ☑ Nachlauf; Vernetzung noch doppelt | 2026-09-23 | (siehe unten) |
-| B3 | Schätzung (und Bilanz) nur im Server | ☐ offen | | |
+| B3 | Schätzung (und Bilanz) nur im Server | ⏳ a ☑ (Laufschätzung); b Widerstand, c Bilanz offen | 2026-09-23 | (siehe unten) |
 | B4 | `schema_version` | ☐ offen | | |
 | B5 | Betriebsdeckel | ☐ offen | | |
 | B6 | Fenster-Diät | ⏸ wartet auf Fabios Entscheidung | | |
@@ -67,3 +67,29 @@ Kette einmal; `local_runner.main` und `cli all` rufen sie, OpenFOAM kommt als Pa
 
 Noch offen aus B2: die Vernetzungskette (`runner._snappy`/`mesh_preview` vs. `local_runner`)
 steht weiter zweimal.
+
+## B3a · Laufschätzung nur im Server
+
+`runner.laufschaetzung(spec, zellen)` (feinste Zelle, Δt, Schritte, Dauer, Kernstunden,
+Stunden auf 16 Kernen, Ausgaben) — `estimate_run` (Netzvorschau) rechnet damit; die Prüfung
+hängt sie mit der Wassertiefe (Speicherkurve, `_pruefe_solver`) an `netz_schaetzung`, die
+mit jeder Vorschau kommt. `simHints.kennwerte` zeigt nur noch an.
+
+**Dabei gefunden und behoben:** Schätzung und Panel sahen nur ausdrücklich angelegte
+Verfeinerungen; snappyHexMesh verfeinert ohne Angabe das Gelände auf Stufe 1 und Bauwerke
+auf Stufe 2. `meshgen.flaechen_stufen(spec)` ist jetzt die eine Quelle für snappy_dict,
+zellen_schaetzung und laufschaetzung (snappyHexMeshDict byte-gleich, Goldens unverändert).
+
+| Messgröße | vorher | nachher | gemessen |
+|---|---|---|---|
+| Fall K Zellen | 10 607 | 22 607 | 21 000 (a5b_k) |
+| Fall K feinste Zelle | 0,10 m | 0,05 m | 0,05 m (Sohle Stufe 1) |
+| Fall K Kernstunden (15 s) | 0,088 | 0,377 | ≈ 0,33 (3 Kerne × 400 s) |
+| Fall A Zellen | – | 46 286 | 29 006 (zu hoch = sichere Richtung) |
+| Client-Drifts (Kerne 8/16, Courant, Wassertiefe P13, Standardstufen) | 4 | 0 | |
+| `simHints.js` | 419 Z. | 387 Z. | |
+| Tests Backend / Client | 907 / 402 | 909 / 399 (1 Test ins Backend verlegt, 2 neu) | |
+
+Der Deckeltest `test_ueber_dem_deckel_ist_es_ein_fehler` nahm an, ohne Verfeinerung werde
+nicht verfeinert — bei 0,07 m ergäben die Standardstufen wirklich 9,3 Mio Zellen (Fehler);
+der Test setzt jetzt ausdrücklich Stufe 0 und keine Bauwerke.

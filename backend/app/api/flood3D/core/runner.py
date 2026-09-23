@@ -241,19 +241,50 @@ def parse_checkmesh(text: str) -> dict:
     return out
 
 
+SCHAETZ_KERNE = 16      # Bezug aller Zeitangaben: RunPod, 16 Threads
+
+
+def laufschaetzung(spec, cells: int) -> dict:
+    """
+    Zeitschritt, Schrittzahl, Dauer und Rechenaufwand eines Laufs — die EINE
+    Rechnung für Netzvorschau (estimate_run), Prüfung und Panel. Bis
+    2026-09-23 rechnete der Client sie ein zweites Mal nach (simHints.js),
+    mit anderer Courant-Zahl und 8 statt 16 Kernen (Fahrplan B3).
+    Maßgeblich ist das Alpha-Courant-Kriterium auf der feinsten Zellstufe.
+    """
+    from .foamfields import schaetzdauer
+    from .meshgen import flaechen_stufen
+    refs = spec.mesh.refinements
+    stufen = {**{r.id: r.level for r in refs if r.type == "box"},
+              **flaechen_stufen(spec)}
+    max_level = max(list(stufen.values()) + [0])
+    finest = spec.mesh.base_cell / 2 ** max_level
+    dt = spec.solver.max_alpha_co * finest / SIGNAL_SPEED_M_S
+    dauer = schaetzdauer(spec)
+    steps = dauer / max(dt, 1e-6)
+    durchsatz = durchsatz_je_kern(cells)
+    core_seconds = cells * steps / durchsatz
+    wi = spec.solver.write_interval_fields
+    return {"feinste_zelle": finest, "max_stufe": max_level,
+            "feinstes_aus": [n for n, lv in stufen.items()
+                             if lv == max_level and max_level > 0],
+            "dt": dt, "dauer_s": dauer, "schritte": steps,
+            "durchsatz_je_kern": durchsatz, "kernstunden": core_seconds / 3600.0,
+            "kerne": SCHAETZ_KERNE,
+            "stunden": core_seconds / SCHAETZ_KERNE / 3600.0,
+            "ausgaben": int(dauer // wi) + 1 if wi > 0 else 0}
+
+
 def estimate_run(spec, cells: int, cores: int = 16,
                  satz: float | None = None) -> dict:
     """
-    Laufzeit- und Kostenschätzung (Spez. Kap. 6.1, Netz- und Kostenvorschau).
-    Maßgeblich ist das Alpha-Courant-Kriterium auf der feinsten Zellstufe —
-    beide Konstanten sind am Referenzlauf kalibriert (Abweichung dort < 5 %).
+    Laufzeit- und Kostenschätzung (Spez. Kap. 6.1, Netz- und Kostenvorschau)
+    — aus laufschaetzung; beide Konstanten sind am Referenzlauf kalibriert
+    (Abweichung dort < 5 %).
     """
-    max_level = max([r.level for r in spec.mesh.refinements] + [0])
-    finest = spec.mesh.base_cell / 2 ** max_level
-    dt = spec.solver.max_alpha_co * finest / SIGNAL_SPEED_M_S
-    from .foamfields import schaetzdauer
-    steps = schaetzdauer(spec) / max(dt, 1e-6)
-    core_seconds = cells * steps / durchsatz_je_kern(cells)
+    ls = laufschaetzung(spec, cells)
+    dt, steps = ls["dt"], ls["schritte"]
+    core_seconds = ls["kernstunden"] * 3600.0
     wall_h = core_seconds / cores / 3600.0
     return {
         "cells": cells,
