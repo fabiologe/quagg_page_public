@@ -205,7 +205,9 @@ Defizit pendelt 0–5 %, im Mittel ≈ 2–3 %. Eine Kur bräuchte ein eigenes G
 für die Randbedingung (functionObject) — Aufwand und Risiko stehen in keinem Verhältnis.
 
 Entscheidung: Randbedingung bleibt `0 / 0,5` (Commit `88610a4`). Das Defizit ist gemessen
-und dokumentiert; Bilanz und Kennwerte nehmen ohnehin den gemessenen Zufluss.
+und dokumentiert. ~~Bilanz und Kennwerte nehmen ohnehin den gemessenen Zufluss.~~
+**Korrektur (B3c, 23.09. spät):** das galt nur für Ganglinien — bei konstantem Zufluss nahm
+die Bilanz die Vorgabe. Seit `7dcc1fe` nimmt sie die Messung (PROTOKOLL_B, B3c).
 
 **Das Defizit erklärt den C_d-Sprung nicht** (0,633 → 0,54): C_d = Q_gemessen /
 (2/3·√2g·b·h^1,5) — weniger Zufluss senkt Q und h gemeinsam. Der Sprung kommt aus der
