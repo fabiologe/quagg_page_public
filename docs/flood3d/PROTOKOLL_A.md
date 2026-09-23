@@ -14,7 +14,7 @@ Angelegt 2026-09-23, noch leer.
 | A3 | Tracer an die Wasserphase | ☑ gemessen (a3_k), Ziel < 3 % verfehlt (6,6 %) | 2026-09-23 | `88610a4` |
 | A4 | σ = 0 | ☑ gemessen (a4_k): ohne messbare Wirkung | 2026-09-23 | `88610a4` |
 | A5 | Atmosphäre-Regel, y⁺ je Patch | ☑ gemessen (a5_k) | 2026-09-23 | `88610a4` |
-| A6 | Harness-Probe, Wehr-Nachlauf, Numerik-Version, Goldens | ⏳ Code ☑; Wehr-Nachlauf rechnet; pm2 + Build offen | 2026-09-23 | `88610a4` |
+| A6 | Harness-Probe, Wehr-Nachlauf, Numerik-Version, Goldens | ⏳ live (pm2 20:43, Build 20:47); Wehr-Nachlauf rechnet (2. Versuch) | 2026-09-23 | `88610a4`, `82faf00`, `5c99945` |
 
 Status-Wörter: ☐ offen · ⏳ in Arbeit · ☑ erledigt (mit Zahl) · ✗ verworfen (mit Grund).
 
@@ -188,4 +188,6 @@ Fall A lief mit `--trotz-fehler`: der echte Fall hat selbst einen Prüffehler
 | 2026-09-23 | Atmosphären-Durchfluss als functionObject (`patchflow_atmosphere`) | Fall-A-Bilanzlücke 2,4 % unerklärt; extract_case liest ihn nicht als Ablauf |
 | 2026-09-23 | Tracer-Ziel < 3 % → Dauertest hält < 10 % | erreicht 6,6 / 8,8 %; Rest vermutlich flächengewichtete Ablauf-Konzentration → Stufe B |
 | 2026-09-23 | Wehr-Nachlauf ans Ende, unbeaufsichtigt | Fabio: nicht alles durchrechnen, das sind kleine Tests |
+| 2026-09-23 | Wehr-Nachlauf 1. Versuch bei t = 8,3 s abgebrochen (137) | pm2-Neustart: der API-Startwächter entfernt `f3d_*`-Container ohne lebendes `quagg.pid`-Label; Probe-Container tragen es jetzt (`82faf00`) |
+| 2026-09-23 | Verifikationsdatei 20:43–20:45 kurz falsch (C_d 0,48 „nicht bestanden") | Auswerte-Wächter reagierte auf das Ende des abgebrochenen Laufs; Original aus `.bak` zurück, Auswertung verweigert jetzt unvollständige Läufe (`5c99945`) |
 | 2026-09-23 | Probe-Warteschlange hing 1 h (17:39–19:25) | `pgrep -f "<muster>"` fand die eigene Startzeile der Shell und wartete auf sich selbst; neu ohne pgrep-Warten |
