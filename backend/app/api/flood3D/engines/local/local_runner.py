@@ -781,6 +781,7 @@ def main() -> int:
         emit(event="log",
              text=f"Core: {'aus dem Bundle' if eigen else 'aus dem Image'}")
         from flood3D.core.casespec import CaseSpec, migriere
+        from flood3D.core.conventions import NUMERIK_VERSION
         from flood3D.core.evaluate import evaluate_run, overfall_cd_rows
         from flood3D.core.extract import extract_case
         from flood3D.core.foamfields import (bed_shear_series,
@@ -789,8 +790,8 @@ def main() -> int:
                                              viz_volume_check)
         from flood3D.core.normalize import write_normalized
         from flood3D.core.render import render_run
-        from flood3D.core.runner import (_pruefe_patches, _y_plus_range,
-                                         parse_checkmesh)
+        from flood3D.core.runner import (_pruefe_patches, _y_plus_je_patch,
+                                         _y_plus_range, parse_checkmesh)
 
         spec = CaseSpec.model_validate(
             migriere(yaml.safe_load((case / "case.yaml").read_text())))
@@ -995,6 +996,7 @@ def main() -> int:
             emit(event="log", text=f"WARNUNG: {foam_hinweis}")
         manifest = {"status": "completed", "origin": "companion",
                     "foam": foam_v, "foam_hinweis": foam_hinweis,
+                    "numerik_version": NUMERIK_VERSION,
                     # Womit gerechnet wurde, gehoert in den Nachweis - und
                     # die Ist-Kosten eines Cloud-Laufs haengen daran
                     "cores": cores, "maschine": maschine,
@@ -1022,6 +1024,10 @@ def main() -> int:
             manifest["fields_error"] = fields_error
         if ypr:
             manifest["y_plus_range"] = [round(ypr[0], 2), round(ypr[1], 2)]
+        ypp = _y_plus_je_patch(case)
+        if ypp:
+            manifest["y_plus_je_patch"] = {p: [round(a, 2), round(b, 2)]
+                                           for p, (a, b) in ypp.items()}
         # Selbsttest: Wasservolumen im Visualisierungsgitter vs. Solver
         vol_check = viz_volume_check(job, df)
         if vol_check:

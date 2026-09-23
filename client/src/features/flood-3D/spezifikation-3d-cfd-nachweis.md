@@ -20,6 +20,13 @@ Version 0.1, Entwurf als Umsetzungsvorlage
 > die konsolidierten Endpunkte (`/preview`, `/geometry`) überholt.
 > Kap. 13 (physikalische Verifikation) ist seit 2026-08-11 erfüllt:
 > Wehrüberfall-Referenzfall bestanden (C_d = 0,6443 im Band 0,55–0,75).
+> **Nachtrag 2026-09-23 (Fahrplan A, `docs/flood3d/`):** Kap. 13 wird bewusst
+> nicht als Benchmark-Suite umgesetzt — der Solver bleibt unverändert, geprüft
+> wird die Hülle: ein Harness-Probelauf (Fall K, `test_harness_probe.py`) nach
+> jeder Änderung am Fallaufbau, dazu der Wehrfall, jetzt im Server-Docker.
+> Ausfluss aus Öffnung, GMS-Normalabfluss und Netzstudie entfallen
+> (Entscheidung Fabio). RunPod ist inzwischen doch gebaut und neben dem
+> Companion ein Rechenort.
 
 
 ---

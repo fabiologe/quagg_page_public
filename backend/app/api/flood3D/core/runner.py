@@ -366,6 +366,33 @@ def mesh_preview(spec, case_dir: str | Path) -> dict:
     return result
 
 
+def _y_plus_je_patch(case_dir: Path) -> dict[str, list[float]]:
+    """
+    y+ je Wandpatch über den ganzen Lauf: {patch: [min, max]}. yPlus.dat
+    schreibt ohnehin eine Zeile je Patch und Zeitpunkt (Spalten
+    t patch min max average, in A0 abgelesen) — die globale Spanne warf den
+    Patch nur weg, und „y+ bis 95.374" ließ offen, wo (Fahrplan A5).
+    """
+    out: dict[str, list[float]] = {}
+    root = case_dir / "postProcessing" / "y_plus"
+    if not root.is_dir():
+        return out
+    for dat in sorted(root.rglob("yPlus.dat")):
+        for line in dat.read_text(errors="replace").splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                lo, hi = float(parts[2]), float(parts[3])
+            except ValueError:
+                continue
+            alt = out.get(parts[1])
+            out[parts[1]] = [lo, hi] if alt is None else [min(alt[0], lo), max(alt[1], hi)]
+    return out
+
+
 def _y_plus_range(case_dir: Path) -> list[float] | None:
     """Globale y+-Spanne aus postProcessing/y_plus (Zeilen: t patch min max avg)."""
     out = None

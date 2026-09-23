@@ -37,6 +37,7 @@ KUR_LABELS = {
     "gelaende_neu_abtasten": "Gelände aus dem Original neu abtasten",
     "import_neu_ableiten_roh": "Import aus der Rohdatei neu ableiten",
     "striche_verwerfen": "Diese Pinselstriche verwerfen",
+    "atmosphaere_anlegen": "Atmosphäre oben anlegen",
     # ohne Prüfbefund — beschriftet die Gizmo-Aktion im Mutationsvertrag
     "drehen": "Modell drehen",
 }
@@ -329,6 +330,31 @@ def _kraftauswertung_ein(spec: CaseSpec, args: dict, base_dir=None) -> str:
             "werden ab dem nächsten Lauf als Zeitreihe geschrieben")
 
 
+def hat_atmosphaere(spec: CaseSpec) -> bool:
+    """Die EINE Messung für Regel und Kur (Fahrplan A5)."""
+    return any(b.type == "atmosphere" for b in spec.boundaries)
+
+
+def _atmosphaere_anlegen(spec: CaseSpec, args: dict, base_dir=None) -> str:
+    from .casespec import BcAtmosphere
+    if hat_atmosphaere(spec):
+        return "Ein Atmosphären-Rand war bereits vorhanden"
+    oben = [b for b in spec.boundaries if b.face == "z_max"]
+    if oben:
+        raise ValueError(f"Die Oberseite ist durch „{oben[0].id}“ belegt — "
+                         "diesen Rand erst auf eine Seitenfläche legen")
+    ids = {b.id for b in spec.boundaries}
+    patches = {b.patch for b in spec.boundaries}
+    bid, patch = "atmo", "atmosphere"
+    n = 2
+    while bid in ids or patch in patches:
+        bid, patch = f"atmo_{n}", f"atmosphere_{n}"
+        n += 1
+    spec.boundaries.append(BcAtmosphere(id=bid, patch=patch, type="atmosphere"))
+    return (f"Atmosphären-Rand „{bid}“ an der Oberseite angelegt — dort herrscht "
+            "Luftdruck, Luft kann ein- und austreten")
+
+
 def _gebiet_hoehe_anpassen(spec: CaseSpec, args: dict, base_dir=None) -> str:
     """
     Gebietsdeckel und -sohle so weit ziehen, dass das Gelände hineinpasst.
@@ -560,6 +586,7 @@ _KUREN = {
     "gelaende_neu_abtasten": _gelaende_neu_abtasten,
     "import_neu_ableiten_roh": _import_neu_ableiten_roh,
     "striche_verwerfen": _striche_verwerfen,
+    "atmosphaere_anlegen": _atmosphaere_anlegen,
 }
 
 

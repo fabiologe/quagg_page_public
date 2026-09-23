@@ -110,6 +110,18 @@ def section_normal(polyline) -> tuple[float, float, float]:
 LAUF_EREIGNISSE = ("log", "progress", "checkpoint", "done", "error")
 
 
+# Stand der Hülle um den Solver: Randbedingungen, Anfangsfelder, Schemata,
+# functionObjects. Jeder Lauf trägt sie im Manifest; GET /runs/{id} vergleicht
+# sie mit dem Stand, an dem der Wehrfall zuletzt verifiziert wurde
+# (data/verifikation/wehr_ueberfall.json). Hochzählen bei jeder Änderung,
+# die das Rechenergebnis betrifft — der Solver selbst bleibt unverändert.
+#   2026-09-A  Fahrplan Stufe A (docs/flood3d/FAHRPLAN_A_PHYSIK_2026-09-23.md):
+#              Freispiegel-Zulauf (variableHeightFlowRate) mit Startwasser,
+#              Turbulenz-Init aus Q/A, Tracer an die Wasserphase, sigma 0;
+#              dazu der Ablauf als Freistrahl aus E7 (2026-09-22)
+NUMERIK_VERSION = "2026-09-A"
+
+
 # Aussennormale je Gebietsflaeche. Positiver Durchfluss heisst damit
 # „verlaesst das Gebiet" — ein Zulauf zaehlt negativ.
 FACE_NORMALS = {

@@ -157,10 +157,14 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
     # Durchfluss ueber die RANDFLAECHEN. Damit schliesst sich die
     # Wasserbilanz aus gemessenen Groessen (Zufluss - Ablauf =
     # Speicheraenderung) statt aus der Vorgabe im Fall — und man sieht
-    # sofort, ob ein Lauf noch am Auffuellen ist.
+    # sofort, ob ein Lauf noch am Auffuellen ist. Seit 2026-09-23 auch über
+    # die ATMOSPHÄRE: Wasser, das oben hinausspritzt, war bis dahin eine
+    # unerklärte Bilanzlücke (Fall A, Fahrplan A1: 2,4 %). Die Auswertung
+    # (extract_case) liest ihn bewusst nicht als Ablauf — er dient der
+    # Bilanzprüfung (probe/probe_lauf.py).
     face_of = {patch: face for face, (patch, _) in assign_faces(spec).items()}
     for b in spec.boundaries:
-        if b.type == "atmosphere" or b.patch not in face_of:
+        if b.patch not in face_of:
             continue
         out += f"""    patchflow_{b.patch}
     {{
@@ -252,6 +256,10 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         libs            (solverFunctionObjects);
         field           T;
         schemesField    T;
+        // an die Wasserphase gebunden (Fahrplan A3, Audit F6): ohne
+        // `phase` transportierte der Gesamtfluss phi den Stoff auch in die
+        // Luft und über die Atmosphäre hinaus (Fall K: 19 % in der Luft)
+        phase           alpha.water;
         nCorr           2;
         writeControl    writeTime;
         log             no;
@@ -450,15 +458,22 @@ relaxationFactors
 
 
 def set_fields_dict(spec: CaseSpec, out: Path | None = None,
-                    location=None, terrain=None) -> str | None:
+                    location=None, terrain=None, base_dir=None) -> str | None:
     """
     Anfangszustand: global `initial_level` (boxToCell), darüber je
     Vorfüllung ein Teilbereich mit EIGENEM Spiegel — das Polygon wird als
     Prisma extrudiert (STL neben den Fall) und surfaceToCell setzt alpha.
-    Reihenfolge: Vorfüllungen NACH der Box, spätere überschreiben frühere.
+    Reihenfolge: Vorfüllungen NACH der Box, spätere überschreiben frühere,
+    zuletzt das Startwasser vor trockenen Freispiegel-Zuläufen (zulauf_lage).
     """
     vorf = spec.solver.vorfuellungen
-    if spec.solver.initial_level is None and not vorf:
+    streifen = []
+    for b in spec.boundaries:
+        lage = zulauf_lage(spec, b, terrain, base_dir)
+        if lage is not None and lage["art"] == "freispiegel" \
+                and lage["startwasser"] == "streifen":
+            streifen.append((b, lage))
+    if spec.solver.initial_level is None and not vorf and not streifen:
         return None
     x0, y0, x1, y1 = spec.domain.extent
     # `outsidePoints` markiert für surfaceToCell das AUSSEN des Prismas —
@@ -526,6 +541,17 @@ def set_fields_dict(spec: CaseSpec, out: Path | None = None,
         nearDistance -1;
         curvature -100;
         useSurfaceOrientation false;
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 1
+        );
+    }}""")
+    for b, lage in streifen:
+        lo_, hi_ = _startstreifen(spec, lage)
+        regionen.append(f"""    // Startwasser vor Zulauf {b.id} (trockener Freispiegel-Rand)
+    boxToCell
+    {{
+        box {vec(lo_)} {vec(hi_)};
         fieldValues
         (
             volScalarFieldValue alpha.water 1
@@ -690,6 +716,158 @@ def resolve_window(spec: CaseSpec, b) -> dict | None:
             "zlo": w.z_min, "zhi": w.z_max}
 
 
+# ---- Wie ein Zulauf ins Gebiet kommt (Fahrplan A1, Audit F1) -------------
+
+ZULAUF_ARTEN = ("freispiegel", "strahl", "rohr")
+# Tiefe des Startwasser-Streifens vor einem trockenen Freispiegel-Zulauf
+ZULAUF_STREIFEN_ZELLEN = 2
+
+
+def _zulauf_q(b, base_dir) -> float:
+    """Bemessungs-Q eines Zulaufs: konstant, oder die Spitze der Ganglinie."""
+    if b.type == "inflow_constant":
+        return float(b.q or 0.0)
+    if base_dir is None:
+        return 0.0
+    try:
+        df = pd.read_csv(Path(base_dir) / b.source)
+        return float(df[b.column_q].to_numpy(float).max())
+    except Exception:                        # noqa: BLE001 — die Prüfung meldet die Datei
+        return 0.0
+
+
+def _boden_an_flaeche(spec: CaseSpec, face: str, lo: float, hi: float,
+                      terrain) -> tuple[np.ndarray, np.ndarray]:
+    """(s, Geländehöhe) entlang der Randfläche zwischen lo und hi."""
+    x0, y0, x1, y1 = spec.domain.extent
+    zelle = spec.mesh.base_cell if spec.mesh else 1.0
+    n = max(2, int(math.ceil((hi - lo) / (zelle / 2))) + 1)
+    s = np.linspace(lo, hi, n)
+    if terrain is None:
+        return s, np.full(n, spec.domain.z_min)
+    # eine halbe Zelle innen: dort liegen die Zellen, die der Rand speist
+    innen = {"x_min": x0 + zelle / 2, "x_max": x1 - zelle / 2,
+             "y_min": y0 + zelle / 2, "y_max": y1 - zelle / 2}[face]
+    xs, ys = ((np.full(n, innen), s) if face.startswith("x")
+              else (s, np.full(n, innen)))
+    boden = np.asarray(terrain.sample(xs, ys), dtype=float)
+    return s, np.clip(boden, spec.domain.z_min, spec.domain.z_max)
+
+
+def zulauf_lage(spec: CaseSpec, b, terrain=None, base_dir=None) -> dict | None:
+    """
+    Wie ein Zulauf ins Gebiet kommt — die EINE Stelle, an der Randbedingung
+    (initial_fields), Startwasser (set_fields_dict), Fläche (fenster_flaeche)
+    und Prüfung (validate) das ablesen.
+
+      rohr         Kreisfenster oder an einen Durchlass gekoppelt: der
+                   Querschnitt ist voll, Q wird gleichmäßig hindurchgedrückt
+                   (flowRateInletVelocity, alpha = 1).
+      strahl       Fenster, dessen Unterkante mehr als eine Zelle über dem
+                   Gelände liegt: eine Öffnung in der Wand, aus der Wasser
+                   fällt — ebenfalls voller Querschnitt.
+      freispiegel  alles, was bis auf die Sohle reicht (kein Fenster,
+                   Rechteck, Trapez, Polygon, an ein Gerinne gekoppelt):
+                   der Wasserstand am Rand folgt dem Gebiet
+                   (variableHeightFlowRateInletVelocity). Bis 2026-09-23
+                   stand hier alpha = 1 über der GANZEN Fläche — ohne
+                   Fenster trat das Wasser von der Sohle bis z_max ein und
+                   fiel als Vorhang ins Gebiet (Audit F1).
+
+    Für freispiegel zusätzlich das Startwasser: die BC verteilt Q auf die
+    NASSE Randfläche, ein trockener Rand hieße Division durch null. z_start
+    = Sohle + max(2 Zellen, kritische Tiefe (Q²/(g·b²))^(1/3)), bei einem
+    gekoppelten Gerinne dessen Einschnittkante, nie über der Fensteroberkante.
+    """
+    if b.type not in ("inflow_hydrograph", "inflow_constant"):
+        return None
+    face = _bc_face(spec, b)
+    if spec.domain is None or face is None or face == "z_max":
+        return {"art": "strahl", "face": face}
+    x0, y0, x1, y1 = spec.domain.extent
+    e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
+    zelle = spec.mesh.base_cell if spec.mesh else 1.0
+    w = getattr(b, "window", None)
+    r = resolve_window(spec, b)
+    if (r is not None and r["shape"] == "kreis") or (
+            w is not None and w.follow and _follow_culvert(spec, w) is not None):
+        return {"art": "rohr", "face": face}
+    lo, hi = (max(r["lo"], e0), min(r["hi"], e1)) if r is not None else (e0, e1)
+    s, boden = _boden_an_flaeche(spec, face, lo, hi, terrain)
+    sohle = float(boden.min())
+    zlo = r.get("zlo") if r is not None else None
+    if zlo is not None and zlo > sohle + zelle:
+        return {"art": "strahl", "face": face, "lo": lo, "hi": hi,
+                "sohle": sohle, "zlo": float(zlo)}
+    q = _zulauf_q(b, base_dir)
+    breite = float(r["bw"]) if r is not None and r["shape"] == "trapez" else hi - lo
+    h_c = (q * q / (9.81 * breite * breite)) ** (1 / 3) if q > 0 and breite > 0 else 0.0
+    ch = _follow_channel(spec, w) if w is not None else None
+    if ch is not None and r is not None and "z_w1" in r:
+        z_start = float(r["z_w1"])
+    else:
+        z_start = sohle + max(ZULAUF_STREIFEN_ZELLEN * zelle, h_c)
+    # Steht bei t = 0 schon Wasser vor der Fläche (Anfangswasserspiegel,
+    # Vorfüllung), ist DAS der Startwasserstand — kein Streifen nötig
+    startwasser = "streifen"
+    vorhanden = _wasser_vor_flaeche(spec, face, lo, hi, sohle + zelle)
+    if vorhanden is not None:
+        z_start, startwasser = vorhanden
+    zhi = r.get("zhi") if r is not None else None
+    if zhi is not None:
+        z_start = min(z_start, float(zhi))
+    z_start = min(z_start, spec.domain.z_max - zelle)
+    a_nass = float(np.trapezoid(np.clip(z_start - boden, 0.0, None), s))
+    return {"art": "freispiegel", "face": face, "lo": lo, "hi": hi,
+            "sohle": sohle, "z_start": z_start, "h_start": z_start - sohle,
+            "startwasser": startwasser,
+            "h_c": h_c, "q": q, "a_nass": a_nass,
+            "u_mittel": q / a_nass if a_nass > 0 else None}
+
+
+def _streifen_grundriss(spec: CaseSpec, face: str, lo: float, hi: float):
+    """(x0, y0, x1, y1) des Streifens vor der Fläche, ZULAUF_STREIFEN_ZELLEN tief."""
+    x0, y0, x1, y1 = spec.domain.extent
+    tiefe = ZULAUF_STREIFEN_ZELLEN * (spec.mesh.base_cell if spec.mesh else 1.0)
+    return {"x_min": (x0 - 1.0, lo, x0 + tiefe, hi),
+            "x_max": (x1 - tiefe, lo, x1 + 1.0, hi),
+            "y_min": (lo, y0 - 1.0, hi, y0 + tiefe),
+            "y_max": (lo, y1 - tiefe, hi, y1 + 1.0)}[face]
+
+
+def _wasser_vor_flaeche(spec: CaseSpec, face: str, lo: float, hi: float,
+                        mindestens: float) -> tuple[float, str] | None:
+    """
+    Wasserspiegel, der bei t = 0 schon vor der Zulauffläche steht — aus dem
+    Anfangswasserspiegel oder einer Vorfüllung, die den Streifen berührt —,
+    wenn er mindestens `mindestens` erreicht (eine Zelle über der Sohle).
+    """
+    import shapely as _sh
+    kandidaten = []
+    lvl = spec.solver.initial_level
+    if lvl is not None and lvl >= mindestens:
+        kandidaten.append((float(lvl), "anfangswasser"))
+    streifen = _sh.box(*_streifen_grundriss(spec, face, lo, hi))
+    for v in spec.solver.vorfuellungen:
+        if v.level >= mindestens and _sh.Polygon(v.polygon).intersects(streifen):
+            kandidaten.append((float(v.level), "vorfuellung"))
+    return max(kandidaten) if kandidaten else None
+
+
+def _startstreifen(spec: CaseSpec, lage: dict) -> tuple[tuple, tuple]:
+    """boxToCell-Quader des Startwassers vor einer Freispiegel-Zulauffläche."""
+    x0, y0, x1, y1 = spec.domain.extent
+    tiefe = ZULAUF_STREIFEN_ZELLEN * (spec.mesh.base_cell if spec.mesh else 1.0)
+    zu, zo = spec.domain.z_min - 1.0, lage["z_start"]
+    lo, hi = lage["lo"], lage["hi"]
+    return {
+        "x_min": ((x0 - 1.0, lo, zu), (x0 + tiefe, hi, zo)),
+        "x_max": ((x1 - tiefe, lo, zu), (x1 + 1.0, hi, zo)),
+        "y_min": ((lo, y0 - 1.0, zu), (hi, y0 + tiefe, zo)),
+        "y_max": ((lo, y1 - tiefe, zu), (hi, y1 + 1.0, zo)),
+    }[lage["face"]]
+
+
 def fenster_mitte(spec: CaseSpec, b) -> tuple[float, float, float] | None:
     """
     Mitte der Öffnung auf der Randfläche — der EINE Ort, an dem die Regel
@@ -727,6 +905,11 @@ def fenster_flaeche(spec: CaseSpec, b, terrain=None) -> float | None:
     face = _bc_face(spec, b)
     if face is None or spec.domain is None:
         return None
+    # Freispiegel-Zulauf: Q verteilt sich auf die NASSE Fläche (seit A1,
+    # 2026-09-23) — zu Beginn die des Startwassers
+    lage = zulauf_lage(spec, b, terrain)
+    if lage is not None and lage["art"] == "freispiegel":
+        return lage["a_nass"]
     x0, y0, x1, y1 = spec.domain.extent
     e0, e1 = (y0, y1) if face.startswith("x") else (x0, x1)
     r = resolve_window(spec, b)
@@ -1233,6 +1416,58 @@ def h_ref(spec: CaseSpec) -> float:
     return 0.0
 
 
+# ---- Turbulenz-Anfangs- und Randwerte (Fahrplan A2, Audit F7) ----------
+# Bis 2026-09-23 standen hier Literale (k = 1e-4, omega = 1) und ein
+# epsilon, das per replace("omega", "epsilon") aus Einträgen entstand, die
+# das Wort gar nicht enthielten — epsilon = 1, nu_t(0) ≈ 1e-9: kEpsilon
+# startete laminar. Jetzt die übliche Herleitung aus Geschwindigkeit U und
+# Längenmaß L = 0,07·D_h am Zulauf (Intensität 5 %).
+TURB_INTENSITAET = 0.05
+TURB_LAENGE_ANTEIL = 0.07
+C_MU = 0.09
+# Ohne Zulauf (Leerlauf) gibt es keine Einströmung, aus der sich U ergäbe:
+# ruhiges Wasser, L = Basiszelle
+TURB_U_RUHE = 0.1
+
+
+def turbulenz_randwerte(u: float, laenge: float) -> dict[str, float]:
+    """k, omega, epsilon aus Geschwindigkeit u (m/s) und Längenmaß L (m)."""
+    u = max(float(u), TURB_U_RUHE)
+    laenge = max(float(laenge), 1e-3)
+    k = 1.5 * (u * TURB_INTENSITAET) ** 2
+    return {"k": k,
+            "omega": math.sqrt(k) / (C_MU ** 0.25 * laenge),
+            "epsilon": C_MU ** 0.75 * k ** 1.5 / laenge,
+            "u": u, "l": laenge}
+
+
+def zulauf_turbulenz(spec: CaseSpec, b, terrain=None, base_dir=None) -> dict:
+    """
+    Turbulenzwerte eines Zulaufs: U = Q/A über die Fläche, auf die Q
+    verteilt wird (fenster_flaeche — bei Freispiegel die nasse Startfläche),
+    L = 0,07·D_h mit D_h = 4A/P des Querschnitts (Kreis: d).
+    """
+    q = _zulauf_q(b, base_dir)
+    lage = zulauf_lage(spec, b, terrain, base_dir) or {}
+    zelle = spec.mesh.base_cell if spec.mesh else 1.0
+    if lage.get("art") == "freispiegel":
+        a = lage["a_nass"]
+        breite = lage["hi"] - lage["lo"]
+        d_h = 4 * a / (breite + 2 * lage["h_start"]) if a > 0 else zelle
+    else:
+        a = fenster_flaeche(spec, b, terrain) or 0.0
+        r = resolve_window(spec, b)
+        if r is not None and r["shape"] == "kreis":
+            d_h = float(r["d"])
+        elif r is not None and r.get("zlo") is not None and r.get("zhi") is not None:
+            umfang = 2 * ((r["hi"] - r["lo"]) + (r["zhi"] - r["zlo"]))
+            d_h = 4 * a / umfang if umfang > 0 else zelle
+        else:
+            d_h = zelle
+    u = q / a if a > 0 else TURB_U_RUHE
+    return {**turbulenz_randwerte(u, TURB_LAENGE_ANTEIL * d_h), "q": q, "d_h": d_h}
+
+
 def _rough_nut(ks: float) -> str:
     return (f"        type            nutkRoughWallFunction;\n"
             f"        Ks              uniform {ks:g};\n"
@@ -1240,7 +1475,8 @@ def _rough_nut(ks: float) -> str:
             f"        value           uniform 0;\n")
 
 
-def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
+def initial_fields(spec: CaseSpec, base_dir: Path,
+                   terrain=None) -> dict[str, str]:
     inflows = [b for b in spec.boundaries
                if b.type in ("inflow_hydrograph", "inflow_constant")]
     outflows = [b for b in spec.boundaries
@@ -1248,17 +1484,54 @@ def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
     atmos = [b for b in spec.boundaries if b.type == "atmosphere"]
 
     u, alpha, p = {}, {}, {}
-    k_f, omega_f, nut_f = {}, {}, {}
+    k_f, omega_f, eps_f, nut_f = {}, {}, {}, {}
+
+    if terrain is None and spec.terrain is not None and spec.domain is not None:
+        terrain = TerrainField.from_spec(spec.terrain, spec.domain, base_dir)
+    turb = {b.patch: zulauf_turbulenz(spec, b, terrain, base_dir) for b in inflows}
+    # Innenfeld und einströmende Luft/Wasser an offenen Rändern: die Werte
+    # des stärksten Zulaufs; ohne Zulauf ruhiges Wasser auf Zellmaß
+    ref = (max(turb.values(), key=lambda t: t["q"]) if turb else
+           turbulenz_randwerte(TURB_U_RUHE,
+                               spec.mesh.base_cell if spec.mesh else 1.0))
+
+    def _fest(wert: float) -> str:
+        return f"        type            fixedValue;\n        value           uniform {wert:.6g};\n"
+
+    def _io(wert: float) -> str:
+        return (f"        type            inletOutlet;\n"
+                f"        inletValue      uniform {wert:.6g};\n"
+                f"        value           uniform {wert:.6g};\n")
 
     for b in inflows:
         rate = _inflow_rate_entry(b, base_dir)
-        u[b.patch] = (f"        type            flowRateInletVelocity;\n"
-                      f"        volumetricFlowRate {rate};\n"
-                      f"        value           uniform (0 0 0);\n")
-        alpha[b.patch] = "        type            fixedValue;\n        value           uniform 1;\n"
+        lage = zulauf_lage(spec, b, terrain, base_dir)
+        if lage["art"] == "freispiegel":
+            # Wasserstand am Rand folgt dem Gebiet; Q wird als GEMISCHstrom
+            # auf die Randflächen im Verhältnis ihres Wasseranteils verteilt,
+            # alpha dort aus der Nachbarzelle, ab upperBound → 1. Das
+            # Tutorial (interFoam/RAS/waterChannel) nimmt 0,9 — dann tragen
+            # teilnasse Flächen Luft mit, und das Wasser blieb am Probefall K
+            # bis 4 % unter Q (0,269 statt 0,28 m³/s bei 15 s). Mit 0,5 kam
+            # Q über den ganzen Lauf exakt an (a5b_k, 2026-09-23, PROTOKOLL_A).
+            u[b.patch] = (f"        type            variableHeightFlowRateInletVelocity;\n"
+                          f"        flowRate        {rate};\n"
+                          f"        alpha           alpha.water;\n"
+                          f"        value           uniform (0 0 0);\n")
+            alpha[b.patch] = ("        type            variableHeightFlowRate;\n"
+                              "        lowerBound      0;\n"
+                              "        upperBound      0.5;\n"
+                              "        value           uniform 0;\n")
+        else:
+            u[b.patch] = (f"        type            flowRateInletVelocity;\n"
+                          f"        volumetricFlowRate {rate};\n"
+                          f"        value           uniform (0 0 0);\n")
+            alpha[b.patch] = "        type            fixedValue;\n        value           uniform 1;\n"
         p[b.patch] = "        type            fixedFluxPressure;\n        value           uniform 0;\n"
-        k_f[b.patch] = "        type            fixedValue;\n        value           uniform 1e-4;\n"
-        omega_f[b.patch] = "        type            fixedValue;\n        value           uniform 1;\n"
+        tb = turb[b.patch]
+        k_f[b.patch] = _fest(tb["k"])
+        omega_f[b.patch] = _fest(tb["omega"])
+        eps_f[b.patch] = _fest(tb["epsilon"])
         nut_f[b.patch] = "        type            calculated;\n        value           uniform 0;\n"
 
     href = h_ref(spec)
@@ -1303,19 +1576,16 @@ def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
                               "        lowerBound      0;\n"
                               "        upperBound      1;\n"
                               "        value           uniform 0;\n")
-        k_f[b.patch] = ("        type            inletOutlet;\n"
-                        "        inletValue      uniform 1e-4;\n"
-                        "        value           uniform 1e-4;\n")
-        omega_f[b.patch] = ("        type            inletOutlet;\n"
-                            "        inletValue      uniform 1;\n"
-                            "        value           uniform 1;\n")
+        k_f[b.patch] = _io(ref["k"])
+        omega_f[b.patch] = _io(ref["omega"])
+        eps_f[b.patch] = _io(ref["epsilon"])
         nut_f[b.patch] = "        type            calculated;\n        value           uniform 0;\n"
 
     wall_u = "        type            noSlip;\n"
     wall_alpha = "        type            zeroGradient;\n"
     wall_p = "        type            fixedFluxPressure;\n        value           uniform 0;\n"
-    wall_k = "        type            kqRWallFunction;\n        value           uniform 1e-4;\n"
-    wall_omega = "        type            omegaWallFunction;\n        value           uniform 1;\n"
+    wall_k = f"        type            kqRWallFunction;\n        value           uniform {ref['k']:.6g};\n"
+    wall_omega = f"        type            omegaWallFunction;\n        value           uniform {ref['omega']:.6g};\n"
     wall_nut = "        type            nutkWallFunction;\n        value           uniform 0;\n"
 
     # Material -> Sandrauheit: raue Wandfunktion auf dem jeweiligen Patch;
@@ -1347,21 +1617,21 @@ def initial_fields(spec: CaseSpec, base_dir: Path) -> dict[str, str]:
         "alpha.water": _field_file("alpha.water", "[0 0 0 0 0 0 0]", "uniform 0",
                                    alpha, wall_alpha),
         "p_rgh": _field_file("p_rgh", "[1 -1 -2 0 0 0 0]", "uniform 0", p, wall_p),
-        "k": _field_file("k", "[0 2 -2 0 0 0 0]", "uniform 1e-4", k_f, wall_k),
-        "omega": _field_file("omega", "[0 0 -1 0 0 0 0]", "uniform 1",
-                             omega_f, wall_omega),
+        "k": _field_file("k", "[0 2 -2 0 0 0 0]", f"uniform {ref['k']:.6g}",
+                         k_f, wall_k),
+        "omega": _field_file("omega", "[0 0 -1 0 0 0 0]",
+                             f"uniform {ref['omega']:.6g}", omega_f, wall_omega),
         "nut": _field_file("nut", "[0 2 -1 0 0 0 0]", "uniform 0", nut_f, wall_nut),
     }
     if spec.solver.turbulence == "kEpsilon":
         # kEpsilon rechnet mit epsilon statt omega. Ohne dieses Feld startet
         # der Solver gar nicht — das Modell war im Schema wählbar und
         # erzeugte einen unvollständigen Fall.
-        eps_f = {pt: eintrag.replace("omega", "epsilon")
-                 for pt, eintrag in omega_f.items()}
         wall_eps = ("        type            epsilonWallFunction;\n"
-                    "        value           uniform 1;\n")
+                    f"        value           uniform {ref['epsilon']:.6g};\n")
         felder["epsilon"] = _field_file("epsilon", "[0 2 -3 0 0 0 0]",
-                                        "uniform 1", eps_f, wall_eps)
+                                        f"uniform {ref['epsilon']:.6g}",
+                                        eps_f, wall_eps)
     if spec.evaluation.verweilzeit:
         # Markierungsstoff: das Gebiet startet unmarkiert, ab t = 0 tritt
         # markiertes Wasser ein. Am Ablauf abgelesen ergibt das die
@@ -1399,7 +1669,11 @@ air
     rho             1;
 }
 
-sigma           0.07;"""
+// Oberflächenspannung aus (Fahrplan A4, 2026-09-23): bei Zellen ab 0,1 m
+// ist die Weber-Zahl riesig, Kapillarität spielt keine Rolle — die
+// CSF-Krümmung aus so groben Zellen erzeugte nur Scheinströmungen an der
+// Grenzfläche. Vorher 0.07 N/m.
+sigma           0;"""
 
 
 def turbulence_properties(spec: CaseSpec) -> str:
@@ -1568,7 +1842,8 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         "decomposeParDict",
         "numberOfSubdomains 4;\n\nmethod          scotch;", location="system"))
 
-    sf = set_fields_dict(spec, out, location=loc, terrain=terrain)
+    sf = set_fields_dict(spec, out, location=loc, terrain=terrain,
+                         base_dir=base_dir)
     if sf:
         (out / "system" / "setFieldsDict").write_text(sf)
     ts = topo_set_dict(spec, base_dir)
@@ -1595,7 +1870,7 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         turbulence_properties(spec))
 
     # 0/
-    for name, content in initial_fields(spec, base_dir).items():
+    for name, content in initial_fields(spec, base_dir, terrain).items():
         (out / "0" / name).write_text(content)
 
     # Allrun

@@ -298,6 +298,8 @@ def _quality(df: pd.DataFrame, manifest: dict | None) -> dict:
         q["checkmesh_ok"] = manifest.get("checkmesh_ok")
         if manifest.get("y_plus_range"):
             q["y_plus_range"] = manifest["y_plus_range"]
+        if manifest.get("y_plus_je_patch"):
+            q["y_plus_je_patch"] = manifest["y_plus_je_patch"]
     return q
 
 
@@ -479,11 +481,18 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
         befunde.append(befund("qualitaet", severity, message, **extra))
 
     yp = quality.get("y_plus_range") or [None, None]
+    je = quality.get("y_plus_je_patch") or {}
     if yp[1] is not None and float(yp[1]) > BEFUND_YPLUS_MAX:
-        b("warnung", f"y+ bis {float(yp[1]):,.0f} — die Wandfunktion ist "
-                     "dort nicht mehr gültig (gesund: 30–300); Sohlschub "
-                     "an diesen Stellen mit Vorsicht lesen."
-                     .replace(",", "."),
+        wo = ""
+        zu_hoch = sorted(((float(v[1]), p) for p, v in je.items()
+                          if float(v[1]) > BEFUND_YPLUS_MAX), reverse=True)
+        if zu_hoch:
+            wo = " (" + ", ".join(f"„{p}“ bis {w:,.0f}".replace(",", ".")
+                                  for w, p in zu_hoch) + ")"
+        b("warnung", f"y+ bis {float(yp[1]):,.0f}".replace(",", ".") + wo
+                     + " — die Wandfunktion ist dort nicht mehr gültig "
+                     "(gesund: 30–300); Sohlschub an diesen Stellen mit "
+                     "Vorsicht lesen.",
           wert=float(yp[1]), grenze=BEFUND_YPLUS_MAX, quelle="yplus")
     co = quality.get("courant_max")
     if co is not None and float(co) > BEFUND_COURANT_MAX:
@@ -510,6 +519,32 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
 # Läufe von davor tragen keine gesicherte Spezifikation (die Archive halten
 # nur Manifest und Bewertung), deshalb gilt der Vorbehalt für jeden Altlauf.
 ABLAUFDRUCK_KORRIGIERT = 1790035200.0        # 2026-09-22 00:00 UTC
+
+
+def numerik_hinweise(manifest: dict, verifiziert: str | None) -> list[dict]:
+    """
+    Mit welchem Stand der Hülle wurde gerechnet, und ist der verifiziert?
+    Wie altlauf_hinweise beim Lesen ergänzt, nie gespeichert. Kein Tor:
+    ein Satz, der sagt, ob ein Ergebnis Machbarkeit oder Nachweis ist.
+    """
+    from .conventions import NUMERIK_VERSION
+    v = manifest.get("numerik_version")
+    if not v:
+        return [befund(
+            "qualitaet", "hinweis",
+            f"Lauf vor dem Numerik-Stand {NUMERIK_VERSION} (23.09.2026): ein "
+            "Zulauf ohne Rohr trat als Wasserwand über die ganze Randfläche "
+            "ein, der Verweilzeit-Stoff lief in die Luft. Neu rechnen, wenn "
+            "Zulauf oder Verweilzeit maßgeblich sind.",
+            quelle="numerik")]
+    if v != verifiziert:
+        return [befund(
+            "qualitaet", "hinweis",
+            f"Numerik-Stand {v} ist noch nicht am Wehrfall verifiziert"
+            + (f" (verifiziert: {verifiziert})" if verifiziert else "")
+            + " — das Ergebnis ist eine Machbarkeitsrechnung, kein Nachweis.",
+            quelle="numerik")]
+    return []
 
 
 def altlauf_hinweise(manifest: dict) -> list[dict]:

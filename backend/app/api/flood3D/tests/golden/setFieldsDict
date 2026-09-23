@@ -1,0 +1,41 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      setFieldsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+defaultFieldValues
+(
+    volScalarFieldValue alpha.water 0
+);
+
+regions
+(
+    boxToCell
+    {
+        box (-1 -1 91) (25 19 94.9);
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 1
+        );
+    }
+    // Startwasser vor Zulauf zulauf (trockener Freispiegel-Rand)
+    boxToCell
+    {
+        box (-1 0 91) (1 18 96.3);
+        fieldValues
+        (
+            volScalarFieldValue alpha.water 1
+        );
+    }
+);
+
+// ************************************************************************* //

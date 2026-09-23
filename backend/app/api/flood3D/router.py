@@ -532,6 +532,16 @@ async def runs_vergleich(a: str = Query(...), b: str = Query(...)):
             "rechenbar": raster["gleich"]}
 
 
+def _verifizierte_numerik() -> str | None:
+    """Numerik-Stand, an dem der Wehrfall zuletzt bestanden hat (A6)."""
+    p = Path(__file__).resolve().parent / "data" / "verifikation" / "wehr_ueberfall.json"
+    try:
+        d = json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+    return d.get("numerik_version") if d.get("bestanden") else None
+
+
 @router.get("/runs/{run_id}")
 async def run_detail(run_id: str):
     paths = _paths(run_id)
@@ -540,8 +550,9 @@ async def run_detail(run_id: str):
     # Befunde, die sich erst nach dem Lauf ergeben haben (Altlauf vor der
     # Ablaufdruck-Korrektur, E7): beim Lesen ergänzt, nie ins Manifest
     # geschrieben — die Archive bleiben, wie sie sind
-    from .core.evaluate import altlauf_hinweise
-    nachtraeglich = altlauf_hinweise(manifest)
+    from .core.evaluate import altlauf_hinweise, numerik_hinweise
+    nachtraeglich = (altlauf_hinweise(manifest)
+                     + numerik_hinweise(manifest, _verifizierte_numerik()))
     if nachtraeglich:
         manifest = {**manifest,
                     "befunde": [*(manifest.get("befunde") or []), *nachtraeglich]}

@@ -122,14 +122,18 @@ def test_laufendpunkt_ergaenzt_den_vorbehalt_ohne_zu_speichern(tmp_path, monkeyp
     (alt / "manifest.json").write_text(json.dumps(manifest_alt))
     neu = tmp_path / "runs" / "neu_r001"
     neu.mkdir()
+    from ..core.conventions import NUMERIK_VERSION
     (neu / "manifest.json").write_text(json.dumps(
-        {"status": "completed", "finished": ABLAUFDRUCK_KORRIGIERT + 60}))
+        {"status": "completed", "finished": ABLAUFDRUCK_KORRIGIERT + 60,
+         "numerik_version": NUMERIK_VERSION}))
+    # der verifizierte Stand kommt sonst aus data/verifikation (echte Ablage)
+    monkeypatch.setattr(router_mod, "_verifizierte_numerik", lambda: NUMERIK_VERSION)
 
     app = FastAPI(); app.include_router(router_mod.router)
     client = TestClient(app)
     b_alt = client.get("/runs/alt_r001").json()["manifest"]["befunde"]
-    assert [b["severity"] for b in b_alt] == ["warnung", "hinweis"]
-    assert b_alt[1]["quelle"] == "ablaufdruck"
+    assert [b["severity"] for b in b_alt] == ["warnung", "hinweis", "hinweis"]
+    assert [b.get("quelle") for b in b_alt[1:]] == ["ablaufdruck", "numerik"]
     b_neu = client.get("/runs/neu_r001").json()["manifest"].get("befunde") or []
     assert b_neu == []
     # das Manifest auf der Platte bleibt, wie es war

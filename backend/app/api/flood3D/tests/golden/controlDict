@@ -125,6 +125,20 @@ functions
         writeInterval   0.1;
         log             no;
     }
+    patchflow_atmosphere
+    {
+        type            surfaceFieldValue;
+        libs            (fieldFunctionObjects);
+        regionType      patch;
+        name            atmosphere;
+        operation       weightedAreaIntegrate;
+        fields          (U);
+        weightField     alpha.water;
+        writeFields     false;
+        writeControl    runTime;
+        writeInterval   0.1;
+        log             no;
+    }
     wall_shear
     {
         type            wallShearStress;

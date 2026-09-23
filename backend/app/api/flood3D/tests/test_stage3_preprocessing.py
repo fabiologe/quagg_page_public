@@ -348,10 +348,14 @@ def test_namenskontrakt_casebuilder_extract(built_case):
 def test_randbedingungen_inhaltlich(built_case):
     _, out, _ = built_case
     u = (out / "0/U").read_text()
-    assert "flowRateInletVelocity" in u
-    assert "constant 0.5" in u
+    # Zulauf ohne Fenster = Freispiegel (A1, 2026-09-23): Wasserstand am
+    # Rand folgt dem Gebiet, kein Vorhang über die ganze Seite
+    assert "variableHeightFlowRateInletVelocity" in u
+    assert "flowRate        constant 0.5" in u
     alpha = (out / "0/alpha.water").read_text()
-    assert "fixedValue" in alpha            # Zulauf voll Wasser
+    inlet = alpha[alpha.index("inlet"):]
+    assert "variableHeightFlowRate" in inlet[:200]
+    assert "upperBound      0.5" in inlet[:200]
     assert '".*"' in alpha                  # Wand-Sammelregel
     setf = (out / "system/setFieldsDict").read_text()
     assert "94.9" in setf                   # Anfangswasserspiegel
@@ -404,16 +408,29 @@ def test_location_in_mesh_liegt_im_stroemungsraum(built_case):
     assert z > 94.0
 
 
+# Seit Fahrplan A6 (2026-09-23) die ganze Numerik, nicht nur 4 Dateien:
+# Schemata, Löser, Stoffwerte, Turbulenzmodell und die Anfangs-/Randfelder
+# sind genau das, was die Hülle um den Solver ausmacht (NUMERIK_VERSION).
 GOLDEN = ["system/controlDict", "system/blockMeshDict",
-          "system/snappyHexMeshDict", "constant/fvOptions"]
+          "system/snappyHexMeshDict", "constant/fvOptions",
+          "system/fvSchemes", "system/fvSolution", "system/setFieldsDict",
+          "constant/transportProperties", "constant/turbulenceProperties",
+          "0/U", "0/alpha.water", "0/p_rgh", "0/k", "0/omega", "0/nut"]
 
 
 @pytest.mark.parametrize("rel", GOLDEN)
 def test_dictionaries_gegen_referenz(built_case, rel):
     """
     Eingefrorene Dictionaries (Spez. Kap. 13). Bei gewollten Änderungen am
-    casebuilder die Referenz bewusst neu erzeugen:
-        cli build --spec <stage3.yaml> --out /tmp/fall && cp ... tests/golden/
+    casebuilder die Referenz bewusst neu erzeugen (und NUMERIK_VERSION in
+    core/conventions.py hochzählen, wenn sich das Rechenergebnis ändert):
+        cd backend && venv/bin/python -c "from pathlib import Path; \
+          from app.api.flood3D.tests.synthetic_case import build_spec_stage3; \
+          from app.api.flood3D.core.casebuilder import build_case; \
+          from app.api.flood3D.tests.test_stage3_preprocessing import GOLDEN; \
+          import tempfile, shutil; d = Path(tempfile.mkdtemp()); \
+          build_case(build_spec_stage3(), d); \
+          [shutil.copy(d / r, 'app/api/flood3D/tests/golden/' + Path(r).name) for r in GOLDEN]"
     """
     _, out, _ = built_case
     golden = Path(__file__).parent / "golden" / Path(rel).name

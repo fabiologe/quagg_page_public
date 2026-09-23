@@ -162,12 +162,23 @@ def test_hydrograph_ohne_messreihe_wird_gekennzeichnet():
 # P1-5: Fensterfläche (Grundlage der Q→U-Ausweisung)
 # --------------------------------------------------------------------------
 
-def test_fenster_flaeche_ohne_fenster_ist_die_gebietsseite():
+def test_fenster_flaeche_ohne_fenster_ist_die_nasse_startflaeche():
+    # Seit A1 (2026-09-23) ist ein Zulauf ohne Fenster ein Freispiegel-
+    # Zulauf: Q verteilt sich auf die NASSE Fläche, nicht auf die ganze
+    # Seite bis z_max. Ohne Gelände liegt die Sohle auf z_min; nass ist die
+    # Fläche bis zum Anfangswasserspiegel — ohne ihn bis max(2 Zellen,
+    # kritische Tiefe) über der Sohle.
     spec = build_spec_stage3()
     zufluss = next(b for b in spec.boundaries if b.type == "inflow_constant")
     x0, y0, x1, y1 = spec.domain.extent
-    erwartet = (y1 - y0) * (spec.domain.z_max - spec.domain.z_min)
-    assert fenster_flaeche(spec, zufluss) == pytest.approx(erwartet)
+    b = y1 - y0
+    assert spec.solver.initial_level is not None
+    h = spec.solver.initial_level - spec.domain.z_min
+    assert fenster_flaeche(spec, zufluss) == pytest.approx(b * h, rel=1e-6)
+    spec.solver.initial_level = None
+    h_c = (zufluss.q ** 2 / (9.81 * b * b)) ** (1 / 3)
+    h = max(2 * spec.mesh.base_cell, h_c)
+    assert fenster_flaeche(spec, zufluss) == pytest.approx(b * h, rel=1e-6)
 
 
 # --------------------------------------------------------------------------

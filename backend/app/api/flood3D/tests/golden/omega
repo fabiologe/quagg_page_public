@@ -1,0 +1,45 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    location    "0";
+    object      omega;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [0 0 -1 0 0 0 0];
+
+internalField   uniform 0.108667;
+
+boundaryField
+{
+    inlet
+    {
+        type            fixedValue;
+        value           uniform 0.108667;
+    }
+    outlet
+    {
+        type            inletOutlet;
+        inletValue      uniform 0.108667;
+        value           uniform 0.108667;
+    }
+    atmosphere
+    {
+        type            inletOutlet;
+        inletValue      uniform 0.108667;
+        value           uniform 0.108667;
+    }
+    ".*"
+    {
+        type            omegaWallFunction;
+        value           uniform 0.108667;
+    }
+}
+
+// ************************************************************************* //

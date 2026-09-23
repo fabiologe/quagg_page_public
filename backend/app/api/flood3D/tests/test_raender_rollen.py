@@ -14,7 +14,7 @@ import pytest
 
 from ..core import casespec as cs
 from ..core.anschluss import rollen_ohne_rand
-from ..core.casebuilder import build_case, fenster_flaeche
+from ..core.casebuilder import build_case, fenster_flaeche, zulauf_lage
 from ..core.kur import anwenden
 from ..core.terrain import TerrainField
 from ..core.validate import validate_case
@@ -39,8 +39,8 @@ def test_zwei_zulaeufe_sind_kein_fehler_und_der_fallbau_schreibt_beide(tmp_path)
     u = (out / "0" / "U").read_text()
     for patch in ("inlet", "inlet_nord"):
         block = u[u.index(patch):]
-        assert "flowRateInletVelocity" in block[:400], patch
-    assert u.count("flowRateInletVelocity") == 2
+        assert "variableHeightFlowRateInletVelocity" in block[:400], patch
+    assert u.count("variableHeightFlowRateInletVelocity") == 2
 
 
 def test_leerlauf_ohne_zulauf_ist_nur_ein_hinweis():
@@ -56,14 +56,27 @@ def test_leerlauf_ohne_zulauf_ist_nur_ein_hinweis():
 
 # ---- G3 -------------------------------------------------------------------
 
-def test_zulauffläche_ohne_fenster_ist_die_seite_ueber_dem_gelaende(tmp_path):
+def test_zulauf_ohne_fenster_ist_freispiegel_ueber_der_sohle(tmp_path):
+    # G3 → A1: ohne Fenster ist der Zulauf ein Freispiegel-Rand; die Fläche,
+    # auf die sich Q verteilt, ist die NASSE Startfläche über der Sohle —
+    # ein kleiner Teil der Seite, nicht mehr die Seite über dem Gelände.
     spec = build_spec_tal(tmp_path)
     b = next(x for x in spec.boundaries if x.id == "zulauf_west")
-    voll = fenster_flaeche(spec, b)                              # bis z_min
+    x0, y0, x1, y1 = spec.domain.extent
+    seite = (y1 - y0) * (spec.domain.z_max - spec.domain.z_min)
     feld = TerrainField.from_spec(spec.terrain, spec.domain, tmp_path)
-    ueber = fenster_flaeche(spec, b, feld)
-    assert 0 < ueber < 0.8 * voll, (voll, ueber)
-    hin = [x for x in _befunde(spec, "ganze Seite", tmp_path)
+    nass = fenster_flaeche(spec, b, feld)
+    lage = zulauf_lage(spec, b, feld)
+    assert lage["art"] == "freispiegel"
+    # Startwasser: max(2 Zellen, kritische Tiefe) über der tiefsten Sohle
+    h_c = (b.q ** 2 / (9.81 * (y1 - y0) ** 2)) ** (1 / 3)
+    # … gekappt eine Zelle unter dem Gebietsdeckel
+    z_start = min(lage["sohle"] + max(2 * spec.mesh.base_cell, h_c),
+                  spec.domain.z_max - spec.mesh.base_cell)
+    assert lage["z_start"] == pytest.approx(z_start)
+    assert nass == pytest.approx(lage["a_nass"])
+    assert 0 < nass < 0.5 * seite, (seite, nass)
+    hin = [x for x in _befunde(spec, "über die Sohle", tmp_path)
            if x["object_id"] == "zulauf_west"]
     assert hin and hin[0]["severity"] == "hinweis"
     assert "x_min" in hin[0]["message"]

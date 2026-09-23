@@ -1295,7 +1295,7 @@ def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
     zwei Zulaufrohren und ein Leerlauf ohne Zulauf waren gesperrt (Audit P9).
     """
     from .anschluss import rollen_ohne_rand
-    from .casebuilder import _bc_face, fenster_flaeche
+    from .casebuilder import _bc_face, fenster_flaeche, zulauf_lage
 
     befunde: list[dict] = []
     f = befunde.append
@@ -1322,41 +1322,58 @@ def _pruefe_raender(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
                    "die Fensterprüfung."))
     if not ctx.outflows:
         f(_finding("boundaries", "fehler", "Kein Abflussrand definiert"))
+    # Ohne Atmosphären-Rand wird die Oberseite still zur Wand
+    # (meshgen.assign_faces): ein dichter Deckel über einem Zweiphasenfall,
+    # eingeschlossene Luft drückt auf den Wasserspiegel (Fahrplan A5)
+    from .kur import hat_atmosphaere
+    if not hat_atmosphaere(spec):
+        f(_finding("boundaries", "fehler",
+                   "Kein Atmosphären-Rand — die Oberseite des Gebiets würde "
+                   "zur Wand, eingeschlossene Luft verfälscht den Wasserspiegel.",
+                   fix=kur("atmosphaere_anlegen")))
 
-    # Q → U ausweisen: flowRateInletVelocity verteilt den Volumenstrom
-    # gleichmäßig über die Fensterfläche, und alpha = 1 füllt das ganze
-    # Fenster mit Wasser. Die resultierende Geschwindigkeit stand bisher
-    # nirgends — dabei entscheidet sie, ob der Zulauf als ruhige Anströmung
-    # oder als Strahl ins Modell schießt (Audit P1-5). Ohne Fenster ist die
-    # Fläche die ganze Gebietsseite ÜBER dem Gelände — das gehört gesagt,
-    # ein Zulauf ist selten 74 m breit (Audit G3).
+    # Wie jeder Zulauf ins Gebiet kommt, und mit welcher Geschwindigkeit
+    # (Audit P1-5, F1). Die Art kommt aus casebuilder.zulauf_lage — derselben
+    # Stelle, die die Randbedingung schreibt. Freispiegel: der Wasserstand am
+    # Rand folgt dem Gebiet, Q verteilt sich auf die nasse Fläche; Rohr und
+    # Strahl (Öffnung über dem Gelände): voller Querschnitt.
     if spec.domain is not None:
         koppelbar = {e["rand"] for e in rollen_ohne_rand(spec)
                      if e["koppelbar"] and e["rolle"] == "zulauf"}
         for b in ctx.inflows:
-            if getattr(b, "window", None) is None:
-                face = _bc_face(spec, b) or "?"
-                x0, y0, x1, y1 = spec.domain.extent
-                breite = (y1 - y0) if face.startswith("x") else (x1 - x0)
-                flaeche = fenster_flaeche(spec, b, ctx.terrain)
+            lage = zulauf_lage(spec, b, ctx.terrain, ctx.base_dir)
+            face = _bc_face(spec, b) or "?"
+            if lage["art"] == "freispiegel":
                 f(_finding(b.id, "hinweis",
-                           f"Zulauf „{b.id}“ ist die ganze Seite {face}: "
-                           f"{breite:.0f} m breit, rund {flaeche or 0:.0f} m² "
-                           "über dem Gelände. Fenster setzen oder an ein "
-                           "Rohr koppeln.",
+                           f"Zulauf „{b.id}“ über die Sohle der Seite {face} "
+                           f"({lage['hi'] - lage['lo']:.1f} m breit): der "
+                           "Wasserstand am Rand folgt dem Gebiet. "
+                           + {"streifen": "Startwasser (eigener Streifen)",
+                              "anfangswasser": "Anfangswasserspiegel",
+                              "vorfuellung": "Vorfüllung"}[lage["startwasser"]]
+                           + f" bis {lage['z_start']:.2f} m NHN "
+                           f"({lage['h_start']:.2f} m über der Sohle).",
                            fix=(kur("anschluesse_herstellen")
-                                if b.id in koppelbar else None)))
+                                if b.id in koppelbar
+                                and getattr(b, "window", None) is None else None)))
+            elif lage["art"] == "strahl" and lage.get("zlo") is not None:
+                f(_finding(b.id, "hinweis",
+                           f"Zulauf „{b.id}“ ist eine Öffnung "
+                           f"{lage['zlo'] - lage['sohle']:.2f} m über dem "
+                           "Gelände — das Wasser tritt mit vollem Querschnitt "
+                           "als Strahl ein."))
             if b.type != "inflow_constant" or not b.q:
                 continue
             flaeche = fenster_flaeche(spec, b, ctx.terrain)
             if flaeche and flaeche > 0:
                 u = float(b.q) / flaeche
+                wo = ("über die nasse Startfläche"
+                      if lage["art"] == "freispiegel" else "über den ganzen Querschnitt")
                 f(_finding(b.id, "warnung" if u > 3.0 else "hinweis",
                            f"Zufluss {b.q:g} m³/s auf rund {flaeche:.2f} m² "
-                           f"Zulauffläche → mittlere Eintrittsgeschwindigkeit "
-                           f"rund {u:.2f} m/s über den GANZEN Querschnitt "
-                           "(die vernetzte, treppige Fensterfläche kann "
-                           "leicht abweichen)."
+                           f"→ mittlere Eintrittsgeschwindigkeit rund {u:.2f} m/s "
+                           f"{wo} (die vernetzte, treppige Fläche kann leicht "
+                           "abweichen)."
                            + (" Das ist strahlartig schnell — Fenster "
                               "vergrößern oder Zufluss prüfen."
                               if u > 3.0 else "")))
@@ -1687,7 +1704,7 @@ def _pruefe_ganglinien(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             if spec.domain is not None and b.column_q in df:
                 from .casebuilder import fenster_flaeche
                 q_max = float(df[b.column_q].to_numpy(float).max())
-                flaeche = fenster_flaeche(spec, b)
+                flaeche = fenster_flaeche(spec, b, ctx.terrain)
                 if q_max > 0 and flaeche and flaeche > 0:
                     u = q_max / flaeche
                     f(_finding(b.id, "warnung" if u > 3.0 else "hinweis",

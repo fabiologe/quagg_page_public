@@ -29,7 +29,9 @@ vergleichbar ist:
   co_max            Courant-Spitze aus dem Solver-Log
   y_plus            je Patch min/max zum letzten Zeitpunkt
   tracer_verlust    (∫Zu − ∫Ab·T_ab − Σ α·T·V) / ∫Zu   (nur mit Verweilzeit)
-  tracer_in_luft    Σ (1 − α)·T·V / ∫Zu               (nur mit Verweilzeit)
+  tracer_in_luft    Σ (1 − α)·T·V / ∫Zu               (nur mit Verweilzeit;
+                    nur ohne Phasenbindung aussagekräftig — mit `phase`
+                    trägt T in Luftzellen keine Masse)
 """
 from __future__ import annotations
 
@@ -262,6 +264,19 @@ def auswerten(job: Path) -> dict:
         t, q = get_series(df, Quantity.DISCHARGE, b.patch)
         if len(t):
             (zu if b.type.startswith("inflow") else ab)[b.patch] = (t, q)
+    # Wasser über die Atmosphäre (seit 2026-09-23 geschrieben, extract_case
+    # liest es bewusst nicht) — derselbe Leser wie für jeden Rand
+    from ..core.conventions import FACE_NORMALS
+    from ..core.extract import readers
+    oben = {}
+    for b in spec.boundaries:
+        if b.type == "atmosphere":
+            fo = case / "postProcessing" / f"patchflow_{b.patch}"
+            if fo.is_dir():
+                rows = readers.read_discharge(fo, b.patch, FACE_NORMALS["z_max"], job.name)
+                if rows:
+                    oben[b.patch] = (np.array([r["time"] for r in rows]),
+                                     np.array([r["value"] for r in rows]))
     tv, v = get_series(df, Quantity.VOLUME, "domain")
     if len(tv) > 1 and zu:
         t0, t1 = tv[0], tv[-1]
@@ -271,6 +286,12 @@ def auswerten(job: Path) -> dict:
         erg.update(v_start=float(v[0]), v_ende=float(v[-1]), zufluss_m3=rein,
                    abfluss_m3=raus,
                    massenfehler=abs(dv - (rein - raus)) / max(rein, 1e-12))
+        if oben:
+            ueber = sum(_integral(t, q, t0, t1) for t, q in oben.values())
+            erg.update(atmosphaere_m3=ueber,
+                       atmosphaere_anteil=ueber / max(rein, 1e-12),
+                       massenfehler_mit_atmosphaere=abs(dv - (rein - raus - ueber))
+                       / max(rein, 1e-12))
         erg["q_zu_ende"] = {p: _mittel_ende(t, -q) for p, (t, q) in zu.items()}
         erg["q_ab_ende"] = {p: _mittel_ende(t, q) for p, (t, q) in ab.items()}
     if spec.evaluation.sections:

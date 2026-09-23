@@ -53,8 +53,38 @@ def geometrie_sichern(spec, case_dir: Path, run_root: Path) -> None:
     except Exception as e:   # noqa: BLE001 — Sichern darf nie einen Lauf verhindern
         print(f"flood3d: Geometrie von {run_root.name} nicht gesichert: {e}",
               flush=True)
+    from .core.conventions import NUMERIK_VERSION
     manifest_schreiben(run_root, case_hash=spec.case_hash(),
-                       netz_hash=spec.netz_hash(), case_id=spec.meta.id)
+                       netz_hash=spec.netz_hash(), case_id=spec.meta.id,
+                       numerik_version=NUMERIK_VERSION,
+                       zulauf=_zulauf_steckbrief(spec, case_dir))
+
+
+def _zulauf_steckbrief(spec, case_dir: Path) -> list[dict] | None:
+    """
+    Wie jeder Zulauf ins Gebiet kam (casebuilder.zulauf_lage, Fahrplan A1)
+    und mit welchen Turbulenzwerten (A2) — fürs Manifest. Scheitert das
+    Gelände, bleibt der Eintrag weg; der Lauf startet trotzdem.
+    """
+    try:
+        from .core.casebuilder import zulauf_lage, zulauf_turbulenz
+        from .core.terrain import TerrainField
+        feld = (TerrainField.from_spec(spec.terrain, spec.domain, case_dir)
+                if spec.terrain is not None and spec.domain is not None else None)
+        out = []
+        for b in spec.boundaries:
+            lage = zulauf_lage(spec, b, feld, case_dir)
+            if lage is None:
+                continue
+            t = zulauf_turbulenz(spec, b, feld, case_dir)
+            out.append({"id": b.id, **{k: (round(v, 4) if isinstance(v, float) else v)
+                                        for k, v in lage.items()},
+                        "turbulenz": {k: float(f"{t[k]:.4g}")
+                                      for k in ("u", "l", "k", "omega", "epsilon")}})
+        return out
+    except Exception as e:   # noqa: BLE001 — Steckbrief darf nie einen Lauf verhindern
+        print(f"flood3d: Zulauf-Steckbrief nicht erstellt: {e}", flush=True)
+        return None
 
 
 # ── Artefakt-Import ─────────────────────────────────────────────────────────
@@ -92,7 +122,8 @@ def _import_entpacken(run_root: Path, run_id: str, data: bytes) -> dict:
     # das überleben, sonst weiß ein importierter Lauf am Ende nicht mehr,
     # aus welchem Fallstand er stammt.
     vorher = read_manifest(run_paths(run_root.parent, run_root.name)) or {}
-    bewahren = {k: vorher[k] for k in ("case_hash", "netz_hash")
+    bewahren = {k: vorher[k] for k in ("case_hash", "netz_hash",
+                                       "numerik_version", "zulauf")
                 if vorher.get(k)}
     for m in z.namelist():
         if m.endswith("/"):

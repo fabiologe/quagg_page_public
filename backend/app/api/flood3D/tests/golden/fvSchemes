@@ -1,0 +1,57 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+|  Erzeugt von quagg flood3D casebuilder — nicht von Hand bearbeiten,         |
+|  maßgeblich ist die casespec (Spez. Kap. 4.1).                              |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      fvSchemes;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+ddtSchemes
+{
+    default         Euler;
+}
+gradSchemes
+{
+    // begrenzt: snappy-Netze erreichen an Bauwerkskanten leicht 60°
+    // Schiefe, ungebremste Gradienten schaukeln sich dort auf
+    default         cellLimited Gauss linear 1;
+}
+divSchemes
+{
+    div(rhoPhi,U)   Gauss linearUpwind grad(U);
+    div(phi,alpha)  Gauss vanLeer;
+    div(phirb,alpha) Gauss linear;
+    div(phi,k)      Gauss upwind;
+    div(phi,omega)  Gauss upwind;
+    div(phi,epsilon) Gauss upwind;
+    // Markierungsstoff der Verweilzeit: begrenzt, damit die Front nicht
+    // ueberschwingt (Konzentrationen ausserhalb 0…1 waeren sinnlos)
+    div(phi,T)      Gauss limitedLinear 1;
+    div(((rho*nuEff)*dev2(T(grad(U))))) Gauss linear;
+}
+laplacianSchemes
+{
+    // "corrected" ist unbegrenzt und nur auf nahezu orthogonalen Netzen
+    // stabil; gemessen wurden 59.9° Nichtorthogonalität -> begrenzen
+    default         Gauss linear limited corrected 0.33;
+}
+interpolationSchemes
+{
+    default         linear;
+}
+snGradSchemes
+{
+    default         limited corrected 0.33;
+}
+wallDist
+{
+    method          meshWave;
+}
+
+// ************************************************************************* //

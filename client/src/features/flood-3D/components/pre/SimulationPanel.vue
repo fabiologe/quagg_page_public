@@ -301,8 +301,8 @@
       <article class="f3d-card">
         <h3>Physikalische Verifikation</h3>
         <p v-if="!verifikation.length" class="f3d-muted f3d-small">
-          Noch kein Verifikationslauf gerechnet. Läuft serverseitig:
-          <code>FLOOD3D_VERIFIKATION=1 pytest …/test_verifikation.py</code>
+          Noch kein Verifikationslauf gerechnet. Läuft im Server-Docker:
+          <code>probe_lauf --fall wehr</code>, dann <code>probe.verifikation</code>
           — nach jeder Änderung am Fallaufbau und vor jedem Release.
         </p>
         <div v-for="v in verifikation" :key="v.fall" class="f3d-verif-zeile">
@@ -316,6 +316,8 @@
               C_d = {{ v.cd_sim }} (Band {{ v.band?.[0] }}–{{ v.band?.[1] }},
               {{ v.band_art }}) · {{ v.zellen?.toLocaleString('de-DE') }} Zellen
               · geprüft {{ v.geprueft }}
+              <template v-if="v.numerik_version"> · Numerik-Stand {{ v.numerik_version }}</template>
+              <template v-if="v.ort"> · {{ v.ort }}</template>
             </span>
           </span>
         </div>
