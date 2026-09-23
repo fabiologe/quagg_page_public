@@ -37,6 +37,13 @@ ZIEL = WURZEL.parent / "verifikation" / "wehr_ueberfall.json"
 def wehr_bewerten(job: Path) -> dict:
     spec = CaseSpec.from_yaml(job / "fall" / "case.yaml")
     df, _ = extract_case(job / "case", spec, job.name)
+    # Nur vollständige Läufe: am 2026-09-23 schrieb ein Wächter das Ergebnis
+    # eines bei t = 8,3 s abgebrochenen Laufs (C_d 0,48, „nicht bestanden")
+    # in die live angezeigte Datei
+    t_ende = float(df["time"].max()) if len(df) else 0.0
+    if t_ende < 0.98 * spec.solver.end_time:
+        raise SystemExit(f"Lauf endete bei t = {t_ende:g} s, verlangt "
+                         f"{spec.solver.end_time:g} s — keine Verifikation")
     cd = pd.DataFrame(overfall_cd_rows(df, spec, job.name))
     if cd.empty:
         raise SystemExit("Keine Überfallbeiwert-Reihe — Wehr nicht überströmt?")
