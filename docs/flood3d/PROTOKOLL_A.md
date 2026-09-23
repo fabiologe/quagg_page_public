@@ -15,6 +15,7 @@ Angelegt 2026-09-23, noch leer.
 | A4 | σ = 0 | ☑ gemessen (a4_k): ohne messbare Wirkung | 2026-09-23 | `88610a4` |
 | A5 | Atmosphäre-Regel, y⁺ je Patch | ☑ gemessen (a5_k) | 2026-09-23 | `88610a4` |
 | A6 | Harness-Probe, Wehr-Nachlauf, Numerik-Version, Goldens | ☑ live (pm2 20:43, Build 20:47); Wehr **nicht bestanden** (C_d 0,540) → A7 | 2026-09-23 | `88610a4`, `82faf00`, `5c99945` |
+| A7 | Zufluss-Defizit | ☑ Ursache gefunden (OpenFOAM-Randbedingung), keine Kur, dokumentiert | 2026-09-23 | – |
 
 Status-Wörter: ☐ offen · ⏳ in Arbeit · ☑ erledigt (mit Zahl) · ✗ verworfen (mit Grund).
 
@@ -175,6 +176,42 @@ Befunde:
 3. Die Referenz wird **nicht** neu eingefroren (das wäre die Eigenreferenz, die das
    Audit kritisiert). Die Verifikationskarte zeigt „nicht bestanden"; Numerik-Stand
    2026-09-A gilt als nicht verifiziert, neue Läufe tragen den Hinweis.
+
+## A7 · Zufluss-Defizit (2026-09-23, vorgezogen auf Fabios Wunsch)
+
+Hypothese: das Defizit kommt von teilnassen Randflächen auf EINSTRÖMENDEN Flächen →
+`lowerBound = upperBound = 0,5` macht jede Einströmfläche ganz nass oder ganz trocken.
+
+| Lauf | Wasser-Zufluss t = 8 / 12 / 18 s | C_d |
+|---|---|---|
+| a6_wehr (0 / 0,5) | 0,1183 / 0,1174 / 0,1163 | 0,540 |
+| a7_wehr (0,5 / 0,5) | 0,1200 / 0,1174 / 0,1163 | 0,541 |
+| a7_k (Fall K, 0,5 / 0,5) | 0,280 durchgehend (wie a5b_k) | – |
+
+**Hypothese widerlegt.** Diagnose-Lauf a7_diag (bis 14 s, Felder jede Sekunde, Randwerte
+von `phi`, `alpha.water`, `alphaPhi0.water` am Zulauf):
+
+| t [s] | 1 | 3 | 5 | 8 | 11 | 12 | 14 |
+|---|---|---|---|---|---|---|---|
+| Σ phi (Gemisch) | 0,1200 | 0,1200 | 0,1200 | 0,1200 | 0,1200 | 0,1200 | 0,1200 |
+| Σ α·phi (Wasser) | 0,1133 | 0,1200 | 0,1188 | 0,1184 | 0,1166 | 0,1200 | 0,1165 |
+| teilnasse Randflächen (von 128) | 8 | 0 | 2 | 8 | 8 | 0 | 8 |
+
+Mechanismus: `variableHeightFlowRate` ist gemischt — auf Flächen OHNE Einstrom gilt
+Null-Gradient, die Fläche übernimmt den Zwischenwert der Nachbarzelle; im nächsten Schritt
+verteilt `variableHeightFlowRateInletVelocity` Q (Gemisch) auch auf diese Fläche, Wasser
+= Q·Σα²A/ΣαA < Q. Die Schranken wirken nur auf Einströmflächen und erreichen das nicht.
+Defizit pendelt 0–5 %, im Mittel ≈ 2–3 %. Eine Kur bräuchte ein eigenes Gewichtsfeld
+für die Randbedingung (functionObject) — Aufwand und Risiko stehen in keinem Verhältnis.
+
+Entscheidung: Randbedingung bleibt `0 / 0,5` (Commit `88610a4`). Das Defizit ist gemessen
+und dokumentiert; Bilanz und Kennwerte nehmen ohnehin den gemessenen Zufluss.
+
+**Das Defizit erklärt den C_d-Sprung nicht** (0,633 → 0,54): C_d = Q_gemessen /
+(2/3·√2g·b·h^1,5) — weniger Zufluss senkt Q und h gemeinsam. Der Sprung kommt aus der
+Anströmung (der alte Wasservorhang brachte Impuls mit) und aus der Messung: Q am
+Querschnitt liegt 5 % unter dem Ablauf. Welcher Wert physikalisch richtiger ist, kann
+dieser eine Fall nicht entscheiden → Kennwert-Definitionen (Sprint C).
 
 ## A6 · Abschluss
 
