@@ -9,7 +9,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 |---|---|---|---|---|
 | B1 | Leichen und Kopien | ☑ | 2026-09-23 | (siehe unten) |
 | B2 | Eine Nachlaufkette | ☑ Nachlauf; Vernetzung noch doppelt | 2026-09-23 | (siehe unten) |
-| B3 | Schätzung (und Bilanz) nur im Server | ⏳ a ☑ (Laufschätzung); b Widerstand, c Bilanz offen | 2026-09-23 | (siehe unten) |
+| B3 | Schätzung (und Bilanz) nur im Server | ☑ a Laufschätzung, c Bilanz; b Widerstand bewusst nicht | 2026-09-23 | (siehe unten) |
 | B4 | `schema_version` | ☐ offen | | |
 | B5 | Betriebsdeckel | ☐ offen | | |
 | B6 | Fenster-Diät | ⏸ wartet auf Fabios Entscheidung | | |
@@ -93,3 +93,33 @@ zellen_schaetzung und laufschaetzung (snappyHexMeshDict byte-gleich, Goldens unv
 Der Deckeltest `test_ueber_dem_deckel_ist_es_ein_fehler` nahm an, ohne Verfeinerung werde
 nicht verfeinert — bei 0,07 m ergäben die Standardstufen wirklich 9,3 Mio Zellen (Fehler);
 der Test setzt jetzt ausdrücklich Stufe 0 und keine Bauwerke.
+
+## B3b · Widerstandsbeiwerte — bewusst NICHT verlegt
+
+`PropertyPanel` zeigt d, f, ξ und Fugenweite live beim Tippen im Formular, bevor die Eingabe
+übernommen ist; der Server sähe sie erst danach. Die Formeln stehen doppelt, sind aber auf
+beiden Seiten an dieselben Zahlen festgenagelt (`widerstand.test.js` ↔ `test_widerstandszone.py`).
+Verlegen hieße träge Anzeige bei kaum geringerem Drift-Risiko.
+
+## B3c · Wasserbilanz nur im Server
+
+`BilanzPanel` liest Zufluss, Speicheränderung, Ablauf, Anteil, Beharrung und Austausch aus
+`result.kennwerte.bilanz` (dieselbe Definition wie das Kriterium „massenbilanz"); das
+Diagramm zeigt weiter die Rohreihen.
+
+**Dabei gefunden und behoben:** Die Server-Bilanz nahm bei KONSTANTEM Zufluss die Vorgabe,
+nicht die Messung — beim A7-Defizit (2–3 % weniger Wasser) verbuchte sie Wasser, das nie im
+Gebiet war; der Client nahm die Messung (letzter Wert). Jetzt: gemessen, wo vorhanden, sonst
+Vorgabe; dazu `ablauf_gemessen` (Mittel über das End-Viertel). Die Aussage in PROTOKOLL_A
+(„Bilanz und Kennwerte nehmen ohnehin den gemessenen Zufluss") stimmte bis dahin nur für
+Ganglinien. Nebenfund beim Einbau: `i0` wurde in `kennwerte` doppelt vergeben (End-Viertel
+und gleitende Steigung) — eigener Name `i_viertel`.
+
+| Messgröße | vorher | nachher |
+|---|---|---|
+| Definitionen der Wasserbilanz | 2 (Server, Panel) | 1 |
+| `BilanzPanel.vue` | 239 Z. | 184 Z. |
+| Tests Backend / Client | 909 / 399 | 910 / 399 |
+
+Alte Läufe tragen ihre Bilanz im result.json (beim Lauf berechnet) — ohne `ablauf_gemessen`
+zeigt das Panel „Ablauf (aus der Bilanz)".

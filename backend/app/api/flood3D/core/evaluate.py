@@ -377,17 +377,36 @@ def _zufluss_reihe(df: pd.DataFrame, spec: CaseSpec,
     und massenbilanz/verweilzeit fielen still auf nicht_auswertbar.
     Zweiter Rückgabewert: Hydrograph-Patches ohne Messreihe.
     """
-    reihe = np.full(len(t), _zufluss(spec))
+    # Seit 2026-09-23 (Fahrplan B3c) auch bei KONSTANTEM Zufluss die Messung:
+    # die Freispiegel-Randbedingung liefert Q als Gemisch, Wasser kommt im
+    # Mittel 2–3 % weniger an (A7) — die Vorgabe verbuchte Wasser, das nie
+    # im Gebiet war. Ohne Messreihe bleibt die Vorgabe.
+    reihe = np.zeros(len(t))
     fehlt: list[str] = []
     for b in spec.boundaries:
-        if b.type != "inflow_hydrograph":
+        if not b.type.startswith("inflow"):
             continue
         tq, vq = get_series(df, Quantity.DISCHARGE, b.patch)
         if len(tq):
             reihe = reihe + np.interp(t, tq, -np.asarray(vq, dtype=float))
+        elif b.type == "inflow_constant":
+            reihe = reihe + float(b.q or 0.0)
         else:
             fehlt.append(b.patch)
     return reihe, fehlt
+
+
+def _ablauf_reihe(df: pd.DataFrame, spec: CaseSpec, t: np.ndarray) -> np.ndarray | None:
+    """Gemessener Ablauf (Summe aller Abläufe) auf der Volumen-Zeitachse, oder None."""
+    reihe, gefunden = np.zeros(len(t)), False
+    for b in spec.boundaries:
+        if not b.type.startswith("outflow"):
+            continue
+        tq, vq = get_series(df, Quantity.DISCHARGE, b.patch)
+        if len(tq):
+            reihe = reihe + np.interp(t, tq, np.asarray(vq, dtype=float))
+            gefunden = True
+    return reihe if gefunden else None
 
 
 def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
@@ -401,8 +420,8 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
         # massgeblicher Zufluss: Mittel über dasselbe End-Viertel wie die
         # Speicheränderungs-Sekante — bei konstantem Zufluss exakt die
         # Vorgabe, beim Hydrographen der gemessene Endzustand
-        i0 = int(np.searchsorted(t, t[-1] - (t[-1] - t[0]) * 0.25))
-        zu = float(np.mean(zu_reihe[i0:])) if len(zu_reihe) else zu
+        i_viertel = int(np.searchsorted(t, t[-1] - (t[-1] - t[0]) * 0.25))
+        zu = float(np.mean(zu_reihe[i_viertel:])) if len(zu_reihe) else zu
         dv = _steigung(t, vol) or 0.0
         # Ablaufreihe aus der Bilanz (Zufluss − gleitende Speicheränderung)
         dv_reihe = np.zeros(len(t))
@@ -413,8 +432,12 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
         q_ab = np.maximum(zu_reihe - dv_reihe, 0.0)
         dauer = float(t[-1])
         volumen = float(vol[-1])
+        ab_reihe = _ablauf_reihe(df, spec, t)
         bilanz = {
             "zufluss": round(zu, 4),
+            # gemessen, Mittel über dasselbe End-Viertel (None ohne Messreihe)
+            "ablauf_gemessen": (round(float(np.mean(ab_reihe[i_viertel:])), 4)
+                                if ab_reihe is not None else None),
             "speicheraenderung": round(dv, 4),
             "ablauf_aus_bilanz": round(max(zu - dv, 0.0), 4),
             "anteil": round(abs(dv) / zu, 4) if zu > 0 else None,

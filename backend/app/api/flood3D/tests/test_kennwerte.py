@@ -89,3 +89,28 @@ def test_massenbilanz_als_nachweis(spec):
     ziel = res["targets"][0]
     assert ziel["value"] == pytest.approx(0.25, abs=0.01)
     assert ziel["result"] == "nicht_erfuellt"
+
+
+def test_bilanz_nimmt_gemessenen_zufluss_und_ablauf():
+    """B3c: auch der konstante Zufluss kommt aus der Messung (A7: die
+    Randbedingung liefert 2–3 % weniger Wasser als vorgegeben)."""
+    import numpy as np
+    import pandas as pd
+
+    from ..core.evaluate import kennwerte
+    from ..probe.faelle import fall_k
+    spec = fall_k()
+    t = np.linspace(0, 20, 81)
+    zeilen = []
+    for ti in t:
+        zeilen += [
+            {"run_id": "r", "time": ti, "quantity": "volume", "location_id": "domain",
+             "component": "", "value": 2.0, "unit": "m3", "source": "x"},
+            {"run_id": "r", "time": ti, "quantity": "discharge", "location_id": "inlet",
+             "component": "", "value": -0.27, "unit": "m3/s", "source": "x"},
+            {"run_id": "r", "time": ti, "quantity": "discharge", "location_id": "outlet",
+             "component": "", "value": 0.27 if ti > 10 else 0.0, "unit": "m3/s", "source": "x"},
+        ]
+    b = kennwerte(pd.DataFrame(zeilen), spec)["bilanz"]
+    assert b["zufluss"] == 0.27                  # gemessen, nicht die Vorgabe 0,28
+    assert b["ablauf_gemessen"] == 0.27          # Mittel über das End-Viertel (t > 15)

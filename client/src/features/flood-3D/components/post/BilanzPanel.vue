@@ -66,7 +66,6 @@
 import { ref, watchEffect } from 'vue'
 import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 import { fmt } from '../../utils/labels'
-import { flood3dApi } from '../../services/api'
 import { bilanzSchwellen } from '../../utils/grenzwerte'
 import KennwertHilfe from './KennwertHilfe.vue'
 import UPlotChart from './UPlotChart.vue'
@@ -74,80 +73,34 @@ import UPlotChart from './UPlotChart.vue'
 const store = usePostStore()
 const entries = ref([])
 
-// Steigung einer Reihe über das letzte Stück ihrer Zeitachse
-function steigung(t, v, anteil = 0.25) {
-  if (!t || t.length < 3) return null
-  const tEnde = t[t.length - 1]
-  const tStart = tEnde - (tEnde - t[0]) * anteil
-  const i0 = t.findIndex((x) => x >= tStart)
-  const dt = tEnde - t[i0]
-  if (!(dt > 0)) return null
-  return (v[v.length - 1] - v[i0]) / dt
-}
-
-// Erster Zeitpunkt, ab dem sich der Ablauf über ein gleitendes Fenster um
-// weniger als `toleranz` ändert — und danach nicht wieder ausbricht.
-function beharrungAb(t, q, toleranz = 0.02) {
-  if (!t || t.length < 10) return null
-  const qEnde = q[q.length - 1]
-  if (!(Math.abs(qEnde) > 1e-9)) return null
-  const spaet = t[0] + (t[t.length - 1] - t[0]) * 0.9
-  for (let i = 0; i < q.length; i++) {
-    let stabil = true
-    for (let j = i; j < q.length; j++) {
-      if (Math.abs(q[j] - qEnde) / Math.abs(qEnde) > toleranz) { stabil = false; break }
-    }
-    // Ein Wert aus dem letzten Zehntel heißt nur, dass sich die Reihe kurz
-    // vor Schluss nicht mehr ändert — das ist keine Beharrung, sondern
-    // der Endpunkt selbst.
-    if (stabil) return t[i] < spaet ? t[i] : null
-  }
-  return null
-}
-
-function zuflussAusSpec(spec) {
-  let q = 0
-  for (const b of spec?.boundaries ?? []) {
-    if (b.type === 'inflow_constant') q += b.q ?? 0
-  }
-  return q
-}
-
 async function laden() {
   const ids = store.selectedRunIds
   const out = []
   for (const runId of ids) {
     try {
-      const [bal, detail] = await Promise.all([
-        store.ensureBalance(runId), flood3dApi.runDetail(runId)])
+      const bal = await store.ensureBalance(runId)
       const vol = bal.volume ?? { t: [], v: [] }
       if (!vol.t?.length) throw new Error('Der Lauf enthält keine Volumenreihe.')
 
-      // Zufluss: gemessene Randflüsse, sonst die Vorgabe aus dem Fall
-      const caseId = (detail?.manifest?.case_id) ?? runId.replace(/_r\d+$/, '')
-      let spec = null
-      try { spec = await flood3dApi.getCase(caseId) } catch { /* alter Lauf */ }
-      const zuSpec = zuflussAusSpec(spec)
+      // Die Zahlen kommen aus der Auswertung des Servers
+      // (evaluate.kennwerte["bilanz"]) — dieselbe Definition wie das
+      // Kriterium „massenbilanz". Bis 2026-09-23 rechnete das Panel sie
+      // selbst (Zufluss = letzter Wert statt Mittel des End-Viertels) und
+      // konnte dem Nachweis widersprechen (Fahrplan B3c).
+      const result = await store.ensureResult(runId).catch(() => null)
+      const kb = result?.kennwerte?.bilanz
+      if (!kb) throw new Error('Die Auswertung enthält keine Wasserbilanz.')
+      const zu = kb.zufluss ?? 0
+      const dv = kb.speicheraenderung ?? 0
+      const abGemessen = kb.ablauf_gemessen != null
+      const ab = abGemessen ? kb.ablauf_gemessen : kb.ablauf_aus_bilanz
+      const tBeharrung = kb.beharrung_ab ?? null
+      const austausch = kb.austausch ?? null
+      const volumen = vol.v[vol.v.length - 1]
+      const anteil = kb.anteil ?? 0
 
-      let rand = []
-      try {
-        rand = (await flood3dApi.series(runId, 'discharge')).series ?? []
-      } catch { /* keine Reihen */ }
-      const patchIds = new Set((spec?.boundaries ?? []).map((b) => b.patch))
-      const gemessen = rand.filter((s) => patchIds.has(s.location_id))
-      const zuMess = gemessen.filter((s) => (spec.boundaries
-        .find((b) => b.patch === s.location_id)?.type ?? '').startsWith('inflow'))
-      const abMess = gemessen.filter((s) => (spec.boundaries
-        .find((b) => b.patch === s.location_id)?.type ?? '').startsWith('outflow'))
-
-      const dv = steigung(vol.t, vol.v) ?? 0
-      const summe = (liste) => (liste.length
-        ? liste.reduce((a, s) => a + Math.abs(s.v[s.v.length - 1]), 0) : null)
-      const zu = summe(zuMess) ?? zuSpec
-      const abGemessen = abMess.length > 0
-      const ab = abGemessen ? summe(abMess) : Math.max(zu - dv, 0)
-
-      // Reihen fürs Diagramm: Speicheränderung als gleitende Steigung
+      // Diagramm: Anzeige der Rohreihen (Speicheränderung als gleitende
+      // Steigung über fünf Proben)
       const dvReihe = vol.t.map((_, i) => {
         const i0 = Math.max(0, i - 5)
         const dt = vol.t[i] - vol.t[i0]
@@ -163,16 +116,8 @@ async function laden() {
           t: vol.t, v: dvReihe },
       ]
 
-      const qAb = charts[1].v
-      const tBeharrung = beharrungAb(vol.t, qAb)
-      const dauer = vol.t[vol.t.length - 1]
-      const volumen = vol.v[vol.v.length - 1]
-      const austausch = volumen > 0 && zu > 0 ? (zu * dauer) / volumen : null
-
-      const anteil = zu > 0 ? Math.abs(dv) / zu : 0
       // Schwellen aus dem massenbilanz-Kriterium des Falls, sonst
       // Vorbelegung — eine Quelle statt Panel-Literale (Audit U15)
-      const result = await store.ensureResult(runId).catch(() => null)
       const sw = bilanzSchwellen(result)
       let ampel
       if (anteil > sw.schlecht) {
