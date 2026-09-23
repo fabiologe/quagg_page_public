@@ -30,6 +30,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+
+from .terrain import gitter_masse
 import shapely
 import shapely.ops
 import trimesh
@@ -141,15 +143,6 @@ def belag_koerper(flaeche, z_min: float, z_max: float) -> trimesh.Trimesh | None
 # geschrieben (dasselbe Muster wie core/sculpt.py).
 
 MAX_STRICH_ZELLEN = 4_000_000
-
-
-def gitter_masse(terrain, domain) -> tuple[float, float, float, int, int]:
-    """Das eine Geländegitter — identisch zu TerrainField.from_spec."""
-    x0, y0, x1, y1 = domain.extent
-    res = terrain.base.resolution
-    nx = int(round((x1 - x0) / res)) + 1
-    ny = int(round((y1 - y0) / res)) + 1
-    return x0, y0, res, nx, ny
 
 
 def karte_lesen(terrain, domain, base_dir: Path) -> np.ndarray:

@@ -496,17 +496,17 @@ def lade_basis(source: str, base_dir: Path, xx, yy,
                  quelle_nodata=int((~gemessen_roh).sum()))
 
 
-def _load_base(source: str, base_dir: Path, xx, yy) -> np.ndarray:
-    """Nur die Höhen — für Aufrufer, die die Maske nicht brauchen."""
-    return lade_basis(source, base_dir, xx, yy).z
-
-
-def _load_esri_ascii(path: Path, xx, yy) -> np.ndarray:
-    return lade_basis(str(path), Path("."), xx, yy).z
-
-
-def _load_xyz(path: Path, xx, yy) -> np.ndarray:
-    return lade_basis(str(path), Path("."), xx, yy).z
+def gitter_masse(terrain, domain) -> tuple[float, float, float, int, int]:
+    """
+    Das EINE Geländegitter (x0, y0, Rasterweite, nx, ny). Pinsel (sculpt),
+    Belagskarte (belag), Drehung (rotate) und TerrainField rechnen darauf —
+    bis 2026-09-23 stand es dreimal byteidentisch im Code (Fahrplan B1).
+    """
+    x0, y0, x1, y1 = domain.extent
+    res = terrain.base.resolution
+    nx = int(round((x1 - x0) / res)) + 1
+    ny = int(round((y1 - y0) / res)) + 1
+    return x0, y0, res, nx, ny
 
 
 # --------------------------------------------------------------------------
@@ -544,10 +544,7 @@ class TerrainField:
     @classmethod
     def from_spec(cls, terrain: Terrain, domain: Domain,
                   base_dir: Path | str = ".") -> "TerrainField":
-        x0, y0, x1, y1 = domain.extent
-        res = terrain.base.resolution
-        nx = int(round((x1 - x0) / res)) + 1
-        ny = int(round((y1 - y0) / res)) + 1
+        x0, y0, res, nx, ny = gitter_masse(terrain, domain)
         xx, yy = np.meshgrid(x0 + np.arange(nx) * res, y0 + np.arange(ny) * res)
         basis = lade_basis(terrain.base.source, Path(base_dir), xx, yy,
                            terrain.base.aussenhoehe)

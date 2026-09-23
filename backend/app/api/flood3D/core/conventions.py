@@ -122,6 +122,20 @@ LAUF_EREIGNISSE = ("log", "progress", "checkpoint", "done", "error")
 NUMERIK_VERSION = "2026-09-A"
 
 
+# Index der Randfläche in domain.extent (x0, y0, x1, y1) — die Lage der
+# Fläche als Koordinate. Stand bis 2026-09-23 zweimal (anschluss._PLANE,
+# rotate._FEST), Fahrplan B1.
+FLAECHE_IN_EXTENT = {"x_min": 0, "x_max": 2, "y_min": 1, "y_max": 3}
+
+
+def naechste_flaeche(punkt, extent) -> str:
+    """Die seitliche Randfläche, der ein Grundrisspunkt am nächsten liegt."""
+    x0, y0, x1, y1 = extent
+    abstand = {"x_min": abs(punkt[0] - x0), "x_max": abs(punkt[0] - x1),
+               "y_min": abs(punkt[1] - y0), "y_max": abs(punkt[1] - y1)}
+    return min(abstand, key=abstand.get)
+
+
 # Aussennormale je Gebietsflaeche. Positiver Durchfluss heisst damit
 # „verlaesst das Gebiet" — ein Zulauf zaehlt negativ.
 FACE_NORMALS = {

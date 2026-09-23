@@ -501,9 +501,9 @@ def test_volumenkoerper_wird_gelaendekoerper(case):
     assert trimesh.load(koerper, force="mesh").is_watertight
     # Höhenraster aus der Oberseite: geneigt von 100 auf 102
     assert spec.terrain.base.source.endswith(".asc")
-    from ..core.terrain import _load_esri_ascii
+    from ..core.terrain import lade_basis
     xx, yy = np.meshgrid(np.array([1.0, 19.0]), np.array([10.0]))
-    z = _load_esri_ascii(d / spec.terrain.base.source, xx, yy)
+    z = lade_basis(spec.terrain.base.source, d, xx, yy).z
     assert z[0][0] == pytest.approx(100.1, abs=0.1)
     assert z[0][1] == pytest.approx(101.9, abs=0.1)
     assert any("Geländekörper" in r for r in info["report"])

@@ -743,8 +743,8 @@ def _pruefe_geometrie(spec: CaseSpec, ctx: _Kontext) -> list[dict]:
             from .solids import boden_unter
             ground = boden_unter(mesh, terrain)
             if ground is None:
-                xs = np.clip([lo[0], hi[0]], *_xr(spec))
-                ys = np.clip([lo[1], hi[1]], *_yr(spec))
+                xs = np.clip([lo[0], hi[0]], spec.domain.extent[0], spec.domain.extent[2])
+                ys = np.clip([lo[1], hi[1]], spec.domain.extent[1], spec.domain.extent[3])
                 ground = terrain.sample(np.array([xs[0], xs[1], xs[0], xs[1]]),
                                         np.array([ys[0], ys[0], ys[1], ys[1]]))
             # Stutzen/Durchlässe dürfen frei ragen (Rohrmündung überm
@@ -2513,11 +2513,3 @@ def _gelaendelage(mesh, terrain) -> tuple[float | None, float | None]:
     spalt = unterkante - float(np.min(boden))
     return (spalt if spalt > 0 else None,
             -spalt if spalt < 0 else None)
-
-
-def _xr(spec: CaseSpec) -> tuple[float, float]:
-    return spec.domain.extent[0], spec.domain.extent[2]
-
-
-def _yr(spec: CaseSpec) -> tuple[float, float]:
-    return spec.domain.extent[1], spec.domain.extent[3]

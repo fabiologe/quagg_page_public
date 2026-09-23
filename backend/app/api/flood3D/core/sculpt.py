@@ -20,19 +20,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .terrain import gitter_masse
+
 SCULPT_DATEI = "sculpt.npz"
 # Obergrenze je Aufruf — ein Patch ist ein Pinselstrich, kein Raster-Upload
 MAX_PATCH_ZELLEN = 2_000_000
 MAX_DELTA = 100.0                 # m; mehr ist kein Pinselstrich mehr
-
-
-def _gitter(terrain, domain):
-    """Das eine Geländegitter — identisch zu TerrainField.from_spec."""
-    x0, y0, x1, y1 = domain.extent
-    res = terrain.base.resolution
-    nx = int(round((x1 - x0) / res)) + 1
-    ny = int(round((y1 - y0) / res)) + 1
-    return x0, y0, res, nx, ny
 
 
 def lade_ebene(terrain, domain, base_dir: Path) -> np.ndarray:
@@ -41,7 +34,7 @@ def lade_ebene(terrain, domain, base_dir: Path) -> np.ndarray:
     Gitter nicht mehr (Gebiet geändert), wird bilinear umgetastet —
     außerhalb des alten Gitters ist das Delta 0.
     """
-    x0, y0, res, nx, ny = _gitter(terrain, domain)
+    x0, y0, res, nx, ny = gitter_masse(terrain, domain)
     if not terrain.sculpt:
         return np.zeros((ny, nx), dtype=np.float64)
     pfad = Path(base_dir) / terrain.sculpt
@@ -62,7 +55,7 @@ def lade_ebene(terrain, domain, base_dir: Path) -> np.ndarray:
 
 
 def _speichern(spec, base_dir: Path, dz: np.ndarray) -> None:
-    x0, y0, res, _, _ = _gitter(spec.terrain, spec.domain)
+    x0, y0, res, _, _ = gitter_masse(spec.terrain, spec.domain)
     pfad = Path(base_dir) / SCULPT_DATEI
     dz32 = dz.astype(np.float32)
     np.savez_compressed(pfad, dz=dz32, x0=x0, y0=y0, res=res)
@@ -82,7 +75,7 @@ def patch_anwenden(spec, base_dir, patches: list[dict]) -> str:
                          "Pinsel formen — nur rasterbasiertes Gelände.")
     if not patches:
         raise ValueError("Keine Pinsel-Patches übergeben.")
-    _, _, _, nx, ny = _gitter(spec.terrain, spec.domain)
+    _, _, _, nx, ny = gitter_masse(spec.terrain, spec.domain)
     ebene = lade_ebene(spec.terrain, spec.domain, Path(base_dir))
     zellen = 0
     dz_max = 0.0
@@ -116,7 +109,7 @@ def patch_anwenden(spec, base_dir, patches: list[dict]) -> str:
 
 def _strich_maske(spec, patches) -> np.ndarray:
     """Welche Rasterknoten der Strich berührt hat."""
-    _, _, _, nx, ny = _gitter(spec.terrain, spec.domain)
+    _, _, _, nx, ny = gitter_masse(spec.terrain, spec.domain)
     maske = np.zeros((ny, nx), dtype=bool)
     for p in patches:
         teil = np.asarray(p["dz"], dtype=float)

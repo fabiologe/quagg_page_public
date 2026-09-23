@@ -62,6 +62,11 @@ export const ENUM_LABELS = {
   bauteil: 'immer Bauteil (wird vernetzt)',
   aushub: 'immer Aushub (Hohlraum im Gelände)',
   maul: 'Maulprofil',
+  // EditGelaende.modus — ohne eigenen Schlüssel griff für `auto` das Label
+  // von `wirkung` („Aushub, sobald eingegraben“), B1
+  'modus:auto': 'einbinden und kappen',
+  'modus:einbinden': 'bis unter das Gelände einbinden',
+  'modus:kappen': 'Übertiefe abschneiden',
 }
 
 // Auswahlwerte, die nur INNERHALB einer Untergruppe gelten — `shape` heißt
@@ -535,7 +540,9 @@ export const NICHT_NEGATIV = new Set([
   'depth', 'height', 'thickness', 'radius', 'diameter', 'width',
   'crest_width', 'wall_height', 'wall_thickness', 'einbindetiefe',
   'side_slope', 'base_cell', 'resolution', 'n_layers', 'expansion_ratio',
-  'q', 'strength', 'falloff', 'wandstaerke', 'bohr_ueberstand',
+  // nicht `strength` (raise_lower: negativ senkt ab — war hier gesperrt) und
+  // nicht `falloff` (eine Auswahl, keine Zahl); Fahrplan B1, 2026-09-23
+  'q', 'wandstaerke', 'bohr_ueberstand',
   'zonen_tiefe', 'korngroesse', 'porositaet', 'flaechendichte', 'cw',
   'blockage_ratio', 'bar_spacing', 'bar_thickness', 'bar_depth',
 ])

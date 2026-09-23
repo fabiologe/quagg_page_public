@@ -73,7 +73,8 @@ def _richtung(v, c, s):
 # Randbedingungsfenster
 # --------------------------------------------------------------------------
 
-_FEST = {"x_min": 0, "x_max": 2, "y_min": 1, "y_max": 3}
+from .conventions import FLAECHE_IN_EXTENT as _FEST  # noqa: E402
+from .conventions import naechste_flaeche  # noqa: E402
 
 
 def _entlang_achse(face: str) -> np.ndarray:
@@ -103,13 +104,6 @@ def _fenstermitte(spec: CaseSpec, b) -> tuple[float, float] | None:
     fest = spec.domain.extent[_FEST[b.face]]
     entlang = _fenster_entlang(spec, b)
     return (fest, entlang) if b.face.startswith("x") else (entlang, fest)
-
-
-def _naechste_flaeche(p, extent) -> str:
-    x0, y0, x1, y1 = extent
-    abstand = {"x_min": abs(p[0] - x0), "x_max": abs(p[0] - x1),
-               "y_min": abs(p[1] - y0), "y_max": abs(p[1] - y1)}
-    return min(abstand, key=abstand.get)
 
 
 # --------------------------------------------------------------------------
@@ -249,7 +243,8 @@ def _belag_drehen(spec, base_dir: Path, c: float, s: float, mitte,
     t = getattr(spec, "terrain", None)
     if t is None or t.belagskarte is None:
         return
-    from .belag import gitter_masse, karte_lesen, karte_schreiben
+    from .belag import karte_lesen, karte_schreiben
+    from .terrain import gitter_masse
     try:
         alt = karte_lesen(t, spec.domain, Path(base_dir))
     except Exception as e:
@@ -383,7 +378,7 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
         if lage is None:
             continue
         neu = _dreh(np.array([lage]), c, s, mitte)[0]
-        b.face = _naechste_flaeche(neu, spec.domain.extent)
+        b.face = naechste_flaeche(neu, spec.domain.extent)
         if alte_flaeche[b.id] != b.face:
             hinweise.append(f"Rand „{b.id}“ liegt jetzt auf {b.face} "
                             f"(vorher {alte_flaeche[b.id]})")

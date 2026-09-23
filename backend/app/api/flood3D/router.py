@@ -1330,7 +1330,8 @@ async def case_belagskarte(case_id: str):
     vertragen: zwischen 1 und 3 läge sonst 2, ein Belag, den niemand
     gemalt hat.
     """
-    from .core.belag import gitter_masse, karte_lesen
+    from .core.belag import karte_lesen
+    from .core.terrain import gitter_masse
 
     spec, d = _load_case(case_id)
     if spec.terrain is None or spec.domain is None:
@@ -1361,8 +1362,8 @@ async def case_belag_malen(case_id: str, payload: dict = Body(...)):
         import numpy as _np
 
         from .core import casespec as _cs
-        from .core.belag import (gitter_masse, karte_lesen, karte_schreiben,
-                                 striche_anwenden)
+        from .core.belag import karte_lesen, karte_schreiben, striche_anwenden
+        from .core.terrain import gitter_masse
 
         if spec.terrain is None or spec.domain is None:
             raise ValueError("Fall ohne Gelände oder Gebiet — nichts zu malen.")

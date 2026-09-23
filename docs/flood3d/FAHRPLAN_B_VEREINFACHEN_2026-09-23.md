@@ -48,7 +48,7 @@ Alles aus der Erkundung vom 23.09., nachweislich unbenutzt oder doppelt. Kein Ve
 | `const BASE` ×2, Fehler-`detail`-Block ×5 | `services/api.js`, `services/volume.js` | `volume.js` nutzt `api.js`-Helfer; ein `fehlerAus(res)` |
 | `laden()` ×3 (88/83/73 Z., gleiche Form) | `BilanzPanel`, `VerweilzeitPanel`, `BauwerkePanel` | ein Composable `useLaufReihen(runId, gruppen)` |
 | `unterbrocheneLaeufe` / `abgeschlosseneCompanionLaeufe` (byteidentisch bis auf einen Vergleich) | `services/localCompanion.js:41/71` | eine Funktion mit Status-Argument |
-| `Nacktes_Becken.dxf` (610 KB), Spezifikation (43 KB) in `src/` | `client/src/features/flood-3D/` | DXF nach `client/public/beispiele/`, Spezifikation nach `docs/flood3d/SPEZIFIKATION.md` (Verweise nachziehen) |
+| `Nacktes_Becken.dxf` (610 KB), Spezifikation (43 KB) in `src/` | `client/src/features/flood-3D/` | DXF nach `docs/flood3d/daten/` (echte Projektdaten — NICHT nach `client/public/`, das die Website ausliefert), Spezifikation nach `docs/flood3d/SPEZIFIKATION.md` (Verweise nachziehen) |
 | `feldTypen.NICHT_NEGATIV` enthält `falloff` (Enum, keine Zahl); `enumLabel('modus','auto')` liefert das `wirkung`-Label | `utils/feldTypen.js:541, :63` | korrigieren, Test |
 
 **Messung:** Zeilen Backend/Client vorher → nachher; Zahl der Doppelfassungen 8 → 0
@@ -82,6 +82,10 @@ fastapi/boto3 im Bundle) bleibt grün — `nachlauf.py` und `vernetzung.py` lieg
 (Bilanz 0,79 %, Q 0,280, WSP 100,233 ± 0,001).
 
 ## B3 · Schätzung nur im Server (1 Tag)
+
+**Nachtrag B1:** auch die Wasserbilanz — `BilanzPanel.vue` rechnet Zufluss, Ablauf,
+Speicheränderung und Beharrung im Browser nach, `evaluate.kennwerte["bilanz"]` liefert sie
+schon (zwei Definitionen derselben Größe).
 
 **Ist.** Kirschmer, Ergun, Bewuchs, Zellzahl, Durchsatz, Δt, Dauer, Kosten, Wassertiefe
 stehen im Backend **und** in `widerstand.js` (312 Z.) / `simHints.js` (419 Z.), mit drei

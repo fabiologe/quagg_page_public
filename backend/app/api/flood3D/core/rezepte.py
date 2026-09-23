@@ -109,7 +109,7 @@ def _aufmass(o) -> float:
     return halb + float(getattr(o, "wall_thickness", 0.0) or 0.0)
 
 
-def _plan_punkte(p) -> list:
+def _bauplan_punkte(p) -> list:
     """Alle XY-Punkte des Bauplans, je Objekt um sein Aufmaß geweitet —
     ohne die Verfeinerungsquader, die `_Bauplan.box` schon auf das Gebiet
     beschneidet."""
@@ -144,7 +144,7 @@ def _plan_ins_gebiet(p) -> tuple[float, float]:
     selbst angelegt hatte (gemessen 2026-09-22).
     """
     x0, y0, x1, y1 = p.spec.domain.extent
-    pkte = _plan_punkte(p)
+    pkte = _bauplan_punkte(p)
     dx = dy = 0.0
     if pkte:
         xs = [q[0] for q in pkte]
@@ -194,13 +194,6 @@ def _stufe_fuer(spec: CaseSpec, mass: float) -> int:
     """Verfeinerungsstufe, die `mass` mit mindestens vier Zellen auflöst."""
     from .meshgen import stufe_fuer
     return stufe_fuer(_zelle(spec), mass)
-
-
-def _rechteck(cx: float, cy: float, b: float, l: float) -> list:
-    return [(round(cx - b / 2, 3), round(cy - l / 2, 3)),
-            (round(cx + b / 2, 3), round(cy - l / 2, 3)),
-            (round(cx + b / 2, 3), round(cy + l / 2, 3)),
-            (round(cx - b / 2, 3), round(cy + l / 2, 3))]
 
 
 class _Bauplan:

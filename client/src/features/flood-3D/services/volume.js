@@ -2,11 +2,11 @@
 //   b"F3DV" | uint32 Headerlänge | Header-JSON | Rohdaten (LE float32)
 // plus Abruf von Zeitpunktliste und Szenengeometrie.
 
-const BASE = '/FastAPI/flood3d'
+import { BASE, fehlerAus } from './api.js'
 
 export async function fetchTimesteps(runId) {
   const res = await fetch(`${BASE}/runs/${runId}/timesteps`)
-  if (!res.ok) throw new Error(`timesteps ${runId}: ${res.statusText}`)
+  if (!res.ok) throw await fehlerAus(res, `timesteps ${runId}: `)
   return res.json()
 }
 
@@ -28,7 +28,7 @@ export function b64ToBits(b64, n) {
 
 export async function fetchGeometry(runId) {
   const res = await fetch(`${BASE}/runs/${runId}/geometry`)
-  if (!res.ok) throw new Error(`geometry ${runId}: ${res.statusText}`)
+  if (!res.ok) throw await fehlerAus(res, `geometry ${runId}: `)
   const data = await res.json()
   return {
     grid: data.grid,
@@ -54,7 +54,7 @@ export async function fetchVolume(runId, time, fields = null) {
   const params = new URLSearchParams({ time: String(time) })
   if (fields) params.set('fields', fields.join(','))
   const res = await fetch(`${BASE}/runs/${runId}/volume?${params}`)
-  if (!res.ok) throw new Error(`volume ${runId}: ${res.statusText}`)
+  if (!res.ok) throw await fehlerAus(res, `volume ${runId}: `)
   const buf = await res.arrayBuffer()
   const view = new DataView(buf)
   const magic = new TextDecoder().decode(new Uint8Array(buf, 0, 4))

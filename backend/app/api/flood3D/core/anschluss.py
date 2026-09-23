@@ -25,16 +25,10 @@ import math
 import numpy as np
 
 from .casespec import CaseSpec
+from .conventions import FLAECHE_IN_EXTENT as _PLANE
+from .conventions import naechste_flaeche
 
-_PLANE = {"x_min": 0, "x_max": 2, "y_min": 1, "y_max": 3}
 _ACHSE = {"x_min": 0, "x_max": 0, "y_min": 1, "y_max": 1}
-
-
-def _naechste_flaeche(spec: CaseSpec, punkt) -> str:
-    x0, y0, x1, y1 = spec.domain.extent
-    return min({"x_min": abs(punkt[0] - x0), "x_max": abs(punkt[0] - x1),
-                "y_min": abs(punkt[1] - y0), "y_max": abs(punkt[1] - y1)}.items(),
-               key=lambda kv: kv[1])[0]
 
 
 def _durchstoss(p, richtung, ebene: float, achse: int, ueberstand: float):
@@ -657,7 +651,7 @@ def anschluesse_herstellen(spec: CaseSpec) -> list[str]:
             continue
         # die Fläche ergibt sich aus der Geometrie, nicht umgekehrt: das
         # Ende, das dem Gebietsrand am nächsten liegt, bestimmt sie
-        kandidaten = [(_naechste_flaeche(spec, e), e) for e in enden]
+        kandidaten = [(naechste_flaeche(e, spec.domain.extent), e) for e in enden]
         face, ende = min(kandidaten, key=lambda ke: abs(
             ke[1][_ACHSE[ke[0]]] - spec.domain.extent[_PLANE[ke[0]]]))
         belegt = {x.face: x.id for x in spec.boundaries

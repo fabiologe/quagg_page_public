@@ -89,3 +89,17 @@ describe('enumFor', () => {
     expect(enumFor('wirkung', '', 'wall')).toEqual(['bauteil', 'aushub'])
   })
 })
+
+describe('Feldkunde-Korrekturen (Fahrplan B1)', () => {
+  it('Geländeheben darf negativ sein, falloff ist keine Zahl', async () => {
+    const { feldMinimum } = await import('../utils/feldTypen.js')
+    expect(feldMinimum('strength')).toBeNull()
+    expect(feldMinimum('falloff')).toBeNull()
+    expect(feldMinimum('diameter')).toBe(0)
+  })
+  it('modus bekommt eigene Labels statt der von wirkung', async () => {
+    const { enumLabel } = await import('../utils/feldTypen.js')
+    expect(enumLabel('modus', 'auto')).toBe('einbinden und kappen')
+    expect(enumLabel('wirkung', 'auto')).toMatch(/Aushub/)
+  })
+})

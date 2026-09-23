@@ -1,6 +1,6 @@
 // flood3D-API-Client (Spez. Kap. 9). Prefix läuft in Dev über den
 // vite-Proxy '/FastAPI' und in Prod über nginx — keine Extra-Konfiguration.
-const BASE = '/FastAPI/flood3d'
+export const BASE = '/FastAPI/flood3d'
 
 // ── Kosten-Gate ─────────────────────────────────────────────────────────────
 // flood-3D steht öffentlich im Netz; jeder Lauf kostet Server-Kerne oder (über
@@ -21,10 +21,6 @@ let launchPasswort = (() => {
 
 function gateKopf() {
   return launchPasswort ? { 'X-Launch-Password': launchPasswort } : {}
-}
-
-export function launchPasswortBekannt() {
-  return Boolean(launchPasswort)
 }
 
 /**
@@ -88,16 +84,26 @@ async function mitNachfrage(aufruf) {
   }
 }
 
+// Die EINE Fehlerform aller Aufrufe: `detail` aus dem Rumpf (Text oder JSON),
+// sonst statusText; `status` hängt am Fehler (403 → Passwort, 409 → belegt).
+// Stand bis 2026-09-23 fünfmal im Modul (Fahrplan B1).
+export async function fehlerAus(res, praefix = '') {
+  let detail = res.statusText
+  try {
+    const data = await res.json()
+    if (data?.detail != null) {
+      detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
+    }
+  } catch { /* leer */ }
+  const err = new Error(`${praefix}${detail}`)
+  err.status = res.status
+  return err
+}
+
 async function getJson(path, params = null) {
   const qs = params ? `?${new URLSearchParams(params)}` : ''
   const res = await fetch(`${BASE}${path}${qs}`)
-  if (!res.ok) {
-    let detail = res.statusText
-    try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-    const err = new Error(`flood3d ${path}: ${detail}`)
-    err.status = res.status
-    throw err
-  }
+  if (!res.ok) throw await fehlerAus(res, `flood3d ${path}: `)
   return res.json()
 }
 
@@ -117,16 +123,7 @@ async function sendJsonEinmal(path, method, body, extraKopf = null) {
     headers: { 'Content-Type': 'application/json', ...gateKopf(), ...(extraKopf || {}) },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const data = await res.json()
-      detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
-    } catch { /* leer */ }
-    const err = new Error(detail)
-    err.status = res.status
-    throw err
-  }
+  if (!res.ok) throw await fehlerAus(res)
   return res.json()
 }
 
@@ -154,23 +151,12 @@ export const flood3dApi = {
     const res = await fetch(
       `${BASE}/cases/${caseId}/import?filename=${encodeURIComponent(file.name)}`,
       { method: 'POST', headers: gateKopf(), body: file })
-    if (!res.ok) {
-      let detail = res.statusText
-      try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-      const err = new Error(detail)
-      err.status = res.status
-      throw err
-    }
+    if (!res.ok) throw await fehlerAus(res)
     return res.json()
   }),
   importApply: (caseId, importId, payload) =>
     sendJson(`/cases/${caseId}/import/${importId}/apply`, 'POST', payload),
   listImports: (caseId) => getJson(`/cases/${caseId}/imports`),
-  // Einzelnes Kandidaten-Netz als STL. Der Endpunkt bleibt (er ist der
-  // einzige Weg, einen Kandidaten VOR dem Übernehmen anzusehen); der
-  // Aufrufer im Import-Dialog ist 2026-08-16 entfallen.
-  importMeshUrl: (caseId, importId, candId) =>
-    `${BASE}/cases/${caseId}/import/${importId}/${candId}.stl`,
   sculpt: (caseId, patches) =>
     sendJson(`/cases/${caseId}/sculpt`, 'POST', { patches }),
   // Belagskarte: welcher Oberflächenbelag wo auf dem Gelände liegt.
@@ -213,13 +199,7 @@ export const flood3dApi = {
   caseBundle: (caseId) => mitGate(async () => {
     const res = await fetch(`${BASE}/cases/${caseId}/bundle`,
       { method: 'POST', headers: gateKopf() })
-    if (!res.ok) {
-      let detail = res.statusText
-      try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-      const err = new Error(detail)
-      err.status = res.status
-      throw err
-    }
+    if (!res.ok) throw await fehlerAus(res)
     return { runId: res.headers.get('X-F3D-Run-Id'), blob: await res.blob() }
   }),
   // Grosse Ergebnisse stückweise übertragen — ein 400-MB-Body scheitert
@@ -238,13 +218,7 @@ export const flood3dApi = {
         { method: 'POST',
           headers: { 'Content-Type': 'application/octet-stream', ...gateKopf() },
           body: stueck })
-      if (!res.ok) {
-        let detail = res.statusText
-        try { detail = (await res.json()).detail ?? detail } catch { /* leer */ }
-        const err = new Error(`Teil ${i + 1}/${teile}: ${detail}`)
-        err.status = res.status
-        throw err
-      }
+      if (!res.ok) throw await fehlerAus(res, `Teil ${i + 1}/${teile}: `)
       if (onProgress) onProgress((i + 1) / teile)
       if (last) return res.json()
     }

@@ -38,17 +38,23 @@ function bytesToBase64(bytes) {
 // Runners (log/progress) für die Live-Anzeige.
 // Angefangene, nicht beendete OpenFOAM-Läufe auf dieser Maschine —
 // Grundlage für "nach Absturz fortsetzen".
-export async function unterbrocheneLaeufe() {
+// OpenFOAM-Läufe aus dem Platten-Manifest des Companion, gefiltert nach
+// fertig / nicht fertig (zwei Aufrufer, bis 2026-09-23 zwei Kopien, B1)
+async function companionLaeufe(fertig) {
   try {
     const res = await fetch(`${COMPANION_BASE}/runs`,
       { signal: AbortSignal.timeout(2500) })
     if (!res.ok) return []
     const { runs } = await res.json()
     return (runs ?? []).filter((r) => r.engine === 'openfoam'
-      && r.status !== 'COMPLETED')
+      && (r.status === 'COMPLETED') === fertig)
   } catch {
     return []
   }
+}
+
+export function unterbrocheneLaeufe() {
+  return companionLaeufe(false)
 }
 
 // Live-Status eines Companion-Jobs — null heisst: Job nicht (mehr) im
@@ -68,17 +74,8 @@ export async function jobStatus(jobId) {
 
 // Abgeschlossene Companion-Jobs (Platten-Manifest): Kandidaten fuer den
 // Nachzuegler-Import — fertig gerechnet, aber der Browser war beim Ende weg.
-export async function abgeschlosseneCompanionLaeufe() {
-  try {
-    const res = await fetch(`${COMPANION_BASE}/runs`,
-      { signal: AbortSignal.timeout(2500) })
-    if (!res.ok) return []
-    const { runs } = await res.json()
-    return (runs ?? []).filter((r) => r.engine === 'openfoam'
-      && r.status === 'COMPLETED')
-  } catch {
-    return []
-  }
+export function abgeschlosseneCompanionLaeufe() {
+  return companionLaeufe(true)
 }
 
 // Platten-Manifest eines Companion-Jobs — enthaelt die done-Ereignisse

@@ -1,1 +1,1 @@
-# flood3D — 3D-CFD-Nachweiswerkzeug (Spezifikation: client/src/features/flood-3D/spezifikation-3d-cfd-nachweis.md)
+# flood3D — 3D-CFD-Nachweiswerkzeug (Spezifikation: docs/flood3d/SPEZIFIKATION.md)
