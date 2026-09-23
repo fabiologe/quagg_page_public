@@ -14,7 +14,7 @@ Angelegt 2026-09-23, noch leer.
 | A3 | Tracer an die Wasserphase | ☑ gemessen (a3_k), Ziel < 3 % verfehlt (6,6 %) | 2026-09-23 | `88610a4` |
 | A4 | σ = 0 | ☑ gemessen (a4_k): ohne messbare Wirkung | 2026-09-23 | `88610a4` |
 | A5 | Atmosphäre-Regel, y⁺ je Patch | ☑ gemessen (a5_k) | 2026-09-23 | `88610a4` |
-| A6 | Harness-Probe, Wehr-Nachlauf, Numerik-Version, Goldens | ⏳ live (pm2 20:43, Build 20:47); Wehr-Nachlauf rechnet (2. Versuch) | 2026-09-23 | `88610a4`, `82faf00`, `5c99945` |
+| A6 | Harness-Probe, Wehr-Nachlauf, Numerik-Version, Goldens | ☑ live (pm2 20:43, Build 20:47); Wehr **nicht bestanden** (C_d 0,540) → A7 | 2026-09-23 | `88610a4`, `82faf00`, `5c99945` |
 
 Status-Wörter: ☐ offen · ⏳ in Arbeit · ☑ erledigt (mit Zahl) · ✗ verworfen (mit Grund).
 
@@ -152,6 +152,29 @@ tatsächlich von MULES transportierten Fluss).
 Die Fall-A-Lücke ist Wasser, das bei 0,5 m Freibord oben hinausspritzt — kein Rechenfehler.
 Warum sie in a1_a 2,4 % und hier 0,8 % beträgt, ist nicht geklärt (geänderter Anfangszustand
 durch A2 ist der einzige Unterschied im Bundle).
+
+## Wehr-Nachlauf (a6_wehr, Stand 2026-09-A mit upperBound 0,5) — NICHT bestanden
+
+Server-Docker, 20 896 Zellen (Netz identisch zur Referenz), 18 s, 943 s Rechenzeit.
+**C_d = 0,540 ± 0,016** (Median letztes Drittel) — Referenzband 0,58–0,71 verfehlt,
+Literaturband 0,50–0,80 gehalten. Referenz 2026-08-13: 0,633 (mit Wasserwand-Zulauf).
+
+| t [s] | 2 | 8 | 12 | 16 | 18 |
+|---|---|---|---|---|---|
+| Wasser-Zufluss (Soll 0,120) | 0,118 | 0,118 | 0,117 | 0,116 | 0,116 |
+| Q Querschnitt `qs_ow` | 0,120 | 0,058 | 0,109 | 0,105 | 0,110 |
+| Q Ablauf | 0,373 | 0,057 | 0,095 | 0,114 | 0,116 |
+| WSP `pegel_ow` | 95,538 | 95,719 | 95,758 | 95,767 | 95,770 |
+
+Befunde:
+1. Zufluss-Defizit bleibt beim nassen Start: −3 % (Fall K trocken: exakt). Die
+   Freispiegel-Randbedingung ist fallabhängig ungenau → eigener Schritt **A7**.
+2. Querschnitt und Ablauf messen im Beharrungszustand 0,110 vs. 0,116 (−5 %) —
+   C_d mit Ablauf-Q ≈ 0,56, mit Soll-Q ≈ 0,58. Messdefinition des Querschnitts
+   (sampledPlane über Schnittzellen) → Stufe B/C (Kennwert-Definitionen).
+3. Die Referenz wird **nicht** neu eingefroren (das wäre die Eigenreferenz, die das
+   Audit kritisiert). Die Verifikationskarte zeigt „nicht bestanden"; Numerik-Stand
+   2026-09-A gilt als nicht verifiziert, neue Läufe tragen den Hinweis.
 
 ## A6 · Abschluss
 
