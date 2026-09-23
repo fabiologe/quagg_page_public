@@ -1,5 +1,5 @@
 """
-Import-Treue — Etappe E1b der Sanierung (docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md
+Import-Treue — Etappe E1b der Sanierung (docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md
 I3, I14, I5).
 
 Vor dem 2026-09-22 legte der Import jedes Netz als float32-STL in

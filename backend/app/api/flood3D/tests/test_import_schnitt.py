@@ -1,6 +1,6 @@
 """
 Goldener Stand des Imports — Wächter für den Schnitt von `apply_import`
-(Etappe E2a der Sanierung, docs/AUDIT_CODE_QUALITAET_FLOOD3D.md W3-P1.2).
+(Etappe E2a der Sanierung, docs/flood3d/AUDIT_CODE_QUALITAET_FLOOD3D.md W3-P1.2).
 
 `apply_import` war eine 480-Zeilen-Funktion mit inneren Funktionen und
 `nonlocal`; jede Import-Reparatur (I1, I2, I7, I10, I8) greift hinein. Vor

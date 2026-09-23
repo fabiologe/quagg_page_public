@@ -515,7 +515,7 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
 
 # Bis zu diesem Zeitpunkt (E7, Audit G1) bezog der freie Ablauf seinen
 # Druck auf hRef = 0 m NHN: ein Becken bei 96 m sog am Rand mit 33 m/s
-# (Gegenlauf 2026-09-22, Zahlen in docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
+# (Gegenlauf 2026-09-22, Zahlen in docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
 # Läufe von davor tragen keine gesicherte Spezifikation (die Archive halten
 # nur Manifest und Bewertung), deshalb gilt der Vorbehalt für jeden Altlauf.
 ABLAUFDRUCK_KORRIGIERT = 1790035200.0        # 2026-09-22 00:00 UTC

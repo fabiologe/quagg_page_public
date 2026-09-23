@@ -104,7 +104,7 @@ Endpunkt geschützt, ohne dass jemand daran denken muss.
   `log.runpod` zurück und übersetzt ihn lesbar. Ohne das stand dort
   „keine Logausgabe" (gemeldet 2026-08-12).
 
-## Rechenort RunPod (im Aufbau)
+## Rechenort RunPod
 
 Dritter Rechenort neben Server und Nutzer-Maschine. Der Worker ist die
 Klammer um denselben `local_runner.py`: `case.zip` rein (Bundle), Ereignisse
@@ -408,8 +408,36 @@ nicht.
   (klein, da ohne derived/-STLs nur Quelltexte). Noch ohne Automatik —
   bewusst offener Punkt.
 
+## Hülle prüfen: Harness-Probe und Numerik-Stand (seit 2026-09-23, Fahrplan A)
+
+Der Solver (interFoam) bleibt unverändert; was wir ändern, ist die Hülle:
+Randbedingungen, Anfangsfelder, Schemata, functionObjects. Deren Stand heißt
+`NUMERIK_VERSION` (`core/conventions.py`, heute `2026-09-A`), steht in jedem
+Laufmanifest (`numerik_version`, dazu `zulauf` mit Art, Startwasser und
+Turbulenzwerten) und wird beim Lesen eines Laufs gegen den verifizierten
+Stand verglichen (`GET /runs/{id}` → Befund „Numerik-Stand … noch nicht am
+Wehrfall verifiziert" bzw. „Lauf vor dem Numerik-Stand …").
+
+- **Nach jeder Änderung an `casebuilder.py`, `meshgen.py` oder den Schemata:**
+  `cd backend && FLOOD3D_PROBE=1 venv/bin/python -m pytest app/api/flood3D/tests/test_harness_probe.py -q`
+  — rechnet Fall K (Gerinne 10 × 1 m, trockener Start, 21 000 Zellen) im
+  Server-Docker, 7–10 min, 0 €; prüft Wasserwand am Zulauf, Massenbilanz,
+  Zufluss-Q, Tracer in der Luft. Zahlen: `data/probe_a/test_k/probe.json`.
+- Einzelne Probeläufe (vorher/nachher): `probe/probe_lauf.py --fall k|wehr|ordner:<pfad> --name …`
+  (Docstring). Nie zwei parallel (4 Kerne); vor jedem Lauf ≥ 3 GB frei.
+- Ändert sich das Rechenergebnis: `NUMERIK_VERSION` hochzählen, Goldens neu
+  (Anleitung in `test_stage3_preprocessing.py::test_dictionaries_gegen_referenz`,
+  15 Dateien), Wehr-Nachlauf (unten).
+
 ## Physikalische Verifikation
 
+- **Ohne RunPod (seit 2026-09-23):**
+  `venv/bin/python -m app.api.flood3D.probe.probe_lauf --fall wehr --name <name>`
+  und danach `venv/bin/python -m app.api.flood3D.probe.verifikation <name>` —
+  rechnet im Server-Docker (≈ 1–1,5 h auf 3 Kernen) und schreibt
+  `data/verifikation/wehr_ueberfall.json` im bisherigen Format plus `ort` und
+  `numerik_version` (die alte Datei bleibt als `.bak`).
+- Bisheriger Weg über RunPod (bleibt möglich):
 - `FLOOD3D_VERIFIKATION=1 venv/bin/python -m pytest app/api/flood3D/tests/test_verifikation.py -q`
   (im backend/-Ordner). Rechnet seit Stage B auf dem ECHTEN Rechenort
   RunPod (16 Threads, ~17 min, ~0,1 €, 2-h-Deckel je Job) — die

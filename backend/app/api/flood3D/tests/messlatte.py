@@ -1,6 +1,6 @@
 """
 Messlatte — dieselben Zahlen vor und nach jeder Etappe der Sanierung
-(docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md), an Fällen auf der Platte und an
+(docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md), an Fällen auf der Platte und an
 den Referenzfällen.
 
     venv/bin/python -m app.api.flood3D.tests.messlatte <cases_root> [fall ...]

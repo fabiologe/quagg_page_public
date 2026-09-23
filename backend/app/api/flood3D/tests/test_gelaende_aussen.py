@@ -1,6 +1,6 @@
 """
 Gelände außerhalb der Vermessung — Etappe E1a der Sanierung
-(docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md, Teil 1).
+(docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md, Teil 1).
 
 Bis 2026-09-21 klemmte das Abtasten jede Koordinate außerhalb des
 Höhenrasters auf den Randwert; eine tiefe Stelle am Rasterrand wurde als

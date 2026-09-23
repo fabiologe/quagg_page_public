@@ -4,7 +4,7 @@ Höhenlage.
 
 Gegenlauf 2026-09-22 (sechs interFoam-Läufe im Docker `quagg-foam-local`,
 Becken 8 × 3 m mit 0,6 m Startwasser, Zahlen in
-docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md): mit `totalPressure p0 0` und
+docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md): mit `totalPressure p0 0` und
 `hRef 0` sog der Rand bei z = 96 m mit 33 m/s, bei z = 296 m mit 57 m/s,
 die Ablaufganglinien unterschieden sich um 7 %, 0,6 m³ verschwanden in den
 ersten 50 ms. Mit `prghTotalPressure` und hRef im Gebiet: beide Höhen auf

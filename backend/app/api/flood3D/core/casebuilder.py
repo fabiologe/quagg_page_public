@@ -14,7 +14,7 @@ jeder Wasserfläche des Patches herrscht Luftdruck (prghTotalPressure p0 0),
 unabhängig von hRef und von der absoluten Höhenlage. Bis 2026-09-22 stand
 dort totalPressure p0 0 mit hRef = 0: p_rgh = 0 hieß „Unterwasser auf
 0 m NHN", und der Rand sog mit der ganzen Höhenlage (Gegenlauf: 33 m/s bei
-z = 96, 57 m/s bei z = 296, Zahlen in docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
+z = 96, 57 m/s bei z = 296, Zahlen in docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
 Der feste Unterwasserstand bleibt fixedValue rho*g*(L - hRef) mit hRef = L.
 """
 from __future__ import annotations

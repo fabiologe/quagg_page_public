@@ -1,6 +1,6 @@
 """
 Wo der Pinsel wirkt — Etappe E3 der Sanierung
-(docs/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
+(docs/flood3d/AUDIT_FLOOD3D_FALLSPEZIFISCH.md).
 
 Bis zum 2026-09-22 lag die Sculpt-Ebene VOR dem ganzen Operationsstapel.
 Das schützte die zugesicherten Sollhöhen (Planum, Gerinnesohle) — traf aber
