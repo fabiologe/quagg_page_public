@@ -87,7 +87,7 @@ zellen_schaetzung und laufschaetzung (snappyHexMeshDict byte-gleich, Goldens unv
 | Fall K Kernstunden (15 s) | 0,088 | 0,377 | ≈ 0,33 (3 Kerne × 400 s) |
 | Fall A Zellen | – | 46 286 | 29 006 (zu hoch = sichere Richtung) |
 | Client-Drifts (Kerne 8/16, Courant, Wassertiefe P13, Standardstufen) | 4 | 0 | |
-| `simHints.js` | 419 Z. | 387 Z. | |
+| `simHints.js` | 419 Z. | 368 Z. | |
 | Tests Backend / Client | 907 / 402 | 909 / 399 (1 Test ins Backend verlegt, 2 neu) | |
 
 Der Deckeltest `test_ueber_dem_deckel_ist_es_ein_fehler` nahm an, ohne Verfeinerung werde
