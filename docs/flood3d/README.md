@@ -32,8 +32,9 @@ Spezifikation liegt beim Client: `client/src/features/flood-3D/spezifikation-3d-
 
 | Datei | Status | Inhalt |
 |---|---|---|
-| `FAHRPLAN_A_PHYSIK_2026-09-23.md` | offen | Stufe A: Zufluss-Randbedingung, Turbulenz-Init, Tracer-Phase, σ = 0, Atmosphäre-Regel, Harness-Probe, Wehr-Nachlauf, Numerik-Version |
-| `PROTOKOLL_A.md` | leer | Umsetzungsprotokoll zu Stufe A (Zahlen, Commits, Laufliste) |
+| `FAHRPLAN_A_PHYSIK_2026-09-23.md` | gebaut 2026-09-23 (A0–A6, PROD) | Stufe A: Zufluss-Randbedingung, Turbulenz-Init, Tracer-Phase, σ = 0, Atmosphäre-Regel, Harness-Probe, Wehr-Nachlauf, Numerik-Version |
+| `PROTOKOLL_A.md` | gefüllt 2026-09-23 | Umsetzungsprotokoll zu Stufe A (Zahlen, Commits, Laufliste, Abweichungen) |
+| `FAHRPLAN_B_VEREINFACHEN_2026-09-23.md` | offen | Stufe B: Leichen/Kopien, eine Nachlaufkette, Schätzung nur im Server, `schema_version`, Betriebsdeckel, Fenster-Diät (Entscheidung Fabio) |
 | `PLAN_LEERLAUF.md` | gebaut (2026-08-16) | „rechne, bis es leer ist" — Abbruchkriterium Stagnation |
 | `FAHRPLAN_GPU_FOAM.md` | geparkt | GPU-Beschleunigung G0–G3; für die RX 6700 XT kein Produktpfad |
 
