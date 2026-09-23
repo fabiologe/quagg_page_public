@@ -781,17 +781,8 @@ def main() -> int:
         emit(event="log",
              text=f"Core: {'aus dem Bundle' if eigen else 'aus dem Image'}")
         from flood3D.core.casespec import CaseSpec, migriere
-        from flood3D.core.conventions import NUMERIK_VERSION
-        from flood3D.core.evaluate import evaluate_run, overfall_cd_rows
-        from flood3D.core.extract import extract_case
-        from flood3D.core.foamfields import (bed_shear_series,
-                                             convert_case_fields,
-                                             energy_head_series,
-                                             viz_volume_check)
-        from flood3D.core.normalize import write_normalized
-        from flood3D.core.render import render_run
-        from flood3D.core.runner import (_pruefe_patches, _y_plus_je_patch,
-                                         _y_plus_range, parse_checkmesh)
+        from flood3D.core.nachlauf import nachlauf
+        from flood3D.core.runner import _pruefe_patches, parse_checkmesh
 
         spec = CaseSpec.model_validate(
             migriere(yaml.safe_load((case / "case.yaml").read_text())))
@@ -936,107 +927,28 @@ def main() -> int:
             # Falle, die es bei der Pause schon einmal gab.
             _setze_stopp(case, "endTime")
 
-        # ---- Nachlauf: exakt die Server-Kette -----------------------------
+        # ---- Nachlauf: die EINE Kette (core/nachlauf.py, B2) ---------------
         emit(event="progress", phase="postprocessing", fraction=1.0)
-
-        # Tatsaechlich vernetzte Oberflaeche — ohne sie kann der Viewer
-        # weder Bauwerke noch das Solver-Netz einblenden. surfaceMeshExtract
-        # endet auch bei Erfolg mit rc != 0, deshalb ohne Abbruch.
-        patches = (["terrain"] if spec.terrain is not None else []) \
-            + [st.patch for st in spec.structures if st.type != "screen"]
-        if patches:
-            try:
-                run_foam_step(case, "surfaceMeshExtract meshSurface.stl "
-                              f"-time 0 -patches '({' '.join(patches)})'",
-                              "log.surfaceMeshExtract")
-            except RuntimeError:
-                pass
-            from flood3D.core.meshsurface import find_mesh_surface
-            if find_mesh_surface(case) is None:
-                emit(event="log", text="WARNUNG: Solver-Netzoberflaeche nicht "
-                     "extrahiert — Bauwerke/Netz fehlen im Viewer")
-
-        ypr = _y_plus_range(case)
-        # Wie im Server-Runner geschützt (F12-Drift): scheitert die
-        # Feldkonvertierung, stirbt NICHT der ganze Lauf nach Stunden
-        # Rechenzeit — die Zeitreihen und Nachweise bleiben nutzbar, nur
-        # die 3D-Felder fehlen (und das steht im Manifest)
-        conv = {}
-        fields_error = None
-        try:
-            run_foam_step(case,
-                          "postProcess -noFunctionObjects -func writeCellCentres -time 0",
-                          "log.writeCellCentres")
-            conv = convert_case_fields(spec, case, job)
-        except Exception as e:               # noqa: BLE001
-            fields_error = str(e)
-            emit(event="log", text="WARNUNG: 3D-Felder nicht konvertiert — "
-                 + str(e) + " (Zeitreihen und Nachweise bleiben nutzbar)")
-        if conv.get("terrain_error"):
-            emit(event="log", text="WARNUNG: Geländeschicht nicht erzeugt — "
-                 + conv["terrain_error"] + " (Ergebnisse bleiben nutzbar, "
-                 "im Viewer fehlt nur das Gelände)")
-        df, missing = extract_case(case, spec, run_id)
-
-        import pandas as pd
-        rows = (bed_shear_series(spec, job, run_id)
-                + energy_head_series(spec, job, run_id))
-        if rows:
-            df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-        cd_rows = overfall_cd_rows(df, spec, run_id)
-        if cd_rows:
-            df = pd.concat([df, pd.DataFrame(cd_rows)], ignore_index=True)
-        write_normalized(df, job / "normalized.parquet")
-
-        from flood3D.core.foam import (foam_abweichung,
-                                       foam_version_aus_log)
-        foam_v = foam_version_aus_log(case)
-        foam_hinweis = foam_abweichung(foam_v)
-        if foam_hinweis:
-            emit(event="log", text=f"WARNUNG: {foam_hinweis}")
         manifest = {"status": "completed", "origin": "companion",
-                    "foam": foam_v, "foam_hinweis": foam_hinweis,
-                    "numerik_version": NUMERIK_VERSION,
                     # Womit gerechnet wurde, gehoert in den Nachweis - und
                     # die Ist-Kosten eines Cloud-Laufs haengen daran
                     "cores": cores, "maschine": maschine,
                     "netz": netz_info, "befunde": netz_befunde,
                     "title": spec.meta.title, "checkmesh": cm,
                     "checkmesh_ok": cm.get("checkmesh_ok"),
-                    "missing_sources": missing, "finished": time.time(),
+                    "finished": time.time(),
                     # Warum endete der Lauf? Ohne diese Angabe sieht ein
                     # planmaessig frueh beendeter Leerlauf aus wie einer,
                     # der abgeschnitten wurde. Nur bei aktivem Kriterium
-                    # gesetzt: ohne Waechter gibt es nichts zu entscheiden,
-                    # und eine Zeile "endete zur eingestellten Zeit" waere
-                    # in jedem normalen Lauf blosses Rauschen.
+                    # gesetzt: ohne Waechter gibt es nichts zu entscheiden.
                     "ende_grund": (None if not lw.aktiv
                                    else ("leerlauf" if lw.grund else "zeit")),
                     "ende_zeit": (lw.ende_zeit if lw.grund
                                   else spec.solver.end_time),
                     "ende_text": lw.grund}
-        if conv.get("terrain_error"):
-            # Muss mit zum Server: die Warnung im Logstrom ist nach dem
-            # Schließen des Fensters weg, und ohne diesen Eintrag stand
-            # man vor einem Lauf ohne Gelände und ohne Erklärung
-            manifest["terrain_error"] = conv["terrain_error"]
-        if fields_error:
-            manifest["fields_error"] = fields_error
-        if ypr:
-            manifest["y_plus_range"] = [round(ypr[0], 2), round(ypr[1], 2)]
-        ypp = _y_plus_je_patch(case)
-        if ypp:
-            manifest["y_plus_je_patch"] = {p: [round(a, 2), round(b, 2)]
-                                           for p, (a, b) in ypp.items()}
-        # Selbsttest: Wasservolumen im Visualisierungsgitter vs. Solver
-        vol_check = viz_volume_check(job, df)
-        if vol_check:
-            manifest.update(vol_check)
-        from flood3D.core.evaluate import befunde_ableiten
-        result = evaluate_run(df, spec, run_id, manifest)
-        manifest.setdefault("befunde", []).extend(
-            befunde_ableiten(result.get("quality") or {}, manifest))
-        render_run(result, df, spec, job)
+        nachlauf(case, job, spec, run_id, manifest,
+                 foam=lambda befehl, log: run_foam_step(case, befehl, log),
+                 melde=lambda text: emit(event="log", text=text))
         # gleiches Format wie der Server-Schreiber (core/store.py) — der
         # Container ist der einzige Schreiber hier, ein Lock braucht er nicht
         (job / "manifest.json").write_text(

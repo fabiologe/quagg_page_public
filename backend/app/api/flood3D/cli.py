@@ -66,21 +66,28 @@ def cmd_render(a) -> None:
 
 
 def cmd_all(a) -> None:
+    """
+    Nachlauf eines gerechneten Falls — dieselbe Kette wie im Runner
+    (core/nachlauf.py, Fahrplan B2). OpenFOAM wird hier nicht aufgerufen:
+    3D-Felder entstehen nur, wenn der Fall 0/C schon enthält.
+    """
+    from .core.nachlauf import nachlauf
     spec = _load(a.spec)
     paths = run_paths(a.out, a.run_id)
     paths.root.mkdir(parents=True, exist_ok=True)
-
-    df, missing = extract_case(a.case, spec, a.run_id)
+    manifest = nachlauf(Path(a.case), paths.root, spec, a.run_id,
+                        read_manifest(paths) or {},
+                        melde=lambda text: print(f"  {text}"))
+    result = json.loads((paths.root / "result.json").read_text())
+    df = read_normalized(paths.root / "normalized.parquet")
     if df.empty:
-        sys.exit(f"Keine Ergebnisquellen in {a.case} gefunden (fehlend: {missing})")
-    write_normalized(df, paths.normalized)
-
-    result = evaluate_run(df, spec, a.run_id, read_manifest(paths))
-    result = render_run(result, df, spec, paths.root)
-
+        sys.exit(f"Keine Ergebnisquellen in {a.case} gefunden "
+                 f"(fehlend: {manifest.get('missing_sources')})")
+    (paths.root / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False))
     print(f"Lauf {a.run_id}: {len(df)} Zeilen, "
           f"{len(result['figures'])} Abbildungen -> {paths.root}")
-    for m in missing:
+    for m in manifest.get("missing_sources") or []:
         print(f"  Hinweis: Quelle fehlt: {m}")
     for t in result["targets"]:
         print(f"  {t['id']}: {t.get('result')}")

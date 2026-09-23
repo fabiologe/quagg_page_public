@@ -8,7 +8,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 | Schritt | Titel | Status | Datum | Commit |
 |---|---|---|---|---|
 | B1 | Leichen und Kopien | ☑ | 2026-09-23 | (siehe unten) |
-| B2 | Eine Nachlaufkette | ☐ offen | | |
+| B2 | Eine Nachlaufkette | ☑ Nachlauf; Vernetzung noch doppelt | 2026-09-23 | (siehe unten) |
 | B3 | Schätzung (und Bilanz) nur im Server | ☐ offen | | |
 | B4 | `schema_version` | ☐ offen | | |
 | B5 | Betriebsdeckel | ☐ offen | | |
@@ -51,3 +51,19 @@ Bewusst **nicht** zusammengelegt — die Erkundung hatte sie als Kopien geführt
 - Drei `laden()` (Bilanz/Verweilzeit/Bauwerke): gemeinsam ist nur die Schleife über die Läufe.
   **Dabei gefunden:** `BilanzPanel` rechnet die Wasserbilanz im Browser nach, obwohl
   `evaluate.kennwerte["bilanz"]` sie liefert — echte Physik-Doppelung → B3.
+
+## B2 · Eine Nachlaufkette
+
+`core/nachlauf.py::nachlauf(case, job, spec, run_id, manifest, foam=None, melde=…)` — die
+Kette einmal; `local_runner.main` und `cli all` rufen sie, OpenFOAM kommt als Parameter.
+
+| Messgröße | vorher | nachher |
+|---|---|---|
+| Nachlaufketten | 2 (+ Reste in runner.py) | 1 |
+| `local_runner.py` | 1 094 Z. | 1 012 Z. |
+| `cli all` | ohne Felder, Sohlschub, Energiehöhe, C_d | dieselbe Kette (Felder, wenn 0/C vorliegt) |
+| Backend-Tests | 907 | 907 |
+| Harness-Probe (Fall K, Container) | a5b_k: Q 0,2616 / WSP 100,2332 / Bilanz 0,79 % / Tracer 8,8 % | test_k: 0,2616 / 100,2332 / 0,79 % / 8,8 % — 4/4 grün |
+
+Noch offen aus B2: die Vernetzungskette (`runner._snappy`/`mesh_preview` vs. `local_runner`)
+steht weiter zweimal.
