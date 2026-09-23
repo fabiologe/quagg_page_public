@@ -141,6 +141,9 @@ backend/app/api/flood3D/*
 !backend/app/api/flood3D/core/
 !backend/app/api/flood3D/engines/
 !backend/app/api/flood3D/tests/
+# Probeläufe der Hülle (Fahrplan Stufe A): Quelltext, keine Daten — die
+# Läufe selbst liegen unter data/probe_a/ und bleiben ignoriert.
+!backend/app/api/flood3D/probe/
 # kleiner Pedant — selbstgeschriebene Buchhaltungs-Quelle (GoBD-relevant),
 # komplett versionieren: bei einem Plattenschaden waere sie sonst weg
 # (gleiche Begruendung wie beim Companion oben). Passwoerter liegen NIE im
