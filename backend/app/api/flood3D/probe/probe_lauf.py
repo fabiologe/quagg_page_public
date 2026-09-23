@@ -39,6 +39,7 @@ import argparse
 import gzip
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -113,7 +114,12 @@ def rechnen(job: Path, kerne: int, speicher: str, timeout_s: int) -> float:
     _platte_pruefen()
     name = f"f3d_probe_{job.name}"
     subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+    # Label mit lebender PID: sonst hält der Startwächter der API
+    # (runner.verwaiste_container_entfernen) den f3d_*-Container beim
+    # nächsten pm2-Neustart für verwaist und entfernt ihn — so geschehen
+    # dem Wehr-Nachlauf am 2026-09-23 (Runner endete mit 137)
     cmd = ["docker", "run", "--rm", "--name", name,
+           "--label", f"quagg.pid={os.getpid()}",
            "--cpus", str(kerne), "--memory", speicher, "--shm-size=2g",
            "-e", f"FLOOD3D_CORES={kerne}", "-v", f"{job}:/job", IMAGE,
            "--job", "/job"]
