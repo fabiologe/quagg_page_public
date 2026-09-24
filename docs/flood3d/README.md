@@ -35,9 +35,10 @@ Beispielzeichnung für Import-Tests: `daten/Nacktes_Becken.dxf` (echte Projektda
 |---|---|---|
 | `FAHRPLAN_A_PHYSIK_2026-09-23.md` | gebaut 2026-09-23 (A0–A6, PROD) | Stufe A: Zufluss-Randbedingung, Turbulenz-Init, Tracer-Phase, σ = 0, Atmosphäre-Regel, Harness-Probe, Wehr-Nachlauf, Numerik-Version |
 | `PROTOKOLL_A.md` | gefüllt 2026-09-23 | Umsetzungsprotokoll zu Stufe A (Zahlen, Commits, Laufliste, Abweichungen) |
-| `PROTOKOLL_B.md` | in Arbeit | Umsetzungsprotokoll zu Stufe B |
-| `FAHRPLAN_B_VEREINFACHEN_2026-09-23.md` | in Arbeit (B1 ☑) | Stufe B: Leichen/Kopien, eine Nachlaufkette, Schätzung nur im Server, `schema_version`, Betriebsdeckel, Fenster-Diät (Entscheidung Fabio) |
+| `PROTOKOLL_B.md` | gefüllt | Umsetzungsprotokoll zu Stufe B |
+| `FAHRPLAN_B_VEREINFACHEN_2026-09-23.md` | gebaut B1–B6, PROD 24.09. |
 | `PLAN_LEERLAUF.md` | gebaut (2026-08-16) | „rechne, bis es leer ist" — Abbruchkriterium Stagnation |
+| `FAHRPLAN_C_ERGEBNISSE_2026-09-24.md` | in Arbeit | Stufe C: Querschnitt exakt (faceZone), Planraster aus echten Zellen, Wasseroberfläche als VTP, Kennwerte eine Definition, Wehr neu |
 | `FAHRPLAN_GPU_FOAM.md` | geparkt | GPU-Beschleunigung G0–G3; für die RX 6700 XT kein Produktpfad |
 
 ## Ausblick (aus dem Gesamtaudit, nicht geplant)
