@@ -21,7 +21,7 @@ gegen den alten Stand und war dort rot.
 | T4 | unlesbare Repo-Datei im GET | fehlt still | `@unlesbar: [key]` + Log |
 | T4 | PUT auf unlesbares Journal | 200, überschrieben | 409, Datei unverändert |
 | T4 | Dokument entfernen bei unlesbarem Journal | erlaubt | 422 mit Grund |
-| T5 | CI-Läufe „IFC-Waechter" | 4/4 rot (`app.mcp` fehlt im Repo) | offen bis zum Push |
+| T5 | CI-Läufe „IFC-Waechter" | 4/4 rot (`app.mcp` fehlt im Repo) | grün (Lauf 36015673399: IFC 172 grün · 3 übersprungen, Client 3408 grün · 31 übersprungen ohne StorageBox/testdata-local) |
 | T6 | ProVI-Modell: Achsen / Knoten | 0 / 0 | 17 / 19 |
 | T6 | Längsschnitt-Knopf | gesperrt („keine Haltungsachsen") | frei, Strang wird gezeichnet |
 | T6 | Prüfliste | 0 Befunde | 9 an 8 Bauteilen |
@@ -76,9 +76,10 @@ Bilder: `viewer/bilder/t6-provi-vorher.png`, `t6-provi-laengsschnitt.png`,
 
 ## Offen
 
-- **pm2-Neustart** für T4 (Server) — erst mit Fabios OK.
-- **CI grün** ist erst nach dem Push messbar (T5); lokal: 175 IFC-Tests sammeln sich aus einem
-  `git archive`-Abzug, `test_mcp_werkzeuge` grün.
+- **Ausgeliefert:** Commit `d4e739b`, gepusht; Client live seit dist 14:55 (Build einer Nachbarsitzung
+  mit Fabios Freigabe, Bundle `CdeView-BxJutO9y.js` geprüft).
+- **pm2-Neustart** für T4 (Server) — erst mit Fabios OK. Bis dahin fehlen nur `@unlesbar` und der
+  409 bei unlesbarem Journal; der Client läuft mit dem alten Server korrekt.
 - **T6c** Sohl-/Deckelgriffe am ProVI-Proxy: brauchen Typprofil-Felder (`Griffe.js:243`). Eine Regel
   müsste ein Profil „leihen" — das bewegt Formulare, Eigenschaften und Massen, nicht nur Griffe.
   Eigener Schritt.
