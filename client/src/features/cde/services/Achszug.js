@@ -178,6 +178,53 @@ export function deltaXZAusSchirm(sdx, sdy, schirm) {
 }
 
 /**
+ * Wie weit liegt ein Punkt auf einer ACHSE, gemessen am Sehstrahl (K6).
+ *
+ * Der Gizmo-Pfeil fährt nur auf seiner Geraden. Gesucht ist der Parameter t
+ * (Meter entlang `richtung`) des Punktes, der dem Zeigerstrahl am nächsten
+ * liegt — die klassische Lotfusspunkt-Rechnung zweier windschiefer Geraden.
+ *
+ * `null`, wenn der Blick fast entlang der Achse geht (die Rechnung wird dort
+ * beliebig empfindlich) — der Aufrufer nimmt dann die Bildschirmpassung.
+ *
+ * @param {{origin:{x,y,z}, direction:{x,y,z}}} strahl
+ * @param {{x,y,z}} ursprung   Punkt auf der Achse (der Griff)
+ * @param {{x,y,z}} richtung   Einheitsvektor der Achse
+ * @returns {number|null} t in Metern
+ */
+export function achsParameter(strahl, ursprung, richtung, { maxCos = 0.985 } = {}) {
+    const d = strahl?.direction, o = strahl?.origin;
+    if (!d || !o || !ursprung || !richtung) return null;
+    const dl = Math.hypot(d.x, d.y, d.z);
+    const rl = Math.hypot(richtung.x, richtung.y, richtung.z);
+    if (!(dl > 1e-9) || !(rl > 1e-9)) return null;
+    const e = { x: richtung.x / rl, y: richtung.y / rl, z: richtung.z / rl };
+    const u = { x: d.x / dl, y: d.y / dl, z: d.z / dl };
+    const cos = Math.abs(e.x * u.x + e.y * u.y + e.z * u.z);
+    if (cos >= maxCos) return null;                       // Blick fast entlang der Achse
+    const w = { x: ursprung.x - o.x, y: ursprung.y - o.y, z: ursprung.z - o.z };
+    const we = w.x * e.x + w.y * e.y + w.z * e.z;
+    const wu = w.x * u.x + w.y * u.y + w.z * u.z;
+    const eu = e.x * u.x + e.y * u.y + e.z * u.z;
+    const nenner = 1 - eu * eu;
+    if (!(Math.abs(nenner) > 1e-9)) return null;
+    return (eu * wu - we) / nenner;
+}
+
+/**
+ * Eine beliebige Richtung als Bildschirmvektor (Pixel je Meter) am Punkt (K6).
+ * Das Gegenstück zu `achsenAufSchirm` für Gizmo-Teile, deren Richtung nicht
+ * eine der drei Weltachsen ist (Teil B: Flächennormale).
+ */
+export function richtungAufSchirm({ punkt, richtung, projiziere }) {
+    const p0 = projiziere?.(punkt) ?? null;
+    if (!p0 || !richtung) return null;
+    const p1 = projiziere({ x: punkt.x + richtung.x, y: punkt.y + richtung.y, z: punkt.z + richtung.z });
+    if (!p1 || !Number.isFinite(p1.x) || !Number.isFinite(p1.y)) return null;
+    return [p1.x - p0.x, p1.y - p0.y];
+}
+
+/**
  * Rasterfang im Raum (S7): jede Komponente auf ein Vielfaches der Rasterweite.
  * Vorgabe 0,10 m — Alt lässt frei (flood-3D-Muster). Ein Raster von 0 tut nichts.
  */

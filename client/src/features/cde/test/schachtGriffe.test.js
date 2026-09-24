@@ -151,11 +151,16 @@ describe('der Griff schreibt über den EINEN Weg', () => {
         expect(ablegen).toContain("modell: 'geliefert'");
     });
 
-    it('gegriffen wird nur hinter der Bereitschafts-Sperre', () => {
+    it('gegriffen wird nur hinter der Bereitschafts-Sperre — und die Regel steht in Griffe.js (K5)', () => {
         expect(canvas).toContain('function griffBereit()');
         const bereit = canvas.slice(canvas.indexOf('function griffBereit()'), canvas.indexOf('function griffeLaden'));
+        // Hier bleiben nur die PLAN-eigenen Ausschlüsse: Setzen, Messen, Stift
+        // beanspruchen dieselbe Fläche.
         expect(bereit).toContain('bearbeitung.modusAn');
-        expect(bereit).toContain('!bearbeitung.scharfId');
+        expect(bereit).toContain('!setzModus.value');
+        // Welche Griffe stehen, entscheidet der Plan NICHT mehr selbst.
+        expect(bereit).not.toContain('!bearbeitung.scharfId');
+        expect(canvas).toMatch(/griffeFrei\(zustand, g,/);
         // Der Griff-Zugriff in onZeigerAb steht hinter genau dieser Frage.
         expect(canvas).toContain('if (griffBereit())');
     });

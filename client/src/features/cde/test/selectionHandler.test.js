@@ -25,6 +25,9 @@ function baue({ pick = null } = {}) {
         getHitPoint: vi.fn(() => ({ x: 1, y: 2, z: 3, ox: 1, oy: 2, oz: 3, modelId: 'm' })),
         clearHover: vi.fn(),
         rechteckAuswahl: vi.fn(async () => ({ items: { m: [1, 2] }, count: 2 })),
+        // Die Kamera wird mit MARKE angehalten (K2) — Griff, Rahmen und
+        // Schnitt halten unabhängig voneinander.
+        kameraSperren: vi.fn(),
     };
     const h = new IfcSelectionHandler({ engine, canvas });
     const ereignisse = { pick: [], leer: [], hover: [], rahmen: [], tipp: [], gesperrt: [] };
@@ -272,14 +275,14 @@ describe('Greifen und Zug (S4)', () => {
     it('Maus: beansprucht → Kamera gesperrt, Bewegungen als Zug, Loslassen legt ab — kein Tipp, kein Pick', async () => {
         const t = mitGriff(true);
         t.h._onPointerDown(ev(300, 200));
-        expect(t.engine.kameraSperren).toHaveBeenCalledWith(true);
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(true, 'griff');
         expect(t.zug.start).toHaveLength(1);
         t.h._onPointerMove(ev(320, 210));
         expect(t.zug.bewegt).toHaveLength(1);
         expect(t.engine.hoverElement).not.toHaveBeenCalled();
         await t.h._onPointerUp(ev(320, 210));
         expect(t.zug.ende[0]).toMatchObject({ abbruch: false, x: 320, y: 210 });
-        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false);
+        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false, 'griff');
         expect(t.engine.pickElement).not.toHaveBeenCalled();
         expect(t.h.ziehtGerade()).toBe(false);
     });
@@ -290,7 +293,7 @@ describe('Greifen und Zug (S4)', () => {
         t.h._onPointerMove(ev(320, 210));
         t.h.zugAbbrechen();
         expect(t.zug.ende[0]).toMatchObject({ abbruch: true });
-        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false);
+        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false, 'griff');
         expect(t.h.ziehtGerade()).toBe(false);
         await t.h._onPointerUp(ev(320, 210));
         expect(t.zug.ende).toHaveLength(1);                 // kein zweites Ende
@@ -311,7 +314,7 @@ describe('Greifen und Zug (S4)', () => {
         t.h._onPointerMove(ev(305, 203, { pointerType: 'touch' }));       // unter der Schwelle
         await vi.advanceTimersByTimeAsync(400);
         expect(t.zug.start).toHaveLength(1);
-        expect(t.engine.kameraSperren).toHaveBeenCalledWith(true);
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(true, 'griff');
         vi.useRealTimers();
     });
 
@@ -320,7 +323,44 @@ describe('Greifen und Zug (S4)', () => {
         t.h._onPointerDown(ev(300, 200));
         t.h._onPointerCancel(ev(300, 200));
         expect(t.zug.ende[0].abbruch).toBe(true);
-        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false);
+        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false, 'griff');
+    });
+
+    // ── K2: der Rahmen hält die Kamera an ────────────────────────────────
+    //
+    // camera-controls kennt kein Shift — links ist und bleibt ROTATE, und das
+    // Zeigerereignis erreicht beide Stapel. Bis 2026-09-20 zeichnete ein
+    // Shift-Zug also einen Rahmen UND drehte die Szene mit.
+
+    it('Shift-Zug sperrt die Kamera und gibt sie beim Loslassen frei', async () => {
+        const t = baue();
+        t.h.setMode('single');
+        t.h._onPointerDown(ev(300, 200, { shiftKey: true }));
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(true, 'rahmen');
+        t.h._onPointerMove(ev(360, 260, { shiftKey: true }));
+        await t.h._onPointerUp(ev(360, 260, { shiftKey: true }));
+        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false, 'rahmen');
+    });
+
+    it('Shift-Klick OHNE Zug gibt die Kamera auch wieder frei', async () => {
+        const t = baue();
+        t.h.setMode('single');
+        t.h._onPointerDown(ev(300, 200, { shiftKey: true }));
+        await t.h._onPointerUp(ev(300, 200, { shiftKey: true }));
+        expect(t.engine.kameraSperren).toHaveBeenLastCalledWith(false, 'rahmen');
+    });
+
+    it('ein Moduswechsel und das Abbauen lösen jede Marke — die Kamera bleibt nie hängen', () => {
+        const t = baue();
+        t.h.setMode('single');
+        t.h._onPointerDown(ev(300, 200, { shiftKey: true }));
+        t.h.setMode('werkzeug');
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(false, 'rahmen');
+
+        t.engine.kameraSperren.mockClear();
+        t.h.detach();
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(false, 'griff');
+        expect(t.engine.kameraSperren).toHaveBeenCalledWith(false, 'rahmen');
     });
 
     it('kein Anspruch → der Tipp läuft wie gewohnt', async () => {

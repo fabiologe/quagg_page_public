@@ -96,7 +96,10 @@ describe('hoverElement / probeTreffer', () => {
     it('liefert Daten statt eines Cursors — Schlüssel, Punkt, Normale, Modell', async () => {
         const t = attrappe({ treffer: treffer(4, [1, 2, 3]) });
         const h = await t.engine.hoverElement(10, 10);
-        expect(h).toEqual({ key: 'm:4', point: { x: 1, y: 2, z: 3 }, normal: { x: 0, y: 1, z: 0 }, modelId: 'm', localId: 4, fang: null });
+        // `art` kommt seit K3 mit — als AUSKUNFT, nicht als Filter: auf dem
+        // Gelände wird weiter gezeichnet und gefangen, nur der Klick wählt es
+        // nicht mehr. Der Zeiger liest sie für den grünen Ring.
+        expect(h).toEqual({ key: 'm:4', point: { x: 1, y: 2, z: 3 }, normal: { x: 0, y: 1, z: 0 }, modelId: 'm', localId: 4, fang: null, art: 'bauteil' });
         expect(t.engine.getHitPoint()).toMatchObject({ x: 1, y: 2, z: 3, ox: 1001, oz: 2003, modelId: 'm' });
         expect(t.modell.raycastWithSnapping).not.toHaveBeenCalled();
     });
@@ -200,6 +203,26 @@ describe('rechteckAuswahl', () => {
         expect(r).toEqual({ items: {}, count: 0 });
         expect(t.engine._selectedItems).toBeNull();
         expect(t.fragments.highlight).not.toHaveBeenCalled();
+    });
+
+    // K3: das Gelände ist gross und liegt überall — sein Schlüssel stand als
+    // ERSTER in der Liste und bestimmte damit die Einordnung der ganzen
+    // Mehrfachauswahl.
+    it('nimmt das Gelände aus dem Rahmen und zählt neu', async () => {
+        const t = attrappe({ rechteck: [3, 5, 8] });
+        t.engine._ohneGelaende = vi.fn(async (items) => ({
+            gelaende: { m: [5] }, rest: { m: items.m.filter(id => id !== 5) },
+        }));
+        const r = await t.engine.rechteckAuswahl({ x0: 0, y0: 0, x1: 50, y1: 50 });
+        expect(r).toEqual({ items: { m: [3, 8] }, count: 2 });
+        expect(t.engine._selectedItems).toEqual({ m: [3, 8] });
+    });
+
+    it('bleibt der Rahmen, wie er war, wenn die Geländeliste nicht zu haben ist', async () => {
+        const t = attrappe({ rechteck: [3, 5] });
+        t.engine._ohneGelaende = vi.fn(async () => { throw new Error('Liste weg'); });
+        const r = await t.engine.rechteckAuswahl({ x0: 0, y0: 0, x1: 50, y1: 50 });
+        expect(r).toEqual({ items: { m: [3, 5] }, count: 2 });
     });
 });
 

@@ -26,6 +26,8 @@ export class IfcCamera {
         // Zoom-Limits, die wir nach jedem fitToBox restoren (siehe _enforceZoomLimits).
         this._minDistance  = 0.01;
         this._minNear      = 0.001;
+        /** Wer die Kamera gerade anhält (`sperren`) — 'griff' | 'rahmen' | 'schnitt'. */
+        this._sperren      = new Set();
     }
 
     // ── Setup ────────────────────────────────────────────────────────────────
@@ -45,7 +47,17 @@ export class IfcCamera {
 
         // Default isometrische Pose
         const ctrls = world.camera.controls;
+        this._aufrecht();
         ctrls.setLookAt(10, 10, 10, 0, 0, 0);
+
+        // DIE POLGRENZE (Fabio 2026-09-20: „dreht man unter das Gelände, ist
+        // alles auf dem Kopf"). Ohne sie läuft der Orbit bis in den Nadir; dort
+        // ist die Blickrichtung parallel zu `up`, THREE.Matrix4.lookAt greift zu
+        // seiner 0.0001-Notbremse und die Bildschirm-Oben-Richtung kippt um 180°.
+        // Unter das Gelände DARF man schauen — nur nicht über den Pol hinaus.
+        // `minPolarAngle` bleibt 0: die Draufsicht steht genau dort, und
+        // `setTarget` (aus `_sanitizeTarget`) klemmt gegen diese Grenze.
+        ctrls.maxPolarAngle = Math.PI - POL_ABSTAND_RAD;
 
         // Dolly-Verhalten
         ctrls.dollySpeed    = 0.7;
@@ -105,17 +117,55 @@ export class IfcCamera {
         }
     }
 
-    /** Direkter Zugriff für Picking/Raycasting (Engine-Layer braucht THREE-Camera). */
     /**
-     * Die Bedienung sperren/freigeben — während ein Griff gezogen wird
-     * (Teil XVI, S4). Dasselbe Muster wie der Schnitt-Gizmo (`controls.enabled`).
+     * DIE EINE UP-RICHTUNG: (0,1,0), und camera-controls weiss davon.
+     *
+     * camera-controls baut seinen Orbit-Raum (`_yAxisUpSpace`) EINMAL im
+     * Konstruktor aus `camera.up`. Wer `up` danach verbiegt, ohne
+     * `updateCameraUp()` zu rufen, hat zwei Wahrheiten: die Position kommt aus
+     * dem alten Kugelraum, die Orientierung aus dem neuen `up` — das Bild
+     * rollt, und an der Entartung kippt es um 180°.
+     *
+     * Deshalb gibt es hier nur noch EINEN erlaubten Wert. Jedes Preset ruft das
+     * hier VOR seinem `setLookAt`: danach baut `setLookAt` den Kugelraum
+     * ohnehin neu, also gibt es keinen Sprung.
      */
-    sperren(an) {
-        const c = this.getControls();
-        if (!c) return false;
-        c.enabled = !an;
+    _aufrecht() {
+        const cam = this.getThree();
+        const ctrls = this.getControls();
+        if (!cam || !ctrls) return false;
+        if (cam.up.x === 0 && cam.up.y === 1 && cam.up.z === 0) return true;
+        cam.up.set(0, 1, 0);
+        ctrls.updateCameraUp?.();
         return true;
     }
+
+    /**
+     * Die Bedienung sperren/freigeben — mit NAMEN statt mit einem Ja/Nein.
+     *
+     * Drei Besitzer wollen die Kamera anhalten: der Griff-Zug, die
+     * Rahmenauswahl und der Schnitt-Gizmo. Mit einem Boolean gab der zuletzt
+     * Fertige sie für alle frei — der Griff-Zug lief dann mitten im Schnitt
+     * weiter. Deshalb ein Satz von Marken: frei ist die Kamera erst, wenn
+     * niemand mehr hält.
+     *
+     * @param {boolean} an   true = sperren
+     * @param {string} [wer] die Marke des Aufrufers
+     */
+    sperren(an, wer = 'griff') {
+        const c = this.getControls();
+        if (!c) return false;
+        if (an) this._sperren.add(wer); else this._sperren.delete(wer);
+        c.enabled = this._sperren.size === 0;
+        return true;
+    }
+
+    /** Wer die Kamera gerade hält — für Tests und Diagnose. */
+    sperrenVon() {
+        return [...this._sperren];
+    }
+
+    /** Direkter Zugriff für Picking/Raycasting (Engine-Layer braucht THREE-Camera). */
 
     getThree() {
         return this._getWorld()?.camera?.three ?? null;
@@ -133,6 +183,7 @@ export class IfcCamera {
         if (!b) return;
         const d = b.maxDim * 1.5;
         const ctrls = this._getWorld().camera.controls;
+        this._aufrecht();
         await ctrls.setLookAt(
             b.center.x + d * 0.6, b.center.y + d * 0.6, b.center.z + d * 0.6,
             b.center.x, b.center.y, b.center.z, true,
@@ -144,9 +195,22 @@ export class IfcCamera {
         const b = this._getBounds();
         if (!b) return;
         const cam = this._getWorld().camera;
-        // Looking straight down: default up=(0,1,0) is parallel to view direction → gimbal lock.
-        // Set up=(0,0,-1) so the Z-axis points "north" on screen for a standard plan orientation.
-        cam.three.up.set(0, 0, -1);
+        // NORDEN OBEN, OHNE `up` ZU VERBIEGEN (2026-09-20).
+        //
+        // Früher stand hier `up = (0,0,-1)` gegen den Gimbal Lock. Das war die
+        // Wurzel des 180°-Kopfstands: camera-controls rechnete weiter im
+        // Y-oben-Raum, und niemand setzte `up` je zurück — `viewTop` läuft auch
+        // automatisch, bei jedem Zeichenwerkzeug (IfcViewer `zeichnenStarten`).
+        //
+        // Gebraucht wird es nicht: senkrecht von oben ergibt `setLookAt` θ = 0,
+        // φ = 0, und `makeSafe()` hebt φ im nächsten Update auf 1e-6. Die
+        // Kamera steht damit ein Millionstel nach +Z versetzt, ihre lokale
+        // Y-Achse zeigt auf Welt −Z: **Norden oben, Osten rechts** — dasselbe
+        // Bild wie vorher, aber danach dreht man wie auf einem Drehteller.
+        //
+        // Plan und PDF hängen ohnehin nicht an dieser Kamera, sondern am
+        // Plot-Frustum (`PlanViewport.frustumFuerBlatt`, dort steht up = −Z).
+        this._aufrecht();
         await cam.controls.setLookAt(
             b.center.x, b.center.y + b.maxDim * 2, b.center.z,
             b.center.x, b.center.y,                b.center.z,
@@ -159,7 +223,7 @@ export class IfcCamera {
         const b = this._getBounds();
         if (!b) return;
         const cam = this._getWorld().camera;
-        cam.three.up.set(0, 1, 0);
+        this._aufrecht();
         await cam.controls.setLookAt(
             b.center.x, b.center.y, b.center.z + b.maxDim * 2,
             b.center.x, b.center.y, b.center.z,
@@ -172,7 +236,7 @@ export class IfcCamera {
         const b = this._getBounds();
         if (!b) return;
         const cam = this._getWorld().camera;
-        cam.three.up.set(0, 1, 0);
+        this._aufrecht();
         await cam.controls.setLookAt(
             b.center.x + b.maxDim * 2, b.center.y, b.center.z,
             b.center.x,                b.center.y, b.center.z,
@@ -182,6 +246,9 @@ export class IfcCamera {
     }
 
     async resetView() {
+        // „Ansicht zurücksetzen" räumt auch die Blickachse auf — sonst bliebe
+        // ein Rest der Draufsicht stehen und das Bild wäre gerollt.
+        this._aufrecht();
         await this._getWorld().camera.controls.setLookAt(10, 10, 10, 0, 0, 0, true);
         this._enforceZoomLimits();
     }
@@ -204,6 +271,7 @@ export class IfcCamera {
     async lookAtPoint(x, y, z, distance = 5) {
         const ctrls = this._getWorld()?.camera?.controls;
         if (!ctrls) return;
+        this._aufrecht();
         await ctrls.setLookAt(x + distance, y + distance, z + distance, x, y, z, true);
         this._enforceZoomLimits();
     }
@@ -215,6 +283,7 @@ export class IfcCamera {
     async fitToBox(box, { padding = 0.5, padBoxScalar = 0 } = {}) {
         const ctrls = this._getWorld()?.camera?.controls;
         if (!ctrls || !box || box.isEmpty?.()) return false;
+        this._aufrecht();
 
         if (padBoxScalar > 0) {
             // Kopie damit der Aufrufer-Box nicht mutiert
@@ -327,6 +396,35 @@ export class IfcCamera {
         );
     }
 
+    /**
+     * Den DREHPUNKT auf ein Bauteil legen, ohne das Bild zu bewegen (K2).
+     *
+     * Ein Klick soll wählen, nicht fahren. Bis 2026-09-20 hob `orbitAroundPoint`
+     * die Kamera animiert auf 20° Elevation — bei JEDEM Klick auf ein neues
+     * Bauteil sprang das Bild.
+     *
+     * Bewegt wird deshalb nur die Tiefe des Drehpunkts: das neue Ziel ist der
+     * Fusspunkt des Bauteilmittelpunkts auf dem aktuellen Sehstrahl. Position
+     * und Blickrichtung bleiben bitgleich, nur der Radius ändert sich — und
+     * mit ihm fühlen sich Drehen und Schieben in der Tiefe des Bauteils an.
+     *
+     * NICHT über `setOrbitPoint`: das arbeitet mit `focalOffset`, der jedes
+     * `setLookAt` überlebt, den Zoom zum Zeiger seitlich driften lässt
+     * (`dollyToCursor` + `infinityDolly`) und gespeicherte Ansichten verfälscht.
+     */
+    async drehpunktAuf(point) {
+        const ctrls = this.getControls();
+        const cam = this.getThree();
+        if (!ctrls || !cam || !point) return false;
+        const ziel = new THREE.Vector3();
+        ctrls.getTarget?.(ziel);
+        const neu = drehpunktAufSehstrahl(cam.position, ziel, point);
+        if (!neu) return false;
+        await ctrls.setLookAt(cam.position.x, cam.position.y, cam.position.z, neu.x, neu.y, neu.z, false);
+        this._enforceZoomLimits();
+        return true;
+    }
+
     /** Convenience: Orbit-Target = aktueller Messpunkt. */
     async orbitAroundMeasurePoint(point) {
         return this.orbitAroundPoint(point);
@@ -348,7 +446,8 @@ export class IfcCamera {
         if (!boxes?.length || boxes[0].isEmpty()) return false;
         const center = new THREE.Vector3();
         boxes[0].getCenter(center);
-        await this.orbitAroundPoint(center);
+        // Nur der Drehpunkt — die Auswahl fährt die Kamera nicht (K2).
+        await this.drehpunktAuf(center);
         return true;
     }
 
@@ -374,10 +473,13 @@ export class IfcCamera {
         if (!state) return;
         const world = this._getWorld();
         if (!world) return;
-        const cam   = world.camera.three;
         const ctrls = world.camera.controls;
 
-        if (state.up) cam.up.fromArray(state.up);
+        // `state.up` wird ABSICHTLICH nicht angewandt: gespeicherte Ansichten
+        // aus der Zeit vor 2026-09-20 tragen die Draufsicht-Achse (0,0,−1) und
+        // würden die Kamera wieder vergiften. `captureState` schreibt sie
+        // weiterhin mit — BCF liest sie.
+        this._aufrecht();
         const p = state.position;
         const t = state.target;
         if (p && t) {
@@ -436,11 +538,17 @@ export class IfcCamera {
 
         // Wir wollen die Kamera-Pose erhalten — also nur das Target schubsen.
         // Strategie: Strahl von Kamera in Blickrichtung schneiden mit der Modell-
-        // Bbox; falls kein Schnitt → einfach Modell-Center als Target setzen.
+        // Bbox. Ohne Schnitt NICHT das Modell-Center nehmen: das liegt fast nie
+        // auf dem Sehstrahl, und `setTarget` behält die Position, dreht also den
+        // Blick — ein Sprung aus dem Nichts. Stattdessen der Fusspunkt des
+        // Centers auf dem Sehstrahl; liegt der hinter der Kamera, bleibt alles.
         const viewDir = new THREE.Vector3().subVectors(tgt, cam.position).normalize();
         const ray     = new THREE.Ray(cam.position, viewDir);
         const hit     = new THREE.Vector3();
-        const newTarget = ray.intersectBox(bounds.box, hit) ? hit : bounds.center.clone();
+        const newTarget = ray.intersectBox(bounds.box, hit)
+            ? hit
+            : drehpunktAufSehstrahl(cam.position, tgt, bounds.center);
+        if (!newTarget) return;
 
         // setTarget mit enableTransition=false → kein Animations-Glitch
         ctrls.setTarget?.(newTarget.x, newTarget.y, newTarget.z, false);
@@ -474,6 +582,60 @@ export class IfcCamera {
      */
     dispose() {}
 
+}
+
+/** Wie nah der Orbit an den Pol darf (rad). Darüber kippt das Bild (2026-09-20). */
+export const POL_ABSTAND_RAD = 0.02;
+
+/**
+ * Wohin „oben im Bild" in der Welt zeigt — die y-Komponente der lokalen
+ * Y-Achse der Kamera.
+ *
+ * Das ist die Grösse, an der ein Kopfstand zu erkennen ist: positiv heisst
+ * „Welt-oben ist auch im Bild oben", negativ heisst „auf dem Kopf". Rein und
+ * ohne `matrixWorld`, damit der Test und die Browserprobe dasselbe messen.
+ */
+export function weltObenImBild(cam) {
+    const q = cam?.quaternion;
+    if (!q) return NaN;
+    // (0,1,0) mit dem Quaternion gedreht, nur die y-Komponente.
+    const { x, y, z, w } = q;
+    return 1 - 2 * (x * x + z * z);
+}
+
+/**
+ * Die Pose der Draufsicht: senkrecht über der Mitte, Abstand aus der
+ * Ausdehnung. `up` ist NICHT Teil der Pose — es ist immer (0,1,0) (siehe
+ * `IfcCamera._aufrecht`).
+ */
+export function draufsichtPose(bounds) {
+    const c = bounds?.center;
+    if (!c || !Number.isFinite(bounds?.maxDim)) return null;
+    return {
+        position: { x: c.x, y: c.y + bounds.maxDim * 2, z: c.z },
+        ziel: { x: c.x, y: c.y, z: c.z },
+    };
+}
+
+/**
+ * Der neue Drehpunkt: die Tiefe des Zielpunkts, aber auf dem alten Sehstrahl.
+ *
+ * Damit bleibt die Kamera stehen (Position und Blickrichtung unverändert) und
+ * nur der Drehradius passt sich dem Bauteil an. Rein, damit es prüfbar ist.
+ *
+ * @returns {{x,y,z}|null} null, wenn der Punkt hinter der Kamera liegt oder
+ *                         die Blickrichtung entartet ist — dann bleibt alles.
+ */
+export function drehpunktAufSehstrahl(position, altesZiel, punkt) {
+    if (!position || !altesZiel || !punkt) return null;
+    const d = { x: altesZiel.x - position.x, y: altesZiel.y - position.y, z: altesZiel.z - position.z };
+    const laenge = Math.hypot(d.x, d.y, d.z);
+    if (!(laenge > 1e-9)) return null;
+    const e = { x: d.x / laenge, y: d.y / laenge, z: d.z / laenge };
+    const p = { x: punkt.x - position.x, y: punkt.y - position.y, z: punkt.z - position.z };
+    const t = p.x * e.x + p.y * e.y + p.z * e.z;
+    if (!(t > 1e-6)) return null;                    // hinter oder genau in der Kamera
+    return { x: position.x + e.x * t, y: position.y + e.y * t, z: position.z + e.z * t };
 }
 
 /** Unter diesem Winkel über der Waagerechten schaut die Kamera nicht mehr auf ein Ziel (S7). */

@@ -356,12 +356,24 @@ export class IfcOverlay {
         this._zugbild = null;
         const cam = this._getWorld?.()?.camera?.three ?? null;
         const rollenFarbe = { entfernen: farbeEntfernen, einfuegen: farbeEinfuegen };
+        const gizmoFarbe = { danger: farbeEntfernen, ok: farbeEinfuegen, accent: farbe, warn: farbeForderung };
         for (const gr of griffe) {
             if (!_endlich(gr?.pos)) continue;
-            const f = gr.farbe ?? rollenFarbe[gr.rolle] ?? (gr.forderung ? farbeForderung : farbe);
+            const f = gr.farbe ?? gizmoFarbe[gr.farbrolle] ?? rollenFarbe[gr.rolle] ?? (gr.forderung ? farbeForderung : farbe);
             // Der Radius folgt dem KAMERAABSTAND — ein fester Meterwert füllte
             // nach „auf Auswahl zoomen" den ganzen Schacht (Headless 2026-09-08).
             const r = radius === 'auto' ? griffRadius(cam, gr.pos) : radius;
+            // DER VERSCHIEBE-GIZMO (K6, Fabio 2026-09-20: „keine Verschiebung
+            // mit den Griffpunkten hat funktioniert"): Pfeile und ein
+            // Ebenenquadrat statt einer Kugel, deren Achse man erraten musste.
+            // Man greift, was man sieht.
+            if (gr.form === 'pfeil' || gr.form === 'quadrat') {
+                const teil = gr.form === 'pfeil' ? _pfeil(gr, r, f, this) : _quadrat(gr, r, f, this);
+                for (const k of teil.objekte) { k.renderOrder = EBENEN.griffe; k.traverse?.(x => { x.renderOrder = EBENEN.griffe; }); g.add(k); }
+                this._griffe.set(gr.key, { kugel: teil.sichtbar, hitbox: teil.hitbox, zeigtBei: null,
+                                           versteckt: false, versatz: { x: 0, y: 0, z: 0 } });
+                continue;
+            }
             // TIPP-GRIFFE sind WÜRFEL (S10): sie werden angetippt, nicht gezogen,
             // und die Form sagt es, bevor jemand es ausprobiert. Sie sitzen etwas
             // über ihrem Zug-Griff, damit beide getroffen werden können.
@@ -538,6 +550,65 @@ function _entsorgeGeometrien(o) {
 function _endlich(p) {
     return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z);
 }
+
+/**
+ * Ein GIZMO-PFEIL: Schaft und Spitze entlang `richtung`, dazu eine
+ * unsichtbare Trefferhülse, die grosszügiger ist als das Bild (T4-Regel —
+ * auf dem Finger trifft man sonst nichts).
+ */
+function _pfeil(gr, r, farbe, overlay) {
+    const laenge = r * GIZMO_LAENGE;
+    const dicke = r * 0.18;
+    const richtung = new THREE.Vector3(gr.richtung.x, gr.richtung.y, gr.richtung.z).normalize();
+    const mitte = new THREE.Vector3(gr.pos.x, gr.pos.y, gr.pos.z).addScaledVector(richtung, laenge / 2);
+    const material = overlay._material('flaeche', farbe, { opacity: 0.95 });
+
+    const gruppe = new THREE.Group();
+    const schaft = new THREE.Mesh(new THREE.CylinderGeometry(dicke, dicke, laenge, 10), material);
+    const spitze = new THREE.Mesh(new THREE.ConeGeometry(dicke * 2.6, laenge * 0.28, 12), material);
+    spitze.position.y = laenge / 2;
+    gruppe.add(schaft, spitze);
+    // Der Zylinder liegt in +Y; auf die Achse drehen.
+    gruppe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), richtung);
+    gruppe.position.copy(mitte);
+    gruppe.traverse(k => { k.userData.griffKey = gr.key; });
+
+    const hitbox = new THREE.Mesh(new THREE.CylinderGeometry(dicke * GIZMO_TREFFER, dicke * GIZMO_TREFFER, laenge * 1.15, 8),
+                                  overlay._material('flaeche', farbe, { opacity: 0 }));
+    hitbox.visible = false;
+    hitbox.quaternion.copy(gruppe.quaternion);
+    hitbox.position.copy(mitte);
+    hitbox.userData.griffKey = gr.key;
+    return { objekte: [gruppe, hitbox], sichtbar: gruppe, hitbox };
+}
+
+/** Das EBENENQUADRAT: waagerecht, vom Ursprung abgesetzt, mit Rand. */
+function _quadrat(gr, r, farbe, overlay) {
+    const kante = r * GIZMO_LAENGE * 0.34;
+    const ab = r * GIZMO_LAENGE * 0.30;
+    const mitte = new THREE.Vector3(gr.pos.x + ab + kante / 2, gr.pos.y, gr.pos.z - ab - kante / 2);
+
+    const gruppe = new THREE.Group();
+    const flaeche = new THREE.Mesh(new THREE.PlaneGeometry(kante, kante), overlay._material('flaeche', farbe, { opacity: 0.3 }));
+    flaeche.rotation.x = -Math.PI / 2;
+    const rand = new THREE.LineSegments(new THREE.EdgesGeometry(flaeche.geometry), overlay._material('linie', farbe, { opacity: 0.95 }));
+    rand.rotation.x = -Math.PI / 2;
+    gruppe.add(flaeche, rand);
+    gruppe.position.copy(mitte);
+    gruppe.traverse(k => { k.userData.griffKey = gr.key; });
+
+    const hitbox = new THREE.Mesh(new THREE.PlaneGeometry(kante * 1.3, kante * 1.3), overlay._material('flaeche', farbe, { opacity: 0 }));
+    hitbox.rotation.x = -Math.PI / 2;
+    hitbox.visible = false;
+    hitbox.position.copy(mitte);
+    hitbox.userData.griffKey = gr.key;
+    return { objekte: [gruppe, hitbox], sichtbar: gruppe, hitbox };
+}
+
+/** Wie lang ein Gizmo-Pfeil im Verhältnis zum Griffradius ist. */
+export const GIZMO_LAENGE = 6;
+/** Wie viel grosszügiger die Trefferhülse ist als der sichtbare Schaft (T4). */
+export const GIZMO_TREFFER = 5;
 
 /**
  * Griffradius aus dem Kameraabstand: etwa 1/70 des Abstands, zwischen 8 cm

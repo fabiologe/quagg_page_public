@@ -29,10 +29,10 @@
  */
 
 import { computed, ref, watch } from 'vue';
-import { aufMasslinie, begrenze, griffZuWerten, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
+import { aufMasslinie, begrenze, griffZuWerten, griffeFrei, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
 import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
-import { ACHSEN, RASTER_M, achsPassung, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, waehleAchse, zugText } from '../services/Achszug.js';
+import { RASTER_M, achsPassung, achsParameter, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, richtungAufSchirm, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
 
 /** Hat dieses Rezept einen Griff am Klickpunkt? Das Rezept sagt es (`bauteilGriff`, A3). */
@@ -83,13 +83,17 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     /** Hat dieser Zug-Griff Nebengriffe, die ein Tipp zeigen könnte? */
     const hatNebengriffe = (key) => griffe.value.some(g => g.zeigtBei === key);
 
-    // Griffe gibt es im Modus ohne Werkzeug — UND mit scharfem Werkzeug die,
-    // die genau dieses Werkzeug bedienen: wer „Schacht verschieben" aus dem
-    // Menü scharf schaltet, soll den Schacht ZIEHEN können (Fabio, PROD-Test
-    // 2026-09-08: die Griffe verschwanden, das Formular blieb allein). Ein
-    // Werkzeug ohne Griffe (kg, Anschliessen mit Tipp-Schlitz) zeigt keine —
-    // der zweite Schlitz tippt auch auf Schächte.
-    const bereit = computed(() => !!bearbeitung?.modusAn);
+    // GRIFFE ERST MIT WERKZEUG (K5, Fabio 2026-09-20: „warum sieht man die
+    // Griffpunkte schon, wenn man den Bearbeitungsmodus startet? Das sollte
+    // erst gehen, wenn man ein spezifisches Werkzeug gewählt hat").
+    //
+    // Der PROD-Test vom 2026-09-08 („die Griffe verschwanden, das Formular
+    // blieb allein") bleibt gelöst: wer „Schacht verschieben" aus dem Menü
+    // scharf schaltet, sieht die Schachtgriffe — und zwar alle, auch ohne
+    // gewähltes Bauteil. Was er NICHT mehr sieht, sind die Griffe aller
+    // anderen Werkzeuge. Die Regel dafür steht EINMAL, in `Griffe.js`, und
+    // Lageplan und Längsschnitt fragen dieselbe.
+    const bereit = computed(() => !!bearbeitung?.modusAn && (!!bearbeitung?.scharfId || !!bearbeitung?.eckenFuer));
 
     // ── Aufbau ─────────────────────────────────────────────────────────────
 
@@ -112,25 +116,17 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const vorgang = ableitung ? (e.autor?.ableitungen?.get?.(ableitung) ?? null) : null;
         const alle = griffeFuer({ schaechte, lageStand, subjekt, typprofil: getTypprofil?.() ?? null, subjektHerkunft: herkunft,
                                   bauform: getBauform?.() ?? null, vorgang });
-        const scharf = bearbeitung?.scharfId ?? null;
-        // Mit scharfem Werkzeug: nur die Griffe, die es bedienen — und nur am
-        // gewählten Bauteil (ein Bild, eine Kugel; 27 Schachtkugeln wären wieder
-        // das Durcheinander).
+        // DIE EINE REGEL (`Griffe.js:griffeFrei`) — ECKEN NUR AUF KNOPFDRUCK
+        // (Teil XXII, Fabio 2026-09-18), sonst nur die Familie des scharfen
+        // Werkzeugs. Ein Erdkörper hat keinen Bauteil-Griff am Klickpunkt: ein
+        // Zucken beim Wählen verschob sonst den ganzen Vorgang (Verschieben
+        // bleibt als Werkzeug in der Tafel).
+        const zustand = { modusAn: !!bearbeitung?.modusAn, scharfId: bearbeitung?.scharfId ?? null,
+                          eckenFuer: bearbeitung?.eckenFuer ?? null };
         const gid = bearbeitung?.bauteil?.globalId ?? null;
-        // ECKEN NUR AUF KNOPFDRUCK (Teil XXII, Fabio 2026-09-18): die Eckgriffe
-        // eines Erdkörpers stehen nur, solange „Ecken ziehen" für GENAU dieses
-        // Bauteil läuft — dann aber alle, und nichts anderes daneben. Und ein
-        // Erdkörper hat keinen Bauteil-Griff am Klickpunkt: ein Zucken beim
-        // Wählen verschob sonst den ganzen Vorgang (Verschieben bleibt als
-        // Werkzeug in der Tafel).
-        const ecken = bearbeitung?.eckenFuer ?? null;
         const ohneGriff = ohneBauteilGriff(subjekt?.stand?.bauplan?.rezept);
-        const sichtbar = ecken
-            ? alle.filter(g => g.ecken && g.globalId === ecken)
-            : alle.filter(g => !g.ecken && !(ohneGriff && g.art === 'bauteil' && g.globalId === subjekt?.globalId));
-        griffe.value = scharf
-            ? sichtbar.filter(g => g.werkzeug === scharf && (!gid || g.globalId === gid))
-            : sichtbar;
+        griffe.value = alle.filter(g => griffeFrei(zustand, g, { subjektGid: gid })
+            && !(ohneGriff && g.art === 'bauteil' && g.globalId === subjekt?.globalId));
         const f = (farben ?? tokenFarben)();
         e.zeigeGriffe?.(griffe.value, { radius: 'auto', farbe: f.accent, farbeForderung: f.warn,
                                         farbeEntfernen: f.danger, farbeEinfuegen: f.ok });
@@ -233,7 +229,6 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: g.rolle === 'entfernen' ? 'Stützpunkt entfernen' : 'Stützpunkt einfügen' } : null;
             return;
         }
-        if (g.art === 'bauteil') { _bauteilZugStart(g, tipp); return; }
         const w = _werkzeugFuer(g);
         if (!w) { _getroffen = null; return; }
         const achsen = (tipp.shiftKey && g.alternativ) ? g.alternativ : g.achsen;
@@ -247,6 +242,13 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const schirm = achsenAufSchirm({ punkt: g.pos, projiziere });
         const startPx = tipp?.px ? { x: tipp.px.x, y: tipp.px.y } : null;
         const meterJePixel = e.pixelmass?.(g.pos) ?? null;
+        // EIN GIZMO-PFEIL (K6): wo auf seiner Geraden liegt der Zeiger beim
+        // Aufnehmen? Dieser Startwert wird abgezogen — sonst spränge der Griff
+        // beim ersten Pixel dorthin, wo der Strahl die Achse zufällig kreuzt.
+        const schirmRichtung = g.form === 'pfeil' && g.richtung
+            ? richtungAufSchirm({ punkt: g.pos, richtung: g.richtung, projiziere }) : null;
+        const startT = g.form === 'pfeil' && g.richtung
+            ? (achsParameter(strahl0, g.pos, g.richtung) ?? 0) : null;
         // Fanglinien EINMAL beim Aufnehmen — in Ost/Nord, wie im Plan.
         let linien = [];
         let versatz = null;
@@ -264,7 +266,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             linien = eckFanglinien(g.ring, g.index, { geschlossen: g.geschlossen });
         }
         zug.value = { griff: g, achsen, ebene, start, pos: { ...g.pos }, bewegt: false, linien, aktiv: [], versatz, fang: null,
-                      schirm, startPx, meterJePixel,
+                      schirm, startPx, meterJePixel, schirmRichtung, startT,
+                      erlaubt: g.achsenErlaubt ?? [],
                       radius: g.art === 'drehung' && g.zentrum ? Math.hypot(g.pos.x - g.zentrum.x, g.pos.z - g.zentrum.z) : null,
                       subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher, laed: w.laed ?? null };
         _subjektAnbinden(zug.value);
@@ -303,11 +306,23 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         if (!z) return;
         const e = engine.value;
         if (z.wirkung === 'tipp') return;                  // ein Tipp bewegt nichts
-        if (z.griff.art === 'bauteil') { _bauteilZugBewegt(z, tipp); return; }
         if (z.griff.art === 'drehung') { _drehZugBewegt(z, tipp); return; }
         const strahl = e.strahl?.(tipp.x, tipp.y);
         let d;
-        if (ebeneBrauchbar(strahl, z.ebene.normal)) {
+        // EIN GIZMO-PFEIL fährt auf SEINER Geraden (K6): der Zeiger bestimmt
+        // nur, wie weit. Keine Achsraterei mehr — man zieht, was man sieht.
+        if (z.griff.form === 'pfeil' && z.griff.richtung) {
+            const t = achsParameter(strahl, z.griff.pos, z.griff.richtung);
+            let laenge = t;
+            if (laenge == null && tipp?.px && z.startPx) {
+                // Blick fast entlang der Achse: aus der Bildschirmpassung.
+                laenge = achsPassung(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y, z.schirmRichtung).t;
+            }
+            if (!Number.isFinite(laenge)) return;
+            const ab = z.startT ?? 0;
+            const s2 = laenge - ab;
+            d = { x: z.griff.richtung.x * s2, y: z.griff.richtung.y * s2, z: z.griff.richtung.z * s2 };
+        } else if (ebeneBrauchbar(strahl, z.ebene.normal)) {
             const hit = schnittStrahlEbene(strahl, z.ebene);
             if (!hit) return;
             d = begrenze({ x: hit.x - z.start.x, y: hit.y - z.start.y, z: hit.z - z.start.z }, z.achsen);
@@ -385,7 +400,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             linien.push({ art: 'linie', gestrichelt: true, farbe: f.accent,
                           punkte: [{ x: u.x, y: z.pos.y, z: u.z }, { x: u.x + r.x * W, y: z.pos.y, z: u.z + r.z * W }] });
         }
-        // Beim Achszug gehört die Ebene `fang` den Führungslinien (`_zeigeAchsen`).
+        // Die Ebene `fang` zeigt die Fang- und Führungslinien des Zugs.
         if (z.griff.art !== 'bauteil') e.overlayZeige?.('fang', linien);
         const d = { x: z.pos.x - z.griff.pos.x, y: z.pos.y - z.griff.pos.y, z: z.pos.z - z.griff.pos.z };
         const teile = [];
@@ -398,7 +413,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                 ? `${m.titel ?? m.feld} ${String(m.art === 'winkel' ? w.toFixed(1) : w.toFixed(2)).replace('.', ',')}${m.einheit ? ` ${m.einheit}` : ''}`
                 : `${m.titel ?? m.feld}: hier nicht möglich`);
         } else if (z.griff.art === 'drehung') teile.push(`${Number(z.winkel ?? 0).toFixed(1).replace('.', ',')}°`);
-        else if (z.griff.art === 'bauteil') teile.push(zugText(d, z.achse));
+        else if (z.griff.art === 'bauteil') {
+            // Der Gizmo-Pfeil nennt seine eigene Achse zuerst; das Quadrat Ost und Nord.
+            teile.push(z.griff.form === 'pfeil'
+                ? zugText(d, z.griff.achsName, { felder: [z.griff.achsName] })
+                : zugText(d, null, { felder: ['ost', 'nord'] }));
+        }
         else if (z.achsen === 'Y') teile.push(zugText(d, 'hoehe', { felder: ['hoehe'] }));
         else teile.push(zugText(d, null, { felder: ['ost', 'nord'] }));
         if (z.fang) teile.push(`→ ${z.fang}`);
@@ -481,76 +501,6 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // ist dieselbe wie beim Tippen ins Formular. Esc bricht ab (Zeiger-Stapel),
     // der Finger armiert per Long-Press, Strg erzwingt die Höhe.
 
-    function _bauteilZugStart(g, tipp) {
-        const e = engine.value;
-        const w = _werkzeugFuer(g);
-        if (!w) { _getroffen = null; return; }
-        const projiziere = (p) => e.projectToScreen?.([p.x, p.y, p.z]) ?? null;
-        const ebene = ziehebene(g.pos, 'XZ');
-        const strahl0 = e.strahl?.(tipp.x, tipp.y);
-        const start = (ebeneBrauchbar(strahl0) ? schnittStrahlEbene(strahl0, ebene) : null) ?? { ...g.pos };
-        zug.value = {
-            griff: g, achsen: 'XYZ', ebene, start, pos: { ...g.pos }, bewegt: false, linien: [], aktiv: [], versatz: null, fang: null,
-            startPx: tipp?.px ? { x: tipp.px.x, y: tipp.px.y } : null,
-            schirm: achsenAufSchirm({ punkt: g.pos, projiziere }),
-            achsZustand: { achse: null }, achse: null,
-            erlaubt: g.achsenErlaubt ?? [],
-            meterJePixel: e.pixelmass?.(g.pos) ?? null,
-            subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher,
-        };
-        _geistAufstellen(zug.value);
-        e.griffHervorheben?.(g.key);
-        _zeigeAchsen();
-        _zeige(tipp);
-    }
-
-    function _bauteilZugBewegt(z, tipp) {
-        const e = engine.value;
-        if (!tipp?.px || !z.startPx) return;
-        const sdx = tipp.px.x - z.startPx.x, sdy = tipp.px.y - z.startPx.y;
-        const wahl = waehleAchse(z.achsZustand, {
-            sdx, sdy, schirm: z.schirm, erlaubt: z.erlaubt, erzwinge: tipp.ctrlKey ? 'hoehe' : null,
-        });
-        z.achsZustand = wahl.zustand;
-        z.achse = wahl.achse;
-        if (!wahl.halten && wahl.achse) {
-            // Die Ebene nur, wenn der Strahl sie steil genug trifft — sonst die Passung.
-            const strahl = wahl.achse === 'hoehe' ? null : e.strahl?.(tipp.x, tipp.y);
-            const hit = (strahl && ebeneBrauchbar(strahl)) ? schnittStrahlEbene(strahl, z.ebene) : null;
-            const d = rasterFang(deltaFuer({ achse: wahl.achse, t: wahl.t, steil: wahl.steil, hit, start: z.start, sdy, meterJePixel: z.meterJePixel }), _raster(tipp));
-            const pos = { x: z.griff.pos.x + d.x, y: z.griff.pos.y + d.y, z: z.griff.pos.z + d.z };
-            z.pos = pos;
-            if (!z.bewegt && Math.hypot(d.x, d.y, d.z) > MINDEST_ZUG_M) z.bewegt = true;
-            e.griffVersetzen?.(z.griff.key, pos);
-            e.geistVersetzen?.(d);
-            // LIVE in die Felder — die Vorschau (useVorschau) zeichnet daraus
-            // Box, Versatzpfeil, Lot und Chip, wie beim Tippen.
-            _werteLive(z, pos);
-        }
-        _zeigeAchsen();
-        _zeige(tipp);
-    }
-
-    /** Die drei Führungslinien durch den Griff — die gewählte deckend, die anderen blass. */
-    function _zeigeAchsen() {
-        const z = zug.value;
-        const e = engine.value;
-        if (!z || !e) return;
-        const f = (farben ?? tokenFarben)();
-        const p = z.griff.pos;
-        const linien = z.erlaubt.map((name) => {
-            const r = ACHSEN[name].richtung;
-            return {
-                art: 'linie', farbe: f[ACHSEN[name].farbe] ?? f.accent, opacity: z.achse === name ? 0.95 : 0.35,
-                punkte: [
-                    { x: p.x - r.x * ACHSLINIE_M, y: p.y - r.y * ACHSLINIE_M, z: p.z - r.z * ACHSLINIE_M },
-                    { x: p.x + r.x * ACHSLINIE_M, y: p.y + r.y * ACHSLINIE_M, z: p.z + r.z * ACHSLINIE_M },
-                ],
-            };
-        });
-        e.overlayZeige?.('fang', linien);
-    }
-
     // ── Ablegen: der EINE Katalogweg ───────────────────────────────────────
 
     async function ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null } = {}) {
@@ -579,17 +529,29 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                 modell: griff.herkunft === 'cde' ? 'cde' : 'geliefert',
             });
             if (!eintraege) { melde?.(bearbeitung.letzterGrund || 'Nichts einzutragen.'); return null; }
-            await nachBauen?.(eintraege);
+            await nachBauen?.(eintraege, griff.werkzeug);
             return eintraege;
         } catch (fehler) {
             console.error('cde: griff', fehler);
             melde?.(`Fehler: ${fehler?.message ?? fehler}`);
             return null;
         } finally {
+            // DIE SERIE (K5) macht der VIEWER (`nachBauenMitMeldung`): erst
+            // dort steht fest, dass Neubau und Neu-Einordnung durch sind. Hier
+            // scharf zu schalten verlor gegen das `abbrechen()`, mit dem
+            // `einordne` beginnt — im Browser gemessen.
             bearbeitung.abbrechen();
             neuBauen();
         }
     }
+
+    /**
+     * Das eben benutzte Werkzeug wieder scharf schalten — für die nächste Ecke.
+     *
+     * Nicht, wenn das Bauteil ersetzt wurde (`einordne(null)`): `starte` ohne
+     * Einordnung winkt jedes Werkzeug durch, und der Nutzer stünde mit einem
+     * scharfen Werkzeug ohne Subjekt da. Ausgang ist „Fertig" oder Esc.
+     */
 
     /** Die per Tipp geöffnete Nebengriff-Gruppe schliessen (Tipp daneben, Esc, Werkzeugwechsel). */
     function schliesseGruppe() {

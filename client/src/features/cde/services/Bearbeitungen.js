@@ -1153,7 +1153,7 @@ function _anModell(schritte, sha) {
  * führte über `erdbau.ur` meist zum Ur — aber nicht, wenn die Ansicht veraltet
  * war. Gibt es kein geliefertes, bleibt es beim ersten Kandidaten.
  */
-function _vorbelegtesGelaende(el) {
+export function vorbelegtesGelaende(el) {
     const kandidaten = el?.gelaendeQuellen ?? [];
     return (kandidaten.find(g => g.herkunft !== 'cde') ?? kandidaten[0])?.globalId ?? '';
 }
@@ -1444,7 +1444,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             AUFLOCKERUNG_FELD,
         ],
         vorbelegung: (el) => ({
-            gelaende: _vorbelegtesGelaende(el),
+            gelaende: vorbelegtesGelaende(el),
             arbeitsraum: '', wandform: 'boeschung', boden: 'nichtbindig', winkel: '', sohle: '',
             auflockerung: auflockerungFuer('nichtbindig'),
         }),
@@ -1498,7 +1498,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             AUFLOCKERUNG_FELD,
         ],
         vorbelegung: (el) => ({
-            gelaende: _vorbelegtesGelaende(el),
+            gelaende: vorbelegtesGelaende(el),
             auflockerung: auflockerungFuer('nichtbindig'),
             umfang: 'haltung', achsbezug: 'quelle', wandform: 'verbau', boden: 'nichtbindig', winkel: null, breite: null,
             wanddicke: 0, bettung: regeltabelle('grabenregeln', GRABENREGELN).bettung.ueblich, schachtMass: 1.0,

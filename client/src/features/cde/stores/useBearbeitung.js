@@ -540,9 +540,17 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // hereinreicht, bürgt dafür; `ausfuehren` prüft ohnehin erneut.
         const werkzeug = GRUPPEN[b.gruppe]?.einstieg === 'werkzeug';
         if (!werkzeug && !subjekt && einordnung.value && !moeglich.value.some(p => p.id === id)) return false;
+        // ZUERST den Vorgänger abräumen, DANN setzen (2026-09-21).
+        //
+        // `belegeWerkzeug` ruft den Ausschalter des vorigen Werkzeugs, und der
+        // ist `abbrechen()` — stand er hier unten, löschte er das eben gesetzte
+        // `scharfId` gleich wieder. Aufgefallen ist das erst, als ein Werkzeug
+        // direkt auf ein anderes folgte: mit scharfem „Stützpunkt verschieben"
+        // tat der Tipp auf den Nebengriff „−" nichts („Bearbeitung ist nicht
+        // bereit"). Vorher wurde nie zweimal hintereinander scharf geschaltet.
+        belegeWerkzeug(`bearbeitung:${id}`, () => abbrechen());
         scharfId.value = id;
         werte.value = { ...(b.vorbelegung?.(subjekt ?? bauteil.value ?? {}, { kandidatenVon }) ?? {}) };
-        belegeWerkzeug(`bearbeitung:${id}`, () => abbrechen());
         return true;
     }
 

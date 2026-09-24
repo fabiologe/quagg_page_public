@@ -21,6 +21,19 @@
     <div v-else class="ls-info">
       <span>{{ sicht.segmente.length }} Haltung{{ sicht.segmente.length === 1 ? '' : 'en' }}
         · {{ sicht.gesamt.toFixed(1) }} m · Überhöhung {{ UEBERHOEHUNG }} : 1</span>
+      <!-- Griffe gehören zu ihrem Werkzeug (K5): hier wird es scharf gemacht,
+           wie „Ecken ziehen" in der Tafel. Vorher standen die Sohlgriffe,
+           sobald der Bearbeiten-Modus an war. -->
+      <button
+        v-if="bearbeitung.modusAn"
+        class="ls-griffe"
+        :class="{ an: sohlgriffeFrei }"
+        type="button"
+        :title="sohlgriffeFrei ? 'Sohlen ziehen beenden' : 'Sohlhöhen im Schnitt ziehen'"
+        @click="sohlenZiehenUmschalten"
+      >
+        <CdeIcon name="edit" :size="12" /> Sohlen ziehen
+      </button>
       <span v-if="cursor" class="ls-cursor">
         St. {{ cursor.s.toFixed(1) }} m · {{ cursor.h.toFixed(2) }} m NN
       </span>
@@ -54,6 +67,7 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { baueSicht, griffe } from '../services/LaengsschnittSicht.js';
+import { griffeFrei } from '../services/Griffe.js';
 import { mitHoehenversatz, punktAusWelt, rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { subjektAusStrang } from '../services/kommando/Subjekt.js';
 import { modellVon } from '../services/Bauteilrezepte.js';
@@ -87,6 +101,22 @@ const cursor = ref(null);
  * am gemischten Knoten beides mit EINEM Griff (17.3b).
  */
 const zug = ref(null);            // { enden, hoehe, station } | null
+
+/**
+ * Stehen die Sohlgriffe? DIESELBE Regel wie im Raum und im Lageplan (K5) —
+ * sie gehören zum Werkzeug „Sohle ziehen". Der Umschalter im Kopf schaltet es
+ * scharf; vorher standen sie, sobald der Bearbeiten-Modus an war.
+ */
+const sohlgriffeFrei = computed(() => griffeFrei(
+  { modusAn: bearbeitung.modusAn, scharfId: bearbeitung.scharfId, eckenFuer: bearbeitung.eckenFuer },
+  { werkzeug: 'sohle-ziehen', art: 'sohle' },
+));
+
+/** Das Werkzeug der Sohlgriffe scharf schalten oder beenden (K5). */
+function sohlenZiehenUmschalten() {
+  if (sohlgriffeFrei.value) { bearbeitung.abbrechen(); return; }
+  api.werkzeugStarten?.('sohle-ziehen');
+}
 let griffListe = [];              // Bildkoordinaten, je zeichne() neu
 
 const sicht = computed(() => {
@@ -148,8 +178,8 @@ const gesten = erzeugePlanGesten({
 function onZeigerAb(ev) {
     cvRef.value?.setPointerCapture?.(ev.pointerId);
 
-    // Griff zuerst — nur im Bearbeiten-Modus, und nur wenn kein Zug läuft.
-    if (bearbeitung.modusAn && !zug.value) {
+    // Griff zuerst — nur mit scharfem „Sohle ziehen" (K5), und nur wenn kein Zug läuft.
+    if (sohlgriffeFrei.value && !zug.value) {
         const k = _kasten();
         const radius = ev.pointerType === 'touch' ? 22 : 12;   // T4-Regel
         let bester = null;
@@ -379,9 +409,9 @@ function zeichne() {
         }
     }
 
-    // Griffe (17.2) — nur im Bearbeiten-Modus, nur an GELIEFERTEN Segmenten.
+    // Griffe (17.2) — nur mit scharfem Werkzeug (K5), nur an GELIEFERTEN Segmenten.
     griffListe = [];
-    if (bearbeitung.modusAn) {
+    if (sohlgriffeFrei.value) {
         for (const g of griffe(s)) {
             // Seit 17.3b sind auch CDE-Enden greifbar — „Eigenes = echt".
             const enden = g.enden;
@@ -453,4 +483,10 @@ watch(() => farbmodus.modus, baldZeichnen);   // H6: die Farben kommen aus den T
   pointer-events: none;
 }
 .ls-cursor { font-variant-numeric: tabular-nums; color: var(--cde-text); }
+.ls-griffe {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.45rem;
+  border: 1px solid var(--cde-line); border-radius: 4px; background: transparent;
+  color: var(--cde-text-dim); font: inherit; cursor: pointer;
+}
+.ls-griffe.an { border-color: var(--cde-accent); color: var(--cde-accent); background: var(--cde-accent-fill); }
 </style>

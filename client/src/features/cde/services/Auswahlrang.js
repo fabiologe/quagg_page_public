@@ -9,9 +9,16 @@
  *
  * Jetzt zählt zuerst, WAS getroffen wurde, dann wie nah:
  *   Bauteil (Haltung, Schacht, Wand, …) vor Erdkörper (Cut/Fill) vor Gelände.
- * Das Gelände bleibt wählbar: allein unter dem Zeiger, oder durch Nochmal-
- * Tippen an derselben Stelle (der nächste Kandidat — ohne Taste, auch auf
- * dem Finger).
+ *
+ * DAS GELÄNDE IST GAR NICHT MEHR WÄHLBAR (Fabio 2026-09-20: „immer wählt man
+ * das Planungsgelände aus — das sollte am besten gar nicht auswählbar sein,
+ * oder nur über einen Knopf, und eher als Fangmöglichkeit dienen"). Der Rang
+ * allein reichte nicht: lag NUR Gelände unter dem Zeiger, gewann es doch — und
+ * über Gelände gab es damit keinen Klick ins Leere mehr. Auch das Durchtippen
+ * landete nach jedem Nachkorrigieren dort.
+ *
+ * Geformt wird es über die Knöpfe im Abschnitt „Gelände"; gefangen wird darauf
+ * weiterhin (`hoeheAn`, `probeTreffer` — beide gehen NICHT über diesen Weg).
  *
  * UNTER DEM GELÄNDE zählt nur, was nahe darunter liegt (`DURCHGRIFF_M` entlang
  * des Strahls). Ein schräger Blick trifft sonst eine Haltung hundert Meter
@@ -38,10 +45,12 @@ export const AUSWAHL_ARTNAME = Object.freeze({ bauteil: 'Bauteil', erdkoerper: '
  * @param {Array<{key: string, distance: number, strahl?: number}>} treffer
  *        alle Treffer aller Strahlen (Mittelstrahl mit `strahl: 0`)
  * @param {(t) => 'bauteil'|'erdkoerper'|'gelaende'} artVon
+ * @param {{durchgriff?: number, gelaendeWaehlbar?: boolean}} [opt]
  * @returns {Array} je Schlüssel der beste Treffer, mit `art` und `rang`, nach
  *          (Rang, Abstand) sortiert
  */
-export function rangiereTreffer(treffer = [], artVon = () => 'bauteil', { durchgriff = DURCHGRIFF_M } = {}) {
+export function rangiereTreffer(treffer = [], artVon = () => 'bauteil',
+                                { durchgriff = DURCHGRIFF_M, gelaendeWaehlbar = false } = {}) {
     const mitArt = treffer
         .filter(t => t && t.key && Number.isFinite(t.distance))
         .map(t => {
@@ -49,6 +58,9 @@ export function rangiereTreffer(treffer = [], artVon = () => 'bauteil', { durchg
             return { ...t, art, rang: AUSWAHL_RANG[art] ?? 0 };
         });
     // Der erste Geländetreffer des MITTELSTRAHLS begrenzt, was darunter zählt.
+    // Das gilt AUCH, wenn das Gelände selbst nicht wählbar ist: sonst zöge der
+    // Klick eine Haltung hundert Meter dahinter heran, nur weil der Deckel
+    // fehlt, den sie verdeckt.
     const gelaendeAb = mitArt
         .filter(t => t.art === 'gelaende' && (t.strahl ?? 0) === 0)
         .reduce((m, t) => Math.min(m, t.distance), Infinity);
@@ -59,7 +71,9 @@ export function rangiereTreffer(treffer = [], artVon = () => 'bauteil', { durchg
         const b = bester.get(t.key);
         if (!b || t.rang < b.rang || (t.rang === b.rang && t.distance < b.distance)) bester.set(t.key, t);
     }
-    return [...bester.values()].sort((a, b) => (a.rang - b.rang) || (a.distance - b.distance));
+    // Erst ganz am Ende fällt das Gelände heraus — die Grenze oben braucht es.
+    const alle = [...bester.values()].filter(t => gelaendeWaehlbar || t.art !== 'gelaende');
+    return alle.sort((a, b) => (a.rang - b.rang) || (a.distance - b.distance));
 }
 
 /**

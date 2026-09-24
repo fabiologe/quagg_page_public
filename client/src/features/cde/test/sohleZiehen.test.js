@@ -152,6 +152,10 @@ describe('3 — der Längsschnitt ruft das Kommando', () => {
         const { b, ae, sohlen } = await strang();
         b.modusSetzen(true);
         await b.einordne(subjektAusStand('cde-H1', { wirksamerStand: ae.wirksamerStand }), null);
+        // Seit K5 gehören die Sohlgriffe zu ihrem Werkzeug — im Längsschnitt
+        // schaltet der Umschalter „Sohlen ziehen\" es scharf. NACH dem
+        // Einordnen: `einordne` räumt ein scharfes Werkzeug ab.
+        expect(b.starte('sohle-ziehen')).toBe(true);
         const wendeEintragAn = vi.fn(async () => ({}));
         const { w, griffe } = await montiere({ wendeEintragAn, modellShaVon: () => 'sha-cde', lieferstandVon: () => null });
         expect(griffe()).toHaveLength(3);                          // A, B, C
@@ -181,6 +185,10 @@ describe('3 — der Längsschnitt ruft das Kommando', () => {
         const { b, ae } = await strang();
         b.modusSetzen(true);
         await b.einordne(subjektAusStand('cde-H1', { wirksamerStand: ae.wirksamerStand }), null);
+        // Seit K5 gehören die Sohlgriffe zu ihrem Werkzeug — im Längsschnitt
+        // schaltet der Umschalter „Sohlen ziehen\" es scharf. NACH dem
+        // Einordnen: `einordne` räumt ein scharfes Werkzeug ab.
+        expect(b.starte('sohle-ziehen')).toBe(true);
         const { w, griffe } = await montiere({ wendeEintragAn: vi.fn(), modellShaVon: () => null, lieferstandVon: () => null });
         const n = ae.eintraege.length;
         await ziehGriff(w, griffe()[1], 0.3);                     // ≈ 2,5 mm bei dieser Lupe
@@ -200,6 +208,10 @@ describe('4 — der gemischte Knoten: geliefert und eigen, ein Vorgang', () => {
                     punkte: [{ x: -30, y: 100.27, z: 0 }, { x: 0, y: 100.15, z: 0 }] };
         const eigen = subjektAusStand('cde-H1', { wirksamerStand: ae.wirksamerStand });
         await b.einordne({ ...eigen, strang: [G, ...eigen.strang] }, null);
+        // Seit K5 gehören die Sohlgriffe zu ihrem Werkzeug — im Längsschnitt
+        // schaltet der Umschalter „Sohlen ziehen\" es scharf. NACH dem
+        // Einordnen: `einordne` räumt ein scharfes Werkzeug ab.
+        expect(b.starte('sohle-ziehen')).toBe(true);
         const basisG = { x: -15, y: 100.06, z: 0 };
         const wendeEintragAn = vi.fn(async () => ({}));
         const { w, griffe } = await montiere({

@@ -22,21 +22,32 @@ describe('rangiereTreffer — erst die Art, dann die Nähe', () => {
 
     it('der Erdkörper 2 cm unter dem Gelände gewinnt', () => {
         const k = rangiereTreffer([{ key: 'c:1', distance: 50 }, { key: 'c:2', distance: 50.02 }], art(ARTEN));
-        expect(k.map(x => x.key)).toEqual(['c:2', 'c:1']);
+        expect(k.map(x => x.key)).toEqual(['c:2']);
     });
 
-    it('die Haltung im Erdkörper gewinnt vor dem Erdkörper, der vor dem Gelände', () => {
+    it('die Haltung im Erdkörper gewinnt vor dem Erdkörper — das Gelände steht gar nicht zur Wahl', () => {
         const k = rangiereTreffer([{ key: 'c:1', distance: 50 }, { key: 'c:2', distance: 50.02 }, { key: 'n:7', distance: 52 }], art(ARTEN));
-        expect(k.map(x => x.art)).toEqual(['bauteil', 'erdkoerper', 'gelaende']);
+        expect(k.map(x => x.art)).toEqual(['bauteil', 'erdkoerper']);
     });
 
-    it('allein unter dem Zeiger bleibt das Gelände wählbar', () => {
-        expect(rangiereTreffer([{ key: 'c:1', distance: 50 }], art(ARTEN)).map(x => x.key)).toEqual(['c:1']);
+    // K3, Fabio 2026-09-20: „immer wählt man das Planungsgelände aus."
+    it('allein unter dem Zeiger ergibt das Gelände KEINEN Kandidaten', () => {
+        expect(rangiereTreffer([{ key: 'c:1', distance: 50 }], art(ARTEN))).toEqual([]);
     });
 
-    it('was weit hinter dem Gelände liegt, zählt nicht — ein schräger Blick trifft sonst ferne Haltungen', () => {
-        const k = rangiereTreffer([{ key: 'c:1', distance: 50 }, { key: 'n:7', distance: 50 + DURCHGRIFF_M + 1 }], art(ARTEN));
+    it('mit gelaendeWaehlbar bleibt der alte Weg offen — der Filter sitzt an EINER Stelle', () => {
+        const k = rangiereTreffer([{ key: 'c:1', distance: 50 }], art(ARTEN), { gelaendeWaehlbar: true });
         expect(k.map(x => x.key)).toEqual(['c:1']);
+    });
+
+    it('was weit hinter dem Gelände liegt, zählt nicht — auch wenn das Gelände selbst nicht wählbar ist', () => {
+        // Die Grenze kommt WEITER vom Geländetreffer: sonst zöge der Klick eine
+        // ferne Haltung heran, nur weil der Deckel fehlt, der sie verdeckt.
+        const k = rangiereTreffer([{ key: 'c:1', distance: 50 }, { key: 'n:7', distance: 50 + DURCHGRIFF_M + 1 }], art(ARTEN));
+        expect(k).toEqual([]);
+        // Gegenprobe: knapp darunter zählt sie sehr wohl.
+        const nah = rangiereTreffer([{ key: 'c:1', distance: 50 }, { key: 'n:7', distance: 50 + DURCHGRIFF_M - 1 }], art(ARTEN));
+        expect(nah.map(x => x.key)).toEqual(['n:7']);
     });
 
     it('ein Randstrahl, der nur das Gelände trifft, verschiebt die Grenze nicht', () => {
@@ -95,22 +106,47 @@ function attrappe({ alle, naechster }) {
 const hit = (localId, distance) => ({ localId, distance, point: new THREE.Vector3(0, 0, 0), fragments: { modelId: CDE_MODELL_ID } });
 
 describe('pickElement: der Erdkörper unter dem deckenden Gelände', () => {
-    it('der erste Tipp wählt den Erdkörper, nicht das Gelände darüber', async () => {
+    it('der erste Tipp wählt den Erdkörper — das Gelände steht gar nicht in der Liste', async () => {
         const t = attrappe({ alle: [hit(1, 50), hit(2, 50.02)], naechster: hit(1, 50) });
         const r = await t.engine.pickElement(100, 100);
         expect(r.localId).toBe(2);
-        expect(r.auswahl).toMatchObject({ nr: 1, von: 2, arten: ['erdkoerper', 'gelaende'] });
+        expect(r.auswahl).toMatchObject({ nr: 1, von: 1, arten: ['erdkoerper'] });
         expect(t.modell.raycastAll).toHaveBeenCalled();
     });
 
-    it('nochmal an derselben Stelle: das Gelände — und dann wieder der Erdkörper', async () => {
+    it('nochmal an derselben Stelle bleibt es der Erdkörper — kein Durchtippen ins Gelände (K3)', async () => {
         const t = attrappe({ alle: [hit(1, 50), hit(2, 50.02)], naechster: hit(1, 50) });
         await t.engine.pickElement(100, 100);
         const zweiter = await t.engine.pickElement(102, 101);
-        expect(zweiter.localId).toBe(1);
-        expect(zweiter.auswahl.nr).toBe(2);
-        const dritter = await t.engine.pickElement(101, 100);
-        expect(dritter.localId).toBe(2);
+        expect(zweiter.gleich).toBe(true);
+        expect(zweiter.localId).toBe(2);
+    });
+
+    it('liegt NUR Gelände unter dem Zeiger, wählt der Klick nichts — mit Grund', async () => {
+        const t = attrappe({ alle: [hit(1, 50)], naechster: hit(1, 50) });
+        expect(await t.engine.pickElement(100, 100)).toBeNull();
+        expect(t.engine.letzterLeergrund()).toBe('gelaende');
+    });
+
+    it('trifft der Klick gar nichts, ist der Grund leer — nicht „Gelände"', async () => {
+        const t = attrappe({ alle: [], naechster: null });
+        expect(await t.engine.pickElement(100, 100)).toBeNull();
+        expect(t.engine.letzterLeergrund()).toBeNull();
+    });
+
+    it('scheitert die Geländeliste, gilt der letzte bekannte Stand — NICHT „alles ist Bauteil"', async () => {
+        const t = attrappe({ alle: [hit(1, 50), hit(2, 50.02)], naechster: hit(1, 50) });
+        await t.engine.pickElement(100, 100);                 // einmal erfolgreich: das Gedächtnis füllt sich
+        expect(t.engine._gelaendeSchluessel?.size).toBe(1);
+
+        // Jetzt fällt die Liste aus — früher wurde das Gelände dadurch Rang 0
+        // und gewann JEDEN Klick, also der Fehler in verschärfter Form.
+        t.engine._gelaendeOrteHolen = vi.fn(async () => { throw new Error('Liste weg'); });
+        t.engine._selectedKey = null;
+        t.engine._letzterPick = null;
+        const r = await t.engine.pickElement(400, 300);
+        expect(r.localId).toBe(2);                            // weiterhin der Erdkörper
+        expect(r.auswahl.arten).toEqual(['erdkoerper']);
     });
 
     it('an anderer Stelle desselben Erdkörpers: nichts ändert sich („gleich")', async () => {

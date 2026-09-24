@@ -30,9 +30,11 @@ export class IfcSection {
      * @param {Function} opt.getWorld   () => World (lazy)
      * @param {Function} opt.getBounds  () => THREE.Box3|null
      */
-    constructor({ getWorld, getBounds }) {
+    constructor({ getWorld, getBounds, sperreKamera = null }) {
         this._getWorld = getWorld;
         this._getBounds = getBounds;
+        /** Die Kamera anhalten — über den EINEN Besitzer, mit Marke (K2). */
+        this._sperreKamera = sperreKamera;
         this._clippingPlane = null;
         this._sectionRenderHook = null;
         this._planePivot = null;
@@ -105,10 +107,13 @@ export class IfcSection {
         world.scene.three.add(helper);
         this._tcHelper = helper;
 
-        // Interlock: disable camera orbit while dragging gizmo
-        // Store as named refs so deleteSectionCuts() can removeEventListener()
-        this._onTcMouseDown = () => { if (world.camera.controls) world.camera.controls.enabled = false; };
-        this._onTcMouseUp   = () => { if (world.camera.controls) world.camera.controls.enabled = true; };
+        // Interlock: die Kamera steht, solange am Gizmo gezogen wird — über den
+        // EINEN Besitzer, mit eigener Marke (K2). Hier steht bewusst KEIN
+        // Rückfall auf `controls.enabled`: ein direktes Freigeben nähme auch
+        // einem laufenden Griff-Zug die Sperre weg, und zwei Wege zu derselben
+        // Sache sind genau der Fehler, den die Marke behebt.
+        this._onTcMouseDown = () => this._sperreKamera?.(true);
+        this._onTcMouseUp   = () => this._sperreKamera?.(false);
         tc.addEventListener('mouseDown', this._onTcMouseDown);
         tc.addEventListener('mouseUp',   this._onTcMouseUp);
 

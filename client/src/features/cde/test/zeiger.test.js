@@ -120,6 +120,15 @@ describe('useZeiger am echten Store', () => {
         expect(t.z.klasse.value).toBe('zeiger--messen');
     });
 
+    it('über dem Gelände kein grüner Ring — es ist nicht anklickbar (K3)', () => {
+        const t = baue();
+        t.z.aufHover({ key: 'c:1', point: { x: 0, y: 0, z: 0 }, art: 'gelaende' }, { x: 1, y: 1 });
+        expect(t.z.klasse.value).toBe('zeiger--auswahl');
+        // Gegenprobe: dasselbe Schweben auf einem Bauteil verspricht den Klick.
+        t.z.aufHover({ key: 'm:1', point: { x: 0, y: 0, z: 0 }, art: 'bauteil' }, { x: 1, y: 1 });
+        expect(t.z.klasse.value).toBe('zeiger--hover');
+    });
+
     it('ohne scharfes Werkzeug gibt es keine Zielmarke und keine Pille', () => {
         const t = baue();
         t.z.aufHover({ key: 'm:1', point: { x: 1, y: 2, z: 3 }, normal: { x: 0, y: 1, z: 0 } }, { x: 5, y: 6 });

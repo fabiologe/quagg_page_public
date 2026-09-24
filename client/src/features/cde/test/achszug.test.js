@@ -23,7 +23,7 @@ import {
     ACHSEN, ACHS_NAMEN, SNAP_FANGEN_GRAD, SNAP_LOESEN_GRAD, TOTZONE_PX,
     achsenErlaubt, achsenAufSchirm, achsPassung, waehleAchse, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, zugText,
 } from '../services/Achszug.js';
-import { griffeFuer, griffZuWerten } from '../services/Griffe.js';
+import { gizmoSitz, gizmoTeile, griffeFuer, griffZuWerten } from '../services/Griffe.js';
 import { felderFuer, nachId, passende } from '../services/Bearbeitungen.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -157,12 +157,33 @@ const EIGEN = {
 };
 
 describe('Der Bauteil-Griff (griffeFuer / griffZuWerten)', () => {
-    it('sitzt am AUSWAHLPUNKT, kennt den Anker und bedient verschieben mit Ost/Nord/Höhe', () => {
-        const g = griffeFuer({ subjekt: ROHR, bauform: 'achse+profil' }).find(x => x.art === 'bauteil');
-        expect(g).toMatchObject({
-            key: 'bauteil:R1', pos: { x: 4, y: 3.2, z: 1 }, anker: { x: 2, y: 3, z: 1 }, achsen: 'XYZ',
-            achsenErlaubt: ['ost', 'nord', 'hoehe'], werkzeug: 'verschieben', felder: ['ost', 'nord', 'hoehe'], herkunft: 'geliefert',
-        });
+    it('DER GIZMO (K6): drei Pfeile und ein Quadrat, am Auswahlpunkt, alle auf verschieben', () => {
+        const teile = griffeFuer({ subjekt: ROHR, bauform: 'achse+profil' }).filter(x => x.art === 'bauteil');
+        expect(teile.map(t => t.key)).toEqual(['bauteil:R1:ost', 'bauteil:R1:nord', 'bauteil:R1:hoehe', 'bauteil:R1:ebene']);
+        for (const t of teile) {
+            // Jeder Teil sitzt am selben Ort, kennt den Anker und füllt dieselben
+            // Felder wie das Formular (Teil XI: werkzeug-gebunden).
+            expect(t).toMatchObject({ pos: { x: 4, y: 3.2, z: 1 }, anker: { x: 2, y: 3, z: 1 },
+                werkzeug: 'verschieben', felder: ['ost', 'nord', 'hoehe'], herkunft: 'geliefert', gizmo: 'bauteil:R1' });
+        }
+        // Die Pfeile tragen ihre Richtung — darauf setzt „Körper bearbeiten" auf.
+        expect(teile.map(t => [t.form, t.achsen, t.richtung && `${t.richtung.x},${t.richtung.y},${t.richtung.z}`])).toEqual([
+            ['pfeil', 'X', '1,0,0'], ['pfeil', 'Z', '0,0,-1'], ['pfeil', 'Y', '0,1,0'], ['quadrat', 'XZ', null],
+        ]);
+        // Ost rot, Nord grün, Höhe blau — die Farben des Vorbilds (flood-3D).
+        expect(teile.map(t => t.farbrolle)).toEqual(['danger', 'ok', 'accent', 'accent']);
+    });
+
+    it('gizmoSitz: der Klickpunkt, sonst der Anker', () => {
+        expect(gizmoSitz(ROHR)).toEqual({ x: 4, y: 3.2, z: 1 });
+        expect(gizmoSitz({ ...ROHR, auswahlpunkt: null })).toEqual({ x: 2, y: 3, z: 1 });
+    });
+
+    it('gizmoTeile: Gelände bekommt keinen, und ohne Ebene auch kein Quadrat', () => {
+        expect(gizmoTeile({ traeger: 'x', pos: { x: 0, y: 0, z: 0 }, erlaubt: [], werkzeug: 'verschieben' })).toEqual([]);
+        const nurHoehe = gizmoTeile({ traeger: 'b:1', globalId: '1', pos: { x: 0, y: 0, z: 0 },
+                                      erlaubt: ['hoehe'], werkzeug: 'verschieben' });
+        expect(nurHoehe.map(t => t.form)).toEqual(['pfeil']);
     });
     it('ohne Auswahlpunkt am Anker; am Gelände, ohne Bauform und ohne umkehrbare Lage gar nicht', () => {
         const { auswahlpunkt, ...ohne } = ROHR;
@@ -232,7 +253,7 @@ describe('useGriffe am echten Store — der Achszug', () => {
         const e = {
             knotenGriffe: () => [],
             schachtAnschluesse: () => [],
-            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => `bauteil:${subjekt.globalId}`), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
+            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => `bauteil:${subjekt.globalId}:ost`), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
             zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
             // Draufsicht: Schirm-x = 10·Welt-x, Schirm-y = 10·Welt-z (10 px je m); die Höhe ist ein Punkt.
@@ -251,80 +272,100 @@ describe('useGriffe am echten Store — der Achszug', () => {
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
-        return { b, ae, e, g, nachBauen, melde };
+        // Seit K5 (2026-09-20) stehen Griffe nur mit scharfem Werkzeug. Der
+        // Bauteil-Griff gehört zu `verschieben` — hier wird es scharf
+        // geschaltet, wie es der Nutzer in der Tafel tut.
+        const scharf = (id = 'verschieben') => b.starte(id, b.bauteil ? {} : { subjekt });
+        return { b, ae, e, g, nachBauen, melde, scharf };
     }
 
-    it('das eingeordnete Bauteil bekommt seinen Griff am Auswahlpunkt — von selbst, sobald die Bauform steht', async () => {
+    it('mit scharfem „Verschieben" steht der Gizmo am Auswahlpunkt — von selbst (K5)', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        await nextTick();
+        // OHNE Werkzeug steht seit K5 kein Griff — das ist die Zusage.
+        expect(t.g.griffe.value).toEqual([]);
+
+        t.scharf();
         await nextTick();                                   // der Watcher, nicht ein Aufruf von Hand
-        const g = t.g.griffe.value.find(x => x.key === 'bauteil:R1');
-        expect(g?.pos).toEqual({ x: 4, y: 3.2, z: 1 });
+        const teile = t.g.griffe.value.filter(x => x.gizmo === 'bauteil:R1');
+        expect(teile).toHaveLength(4);
+        for (const g of teile) expect(g.pos).toEqual({ x: 4, y: 3.2, z: 1 });
     });
 
-    it('Aufnehmen schaltet verschieben scharf, der Zug nach rechts wählt Ost, die Felder folgen LIVE, Ablegen schreibt EINE lage', async () => {
+    it('DER PFEIL FÄHRT AUF SEINER ACHSE — in JEDER Zugrichtung (K6)', async () => {
+        // Fabio 2026-09-20: „keine Verschiebung mit den Griffpunkten hat
+        // funktioniert." Gemessen: ein waagerechter Zug von 96 px zwischen den
+        // projizierten Achsen fing keine — Δ blieb 0,00, nichts wurde
+        // geschrieben. Jetzt zieht man, was man sieht.
+        for (let grad = 0; grad < 360; grad += 15) {
+            const t = baue();
+            await t.b.einordne(ROHR, null);
+            t.scharf();
+            t.g.neuBauen();
+            t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
+            t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
+
+            // Der Strahl bildet (x, y) auf (x, ·, z) ab: ein Zug in Weltrichtung.
+            const r = (grad * Math.PI) / 180;
+            const zx = 4 + Math.cos(r) * 10, zz = 1 + Math.sin(r) * 10;
+            t.g.zugBewegt({ x: zx, y: zz, px: { x: zx * 10, y: zz * 10 }, typ: 'mouse' });
+
+            const werte = t.b.werte;
+            // NORD und HÖHE bleiben, was sie waren — der Pfeil kennt nur Ost.
+            expect(werte.nord, `${grad}°`).toBe(-2001);
+            expect(werte.hoehe, `${grad}°`).toBe(303);
+            // Und Ost folgt der Projektion auf die Achse: exakt cos(grad) × 10.
+            const erwartet = Math.round((1002 + Math.cos(r) * 10) * 1000) / 1000;
+            expect(werte.ost, `${grad}°`).toBeCloseTo(Math.round(erwartet * 10) / 10, 5);
+        }
+    });
+
+    it('Aufnehmen schaltet verschieben scharf, der Zug füttert die Felder LIVE, Ablegen schreibt EINE lage', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        t.scharf();
         t.g.neuBauen();
         expect(t.g.greifen({ x: 4, y: 1, typ: 'mouse' })).toBe(true);
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
         expect(t.b.scharfId).toBe('verschieben');                       // die Vorschau läuft ab jetzt
-        expect(t.g.zug.value.achsen).toBe('XYZ');
-        expect(t.e.overlayZeige).toHaveBeenCalledWith('fang', expect.arrayContaining([expect.objectContaining({ art: 'linie' })]));
-        // 3 px: Totzone — nichts bewegt sich.
-        t.g.zugBewegt({ x: 4.3, y: 1, px: { x: 43, y: 10 }, typ: 'mouse' });
-        expect(t.g.zug.value.achse).toBeNull();
-        expect(t.g.zug.value.bewegt).toBe(false);
-        // 10 m nach rechts: Ost.
-        t.g.zugBewegt({ x: 14, y: 1.3, px: { x: 140, y: 13 }, typ: 'mouse' });
-        expect(t.g.zug.value.achse).toBe('ost');
-        expect(t.e.griffVersetzen).toHaveBeenLastCalledWith('bauteil:R1', { x: 14, y: 3.2, z: 1 });
+        expect(t.g.zug.value.griff.form).toBe('pfeil');
+        // 10 m nach Osten.
+        t.g.zugBewegt({ x: 14, y: 1, px: { x: 140, y: 10 }, typ: 'mouse' });
+        expect(t.e.griffVersetzen).toHaveBeenLastCalledWith('bauteil:R1:ost', { x: 14, y: 3.2, z: 1 });
         expect(t.b.werte).toMatchObject({ ost: 1012, nord: -2001, hoehe: 303 });
         expect(t.g.pille.value.text).toMatch(/^▸ Ost \+10\.00/);
-        const achsen = t.e.overlayZeige.mock.calls.at(-1)[1];
-        expect(achsen.find(l => l.opacity === 0.95).farbe).toBe('#f00');    // die gewählte Achse leuchtet in ihrer Farbe
         // Griffe bleiben während des Zugs — trotz scharfem Werkzeug.
+        t.scharf();
         t.g.neuBauen();
-        expect(t.g.griffe.value.some(x => x.key === 'bauteil:R1')).toBe(true);
+        expect(t.g.griffe.value.some(x => x.key === 'bauteil:R1:ost')).toBe(true);
         await t.g.zugEnde({ abbruch: false });
         expect(t.nachBauen).toHaveBeenCalledTimes(1);
         expect(t.ae.eintraege).toHaveLength(1);
         expect(t.ae.eintraege[0]).toMatchObject({ art: 'lage', globalId: 'R1', nachher: { x: 12, y: 3, z: 1 }, basis: { x: 2, y: 3, z: 1 }, modell: 'geliefert' });
+        // `ablegen` räumt auf; die SERIE macht der Viewer (`_serieFortsetzen`).
         expect(t.b.scharfId).toBeNull();
         expect(t.g.zug.value).toBeNull();
         expect(t.e.overlayLeere).toHaveBeenCalledWith('fang');
     });
 
-    it('Seitenansicht (Kamera waagerecht auf Bauteilhöhe): Nord kommt aus der Bildschirmpassung, nicht aus der Kanten-Ebene', async () => {
-        const t = baue();
-        // Blick entlang −x; Nord (−z) läuft nach rechts (4 px/m), die Höhe nach oben; Ost ist ein Punkt.
-        t.e.blickrichtung = () => ({ x: -1, y: 0, z: 0 });
-        t.e.projectToScreen = ([, y, z]) => ({ x: -z * 4, y: -y * 4 });
-        t.e.strahl = () => ({ origin: { x: 100, y: 3.2, z: 1 }, direction: { x: -1, y: 0, z: 0 } });
-        await t.b.einordne(ROHR, null);
-        t.g.neuBauen();
-        t.g.greifen({ x: 0, y: 0, typ: 'mouse' });
-        t.g.zugStart({ x: 0, y: 0, px: { x: -4, y: -12.8 }, typ: 'mouse' });
-        t.g.zugBewegt({ x: 0, y: 0, px: { x: 36, y: -12.8 }, typ: 'mouse' });        // 40 px nach rechts = 10 m Nord
-        expect(t.g.zug.value.achse).toBe('nord');
-        expect(t.g.zug.value.pos.z).toBeCloseTo(1 - 10, 6);
-        expect(t.b.werte.nord).toBeCloseTo(-2001 + 10, 3);
-        await t.g.zugEnde({ abbruch: false });
-        expect(t.ae.eintraege[0].nachher).toEqual({ x: 2, y: 3, z: -9 });
-    });
-
-    it('Strg erzwingt die Höhe — von oben aus Pixeln × Meter je Pixel', async () => {
+    it('DAS QUADRAT zieht frei in der Ebene — Ost und Nord zugleich, die Höhe bleibt', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        t.scharf();
         t.g.neuBauen();
+        t.e.griffUnter = vi.fn(() => 'bauteil:R1:ebene');
         t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
-        t.g.zugBewegt({ x: 4, y: 1, px: { x: 40, y: -10 }, typ: 'mouse', ctrlKey: true });   // 20 px nach oben × 0,5 m/px
-        expect(t.g.zug.value.achse).toBe('hoehe');
-        expect(t.b.werte.hoehe).toBeCloseTo(313, 3);
-        await t.g.zugEnde({ abbruch: false });
-        expect(t.ae.eintraege[0].nachher).toEqual({ x: 2, y: 13, z: 1 });
+        expect(t.g.zug.value.griff.form).toBe('quadrat');
+        t.g.zugBewegt({ x: 9, y: 4, px: { x: 90, y: 40 }, typ: 'mouse' });
+        expect(t.b.werte.ost).toBe(1007);
+        expect(t.b.werte.nord).toBe(-2004);
+        expect(t.b.werte.hoehe).toBe(303);                  // unberührt
+        expect(t.g.pille.value.text).toMatch(/Ost \+5\.00 · Nord −3\.00 m/);
     });
+
+
 
     it('Werkzeug aus dem Menü scharf: der Griff bleibt, der Zug füttert es, Abbruch stellt die Werte her und lässt es scharf', async () => {
         const t = baue();
@@ -332,7 +373,8 @@ describe('useGriffe am echten Store — der Achszug', () => {
         expect(t.b.starte('verschieben', { subjekt: ROHR })).toBe(true);
         t.b.setzeWert('hoehe', 305);                                 // eine Nutzer-Entscheidung im Formular
         await nextTick();
-        expect(t.g.griffe.value.map(x => x.key)).toEqual(['bauteil:R1']);   // nur der Griff des Werkzeugs, keine Sohlen
+        // Nur die Teile des Gizmos — keine Sohlen daneben (andere Familie).
+        expect(t.g.griffe.value.map(x => x.key)).toEqual(['bauteil:R1:ost', 'bauteil:R1:nord', 'bauteil:R1:hoehe', 'bauteil:R1:ebene']);
         t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
         expect(t.g.zug.value.warScharf).toBe(true);
@@ -349,20 +391,29 @@ describe('useGriffe am echten Store — der Achszug', () => {
         t.g.zugBewegt({ x: 14, y: 1, px: { x: 140, y: 10 }, typ: 'mouse' });
         await t.g.zugEnde({ abbruch: false });
         expect(t.ae.eintraege[0]).toMatchObject({ art: 'lage', nachher: { x: 12, y: 3, z: 1 } });
-        expect(t.b.scharfId).toBeNull();
+        expect(t.b.scharfId).toBeNull();                     // die Serie macht der Viewer
     });
 
-    it('Abbruch (Esc / pointercancel) räumt das Werkzeug und schreibt nichts', async () => {
+    it('Abbruch (Esc / pointercancel) schreibt nichts — das gewählte Werkzeug bleibt (K5)', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        t.scharf();
         t.g.neuBauen();
         t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
         t.g.zugBewegt({ x: 24, y: 1, px: { x: 240, y: 10 }, typ: 'mouse' });
         await t.g.zugEnde({ abbruch: true });
-        expect(t.b.scharfId).toBeNull();
+        // Seit K5 ist das Werkzeug VOR dem Griff scharf (sonst stünde kein
+        // Griff) — ein abgebrochener Zug nimmt es dem Nutzer nicht weg. Den
+        // Ausgang hat er selbst: Esc über `slotAus`, oder „Fertig".
+        expect(t.b.scharfId).toBe('verschieben');
         expect(t.ae.eintraege).toHaveLength(0);
         expect(t.e.zeigeZugbild).toHaveBeenLastCalledWith(null);
+        // Und der Ausgang räumt wirklich ab.
+        t.b.abbrechen();
+        expect(t.b.scharfId).toBeNull();
+        t.g.neuBauen();
+        expect(t.g.griffe.value).toEqual([]);
     });
 
     it('eigenes Rohr: der Zug schreibt erzeugt mit gewandertem Bauplan', async () => {
@@ -372,11 +423,13 @@ describe('useGriffe am echten Store — der Achszug', () => {
         await t.ae.eintragen({ art: 'erzeugt', globalId: 'cde1', nachher: EIGEN.stand.bauplan, modell: 'cde' });
         await t.b.einordne(EIGEN, null);
         expect(t.b.bauteil.stand?.bauplan?.rezept).toBe('rohr');
+        t.scharf();
         t.g.neuBauen();
+        t.e.griffUnter = vi.fn(() => 'bauteil:cde1:nord');          // der NORD-Pfeil des Gizmos
         t.g.greifen({ x: 2.5, y: 0, typ: 'mouse' });
         t.g.zugStart({ x: 2.5, y: 0, px: { x: 25, y: 0 }, typ: 'mouse' });
         t.g.zugBewegt({ x: 2.5, y: -10, px: { x: 25, y: -100 }, typ: 'mouse' });   // nach oben auf dem Schirm = Nord (−z)
-        expect(t.g.zug.value.achse).toBe('nord');
+        expect(t.g.zug.value.griff.achsName).toBe('nord');
         await t.g.zugEnde({ abbruch: false });
         expect(t.ae.eintraege).toHaveLength(2);
         const e = t.ae.eintraege.at(-1);
@@ -389,14 +442,19 @@ describe('Verklebung (Textwächter)', () => {
     it('der Viewer reicht die Bauform an die Griffe und hängt den Auswahlpunkt ans Subjekt', () => {
         const v = lies('components/IfcViewer.vue');
         expect(v).toMatch(/getBauform: \(\) => bearbeitung\.einordnung\?\.bauform \?\? null/);
-        expect(v).toMatch(/angereichert\.auswahlpunkt = pkt \?\?/);
+        expect(v).toMatch(/angereichert\.auswahlpunkt = pkt;/);
     });
-    it('die Griffe überleben das scharfe Werkzeug des eigenen Zugs — und werden mitten im Zug nicht umgebaut', () => {
+    it('EINE Regel für Raum, Lageplan und Längsschnitt — und im Zug wird nicht umgebaut (K5)', () => {
         const g = lies('composables/useGriffe.js');
-        expect(g).toMatch(/const bereit = computed\(\(\) => !!bearbeitung\?\.modusAn\)/);
-        // Mit scharfem Werkzeug bleiben GENAU die Griffe, die es bedienen — am gewählten Bauteil.
-        // Seit Teil XXII vorher gesiebt (`sichtbar`: Eckgriffe nur mit „Ecken ziehen").
-        expect(g).toMatch(/sichtbar\.filter\(g => g\.werkzeug === scharf && \(!gid \|\| g\.globalId === gid\)\)/);
+        // Griffe stehen nur mit scharfem Werkzeug (oder in „Ecken ziehen").
+        expect(g).toMatch(/const bereit = computed\(\(\) => !!bearbeitung\?\.modusAn && \(!!bearbeitung\?\.scharfId \|\| !!bearbeitung\?\.eckenFuer\)\)/);
+        // WELCHE Griffe, sagt `griffeFrei` — und zwar allen drei Flächen.
+        expect(g).toMatch(/griffeFrei\(zustand, g, \{ subjektGid: gid \}\)/);
+        expect(lies('components/IfcPlanCanvas.vue')).toMatch(/griffeFrei\(zustand, g,/);
+        expect(lies('components/LaengsschnittCanvas.vue')).toMatch(/griffeFrei\(/);
+        // Keine Fläche trifft die Entscheidung mehr selbst.
+        expect(g).not.toMatch(/g\.werkzeug === scharf/);
+        expect(lies('components/IfcPlanCanvas.vue')).not.toMatch(/!bearbeitung\.scharfId/);
         expect(g).toMatch(/if \(zug\.value\) return;\s*\/\/ mitten im Zug nicht umbauen/);
     });
     it('Schacht verschieben und Verschieben teilen sich die Anschluss-Logik', () => {

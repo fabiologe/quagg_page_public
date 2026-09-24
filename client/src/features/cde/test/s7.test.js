@@ -159,7 +159,7 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
         const netz = { positions: new Float64Array(9), triCount: 1 };
         const e = {
             knotenGriffe: () => [], schachtAnschluesse: () => [],
-            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'bauteil:R1'), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
+            zeigeGriffe: vi.fn(), griffUnter: vi.fn(() => 'bauteil:R1:ost'), griffHervorheben: vi.fn(), griffVersetzen: vi.fn(),
             zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(),
             blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
             projectToScreen: ([x, , z]) => ({ x: x * 10, y: z * 10 }),
@@ -174,11 +174,18 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
             lieferstandVon: () => ({ x: 2, y: 3, z: 1 }), nachBauen: vi.fn(async () => ({ angewandt: true })),
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
-        return { b, ae, e, g };
+        // Seit K5 (2026-09-20) stehen Griffe nur mit scharfem Werkzeug — hier
+        // das des Bauteil-Griffs bzw. des Knotengriffs.
+        // Knotengriffe sind subjektlos (alle Schächte), der Bauteil-Griff braucht eines.
+        const scharf = (id = 'verschieben') => (id === 'schacht-verschieben'
+            ? b.starte(id)
+            : b.starte(id, b.bauteil ? {} : { subjekt: ROHR }));
+        return { b, ae, e, g, scharf };
     }
     it('der Bauteil-Griff stellt beim Aufnehmen das Geistnetz auf, versetzt es je Bewegung und räumt es am Ende', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        t.scharf();
         await nextTick();
         t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });
@@ -203,6 +210,7 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
                                     punkt: { x: 20, y: 0, z: 20 }, herkunft: 'geliefert' }];
         t.e.griffUnter = vi.fn(() => 'knoten:S1');
         await t.b.einordne(null, null);
+        expect(t.scharf('schacht-verschieben')).toBe(true);
         t.g.neuBauen?.();
         await nextTick();
         expect(t.g.griffe.value.some(g => g.key === 'knoten:S1' && g.art === 'knoten')).toBe(true);
@@ -215,6 +223,7 @@ describe('useGriffe am echten Store — Geist und Raster', () => {
     it('Alt lässt das Raster frei', async () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
+        t.scharf();
         await nextTick();
         t.g.greifen({ x: 4, y: 1, typ: 'mouse' });
         t.g.zugStart({ x: 4, y: 1, px: { x: 40, y: 10 }, typ: 'mouse' });

@@ -112,6 +112,8 @@ export class IfcSelectionHandler {
         this._hoverTimer = null;
         this._halteAbbrechen();
         if (this._zug) this._zugBeenden(null, true);
+        // Keine Marke überlebt das Abbauen — sonst bliebe die Kamera gesperrt.
+        this._kameraFreigeben();
     }
 
     // ── Modus ────────────────────────────────────────────────────────────────
@@ -127,10 +129,11 @@ export class IfcSelectionHandler {
         if (mode !== 'single') {
             // Ein laufender Rahmen gehört zur Auswahl — in jedem anderen Modus fällt er.
             this._removeMarqueeEl();
+            if (this._marqueeActive || this._marqueeStart) this._kamera(false, 'rahmen');
             this._marqueeActive = false;
             this._marqueeStart  = null;
         }
-        if (mode === 'disabled') this._down = null;
+        if (mode === 'disabled') { this._down = null; this._kameraFreigeben(); }
     }
 
     getMode() { return this._mode; }
@@ -192,9 +195,16 @@ export class IfcSelectionHandler {
         }
 
         // Shift + Zug mit der Maus = Rahmen (nur im Auswahlmodus).
+        //
+        // DIE KAMERA STEHT DABEI (K2, 2026-09-20). camera-controls kennt kein
+        // Shift: links ist und bleibt ROTATE, und das Ereignis erreicht beide
+        // Stapel. Bis hierher zeichnete man also einen Rahmen UND drehte die
+        // Szene. Gesperrt wird schon beim Aufsetzen — ein Shift-Klick ohne Zug
+        // gibt in `_onPointerUp` sofort wieder frei.
         if (this._mode === 'single' && e.shiftKey && this._down.typ !== 'touch') {
             this._marqueeStart  = { x: e.clientX, y: e.clientY };
             this._marqueeActive = false;
+            this._kamera(true, 'rahmen');
         }
     }
 
@@ -258,10 +268,12 @@ export class IfcSelectionHandler {
             this._marqueeActive = false;
             this._marqueeStart  = null;
             this._removeMarqueeEl();
+            this._kamera(false, 'rahmen');
             this._down = null;
             await this._finishMarquee(start, end);
             return;
         }
+        if (this._marqueeStart) this._kamera(false, 'rahmen');   // Shift-Klick ohne Zug
         this._marqueeStart = null;
 
         const down = this._down;
@@ -288,7 +300,9 @@ export class IfcSelectionHandler {
             this._emit(this._onPickCbs, result);
         } else {
             await this._engine?.clearSelection();
-            this._emit(this._onClickEmptyCbs);
+            // Mit GRUND: lag nur Gelände unter dem Zeiger, ist das kein Griff
+            // ins Leere, und der Nutzer bekommt eine Antwort statt Schweigen.
+            this._emit(this._onClickEmptyCbs, { grund: this._engine?.letzterLeergrund?.() ?? null });
         }
     }
 
@@ -299,6 +313,7 @@ export class IfcSelectionHandler {
         this._halteAbbrechen();
         if (this._zug) { this._zugBeenden(e, true); }
         this._down = null;
+        if (this._marqueeStart || this._marqueeActive) this._kamera(false, 'rahmen');
         this._marqueeStart  = null;
         this._marqueeActive = false;
         this._removeMarqueeEl();
@@ -324,7 +339,7 @@ export class IfcSelectionHandler {
         this._marqueeStart = null;
         this._zug = { id: e?.pointerId ?? tipp.event?.pointerId ?? 1, typ: tipp.typ, start: { x: tipp.x, y: tipp.y } };
         // Die Kamera steht, solange gezogen wird — sonst dreht sie mit (Muster IfcSection).
-        try { this._engine?.kameraSperren?.(true); } catch { /* */ }
+        this._kamera(true, 'griff');
         try { this._canvas?.setPointerCapture?.(this._zug.id); } catch { /* */ }
         this._emit(this._onZugStartCbs, tipp);
     }
@@ -332,7 +347,7 @@ export class IfcSelectionHandler {
     _zugBeenden(e, abbruch) {
         const z = this._zug;
         this._zug = null;
-        try { this._engine?.kameraSperren?.(false); } catch { /* */ }
+        this._kamera(false, 'griff');
         try { this._canvas?.releasePointerCapture?.(z?.id); } catch { /* */ }
         const p = { x: e?.clientX ?? z?.start.x ?? 0, y: e?.clientY ?? z?.start.y ?? 0, typ: z?.typ };
         this._emit(this._onZugEndeCbs, { ...this._tipp(p, e), abbruch: !!abbruch });
@@ -340,6 +355,24 @@ export class IfcSelectionHandler {
 
     _halteAbbrechen() {
         if (this._halte) { clearTimeout(this._halte.timer); this._halte = null; }
+    }
+
+    /**
+     * Die Kamera anhalten oder freigeben — IMMER mit Marke (K2).
+     *
+     * Griff-Zug, Rahmen und Schnitt-Gizmo halten sie unabhängig voneinander;
+     * frei ist sie erst, wenn niemand mehr hält. Ein vergessenes Freigeben
+     * sperrt die Kamera dauerhaft — deshalb geben `setMode` und `detach` in
+     * jedem Fall frei.
+     */
+    _kamera(an, wer) {
+        try { this._engine?.kameraSperren?.(an, wer); } catch { /* */ }
+    }
+
+    /** Alle Marken dieses Stapels lösen — beim Moduswechsel und beim Abbauen. */
+    _kameraFreigeben() {
+        this._kamera(false, 'griff');
+        this._kamera(false, 'rahmen');
     }
 
     /** Läuft gerade ein Zug? (für Verbraucher, die sich zurückhalten sollen) */

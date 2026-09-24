@@ -64,7 +64,11 @@ describe('R1 — der Finger kann nicht schweben, also öffnet ein TIPP die Grupp
             getModellSha: () => 'sha1', getWer: () => 'Fabio', melde: vi.fn(),
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
-        return { g, e, nachBauen, bearbeitung };
+        // Seit K5 stehen Griffe nur mit scharfem Werkzeug — hier die Familie
+        // der Stützpunkte, zu der auch die Nebengriffe „entfernen"/„einfügen"
+        // gehören (genau dafür gibt es Familien statt Gleichheit).
+        bearbeitung.starte('stuetzpunkt-verschieben', { subjekt });
+        return { g, e, nachBauen, bearbeitung, subjekt };
     }
 
     it('Aufsetzen und Loslassen OHNE Zug öffnet die Nebengriffe — und schreibt nichts (R4)', async () => {

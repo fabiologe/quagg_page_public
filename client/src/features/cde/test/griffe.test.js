@@ -136,7 +136,13 @@ const b_vorbelegung = (el) => nachId('stuetzpunkt-verschieben').vorbelegung(el);
 describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
     beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); useBearbeitung().modusSetzen(true); });
 
-    function baue() {
+    /**
+     * Seit K5 (2026-09-20) stehen Griffe NUR mit scharfem Werkzeug — so wie
+     * der Nutzer es in der Tafel tut. `baue()` schaltet deshalb das Werkzeug
+     * der Schachtgriffe scharf; ohne Subjekt, denn Knotengriffe sind
+     * subjektlos (alle Schächte des Modells).
+     */
+    function baue({ werkzeug = 'schacht-verschieben' } = {}) {
         const b = useBearbeitung();
         const ae = useAenderungen();
         const e = {
@@ -160,14 +166,30 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0' }),
         });
+        if (werkzeug) b.starte(werkzeug);
         return { b, ae, e, g, nachBauen, melde };
     }
 
-    it('baut die Griffe im Modus und zeigt sie über die Engine', () => {
+    it('OHNE Werkzeug steht kein Griff — mit „Schacht verschieben" stehen alle (K5)', () => {
+        const ohne = baue({ werkzeug: null });
+        ohne.g.neuBauen();
+        expect(ohne.g.griffe.value).toEqual([]);
+        expect(ohne.e.zeigeGriffe).toHaveBeenCalledWith([]);
+
+        // Dasselbe Bild mit scharfem Werkzeug: beide Schächte, obwohl KEIN
+        // Bauteil gewählt ist (Knotengriffe sind subjektlos — die Regression
+        // vom 2026-09-08 bleibt gelöst).
         const t = baue();
         t.g.neuBauen();
         expect(t.e.zeigeGriffe).toHaveBeenCalled();
         expect(t.g.griffe.value.map(x => x.key)).toEqual(['knoten:S1', 'knoten:S2']);
+    });
+
+    it('ein Werkzeug OHNE Griffe zeigt keine — auch wenn es scharf ist', () => {
+        const t = baue({ werkzeug: null });
+        t.b.starte('kg-setzen');
+        t.g.neuBauen();
+        expect(t.g.griffe.value).toEqual([]);
     });
 
     it('Maus greift sofort, Finger wartet; ohne Griff unter dem Zeiger nichts', () => {
@@ -193,7 +215,10 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
         const e = t.ae.eintraege;
         expect(e.length).toBeGreaterThan(0);
         expect(e[0]).toMatchObject({ art: 'lage', globalId: 'S1', nachher: { x: 4, y: 3, z: 3 }, basis: { x: 0, y: 3, z: 0 }, modell: 'geliefert' });
-        expect(t.b.scharfId).toBeNull();                       // aufgeräumt
+        // `ablegen` räumt auf. Die SERIE (K5) setzt der Viewer fort, sobald
+        // Neubau und Neu-Einordnung durch sind (`_serieFortsetzen`) — hier
+        // gibt es keinen, also bleibt es stumpf.
+        expect(t.b.scharfId).toBeNull();
         expect(t.g.zug.value).toBeNull();
     });
 
@@ -228,15 +253,20 @@ describe('Ein Weg für Plan und Raum (Textwächter)', () => {
     it('der Raum-Griff legt über starte → setzeWert → ausfuehren → nachBauen ab', () => {
         const q = lies('composables/useGriffe.js');
         const fn = q.slice(q.indexOf('async function ablegen'));
-        for (const s of ['bearbeitung.starte(griff.werkzeug, { subjekt })', 'bearbeitung.setzeWert(feld, wert)', 'bearbeitung.ausfuehren({', 'await nachBauen?.(eintraege)']) {
+        for (const s of ['bearbeitung.starte(griff.werkzeug, { subjekt })', 'bearbeitung.setzeWert(feld, wert)', 'bearbeitung.ausfuehren({', 'await nachBauen?.(eintraege, griff.werkzeug)']) {
             expect(fn, s).toContain(s);
         }
         expect(q).not.toMatch(/setzeAnker|eintragen\(/);
     });
-    it('der Zeiger-Stapel sperrt die Kamera für die Dauer des Zugs', () => {
+    it('der Zeiger-Stapel sperrt die Kamera für die Dauer des Zugs — mit Marke (K2)', () => {
         const h = lies('services/IfcSelectionHandler.js');
-        expect(h).toMatch(/kameraSperren\?\.\(true\)/);
-        expect(h).toMatch(/kameraSperren\?\.\(false\)/);
-        expect(lies('services/IfcCamera.js')).toMatch(/sperren\(an\)/);
+        expect(h).toMatch(/_kamera\(true, 'griff'\)/);
+        expect(h).toMatch(/_kamera\(false, 'griff'\)/);
+        // Auch der Rahmen hält die Kamera an — sonst dreht sie beim Aufziehen mit.
+        expect(h).toMatch(/_kamera\(true, 'rahmen'\)/);
+        expect(h).toMatch(/_kamera\(false, 'rahmen'\)/);
+        // Die Kamera hat EINEN Besitzer, und der zählt die Halter.
+        expect(lies('services/IfcCamera.js')).toMatch(/sperren\(an, wer = 'griff'\)/);
+        expect(lies('services/IfcSection.js')).not.toMatch(/controls\.enabled = true/);
     });
 });

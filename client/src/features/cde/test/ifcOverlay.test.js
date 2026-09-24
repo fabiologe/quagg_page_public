@@ -200,3 +200,59 @@ describe('griffRadius — die Kugel bleibt auf dem Schirm gleich gross', () => {
         expect(griffRadius(null, { x: 1, y: 0, z: 0 })).toBe(0.25);
     });
 });
+
+describe('Der Verschiebe-Gizmo (K6)', () => {
+    const GIZMO = (form, richtung, key) => ({
+        key, gizmo: 'bauteil:R1', art: 'bauteil', form, richtung, farbrolle: 'danger',
+        pos: { x: 0, y: 0, z: 0 }, werkzeug: 'verschieben',
+    });
+
+    it('zeichnet je Pfeil Schaft und Spitze auf seiner Achse — mit unsichtbarer Trefferhülse', () => {
+        const { overlay } = baue();
+        overlay.zeigeGriffe([
+            GIZMO('pfeil', { x: 1, y: 0, z: 0 }, 'bauteil:R1:ost'),
+            GIZMO('pfeil', { x: 0, y: 1, z: 0 }, 'bauteil:R1:hoehe'),
+            GIZMO('quadrat', null, 'bauteil:R1:ebene'),
+        ], { radius: 0.25, farbe: '#0af', farbeEntfernen: '#f00', farbeEinfuegen: '#0f0' });
+
+        const ebene = overlay._ebenen.get('griffe');
+        // Je Teil ein sichtbares Objekt und eine Hitbox.
+        expect(ebene.children).toHaveLength(6);
+        const sichtbar = ebene.children.filter(k => k.visible !== false && k.type === 'Group');
+        expect(sichtbar).toHaveLength(3);
+        // Der Ost-Pfeil trägt zwei Meshes (Schaft, Spitze) und zeigt nach +x.
+        const ost = sichtbar[0];
+        expect(ost.children).toHaveLength(2);
+        const achse = new THREE.Vector3(0, 1, 0).applyQuaternion(ost.quaternion);
+        expect(achse.x).toBeCloseTo(1, 6);
+        expect(ost.position.x).toBeGreaterThan(0);        // sitzt auf der halben Länge
+        // Der Höhen-Pfeil steht senkrecht.
+        expect(new THREE.Vector3(0, 1, 0).applyQuaternion(sichtbar[1].quaternion).y).toBeCloseTo(1, 6);
+        // Jedes Kind kennt seinen Griffschlüssel — sonst findet `griffUnter` nichts.
+        const schluessel = new Set();
+        ebene.traverse(k => { if (k.userData?.griffKey) schluessel.add(k.userData.griffKey); });
+        expect([...schluessel].sort()).toEqual(['bauteil:R1:ebene', 'bauteil:R1:hoehe', 'bauteil:R1:ost']);
+    });
+
+    it('die Trefferhülse ist grosszügiger als der sichtbare Schaft (T4 — Finger)', () => {
+        const { overlay } = baue();
+        overlay.zeigeGriffe([GIZMO('pfeil', { x: 1, y: 0, z: 0 }, 'bauteil:R1:ost')], { radius: 0.25 });
+        const ebene = overlay._ebenen.get('griffe');
+        const hitbox = ebene.children.find(k => k.visible === false);
+        const schaft = ebene.children.find(k => k.type === 'Group').children[0];
+        expect(hitbox.geometry.parameters.radiusTop)
+            .toBeGreaterThan(schaft.geometry.parameters.radiusTop * 2);
+        expect(hitbox.material.opacity).toBe(0);
+    });
+
+    it('das Quadrat liegt waagerecht und abgesetzt — beide sind einzeln zu treffen', () => {
+        const { overlay } = baue();
+        overlay.zeigeGriffe([GIZMO('quadrat', null, 'bauteil:R1:ebene')], { radius: 0.25 });
+        const ebene = overlay._ebenen.get('griffe');
+        const gruppe = ebene.children.find(k => k.type === 'Group');
+        expect(gruppe.position.x).toBeGreaterThan(0);
+        expect(gruppe.position.z).toBeLessThan(0);        // nach Nord versetzt (−z)
+        expect(gruppe.position.y).toBe(0);                // in der Ebene des Griffs
+        expect(overlay._griffe.has('bauteil:R1:ebene')).toBe(true);
+    });
+});

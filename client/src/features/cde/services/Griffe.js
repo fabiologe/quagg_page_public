@@ -50,6 +50,124 @@ export { aufMasslinie } from './gelaende/Eckmasse.js';
 /** Wie weit ein Griff mindestens bewegt sein muss, damit ein Ablegen zählt (m). */
 export const MINDEST_ZUG_M = 0.01;
 
+/**
+ * WELCHE GRIFFE ZUSAMMENGEHÖREN (K5, Fabio 2026-09-20: „warum sieht man die
+ * Griffpunkte schon, wenn man den Bearbeitungsmodus startet? Das sollte erst
+ * gehen, wenn man ein spezifisches Werkzeug gewählt hat").
+ *
+ * Griffe stehen ab jetzt NUR mit scharfem Werkzeug. Eine strenge Gleichheit
+ * „Griff-Werkzeug === scharfes Werkzeug" ginge aber zu weit: die Nebengriffe
+ * „Stützpunkt entfernen/einfügen" tragen ein anderes Werkzeug als ihr
+ * Elterngriff und wären dann unerreichbar. Deshalb Familien — wer eine davon
+ * scharf hat, sieht die ganze Gruppe.
+ */
+export const GRIFF_FAMILIEN = Object.freeze({
+    verschieben:   ['verschieben'],
+    schacht:       ['schacht-verschieben'],
+    punkte:        ['stuetzpunkt-verschieben', 'stuetzpunkt-entfernen', 'stuetzpunkt-einfuegen', 'kante-verschieben'],
+    drehen:        ['drehen'],
+    sohlen:        ['sohlhoehen-setzen'],
+    deckel:        ['deckelhoehe-setzen'],
+    bezug:         ['bezugshoehe-setzen'],
+    ecken:         ['erdbau-stuetzpunkt-verschieben', 'erdbau-mass-setzen'],
+    laengsschnitt: ['sohle-ziehen'],
+});
+
+/** Jedes Werkzeug, das im Bild einen Griff hat — die Tafel markiert sie (K5). */
+export const GRIFF_WERKZEUGE = Object.freeze([...new Set(Object.values(GRIFF_FAMILIEN).flat())]);
+
+/** Die Familie eines Werkzeugs, oder null. */
+export function griffFamilie(werkzeug) {
+    if (!werkzeug) return null;
+    for (const [name, liste] of Object.entries(GRIFF_FAMILIEN)) if (liste.includes(werkzeug)) return name;
+    return null;
+}
+
+/**
+ * Steht dieser Griff gerade im Bild? DIE EINE REGEL für Raum, Lageplan und
+ * Längsschnitt — vorher hatte jede Fläche ihre eigene (3D verengte, der Plan
+ * sperrte bei scharfem Werkzeug, der Längsschnitt fragte nur den Modus).
+ *
+ * @param {{modusAn: boolean, scharfId: string|null, eckenFuer: string|null}} zustand
+ * @param {object} griff
+ * @param {{subjektGid?: string|null}} [bezug]
+ */
+export function griffeFrei(zustand, griff, { subjektGid = null } = {}) {
+    if (!zustand?.modusAn || !griff) return false;
+    // „Ecken ziehen" ist der eigene Schalter dafür (Fabio 2026-09-18) und
+    // zeigt AUSSCHLIESSLICH die Ecken dieses einen Bauteils.
+    if (zustand.eckenFuer) return !!griff.ecken && griff.globalId === zustand.eckenFuer;
+    if (griff.ecken) return false;
+    const familie = griffFamilie(zustand.scharfId);
+    if (!familie || familie !== griffFamilie(griff.werkzeug)) return false;
+    // Knotengriffe sind SUBJEKTLOS (alle Schächte des Modells, nicht nur das
+    // gewählte Bauteil) — genau die Regression vom 2026-09-08, als ein aus dem
+    // Menü scharf geschaltetes „Schacht verschieben" keinen Griff mehr zeigte.
+    if (griff.art === 'knoten') return !subjektGid || griff.globalId === subjektGid;
+    return !subjektGid || !griff.globalId || griff.globalId === subjektGid;
+}
+
+/**
+ * DER VERSCHIEBE-GIZMO (K6, Fabio 2026-09-20: „keine Verschiebung mit den
+ * Griffpunkten hat funktioniert").
+ *
+ * Bis hierher gab es EINEN Griff, und die Achse folgte der Zugrichtung mit
+ * 14° Fangwinkel. Im Browser gemessen: ein waagerechter Zug über 96 px, der
+ * zwischen den projizierten Achsen lag, fing gar keine — die Pille blieb auf
+ * 0,00 und beim Loslassen wurde nichts geschrieben. Man musste die Achse
+ * treffen, ohne sie zu sehen (die Führungslinien standen auf Deckkraft 0,35).
+ *
+ * Jetzt sind die Achsen GEGENSTÄNDE: drei Pfeile (Ost rot, Nord grün, Höhe
+ * blau) und ein Quadrat für die Ebene. Man greift, was man sieht. Teil XI
+ * bleibt gewahrt — jeder Teil ist werkzeug-gebunden und füllt dieselben
+ * Felder (`ost`, `nord`, `hoehe`) wie das Formular.
+ *
+ * `richtung` ist ein beliebiger Einheitsvektor, nicht nur eine Weltachse:
+ * darauf setzt die Etappe „Körper bearbeiten" auf (eine Fläche bekommt einen
+ * Pfeil entlang ihrer Normalen).
+ */
+export function gizmoTeile({ traeger, globalId, name = '', herkunft = 'geliefert', pos, anker,
+                             erlaubt = ACHS_NAMEN_GIZMO, werkzeug, felder = [], modelId = null, localId = null } = {}) {
+    if (!traeger || !_endlich(pos)) return [];
+    const gemeinsam = { globalId, name, herkunft, art: 'bauteil', gizmo: traeger, werkzeug, felder,
+                        pos: { x: pos.x, y: pos.y, z: pos.z }, modelId, localId,
+                        ...(anker ? { anker: { x: anker.x, y: anker.y, z: anker.z } } : {}) };
+    const aus = [];
+    for (const name2 of erlaubt) {
+        const a = GIZMO_ACHSEN[name2];
+        if (!a) continue;
+        aus.push({ ...gemeinsam, key: `${traeger}:${name2}`, achsen: a.achsen, form: 'pfeil',
+                   achsName: name2, richtung: { ...a.richtung }, farbrolle: a.farbe });
+    }
+    // Das Quadrat zieht frei in der WAAGERECHTEN — der häufigste Fall, und der
+    // einzige, für den man sonst zwei Pfeile nacheinander bräuchte.
+    if (erlaubt.includes('ost') && erlaubt.includes('nord')) {
+        aus.push({ ...gemeinsam, key: `${traeger}:ebene`, achsen: 'XZ', form: 'quadrat',
+                   achsName: 'ebene', richtung: null, farbrolle: 'accent' });
+    }
+    return aus;
+}
+
+/** Die drei Achsen des Gizmos — Richtung und Farbrolle. */
+const GIZMO_ACHSEN = Object.freeze({
+    ost:   { richtung: { x: 1, y: 0, z: 0 },  achsen: 'X', farbe: 'danger' },
+    nord:  { richtung: { x: 0, y: 0, z: -1 }, achsen: 'Z', farbe: 'ok' },
+    hoehe: { richtung: { x: 0, y: 1, z: 0 },  achsen: 'Y', farbe: 'accent' },
+});
+const ACHS_NAMEN_GIZMO = Object.freeze(Object.keys(GIZMO_ACHSEN));
+
+/**
+ * WO der Gizmo sitzt.
+ *
+ * Am Klickpunkt, wenn er zu DIESEM Bauteil gehört — dort liegen Hand und
+ * Finger. Sonst (Baumklick, Palette, Prüfliste) an der Ankerstelle: bei einer
+ * 300-m-Haltung liegt ein fremder Klickpunkt oft ausserhalb des Bildes.
+ */
+export function gizmoSitz(subjekt) {
+    const p = _endlich(subjekt?.auswahlpunkt) ? subjekt.auswahlpunkt : subjekt?.anker;
+    return { x: p.x, y: p.y, z: p.z };
+}
+
 /** Ein Bauteil mit weniger Punkten als hier lässt sich nicht mehr sinnvoll drehen. */
 const DREH_MINDEST_PUNKTE = 2;
 
@@ -110,15 +228,13 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     if (subjekt?.globalId && _endlich(subjekt.anker) && subjekt.lageUmkehrbar !== false) {
         const erlaubt = achsenErlaubt(bauform);
         if (erlaubt.length) {
-            const p = _endlich(subjekt.auswahlpunkt) ? subjekt.auswahlpunkt : subjekt.anker;
-            aus.push({
-                key: `bauteil:${subjekt.globalId}`, globalId: subjekt.globalId, name: subjekt.name ?? '',
-                herkunft: subjektHerkunft, art: 'bauteil',
-                pos: { x: p.x, y: p.y, z: p.z }, anker: { x: subjekt.anker.x, y: subjekt.anker.y, z: subjekt.anker.z },
-                achsen: 'XYZ', achsenErlaubt: erlaubt,
+            aus.push(...gizmoTeile({
+                traeger: `bauteil:${subjekt.globalId}`, globalId: subjekt.globalId, name: subjekt.name ?? '',
+                herkunft: subjektHerkunft, erlaubt,
+                pos: gizmoSitz(subjekt), anker: { x: subjekt.anker.x, y: subjekt.anker.y, z: subjekt.anker.z },
                 werkzeug: 'verschieben', felder: ['ost', 'nord', 'hoehe'],
                 modelId: subjekt.modelId ?? null, localId: subjekt.localId ?? null,
-            });
+            }));
         }
     }
 

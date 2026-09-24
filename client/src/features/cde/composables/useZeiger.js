@@ -53,13 +53,19 @@ export function useZeiger({ engine, bearbeitung, messenAktiv, notizAktiv, farben
      * Die Cursor-Klasse — genau eine, in dieser Rangfolge:
      *   messen   ein Tipp-Werkzeug läuft (gelbes Fadenkreuz-Quadrat)
      *   werkzeug eine Bearbeitung ist scharf (Fadenkreuz)
-     *   hover    der Zeiger steht auf einem Bauteil (grüner Ring)
+     *   hover    der Zeiger steht auf einem WÄHLBAREN Bauteil (grüner Ring)
      *   auswahl  Ruhe (weisser Ring)
+     *
+     * Über dem Gelände bleibt es der weisse Ring: es ist nicht anklickbar (K3),
+     * und ein grüner Ring verspräche einen Klick, der nichts tut. Gezeichnet
+     * und gefangen wird dort trotzdem — dafür steht das Fadenkreuz des
+     * scharfen Werkzeugs.
      */
     const klasse = computed(() => {
         if (messenAktiv?.value || notizAktiv?.value) return 'zeiger--messen';
         if (zeigt.value) return 'zeiger--werkzeug';
-        return treffer.value?.key ? 'zeiger--hover' : 'zeiger--auswahl';
+        const t = treffer.value;
+        return (t?.key && t.art !== 'gelaende') ? 'zeiger--hover' : 'zeiger--auswahl';
     });
 
     const _farben = () => (farben ? farben() : tokenFarben());

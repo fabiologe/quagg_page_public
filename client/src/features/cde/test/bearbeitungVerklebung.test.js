@@ -145,10 +145,19 @@ describe('Kein neuer Weg am Bearbeiten-Modus vorbei (Stufe 12.0d)', () => {
     it('der Längsschnitt-Griff prüft den Modus VOR dem Anfassen', () => {
         // Die Allowlist oben ist keine Ausnahme, sondern ein Versprechen:
         // hier steht der Beleg, dass die Sperre wirklich existiert.
+        //
+        // Seit K5 (2026-09-20) heisst sie `sohlgriffeFrei` und fragt die EINE
+        // Regel (`Griffe.js:griffeFrei`) — die Modusprüfung steckt dort, nicht
+        // mehr wörtlich im Handler. Geprüft wird deshalb beides: dass die
+        // Sperre den Modus enthält, und dass sie VOR dem Griff-Zugriff steht.
         const text = lies('components/LaengsschnittCanvas.vue');
+        const def = text.slice(text.indexOf('const sohlgriffeFrei'), text.indexOf('function sohlenZiehenUmschalten'));
+        expect(def).toContain('griffeFrei(');
+        expect(def).toContain('bearbeitung.modusAn');
+
         const ab = text.indexOf('function onZeigerAb');
         const griffSuche = text.indexOf('griffListe', ab);
-        const sperre = text.indexOf('bearbeitung.modusAn', ab);
+        const sperre = text.indexOf('sohlgriffeFrei.value', ab);
         expect(sperre).toBeGreaterThan(-1);
         expect(sperre).toBeLessThan(griffSuche);
     });

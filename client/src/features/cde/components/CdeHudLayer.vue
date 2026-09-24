@@ -32,7 +32,7 @@
     <div
       v-if="zeigerMarke"
       class="hud-zeiger"
-      :class="{ 'hud-zeiger--fang': !!zeigerMarke.fang }"
+      :class="{ 'hud-zeiger--fang': !!zeigerMarke.fang, 'hud-zeiger--hoch': zeigerHoch }"
       :style="{ left: zeigerMarke.x + 'px', top: zeigerMarke.y + 'px' }"
     >
       <span v-if="zeigerMarke.fang" class="hud-zeiger-fang">→ {{ zeigerMarke.fang.name }}</span>
@@ -173,6 +173,22 @@ const emit = defineEmits([
  * gewählte Element bleiben Props: die kommen aus der Engine, nicht aus einem Store.
  */
 const bearbeitung = useBearbeitung();
+
+/**
+ * KLAPPT DIE ZEIGER-PILLE NACH OBEN (K7, 2026-09-20).
+ *
+ * Im unteren Bilddrittel steht die Kontextleiste mit den Feldern, die der Zug
+ * gerade füllt — und die Pille lag darüber („Ost +1,00" verdeckte das Feld
+ * „Rechtswert", im Browser gesehen). Nahe am unteren Rand klappt sie deshalb
+ * über den Zeiger statt darunter.
+ */
+const ZEIGER_UNTEN_PX = 150;
+const zeigerHoch = computed(() => {
+  const y = props.zeigerMarke?.y;
+  if (!Number.isFinite(y)) return false;
+  const h = props.getCanvas?.()?.getBoundingClientRect?.().height ?? 0;
+  return h > 0 && y > h - ZEIGER_UNTEN_PX;
+});
 // Der Viewer startet Werkzeuge (E4). Ohne ihn — die Pille allein im Test —
 // startet der Store: `useViewerApi` wirft, wenn keiner bereitsteht.
 let api = null;
@@ -330,6 +346,10 @@ function formatDist(m) {
   box-shadow: var(--cde-shadow-sm);
   pointer-events: none;
 }
+/* NICHT ÜBER DEM, WAS MAN BEARBEITET (K7): nahe am unteren Rand klappt die
+   Pille nach oben — dort steht die Kontextleiste mit den Feldern, die der Zug
+   gerade füllt (im Browser gesehen: die Pille lag über „Rechtswert"). */
+.hud-zeiger--hoch { transform: translate(14px, calc(-100% - 14px)); }
 .hud-zeiger--fang { border-color: var(--cde-warn); }
 .hud-zeiger-fang { color: var(--cde-warn-soft); font-weight: 600; }
 .hud-zeiger-text { color: var(--cde-text-dim); }

@@ -350,6 +350,10 @@ export class IfcEngine {
         this.section     = new IfcSection({
             getWorld: () => this._getWorld(),
             getBounds: () => this._getModelBounds(),
+            // Die Kamera hat EINEN Besitzer (K2): wer sie anhält, sagt seinen
+            // Namen. Vorher schrieb der Gizmo `controls.enabled` selbst — und
+            // gab sie damit auch für einen laufenden Griff-Zug wieder frei.
+            sperreKamera: (an) => this.camera.sperren(an, 'schnitt'),
         });
         this.storeys     = new IfcStoreys({
             components: this.components,
@@ -1103,7 +1107,14 @@ export class IfcEngine {
         // WAS DER KLICK MEINT (Teil XXII): alle Kandidaten, nach Art und Nähe
         // geordnet — Bauteil vor Erdkörper vor Gelände (`Auswahlrang.js`).
         const kandidaten = await this._pickKandidaten(clientX, clientY);
-        if (!kandidaten.length) { this._letzterPick = null; return null; }
+        if (!kandidaten.length) {
+            this._letzterPick = null;
+            // Lag NUR Gelände unter dem Zeiger, ist das kein Griff ins Leere,
+            // sondern eine Frage, die eine Antwort verdient (K3).
+            this._letzterLeergrund = this._nurGelaendeGetroffen ? 'gelaende' : null;
+            return null;
+        }
+        this._letzterLeergrund = null;
         // NOCHMAL AN DERSELBEN STELLE → der nächste Kandidat. Ohne Taste, damit
         // es auch der Finger kann (Tablet-Rezept, Regel 2).
         const l = this._letzterPick;
@@ -1199,14 +1210,43 @@ export class IfcEngine {
                          point: t.point ?? null, distance: t.distance, strahl: i };
             });
         if (!treffer.length) return [];
-        const gelaende = new Set();
-        try {
-            for (const o of (await this._gelaendeOrteHolen()) ?? []) gelaende.add(`${basisModelId(o.modelId)}:${o.localId}`);
-        } catch { /* ohne Geländeliste: alles ist Bauteil — wie vorher */ }
+        const gelaende = await this._gelaendeSchluesselHolen();
         const erdkoerper = new Set([...(this.autor?.erdkoerper?.values?.() ?? [])]
             .filter(k => k?.localId != null).map(k => `${CDE_MODELL_ID}:${k.localId}`));
-        return rangiereTreffer(treffer, (t) => (gelaende.has(t.key) ? 'gelaende'
+        const kandidaten = rangiereTreffer(treffer, (t) => (gelaende.has(t.key) ? 'gelaende'
             : erdkoerper.has(t.key) ? 'erdkoerper' : 'bauteil'));
+        // Für die Rückmeldung: getroffen wurde etwas, wählbar war nichts davon.
+        this._nurGelaendeGetroffen = !kandidaten.length && treffer.some(t => gelaende.has(t.key));
+        return kandidaten;
+    }
+
+    /** Warum der letzte Klick nichts gewählt hat — 'gelaende' oder null (K3). */
+    letzterLeergrund() { return this._letzterLeergrund ?? null; }
+
+    /**
+     * Die Schlüssel (`modelId:localId`) aller Geländeflächen — an EINER Stelle.
+     *
+     * Klick (`_pickKandidaten`) und Schweben (`probeTreffer`) fragen dasselbe;
+     * hätte jeder seine eigene Quelle, sagte der Zeiger „anklickbar" und der
+     * Klick täte nichts. Genau das war in der Browserprobe zu sehen, solange
+     * nur der Klick die Menge füllte.
+     *
+     * Mit GEDÄCHTNIS: scheitert die Liste, hiess es früher „alles ist Bauteil"
+     * — und dann war das Gelände Rang 0 und gewann jeden Klick, der Fehler in
+     * verschärfter Form. Der letzte bekannte Stand ist der bessere Rückfall.
+     */
+    async _gelaendeSchluesselHolen() {
+        try {
+            const frisch = new Set();
+            for (const o of (await this._gelaendeOrteHolen()) ?? []) frisch.add(`${basisModelId(o.modelId)}:${o.localId}`);
+            this._gelaendeSchluessel = frisch;
+            return frisch;
+        } catch (fehler) {
+            if (!this._gelaendeSchluessel) {
+                console.warn('[CDE] Geländeliste nicht lesbar — der Klick kennt das Gelände nicht:', fehler?.message ?? fehler);
+            }
+            return this._gelaendeSchluessel ?? new Set();
+        }
     }
 
     async clearSelection() {
@@ -1278,13 +1318,19 @@ export class IfcEngine {
         if (!r?.point) return null;
 
         const mId = basisModelId(r.fragments?.modelId ?? modelId ?? null);
+        const schluessel = (mId != null && r.localId != null) ? `${mId}:${r.localId}` : null;
+        const gelaende = await this._gelaendeSchluesselHolen();
         const treffer = {
-            key:     (mId != null && r.localId != null) ? `${mId}:${r.localId}` : null,
+            key:     schluessel,
             point:   { x: r.point.x, y: r.point.y, z: r.point.z },
             normal:  r.normal ? { x: r.normal.x, y: r.normal.y, z: r.normal.z } : null,
             modelId: mId,
             localId: r.localId ?? null,
             fang:    null,
+            // WAS hier liegt — nur als Auskunft. Gefiltert wird NICHT: auf dem
+            // Gelände wird gezeichnet und gefangen (`hoeheAn`, Zeichenebene,
+            // Schliessfang). Nur der KLICK wählt es nicht mehr (K3).
+            art:     (schluessel && gelaende.has(schluessel)) ? 'gelaende' : 'bauteil',
         };
         if (fang) {
             const modelle = modell ? [modell] : [...(fragments.list?.values?.() ?? [])];
@@ -1362,7 +1408,7 @@ export class IfcEngine {
         const topLeft     = new THREE.Vector2(Math.min(x0, x1), Math.min(y0, y1));
         const bottomRight = new THREE.Vector2(Math.max(x0, x1), Math.max(y0, y1));
 
-        const items = {};
+        let items = {};
         let count = 0;
         for (const model of fragments.list?.values?.() ?? []) {
             let r = null;
@@ -1378,6 +1424,15 @@ export class IfcEngine {
             count += menge.size - (items[mid]?.length ?? 0);
             items[mid] = [...menge];
         }
+
+        // DAS GELÄNDE GEHÖRT NICHT IN DEN RAHMEN (K3). Es ist gross, liegt
+        // überall, und sein Schlüssel stand als ERSTER in der Liste — damit
+        // bestimmte es die Einordnung der ganzen Mehrfachauswahl.
+        try {
+            const { rest } = await this._ohneGelaende(items);
+            items = rest;
+            count = Object.values(items).reduce((n, ids) => n + ids.length, 0);
+        } catch { /* ohne Geländeliste bleibt der Rahmen, wie er war */ }
 
         if (this._selectedItems) {
             try { await this._resetHighlight(this._selectedItems); } catch { /* */ }
@@ -1406,7 +1461,7 @@ export class IfcEngine {
     strahl(x, y)                   { return this.overlay.strahl(x, y); }
     blickrichtung()                { return this.overlay.blickrichtung(); }
     /** Die Kamera während eines Griff-Zugs sperren — sonst dreht sie mit. */
-    kameraSperren(an)              { return this.camera.sperren(an); }
+    kameraSperren(an, wer)         { return this.camera.sperren(an, wer); }
 
     // ── Färbe-Stapel (Teil XVI, S2) ────────────────────────────────────────
 

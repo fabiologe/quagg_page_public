@@ -163,10 +163,14 @@ describe('Kamera und Engine lesen den AKTUELLEN Ort (DeltaBoxen)', () => {
         const delta = { modelId: DELTA, getBoxes: vi.fn(async () => [box([10, 0, 0], [12, 2, 2])]) };
         const list = new Map([[BASIS, basis], [DELTA, delta]]);
         const cam = Object.create(IfcCamera.prototype);
-        const orbit = vi.fn(async () => {});
-        Object.assign(cam, { _components: { get: () => ({ list }) }, orbitAroundPoint: orbit });
+        // Seit K2 (2026-09-20) legt die Auswahl nur noch den DREHPUNKT um; sie
+        // fährt die Kamera nicht mehr an. Die Frage dieses Tests bleibt
+        // dieselbe: kommt der Punkt aus der Delta-Box (x ≈ 11) oder vom
+        // Lieferort (x ≈ 1)?
+        const drehpunkt = vi.fn(async () => true);
+        Object.assign(cam, { _components: { get: () => ({ list }) }, drehpunktAuf: drehpunkt });
         expect(await cam.orbitAroundSelection(BASIS, 7)).toBe(true);
-        expect(orbit.mock.calls[0][0].x).toBeCloseTo(11);
+        expect(drehpunkt.mock.calls[0][0].x).toBeCloseTo(11);
     });
     it('engine.getBoxes liefert die Delta-Box — und die Basis, wo das Delta leer ist', async () => {
         const basis = { modelId: BASIS, deltaModelId: DELTA, getBoxes: vi.fn(async (ids) => ids.map(() => box([0, 0, 0], [2, 2, 2]))) };

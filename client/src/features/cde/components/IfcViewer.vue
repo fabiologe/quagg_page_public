@@ -462,7 +462,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, shallowRef, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue';
+import { ref, computed, nextTick, reactive, shallowRef, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue';
 import { IfcEngine }            from '../services/IfcEngine.js';
 import { IfcSelectionHandler }  from '../services/IfcSelectionHandler.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -496,6 +496,7 @@ import { tokenFarben, useZeiger } from '../composables/useZeiger.js';
 import { useVorschau } from '../composables/useVorschau.js';
 import { useEingabe } from '../composables/useEingabe.js';
 import { useGriffe } from '../composables/useGriffe.js';
+import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '../services/IfcAutor.js';
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
@@ -848,14 +849,48 @@ function _hoehenversatzAusBezug() {
 // der Weltpunkt aus dem Raycast auf das Subjekt statt aus der Blattlage.
 let _letztesWerkzeugId = null;
 watch(() => bearbeitung.scharfId, (id) => { if (id) _letztesWerkzeugId = id; });
+
+/**
+ * Anwenden und SAGEN, was daraus wurde — für Formular, Zeichnen UND Griffe.
+ *
+ * Bis 2026-09-20 reichte der Griffweg nur `wendeEintragAn` durch: nach einem
+ * Eckzug am Aushub stand die neue Kubatur nirgends (354 → 519 m³ erst nach
+ * erneutem Anwählen). Jetzt geht jeder Weg hier durch, und die Mengen stehen
+ * in derselben Zeile.
+ */
+async function nachBauenMitMeldung(eintraege, werkzeugId = null) {
+  const gid = bearbeitung.bauteil?.globalId ?? null;
+  const r = await wendeEintragAn(eintraege);
+  const text = r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Forderung an den Planer geführt.' : 'Eingetragen.';
+  _melderueck(_mitMengen(text, eintraege), werkzeugId ?? _letztesWerkzeugId);
+  // DIE SERIE (K5): ein Griffwerkzeug bleibt scharf, damit die nächste Ecke
+  // keinen Knopfdruck kostet. HIER, nicht im Griff selbst: `wendeEintragAn`
+  // ordnet am Ende neu ein, und `einordne` beginnt mit `abbrechen()` — ein
+  // früher gesetztes Werkzeug verlor dieses Rennen (im Browser gemessen).
+  //
+  // Und einen Tick SPÄTER: `ablegen` räumt sein Werkzeug erst im `finally`
+  // ab, also nach diesem Aufruf. Ohne das Warten sähe die Serie ein noch
+  // scharfes Werkzeug und täte nichts (auch das im Browser gemessen).
+  nextTick(() => _serieFortsetzen(werkzeugId, gid));
+  return r;
+}
+
+/** Dasselbe Griffwerkzeug am selben Bauteil wieder scharf schalten (K5). */
+function _serieFortsetzen(werkzeugId, gid) {
+  if (!werkzeugId || !GRIFF_WERKZEUGE.includes(werkzeugId)) return;
+  if (bearbeitung.scharfId || !bearbeitung.modusAn) return;
+  const subjekt = bearbeitung.bauteil;
+  // Ein ERSETZTES oder verschwundenes Bauteil bekommt kein Werkzeug: `starte`
+  // ohne Einordnung winkt alles durch, und der Nutzer stünde mit einem
+  // scharfen Werkzeug ohne Subjekt da.
+  if (gid && subjekt?.globalId !== gid) return;
+  try { bearbeitung.starte(werkzeugId, subjekt ? { subjekt } : {}); } catch { /* dann eben nicht */ }
+}
+
 const eingabe = useEingabe({
   bearbeitung, cde,
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
-  nachBauen: async (eintraege) => {
-    const r = await wendeEintragAn(eintraege);
-    _melderueck(_mitMengen(r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Forderung an den Planer geführt.' : 'Eingetragen.', eintraege), _letztesWerkzeugId);
-    return r;
-  },
+  nachBauen: (eintraege, werkzeugId) => nachBauenMitMeldung(eintraege, werkzeugId),
   getHoehenversatz: () => _hoehenversatzAusBezug(),
   getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
   bereiteHoehenVor: () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
@@ -930,7 +965,10 @@ const griffe = useGriffe({
   holeKnotenSubjekt: (gid) => schachtSubjekt(gid),
   holeKnotenAnschluesse: (gid) => engine.value?.schachtAnschluesse?.(gid) ?? [],
   lieferstandVon: (gid) => nachspielen.lieferstandVon(gid),
-  nachBauen: (eintraege) => wendeEintragAn(eintraege),
+  // MIT RÜCKMELDUNG (K5): der Griffweg schwieg bis 2026-09-20. Nach einem
+  // Eckzug am Aushub stand die neue Kubatur (354 → 519 m³) nirgends — man
+  // musste das Bauteil neu anwählen, um sie zu sehen.
+  nachBauen: (eintraege, werkzeugId) => nachBauenMitMeldung(eintraege, werkzeugId),
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
   getWer: () => cde.bearbeiter || '',
   melde,
@@ -967,7 +1005,11 @@ let _rueckmeldungTimer = null;
 /** Gelieferte Bauteile mit EIGENER Farbe, die der Katalog nicht übermalt hat. */
 const erdbauEigene = ref([]);
 
-watch(() => bearbeitung.scharfId, (id) => { if (id) rueckmeldung.value = null; });
+// Nur ein ANDERES Werkzeug löscht die Rückmeldung: in einer Serie (K5) bleibt
+// dasselbe scharf, und „Übernommen · Aushub 519 m³" soll dabei stehen bleiben.
+watch(() => bearbeitung.scharfId, (id) => {
+  if (id && id !== rueckmeldung.value?.werkzeugId) rueckmeldung.value = null;
+});
 function _melderueck(text, werkzeugId) {
   rueckmeldung.value = { text, werkzeugId };
   if (_rueckmeldungTimer) clearTimeout(_rueckmeldungTimer);
@@ -1167,6 +1209,62 @@ const toolbarItems = computed(() => [
 /** Abstand Auswahlpunkt → Anker des zuletzt angeklickten Bauteils (Welt). */
 let _auswahlAbstand = null;
 
+/**
+ * DER EINE WEG, eine Auswahl zu räumen (K3).
+ *
+ * Es gibt zwei Wahrheiten über „was ist gewählt": `ifc.selectedElement` (Tafel,
+ * HUD-Pille) und `bearbeitung.bauteil`/`.bauteile` (Werkzeuge, Befunde). Wer
+ * nur eine leert, lässt die andere lügen — genau das war nach „Auswahl
+ * ausblenden" (H) im Browser zu sehen: „3 Bauteile gewählt" ohne Auswahl.
+ */
+function auswahlLeeren() {
+  ifc.clearElement();
+  bearbeitung.einordne(null, null);
+  _auswahlAbstand = null;
+}
+
+/**
+ * DER EINE WEG, ohne Mausklick zu wählen (K4).
+ *
+ * Es gab zwei: `zoomToLocalId` hob im Bild hervor, ohne den Store zu setzen
+ * (Baum, Befehlspalette — die Tafel zeigte weiter das zuletzt Angeklickte),
+ * und `waehleBauteil` machte es vollständig (nur das Cockpit). Jetzt gehen
+ * beide hier durch; `fahrt` sagt nur, ob die Kamera mitkommt.
+ *
+ * Ohne Fahrt ist es der Einstieg der Tafel „Gelände": das Gelände wird
+ * WIRKLICH gewählt (der Eingabe-Motor und `ausfuehren` verlangen
+ * `bearbeitung.bauteil`) — nur eben ohne Klick und ohne Kamerasprung.
+ */
+async function waehleOrtVoll(modelId, localId, { fahrt = true } = {}) {
+  if (!engine.value || modelId == null || localId == null) return false;
+  if (fahrt) await engine.value.zoomToElement(modelId, localId);
+  else await engine.value.waehleOrt(modelId, localId);
+  const el = await engine.value.refreshElement();
+  if (!el) return false;
+  ifc.setElement(el);
+  panels.open('bauteil');
+  await _einordnenMitHuelle(el);
+  return true;
+}
+
+/**
+ * Eine Geländeoperation starten, ohne dass jemand das Gelände anklickt (K4).
+ *
+ * Reihenfolge: Modus an → Gelände wählen → Werkzeug scharf. Ein still
+ * zusammengebautes Subjekt am Store vorbei wäre der Fehler von „H" in neuer
+ * Form — der Store sagte „gewählt", die Engine wüsste nichts davon.
+ */
+async function gelaendeWerkzeugStarten(id, globalId) {
+  if (!bearbeitenEin()) return false;
+  // Der Ort steht schon in der Kandidatenliste (`modelId`, `localId`) — eine
+  // zweite Auflösung wäre eine zweite Wahrheit.
+  const liste = await (engine.value?.gelaendeKandidaten?.() ?? []);
+  const ort = globalId ? liste.find(g => g.globalId === globalId) : liste[0];
+  if (!ort) { melde('Dieses Gelände ist gerade nicht geladen.'); return false; }
+  if (!await waehleOrtVoll(ort.modelId, ort.localId, { fahrt: false })) return false;
+  return zeichnenStarten(id);
+}
+
 async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
   let angereichert = result;
   try {
@@ -1196,9 +1294,15 @@ async function _einordnenMitHuelle(result, { weitere = [] } = {}) {
       // Bauteil-Griff. Kommt die Einordnung ohne Treffer (frisch nach dem
       // Anwenden), bleibt der Griff am gemerkten Abstand zum Anker.
       const pkt = result.point && [result.point.x, result.point.y, result.point.z].every(Number.isFinite) ? result.point : null;
-      if (pkt) _auswahlAbstand = { x: pkt.x - h.anker.x, y: pkt.y - h.anker.y, z: pkt.z - h.anker.z };
-      const ab = _auswahlAbstand ?? { x: 0, y: 0, z: 0 };
-      angereichert.auswahlpunkt = pkt ?? { x: h.anker.x + ab.x, y: h.anker.y + ab.y, z: h.anker.z + ab.z };
+      if (pkt) _auswahlAbstand = { gid: result.globalId ?? null, x: pkt.x - h.anker.x, y: pkt.y - h.anker.y, z: pkt.z - h.anker.z };
+      // AN DIESES BAUTEIL GEBUNDEN (K6): der gemerkte Abstand stammte sonst
+      // womöglich vom zuletzt ANGEKLICKTEN — bei einem Baumklick sass der
+      // Gizmo dann irgendwo neben dem Bauteil.
+      const ab = (_auswahlAbstand?.gid && _auswahlAbstand.gid === result.globalId) ? _auswahlAbstand : null;
+      // Ohne passenden Abstand KEIN Auswahlpunkt: der Gizmo sitzt dann am
+      // Anker. Ein fremder Punkt wäre schlimmer als keiner.
+      if (pkt) angereichert.auswahlpunkt = pkt;
+      else if (ab) angereichert.auswahlpunkt = { x: h.anker.x + ab.x, y: h.anker.y + ab.y, z: h.anker.z + ab.z };
     }
     // DIE ACHSE, falls es eine gibt. Sie kennt Anfang und Ende GETRENNT —
     // die Hülle kann das nicht, sie ist eine Bounding-Box und weiss nicht,
@@ -1671,8 +1775,12 @@ provideViewerApi({
    * Für Aufrufer, die nur eine localId haben (Struktur-Baum, Befehlspalette).
    */
   zoomToLocalId:        async (localId, modelId = null) => {
+    // VOLLE AUSWAHL, nicht nur Kamera (K4). Bis 2026-09-20 hob der Baumklick
+    // im Bild hervor, liess aber `selectedElement` und `bearbeitung.bauteil`
+    // stehen: die Tafel zeigte weiter das zuletzt ANGEKLICKTE Bauteil. Im
+    // Browser sichtbar als „Geländekanten blau, Tafel sagt Schacht".
     const mid = modelId ?? engine.value?.getModelList()?.[0]?.modelId;
-    if (mid != null) await engine.value?.zoomToElement(mid, localId);
+    if (mid != null) await waehleOrtVoll(mid, localId, { fahrt: true });
   },
   zoomToCategory:       (name) => engine.value?.zoomToCategory(name),
   setStoreyVisible:     (localId, visible, modelId = null) =>
@@ -1799,16 +1907,13 @@ provideViewerApi({
    * Arbeitsliste wurde damit eine Leseliste — man sprang hin und musste dann
    * doch von Hand klicken.
    */
-  waehleBauteil: async (modelId, localId) => {
-    if (!engine.value) return false;
-    await engine.value.zoomToElement(modelId, localId);
-    const el = await engine.value.refreshElement();
-    if (!el) return false;
-    ifc.setElement(el);
-    panels.open('bauteil');
-    await _einordnenMitHuelle(el);
-    return true;
-  },
+  waehleBauteil: (modelId, localId) => waehleOrtVoll(modelId, localId, { fahrt: true }),
+  /** Dasselbe OHNE Kamerafahrt — der Weg der Tafel „Gelände" (K4). */
+  waehleOhneFahrt: (modelId, localId) => waehleOrtVoll(modelId, localId, { fahrt: false }),
+  /** Die Geländeflächen als Liste — ohne Prüfmass, für die Tafel (K4). */
+  gelaendeListe: () => engine.value?.gelaendeKandidaten?.() ?? Promise.resolve([]),
+  /** Eine Geländeoperation starten, ohne dass jemand das Gelände anklicken muss (K4). */
+  gelaendeWerkzeugStarten: (id, globalId) => gelaendeWerkzeugStarten(id, globalId),
   /** Kassensturz E4: Tafel „Bauteil“, Pille und Merkmale starten über den Viewer. */
   werkzeugStarten: (id, opts) => werkzeugStarten(id, opts),
   /** Teil XXII: „Ecken ziehen" — die Eckgriffe des gewählten Erdkörpers, bis Fertig. */
@@ -2147,9 +2252,15 @@ onMounted(async () => {
     _einordnenMitHuelle(result)
       .catch(e => console.warn('cde: einordnen', e?.message ?? e));
   });
-  _selection.onClickEmpty(() => {
-    ifc.clearElement();
-    bearbeitung.einordne(null, null);
+  _selection.onClickEmpty(({ grund } = {}) => {
+    const hatteAuswahl = !!ifc.selectedElement;
+    auswahlLeeren();
+    // Ein Klick aufs Gelände ist ab K3 kein Griff ins Leere mehr, sondern eine
+    // Frage. Beantwortet wird sie nur, wenn nichts gewählt WAR — sonst käme
+    // der Satz bei jedem gewöhnlichen Abwählen auf dem Boden.
+    if (grund === 'gelaende' && !hatteAuswahl) {
+      melde('Gelände wird nicht angeklickt — Geländeoperationen stehen in der Tafel unter „Gelände".');
+    }
   });
   _selection.onHover((pos, treffer, px) => {
     coords.value = pos
@@ -2853,10 +2964,10 @@ const anyHidden = computed(() => categoryList.value.some(c => !c.visible));
 
 async function onHideSelected() {
   await engine.value?.hideSelected();
-  // Selection cleared in engine — refresh store
-  ifc.clearElement();
-  // categoryList visibility doesn't change for hide-selected (selection ≠ whole category)
-  // but show "Alle zeigen" if any item is hidden — we approximate by marking dirty later
+  // Die Engine hat ihre Auswahl geleert — der Store muss MIT. Bis 2026-09-20
+  // stand hier nur `ifc.clearElement()`: die Tafel behauptete danach weiter
+  // „3 Bauteile gewählt", obwohl Engine und Auswahl leer waren.
+  auswahlLeeren();
 }
 
 async function onIsolateSelected() {
@@ -3000,14 +3111,18 @@ function onToggleNotes() { panels.toggle('issues'); }
 
 /* Bearbeiten-Modus: Rahmen und Marke. Beide über allem, beide klickdurchlässig
    bis auf den Beenden-Knopf — ein Modus-Hinweis darf nie im Weg stehen. */
+/* ÜBER DEM BILD (K7, 2026-09-20): Rahmen, Marke und Modus-Meldung lagen mit
+   z-index 6–8 UNTER `.canvas-root` (10) — nach dem Druck auf „Bearbeiten" war
+   im Bild nichts zu sehen. Gemessen: Randpixel = Hintergrund, und
+   `elementsFromPoint` führte den WebGL-Canvas über der Marke. */
 .bearb-rahmen {
-  position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  position: absolute; inset: 0; pointer-events: none; z-index: 22;
   border: 2px solid var(--cde-accent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cde-accent) 35%, transparent);
 }
 .bearb-marke {
   position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%);
-  z-index: 7; display: flex; align-items: center; gap: 0.35rem;
+  z-index: 23; display: flex; align-items: center; gap: 0.35rem;
   padding: 0.2rem 0.35rem 0.2rem 0.5rem; border-radius: var(--cde-radius-sm);
   background: var(--cde-accent); color: var(--cde-text-invert);
   font-size: var(--cde-font-xs); font-weight: 600; letter-spacing: 0.02em;
@@ -3036,7 +3151,7 @@ function onToggleNotes() { panels.toggle('issues'); }
 .bearb-abschluss.gedimmt { opacity: 0.6; }
 .bearb-sperre {
   position: absolute; top: 2.6rem; left: 50%; transform: translateX(-50%);
-  z-index: 8; display: flex; align-items: center; gap: 0.4rem;
+  z-index: 24; display: flex; align-items: center; gap: 0.4rem;
   max-width: min(90%, 34rem);
   padding: 0.35rem 0.65rem;
   background: var(--cde-float);

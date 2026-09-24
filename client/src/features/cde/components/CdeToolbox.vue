@@ -69,6 +69,46 @@
             </div>
           </div>
         </template>
+        <!-- GELÄNDE (K4, Fabio 2026-09-20): „das Gelände sollte am besten gar
+             nicht auswählbar sein — oder nur über einen Knopf." Seit K3 fängt
+             der Klick es nicht mehr; geformt wird es hier. Das Gelände wird
+             dabei WIRKLICH gewählt (der Eingabe-Motor braucht ein Subjekt),
+             nur ohne Klick und ohne Kamerasprung. -->
+        <template v-if="gelaendeWerkzeuge.length">
+          <h4 class="tb-kopf">Gelände</h4>
+          <p v-if="!gelaende.length" class="tb-warum">Kein Gelände geladen — erst ein Modell mit Geländefläche öffnen.</p>
+          <template v-else>
+            <label v-if="gelaende.length > 1" class="tb-gelaende-wahl">
+              <span>Fläche</span>
+              <select v-model="gewaehltesGelaende" :disabled="!!sperrgrund">
+                <option v-for="g in gelaende" :key="g.globalId" :value="g.globalId">
+                  {{ g.name || (g.herkunft === 'cde' ? 'Gelände (CDE)' : 'Gelände') }}
+                </option>
+              </select>
+            </label>
+            <div class="tb-liste">
+              <button
+                v-for="b in gelaendeWerkzeuge"
+                :key="b.id"
+                class="tb-btn"
+                :disabled="!!sperrgrund"
+                :title="sperrgrund || b.titel"
+                @click="gelaendeWerkzeug(b.id)"
+              >
+                <CdeIcon :name="b.icon" :size="13" />
+                <span>{{ b.titel }}</span>
+              </button>
+            </div>
+            <button
+              class="tb-btn tb-btn--leise"
+              type="button"
+              :title="`Merkmale, Mengen und Querschnitt dieser Fläche — ohne Kamerasprung`"
+              @click="gelaendeZeigen()"
+            >
+              <CdeIcon name="info" :size="13" /> <span>Eigenschaften</span>
+            </button>
+          </template>
+        </template>
         <!-- KATALOG (Teil XXIII, A5): was aus Büro oder Projekt NICHT gilt, weil
              es die Prüfung nicht besteht — sonst wirkte es still als
              „Werkzeug erscheint nie". -->
@@ -180,6 +220,12 @@
               <!-- Die Beschriftung, die DIESER Typ dem Feld gibt: „DN“ am Rohr,
                    „Profilreihe“ am Träger — das Vokabular kommt aus Daten. -->
               <em v-if="b.felder.length" class="tb-feld">{{ b.felder.map(f => f.label).join(', ') }}</em>
+              <!-- IM BILD ZIEHBAR (K5): seit Griffe nur noch mit scharfem
+                   Werkzeug stehen, muss dastehen, welcher Knopf einen bringt —
+                   sonst ist der Weg unentdeckbar, auf dem Finger erst recht
+                   (dort gibt es kein Schweben). Die Liste kommt aus Griffe.js. -->
+              <CdeIcon v-if="GRIFF_WERKZEUGE.includes(b.id)" name="pointer" :size="11" class="tb-ziehbar"
+                       title="Im Bild ziehbar — der Griff erscheint, sobald dieses Werkzeug läuft" />
               <CdeIcon v-if="b.nurFestlegung" name="documents" :size="11" class="tb-nurfest" />
             </button>
           </div>
@@ -360,8 +406,9 @@ import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
-import { ausGruppe, nachId, eingabeArt } from '../services/Bearbeitungen.js';
+import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
 import { achsAnzeige } from '../services/Achsanzeige.js';
 import { hatErdbauEcken } from '../services/Griffe.js';
@@ -376,6 +423,49 @@ const api = useViewerApi();
 // Der Katalog lebt: ein Rezept aus der Bibliothek bringt sein Zeichenwerkzeug
 // mit (Teil XXIII, A5). `katalogStand` wandert mit jeder Registrierung.
 const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, ausGruppe('erzeugen')));
+
+// ── Gelände formen, ohne es anzuklicken (K4) ────────────────────────────────
+//
+// Die Werkzeuge kommen aus dem Katalog (`gruppe: 'gelaende'`, jedes mit einer
+// `operation`) — hier steht KEIN Operationsname, sonst wäre die Tafel eine
+// zweite Liste neben `GELAENDE_OPS` (Wächter W2).
+const gelaendeWerkzeuge = computed(() => (void bearbeitung.katalogStand,
+  ausGruppe('gelaende').filter(b => b.operation)));
+/** Die Geländeflächen des geladenen Satzes — die Liste kommt vom Viewer. */
+const gelaende = ref([]);
+const gewaehltesGelaende = ref('');
+
+async function gelaendeLaden() {
+  try {
+    const liste = await (api.gelaendeListe?.() ?? []);
+    gelaende.value = Array.isArray(liste) ? liste : [];
+  } catch { gelaende.value = []; }
+  // Vorbelegt ist das erste GELIEFERTE — dieselbe Regel wie im Katalog
+  // (`vorbelegtesGelaende`), damit Knopf und Formular dasselbe meinen.
+  if (!gelaende.value.some(g => g.globalId === gewaehltesGelaende.value)) {
+    gewaehltesGelaende.value = vorbelegtesGelaende({ gelaendeQuellen: gelaende.value });
+  }
+}
+
+// Ohne Auswahl ist die Tafel der Einstieg; die Liste hängt an der Modellmenge
+// und am Journal (eine Formung erzeugt die Anzeigefläche).
+watch(() => [bearbeitung.bauteil?.globalId ?? null, ifc.geometrieStand, bearbeitung.modusAn],
+      () => { if (!bearbeitung.bauteil) gelaendeLaden(); }, { immediate: true });
+
+function gelaendeWerkzeug(id) {
+  rueckmeldung.value = '';
+  const ok = api.gelaendeWerkzeugStarten?.(id, gewaehltesGelaende.value || null);
+  Promise.resolve(ok).then((r) => {
+    if (r === false) rueckmeldung.value = bearbeitung.letzterGrund || 'Das Werkzeug liess sich gerade nicht starten.';
+  });
+  return ok;
+}
+
+/** Merkmale, Mengen und Querschnitt der Fläche — ohne Klick, ohne Kamerasprung. */
+function gelaendeZeigen() {
+  const g = gelaende.value.find(x => x.globalId === gewaehltesGelaende.value) ?? gelaende.value[0];
+  if (g) api.waehleOhneFahrt?.(g.modelId, g.localId);
+}
 
 /** Was beim Katalogladen abgewiesen wurde — gemeldet, nicht still verworfen (A5, S8). */
 const KATALOG_ART = Object.freeze({ rezept: 'Rezept', typprofil: 'Typprofil', bauformregel: 'Bauformregel', vorlage: 'Vorlage',
@@ -769,6 +859,12 @@ async function vorlageEntfernen(v) {
 }
 .tb-btn:hover { border-color: var(--cde-accent-line); color: var(--cde-accent); }
 .tb-btn--aus { opacity: 0.6; cursor: default; }
+/* Zweitrangig neben den Werkzeugen: „Eigenschaften" ist kein Werkzeug (K4). */
+.tb-btn--leise { align-self: flex-start; margin-top: 0.3rem; opacity: 0.8; }
+/* „im Bild ziehbar" — leise, aber da (K5). */
+.tb-ziehbar { margin-left: auto; opacity: 0.55; }
+.tb-gelaende-wahl { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0 0.35rem; font-size: 0.78rem; color: var(--cde-text-dim); }
+.tb-gelaende-wahl select { flex: 1; min-width: 0; }
 .tb-btn--aus:hover { border-color: var(--cde-line); color: var(--cde-text); }
 .tb-feld { margin-left: auto; font-style: normal; color: var(--cde-text-dim); font-size: 0.68rem; }
 .tb-nurfest { color: var(--cde-text-dim); }

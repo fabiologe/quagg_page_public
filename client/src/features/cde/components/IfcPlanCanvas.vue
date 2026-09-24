@@ -93,7 +93,7 @@ import { erzeugeEingabeRouting } from '@/services/tinte/EingabeRouting';
 import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
 import { fanglinienFuer, fange, rasterFuerMassstab } from '../services/Fanglinien.js';
-import { griffeFuer } from '../services/Griffe.js';
+import { griffeFrei, griffeFuer } from '../services/Griffe.js';
 import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import { _drawTitleBlock, _drawWatermark } from '../services/IfcPdfExporter.js';
@@ -499,18 +499,21 @@ function baldZeichnen() {
 // ── Schacht-Griffe: Laden, Greifen, Fangen, Ablegen (G1) ────────────────────
 
 /**
- * Griffe nur, wenn nichts anderes die Fläche beansprucht: der Bearbeiten-
- * Modus ist an, kein Werkzeug ist scharf (der zweite Schlitz von
- * „an Schacht anschließen" tippt auch auf Schächte!), kein Setz-,
- * Mess- oder Stiftmodus läuft.
+ * Griffe nur, wenn nichts anderes die Fläche beansprucht.
+ *
+ * WELCHE Griffe stehen, sagt `griffeFrei` — dieselbe Regel wie im Raum und im
+ * Längsschnitt (K5). Hier bleiben nur die plan-eigenen Ausschlüsse: Setzen,
+ * Messen und der Stift beanspruchen dieselbe Fläche. Der zweite Schlitz von
+ * „an Schacht anschließen" tippt ebenfalls auf Schächte — er gehört keiner
+ * Griff-Familie an und bringt damit von selbst keine Griffe mehr mit.
  */
 function griffBereit() {
-  return bearbeitung.modusAn && !bearbeitung.scharfId
-      && !setzModus.value && !messen.value && !stiftModus.value;
+  return bearbeitung.modusAn && !setzModus.value && !messen.value && !stiftModus.value;
 }
 
 function griffeLaden() {
   if (!bearbeitung.modusAn) { griffe.value = []; return; }
+  const zustand = { modusAn: bearbeitung.modusAn, scharfId: bearbeitung.scharfId, eckenFuer: bearbeitung.eckenFuer };
   // DIE FACHLOGIK LIEGT EINMAL (Teil XVI, S4): welcher Griff, an welcher
   // WIRKSAMEN Lage (ein verschobener Schacht steht im Journal, die Achslese
   // kennt nur den Lieferort) — `griffeFuer` bedient Plan und Raum. Der Plan
@@ -519,7 +522,7 @@ function griffeLaden() {
     schaechte: api.getKnotenGriffe?.() ?? [],
     lageStand: new Map(aenderungen.wirksamerStand('lage')),
   })
-    .filter(g => g.art === 'knoten')
+    .filter(g => g.art === 'knoten' && griffeFrei(zustand, g, { subjektGid: bearbeitung.bauteil?.globalId ?? null }))
     .map(g => ({ globalId: g.globalId, name: g.name, modelId: g.modelId, x: g.pos.x, z: g.pos.z }));
 }
 

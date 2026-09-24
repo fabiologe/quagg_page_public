@@ -206,11 +206,15 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
             nachBauen, getModellSha: () => 'sha1', getWer: () => 'Fabio', melde,
             farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
         });
-        return { bearbeitung, ae, e, g, nachBauen, melde, subjekt };
+        // Seit K5 stehen Griffe nur mit scharfem Werkzeug — hier die Familie
+        // der Stützpunkte (Zug-, Tipp- und Drehgriffe gehören dazu).
+        const scharf = (id = 'stuetzpunkt-verschieben') => bearbeitung.starte(id, { subjekt });
+        return { bearbeitung, ae, e, g, nachBauen, melde, subjekt, scharf };
     }
 
     it('baut Zug- und Tipp-Griffe und reicht dem Overlay die Rollenfarben', () => {
         const t = baue();
+        t.scharf();
         t.g.neuBauen();
         expect(t.g.griffe.value.some(x => x.wirkung === 'tipp')).toBe(true);
         expect(t.e.zeigeGriffe.mock.calls[0][1]).toMatchObject({ farbeEntfernen: '#f00', farbeEinfuegen: '#0f0' });
@@ -218,6 +222,7 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
 
     it('Tipp auf „−": kein Zug nötig, der Eintrag entfernt den genannten Stützpunkt', async () => {
         const t = baue();
+        t.scharf();
         t.g.neuBauen();
         expect(t.g.greifen({ x: 0, y: 0, typ: 'mouse' })).toBe(true);
         t.g.zugStart({ x: 0, y: 0, px: { x: 10, y: 10 }, typ: 'mouse' });
@@ -226,6 +231,10 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
         t.g.zugBewegt({ x: 9, y: 9, px: { x: 19, y: 19 }, typ: 'mouse' });    // ein Tipp bewegt nichts
         expect(t.g.zug.value.pos).toEqual(t.g.griffe.value.find(x => x.key === 'stuetz-weg:cde1:1').pos);
         const eintrag = await t.g.zugEnde({});                                // OHNE Bewegung — trotzdem wirksam
+        // Kein Fehlschlag unterwegs: mit scharfem „Stützpunkt verschieben" war
+        // der Tipp auf den Nebengriff still wirkungslos, weil `starte` sein
+        // eigenes `scharfId` gleich wieder löschte (Kur 2026-09-21).
+        expect(t.melde.mock.calls.map(c => c[0])).toEqual([]);
         expect(eintrag).toMatchObject({ art: 'erzeugt', globalId: 'cde1' });
         expect(eintrag.nachher.parameter.punkte).toEqual([RING[0], RING[2], RING[3]]);
         expect(t.nachBauen).toHaveBeenCalled();
@@ -234,6 +243,7 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
 
     it('Esc bricht auch den Tipp ab — nichts wird geschrieben', async () => {
         const t = baue();
+        t.scharf();
         t.g.neuBauen();
         t.g.greifen({ x: 0, y: 0, typ: 'mouse' });
         t.g.zugStart({ x: 0, y: 0, px: { x: 10, y: 10 }, typ: 'mouse' });
@@ -244,6 +254,8 @@ describe('useGriffe: ein Tipp legt ohne Zug ab', () => {
     it('Drehgriff: der Zug läuft auf dem Kreis und füllt den Winkel, im 5°-Raster', () => {
         const t = baue();
         t.e.griffUnter.mockReturnValue('drehung:cde1');
+        // Der Drehgriff gehört zu `drehen` — eine eigene Familie (K5).
+        t.scharf('drehen');
         t.g.neuBauen();
         t.g.greifen({ x: 0, y: 0, typ: 'mouse' });
         const dreh = t.g.griffe.value.find(x => x.key === 'drehung:cde1');

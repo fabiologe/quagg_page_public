@@ -15,6 +15,13 @@
         <CdeIcon :name="bearbeitung.scharf.icon" :size="14" />
         <strong>{{ bearbeitung.scharf.titel }}</strong>
         <span v-if="subjektName" class="kl-subjekt" :title="subjektName">{{ subjektName }}</span>
+        <!-- WAS EBEN PASSIERT IST, in der Werkzeugkarte (K5): in einer Serie
+             bleibt das Werkzeug scharf, und die Rückmeldung stand bis dahin nur
+             im Zweig OHNE scharfes Werkzeug — nach einem Griffzug sah sie
+             niemand. Hier steht sie, solange sie zu DIESEM Werkzeug gehört. -->
+        <span v-if="serienmeldung" class="kl-serie" :title="serienmeldung">
+          <CdeIcon name="check" :size="12" /> {{ serienmeldung }}
+        </span>
       </div>
       <!-- Eine laufende GESTE (S3): der nächste Tipp füllt ein Feld -->
       <div v-if="geste" class="kl-geste-hinweis">
@@ -108,6 +115,10 @@ const props = defineProps({
 defineEmits(['fertig', 'uebernehmen', 'nochmal', 'rueckmeldung-zu', 'geste', 'geste-ab']);
 
 const bearbeitung = useBearbeitung();
+
+/** Die Rückmeldung DIESES Werkzeugs — in der Serie bleibt sie sichtbar (K5). */
+const serienmeldung = computed(() => (props.rueckmeldung?.werkzeugId
+  && props.rueckmeldung.werkzeugId === bearbeitung.scharfId) ? props.rueckmeldung.text : null);
 
 /** Läuft ein Zug im Motor? Dann führt er Hinweis, Fehler und Knopf. */
 const zugLaeuft = computed(() => !!props.motor?.aktiv?.value && !!props.motor?.zug?.value);
@@ -206,6 +217,11 @@ function naechsterSchritt() {
 }
 .kl-kopf { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .kl-kopf strong { font-weight: 600; }
+.kl-serie {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem;
+  color: var(--cde-success); font-size: 0.78rem; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 22rem;
+}
 .kl-subjekt {
   color: var(--cde-text-dim); font-size: var(--cde-font-xs);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
