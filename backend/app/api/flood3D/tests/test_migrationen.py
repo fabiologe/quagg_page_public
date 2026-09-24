@@ -49,13 +49,18 @@ def test_migration_hebt_alte_form_an(ziel, altform, pruefe):
     cs.CaseSpec.model_validate(d)                        # danach gültig
 
 
-def test_gestempelter_fall_laeuft_nicht_erneut():
+def test_idempotente_migrationen_laufen_auch_auf_gestempelten_daten():
+    # ein Dump mit aktuellem Stempel kann trotzdem ein Altfeld tragen
     d = _basis()
-    d["meta"]["schema_version"] = SCHEMA_VERSION
-    d["meta"]["crs_offset"] = [1.0, 2.0]                 # käme nur aus altem Fall
+    assert d["meta"]["schema_version"] == SCHEMA_VERSION
+    d["meta"]["crs_offset"] = [1.0, 2.0]
     bericht: list[str] = []
     migriere(d, bericht)
-    assert bericht == [] and d["meta"]["crs_offset"] == [1.0, 2.0]
+    assert "crs_offset" not in d["meta"] and bericht
+    # und ein sauberer Fall meldet nichts
+    bericht = []
+    migriere(_basis(), bericht)
+    assert bericht == []
 
 
 def test_stempel_aendert_keinen_hash():
@@ -73,3 +78,7 @@ def test_alle_gespeicherten_faelle_laden():
     for n in namen:
         spec = cs.CaseSpec.from_yaml(FAELLE / n / "case.yaml")
         assert spec.meta.schema_version == SCHEMA_VERSION, n
+
+
+def test_neuer_fall_traegt_die_aktuelle_version():
+    assert fall_k().meta.schema_version == SCHEMA_VERSION

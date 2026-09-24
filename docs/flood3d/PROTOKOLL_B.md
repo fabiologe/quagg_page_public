@@ -153,3 +153,13 @@ Schlusszeichen in einem Python-String → SyntaxError, `“` verwenden.
 
 Bewusst nicht: Semaphor für Cloud-Läufe — der RunPod-Endpunkt rechnet mit „Max Workers 1"
 ohnehin nacheinander. Tests Backend 918 → 923.
+
+### B4 · Nachtrag nach der Harness-Probe (24.09.)
+
+Die Probe (4/4 grün, Zahlen identisch: Q 0,2616, WSP 100,2332, Bilanz 0,79 %) zeigte:
+ein im Code neu erzeugter Fall trug `schema_version: 0`. Standard ist jetzt die aktuelle
+Version. Dabei brachen drei Tests, die einen „alten" Fall aus einem frischen Dump plus
+Altfeld bauen — mit Stempel 7 übersprang `migriere` die Migration. Dasselbe kann im
+Betrieb passieren (gestempelte Daten mit Altfeld aus Import oder Handarbeit). Deshalb:
+die sieben idempotenten Migrationen laufen IMMER (`IDEMPOTENT_BIS = 7`); der Stempel sperrt
+nur künftige, nicht-idempotente. Tests 924.

@@ -150,7 +150,9 @@ class Meta(_Model):
     transform: CrsTransform | None = None
     # Stand des Formats (SCHEMA_VERSION); migriere() hebt ältere Fälle an.
     # Hash-neutral (_hash_daten): ein neuer Stempel ist kein neuer Fall.
-    schema_version: int = 0
+    # Ein neu erzeugter Fall ist aktuell; alte YAML ohne Schlüssel stempelt
+    # migriere() VOR der Validierung (liest dort 0).
+    schema_version: int = Field(default_factory=lambda: SCHEMA_VERSION)
 
 
 # --------------------------------------------------------------------------
@@ -1494,6 +1496,11 @@ MIGRATIONEN = [
     (7, "Verortung in die transform-Abbildung überführt", _m7_transform),
 ]
 SCHEMA_VERSION = MIGRATIONEN[-1][0]
+# Die Migrationen bis hierher prüfen die alte Form selbst — sie laufen
+# IMMER, auch auf gestempelten Daten: ein Dump mit Stempel 7 kann trotzdem
+# ein Altfeld tragen (Import, Handarbeit, Tests). Erst spätere Migrationen,
+# die sich nicht selbst erkennen, verlassen sich auf den Stempel.
+IDEMPOTENT_BIS = 7
 
 
 def migriere(daten: dict, bericht: list[str] | None = None) -> dict:
@@ -1510,7 +1517,8 @@ def migriere(daten: dict, bericht: list[str] | None = None) -> dict:
     except (TypeError, ValueError):
         stand = 0
     for ziel, text, fn in MIGRATIONEN:
-        if stand < ziel and fn(daten) and bericht is not None:
+        if (ziel <= IDEMPOTENT_BIS or stand < ziel) and fn(daten) \
+                and bericht is not None:
             bericht.append(text)
     if meta is not None:
         meta["schema_version"] = max(stand, SCHEMA_VERSION)
