@@ -1,6 +1,6 @@
 """
 Harness-Probe (Fahrplan A6): Fall K einmal wirklich rechnen — im Server-
-Docker, 7–10 min, 0 € — und die Hülle an vier Zahlen messen. Der Solver
+Docker, 7–10 min, 0 € — und die Hülle an fünf Zahlen messen. Der Solver
 bleibt unverändert; was hier bricht, haben WIR gebaut (Randbedingung,
 Anfangsfeld, functionObject). Nicht in der Standard-Suite:
 
@@ -60,3 +60,9 @@ def test_tracer_bilanz(probe):
     # flächengewichteten Ablauf-Konzentration (weightedAverage) — eine
     # Definitionsfrage für Stufe B. Die Schwelle hält den Stand fest.
     assert probe["tracer_verlust"] < 0.10
+
+
+def test_planraster_volumentreu(probe):
+    # Fahrplan C2: Σ h·A aus den echten Zellen gegen die Volumenreihe des
+    # Solvers. Das Voxel-Raster lag bei 34–100 % daneben (Audit F4).
+    assert probe["plan_volume_error_rel_max"] < 0.01

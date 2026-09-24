@@ -8,9 +8,9 @@ zugehörigen Nachweise still „nicht_auswertbar"). Beide rufen jetzt diese
 Funktion; OpenFOAM-Schritte kommen als Parameter herein (im Container
 direkt, in der CLI keine).
 
-Reihenfolge: Netzoberfläche → Zellzentren → 3D-Felder → Zeitreihen →
-Sohlschub/Energiehöhe/Überfallbeiwert → Zwischendatei → y+ → Viz-Selbsttest
-→ Bewertung → Befunde → Abbildungen. Fehler in den Feldern beenden den
+Reihenfolge: Netzoberfläche → Zellzentren/-volumen → 3D-Felder und
+Planraster → Zeitreihen → Sohlschub/Energiehöhe/Überfallbeiwert →
+Zwischendatei → y+ → Viz-/Plan-Selbsttest → Bewertung → Befunde → Abbildungen. Fehler in den Feldern beenden den
 Nachlauf nicht: Zeitreihen und Nachweise bleiben nutzbar, das Manifest sagt,
 was fehlt.
 """
@@ -43,6 +43,7 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
     from .foamfields import (bed_shear_series, convert_case_fields,
                              energy_head_series, viz_volume_check)
     from .meshsurface import find_mesh_surface
+    from .planfelder import plan_volume_check
     from .normalize import write_normalized
     from .render import render_run
     from .runner import _y_plus_je_patch, _y_plus_range
@@ -72,6 +73,14 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
         if foam is not None:
             foam("postProcess -noFunctionObjects -func writeCellCentres -time 0",
                  "log.writeCellCentres")
+            # Zellvolumen für die Planraster (C2); fehlen sie, entfallen
+            # nur die Raster
+            try:
+                foam("postProcess -noFunctionObjects -func writeCellVolumes -time 0",
+                     "log.writeCellVolumes")
+            except RuntimeError:
+                melde("WARNUNG: Zellvolumen nicht geschrieben — Planraster "
+                      "entfallen, der Grundriss rechnet aus dem Voxel-Raster")
         if (case / "0" / "C").exists() or (case / "0" / "C.gz").exists():
             conv = convert_case_fields(spec, case, job)
         else:
@@ -81,6 +90,8 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
     if fields_error:
         melde("WARNUNG: 3D-Felder nicht konvertiert — " + fields_error
               + " (Zeitreihen und Nachweise bleiben nutzbar)")
+    if conv.get("plan_error"):
+        melde("WARNUNG: Planraster nicht erzeugt — " + conv["plan_error"])
     if conv.get("terrain_error"):
         melde("WARNUNG: Geländeschicht nicht erzeugt — " + conv["terrain_error"]
               + " (Ergebnisse bleiben nutzbar, im Viewer fehlt nur das Gelände)")
@@ -116,6 +127,11 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
     vol_check = viz_volume_check(job, df)
     if vol_check:
         manifest.update(vol_check)
+    plan_check = plan_volume_check(conv.get("plan_infos") or [], df)
+    if plan_check:
+        manifest.update(plan_check)
+    if conv.get("plan_error"):
+        manifest["plan_error"] = conv["plan_error"]
 
     result = evaluate_run(df, spec, run_id, manifest)
     manifest.setdefault("befunde", []).extend(

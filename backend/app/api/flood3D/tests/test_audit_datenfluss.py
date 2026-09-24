@@ -225,3 +225,17 @@ def test_viz_volume_check_misst_die_abweichung(tmp_path):
 def test_viz_volume_check_ohne_felder_ist_none(tmp_path):
     df = _df({("volume", "domain", ""): ([0.0], [5.0])})
     assert viz_volume_check(tmp_path, df) is None
+
+
+def test_viz_volume_check_vergleicht_nur_innerhalb_der_reihe(tmp_path):
+    # Die Volumenreihe beginnt beim ersten Schreibtakt; t = 0 davor wurde
+    # auf deren ersten Wert geklemmt — in Fall A (c2_a) 14 % „Fehler“
+    grid = VolumeGrid(origin=(0, 0, 0), spacing=(1, 1, 1), dims=(2, 2, 2))
+    alpha = np.zeros(grid.shape_zyx, dtype=np.float32)
+    alpha[0, :, :] = 1.0
+    write_timestep(tmp_path, 0, 0.0, {"alpha": alpha * 0.5})     # 2 m³
+    write_timestep(tmp_path, 1, 1.0, {"alpha": alpha})           # 4 m³
+    write_index(tmp_path, grid, [0.0, 1.0], ["alpha"])
+    df = _df({("volume", "domain", ""): ([0.1, 1.0], [3.0, 4.0])})
+    check = viz_volume_check(tmp_path, df)
+    assert check["viz_volume_error_rel_max"] == pytest.approx(0.0)

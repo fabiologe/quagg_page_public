@@ -314,7 +314,7 @@ import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 // Geometrie/Zeitschritte über den GEMEINSAMEN Feld-Cache (Audit H6):
 // der Direktweg über services/volume lud beim Tabwechsel Grundriss↔Raum
 // alles doppelt
-import { getGeometry, getTimesteps, getVolume, planFieldsCached }
+import { PLAN_FELDER, getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { glaetteFeldCached } from '../../utils/glaettung'
 import { flood3dApi } from '../../services/api'
@@ -706,6 +706,7 @@ function benoetigteFelder() {
   const needs = activeField.value?.needs
   if (needs) felder.add(needs)
   if (availableFieldKeys.value.includes('bed_shear')) felder.add('bed_shear')
+  for (const f of PLAN_FELDER) felder.add(f)     // Säulenwerte der Punktabfrage
   return [...felder]
 }
 

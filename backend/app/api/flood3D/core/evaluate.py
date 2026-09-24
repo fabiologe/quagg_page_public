@@ -490,6 +490,9 @@ def kennwerte(df: pd.DataFrame, spec: CaseSpec) -> dict:
 BEFUND_YPLUS_MAX = 500.0
 BEFUND_COURANT_MAX = 1.5
 BEFUND_VIZ_VOLUMEN = 0.05
+# Planraster (C2) sind volumentreu bis auf Zellen am Gebietsrand (Fall A
+# 0,03 %) — mehr als 1 % heißt: die Zuordnung Zelle → Säule ist kaputt
+BEFUND_PLAN_VOLUMEN = 0.01
 
 
 def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
@@ -524,11 +527,22 @@ def befunde_ableiten(quality: dict, manifest: dict) -> list[dict]:
                      "heiß (oft ein Netz- oder Randproblem).",
           wert=float(co), grenze=BEFUND_COURANT_MAX, quelle="courant")
     viz = manifest.get("viz_volume_error_rel_max")
+    plan = manifest.get("plan_volume_error_rel_max")
     if viz is not None and float(viz) > BEFUND_VIZ_VOLUMEN:
-        b("warnung", f"Viz-Volumen-Selbsttest: {float(viz) * 100:.0f} % "
-                     "Abweichung zum Solver-Volumen — die 3D-Ansicht ist "
-                     "dort gröber als die Rechnung.",
-          wert=float(viz), grenze=BEFUND_VIZ_VOLUMEN, quelle="viz_volume")
+        # mit Planrastern (C2) betrifft das nur noch die 3D-Ansicht
+        text = (f"Viz-Volumen-Selbsttest: {float(viz) * 100:.0f} % Abweichung "
+                "zum Solver-Volumen — die 3D-Ansicht (Voxel-Raster) ist dort "
+                "gröber als die Rechnung. "
+                + ("Grundriss, Längsschnitt und Laubkarten rechnen aus den "
+                   "Zellen (Planraster)." if plan is not None else
+                   "Grundriss und Längsschnitt ebenso (Lauf ohne Planraster)."))
+        b("warnung", text, wert=float(viz), grenze=BEFUND_VIZ_VOLUMEN,
+          quelle="viz_volume")
+    if plan is not None and float(plan) > BEFUND_PLAN_VOLUMEN:
+        b("fehler", f"Planraster-Selbsttest: {float(plan) * 100:.1f} % "
+                    "Abweichung zum Solver-Volumen — Σ h·A müsste Σ α·V "
+                    "treffen; die Planraster sind nicht belastbar.",
+          wert=float(plan), grenze=BEFUND_PLAN_VOLUMEN, quelle="plan_volume")
     if quality.get("checkmesh_ok") is False:
         b("fehler", "checkMesh war durchgefallen — Ergebnis nur mit "
                     "Vorsicht verwenden (Altlauf vor dem Netz-Tor).",

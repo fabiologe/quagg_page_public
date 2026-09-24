@@ -189,7 +189,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore, SERIES_COLORS, LIMIT_COLOR }
   from '../../stores/usePostStore'
-import { getGeometry, getTimesteps, getVolume, planFieldsCached }
+import { PLAN_FELDER, getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { PAD, useRasterCanvas } from '../../composables/useRasterCanvas'
 import { flood3dApi } from '../../services/api'
@@ -242,6 +242,9 @@ const lockMin = ref(0)
 const lockMax = ref(1)
 const autoRange = ref([0, 1])
 const hasTau = ref(false)
+// Lauf mit Planrastern aus den Zellen (C2) — die Umhüllende braucht dann
+// nur die 2D-Raster, nicht je Zeitpunkt die 3D-Felder alpha/U
+let hatPlan = false
 const hover = ref(null)
 const sectionMode = ref(false)
 const sectionPts = ref([])
@@ -288,7 +291,8 @@ let requestSeq = 0
 // Der Grundriss braucht genau diese Felder — p, p_rgh, k, ω, νt, T
 // wurden vorher bei jedem Zeitschritt mitgeladen und nie angefasst
 function feldListe() {
-  return hasTau.value ? ['alpha', 'U', 'bed_shear'] : ['alpha', 'U']
+  return [...(hasTau.value ? ['alpha', 'U', 'bed_shear'] : ['alpha', 'U']),
+    ...PLAN_FELDER]
 }
 
 // Fall-Spezifikation und Rand-Durchflüsse einmal je Lauf (BilanzPanel-
@@ -326,6 +330,7 @@ async function loadRun() {
     grid = index.grid
     gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
     hasTau.value = index.fields.includes('bed_shear')
+    hatPlan = PLAN_FELDER.every((f) => index.fields.includes(f))
     if (raster.value === 'tau' && !hasTau.value) raster.value = 'depth'
     nzMax.value = grid.dims[2] - 1
     if (ebeneK.value > nzMax.value) ebeneK.value = nzMax.value
@@ -366,8 +371,11 @@ async function baueHuelle() {
   const felder = ['depth', 'umag', 'umagM', 'froude', 'tau']
   const acc = {}
   huellenFortschritt.value = 0.001
+  const laden = hatPlan
+    ? [...PLAN_FELDER, ...(hasTau.value ? ['bed_shear'] : [])]
+    : feldListe()
   for (let i = 0; i < times.value.length; i++) {
-    const vol = await getVolume(activeRunId.value, times.value[i], feldListe())
+    const vol = await getVolume(activeRunId.value, times.value[i], laden)
     const f = planFieldsCached(vol, terrain?.z)
     for (const name of felder) {
       const q = f[name]
@@ -952,8 +960,10 @@ function computeProfile() {
       const u = sampleColumn(pf.umagM, x, y)
       wsp.push(surf)
       energy.push(surf + (u * u) / (2 * G))
-      // Fr nur bei belastbarer Tiefe — im Benetzungsfilm dominiert das Raster
-      froude.push(h > TIEFE_BENETZT ? u / Math.sqrt(G * h) : null)
+      // Fr aus dem Planraster — dieselbe Definition wie im Grundriss (leer
+      // unter zwei Zellen Tiefe); vorher stand hier eine zweite
+      const fr = sampleColumn(pf.froude, x, y)
+      froude.push(Number.isFinite(fr) ? fr : null)
       // Grenztiefe aus dem spezifischen Abfluss q = u·h: y_kr = (q²/g)^(1/3).
       // Wo der Wasserspiegel sie schneidet, geht der Abfluss durch den
       // kritischen Zustand — die Linie, an der man Kontrollquerschnitte

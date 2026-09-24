@@ -83,13 +83,45 @@ export function getVolume(runId, time, felder = null) {
   return Promise.all(laufend).then(() => eintrag)
 }
 
+// Planraster, die der Server aus den ECHTEN Rechenzellen schreibt (Fahrplan
+// C2, core/planfelder.py): Tiefe Σ α·V / A (volumentreu), Wasserspiegel,
+// tiefengemittelte und Oberflaechengeschwindigkeit, Froude. Ansichten
+// fordern sie immer mit an — ein Lauf ohne sie (vor C2) liefert sie
+// einfach nicht, und planFields rechnet dann wie bisher aus dem Voxel-Raster.
+export const PLAN_FELDER = ['plan_h', 'plan_wsp', 'plan_ux', 'plan_uy',
+  'plan_uox', 'plan_uoy', 'plan_uo', 'plan_fr']
+
+function hatPlanraster(vol) {
+  return PLAN_FELDER.every((k) => k in vol.fields)
+}
+
+// Serverraster in der Form von planFields — dieselben Schluessel, damit
+// kein Verbraucher unterscheiden muss, woher die Werte kommen.
+function planAusServer(vol) {
+  const [nx, ny] = vol.grid.dims
+  const { origin, spacing } = vol.grid
+  const f = vol.fields
+  const depth = f.plan_h.data
+  const uxM = f.plan_ux.data
+  const uyM = f.plan_uy.data
+  const umagM = new Float32Array(nx * ny)
+  for (let c = 0; c < nx * ny; c++) umagM[c] = Math.hypot(uxM[c], uyM[c])
+  const tau = f.bed_shear ? f.bed_shear.data : null
+  return { nx, ny, origin, spacing, surface: f.plan_wsp.data, depth,
+    ux: f.plan_uox.data, uy: f.plan_uoy.data, umag: f.plan_uo.data, tau,
+    hInt: depth, uxM, uyM, umagM, froude: f.plan_fr.data, quelle: 'zellen' }
+}
+
 // Abgeleitete Grundriss-Felder aus einem Volumenpaket, je Säule (i,j):
 // Tiefe als Saeulenintegral Σ α·dz (volumenerhaltend — auch ein
 // Millimeterfilm mit α < 0,5 in der Sohlzelle traegt bei), Wasserspiegel
 // subzellig aus dem Phasenanteil rekonstruiert (vorher Oberkante der
 // obersten Nasszelle: auf dz quantisiert und bis +1 Zelle ueberschaetzt),
 // Oberflaechen- und tiefengemittelte Geschwindigkeit, Froude-Zahl.
+// Traegt das Paket die Serverraster, gelten DIE (eine Definition je Groesse);
+// die Rechnung darunter bleibt fuer Laeufe vor C2 (`quelle: 'raster'`).
 export function planFields(vol, terrainZ) {
+  if (hatPlanraster(vol)) return planAusServer(vol)
   const [nx, ny, nz] = vol.grid.dims
   const { origin, spacing } = vol.grid
   const alpha = vol.fields.alpha.data
@@ -178,7 +210,7 @@ export function planFields(vol, terrainZ) {
   }
   const tau = vol.fields.bed_shear ? vol.fields.bed_shear.data : null
   return { nx, ny, origin, spacing, surface, depth, ux, uy, umag, tau,
-    hInt, uxM, uyM, umagM, froude }
+    hInt, uxM, uyM, umagM, froude, quelle: 'raster' }
 }
 
 // Memoisierte Variante: planFields lief vorher bei JEDEM update() neu,
@@ -186,11 +218,12 @@ export function planFields(vol, terrainZ) {
 // mit Hin und Zurueck ist das reine Doppelarbeit. Schluessel ist der
 // Cache-Eintrag selbst (WeakMap: verschwindet er aus dem LRU, raeumt
 // der GC die Ableitungen mit); dazu Terrain-Identitaet und die Frage,
-// welche der drei benutzten Feldgruppen inzwischen nachgeladen sind.
+// welche der benutzten Feldgruppen inzwischen nachgeladen sind.
 const planCache = new WeakMap()
 
 export function planFieldsCached(vol, terrainZ) {
   const stand = `${'alpha' in vol.fields}|${'U' in vol.fields}|${'bed_shear' in vol.fields}`
+    + `|${hatPlanraster(vol)}`
   const c = planCache.get(vol)
   if (c && c.terrainZ === terrainZ && c.stand === stand) return c.result
   const result = planFields(vol, terrainZ)

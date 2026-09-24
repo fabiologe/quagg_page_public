@@ -356,6 +356,16 @@ def auswerten(job: Path) -> dict:
     erg["z_zulauf_max_1s"] = z_zulauf
     erg["verlauf"] = verlauf
 
+    # --- Planraster (C2): Volumen gegen den Solver, Voxel zum Vergleich --
+    if V is not None and zeiten:
+        from ..core.foamfields import convert_case_fields, viz_volume_check
+        from ..core.planfelder import plan_volume_check
+        conv = convert_case_fields(spec, case, job)
+        erg.update(viz_volume_check(job, df) or {})
+        erg.update(plan_volume_check(conv.get("plan_infos") or [], df) or {})
+        if conv.get("plan_error"):
+            erg["plan_error"] = conv["plan_error"]
+
     if spec.evaluation.verweilzeit and zeiten and V is not None and zu:
         t_end, d_end = zeiten[-1]
         a = _feld(d_end / "alpha.water", len(C))

@@ -85,3 +85,38 @@ describe('planFields — Saeulenintegral und Wasserspiegel', () => {
     expect(Number.isNaN(pf.froude[0])).toBe(true)
   })
 })
+
+// Fahrplan C2: traegt das Paket die Serverraster (core/planfelder.py), gelten
+// sie — der Client rechnet dann keine eigene Tiefe, keinen Spiegel, keine
+// eigene Froude-Zahl (vorher 34–100 % Volumenabweichung aus dem Voxel-Raster).
+describe('planFields — Serverraster aus den echten Zellen', () => {
+  function mitServerraster(vol, werte) {
+    for (const [k, v] of Object.entries(werte)) {
+      vol.fields[k] = { data: Float32Array.from([v]) }
+    }
+    return vol
+  }
+  const SERVER = { plan_h: 0.8, plan_wsp: 10.8, plan_ux: 0.3, plan_uy: 0.4,
+    plan_uox: 0.9, plan_uoy: 0, plan_uo: 0.95, plan_fr: 0.18 }
+
+  it('nimmt Tiefe, Spiegel, Geschwindigkeiten und Froude vom Server', () => {
+    // Voxel-Saeule sagt etwas ANDERES (0,5 m) — gewinnen muss der Server
+    const pf = planFields(mitServerraster(volAusSaeule([1, 1, 0, 0],
+      [[5, 0, 0], [5, 0, 0], [0, 0, 0], [0, 0, 0]]), SERVER), Float32Array.from([0]))
+    expect(pf.quelle).toBe('zellen')
+    expect(pf.depth[0]).toBeCloseTo(0.8)
+    expect(pf.hInt[0]).toBeCloseTo(0.8)
+    expect(pf.surface[0]).toBeCloseTo(10.8)
+    expect(pf.umagM[0]).toBeCloseTo(0.5)
+    expect(pf.umag[0]).toBeCloseTo(0.95)
+    expect(pf.froude[0]).toBeCloseTo(0.18)
+  })
+
+  it('rechnet ohne vollstaendige Serverraster wie bisher', () => {
+    const { plan_fr: _weg, ...unvollstaendig } = SERVER
+    const pf = planFields(mitServerraster(volAusSaeule([1, 1, 0, 0]), unvollstaendig),
+      Float32Array.from([0]))
+    expect(pf.quelle).toBe('raster')
+    expect(pf.depth[0]).toBeCloseTo(2 * DZ)
+  })
+})

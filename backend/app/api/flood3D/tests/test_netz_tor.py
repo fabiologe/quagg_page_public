@@ -53,3 +53,15 @@ def test_befunde_aus_qualitaetszahlen():
     # gesunde Zahlen -> keine Befunde
     assert befunde_ableiten({"y_plus_range": [1, 200], "courant_max": 0.5,
                              "checkmesh_ok": True}, {}) == []
+
+
+
+def test_befunde_planraster():
+    gesund = {"y_plus_range": [1, 200], "courant_max": 0.5, "checkmesh_ok": True}
+    # mit Planrastern betrifft die Viz-Warnung nur die 3D-Ansicht
+    b, = befunde_ableiten(gesund, {"viz_volume_error_rel_max": 0.5,
+                                   "plan_volume_error_rel_max": 0.0003})
+    assert b["quelle"] == "viz_volume" and "Planraster" in b["message"]
+    # Planraster daneben = Fehler (Σ h·A muss Σ α·V treffen)
+    b, = befunde_ableiten(gesund, {"plan_volume_error_rel_max": 0.05})
+    assert b["quelle"] == "plan_volume" and b["severity"] == "fehler"

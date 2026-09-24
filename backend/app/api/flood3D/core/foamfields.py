@@ -17,6 +17,7 @@ import numpy as np
 
 from .fields import (VolumeGrid, resample_points, write_geometry, write_index,
                      write_timestep)
+from .planfelder import PLAN_FELDER, PlanNetz
 from .terrain import TerrainField
 
 def foam_text(path: str | Path) -> str:
@@ -259,6 +260,21 @@ def viz_grid_for(spec) -> VolumeGrid:
                       spacing=(s, s, sz), dims=d)
 
 
+def _blockzelle_und_stufe(spec) -> tuple[tuple[float, float, float], int]:
+    """
+    Maße der blockMesh-Zelle und höchste Verfeinerungsstufe des Falls —
+    daraus bestimmt planfelder.zellmasse Grundfläche und Höhe jeder Zelle.
+    """
+    from .meshgen import cell_counts, flaechen_stufen
+    x0, y0, x1, y1 = spec.domain.extent
+    nx, ny, nz = cell_counts(spec)
+    block = ((x1 - x0) / nx, (y1 - y0) / ny,
+             (spec.domain.z_max - spec.domain.z_min) / nz)
+    stufen = list(flaechen_stufen(spec).values()) \
+        + [int(r.level) for r in spec.mesh.refinements]
+    return block, max(stufen, default=0)
+
+
 def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
                         ) -> dict:
     """Alle Ausgabezeitpunkte des Falls in die fields/-Ablage des Laufs."""
@@ -303,18 +319,40 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
     # dem einen Namen sucht, bekaeme dann eine LEERE tau-Karte.
     gelaende_patches = _gelaende_patches(case_dir)
     face_centres = _patches_verketten(case_dir / "0" / "C", gelaende_patches)
+    # Planraster aus den echten Zellen (C2) — brauchen die Zellvolumen
+    # (writeCellVolumes). Ohne 0/V (alte Läufe, CLI ohne OpenFOAM) fehlen
+    # sie, und der Client rechnet wie bisher aus dem Voxel-Raster.
+    plan, plan_error, plan_infos = None, None, []
+    if foam_exists(case_dir / "0" / "V"):
+        try:
+            block, max_stufe = _blockzelle_und_stufe(spec)
+            plan = PlanNetz(centres,
+                            parse_internal_field(case_dir / "0" / "V", n_cells),
+                            grid, block=block, max_stufe=max_stufe)
+        except Exception as e:                      # noqa: BLE001
+            plan_error = f"{type(e).__name__}: {e}"
     written = []
     written_fields: set[str] = set()
     has_shear = False
     for idx, (t, d) in enumerate(times):
         fields = {}
+        roh = {}
         for name, fname, fill in field_specs:
             f = d / fname
             if not foam_exists(f):
                 continue
             vals = parse_internal_field(f, n_cells)
+            if name in ("alpha", "U"):
+                roh[name] = vals
             fields[name] = resample_points(centres, vals, grid, fill=fill)
             written_fields.add(name)
+        if plan is not None and "alpha" in roh:
+            try:
+                pf, info = plan.raster(roh["alpha"], roh.get("U"))
+                fields.update(pf)
+                plan_infos.append((t, info))
+            except Exception as e:                  # noqa: BLE001
+                plan, plan_error = None, f"{type(e).__name__}: {e}"
         ws = d / "wallShearStress"
         if foam_exists(ws) and face_centres is not None \
                 and face_centres.ndim == 2:
@@ -351,8 +389,15 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
             terrain_error = f"{type(e).__name__}: {e}"
 
     names = sorted(written_fields) + (["bed_shear"] if has_shear else [])
+    # nur, wenn JEDER Zeitpunkt sie trägt — ein Abbruch mittendrin ließe
+    # sonst Zeitpunkte ohne Raster zurück, die der Client nicht erwartet
+    if plan is not None and len(plan_infos) == len(written):
+        names += list(PLAN_FELDER)
     write_index(run_root, grid, written, names)
-    out = {"times": written, "grid_dims": list(grid.dims), "cells": n_cells}
+    out = {"times": written, "grid_dims": list(grid.dims), "cells": n_cells,
+           "plan_infos": plan_infos if plan is not None else []}
+    if plan_error:
+        out["plan_error"] = plan_error
     if terrain_error:
         out["terrain_error"] = terrain_error
     return out
@@ -446,6 +491,11 @@ def viz_volume_check(run_root: str | Path, df) -> dict | None:
         alpha = fields.get("alpha")
         if alpha is None:
             continue
+        # nur innerhalb der Reihe: sie beginnt beim ersten Schreibtakt
+        # (z. B. 0,1 s), interp klemmte t = 0 auf diesen Wert (C2, Fall A:
+        # 14 % „Fehler“, der keiner war)
+        if not t_ref[0] - 1e-9 <= time <= t_ref[-1] + 1e-9:
+            continue
         viz = float(np.clip(alpha, 0.0, 1.0).sum()) * zellvol
         soll = float(np.interp(time, t_ref, v_ref))
         if soll > 1e-9:
@@ -468,7 +518,7 @@ def energy_head_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
 
     run_root = Path(run_root)
     index = read_index(run_root)
-    if index is None or "alpha" not in index.get("fields", []):
+    if index is None or not ({"alpha", "plan_wsp"} & set(index.get("fields", []))):
         return []
     # Von der Target-Kopplung gelöst (Audit U12): die Energiehöhe entsteht
     # für JEDEN Querschnitt — das Diagramm dafür existiert, und vorher gab
@@ -503,9 +553,34 @@ def energy_head_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
         iy = np.clip(((pts[:, 1] - oy) / sy).astype(int), 0, ny - 1)
         samples[sec.id] = (ix, iy)
 
+    # Mit Planrastern (C2) aus denselben Größen, die der Grundriss zeigt:
+    # E = WSP + |ū|²/2g je Säule, ū tiefengemittelt aus den echten Zellen.
+    # Ohne sie (alte Läufe) wie bisher aus dem Voxel-Raster.
+    mit_plan = "plan_wsp" in index.get("fields", [])
+
     rows = []
     for entry in index["timesteps"]:
         time, fields = read_timestep(run_root, entry["index"])
+        if mit_plan:
+            wsp_r, ux_r, uy_r = (fields.get(k) for k in
+                                 ("plan_wsp", "plan_ux", "plan_uy"))
+            if wsp_r is None or ux_r is None or uy_r is None:
+                continue
+            for sec_id, (ix, iy) in samples.items():
+                wsp = wsp_r[iy, ix].astype(float)
+                nass = np.isfinite(wsp)
+                if not nass.any():
+                    continue
+                v2 = ux_r[iy, ix].astype(float) ** 2 + uy_r[iy, ix].astype(float) ** 2
+                heads = wsp[nass] + v2[nass] / (2 * 9.81)
+                rows.append({
+                    "run_id": run_id, "time": float(time),
+                    "quantity": Quantity.ENERGY_HEAD.value, "location_id": sec_id,
+                    "component": "", "value": float(np.mean(heads)),
+                    "unit": UNITS[Quantity.ENERGY_HEAD],
+                    "source": "fields/plan",
+                })
+            continue
         alpha = fields.get("alpha")
         u = fields.get("U")
         if alpha is None or u is None:

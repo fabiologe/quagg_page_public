@@ -275,7 +275,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import KennwertHilfe from './KennwertHilfe.vue'
 import { usePostStore } from '../../stores/usePostStore'
-import { getGeometry, getTimesteps, getVolume, planFieldsCached }
+import { PLAN_FELDER, getGeometry, getTimesteps, getVolume, planFieldsCached }
   from '../../composables/useFieldCache'
 import { PAD, useRasterCanvas } from '../../composables/useRasterCanvas'
 import { TIEFE_BENETZT } from '../../utils/anzeigeSchwellen'
@@ -427,7 +427,8 @@ async function rechnen() {
     const zellflaeche = spacing[0] * spacing[1]
 
     for (let i = 0; i < zeitenL.length; i++) {
-      const vol = await getVolume(leerlaufId.value, zeitenL[i], ['alpha', 'U'])
+      const vol = await getVolume(leerlaufId.value, zeitenL[i],
+        ['alpha', 'U', ...PLAN_FELDER])
       if (meins !== lauf) return
       const pf = planFieldsCached(vol, terrainZ)
       trockenfallSchritt(tf, pf.depth, zeitenL[i])
@@ -493,7 +494,7 @@ async function rechnen() {
     const gewichte = zeitGewichte(zeitenS)
     for (let i = 0; i < zeitenS.length; i++) {
       const vol = await getVolume(schwallId.value, zeitenS[i],
-        ['alpha', 'bed_shear'])
+        ['alpha', 'bed_shear', ...PLAN_FELDER])
       if (meins !== lauf) return
       const pf = planFieldsCached(vol, terrainZ)
       if (!pf.tau) continue
