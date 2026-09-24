@@ -8,10 +8,10 @@ Zu `FAHRPLAN_C_ERGEBNISSE_2026-09-24.md`. Kein Schritt erledigt ohne Zahl vorher
 |---|---|---|---|---|
 | C0 | Messlatte | ◐ in C1 aufgegangen (Wehr alt/neu im Vergleich) | 2026-09-24 | |
 | C1 | Querschnitt exakt über die Zellflächen | ☑ gebaut, Suite + Harness grün | 2026-09-24 | `2fd2dbf` |
-| C2 | Planraster aus echten Zellen | ☑ gebaut; Volumen 50 % → 0,03 %, Pegel 40 → 9 mm | 2026-09-24 | `72209d1` |
-| C3 | Wasseroberfläche aus dem Rechennetz | ☑ gebaut; Fall A flach: Iso − plan −2,5 cm, − Voxel +5,4 cm | 2026-09-24 | |
-| C4 | Kennwerte: eine Definition je Größe | ☑ gebaut; Tracerbilanz 8,8 % → 0,014 % | 2026-09-24 | |
-| C5 | Wehr neu | ☑ C_d 0,533 im Literaturband 0,49–0,55 (DWA-M 176); Querschnitt/Ablauf +0,06 % | 2026-09-24 | |
+| C2 | Planraster aus echten Zellen | ☑ gebaut; Volumen 50 % → 0,0 % (Zellquader), Pegel 40 → 9 mm | 2026-09-24 | `72209d1` |
+| C3 | Wasseroberfläche aus dem Rechennetz | ☑ gebaut; Fall A flach: Iso − plan −2,5 cm, − Voxel +5,4 cm | 2026-09-24 | `1c98a95` |
+| C4 | Kennwerte: eine Definition je Größe | ☑ gebaut; Tracerbilanz 8,8 % → 0,014 % | 2026-09-24 | `1c98a95` |
+| C5 | Wehr neu | ☑ C_d 0,533 im Literaturband 0,49–0,55 (DWA-M 176); Querschnitt/Ablauf +0,06 % | 2026-09-24 | `290bdf4` |
 
 ## C1 · Querschnitt exakt
 
@@ -276,3 +276,23 @@ Spiegel entlang der Normalen bis 3 m, je Seite; frei, sobald er stromab unter di
 sofort angezeigt, der Nachlauf-/Bewertungscode von Stufe C ist dort noch nicht deployt. Beim
 Deploy: `venv/bin/python -m app.api.flood3D.probe.verifikation c5_wehr` (Job-Ordner
 `data/probe_a/c5_wehr`, 121 MB, bis dahin behalten).
+
+Harness-Probe nach C5, Stand `290bdf4`: 5/5 grün (Tracer-Verlust 0,014 %, Planraster-Volumen
+0,0 %, Massenfehler 0,79 %).
+
+## Auslieferung Stufe C (offen — nur mit Fabios OK)
+
+Nichts von C1–C5 ist live. Was ein Deploy braucht, zusammen:
+
+1. `pm2 restart quagg-api` — neuer Endpunkt `/runs/{id}/oberflaeche`, Nachlauf/Bewertung
+   (reist auch im Bundle mit, wirkt für neue Läufe ab dem Neustart).
+2. Client-Build (`npm run build`, vorher RAM/Platte und `find client/src -newer client/dist`
+   gegen fremde Zwischenstände prüfen) — Raum3D, Grundriss, Laubkarten, Hilfetexte.
+3. `venv/bin/python -m app.api.flood3D.probe.verifikation c5_wehr` — schreibt die
+   Verifikationskarte (C_d 0,533, bestanden, Band DWA-M 176); danach `data/probe_a/c5_wehr`
+   aufräumen.
+
+Läufe von vor Stufe C bleiben lesbar: ohne 0/V keine Planraster (Client rechnet wie bisher aus
+dem Voxel-Raster), ohne Oberfläche Marching Cubes, ohne Planraster C_d mit H = h und Nässe
+τ > 0. NUMERIK_VERSION bleibt 2026-09-A (keine Änderung am Rechenergebnis — nur an der
+Auswertung und einem zusätzlichen functionObject).
