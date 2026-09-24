@@ -1,7 +1,8 @@
 """
 Physikalischer Referenzfall (Spez. Kap. 13, Audit U21): Überfall über ein
 breitkroniges Wehr, gerechnet mit der ECHTEN Pipeline (blockMesh → snappy →
-interFoam), verglichen mit der Überfallformel Q = C_d · 2/3·√(2g)·b·h^1,5.
+interFoam), verglichen mit der Überfallformel Q = C_d · 2/3·√(2g)·b·H^1,5 und dem
+Literaturband nach DWA-M 176 (siehe `bewertungsband`).
 
 Der Fall ist bewusst klein, kostet aber trotzdem RECHENZEIT (Erstlauf:
 82 min auf 4 Kernen bei end_time 25 s; nach Kürzung auf 18 s ≈ 1 h — der
@@ -25,16 +26,26 @@ import numpy as np
 
 from ..core import casespec as cs
 
-# Toleranzband. `CD_REFERENZ` wird nach dem ERSTEN bestandenen Lauf auf den
-# gemessenen Wert eingefroren (Regression); bis dahin zählt allein das
-# Plausibilitätsfenster der Literatur für breitkronige Wehre.
-CD_PLAUSIBEL = (0.50, 0.80)      # Literaturspanne breitkronig (µ ≈ 0,5–0,58
-                                 # nach Poleni entspricht C_d ≈ 0,55–0,75)
-# Erstlauf 2026-08-11: C_d = 0,6443 ± 0,0093 (20.896 Zellen, 82 min auf
-# 4 Kernen) — mitten im Literaturband. Ab jetzt ist DIESER Wert die
-# Regressions-Referenz; das Plausibilitätsfenster bleibt als zweite Schranke.
-CD_REFERENZ: float | None = 0.644
-CD_TOLERANZ_REL = 0.10           # ± um die eingefrorene Referenz
+# Bewertungsband (Fahrplan C5, festgelegt 2026-09-24 VOR dem Ergebnis des
+# Laufs c5_wehr): die Literatur, keine Eigenreferenz.
+#   DWA-M 176 (2013), Abschn. 4.9 „Ausbildung von Überlaufschwellen",
+#   Tabelle der Überfallbeiwerte zur hydraulischen Berechnung:
+#   breitkroniges Wehr 0,49–0,51, abgefasst 0,50–0,55; scharfkantig 0,62,
+#   rundkronig 0,75, profiliert 0,75–0,85 (OCR-Lesung der Tabelle).
+# C_d IST der Poleni-Beiwert µ (Q = ⅔·µ·√(2g)·b·h^1,5). Bis dahin stand hier
+# „µ ≈ 0,5–0,58 nach Poleni entspricht C_d ≈ 0,55–0,75" — eine Umrechnung,
+# die es nicht gibt; sie weitete das Band auf 0,50–0,80, und die am
+# 2026-08-11 eingefrorene Eigenreferenz 0,644 (vor dem Freispiegel-Zulauf
+# A1 gerechnet) lag scheinbar darin. Das Verifikationswehr ist breitkronig
+# mit geneigten Flanken → das Band beider breitkroniger Zeilen.
+CD_LITERATUR = (0.49, 0.55)
+CD_QUELLE = ("DWA-M 176 (2013), Abschn. 4.9: breitkronig 0,49–0,51, "
+             "abgefasst 0,50–0,55")
+
+
+def bewertungsband() -> tuple[tuple[float, float], str]:
+    """Das EINE Band für jede Verifikation des Wehrs (Server-Probe und RunPod)."""
+    return CD_LITERATUR, f"Literatur breitkronig — {CD_QUELLE}"
 
 
 def referenz_spec() -> cs.CaseSpec:
@@ -130,25 +141,14 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
     manifest = json.loads((run_root / "manifest.json").read_text())
 
     df = pd.read_parquet(run_root / "normalized.parquet")
-    cd = df[(df["quantity"] == "overfall_cd")
-            & (df["location_id"] == "wehr")].sort_values("time")
-    if not len(cd):
+    # dieselbe Verdichtung wie jeder Nachweis (Fahrplan C4)
+    from ..core.evaluate import ueberfall_beiwert
+    cd = ueberfall_beiwert(df, spec, "wehr")
+    if cd is None:
         raise AssertionError("Keine Überfallbeiwert-Reihe entstanden — "
                              "Wehr wird nicht überströmt?")
-    # eingeschwungener Bereich: letztes Drittel der Reihe
-    hinten = cd.iloc[int(len(cd) * 2 / 3):]
-    cd_sim = float(hinten["value"].median())
-    streuung = float(hinten["value"].std())
-
-    if CD_REFERENZ is not None:
-        band = (CD_REFERENZ * (1 - CD_TOLERANZ_REL),
-                CD_REFERENZ * (1 + CD_TOLERANZ_REL))
-        band_art = f"eingefrorene Referenz {CD_REFERENZ:g} ± " \
-                   f"{CD_TOLERANZ_REL:.0%}"
-    else:
-        band = CD_PLAUSIBEL
-        band_art = "Literatur-Plausibilität breitkronig (Erstlauf — " \
-                   "Referenz danach einfrieren)"
+    cd_sim, streuung = cd["wert"], cd["streuung"]
+    band, band_art = bewertungsband()
     bestanden = band[0] <= cd_sim <= band[1]
 
     ergebnis = {
@@ -163,7 +163,7 @@ def verifikation_rechnen(ziel_json: Path) -> dict:
         "band": [round(band[0], 4), round(band[1], 4)],
         "band_art": band_art,
         "bestanden": bool(bestanden),
-        "formel": "Q = C_d · 2/3 · √(2g) · b · h^1,5",
+        "formel": "Q = C_d · 2/3 · √(2g) · b · H^1,5, H = h + ū²/2g",
     }
     ziel_json.parent.mkdir(parents=True, exist_ok=True)
     ziel_json.write_text(json.dumps(ergebnis, indent=2, ensure_ascii=False))

@@ -11,7 +11,7 @@ Zu `FAHRPLAN_C_ERGEBNISSE_2026-09-24.md`. Kein Schritt erledigt ohne Zahl vorher
 | C2 | Planraster aus echten Zellen | ☑ gebaut; Volumen 50 % → 0,03 %, Pegel 40 → 9 mm | 2026-09-24 | `72209d1` |
 | C3 | Wasseroberfläche aus dem Rechennetz | ☑ gebaut; Fall A flach: Iso − plan −2,5 cm, − Voxel +5,4 cm | 2026-09-24 | |
 | C4 | Kennwerte: eine Definition je Größe | ☑ gebaut; Tracerbilanz 8,8 % → 0,014 % | 2026-09-24 | |
-| C5 | Wehr neu | ☐ offen | | |
+| C5 | Wehr neu | ☑ C_d 0,533 im Literaturband 0,49–0,55 (DWA-M 176); Querschnitt/Ablauf +0,06 % | 2026-09-24 | |
 
 ## C1 · Querschnitt exakt
 
@@ -232,3 +232,47 @@ Planraster: wie bisher.
 
 Tests: `test_ueberfall_c4.py` (6), `test_bed_shear_minimum_nur_ueber_nassen_saeulen`; Hilfetext
 C_d im Client (H statt h, Beharrung, Rückstau). Backend 950 + 6 übersprungen, Client 404.
+
+## C5 · Wehr neu
+
+**Kriterium vor dem Ergebnis festgelegt** (`tests/verifikation_wehr.bewertungsband`, eine
+Funktion für Server-Probe und RunPod-Weg): C_d im Literaturband **0,49–0,55** nach
+DWA-M 176 (2013), Abschn. 4.9 „Ausbildung von Überlaufschwellen", Tabelle der Überfallbeiwerte
+zur hydraulischen Berechnung: breitkroniges Wehr 0,49–0,51, abgefasst 0,50–0,55 (scharfkantig
+0,62, rundkronig 0,75, profiliert 0,75–0,85; OCR-Lesung der Tabelle, Quelle über NormRAG).
+Keine Eigenreferenz mehr.
+
+**Fund dabei:** der Kommentar zum alten Band rechnete „µ ≈ 0,5–0,58 nach Poleni entspricht
+C_d ≈ 0,55–0,75" um. Unsere Formel Q = C_d · ⅔ · √(2g) · b · h^1,5 IST die Poleni-Formel,
+C_d = µ — die Umrechnung gibt es nicht. Sie weitete das Band auf 0,50–0,80, und die am
+2026-08-11 eingefrorene Referenz 0,644 (vor dem Freispiegel-Zulauf A1 gerechnet, mit dem
+Wasservorhang) lag scheinbar „mitten im Literaturband". 0,644 ist der Wert eines scharfkantigen
+Wehrs; das „nicht bestanden" von Stufe A (0,540) lag in Wahrheit im Band.
+
+**Lauf c5_wehr** (Server-Docker, 3 Kerne, 20 896 Zellen, 40 s statt 18 s, Felder alle 2 s,
+Rechenzeit 1 950 s):
+
+| Größe | Wert |
+|---|---|
+| Beharrung ab (Ablauf im 2-%-Band) | 16,6 s |
+| Q Querschnitt / Q Ablauf, 16,6–40 s | **+0,06 %** (Abnahme C1 < 1 %: ☑; bei 15–18 s −2,35 %) |
+| Q Zulauf / Q Ablauf, 16,6–40 s | +0,78 % (Massenfehler 1,03 %) |
+| Pegel 18 / 25 / 40 s | 95,7704 / 95,7740 / 95,7745 m |
+| ū²/2g am Pegel | 1,2 mm (h ≈ 0,17 m → C_d −1 %) |
+| **C_d** (Median ab Beharrung, H = h + ū²/2g) | **0,5333 ± 0,0030** |
+| Unterwasser (tiefster Spiegel stromab bis 3 m) | 95,04 m, 0,56 m unter der Krone → frei |
+| Bewertung | im Band 0,49–0,55 — **bestanden** |
+
+Zum Vergleich mit derselben Definition: 12–18 s 0,547, 15–18 s 0,542 — das alte Zeitfenster lag
+im Anlauf.
+
+**Rückstaukontrolle korrigiert:** der erste Entwurf maß das Unterwasser 2 Rasterzellen neben der
+Kronenlinie — beim Verifikationswehr (Krone 0,4 m breit, geneigte Flanken) noch auf dem
+Wehrkörper im Überfallstrahl, 8 mm über der Krone → Fehlalarm „nicht frei". Jetzt: tiefster
+Spiegel entlang der Normalen bis 3 m, je Seite; frei, sobald er stromab unter die Krone fällt
+(Tests `test_unterwasser_frei_trotz_strahl_auf_dem_wehrkoerper`, `test_unterwasser_eingestaut`).
+
+**Nicht geschrieben:** `data/verifikation/wehr_ueberfall.json`. Die Datei wird in der Produktion
+sofort angezeigt, der Nachlauf-/Bewertungscode von Stufe C ist dort noch nicht deployt. Beim
+Deploy: `venv/bin/python -m app.api.flood3D.probe.verifikation c5_wehr` (Job-Ordner
+`data/probe_a/c5_wehr`, 121 MB, bis dahin behalten).

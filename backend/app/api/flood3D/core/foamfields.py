@@ -701,13 +701,20 @@ def geschwindigkeitshoehe(run_root, punkt) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(t), np.asarray(hv)
 
 
-def unterwasser_an_linie(run_root, polyline, abstand_zellen: float = 2.0
+def unterwasser_an_linie(run_root, polyline, reichweite_m: float = 3.0
                          ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Wasserspiegel (plan_wsp) beiderseits einer Linie (Wehrkrone) im Abstand
-    `abstand_zellen` Rasterzellen, je Feld-Ausgabezeit: der Median der
-    TIEFEREN Seite — das Unterwasser. NaN, wenn eine Seite trocken ist
-    (dann ist sie das Unterwasser, und der Überfall ist frei).
+    Tiefster Wasserspiegel (plan_wsp) stromab einer Linie (Wehrkrone), je
+    Feld-Ausgabezeit — für die Rückstaukontrolle: bei FREIEM Überfall sinkt
+    der Spiegel hinter der Krone irgendwo unter die Kronenhöhe, bei
+    eingestautem bleibt er überall darüber. Je Seite und Abstand (1 Zelle
+    bis `reichweite_m`) der Median über die Kronenpunkte, je Seite das
+    Minimum über die Abstände; stromab ist die tiefere Seite. NaN, wenn
+    stromab etwas trocken fällt (frei).
+    Der erste Entwurf nahm EINEN Abstand von 2 Zellen — beim
+    Verifikationswehr (Krone 0,4 m breit, geneigte Flanken) lag der Punkt
+    noch auf dem Wehrkörper im Überfallstrahl, 8 mm über der Krone, und
+    meldete Rückstau (c5_wehr, 2026-09-24).
     """
     from .fields import read_timestep
     index = _plan_zeitpunkte(run_root)
@@ -717,7 +724,9 @@ def unterwasser_an_linie(run_root, polyline, abstand_zellen: float = 2.0
     s = g["spacing"][0]
     nx, ny = g["dims"][0], g["dims"][1]
     pl = np.asarray([(p[0], p[1]) for p in polyline], float)
-    seiten = ([], [])
+    abstaende = np.arange(1, max(2, int(reichweite_m / s)) + 1) * s
+    # je Seite, je Abstand: Säulenindizes entlang der Krone
+    seiten: tuple[list, list] = ([[] for _ in abstaende], [[] for _ in abstaende])
     for a, b in zip(pl[:-1], pl[1:]):
         lang = float(np.linalg.norm(b - a))
         if lang <= 0:
@@ -726,21 +735,24 @@ def unterwasser_an_linie(run_root, polyline, abstand_zellen: float = 2.0
         for f in np.linspace(0, 1, max(2, int(lang / s) + 1)):
             p = a + f * (b - a)
             for k, vz in enumerate((1.0, -1.0)):
-                q = p + vz * abstand_zellen * s * n
-                i, j = int((q[0] - g["origin"][0]) / s), int((q[1] - g["origin"][1]) / s)
-                if 0 <= i < nx and 0 <= j < ny:
-                    seiten[k].append(j * nx + i)
-    if not seiten[0] or not seiten[1]:
-        return np.zeros(0), np.zeros(0)
+                for m, d in enumerate(abstaende):
+                    q = p + vz * d * n
+                    i, j = int((q[0] - g["origin"][0]) / s), int((q[1] - g["origin"][1]) / s)
+                    if 0 <= i < nx and 0 <= j < ny:
+                        seiten[k][m].append(j * nx + i)
     t, uw = [], []
     for e in index["timesteps"]:
         time, f = read_timestep(Path(run_root), e["index"])
         w = f["plan_wsp"].ravel()
-        m = [w[np.asarray(sz)] for sz in seiten]
-        if any(not np.isfinite(x).any() for x in m):
-            u = np.nan                      # eine Seite trocken: frei
-        else:
-            u = min(float(np.nanmedian(x)) for x in m)
+        tiefst = []
+        for seite in seiten:
+            werte = [np.nanmedian(w[np.asarray(z)]) if z else np.nan for z in seite]
+            if any(z and not np.isfinite(v) for z, v in zip(seite, werte)):
+                tiefst.append(-np.inf)          # trocken gefallen: frei
+            else:
+                endlich = [v for v in werte if np.isfinite(v)]
+                tiefst.append(min(endlich) if endlich else np.nan)
+        u = min(tiefst) if all(np.isfinite(x) or x == -np.inf for x in tiefst) else np.nan
         t.append(time)
-        uw.append(u)
+        uw.append(np.nan if u == -np.inf else u)
     return np.asarray(t), np.asarray(uw)

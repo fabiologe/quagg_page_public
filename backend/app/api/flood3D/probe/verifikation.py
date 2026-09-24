@@ -28,7 +28,7 @@ from ..core.casespec import CaseSpec
 from ..core.conventions import NUMERIK_VERSION
 from ..core.evaluate import overfall_cd_rows, ueberfall_beiwert
 from ..core.extract.case_reader import extract_case
-from ..tests.verifikation_wehr import CD_PLAUSIBEL, CD_REFERENZ, CD_TOLERANZ_REL
+from ..tests.verifikation_wehr import bewertungsband
 from .probe_lauf import WURZEL
 
 ZIEL = WURZEL.parent / "verifikation" / "wehr_ueberfall.json"
@@ -54,11 +54,7 @@ def wehr_bewerten(job: Path) -> dict:
     if cd is None:
         raise SystemExit("Keine Überfallbeiwert-Reihe — Wehr nicht überströmt?")
     cd_sim, streuung = cd["wert"], cd["streuung"]
-    if CD_REFERENZ is not None:
-        band = (CD_REFERENZ * (1 - CD_TOLERANZ_REL), CD_REFERENZ * (1 + CD_TOLERANZ_REL))
-        band_art = f"eingefrorene Referenz {CD_REFERENZ:g} ± {CD_TOLERANZ_REL:.0%}"
-    else:
-        band, band_art = CD_PLAUSIBEL, "Literatur-Plausibilität breitkronig"
+    band, band_art = bewertungsband()
     probe = json.loads((job / "probe.json").read_text()) if (job / "probe.json").is_file() else {}
     return {
         "fall": "wehr_ueberfall",

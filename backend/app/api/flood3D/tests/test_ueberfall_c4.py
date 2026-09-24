@@ -129,3 +129,38 @@ def test_rueckstau_unterwasser_ueber_krone(monkeypatch):
     cd = ev.ueberfall_beiwert(df, spec, "w1")
     assert cd["frei"] is False and cd["unterwasser_ueber_krone"] == pytest.approx(0.2)
     assert "nicht frei" in ev._eval_target(df, spec.evaluation.targets[-1], spec)["message"]
+
+
+def _wsp_raster(tmp_path, stromab):
+    """Krone bei x = 2,5 (Höhe 0,6); stromauf 1,0; stromab je Abstand."""
+    nx, ny, s = 20, 4, 0.25
+    grid = VolumeGrid(origin=(0, 0, 0), spacing=(s, s, s), dims=(nx, ny, 1))
+    wsp = np.full((ny, nx), 1.0, np.float32)
+    for i in range(nx):
+        x = (i + 0.5) * s
+        if x > 2.5:
+            wsp[:, i] = stromab(x - 2.5)
+    felder = {k: np.zeros((ny, nx), np.float32) for k in PLAN_FELDER}
+    felder["plan_wsp"] = wsp
+    write_timestep(tmp_path, 0, 1.0, felder)
+    write_index(tmp_path, grid, [1.0], list(PLAN_FELDER))
+    return [(2.5, 0.1, 0.6), (2.5, 0.9, 0.6)]
+
+
+def test_unterwasser_frei_trotz_strahl_auf_dem_wehrkoerper(tmp_path):
+    """
+    Direkt hinter der Kronenlinie liegt der Strahl noch 2 cm über der Krone
+    (breite Krone, geneigte Flanke) — der erste Entwurf maß dort und meldete
+    Rückstau (c5_wehr). Weiter stromab fällt der Spiegel unter die Krone.
+    """
+    from ..core.foamfields import unterwasser_an_linie
+    krone = _wsp_raster(tmp_path, lambda d: 0.62 if d < 0.6 else 0.30)
+    _, uw = unterwasser_an_linie(tmp_path, krone)
+    assert uw[0] == pytest.approx(0.30)                  # < Krone 0,6: frei
+
+
+def test_unterwasser_eingestaut(tmp_path):
+    from ..core.foamfields import unterwasser_an_linie
+    krone = _wsp_raster(tmp_path, lambda d: 0.70)
+    _, uw = unterwasser_an_linie(tmp_path, krone)
+    assert uw[0] == pytest.approx(0.70)                  # > Krone: nicht frei
