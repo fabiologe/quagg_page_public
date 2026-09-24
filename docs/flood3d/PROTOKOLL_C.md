@@ -280,7 +280,7 @@ Deploy: `venv/bin/python -m app.api.flood3D.probe.verifikation c5_wehr` (Job-Ord
 Harness-Probe nach C5, Stand `290bdf4`: 5/5 grün (Tracer-Verlust 0,014 %, Planraster-Volumen
 0,0 %, Massenfehler 0,79 %).
 
-## Auslieferung Stufe C (offen — nur mit Fabios OK)
+## Auslieferung Stufe C — erledigt 2026-09-24 (Fabio: „lets go !“)
 
 Nichts von C1–C5 ist live. Was ein Deploy braucht, zusammen:
 
@@ -296,3 +296,11 @@ Läufe von vor Stufe C bleiben lesbar: ohne 0/V keine Planraster (Client rechnet
 dem Voxel-Raster), ohne Oberfläche Marching Cubes, ohne Planraster C_d mit H = h und Nässe
 τ > 0. NUMERIK_VERSION bleibt 2026-09-A (keine Änderung am Rechenergebnis — nur an der
 Auswertung und einem zusätzlichen functionObject).
+
+**Ausgeliefert 2026-09-24:** pm2-Neustart 11:43 (API gesund; `/oberflaeche` antwortet für
+Altläufe mit der 404-Meldung des Handlers), Build 11:45 (`Flood3DPreMain-Ej7lE0TX.js`, atomar
+über dist_neu, temporäre 2-GB-Swapdatei danach abgebaut; vorher geprüft: neuer als der letzte
+Build nur die eigenen flood-3D-Dateien), Verifikationskarte 11:46 aus c5_wehr (C_d 0,5333,
+bestanden, Band DWA-M 176; alte Karte als `wehr_ueberfall.2026-09-23.bak`), Job-Ordner danach
+aufgeräumt. Offen: Browserprobe an einem neuen Lauf (Planraster, Oberfläche, τ auf dem
+Erdkörper erscheinen erst für Läufe, die nach dem Neustart gerechnet werden).
