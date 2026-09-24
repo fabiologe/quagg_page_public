@@ -113,20 +113,28 @@ def _eval_target(df: pd.DataFrame, target, spec: CaseSpec = None) -> dict:
                    result=result, utilisation=util)
 
     elif target.kind == "overfall_cd":
-        t, v = get_series(df, Quantity.OVERFALL_CD, target.weir)
-        if not len(t):
+        cd = ueberfall_beiwert(df, spec, target.weir) if spec is not None else None
+        if cd is None:
             return missing(f"Keine Überfallbeiwert-Reihe für Wehr {target.weir} "
                            "— Querschnitts- oder Pegelreihe fehlt, oder die "
                            "Krone war nie überströmt")
-        value = float(np.median(v))
+        value = cd["wert"]
+        hinweise = [f"Median ab t = {cd['fenster_ab']:g} s"
+                    + (" (Beharrung)" if cd["eingeschwungen"] else
+                       " — Lauf nicht eingeschwungen, letztes Drittel")]
+        if cd.get("frei") is False:
+            hinweise.append(f"Unterwasser {cd['unterwasser_ueber_krone']:.2f} m "
+                            "über der Krone — Überfall nicht frei, die "
+                            "Überfallformel gilt nicht")
+        out.update(value=value, unit="-", n_samples=cd["n"],
+                   fenster_ab=cd["fenster_ab"], eingeschwungen=cd["eingeschwungen"],
+                   frei=cd.get("frei"), message="; ".join(hinweise))
         if target.limit_max is None and target.limit_min is None:
-            out.update(value=value, unit="-", result="informativ",
-                       n_samples=int(len(v)))
+            out["result"] = "informativ"
         else:
             result, util = _verdict(value, target.limit_max, target.limit_min)
-            out.update(value=value, unit="-", limit_max=target.limit_max,
-                       limit_min=target.limit_min, result=result,
-                       utilisation=util, n_samples=int(len(v)))
+            out.update(limit_max=target.limit_max, limit_min=target.limit_min,
+                       result=result, utilisation=util)
 
     elif target.kind == "massenbilanz":
         # |dV/dt| am Ende, bezogen auf den Zufluss — die 2 %/10 %-Ampel des
@@ -222,33 +230,51 @@ def _extremes(df: pd.DataFrame) -> list[dict]:
 # Abgeleitete Reihen — entstehen VOR write_normalized im Runner
 # --------------------------------------------------------------------------
 
-def overfall_cd_rows(df: pd.DataFrame, spec: CaseSpec, run_id: str) -> list[dict]:
+def ueberfall_paare(spec: CaseSpec) -> list[tuple[str, str, str]]:
     """
-    Überfallbeiwert-Zeitreihe je Wehr: C_d = Q / (2/3·√(2g)·b·h^1.5) mit
-    h = Oberwasserstand − mittlere Kronenhöhe, b = Kronenlänge. Nur
-    Zeitpunkte mit nennenswerter Überströmung (h > 2 cm, Q > 0).
+    (Wehr, Querschnitt, Pegel) je Überfallbeiwert — aus den Kriterien. Ohne
+    Kriterium nur, wenn die Zuordnung eindeutig ist: genau EIN Wehr, EIN
+    Querschnitt, EIN Pegel (Fahrplan C4). Bis dahin bekam JEDES Wehr den
+    einen Querschnitt — bei zwei Wehren zweimal derselbe Durchfluss.
     """
-    rows: list[dict] = []
-    # Wehr/Querschnitt/Pegel-Tripel: aus den Kriterien — und, von der
-    # Target-Kopplung gelöst (Audit U12, Plan-Befund L2), zusätzlich für
-    # jedes NICHT abgedeckte Wehr, sofern der Fall genau EINEN Querschnitt
-    # und EINEN Pegel hat (dann ist die Zuordnung eindeutig; bei mehreren
-    # bleibt sie eine fachliche Entscheidung über ein Kriterium).
     paare = [(tg.weir, tg.section, tg.gauge)
              for tg in spec.evaluation.targets if tg.kind == "overfall_cd"]
-    abgedeckt = {w for w, _, _ in paare}
-    if (len(spec.evaluation.sections) == 1
+    wehre = [s for s in spec.structures if s.type == "weir"]
+    if (not paare and len(wehre) == 1 and len(spec.evaluation.sections) == 1
             and len(spec.evaluation.gauges) == 1):
-        for s in spec.structures:
-            if s.type == "weir" and s.id not in abgedeckt:
-                paare.append((s.id, spec.evaluation.sections[0].id,
-                              spec.evaluation.gauges[0].id))
-    for weir_id, section_id, gauge_id in paare:
+        paare.append((wehre[0].id, spec.evaluation.sections[0].id,
+                      spec.evaluation.gauges[0].id))
+    return paare
+
+
+def _krone(weir) -> float:
+    """Kronenhöhe = tiefster Punkt der Krone — dort setzt der Überfall an."""
+    return float(min(p[2] for p in weir.crest_polyline))
+
+
+def overfall_cd_rows(df: pd.DataFrame, spec: CaseSpec, run_id: str,
+                     run_root=None) -> list[dict]:
+    """
+    Überfallbeiwert-Zeitreihe je Wehr (Fahrplan C4):
+
+        C_d = Q / (2/3 · √(2g) · b · H^1,5),   H = WSP − Krone + ū²/2g
+
+    WSP am Pegel, ū tiefengemittelt an der Pegelsäule aus den Planrastern
+    (C2; ohne sie — Lauf vor C2 — fehlt die Geschwindigkeitshöhe, H = h),
+    Krone = tiefster Kronenpunkt, b = Kronenlänge, Q am Querschnitt. Nur
+    Zeitpunkte mit H > 2 cm und Q ≠ 0. Dazu, mit Planrastern, der
+    Unterwasserspiegel neben der Krone als Pegelreihe `<wehr>_unterwasser`
+    (Rückstaukontrolle in `ueberfall_beiwert`).
+    """
+    from .foamfields import geschwindigkeitshoehe, unterwasser_an_linie
+    rows: list[dict] = []
+    for weir_id, section_id, gauge_id in ueberfall_paare(spec):
         weir = next((s for s in spec.structures
                      if s.id == weir_id and s.type == "weir"), None)
-        if weir is None:
+        gauge = next((g for g in spec.evaluation.gauges if g.id == gauge_id), None)
+        if weir is None or gauge is None:
             continue
-        crest = float(np.mean([p[2] for p in weir.crest_polyline]))
+        krone = _krone(weir)
         pts = np.asarray([(p[0], p[1]) for p in weir.crest_polyline], float)
         b = float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
         tq, q = get_series(df, Quantity.DISCHARGE, section_id)
@@ -257,16 +283,62 @@ def overfall_cd_rows(df: pd.DataFrame, spec: CaseSpec, run_id: str) -> list[dict
             continue
         grid = np.union1d(tq, tl)
         qi = np.interp(grid, tq, q)
-        h = np.interp(grid, tl, lv) - crest
-        ok = (h > 0.02) & (np.abs(qi) > 1e-6)
-        cd = np.abs(qi[ok]) / ((2.0 / 3.0) * np.sqrt(2 * 9.81) * b * h[ok] ** 1.5)
+        H = np.interp(grid, tl, lv) - krone
+        if run_root is not None:
+            tf, hv = geschwindigkeitshoehe(run_root, gauge.point)
+            if len(tf):
+                H = H + np.interp(grid, tf, hv)
+        ok = (H > 0.02) & (np.abs(qi) > 1e-6)
+        cd = np.abs(qi[ok]) / ((2.0 / 3.0) * np.sqrt(2 * 9.81) * b * H[ok] ** 1.5)
         for t, v in zip(grid[ok], cd):
             rows.append({"run_id": run_id, "time": float(t),
                          "quantity": Quantity.OVERFALL_CD.value,
                          "location_id": weir_id, "component": "",
                          "value": float(v), "unit": UNITS[Quantity.OVERFALL_CD],
                          "source": "abgeleitet/ueberfall"})
+        if run_root is not None:
+            tu, uw = unterwasser_an_linie(run_root, weir.crest_polyline)
+            for t, v in zip(tu, uw):
+                if np.isfinite(v):
+                    rows.append({"run_id": run_id, "time": float(t),
+                                 "quantity": Quantity.LEVEL.value,
+                                 "location_id": f"{weir_id}_unterwasser",
+                                 "component": "", "value": float(v),
+                                 "unit": UNITS[Quantity.LEVEL],
+                                 "source": "fields/plan"})
     return rows
+
+
+def ueberfall_beiwert(df: pd.DataFrame, spec: CaseSpec, weir_id: str) -> dict | None:
+    """
+    DIE Verdichtung der C_d-Reihe (Nachweis und Verifikation, Fahrplan C4):
+    Median ab Beharrungsbeginn des Ablaufs (`kennwerte` → bilanz.beharrung_ab).
+    Ist der Lauf nicht eingeschwungen, das letzte Drittel — ausgewiesen.
+    Bis dahin nahm der Nachweis den Median der GANZEN Reihe (Anlauf
+    inklusive) und die Verifikation das letzte Drittel.
+    Rückstau: Unterwasser neben der Krone im selben Fenster über der Krone
+    → `frei = False` (die Überfallformel setzt freien Überfall voraus).
+    """
+    t, v = get_series(df, Quantity.OVERFALL_CD, weir_id)
+    if not len(t):
+        return None
+    ab = (kennwerte(df, spec).get("bilanz") or {}).get("beharrung_ab")
+    eingeschwungen = ab is not None and int((t >= ab).sum()) >= 3
+    m = t >= (ab if eingeschwungen else t[0] + (t[-1] - t[0]) * 2 / 3)
+    out = {"wert": float(np.median(v[m])),
+           "streuung": float(np.std(v[m])),
+           "n": int(m.sum()),
+           "fenster_ab": float(t[m][0]),
+           "eingeschwungen": bool(eingeschwungen)}
+    weir = next((s for s in spec.structures if s.id == weir_id), None)
+    tu, uw = get_series(df, Quantity.LEVEL, f"{weir_id}_unterwasser")
+    if weir is not None and len(tu):
+        im = tu >= out["fenster_ab"]
+        if im.any():
+            ueber = float(np.median(uw[im])) - _krone(weir)
+            out["unterwasser_ueber_krone"] = round(ueber, 4)
+            out["frei"] = ueber <= 0.0
+    return out
 
 
 # --------------------------------------------------------------------------

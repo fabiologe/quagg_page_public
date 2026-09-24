@@ -92,6 +92,9 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
               + " (Zeitreihen und Nachweise bleiben nutzbar)")
     if conv.get("plan_error"):
         melde("WARNUNG: Planraster nicht erzeugt — " + conv["plan_error"])
+    if conv.get("oberflaeche_error"):
+        melde("WARNUNG: Wasseroberfläche nicht übernommen — "
+              + conv["oberflaeche_error"] + " (Raum3D zeigt Marching Cubes)")
     if conv.get("terrain_error"):
         melde("WARNUNG: Geländeschicht nicht erzeugt — " + conv["terrain_error"]
               + " (Ergebnisse bleiben nutzbar, im Viewer fehlt nur das Gelände)")
@@ -100,7 +103,7 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
     rows = bed_shear_series(spec, job, run_id) + energy_head_series(spec, job, run_id)
     if rows:
         df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-    cd_rows = overfall_cd_rows(df, spec, run_id)
+    cd_rows = overfall_cd_rows(df, spec, run_id, run_root=job)
     if cd_rows:
         df = pd.concat([df, pd.DataFrame(cd_rows)], ignore_index=True)
     write_normalized(df, job / "normalized.parquet")
@@ -132,6 +135,8 @@ def nachlauf(case: Path, job: Path, spec: CaseSpec, run_id: str,
         manifest.update(plan_check)
     if conv.get("plan_error"):
         manifest["plan_error"] = conv["plan_error"]
+    if conv.get("oberflaeche_error"):
+        manifest["oberflaeche_error"] = conv["oberflaeche_error"]
 
     result = evaluate_run(df, spec, run_id, manifest)
     manifest.setdefault("befunde", []).extend(

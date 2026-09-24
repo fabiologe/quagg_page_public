@@ -28,10 +28,15 @@ vergleichbar ist:
   wsp_pegel         Wasserspiegel am ersten Pegel, Mittel der letzten Sekunde
   co_max            Courant-Spitze aus dem Solver-Log
   y_plus            je Patch min/max zum letzten Zeitpunkt
-  tracer_verlust    (∫Zu − ∫Ab·T_ab − Σ α·T·V) / ∫Zu   (nur mit Verweilzeit)
-  tracer_in_luft    Σ (1 − α)·T·V / ∫Zu               (nur mit Verweilzeit;
-                    nur ohne Phasenbindung aussagekräftig — mit `phase`
-                    trägt T in Luftzellen keine Masse)
+  tracer_verlust    (∫Zu − ∫Ab·T_ab − Σ T·V) / ∫Zu     (nur mit Verweilzeit)
+                    T_ab durchflussgewichtet (C4). Masse = Σ T·V, NICHT
+                    Σ α·T·V: mit `phase alpha.water` transportiert
+                    scalarTransport T mit dem Wasserfluss α·φ, T ist
+                    Masse je Zellvolumen — die Bilanz schließt so auf
+                    0,02 % (c4_k, 2026-09-24); mit α·T·V fehlte der Anteil
+                    in den Grenzflächenzellen (8,8 %, als „Verlust“ gezählt)
+  tracer_in_luft    Σ (1 − α)·T·V / ∫Zu — der Teil der Masse, der in den
+                    Grenzflächenzellen auf den Luftanteil entfällt (Info)
 """
 from __future__ import annotations
 
@@ -381,10 +386,10 @@ def auswerten(job: Path) -> dict:
                     if len(tt):
                         tr_i = np.interp(tq, tt, tr)
                         raus_T += _integral(tq, q * tr_i, t0, t_end)
-            im_wasser = float((a * T * V).sum())
+            masse = float((T * V).sum())
             in_luft = float(((1 - a) * T * V).sum())
-            erg.update(tracer_zu=rein, tracer_ab=raus_T, tracer_im_wasser=im_wasser,
-                       tracer_verlust=(rein - raus_T - im_wasser) / max(rein, 1e-12),
+            erg.update(tracer_zu=rein, tracer_ab=raus_T, tracer_masse=masse,
+                       tracer_verlust=(rein - raus_T - masse) / max(rein, 1e-12),
                        tracer_in_luft=in_luft / max(rein, 1e-12))
     return erg
 

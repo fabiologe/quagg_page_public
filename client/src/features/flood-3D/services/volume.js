@@ -74,3 +74,32 @@ export async function fetchVolume(runId, time, fields = null) {
   return out
 }
 
+// Wasseroberfläche aus dem Rechennetz (Fahrplan C3, backend core/oberflaeche.py):
+//   b"F3DS" | uint32 Headerlänge | Header-JSON | Punkte (f32 ×3)
+//   | Dreiecke (u32 ×3) | Knotenfelder (f32)
+export function parseOberflaeche(buf) {
+  const view = new DataView(buf)
+  const magic = new TextDecoder().decode(new Uint8Array(buf, 0, 4))
+  if (magic !== 'F3DS') throw new Error('Ungültiges Oberflächenpaket')
+  const headerLen = view.getUint32(4, true)
+  const kopf = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, headerLen)))
+  let pos = 8 + headerLen
+  const punkte = new Float32Array(buf, pos, kopf.punkte * 3)
+  pos += kopf.punkte * 12
+  const dreiecke = new Uint32Array(buf, pos, kopf.dreiecke * 3)
+  pos += kopf.dreiecke * 12
+  const felder = {}
+  for (const f of kopf.felder) {
+    felder[f.name] = new Float32Array(buf, pos, kopf.punkte * f.components)
+    pos += kopf.punkte * f.components * 4
+  }
+  return { time: kopf.time, punkte, dreiecke, felder }
+}
+
+// null, wenn der Lauf keine hat (vor C3 gerechnet) — dann Marching Cubes
+export async function fetchOberflaeche(runId, time) {
+  const res = await fetch(`${BASE}/runs/${runId}/oberflaeche?time=${time}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw await fehlerAus(res, `oberflaeche ${runId}: `)
+  return parseOberflaeche(await res.arrayBuffer())
+}

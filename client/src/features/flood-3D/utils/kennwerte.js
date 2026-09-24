@@ -367,8 +367,11 @@ export const KENNWERTE = {
     label: 'Überfallbeiwert C_d',
     einheit: '—',
     was: 'Wirkungsgrad des Wehrs in der Überfallformel '
-      + 'Q = ⅔·C_d·√(2g)·b·h^1,5. Er fasst zusammen, wie gut die Krone '
-      + 'angeströmt wird.',
+      + 'Q = ⅔·C_d·√(2g)·b·H^1,5 mit der Energiehöhe H = h + v²/2g über dem '
+      + 'tiefsten Kronenpunkt (v tiefengemittelt am Pegel). Er fasst zusammen, '
+      + 'wie gut die Krone angeströmt wird. Gewertet wird der Median ab dem '
+      + 'Beharrungszustand; steht das Unterwasser über der Krone, ist der '
+      + 'Überfall nicht frei und die Formel gilt nicht.',
     stufen: [
       { bis: 0.5, text: 'auffällig niedrig — meist Rückstau von unten, '
         + 'schräge Anströmung oder eine zu kurze Kronenlänge im Modell.',

@@ -225,6 +225,33 @@ def test_volume_gzip_transport(client):
     assert r.content[:4] == b"F3DV"
 
 
+def test_oberflaeche_ohne_und_mit(client, tmp_path):
+    """C3: 404 vor C3 gerechnet; danach die Isofläche als F3DS-Paket."""
+    import json as _json
+    import struct
+
+    from ..core.fields import fields_dir
+    from ..core.oberflaeche import oberflaechen_umwandeln
+    from .test_oberflaeche import _fall
+    assert client.get("/runs/r001/oberflaeche", params={"time": 1}).status_code == 404
+
+    run = _runs_wurzel(client) / "r001"
+    zeiten = oberflaechen_umwandeln(_fall(tmp_path), run)
+    idx_pfad = fields_dir(run) / "index.json"
+    index = _json.loads(idx_pfad.read_text())
+    idx_pfad.write_text(_json.dumps({**index, "oberflaeche": zeiten}))
+    try:
+        assert client.get("/runs/r001/timesteps").json()["oberflaeche"] == [1.0, 2.0]
+        r = client.get("/runs/r001/oberflaeche", params={"time": 1.2})
+        assert r.status_code == 200 and r.headers["x-f3d-time"] == "1.0"
+        blob = r.content
+        assert blob[:4] == b"F3DS"
+        (hlen,) = struct.unpack("<I", blob[4:8])
+        assert _json.loads(blob[8:8 + hlen])["dreiecke"] == 3
+    finally:
+        idx_pfad.write_text(_json.dumps(index))
+
+
 def test_unbekannter_lauf_und_traversal(client):
     assert client.get("/runs/gibtsnicht").status_code == 404
     assert client.get("/runs/..%2F..%2Fetc/result").status_code in (404, 422)

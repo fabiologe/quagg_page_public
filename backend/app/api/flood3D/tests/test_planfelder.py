@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from ..core.fields import VolumeGrid
-from ..core.planfelder import PlanNetz, zellmasse
+from ..core.planfelder import PlanNetz
 
 
 def _saeulen(nx, ny, nz, kante, alpha_je_k, u=(0.0, 0.0, 0.0), z0=0.0):
@@ -119,13 +119,49 @@ def test_trockene_saeule_ohne_spiegel_und_geschwindigkeit():
     assert f["plan_ux"][0, 0] == 0 and f["plan_uo"][0, 0] == 0
 
 
-def test_zellmasse_aus_blockzelle_und_stufe():
-    """Flache Zellen (Fall K: 0,05 × 0,05 × 0,047 m) — ∛V läge daneben."""
-    v = np.array([0.1 * 0.1 * 0.094, 0.05 * 0.05 * 0.047, 0.05 * 0.05 * 0.02])
-    dx, dy, hz = zellmasse(v, (0.1, 0.1, 0.094), max_stufe=1)
-    assert dx == pytest.approx([0.1, 0.05, 0.05])
-    assert hz == pytest.approx([0.094, 0.047, 0.02])   # angeschnitten: volumentreu
-    assert dx[2] == 0.05                               # Deckel Stufe 1
+def _polymesh(case, punkte, flaechen, owner, neighbour):
+    pm = case / "constant" / "polyMesh"
+    pm.mkdir(parents=True)
+    kopf = "FoamFile\n{\n    format      ascii;\n}\n// * * //\n\n"
+    (pm / "points").write_text(kopf + f"{len(punkte)}\n(\n"
+                               + "\n".join(f"({x} {y} {z})" for x, y, z in punkte) + "\n)\n")
+    (pm / "faces").write_text(kopf + f"{len(flaechen)}\n(\n"
+                              + "\n".join(f"{len(f)}({' '.join(map(str, f))})" for f in flaechen)
+                              + "\n)\n")
+    for name, werte in (("owner", owner), ("neighbour", neighbour)):
+        (pm / name).write_text(kopf + f"{len(werte)}\n(\n"
+                               + "\n".join(map(str, werte)) + "\n)\n")
+
+
+def test_zellquader_aus_dem_netz(tmp_path):
+    """
+    Zwei Zellen: Würfel [0,1]³ und daneben eine am Gelände angeschnittene
+    [1,2]×[0,1]×[0,0,5]. Aus dem Volumen geschätzt läge die zweite falsch
+    (Fall A: 0,25-m-Zelle als 0,125 × 0,125 × 0,32 m).
+    """
+    from ..core.foamfields import zellquader
+    punkte = [(0, 0, 0), (0, 1, 0), (0, 1, 1), (0, 0, 1),        # x = 0
+              (1, 0, 0), (1, 1, 0), (1, 1, 0.5), (1, 0, 0.5),    # gemeinsame Fläche
+              (1, 1, 1), (1, 0, 1),
+              (2, 0, 0), (2, 1, 0), (2, 1, 0.5), (2, 0, 0.5)]    # x = 2
+    flaechen = [(4, 5, 6, 7),                 # innen: 0 | 1
+                (0, 1, 2, 3), (3, 2, 8, 9),   # Zelle 0: x = 0, Deckel
+                (10, 11, 12, 13)]             # Zelle 1: x = 2
+    _polymesh(tmp_path, punkte, flaechen, owner=[0, 0, 0, 1], neighbour=[1])
+    lo, hi = zellquader(tmp_path)
+    assert lo.tolist() == [[0, 0, 0], [1, 0, 0]]
+    assert hi.tolist() == [[1, 1, 1], [2, 1, 0.5]]
+
+
+def test_angeschnittene_zelle_mit_echter_unterkante():
+    """Quader gegeben: Unterkante und Grundfläche daraus, nicht aus ∛V."""
+    c = np.array([[0.5, 0.5, 0.25]])
+    v = np.array([0.5])                                  # 1 × 1 × 0,5
+    netz = PlanNetz(c, v, _gitter(1, 1.0),
+                    quader=(np.array([[0, 0, 0.0]]), np.array([[1, 1, 0.5]])))
+    f, _ = netz.raster(np.array([1.0]))
+    assert netz.sohle[0] == pytest.approx(0.0)           # ∛V gäbe 0,25 − 0,397
+    assert f["plan_wsp"][0, 0] == pytest.approx(0.5)
 
 
 def test_feine_zellen_nebeneinander_zaehlen_als_flaeche():
@@ -145,8 +181,9 @@ def test_feine_zellen_nebeneinander_zaehlen_als_flaeche():
     c.append((0.05, 0.05, 0.15))                     # grob darüber, trocken
     v.append(0.1 ** 3)
     a.append(0.0)
-    netz = PlanNetz(np.array(c), np.array(v), _gitter(1, 0.1),
-                    block=(0.1, 0.1, 0.1), max_stufe=1)
+    c, v = np.array(c), np.array(v)
+    halb = np.cbrt(v)[:, None] / 2
+    netz = PlanNetz(c, v, _gitter(1, 0.1), quader=(c - halb, c + halb))
     f, info = netz.raster(np.array(a))
     assert f["plan_h"][0, 0] == pytest.approx(0.075)
     assert f["plan_wsp"][0, 0] == pytest.approx(0.075)

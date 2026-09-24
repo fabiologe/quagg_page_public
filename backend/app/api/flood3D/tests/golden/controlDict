@@ -280,6 +280,35 @@ functions
         writeControl    writeTime;
         log             no;
     }
+    wasseroberflaeche
+    {
+        type            surfaces;
+        libs            (sampling);
+        writeControl    writeTime;
+        surfaceFormat   vtk;
+        formatOptions
+        {
+            vtk
+            {
+                legacy      true;
+                format      ascii;
+                precision   7;
+            }
+        }
+        interpolationScheme cellPoint;
+        fields          (U);
+        surfaces
+        {
+            alpha05
+            {
+                type        isoSurface;
+                isoMethod   topo;
+                isoField    alpha.water;
+                isoValue    0.5;
+                interpolate true;
+            }
+        }
+    }
 }
 
 // ************************************************************************* //

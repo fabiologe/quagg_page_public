@@ -74,14 +74,15 @@ def write_timestep(run_root: Path, idx: int, time: float,
 
 
 def write_index(run_root: Path, grid: VolumeGrid, times: list[float],
-                field_names: list[str]) -> None:
+                field_names: list[str], extra: dict | None = None) -> None:
     d = fields_dir(run_root)
     entries = []
     for i, t in enumerate(times):
         f = d / f"t_{i:04d}.npz"
         entries.append({"index": i, "time": t,
                         "size_bytes": f.stat().st_size if f.exists() else 0})
-    index = {"grid": asdict(grid), "fields": field_names, "timesteps": entries}
+    index = {"grid": asdict(grid), "fields": field_names, "timesteps": entries,
+             **(extra or {})}
     (d / "index.json").write_text(json.dumps(index, indent=2))
 
 

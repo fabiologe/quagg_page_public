@@ -36,27 +36,36 @@
           <input type="checkbox" v-model="layers.terrainShear" :disabled="!layers.terrain" />
           Sohlschubspannung einfärben
         </label>
-        <label class="f3d-check"><input type="checkbox" v-model="layers.surface" /> Wasseroberfläche (Isofläche α = {{ alphaIso.toFixed(2) }})</label>
+        <label class="f3d-check"><input type="checkbox" v-model="layers.surface" />
+          Wasseroberfläche
+          {{ oberflaecheAusNetz ? '(Rechennetz, α = 0,5)' : `(Isofläche α = ${alphaIso.toFixed(2)})` }}</label>
         <label class="f3d-check f3d-sub" v-if="layers.surface">
           <input type="checkbox" v-model="realistisch" />
           Realistisch darstellen
         </label>
-        <div class="f3d-row f3d-sub" v-if="layers.surface">
+        <p v-if="layers.surface && hatOberflaeche" class="f3d-hint-inline">
+          {{ oberflaecheAusNetz
+            ? 'Isofläche α = 0,5, von OpenFOAM auf dem Rechennetz geschnitten — '
+              + 'keine Glättung, keine Rasterfacetten.'
+            : 'Zu diesem Zeitpunkt gibt es keine Fläche aus dem Rechennetz '
+              + '(Startzeit) — gezeigt wird Marching Cubes auf dem Darstellungsraster.' }}
+        </p>
+        <div class="f3d-row f3d-sub" v-if="layers.surface && !oberflaecheAusNetz">
           <span class="f3d-lbl">Glättung</span>
           <input type="range" min="0" max="3" step="1" v-model.number="glaettung" />
           <span class="f3d-mono">{{ glaettung }}×</span>
         </div>
-        <div class="f3d-row f3d-sub" v-if="layers.surface">
+        <div class="f3d-row f3d-sub" v-if="layers.surface && !oberflaecheAusNetz">
           <span class="f3d-lbl">α-Grenze</span>
           <input type="range" min="0.05" max="0.95" step="0.05" v-model.number="alphaIso" />
           <span class="f3d-mono">{{ alphaIso.toFixed(2) }}</span>
         </div>
-        <p v-if="layers.surface && alphaIso !== ALPHA_NASS" class="f3d-hint-inline">
+        <p v-if="layers.surface && !oberflaecheAusNetz && alphaIso !== ALPHA_NASS" class="f3d-hint-inline">
           Abweichend von α = {{ ALPHA_NASS }}: kleinere Werte zeigen mehr
           (auch teilgefüllte Zellen und Gischt), größere weniger. Farbskala
           und Punktabfrage bleiben bei α ≥ {{ ALPHA_NASS }}.
         </p>
-        <p v-if="layers.surface && glaettung === 0" class="f3d-hint-inline">
+        <p v-if="layers.surface && !oberflaecheAusNetz && glaettung === 0" class="f3d-hint-inline">
           Ohne Glättung zeigt die Oberfläche die Facetten des
           Darstellungsrasters — nicht die des Rechennetzes.
         </p>
@@ -292,6 +301,7 @@ import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray'
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData'
 import vtkImageMarchingCubes from '@kitware/vtk.js/Filters/General/ImageMarchingCubes'
+import vtkPolyDataNormals from '@kitware/vtk.js/Filters/Core/PolyDataNormals'
 import { verfolgeStromlinien } from '../../utils/stromlinien'
 import vtkTubeFilter from '@kitware/vtk.js/Filters/General/TubeFilter'
 import { VaryRadius } from '@kitware/vtk.js/Filters/General/TubeFilter/Constants'
@@ -314,8 +324,10 @@ import { usePostStore, SERIES_COLORS } from '../../stores/usePostStore'
 // Geometrie/Zeitschritte über den GEMEINSAMEN Feld-Cache (Audit H6):
 // der Direktweg über services/volume lud beim Tabwechsel Grundriss↔Raum
 // alles doppelt
-import { PLAN_FELDER, getGeometry, getTimesteps, getVolume, planFieldsCached }
-  from '../../composables/useFieldCache'
+import { PLAN_FELDER, getGeometry, getOberflaeche, getTimesteps, getVolume,
+  planFieldsCached } from '../../composables/useFieldCache'
+import { dreieckeAlsZellen, knotenBetrag, oberflaechenZeit, schubAufKoerper }
+  from '../../utils/oberflaeche3d'
 import { glaetteFeldCached } from '../../utils/glaettung'
 import { flood3dApi } from '../../services/api'
 import { fensterMittelpunkt, kumuliere, randTyp, wertBei }
@@ -369,6 +381,11 @@ const layers = ref({
 // Isoflächen-Grenze der Wasseroberfläche — Vorgabe ALPHA_NASS, per Regler
 // verstellbar (kleiner = mehr Wasser sichtbar, auch Gischt/Teilfüllung)
 const alphaIso = ref(ALPHA_NASS)
+// Wasseroberfläche aus dem Rechennetz (C3): Zeiten aus dem Index, und ob
+// die gerade gezeigte daher stammt (sonst Marching Cubes auf dem Raster)
+let oberZeiten = []
+const hatOberflaeche = ref(false)
+const oberflaecheAusNetz = ref(false)
 const sliceAxis = ref('k')
 const sliceIdx = ref(0)
 const sliceCount = ref(1)      // Ebenenstapel entlang der Achse (Spez. Kap. 8)
@@ -433,6 +450,7 @@ let requestSeq = 0
 let cameraInitialized = false
 let grid = null
 let terrainInfo = null            // { z: Float32Array, nx, ny } für die Punktabfrage
+let koerperDaten = null           // Erdkörper (vtkPolyData), wenn der Lauf einen hat
 let currentVol = null
 let downPos = null
 const vtk = {}
@@ -457,6 +475,9 @@ function buildPipelines() {
   vtk.ctfField.applyColorMap(preset)
   vtk.ctfTau = vtkColorTransferFunction.newInstance()
   vtk.ctfTau.applyColorMap(preset)
+  // Erdkörper: Punkte unter der Geländeoberfläche tragen kein τ (NaN) und
+  // behalten die Geländefarbe
+  vtk.ctfTau.setNanColor(0.45, 0.42, 0.38, 1)
   vtk.ctfVel = vtkColorTransferFunction.newInstance()
   vtk.ctfVel.applyColorMap(preset)
 
@@ -473,6 +494,7 @@ function buildPipelines() {
   vtk.alphaImage = vtkImageData.newInstance()
   vtk.mc = vtkImageMarchingCubes.newInstance({ contourValue: 0.5, computeNormals: true, mergePoints: true })
   vtk.mc.setInputData(vtk.alphaImage)
+  vtk.normals = vtkPolyDataNormals.newInstance()
   vtk.surfaceMapper = vtkMapper.newInstance({ useLookupTableScalarRange: true })
   vtk.surfaceMapper.setLookupTable(vtk.ctfField)
   vtk.surfaceActor = vtkActor.newInstance()
@@ -591,10 +613,12 @@ function buildTerrain(geo) {
   // ein Raster mit einem z je x/y kann keine Bohrung zeigen, der
   // Solver-Körper (terrain_solid) enthält sie zwingend.
   terrainInfo = { z: geo.terrain.z, nx, ny }
+  koerperDaten = null
   if (geo.terrainSolid) {
     const reader = vtkSTLReader.newInstance()
     reader.parseAsArrayBuffer(geo.terrainSolid)
-    vtk.terrainMapper.setInputData(reader.getOutputData())
+    koerperDaten = reader.getOutputData()
+    vtk.terrainMapper.setInputData(koerperDaten)
     return
   }
   // Lauf ohne Erdkörper (auch nach Laufwechsel): zurück aufs Höhenfeld
@@ -924,6 +948,16 @@ function updateStreamlines(alpha, U, umag) {
   vtk.slMapper.setInputData(rohre)
 }
 
+// Serverfläche → vtkPolyData mit geglätteten Normalen (für Glanzlicht und
+// die realistische Darstellung; die Geometrie bleibt die gerechnete)
+function oberflaechePolyData(ober) {
+  const pd = vtkPolyData.newInstance()
+  pd.getPoints().setData(ober.punkte, 3)
+  pd.getPolys().setData(dreieckeAlsZellen(ober.dreiecke))
+  vtk.normals.setInputData(pd)
+  return vtk.normals.getOutputData()
+}
+
 async function updateScene() {
   if (!renderer || !activeRunId.value || !times.value.length) return
   const seq = ++requestSeq
@@ -987,11 +1021,23 @@ async function updateScene() {
     vtk.volumeMapper.setSampleDistance(Math.min(...grid.spacing) * 0.8)
 
     if (layers.value.surface) {
-      const pd = vtk.mc.getOutputData()
+      // Fläche aus dem Rechennetz, wenn es zur Feldzeit eine gibt (C3);
+      // sonst (Startzeit, Läufe davor) Marching Cubes auf dem Raster
+      const tOber = oberflaechenZeit(oberZeiten, times.value[timeIdx.value])
+      const ober = tOber != null ? await getOberflaeche(activeRunId.value, tOber) : null
+      if (seq !== requestSeq) return
+      oberflaecheAusNetz.value = !!ober
+      const pd = ober ? oberflaechePolyData(ober) : vtk.mc.getOutputData()
       const pts = pd.getPoints().getData()
-      const scalars = new Float32Array(pts.length / 3)
-      for (let i = 0; i < scalars.length; i++) {
-        scalars[i] = sampleLinear(field, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2])
+      let scalars
+      if (ober && activeFieldKey.value === 'umag' && ober.felder.U) {
+        // |U| exakt an den Knoten (cellPoint aus dem Rechennetz)
+        scalars = knotenBetrag(ober.felder.U)
+      } else {
+        scalars = new Float32Array(pts.length / 3)
+        for (let i = 0; i < scalars.length; i++) {
+          scalars[i] = sampleLinear(field, pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2])
+        }
       }
       pd.getPointData().setScalars(
         vtkDataArray.newInstance({ name: 'field', values: scalars, numberOfComponents: 1 }))
@@ -1005,9 +1051,21 @@ async function updateScene() {
       tauRange.value = [0, tHi || 1]
       vtk.ctfTau.setMappingRange(0, tHi || 1)
       vtk.ctfTau.updateRange()
-      vtk.terrainData.getPointData().setScalars(
-        vtkDataArray.newInstance({ name: 'tau', values: tau.data, numberOfComponents: 1 }))
-      vtk.terrainData.modified()
+      if (koerperDaten && terrainInfo) {
+        // gezeichnet wird der Erdkörper — τ auf SEINE Punkte (C3; vorher
+        // landete es auf dem Höhenfeld, das dann gar nicht sichtbar ist)
+        const werte = schubAufKoerper(koerperDaten.getPoints().getData(), tau.data,
+          terrainInfo.z, { nx: terrainInfo.nx, ny: terrainInfo.ny,
+            origin: grid.origin, spacing: grid.spacing },
+          Math.max(0.5 * grid.spacing[0], 0.1))
+        koerperDaten.getPointData().setScalars(
+          vtkDataArray.newInstance({ name: 'tau', values: werte, numberOfComponents: 1 }))
+        koerperDaten.modified()
+      } else {
+        vtk.terrainData.getPointData().setScalars(
+          vtkDataArray.newInstance({ name: 'tau', values: tau.data, numberOfComponents: 1 }))
+        vtk.terrainData.modified()
+      }
     }
     // In der Präsentationsansicht bleibt auch das Gelände farblos — Farbe
     // trägt dort nur das Wasser, sonst konkurrieren zwei Skalen im Bild.
@@ -1503,6 +1561,8 @@ async function loadRun() {
     grid = index.grid
     gridLabel.value = grid.spacing.map((s) => Number(s.toPrecision(3))).join(' × ') + ' m'
     availableFieldKeys.value = index.fields ?? []
+    oberZeiten = index.oberflaeche ?? []
+    hatOberflaeche.value = oberZeiten.length > 0
     if (!FIELD_OPTIONS.value.some((f) => f.key === activeFieldKey.value)) {
       activeFieldKey.value = FIELD_OPTIONS.value[0]?.key ?? 'umag'
     }

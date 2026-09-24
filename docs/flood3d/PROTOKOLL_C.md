@@ -8,9 +8,9 @@ Zu `FAHRPLAN_C_ERGEBNISSE_2026-09-24.md`. Kein Schritt erledigt ohne Zahl vorher
 |---|---|---|---|---|
 | C0 | Messlatte | ◐ in C1 aufgegangen (Wehr alt/neu im Vergleich) | 2026-09-24 | |
 | C1 | Querschnitt exakt über die Zellflächen | ☑ gebaut, Suite + Harness grün | 2026-09-24 | `2fd2dbf` |
-| C2 | Planraster aus echten Zellen | ☑ gebaut; Volumen 50 % → 0,03 %, Pegel 40 → 9 mm | 2026-09-24 | (dieser) |
-| C3 | Wasseroberfläche als VTP | ☐ offen | | |
-| C4 | Kennwerte: eine Definition je Größe | ☐ offen | | |
+| C2 | Planraster aus echten Zellen | ☑ gebaut; Volumen 50 % → 0,03 %, Pegel 40 → 9 mm | 2026-09-24 | `72209d1` |
+| C3 | Wasseroberfläche aus dem Rechennetz | ☑ gebaut; Fall A flach: Iso − plan −2,5 cm, − Voxel +5,4 cm | 2026-09-24 | |
+| C4 | Kennwerte: eine Definition je Größe | ☑ gebaut; Tracerbilanz 8,8 % → 0,014 % | 2026-09-24 | |
 | C5 | Wehr neu | ☐ offen | | |
 
 ## C1 · Querschnitt exakt
@@ -111,13 +111,13 @@ schießend den Hang hinab) — im alten Raster genauso.
 | t [s] | Pegel Solver | Planraster (Mittel der 4 Säulen an der Ecke) | Δ | Voxel alt | Δ |
 |---|---|---|---|---|---|
 | 2,5 | 100,0784 | 100,0801 | +1,7 mm | 100,0749 | −3,5 mm |
-| 6,0 | 100,1854 | 100,1705 | −14,9 mm | 100,1228 | −62,6 mm |
-| 15,0 | 100,2353 | 100,2305 | −4,8 mm | 100,1880 | −47,3 mm |
-| Mittel \|Δ\| (2,5–15 s) | | | **9,1 mm** | | **40,1 mm** |
+| 6,0 | 100,1854 | 100,1704 | −15,0 mm | 100,1228 | −62,6 mm |
+| 15,0 | 100,2353 | 100,2303 | −5,0 mm | 100,1880 | −47,3 mm |
+| Mittel \|Δ\| (2,5–15 s) | | | **9,2 mm** | | **40,1 mm** |
 
 Volumen Fall K: 0,006 %. Der Rest gegen den Pegel liegt im Pegel, nicht in den Rastern —
 von Hand nachgerechnet bei 15 s: Sohle der Pegelsäule 100,0098 (Gelände 100,010) + Schichten
-0,0408 + 2 × 0,0468 + 0,7986 × 0,0941 + 0,1158 × 0,0944 = 100,2303, Server 100,2305.
+0,0408 + 2 × 0,0468 + 0,7986 × 0,0941 + 0,1158 × 0,0944 = 100,2303, Server 100,2303 (mit Zellquadern aus dem Netz, c4_k; vorher 100,2305).
 `interfaceHeight` integriert punktweise interpoliertes α auf einer Linie über der Säulenecke
 und zählt dabei 5 mm mehr Wasser, als in der Säule steckt.
 
@@ -132,3 +132,103 @@ Planraster > 1 % vom Solver abweichen. Harness-Probe: fünfte Behauptung
 Nicht gemacht: Browserprobe der Panels an einem C2-Lauf (braucht pm2 + Build); Laubkarten-Tests
 laufen weiter gegen synthetische Arrays — `planFields` liefert aus Serverrastern dieselben
 Schlüssel (`test/planFields.test.js`, Serverzweig).
+
+## C3 · Wasseroberfläche aus dem Rechennetz
+
+functionObject `wasseroberflaeche` (`casebuilder._wasseroberflaeche`): `type surfaces`,
+Isofläche `isoMethod topo`, α = 0,5, U auf den Knoten (cellPoint), `writeControl writeTime` —
+also zu jeder Feld-Ausgabe außer t = 0. **Abweichung vom Fahrplan:** Legacy-VTK in ASCII statt
+VTP. `core/oberflaeche.py` liest es ohne XML-/Base64-Leser, zerlegt die Vielecke (topo
+schreibt Vielecke, über Zeilen umbrochen) in Dreiecke und legt je Zeitpunkt
+`fields/oberflaeche/t_XXXX.npz` ab; `fields/index.json` trägt `oberflaeche: [Zeiten]`.
+Endpunkt `GET /runs/{id}/oberflaeche?time=` liefert ein Binärpaket F3DS (Punkte f32, Dreiecke
+u32, U f32; gzip), 404 bei Läufen davor. Syntax am Lauf bestätigt (c3_k, Fall K 3 s): Log
+meldet `isoSurface: alpha05 : isoMethod:topo`, keine neue Warnung (die Warnung „Field U not found"
+kommt vom `residuals`-Objekt und stand schon in a7_k).
+
+Raum3D: gibt es zur Feldzeit eine Fläche aus dem Rechennetz, wird sie gezeichnet (geglättete
+Normalen nur für die Beleuchtung); die Regler α-Grenze und Glättung verschwinden dann, ein
+Hinweis sagt, woher die Fläche kommt. Zur Startzeit und in Läufen davor bleibt Marching Cubes
+auf dem Raster. Einfärbung |U| exakt an den Knoten, andere Größen wie bisher aus dem Raster.
+**Sohlschub auf dem Erdkörper:** τ geht jetzt auf die Punkte des Erdkörpers (Punkte unter der
+Geländeoberfläche — Bohrungen, Seiten — bleiben in Geländefarbe); vorher landete es auf dem
+Höhenfeld, das bei einem Erdkörper nicht gezeichnet wird.
+
+**Fall K (c3_k, 3 s), je Säule mit Isofläche:**
+
+| t | Säulen | Isofläche − plan_wsp (Median) | \|Δ\| zum alten Voxel-Spiegel (Median / 95 %) | Paket gzip (Voxel-α für MC) |
+|---|---|---|---|---|
+| 2 s | 448 | +4,5 mm | 10,3 / 41 mm | 32 kB (24 kB) |
+| 3 s | 625 | +6,3 mm | 19,8 / 45 mm | 44 kB (34 kB) |
+
+Am Pegel bei 3 s: Isofläche 100,1095, plan_wsp 100,1088, Pegel (`interfaceHeight`) 100,1149.
+Isofläche und Pegel interpolieren α punktweise (cellPoint) und liegen beide rund 5 mm über dem
+volumentreuen Spiegel aus C2 — das ist der Unterschied der Definitionen an einer über eine
+0,1-m-Zelle verschmierten Grenzfläche, kein Fehler einer Seite. Der Grundriss (C2) bleibt beim
+volumentreuen Maß; die 3D-Ansicht zeigt die Fläche, die OpenFOAM schneidet.
+
+**Fall A (c3_a, 29 000 Zellen, 10 s, 20 Flächen):** 1 300–1 400 Punkte, 2 400–2 600 Dreiecke
+je Zeitpunkt, Paket 39–41 kB gzip. Je Säule verglichen lag die Isofläche 4–9 cm unter plan_wsp —
+aber in Fall A fällt das Gelände innerhalb einer 0,5-m-Säule bis 0,44 m ab; dort hat eine Säule
+keinen einen Spiegel, der Vergleich misst die Neigung. Nur flache, tiefe Säulen (Geländespanne
+< 5 cm, h > 10 cm, 32 Säulen, t = 10 s):
+
+| | Median | \|Δ\| 95 % |
+|---|---|---|
+| Isofläche − plan_wsp (C2) | −25,5 mm | 138 mm |
+| Isofläche − Voxel-Spiegel alt | +54,1 mm | 297 mm |
+
+Die Zellen an der Oberfläche sind in Fall A 0,25–0,47 m hoch; 2,5 cm sind ein Zehntel davon —
+genauer lassen sich zwei Definitionen an einer über eine Zelle verschmierten Grenzfläche nicht
+vergleichen.
+
+**Nachtrag C2 — Zellgeometrie aus dem Netz:** Fall A deckte auf, dass die Zellmaße aus dem
+Volumen (Stufe = log₈(V_Block / V)) für angeschnittene Zellen nicht taugen: 511 Zellen lägen
+rechnerisch auf Stufe 3, die der Fall nicht hat; eine Zelle mit V = 0,005 m³ wurde zu
+0,125 × 0,125 × 0,32 m. `foamfields.zellquader` liest jetzt den achsparallelen Quader jeder Zelle
+aus `constant/polyMesh` (points/faces/owner/neighbour; Min/Max über die Punkte ihrer Flächen) —
+Grundfläche und Unterkante exakt, Höhe volumentreu V/Grundfläche. Fall A Planraster-Volumen
+0,028 % → 0,0 %; Fall K unverändert (Gelände bündig, keine angeschnittenen Zellen). Tests
+`test_zellquader_aus_dem_netz`, `test_angeschnittene_zelle_mit_echter_unterkante`.
+
+## C4 · Kennwerte: eine Definition je Größe
+
+**Überfallbeiwert** (`evaluate.ueberfall_paare`, `overfall_cd_rows`, `ueberfall_beiwert`):
+
+- Paare nur aus Kriterien; ohne Kriterium nur, wenn eindeutig (genau 1 Wehr, 1 Querschnitt,
+  1 Pegel). **Abweichung vom Fahrplan:** die Autopaarung entfällt nicht ganz — im eindeutigen
+  Fall bleibt sie, sonst verlöre jeder einfache Fall sein C_d-Diagramm. Entfallen ist „jedes
+  Wehr bekommt den einen Querschnitt" (zwei Wehre → zweimal derselbe Q).
+- Krone = tiefster Kronenpunkt (vorher Mittel).
+- H = WSP − Krone + ū²/2g, ū tiefengemittelt an der Pegelsäule aus den Planrastern (C2);
+  Läufe ohne Planraster: H = h.
+- EINE Verdichtung für Nachweis und Verifikation: Median ab Beharrungsbeginn des Ablaufs
+  (`kennwerte` → bilanz.beharrung_ab); nicht eingeschwungen → letztes Drittel, im Nachweis
+  ausgewiesen. Vorher: Nachweis = Median der ganzen Reihe (Anlauf inklusive), Verifikation =
+  letztes Drittel.
+- Rückstau: Unterwasser neben der Krone (plan_wsp im Abstand 2 Rasterzellen, tiefere Seite)
+  als Pegelreihe `<wehr>_unterwasser`; liegt es im Fenster über der Krone → `frei = False`,
+  Hinweis „Überfall nicht frei, die Überfallformel gilt nicht".
+
+**Tracer am Ablauf durchflussgewichtet** (`weightField alphaPhi0.water` statt `alpha.water`)
+— und dabei ein Fehler der Probe aus Stufe A aufgedeckt: mit `phase alpha.water` transportiert
+`scalarTransport` T mit dem Wasserfluss, T ist Masse je ZELLvolumen. Die Probe zählte die Masse
+als Σ α·T·V und buchte den Anteil in den Grenzflächenzellen als „Verlust". Fall K, 15 s:
+
+| Bilanz Zufluss − Ablauf − Masse | Masse Σ α·T·V | Masse Σ T·V |
+|---|---|---|
+| Ablauf α-gewichtet (a5b_k / c2_k) | 8,8 % | −0,8 % |
+| Ablauf durchflussgewichtet (c4_k) | 9,6 % | **0,014 %** |
+
+Belegt ist die Deutung durch die Zahl (die Bilanz schließt), nicht durch den OpenFOAM-Quelltext.
+Harness-Behauptung verschärft: |Tracer-Verlust| < 1 % (vorher < 10 %).
+
+**min_bed_shear:** nass = plan_h > 1 cm (`TIEFE_BENETZT`, gleich dem Client) statt τ > 0 — die
+Luftströmung über trockenem Gelände erzeugt ein τ > 0, das Minimum fand sie. Läufe ohne
+Planraster: wie bisher.
+
+**Froude, WSP, Energiehöhe:** mit C2 nur noch aus den Serverrastern (Längsschnitt tastet
+`froude` ab, Energiehöhe aus plan_wsp + ū²/2g).
+
+Tests: `test_ueberfall_c4.py` (6), `test_bed_shear_minimum_nur_ueber_nassen_saeulen`; Hilfetext
+C_d im Client (H statt h, Beharrung, Rückstau). Backend 950 + 6 übersprungen, Client 404.

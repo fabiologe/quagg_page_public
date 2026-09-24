@@ -55,11 +55,11 @@ def test_zulauf_liefert_das_vorgegebene_q(probe):
 
 
 def test_tracer_bilanz(probe):
-    # Zufluss − Ablauf − Σ α·T·V am Ende. Ohne Phasenbindung 50 % (a2_k),
-    # mit 6,6 % (a3_k) bzw. 8,8 % mit upperBound 0,5 (a5b_k, 2026-09-23). Der Rest liegt vermutlich an der
-    # flächengewichteten Ablauf-Konzentration (weightedAverage) — eine
-    # Definitionsfrage für Stufe B. Die Schwelle hält den Stand fest.
-    assert probe["tracer_verlust"] < 0.10
+    # Zufluss − Ablauf − Σ T·V am Ende (Fahrplan C4). Ohne Phasenbindung
+    # 50 % (a2_k). Mit Phasenbindung ist T Masse je ZELLvolumen — gezählt
+    # als Σ α·T·V fehlten 8,8 % (a5b_k), die in den Grenzflächenzellen
+    # lagen; mit Σ T·V und durchflussgewichtetem Ablauf 0,02 % (c4_k).
+    assert abs(probe["tracer_verlust"]) < 0.01
 
 
 def test_planraster_volumentreu(probe):

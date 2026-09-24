@@ -866,6 +866,42 @@ async def run_volume(request: Request, run_id: str,
                     headers=headers)
 
 
+@router.get("/runs/{run_id}/oberflaeche")
+async def run_oberflaeche(request: Request, run_id: str,
+                          time: float = Query(...)):
+    """
+    Wasseroberfläche aus dem Rechennetz (Isofläche α = 0,5, Fahrplan C3) zum
+    nächstgelegenen Zeitpunkt als Binärblock (Format siehe
+    core/oberflaeche.py). 404, wenn der Lauf keine hat (vor C3 gerechnet).
+    """
+    from .core.oberflaeche import lies_oberflaeche, pack_oberflaeche
+    paths = _paths(run_id)
+    index = vol_fields.read_index(paths.root)
+    zeiten = (index or {}).get("oberflaeche")
+    if not zeiten:
+        raise HTTPException(status_code=404,
+                            detail="Für diesen Lauf liegt keine Wasseroberfläche "
+                                   "aus dem Rechennetz vor.")
+    gzip_ok = "gzip" in request.headers.get("accept-encoding", "").lower()
+
+    def work():
+        t, daten = lies_oberflaeche(paths.root, zeiten, time)
+        blob = pack_oberflaeche(t, daten)
+        if gzip_ok and len(blob) > 4096:
+            import gzip
+            return t, gzip.compress(blob, compresslevel=3), True
+        return t, blob, False
+
+    t_actual, blob, komprimiert = await asyncio.to_thread(work)
+    headers = {"X-F3D-Time": str(t_actual),
+               "Cache-Control": "max-age=3600",
+               "Vary": "Accept-Encoding"}
+    if komprimiert:
+        headers["Content-Encoding"] = "gzip"
+    return Response(content=blob, media_type="application/octet-stream",
+                    headers=headers)
+
+
 # --------------------------------------------------------------------------
 # Fälle (PreViewer, Spez. Kap. 9): die maßgebliche Geometrie entsteht
 # serverseitig — das Frontend zeigt terrain/solids nur an (Spez. Kap. 3).

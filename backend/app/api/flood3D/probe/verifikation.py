@@ -6,8 +6,8 @@ unverändert) über probe_lauf im Server-Docker und schreibt das Ergebnis im
 BISHERIGEN Format nach data/verifikation/wehr_ueberfall.json — dieselbe
 Datei, die GET /verifikation und die Karte in Phase „Simulation" zeigen,
 dazu `ort` und `numerik_version`. Den Beiwert rechnet dieselbe Funktion wie
-jeder Nutzerlauf (evaluate.overfall_cd_rows), bewertet wird wie bisher der
-Median des letzten Drittels gegen die eingefrorene Referenz.
+jeder Nutzerlauf (evaluate.overfall_cd_rows), verdichtet wie jeder Nachweis
+(evaluate.ueberfall_beiwert: Median ab Beharrung).
 
     cd backend
     venv/bin/python -m app.api.flood3D.probe.probe_lauf --fall wehr --name a6_wehr
@@ -26,7 +26,7 @@ import pandas as pd
 
 from ..core.casespec import CaseSpec
 from ..core.conventions import NUMERIK_VERSION
-from ..core.evaluate import overfall_cd_rows
+from ..core.evaluate import overfall_cd_rows, ueberfall_beiwert
 from ..core.extract.case_reader import extract_case
 from ..tests.verifikation_wehr import CD_PLAUSIBEL, CD_REFERENZ, CD_TOLERANZ_REL
 from .probe_lauf import WURZEL
@@ -44,13 +44,16 @@ def wehr_bewerten(job: Path) -> dict:
     if t_ende < 0.98 * spec.solver.end_time:
         raise SystemExit(f"Lauf endete bei t = {t_ende:g} s, verlangt "
                          f"{spec.solver.end_time:g} s — keine Verifikation")
-    cd = pd.DataFrame(overfall_cd_rows(df, spec, job.name))
-    if cd.empty:
+    # dieselbe Reihe und dieselbe Verdichtung wie der Nachweis jedes Laufs
+    # (Fahrplan C4); mit Planrastern, wenn die Probe sie geschrieben hat
+    zeilen = overfall_cd_rows(df, spec, job.name,
+                              run_root=job if (job / "fields").is_dir() else None)
+    if zeilen:
+        df = pd.concat([df, pd.DataFrame(zeilen)], ignore_index=True)
+    cd = ueberfall_beiwert(df, spec, "wehr")
+    if cd is None:
         raise SystemExit("Keine Überfallbeiwert-Reihe — Wehr nicht überströmt?")
-    cd = cd[cd["location_id"] == "wehr"].sort_values("time")
-    hinten = cd.iloc[int(len(cd) * 2 / 3):]
-    cd_sim = float(hinten["value"].median())
-    streuung = float(hinten["value"].std())
+    cd_sim, streuung = cd["wert"], cd["streuung"]
     if CD_REFERENZ is not None:
         band = (CD_REFERENZ * (1 - CD_TOLERANZ_REL), CD_REFERENZ * (1 + CD_TOLERANZ_REL))
         band_art = f"eingefrorene Referenz {CD_REFERENZ:g} ± {CD_TOLERANZ_REL:.0%}"
@@ -69,7 +72,10 @@ def wehr_bewerten(job: Path) -> dict:
         "band": [round(band[0], 4), round(band[1], 4)],
         "band_art": band_art,
         "bestanden": bool(band[0] <= cd_sim <= band[1]),
-        "formel": "Q = C_d · 2/3 · √(2g) · b · h^1,5",
+        "formel": "Q = C_d · 2/3 · √(2g) · b · H^1,5, H = h + ū²/2g",
+        "fenster_ab": cd["fenster_ab"],
+        "eingeschwungen": cd["eingeschwungen"],
+        "frei": cd.get("frei"),
         "ort": "server-docker",
         "numerik_version": NUMERIK_VERSION,
     }

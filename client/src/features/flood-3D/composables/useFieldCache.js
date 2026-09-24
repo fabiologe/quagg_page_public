@@ -1,6 +1,7 @@
 // Gemeinsamer Felddaten-Cache für Grundriss- und Raum-Ansicht: Zeitpunkte,
 // Szenengeometrie und Volumenpakete je Lauf, LRU-begrenzt.
-import { fetchGeometry, fetchTimesteps, fetchVolume } from '../services/volume'
+import { fetchGeometry, fetchOberflaeche, fetchTimesteps, fetchVolume }
+  from '../services/volume'
 import { ALPHA_NASS, TIEFE_TROCKEN } from '../utils/anzeigeSchwellen'
 
 const indexCache = new Map()
@@ -26,6 +27,25 @@ export async function getGeometry(runId) {
     }))
   }
   return geometryCache.get(runId)
+}
+
+// Wasseroberflaeche aus dem Rechennetz (C3) je (Lauf, Zeit), LRU wie oben.
+// Nur fuer Zeiten aus index.oberflaeche anfragen — der Server liefert
+// sonst die naechstgelegene, und t = 0 hat keine.
+const oberflaechenCache = new Map()
+
+export function getOberflaeche(runId, time) {
+  const key = `${runId}|${time}`
+  if (!oberflaechenCache.has(key)) {
+    oberflaechenCache.set(key, fetchOberflaeche(runId, time).catch((e) => {
+      oberflaechenCache.delete(key)
+      throw e
+    }))
+    if (oberflaechenCache.size > VOLUME_LIMIT) {
+      oberflaechenCache.delete(oberflaechenCache.keys().next().value)
+    }
+  }
+  return oberflaechenCache.get(key)
 }
 
 // Feld-selektiver Volumen-Cache, EINER fuer alle Ansichten. Vorher luden

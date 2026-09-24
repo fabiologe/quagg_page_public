@@ -49,7 +49,7 @@ def test_ueberfallbeiwert_aus_q_und_h():
 
     df2 = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
     tgt = next(t for t in spec.evaluation.targets if t.id == "cd_wehr")
-    out = _eval_target(df2, tgt)
+    out = _eval_target(df2, tgt, spec)
     assert out["result"] == "informativ"
     assert out["value"] == pytest.approx(0.65, abs=1e-3)
 
@@ -61,7 +61,7 @@ def test_ueberfallbeiwert_trockene_krone():
         + _rows("level", "pegel_becken", [(t, 94.5) for t in range(0, 30, 5)]))
     assert overfall_cd_rows(df, spec, "r") == []
     tgt = next(t for t in spec.evaluation.targets if t.id == "cd_wehr")
-    assert _eval_target(df, tgt)["result"] == "nicht_auswertbar"
+    assert _eval_target(df, tgt, spec)["result"] == "nicht_auswertbar"
 
 
 def test_max_bed_shear_target():

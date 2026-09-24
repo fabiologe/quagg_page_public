@@ -11,14 +11,13 @@ Zellvolumen und Phasenanteil — und der Client zeigt sie nur noch an.
 Säule = Rasterzelle des xy-Gitters des Laufs (`viz_grid_for`, dasselbe
 Gitter wie Voxel und Sohlschub).
 
-Zellgeometrie: snappyHexMesh-Zellen sind achsparallele Quader, deren
-Grundfläche die Blockzelle geteilt durch 2^Stufe ist. Die Stufe folgt aus
-dem Volumen (V_Block / 8^Stufe, gedeckelt auf die höchste Stufe des
-Falls), die Höhe aus V / Grundfläche — volumentreu auch für Zellen, die
-das Gelände anschneidet. ∛V taugte dafür nicht: die Zellen sind flacher
-als breit (Fall K 0,05 × 0,05 × 0,047 m); die Sohle der Pegelsäule lag
-damit 3 mm unter dem Gelände (100,0068 statt 100,010), mit V/Grundfläche
-trifft sie es (100,0098). Ohne Blockmaße (Tests mit Würfeln) gilt ∛V.
+Zellgeometrie: der achsparallele Quader jeder Zelle aus dem Netz
+(`foamfields.zellquader`) — Grundfläche und Unterkante exakt, auch für
+Zellen, die snappyHexMesh am Gelände anschneidet; Höhe volumentreu
+V / Grundfläche. Aus dem Volumen geschätzt taugte das nicht: ∛V irrt bei
+flachen Zellen (Fall K 0,05 × 0,05 × 0,047 m legte die Sohle 3 mm unters
+Gelände), die Stufe aus V bei angeschnittenen (Fall A: eine 0,25-m-Zelle
+als 0,125 × 0,125 × 0,32 m). Ohne Netz (Tests mit Würfeln) gilt ∛V.
 
 Eine Zelle wird mit ihrer Grundfläche anteilig auf die Säulen verteilt, die
 sie überdeckt; die Anteile summieren sich zu 1. Deshalb ist
@@ -59,26 +58,13 @@ from .fields import VolumeGrid
 
 G = 9.81
 TIEFE_TROCKEN = 0.001      # m — gleich utils/anzeigeSchwellen.js
+TIEFE_BENETZT = 0.01       # m — ebenso; ab hier gilt eine Säule als nass für
+                           # Nachweise (Sohlschub), darunter ist es ein Film
 ALPHA_NASS = 0.5
 
 # Namen im Zeitpunkt-Paket (fields/t_XXXX.npz), je (ny, nx)
 PLAN_FELDER = ("plan_h", "plan_wsp", "plan_ux", "plan_uy",
                "plan_uox", "plan_uoy", "plan_uo", "plan_fr")
-
-
-def zellmasse(volumes: np.ndarray, block: tuple[float, float, float] | None,
-              max_stufe: int | None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(Breite x, Breite y, Höhe) je Zelle — siehe Modul-Docstring."""
-    volumes = np.asarray(volumes, dtype=np.float64)
-    if block is None:
-        k = np.cbrt(volumes)
-        return k, k, k
-    bx, by, bz = block
-    stufe = np.rint(np.log(bx * by * bz / volumes) / np.log(8.0))
-    stufe = np.clip(stufe, 0, max_stufe if max_stufe is not None else np.inf)
-    teil = 2.0 ** stufe
-    dx, dy = bx / teil, by / teil
-    return dx, dy, volumes / (dx * dy)
 
 
 class PlanNetz:
@@ -87,14 +73,13 @@ class PlanNetz:
     Anteilen, Säule der Zellmitte, Zellmaße, Sohle und kleinste Zellhöhe je
     Säule. Einmal je Lauf gebaut, dann für jeden Zeitpunkt benutzt.
 
-    `block` = Maße der blockMesh-Zelle (x, y, z), `max_stufe` = höchste
-    Verfeinerungsstufe des Falls; ohne `block` gelten Würfel der Kante ∛V.
+    `quader` = (lo, hi) je Zelle aus `foamfields.zellquader`; ohne gelten
+    Würfel der Kante ∛V um das Zellzentrum.
     """
 
     def __init__(self, centres: np.ndarray, volumes: np.ndarray,
                  grid: VolumeGrid,
-                 block: tuple[float, float, float] | None = None,
-                 max_stufe: int | None = None):
+                 quader: tuple[np.ndarray, np.ndarray] | None = None):
         centres = np.asarray(centres, dtype=np.float64)
         volumes = np.asarray(volumes, dtype=np.float64)
         if len(centres) != len(volumes):
@@ -104,7 +89,17 @@ class PlanNetz:
         self.flaeche = grid.spacing[0] * grid.spacing[1]
         self.volumes = volumes
         n_col = self.nx * self.ny
-        dx, dy, hoehe = zellmasse(volumes, block, max_stufe)
+        if quader is not None:
+            lo, hi = (np.asarray(q, dtype=np.float64) for q in quader)
+            dx, dy = hi[:, 0] - lo[:, 0], hi[:, 1] - lo[:, 1]
+            mx, my = (lo[:, 0] + hi[:, 0]) / 2, (lo[:, 1] + hi[:, 1]) / 2
+            unterkante = lo[:, 2]
+        else:
+            k = np.cbrt(volumes)
+            dx = dy = k
+            mx, my = centres[:, 0], centres[:, 1]
+            unterkante = centres[:, 2] - k / 2
+        hoehe = volumes / (dx * dy)
         self.hoehe = hoehe
         self.grundflaeche = dx * dy
 
@@ -124,8 +119,8 @@ class PlanNetz:
                 teile.append((i, w, ok))
             return teile
 
-        tx = achse(centres[:, 0], dx, grid.origin[0], grid.spacing[0], self.nx)
-        ty = achse(centres[:, 1], dy, grid.origin[1], grid.spacing[1], self.ny)
+        tx = achse(mx, dx, grid.origin[0], grid.spacing[0], self.nx)
+        ty = achse(my, dy, grid.origin[1], grid.spacing[1], self.ny)
         zellen, saeulen, anteile = [], [], []
         idx = np.arange(len(centres))
         for ix, wx, okx in tx:
@@ -145,7 +140,7 @@ class PlanNetz:
         self._drin = np.nonzero(drin)[0]
         self.mitte = np.where(drin, j * self.nx + i, -1)
         self.z = centres[:, 2]
-        self.unterkante = self.z - hoehe / 2
+        self.unterkante = unterkante
 
         d = self._drin
         self.sohle = np.full(n_col, np.inf)

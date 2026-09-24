@@ -145,3 +145,10 @@ FACE_NORMALS = {
     "y_max": (0.0, 1.0, 0.0),
     "z_max": (0.0, 0.0, 1.0),
 }
+
+
+# Wasseroberfläche aus dem Rechennetz (C3): functionObject und Fläche darin.
+# casebuilder schreibt sie, oberflaeche.py liest
+# postProcessing/<OBERFLAECHE_FO>/<Zeit>/<OBERFLAECHE_FLAECHE>.vtk
+OBERFLAECHE_FO = "wasseroberflaeche"
+OBERFLAECHE_FLAECHE = "alpha05"

@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from .casespec import CaseSpec
-from .conventions import section_normal
+from .conventions import OBERFLAECHE_FLAECHE, OBERFLAECHE_FO, section_normal
 from .foam import foam_file, table, vec
 from .meshgen import (assign_faces, blockmesh_dict, feature_flaechen,
                       location_in_mesh, snappy_dict, surface_feature_dict)
@@ -264,6 +264,10 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         for b in spec.boundaries:
             if not b.type.startswith("outflow"):
                 continue
+            # durchflussgewichtet (Fahrplan C4): Σ T·α·phi / Σ α·phi — die
+            # Konzentration, mit der der Stoff das Gebiet WIRKLICH verlässt.
+            # Mit weightField alpha.water war es ein Flächenmittel; langsame
+            # Randzonen zählten wie der Stromstrich (Fall K 8,8 % Verlust).
             out += f"""    tracer_{b.patch}
     {{
         type            surfaceFieldValue;
@@ -272,7 +276,7 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         name            {b.patch};
         operation       weightedAverage;
         fields          (T);
-        weightField     alpha.water;
+        weightField     alphaPhi0.water;
         writeFields     false;
 {ctl}    }}
 """
@@ -309,8 +313,49 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
         writeControl    writeTime;
         log             no;
     }}
-"""
+{_wasseroberflaeche()}"""
     return out
+
+
+def _wasseroberflaeche() -> str:
+    """
+    Wasseroberfläche als Isofläche α = 0,5 auf dem RECHENNETZ, zu jeder
+    Feld-Ausgabe (Fahrplan C3). Bis dahin zeichnete Raum3D Marching Cubes
+    auf dem Voxel-Raster — mit Glättungsregler, weil die Rasterfacetten
+    sonst sichtbar waren. topo schneidet die Zellen selbst, U kommt auf die
+    Knoten (cellPoint). Legacy-VTK in ASCII: der Nachlauf liest es ohne
+    XML-/Base64-Leser.
+    """
+    return f"""    {OBERFLAECHE_FO}
+    {{
+        type            surfaces;
+        libs            (sampling);
+        writeControl    writeTime;
+        surfaceFormat   vtk;
+        formatOptions
+        {{
+            vtk
+            {{
+                legacy      true;
+                format      ascii;
+                precision   7;
+            }}
+        }}
+        interpolationScheme cellPoint;
+        fields          (U);
+        surfaces
+        {{
+            {OBERFLAECHE_FLAECHE}
+            {{
+                type        isoSurface;
+                isoMethod   topo;
+                isoField    alpha.water;
+                isoValue    0.5;
+                interpolate true;
+            }}
+        }}
+    }}
+"""
 
 
 # --------------------------------------------------------------------------

@@ -216,6 +216,26 @@ def test_bed_shear_series_aus_feldern(tmp_path):
     assert all(lo <= hi for lo, hi in zip(mins, maxs))
 
 
+def test_bed_shear_minimum_nur_ueber_nassen_saeulen(tmp_path):
+    """
+    Fahrplan C4: nass = Tiefe aus den Planrastern > 1 cm. Die trockene
+    Säule trägt ein kleines τ aus der Luftströmung — vorher (τ > 0 als
+    Nässe) bestimmte sie das Minimum der Räumbarkeit.
+    """
+    from ..core.fields import VolumeGrid, write_index, write_timestep
+    from ..core.foamfields import bed_shear_series
+    spec = build_spec_stage3()
+    box = next(r for r in spec.mesh.refinements if r.id == "r01")
+    x0, y0, _, _, _, _ = box.extent
+    grid = VolumeGrid(origin=(x0, y0, 90), spacing=(0.5, 0.5, 0.5), dims=(2, 1, 1))
+    write_timestep(tmp_path, 0, 1.0, {
+        "bed_shear": np.array([[0.004, 2.5]], np.float32),     # Luft | Wasser
+        "plan_h": np.array([[0.0, 0.3]], np.float32)})
+    write_index(tmp_path, grid, [1.0], ["bed_shear", "plan_h"])
+    rows = bed_shear_series(spec, tmp_path, "r")
+    assert [r["value"] for r in rows if r["component"] == ""] == [pytest.approx(2.5)]
+
+
 MULTI_STL = """solid terrain
  facet normal 0 0 1
   outer loop

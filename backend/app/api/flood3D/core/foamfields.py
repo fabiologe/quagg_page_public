@@ -17,7 +17,8 @@ import numpy as np
 
 from .fields import (VolumeGrid, resample_points, write_geometry, write_index,
                      write_timestep)
-from .planfelder import PLAN_FELDER, PlanNetz
+from .oberflaeche import oberflaechen_umwandeln
+from .planfelder import PLAN_FELDER, TIEFE_BENETZT, PlanNetz
 from .terrain import TerrainField
 
 def foam_text(path: str | Path) -> str:
@@ -260,19 +261,57 @@ def viz_grid_for(spec) -> VolumeGrid:
                       spacing=(s, s, sz), dims=d)
 
 
-def _blockzelle_und_stufe(spec) -> tuple[tuple[float, float, float], int]:
+def _liste(text: str) -> str:
+    """Rumpf der ersten OpenFOAM-Liste nach dem Kopf: 'N\n( … )'."""
+    m = re.search(r"\n(\d+)\s*\n\(", text)
+    if m is None:
+        raise ValueError("keine Liste gefunden")
+    return text[m.end():text.rindex(")")]
+
+
+def zellquader(case_dir: str | Path) -> tuple[np.ndarray, np.ndarray] | None:
     """
-    Maße der blockMesh-Zelle und höchste Verfeinerungsstufe des Falls —
-    daraus bestimmt planfelder.zellmasse Grundfläche und Höhe jeder Zelle.
+    Achsparalleler Quader jeder Zelle (lo, hi je (n, 3)) aus dem Netz —
+    Min/Max über die Punkte ihrer Flächen. Für die Planraster (C2): exakte
+    Grundfläche und Unterkante, auch für Zellen, die snappyHexMesh am
+    Gelände angeschnitten hat. Aus dem Volumen geschätzt (∛V, dann über
+    die Verfeinerungsstufe) lag eine angeschnittene 0,25-m-Zelle als
+    „0,125 × 0,125 × 0,32 m" daneben (Fall A, 2026-09-24). None ohne
+    ASCII-Netz.
     """
-    from .meshgen import cell_counts, flaechen_stufen
-    x0, y0, x1, y1 = spec.domain.extent
-    nx, ny, nz = cell_counts(spec)
-    block = ((x1 - x0) / nx, (y1 - y0) / ny,
-             (spec.domain.z_max - spec.domain.z_min) / nz)
-    stufen = list(flaechen_stufen(spec).values()) \
-        + [int(r.level) for r in spec.mesh.refinements]
-    return block, max(stufen, default=0)
+    pm = Path(case_dir) / "constant" / "polyMesh"
+    namen = ("points", "faces", "owner", "neighbour")
+    if not all(foam_exists(pm / n) for n in namen):
+        return None
+    texte = {n: foam_text(pm / n) for n in namen}
+    if any(re.search(r"format\s+binary", t[:1500]) for t in texte.values()):
+        return None
+    punkte = np.fromstring(_liste(texte["points"]).replace("(", " ").replace(")", " "),
+                           sep=" ").reshape(-1, 3)
+    roh = np.fromstring(_liste(texte["faces"]).replace("(", " ").replace(")", " "),
+                        sep=" ").astype(np.int64)
+    owner = np.fromstring(_liste(texte["owner"]), sep=" ").astype(np.int64)
+    neighbour = np.fromstring(_liste(texte["neighbour"]), sep=" ").astype(np.int64)
+    # [k, p1 … pk, k, …] → flache Punktliste + Startindex je Fläche
+    starts, i = [], 0
+    while i < len(roh):
+        starts.append(i + 1)
+        i += int(roh[i]) + 1
+    starts = np.asarray(starts)
+    groesse = roh[starts - 1]
+    maske = np.ones(len(roh), dtype=bool)
+    maske[starts - 1] = False
+    flach = punkte[roh[maske]]
+    offs = np.concatenate([[0], np.cumsum(groesse)[:-1]])
+    f_lo = np.minimum.reduceat(flach, offs, axis=0)
+    f_hi = np.maximum.reduceat(flach, offs, axis=0)
+    n = int(max(owner.max(), neighbour.max() if len(neighbour) else 0)) + 1
+    lo = np.full((n, 3), np.inf)
+    hi = np.full((n, 3), -np.inf)
+    for zellen, flaechen in ((owner, slice(None)), (neighbour, slice(0, len(neighbour)))):
+        np.minimum.at(lo, zellen, f_lo[flaechen])
+        np.maximum.at(hi, zellen, f_hi[flaechen])
+    return lo, hi
 
 
 def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
@@ -325,10 +364,12 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
     plan, plan_error, plan_infos = None, None, []
     if foam_exists(case_dir / "0" / "V"):
         try:
-            block, max_stufe = _blockzelle_und_stufe(spec)
+            quader = zellquader(case_dir)
+            if quader is not None and len(quader[0]) != n_cells:
+                quader = None
             plan = PlanNetz(centres,
                             parse_internal_field(case_dir / "0" / "V", n_cells),
-                            grid, block=block, max_stufe=max_stufe)
+                            grid, quader=quader)
         except Exception as e:                      # noqa: BLE001
             plan_error = f"{type(e).__name__}: {e}"
     written = []
@@ -393,11 +434,23 @@ def convert_case_fields(spec, case_dir: str | Path, run_root: str | Path,
     # sonst Zeitpunkte ohne Raster zurück, die der Client nicht erwartet
     if plan is not None and len(plan_infos) == len(written):
         names += list(PLAN_FELDER)
-    write_index(run_root, grid, written, names)
+    # Wasseroberfläche aus dem Rechennetz (C3) — Beiwerk wie das Gelände:
+    # scheitert sie, bleibt der Rest nutzbar, Raum3D nimmt Marching Cubes
+    extra, oberflaeche_error = {}, None
+    try:
+        ober = oberflaechen_umwandeln(case_dir, run_root)
+        if ober:
+            extra["oberflaeche"] = ober
+    except Exception as e:                          # noqa: BLE001
+        oberflaeche_error = f"{type(e).__name__}: {e}"
+    write_index(run_root, grid, written, names, extra)
     out = {"times": written, "grid_dims": list(grid.dims), "cells": n_cells,
+           "oberflaeche": extra.get("oberflaeche", []),
            "plan_infos": plan_infos if plan is not None else []}
     if plan_error:
         out["plan_error"] = plan_error
+    if oberflaeche_error:
+        out["oberflaeche_error"] = oberflaeche_error
     if terrain_error:
         out["terrain_error"] = terrain_error
     return out
@@ -408,7 +461,10 @@ def bed_shear_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
     Zeitreihen der minimalen Sohlschubspannung je Nachweisregion
     (Spez. Kap. 2: Sedimentationsverhalten und Räumbarkeit) — macht das
     min_bed_shear-Target auswertbar. Region = Verfeinerungsbox gleicher ID,
-    Minimum über benetzte Zellen (τ > 0) im Grundriss der Box.
+    Minimum über NASSE Säulen im Grundriss der Box: Tiefe aus den
+    Planrastern > TIEFE_BENETZT (Fahrplan C4). Vorher galt τ > 0 als nass —
+    auch die Luftströmung über trockenem Gelände erzeugt ein τ > 0, und das
+    Minimum fand sie. Läufe ohne Planraster behalten τ > 0.
     """
     from .conventions import UNITS, Quantity
     from .fields import read_index, read_timestep
@@ -440,8 +496,10 @@ def bed_shear_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
         tau = fields.get("bed_shear")
         if tau is None:
             continue
+        h = fields.get("plan_h")
+        nass = h > TIEFE_BENETZT if h is not None else tau > 1e-9
         for region, (x0, y0, _, x1, y1, _) in regions.items():
-            mask = (xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1) & (tau > 1e-9)
+            mask = (xx >= x0) & (xx <= x1) & (yy >= y0) & (yy <= y1) & nass
             if not mask.any():
                 continue
             # component "" = Minimum (Räumbarkeit, bestehender Vertrag),
@@ -607,3 +665,82 @@ def energy_head_series(spec, run_root: str | Path, run_id: str) -> list[dict]:
                 "source": "fields/energy_head",
             })
     return rows
+
+
+# --------------------------------------------------------------------------
+# Planraster an Punkten und Linien (Fahrplan C4) — für den Überfallbeiwert
+# --------------------------------------------------------------------------
+
+def _plan_zeitpunkte(run_root: Path):
+    """(Index, Zeitpunkt-Einträge) — None ohne Planraster (Lauf vor C2)."""
+    from .fields import read_index
+    index = read_index(Path(run_root))
+    if index is None or "plan_ux" not in index.get("fields", []):
+        return None
+    return index
+
+
+def geschwindigkeitshoehe(run_root, punkt) -> tuple[np.ndarray, np.ndarray]:
+    """
+    ū²/2g an der Säule unter `punkt` je Feld-Ausgabezeit, ū tiefengemittelt
+    aus den Planrastern (C2). Leer ohne Planraster.
+    """
+    from .fields import read_timestep
+    index = _plan_zeitpunkte(run_root)
+    if index is None:
+        return np.zeros(0), np.zeros(0)
+    g = index["grid"]
+    i = min(max(int((punkt[0] - g["origin"][0]) / g["spacing"][0]), 0), g["dims"][0] - 1)
+    j = min(max(int((punkt[1] - g["origin"][1]) / g["spacing"][1]), 0), g["dims"][1] - 1)
+    t, hv = [], []
+    for e in index["timesteps"]:
+        time, f = read_timestep(Path(run_root), e["index"])
+        ux, uy = float(f["plan_ux"][j, i]), float(f["plan_uy"][j, i])
+        t.append(time)
+        hv.append((ux * ux + uy * uy) / (2 * 9.81))
+    return np.asarray(t), np.asarray(hv)
+
+
+def unterwasser_an_linie(run_root, polyline, abstand_zellen: float = 2.0
+                         ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Wasserspiegel (plan_wsp) beiderseits einer Linie (Wehrkrone) im Abstand
+    `abstand_zellen` Rasterzellen, je Feld-Ausgabezeit: der Median der
+    TIEFEREN Seite — das Unterwasser. NaN, wenn eine Seite trocken ist
+    (dann ist sie das Unterwasser, und der Überfall ist frei).
+    """
+    from .fields import read_timestep
+    index = _plan_zeitpunkte(run_root)
+    if index is None:
+        return np.zeros(0), np.zeros(0)
+    g = index["grid"]
+    s = g["spacing"][0]
+    nx, ny = g["dims"][0], g["dims"][1]
+    pl = np.asarray([(p[0], p[1]) for p in polyline], float)
+    seiten = ([], [])
+    for a, b in zip(pl[:-1], pl[1:]):
+        lang = float(np.linalg.norm(b - a))
+        if lang <= 0:
+            continue
+        n = np.array([-(b - a)[1], (b - a)[0]]) / lang
+        for f in np.linspace(0, 1, max(2, int(lang / s) + 1)):
+            p = a + f * (b - a)
+            for k, vz in enumerate((1.0, -1.0)):
+                q = p + vz * abstand_zellen * s * n
+                i, j = int((q[0] - g["origin"][0]) / s), int((q[1] - g["origin"][1]) / s)
+                if 0 <= i < nx and 0 <= j < ny:
+                    seiten[k].append(j * nx + i)
+    if not seiten[0] or not seiten[1]:
+        return np.zeros(0), np.zeros(0)
+    t, uw = [], []
+    for e in index["timesteps"]:
+        time, f = read_timestep(Path(run_root), e["index"])
+        w = f["plan_wsp"].ravel()
+        m = [w[np.asarray(sz)] for sz in seiten]
+        if any(not np.isfinite(x).any() for x in m):
+            u = np.nan                      # eine Seite trocken: frei
+        else:
+            u = min(float(np.nanmedian(x)) for x in m)
+        t.append(time)
+        uw.append(u)
+    return np.asarray(t), np.asarray(uw)
