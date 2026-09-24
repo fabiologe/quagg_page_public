@@ -2045,6 +2045,11 @@
             }
           ],
           "default": null
+        },
+        "schema_version": {
+          "default": 0,
+          "title": "Schema Version",
+          "type": "integer"
         }
       },
       "required": [

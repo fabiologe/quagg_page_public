@@ -10,7 +10,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 | B1 | Leichen und Kopien | ☑ | 2026-09-23 | (siehe unten) |
 | B2 | Eine Nachlaufkette | ☑ Nachlauf; Vernetzung noch doppelt | 2026-09-23 | (siehe unten) |
 | B3 | Schätzung (und Bilanz) nur im Server | ☑ a Laufschätzung, c Bilanz; b Widerstand bewusst nicht | 2026-09-23 | (siehe unten) |
-| B4 | `schema_version` | ☐ offen | | |
+| B4 | `schema_version` | ☑ | 2026-09-24 | (siehe unten) |
 | B5 | Betriebsdeckel | ☐ offen | | |
 | B6 | Fenster-Diät | ⏸ wartet auf Fabios Entscheidung | | |
 
@@ -123,3 +123,21 @@ und gleitende Steigung) — eigener Name `i_viertel`.
 
 Alte Läufe tragen ihre Bilanz im result.json (beim Lauf berechnet) — ohne `ablauf_gemessen`
 zeigt das Panel „Ablauf (aus der Bilanz)".
+
+## B4 · `schema_version` + nummerierte Migrationen
+
+`casespec.MIGRATIONEN = [(1, Text, Funktion), …, (7, …)]`, `SCHEMA_VERSION = 7`,
+`meta.schema_version` (hash-neutral in `_hash_daten` — ein Stempel ist kein neuer Fallstand).
+`migriere(daten, bericht)` läuft nur oberhalb der gespeicherten Version und meldet, was sie
+geändert hat. Die sieben Migrationen bis Version 7 prüfen die alte Form weiter selbst
+(idempotent), laufen also auch auf ungestempelten Fällen gefahrlos.
+
+| Messgröße | vorher | nachher |
+|---|---|---|
+| Migrationen mit eigenem Test | 1 (bohr_ueberstand, in test_durchstoss) | 4 Formen + Stempel + Hash + alle 12 gespeicherten Fälle laden |
+| Tests Backend | 910 | 918 |
+
+Referenzen neu geschrieben, Unterschied nur der Stempel: `golden/import_schnitt.json` (+2 Z.),
+Schema-Schnappschuss (+5 Z.). Die gespeicherten case.yaml bekommen den Stempel beim nächsten
+Speichern (Laden schreibt nie zurück). Falle wieder getroffen: „…" mit geradem
+Schlusszeichen in einem Python-String → SyntaxError, `“` verwenden.

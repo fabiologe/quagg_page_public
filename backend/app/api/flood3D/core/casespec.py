@@ -148,6 +148,9 @@ class Meta(_Model):
     # ersetzt die alten Felder crs_offset/crs_rotation_deg, die zwei
     # verschiedene Drehkonventionen mischten und das Drehzentrum verloren.
     transform: CrsTransform | None = None
+    # Stand des Formats (SCHEMA_VERSION); migriere() hebt ältere Fälle an.
+    # Hash-neutral (_hash_daten): ein neuer Stempel ist kein neuer Fall.
+    schema_version: int = 0
 
 
 # --------------------------------------------------------------------------
@@ -1375,67 +1378,142 @@ class Evaluation(_Model):
 
 # Felder, die es einmal gab und die nie eine Wirkung hatten. `extra="forbid"`
 # ist scharf — ohne diese Liste ließe sich kein alter Fall mehr öffnen.
-def migriere(daten: dict) -> dict:
-    """Alte case.yaml lesbar halten: entfallene Angaben still verwerfen."""
+# ---- Migrationen (Fahrplan B4, 2026-09-23) --------------------------------
+# Jede Migration hebt einen Fall um genau eine Formatversion an und meldet,
+# ob sie etwas geändert hat. Alle bis Version 7 prüfen die alte Form selbst
+# (idempotent) — sie laufen deshalb auch auf Fällen ohne Stempel gefahrlos.
+# Neue Migrationen dürfen sich auf den Stempel verlassen.
+
+def _m1_cutwater(daten: dict) -> bool:
+    """Pfeiler-Feld `cutwater` (nie gebaut) verwerfen."""
+    geaendert = False
+    for st in daten.get("structures") or []:
+        if isinstance(st, dict) and "cutwater" in st:
+            st.pop("cutwater"); geaendert = True
+    return geaendert
+
+
+def _m2_herkunft(daten: dict) -> bool:
+    """Importkörper aus der Zeit vor dem herkunft-Feld."""
+    geaendert = False
+    for st in daten.get("structures") or []:
+        if isinstance(st, dict) and st.get("type") == "imported" and not st.get("herkunft"):
+            st["herkunft"] = "import"; geaendert = True
+    return geaendert
+
+
+def _m3_spline(daten: dict) -> bool:
+    """„spline“ war wählbar, aber nie gebaut — ehrlich: polyline."""
+    geaendert = False
+    for st in daten.get("structures") or []:
+        al = st.get("alignment") if isinstance(st, dict) else None
+        if isinstance(al, dict) and al.get("kind") == "spline":
+            al["kind"] = "polyline"; geaendert = True
+    return geaendert
+
+
+def _m4_bohr_ueberstand(daten: dict) -> bool:
+    """
+    Bohr-Überstand EXPLIZIT in alte Fälle schreiben: die alte Enden-
+    Heuristik (Gebietskante → voller Überstand, sonst 5 cm) ist gelöscht —
+    der Regler soll im Fall SICHTBAR stehen, nicht still als Default wirken.
+    """
+    geaendert = False
+    for st in daten.get("structures") or []:
+        if (isinstance(st, dict) and st.get("type") == "culvert"
+                and st.get("durchstoesst_gelaende")
+                and st.get("bohr_ueberstand") is None):
+            st["bohr_ueberstand"] = 0.5; geaendert = True
+    return geaendert
+
+
+def _m5_berechnungskoerper(daten: dict) -> bool:
+    """Pseudo-Operation „Berechnungskörper“ → Eigenschaft am Gelände."""
+    terrain = daten.get("terrain")
+    if not isinstance(terrain, dict) or not isinstance(terrain.get("operations"), list):
+        return False
+    ops = terrain["operations"]
+    reste = [o for o in ops if not (isinstance(o, dict)
+             and o.get("type") == "berechnungskoerper")]
+    for o in ops:
+        if isinstance(o, dict) and o.get("type") == "berechnungskoerper":
+            # "auto" ist der Schema-Default und zählt nicht als bewusste
+            # Wahl — die Operation MEINTE "an"
+            if terrain.get("erdkoerper") in (None, "auto"):
+                terrain["erdkoerper"] = "an"
+            if o.get("unterkante") is not None:
+                terrain.setdefault("erdkoerper_unterkante", o["unterkante"])
+            if o.get("ueberstand") is not None:
+                terrain.setdefault("erdkoerper_ueberstand", o["ueberstand"])
+    if len(reste) == len(ops):
+        return False
+    terrain["operations"] = reste
+    return True
+
+
+def _m6_crs_felder(daten: dict) -> bool:
+    """meta.crs.origin / rotation_deg (nie ausgewertet) verwerfen."""
+    crs = (daten.get("meta") or {}).get("crs")
+    if not isinstance(crs, dict):
+        return False
+    weg = [k for k in ("origin", "rotation_deg") if k in crs]
+    for k in weg:
+        crs.pop(k)
+    return bool(weg)
+
+
+def _m7_transform(daten: dict) -> bool:
+    """
+    Alte Verortung (zwei Felder, zwei Drehkonventionen) in die eine
+    transform-Abbildung überführen. Die alten Felder stammten aus der
+    IMPORT-Konvention: erst Offset abziehen, dann um den Ursprung drehen —
+    daraus folgt t = −R(θ)·off.
+    """
+    meta = daten.get("meta")
+    if not isinstance(meta, dict) or not ({"crs_offset", "crs_rotation_deg"} & set(meta)):
+        return False
+    off = meta.pop("crs_offset", None)
+    rot = float(meta.pop("crs_rotation_deg", 0.0) or 0.0)
+    if (off or rot) and not meta.get("transform"):
+        ox, oy = (float(off[0]), float(off[1])) if off else (0.0, 0.0)
+        c, s = _rot2(rot)
+        meta["transform"] = {
+            "rotation_deg": rot % 360.0,
+            "translation": [-(c * ox - s * oy), -(s * ox + c * oy)]}
+    return True
+
+
+# (Zielversion, was sie tut, Funktion) — nur anhängen, nie umnummerieren
+MIGRATIONEN = [
+    (1, "Pfeiler-Feld cutwater verworfen", _m1_cutwater),
+    (2, "Importkörpern die Herkunft „import“ gegeben", _m2_herkunft),
+    (3, "Spline-Achsen als Polylinien", _m3_spline),
+    (4, "Bohr-Überstand 0,5 m sichtbar eingetragen", _m4_bohr_ueberstand),
+    (5, "Berechnungskörper als Erdkörper-Eigenschaft", _m5_berechnungskoerper),
+    (6, "unbenutzte Verortungsfelder verworfen", _m6_crs_felder),
+    (7, "Verortung in die transform-Abbildung überführt", _m7_transform),
+]
+SCHEMA_VERSION = MIGRATIONEN[-1][0]
+
+
+def migriere(daten: dict, bericht: list[str] | None = None) -> dict:
+    """
+    Alte case.yaml lesbar halten: jede Migration oberhalb der gespeicherten
+    Version läuft, der Stempel wird auf SCHEMA_VERSION gesetzt. `bericht`
+    bekommt je Migration, die etwas GEÄNDERT hat, einen Satz.
+    """
     if not isinstance(daten, dict):
         return daten
-    for st in daten.get("structures") or []:
-        if isinstance(st, dict):
-            st.pop("cutwater", None)
-            # Importkörper aus der Zeit vor dem herkunft-Feld
-            if st.get("type") == "imported" and not st.get("herkunft"):
-                st["herkunft"] = "import"
-            # "spline" war wählbar, aber nie gebaut — ehrlich: polyline
-            al = st.get("alignment")
-            if isinstance(al, dict) and al.get("kind") == "spline":
-                al["kind"] = "polyline"
-            # Bohr-Überstand EXPLIZIT in alte Fälle schreiben: die alte
-            # Enden-Heuristik (Gebietskante → voller Überstand, sonst 5 cm)
-            # ist gelöscht — der neue Regler soll im Fall SICHTBAR stehen,
-            # nicht still als Schema-Default wirken.
-            if (st.get("type") == "culvert"
-                    and st.get("durchstoesst_gelaende")
-                    and st.get("bohr_ueberstand") is None):
-                st["bohr_ueberstand"] = 0.5
-    terrain = daten.get("terrain")
-    if isinstance(terrain, dict):
-        ops = terrain.get("operations")
-        if isinstance(ops, list):
-            # Pseudo-Operation „Berechnungskörper" → Eigenschaft am Gelände
-            reste = [o for o in ops if not (isinstance(o, dict)
-                     and o.get("type") == "berechnungskoerper")]
-            for o in ops:
-                if isinstance(o, dict) and o.get("type") == "berechnungskoerper":
-                    # "auto" ist der Schema-Default und zaehlt nicht als
-                    # bewusste Wahl — die Operation MEINTE "an"
-                    if terrain.get("erdkoerper") in (None, "auto"):
-                        terrain["erdkoerper"] = "an"
-                    if o.get("unterkante") is not None:
-                        terrain.setdefault("erdkoerper_unterkante",
-                                           o["unterkante"])
-                    if o.get("ueberstand") is not None:
-                        terrain.setdefault("erdkoerper_ueberstand",
-                                           o["ueberstand"])
-            if len(reste) != len(ops):
-                terrain["operations"] = reste
-    meta = daten.get("meta")
-    if isinstance(meta, dict):
-        crs = meta.get("crs")
-        if isinstance(crs, dict):
-            crs.pop("origin", None)
-            crs.pop("rotation_deg", None)
-        # Alte Verortung (zwei Felder, zwei Drehkonventionen) in die eine
-        # transform-Abbildung überführen. Die alten Felder stammten aus der
-        # IMPORT-Konvention: erst Offset abziehen, dann um den Ursprung
-        # drehen — daraus folgt t = −R(θ)·off.
-        off = meta.pop("crs_offset", None)
-        rot = float(meta.pop("crs_rotation_deg", 0.0) or 0.0)
-        if (off or rot) and not meta.get("transform"):
-            ox, oy = (float(off[0]), float(off[1])) if off else (0.0, 0.0)
-            c, s = _rot2(rot)
-            meta["transform"] = {
-                "rotation_deg": rot % 360.0,
-                "translation": [-(c * ox - s * oy), -(s * ox + c * oy)]}
+    meta = daten.get("meta") if isinstance(daten.get("meta"), dict) else None
+    try:
+        stand = int((meta or {}).get("schema_version") or 0)
+    except (TypeError, ValueError):
+        stand = 0
+    for ziel, text, fn in MIGRATIONEN:
+        if stand < ziel and fn(daten) and bericht is not None:
+            bericht.append(text)
+    if meta is not None:
+        meta["schema_version"] = max(stand, SCHEMA_VERSION)
     return daten
 
 
@@ -1544,6 +1622,8 @@ class CaseSpec(_Model):
         geleerte Altfelder heraus, deren Fehlen heute zum Hash gehört.
         """
         daten = self.model_dump(mode="json")
+        # der Formatstempel ist kein Inhalt des Falls
+        (daten.get("meta") or {}).pop("schema_version", None)
         base = (daten.get("terrain") or {}).get("base") or {}
         for neu in ("aussenhoehe",):
             if base.get(neu) is None:
