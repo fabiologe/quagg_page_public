@@ -68,7 +68,11 @@ from .laufwerk import _import_entpacken
 # auch der nächste neue Endpunkt geschützt, ohne dass jemand daran denkt.
 router = APIRouter(dependencies=[Depends(schreib_gate)])
 
-_SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
+# Kennungen beginnen mit Buchstabe oder Ziffer: `..` passte bis 2026-09-23
+# durch das alte Muster [A-Za-z0-9._-]+ und öffnete eine Ebene über
+# data/runs bzw. data/cases (Audit F12, Fahrplan B5) — ein Muster für alle
+# Stellen, die Kennungen zu Pfaden machen
+_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SAFE_FIG = re.compile(r"^[A-Za-z0-9._-]+\.(png|svg)$")
 
 
@@ -1116,6 +1120,7 @@ async def case_import_analyze(case_id: str, request: Request,
     Rollen-Vorschlag — übernommen wird erst nach der Deklaration.
     """
     from .core.importer import analyze_file
+    laufwerk.platte_pruefen()
 
     _, d = _load_case(case_id)
     data = await request.body()
@@ -1930,6 +1935,14 @@ async def case_mesh_preview(case_id: str, request: Request,
             detail="Für diesen Fall läuft bereits eine Netzvorschau — "
                    "bitte warten, bis sie fertig ist (blockMesh + "
                    "snappyHexMesh brauchen einige Minuten).")
+    # … und der Server rechnet höchstens MAX_PREVIEWS Vorschauen zugleich
+    # (4 Kerne, geteilt mit der Webseite; B5)
+    if len(laufwerk._laufende_previews) >= laufwerk.MAX_PREVIEWS:
+        raise HTTPException(
+            status_code=429,
+            detail="Der Server vernetzt gerade einen anderen Fall — bitte in "
+                   "ein paar Minuten erneut versuchen.")
+    laufwerk.platte_pruefen()
 
     # Dasselbe Tor wie vor POST /runs: Fehler-Befunde starten keinen
     # minutenlangen Vernetzungslauf, der erst im Container stirbt — dieser
@@ -1990,6 +2003,7 @@ async def case_bundle(case_id: str, request: Request):
     zurück — die Ergebnis-Phase merkt keinen Unterschied zum Serverlauf.
     """
     from .core.bundle import BundleFehler, bundle_bauen
+    laufwerk.platte_pruefen()
     from .gate import pruefe_kosten_gate
 
     # Kosten-Gate: baut den Fall serverseitig und reserviert eine run_id
@@ -2043,6 +2057,8 @@ async def import_run_chunk(run_id: str, request: Request,
     Browser das Archiv in Häppchen an und löst mit last=true das
     Entpacken aus.
     """
+    if index == 0:
+        laufwerk.platte_pruefen()
     root = runs_root().resolve()
     run_root = (root / run_id).resolve()
     if run_root.parent != root or not run_root.is_dir():
@@ -2096,13 +2112,15 @@ async def start_run(request: Request, payload: dict = Body(...)):
 
     # Tor vor dem Lauf: Fehler-Befunde starten keinen bezahlten Lauf, der
     # erst im Container stirbt.
-    fehler = [b for b in validate_case(spec, case_dir)
+    netz: dict = {}
+    fehler = [b for b in validate_case(spec, case_dir, netz=netz)
               if b.get("severity") == "fehler"]
     if fehler:
         raise HTTPException(
             status_code=422,
             detail="Der Fall hat Fehler-Befunde: "
                    + " | ".join(b["message"] for b in fehler[:5]))
+    deckel = laufwerk.zeitdeckel_s(spec, netz, payload.get("max_laufzeit_s"))
 
     run_id, run_root = lauf_reservieren(runs_root(), case_id)
     # Geometrie von JETZT konservieren, bevor irgendetwas rechnet — der
@@ -2116,8 +2134,10 @@ async def start_run(request: Request, payload: dict = Body(...)):
         spec, case_dir, run_id, run_root,
         cores=payload.get("cores"),
         checkpoint_s=payload.get("checkpoint_s", 600),
-        max_laufzeit_s=payload.get("max_laufzeit_s"))
-    return {"run_id": run_id, "status": "building", "ort": ort}
+        max_laufzeit_s=deckel)
+    manifest_schreiben(run_root, max_laufzeit_s=deckel)
+    return {"run_id": run_id, "status": "building", "ort": ort,
+            "max_laufzeit_s": deckel}
 
 
 @router.post("/runs/{run_id}/abort")

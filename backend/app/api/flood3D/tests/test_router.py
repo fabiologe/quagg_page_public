@@ -236,3 +236,19 @@ def test_server_rechenort_ist_geschichte(client):
     r = client.post("/runs", json={"case_id": "demo", "ort": "server"})
     assert r.status_code == 410
     assert "Lokal" in r.json()["detail"] and "RunPod" in r.json()["detail"]
+
+
+def test_punkt_kennungen_sind_ungueltig():
+    """B5: `..` als Kennung öffnete eine Ebene über data/runs bzw. data/cases."""
+    from fastapi import HTTPException
+
+    from ..router import _SAFE, _case_dir, _paths
+    for boese in ("..", ".", ".versteckt", "../x"):
+        assert not _SAFE.match(boese), boese
+        with pytest.raises(HTTPException) as e:
+            _paths(boese)
+        assert e.value.status_code == 422
+        with pytest.raises(HTTPException) as e:
+            _case_dir(boese)
+        assert e.value.status_code == 422
+    assert _SAFE.match("Rentrich_BetaTest08_r004") and _SAFE.match("g0-riesennetz")

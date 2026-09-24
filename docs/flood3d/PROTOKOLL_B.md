@@ -11,7 +11,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 | B2 | Eine Nachlaufkette | ☑ Nachlauf; Vernetzung noch doppelt | 2026-09-23 | (siehe unten) |
 | B3 | Schätzung (und Bilanz) nur im Server | ☑ a Laufschätzung, c Bilanz; b Widerstand bewusst nicht | 2026-09-23 | (siehe unten) |
 | B4 | `schema_version` | ☑ | 2026-09-24 | (siehe unten) |
-| B5 | Betriebsdeckel | ☐ offen | | |
+| B5 | Betriebsdeckel | ☑ (Semaphor nur für Netzvorschau) | 2026-09-24 | (siehe unten) |
 | B6 | Fenster-Diät | ⏸ wartet auf Fabios Entscheidung | | |
 
 ## B1 · Leichen und Kopien
@@ -141,3 +141,15 @@ Referenzen neu geschrieben, Unterschied nur der Stempel: `golden/import_schnitt.
 Schema-Schnappschuss (+5 Z.). Die gespeicherten case.yaml bekommen den Stempel beim nächsten
 Speichern (Laden schreibt nie zurück). Falle wieder getroffen: „…" mit geradem
 Schlusszeichen in einem Python-String → SyntaxError, `“` verwenden.
+
+## B5 · Betriebsdeckel
+
+| Deckel | vorher | nachher | Test |
+|---|---|---|---|
+| Kennungen → Pfade | `_SAFE` ließ `..` durch (eine Ebene über data/runs, data/cases) | Kennung beginnt mit Buchstabe/Ziffer — ein Muster für alle 7 Stellen | `test_router.py::test_punkt_kennungen_sind_ungueltig` |
+| Cloud-Zeitdeckel | ohne Angabe keiner (Client sendet nie `max_laufzeit_s`) | Server setzt 3 × Laufschätzung, 30 min … 8 h; Angabe gilt bis 24 h; steht im Manifest (auch nach Import) | `test_betriebsdeckel.py` |
+| Platte | kein Wächter | < 2 GB frei → 507 mit Zahl vor Netzvorschau, Bundle, CAD-Import, Ergebnis-Import (`FLOOD3D_PLATTE_MIN_GB`) | `test_platte_pruefen_meldet_507` |
+| Netzvorschauen zugleich | je Fall eine, fallübergreifend beliebig | höchstens 1 auf dem Server (`FLOOD3D_MAX_PREVIEWS`) → 429 | `test_zweite_netzvorschau_wartet` |
+
+Bewusst nicht: Semaphor für Cloud-Läufe — der RunPod-Endpunkt rechnet mit „Max Workers 1"
+ohnehin nacheinander. Tests Backend 918 → 923.

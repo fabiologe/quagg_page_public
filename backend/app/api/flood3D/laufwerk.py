@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -35,6 +36,52 @@ _waechter_laeuft = False
 
 
 # ── Geometrie des Laufs konservieren ────────────────────────────────────────
+# Zeitdeckel eines Cloud-Laufs (Fahrplan B5, Audit F12): bis 2026-09-23
+# startete die Oberfläche jeden RunPod-Lauf OHNE executionTimeout — ein
+# hängender Solver kostete, bis jemand ihn fand
+ZEITDECKEL_FAKTOR = 3.0
+ZEITDECKEL_MIN_S = 1800
+ZEITDECKEL_VORGABE_MAX_S = 8 * 3600
+ZEITDECKEL_HART_MAX_S = 24 * 3600
+
+
+# Platte: der Server hat 38 GB, oft keine 5 frei (2026-09-23: 4,3 GB).
+# Netzvorschau, Bundle, CAD-Import und Ergebnis-Import schreiben leicht
+# Hunderte MB — vorher prüfen statt mitten im Schreiben scheitern (B5)
+PLATTE_MIN_GB = float(os.environ.get("FLOOD3D_PLATTE_MIN_GB", "2"))
+# Netzvorschauen rechnen im Server-Docker auf 4 Kernen neben der Webseite
+MAX_PREVIEWS = int(os.environ.get("FLOOD3D_MAX_PREVIEWS", "1"))
+
+
+def platte_pruefen(pfad: Path | None = None) -> None:
+    """507, wenn unter PLATTE_MIN_GB frei sind — mit der Zahl."""
+    ort = Path(pfad or runs_root())
+    while not ort.exists() and ort != ort.parent:      # noch nicht angelegt:
+        ort = ort.parent                                # dieselbe Platte
+    frei = shutil.disk_usage(ort).free / 1e9
+    if frei < PLATTE_MIN_GB:
+        raise HTTPException(
+            status_code=507,
+            detail=f"Auf dem Server sind nur noch {frei:.1f} GB frei "
+                   f"(nötig: {PLATTE_MIN_GB:g} GB) — alte Läufe archivieren "
+                   "oder löschen.")
+
+
+def zeitdeckel_s(spec, netz: dict | None, angegeben=None) -> int:
+    """
+    Sekunden bis zum harten Abbruch. Eine Angabe gilt (gedeckelt auf 24 h);
+    sonst 3 × die Laufschätzung (runner.laufschaetzung, 16 Kerne), mindestens
+    30 min, höchstens 8 h.
+    """
+    if angegeben:
+        return int(min(float(angegeben), ZEITDECKEL_HART_MAX_S))
+    stunden = ((netz or {}).get("lauf") or {}).get("stunden")
+    if not stunden:
+        return ZEITDECKEL_VORGABE_MAX_S
+    return int(min(max(ZEITDECKEL_FAKTOR * stunden * 3600, ZEITDECKEL_MIN_S),
+                   ZEITDECKEL_VORGABE_MAX_S))
+
+
 def geometrie_sichern(spec, case_dir: Path, run_root: Path) -> None:
     """
     Beim Start: die Spezifikation samt Datendateien in ``run_root/spec``
@@ -123,7 +170,8 @@ def _import_entpacken(run_root: Path, run_id: str, data: bytes) -> dict:
     # aus welchem Fallstand er stammt.
     vorher = read_manifest(run_paths(run_root.parent, run_root.name)) or {}
     bewahren = {k: vorher[k] for k in ("case_hash", "netz_hash",
-                                       "numerik_version", "zulauf")
+                                       "numerik_version", "zulauf",
+                                       "max_laufzeit_s")
                 if vorher.get(k)}
     for m in z.namelist():
         if m.endswith("/"):
