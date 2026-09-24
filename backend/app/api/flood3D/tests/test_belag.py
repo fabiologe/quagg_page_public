@@ -97,7 +97,7 @@ def test_topo_set_schneidet_je_belag_aus_dem_gelaende(tmp_path):
     assert ts is not None
     # erst ALLE Gelaendeflaechen, dann auf die unter dem Prisma einschraenken
     assert "patchToFace" in ts and "patch   terrain;" in ts
-    assert ts.count("searchableSurfaceToFace") == 2
+    assert ts.count("source  searchableSurfaceToFace;") == 2
     assert 'file    "belag1.stl";' in ts and 'file    "belag2.stl";' in ts
     assert "action  subset;" in ts
 

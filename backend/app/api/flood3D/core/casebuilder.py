@@ -65,6 +65,29 @@ def _momentbezug(spec: CaseSpec, base_dir, koerper=None) -> dict:
     return out
 
 
+def schnitt_band(spec: CaseSpec, sec):
+    """
+    Senkrechtes Band entlang der GANZEN Querschnitts-Polylinie, von unter
+    z_min bis über z_max — topoSet macht daraus die faceZone, über deren
+    echte Zellflächen der Durchfluss summiert wird (Fahrplan C1). Normale
+    je Segment = Rechtsnormale (dy, −dx) wie conventions.section_normal:
+    positiver Durchfluss behält seine Richtung.
+    """
+    import trimesh
+    zu, zo = spec.domain.z_min - 1.0, spec.domain.z_max + 1.0
+    ecken, dreiecke = [], []
+    for (ax, ay), (bx, by) in zip(sec.polyline[:-1], sec.polyline[1:]):
+        i = len(ecken)
+        ecken += [(ax, ay, zu), (bx, by, zu), (bx, by, zo), (ax, ay, zo)]
+        # (B0−A0)×(B1−A0) = (dy, −dx)·h — die Rechtsnormale
+        dreiecke += [(i, i + 1, i + 2), (i, i + 2, i + 3)]
+    return trimesh.Trimesh(vertices=ecken, faces=dreiecke, process=False)
+
+
+def schnitt_zone(sec) -> str:
+    return f"qs_{sec.id}"
+
+
 def _solver_info_takt(spec: CaseSpec) -> str:
     """
     solverInfo schreibt bei JEDER Ausführung eine Zeile — und ohne
@@ -108,48 +131,21 @@ def function_objects(spec: CaseSpec, base_dir=".", koerper=None) -> str:
 """
 
     z_mid = ((spec.domain.z_min + spec.domain.z_max) / 2) if spec.domain else 0.0
+    # Durchfluss je Querschnitt über die ECHTEN Zellflächen einer faceZone
+    # (Fahrplan C1, 2026-09-24): Summe des Flusses, den der Solver
+    # transportiert — Wasser (alphaPhi0.water) und Gemisch (phi). Bis dahin
+    # eine interpolierte Schnittebene (sampledPlane, weightedAreaIntegrate
+    # α·U) aus nur Anfangs- und Endpunkt; beim Wehr maß sie im
+    # Beharrungszustand 5 % unter dem Ablauf.
     for sec in spec.evaluation.sections:
-        p0 = np.asarray(sec.polyline[0], dtype=float)
-        p1 = np.asarray(sec.polyline[-1], dtype=float)
-        mid = (p0 + p1) / 2
-        n = section_normal(sec.polyline)
-        # Ohne bounds integriert die Ebene ueber das GANZE Modellgebiet —
-        # der Querschnitt misst dann auch Wasser, das die gezeichnete Linie
-        # nie kreuzt (Audit P1-1). Die Box umfasst ALLE Polylinienpunkte
-        # (nicht nur die Endpunkte) plus ein Zellpolster, damit die
-        # angeschnittenen Facetten sicher innerhalb liegen; vertikal die
-        # volle Gebietshoehe. OpenFOAM.com (v2406) liest `bounds` am
-        # sampledPlane; ohne Gebietsangabe bleibt die alte, unbegrenzte Ebene.
-        bounds = ""
-        if spec.domain is not None:
-            xs = [float(p[0]) for p in sec.polyline]
-            ys = [float(p[1]) for p in sec.polyline]
-            pad = spec.mesh.base_cell if spec.mesh is not None else 0.5
-            bounds = (f"            bounds          "
-                      f"({min(xs) - pad:g} {min(ys) - pad:g} "
-                      f"{spec.domain.z_min - pad:g}) "
-                      f"({max(xs) + pad:g} {max(ys) + pad:g} "
-                      f"{spec.domain.z_max + pad:g});\n")
         out += f"""    discharge_{sec.id}
     {{
         type            surfaceFieldValue;
         libs            (fieldFunctionObjects);
-        regionType      sampledSurface;
-        name            {sec.id};
-        sampledSurfaceDict
-        {{
-            type            plane;
-            planeType       pointAndNormal;
-{bounds}            pointAndNormalDict
-            {{
-                point           {vec((mid[0], mid[1], z_mid))};
-                normal          {vec((n[0], n[1], 0.0))};
-            }}
-        }}
-        operation       weightedAreaIntegrate;
-        fields          (U);
-        weightField     alpha.water;
-        surfaceFormat   none;
+        regionType      faceZone;
+        name            {schnitt_zone(sec)};
+        operation       sum;
+        fields          (phi alphaPhi0.water);
         writeFields     false;
 {ctl}    }}
 """
@@ -1091,9 +1087,22 @@ def topo_set_dict(spec: CaseSpec,
     screens = [s for s in spec.structures if s.type == "screen"]
     windows = _windowed_bcs(spec)
     belaege = _belaege(spec, base_dir)
-    if not screens and not windows and not belaege:
+    sections = spec.evaluation.sections if spec.domain is not None else []
+    if not screens and not windows and not belaege and not sections:
         return None
     actions = ""
+    # Querschnitte: faceZone aus dem senkrechten Band (schnitt_band), die
+    # Orientierung kommt aus den Flächennormalen des Bands (C1)
+    for sec in sections:
+        actions += f"""    {{
+        name        {schnitt_zone(sec)};
+        type        faceZoneSet;
+        action      new;
+        source      searchableSurfaceToFaceZone;
+        surfaceType triSurfaceMesh;
+        surfaceName schnitt_{sec.id}.stl;
+    }}
+"""
     # Fenster: Flächen des Randpatches AUSSERHALB des Fensters sammeln —
     # createPatch macht daraus die Wand randwand_<id>
     for b in windows:
@@ -1765,6 +1774,10 @@ def build_case(spec: CaseSpec, out_dir: str | Path,
         # Geländeflächen je Belag heraus (core/belag.py).
         for b, koerper in _belaege(spec, base_dir):
             koerper.export(out / "constant" / "triSurface" / f"belag{b.id}.stl")
+    # Querschnitts-Bänder für die faceZones (C1)
+    for sec in spec.evaluation.sections:
+        schnitt_band(spec, sec).export(
+            out / "constant" / "triSurface" / f"schnitt_{sec.id}.stl")
     # Sich durchdringende Körper werden hier entflochten (gleiche
     # Wasserberandung, aber keine doppelt belegten Flächen für snappy) —
     # was dabei passiert ist, steht als Notiz im Ergebnis.

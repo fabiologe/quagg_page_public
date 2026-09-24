@@ -96,6 +96,22 @@ def read_forces(fo_dir: Path, patch_id: str, run_id: str) -> list[dict]:
 # Durchfluss je Querschnitt
 # --------------------------------------------------------------------------
 
+def _read_zone_discharge(fo_dir: Path, section_id: str,
+                         run_id: str) -> list[dict] | None:
+    """
+    Durchfluss aus der faceZone-Summe (seit C1, 2026-09-24): Spalten
+    sum(phi) und sum(alphaPhi0.water); genommen wird der WASSERfluss.
+    None, wenn die Datei das alte Vektorformat hat.
+    """
+    names, rows = read_scalar_fo(fo_dir, "surfaceFieldValue.dat")
+    idx = next((i for i, n in enumerate(names) if "alphaPhi" in n), None)
+    if idx is None:
+        return None
+    rows_all = [_row(run_id, r[0], Quantity.DISCHARGE, section_id,
+                     Component.NONE, r[1 + idx], fo_dir.name) for r in rows]
+    return rows_all or None
+
+
 def read_discharge(fo_dir: Path, section_id: str, normal,
                    run_id: str) -> list[dict]:
     """
@@ -112,6 +128,9 @@ def read_discharge(fo_dir: Path, section_id: str, normal,
     weightedAreaNormalIntegrate) — damit wurde die Luftströmung
     mitintegriert und der Durchfluss war um Größenordnungen zu hoch.
     """
+    zone = _read_zone_discharge(fo_dir, section_id, run_id)
+    if zone is not None:
+        return zone
     rows = read_vector_fo(fo_dir, "surfaceFieldValue.dat")
     n = normal or (1.0, 0.0, 0.0)
     out = []

@@ -39,6 +39,7 @@ Beispielzeichnung für Import-Tests: `daten/Nacktes_Becken.dxf` (echte Projektda
 | `FAHRPLAN_B_VEREINFACHEN_2026-09-23.md` | gebaut B1–B6, PROD 24.09. |
 | `PLAN_LEERLAUF.md` | gebaut (2026-08-16) | „rechne, bis es leer ist" — Abbruchkriterium Stagnation |
 | `FAHRPLAN_C_ERGEBNISSE_2026-09-24.md` | in Arbeit | Stufe C: Querschnitt exakt (faceZone), Planraster aus echten Zellen, Wasseroberfläche als VTP, Kennwerte eine Definition, Wehr neu |
+| `PROTOKOLL_C.md` | in Arbeit | Umsetzungsprotokoll zu Stufe C |
 | `FAHRPLAN_GPU_FOAM.md` | geparkt | GPU-Beschleunigung G0–G3; für die RX 6700 XT kein Produktpfad |
 
 ## Ausblick (aus dem Gesamtaudit, nicht geplant)

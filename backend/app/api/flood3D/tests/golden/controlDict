@@ -49,23 +49,10 @@ functions
     {
         type            surfaceFieldValue;
         libs            (fieldFunctionObjects);
-        regionType      sampledSurface;
-        name            qs_zulauf;
-        sampledSurfaceDict
-        {
-            type            plane;
-            planeType       pointAndNormal;
-            bounds          (3.5 1.5 91.5) (4.5 16.5 100.5);
-            pointAndNormalDict
-            {
-                point           (4 9 96);
-                normal          (1 0 0);
-            }
-        }
-        operation       weightedAreaIntegrate;
-        fields          (U);
-        weightField     alpha.water;
-        surfaceFormat   none;
+        regionType      faceZone;
+        name            qs_qs_zulauf;
+        operation       sum;
+        fields          (phi alphaPhi0.water);
         writeFields     false;
         writeControl    runTime;
         writeInterval   0.1;
@@ -75,23 +62,10 @@ functions
     {
         type            surfaceFieldValue;
         libs            (fieldFunctionObjects);
-        regionType      sampledSurface;
-        name            qs_ablauf;
-        sampledSurfaceDict
-        {
-            type            plane;
-            planeType       pointAndNormal;
-            bounds          (19.5 1.5 91.5) (20.5 16.5 100.5);
-            pointAndNormalDict
-            {
-                point           (20 9 96);
-                normal          (1 0 0);
-            }
-        }
-        operation       weightedAreaIntegrate;
-        fields          (U);
-        weightField     alpha.water;
-        surfaceFormat   none;
+        regionType      faceZone;
+        name            qs_qs_ablauf;
+        operation       sum;
+        fields          (phi alphaPhi0.water);
         writeFields     false;
         writeControl    runTime;
         writeInterval   0.1;

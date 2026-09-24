@@ -28,18 +28,28 @@ from .synthetic_case import build_spec_stage3
 # P1-1: discharge-bounds
 # --------------------------------------------------------------------------
 
-def test_discharge_ebene_umfasst_alle_polylinienpunkte():
-    """Die bounds-Box muss auch ZWISCHENPUNKTE der Polylinie einschließen —
-    Mitte/Normale kommen weiterhin aus den Endpunkten."""
+def test_querschnitt_misst_ueber_die_ganze_polylinie():
+    """C1 (2026-09-24): statt einer Ebene aus Anfangs-/Endpunkt eine faceZone
+    aus dem senkrechten Band entlang ALLER Punkte; gemessen wird der Fluss
+    über die echten Zellflächen."""
+    import numpy as np
+
+    from ..core.casebuilder import schnitt_band, topo_set_dict
     spec = build_spec_stage3()
     spec.evaluation.sections = [cs.Section(
         id="knick", polyline=[(4, 2), (15, 9), (4, 16)])]
+    band = schnitt_band(spec, spec.evaluation.sections[0])
+    xy = {(round(v[0], 6), round(v[1], 6)) for v in band.vertices}
+    assert {(4, 2), (15, 9), (4, 16)} <= xy               # Knickpunkt dabei
+    assert band.bounds[0][2] < spec.domain.z_min and band.bounds[1][2] > spec.domain.z_max
+    # Normale des ersten Segments = Rechtsnormale (dy, −dx)
+    n = band.face_normals[0]
+    d = np.array([15 - 4, 9 - 2]) / np.hypot(11, 7)
+    assert np.allclose(n[:2], [d[1], -d[0]], atol=1e-9)
     out = function_objects(spec)
-    zeile = next(line for line in out.splitlines() if "bounds" in line)
-    pad = spec.mesh.base_cell
-    # x reicht bis zum Zwischenpunkt x=15 plus Polster, nicht nur bis 4
-    assert f"({4 - pad:g} {2 - pad:g}" in zeile
-    assert f"({15 + pad:g} {16 + pad:g}" in zeile
+    blk = out[out.index("discharge_knick"):]
+    assert "regionType      faceZone;" in blk[:300] and "alphaPhi0.water" in blk[:400]
+    assert "qs_knick" in topo_set_dict(spec)
 
 
 def test_discharge_ohne_domain_bleibt_unbegrenzt():
