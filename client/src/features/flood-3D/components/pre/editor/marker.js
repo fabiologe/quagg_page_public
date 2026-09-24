@@ -413,11 +413,6 @@ function buildMarkers() {
           const s = new THREE.Shape()
           s.absarc(win.center, win.zc, win.d / 2, 0, Math.PI * 2)
           mkFaceShape(s, 0.4)
-        } else if (win.shape === 'polygon') {
-          const s = new THREE.Shape()
-          win.points.forEach(([a, z], k) => (k ? s.lineTo(a, z) : s.moveTo(a, z)))
-          s.closePath()
-          mkFaceShape(s, 0.4)
         } else if (win.shape === 'trapez') {
           const s = new THREE.Shape()
           s.moveTo(win.center - win.bw / 2, win.zw0)

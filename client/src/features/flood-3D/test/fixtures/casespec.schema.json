@@ -699,8 +699,7 @@
           "enum": [
             "rechteck",
             "kreis",
-            "trapez",
-            "polygon"
+            "trapez"
           ],
           "title": "Shape",
           "type": "string"
@@ -822,31 +821,6 @@
           ],
           "default": null,
           "title": "Top Width"
-        },
-        "points": {
-          "anyOf": [
-            {
-              "items": {
-                "maxItems": 2,
-                "minItems": 2,
-                "prefixItems": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "type": "array"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Points"
         }
       },
       "title": "BcWindow",

@@ -1060,7 +1060,11 @@ class BcWindow(_Model):
     Alle Formen entstehen als Face-Auswahl auf dem Gebietsrand und sind
     daher in Zellauflösung treppig — Netzverfeinerung am Fenster glättet.
     """
-    shape: Literal["rechteck", "kreis", "trapez", "polygon"] = "rechteck"
+    # „polygon" (frei gezeichnet, Ei/Maul/Tropfen) gestrichen 2026-09-24
+    # (Fahrplan B6): seit dem Freispiegel-Zulauf (A1) begrenzt ein Fenster
+    # nur noch Breite und Höhe; kein Fall nutzte es. Migration 8 macht
+    # daraus das umschließende Rechteck.
+    shape: Literal["rechteck", "kreis", "trapez"] = "rechteck"
     span: tuple[float, float] | None = None
     follow: str | None = None
     z_min: float | None = None
@@ -1070,9 +1074,6 @@ class BcWindow(_Model):
     diameter: float | None = None    # kreis
     bottom_width: float | None = None  # trapez: Sohlbreite
     top_width: float | None = None     # trapez: Breite an der Oberkante
-    # polygon: frei gezeichneter Querschnitt als [(Kante, Höhe), …] —
-    # Grundlage auch für Ei-/Maul-/Tropfenprofile (Editor-Vorlagen)
-    points: list[tuple[float, float]] | None = None
 
 
 class _Bc(_Objekt):
@@ -1485,6 +1486,27 @@ def _m7_transform(daten: dict) -> bool:
     return True
 
 
+def _m8_fenster_polygon(daten: dict) -> bool:
+    """Polygonfenster (gestrichen, B6) → umschließendes Rechteck."""
+    geaendert = False
+    for b in daten.get("boundaries") or []:
+        w = b.get("window") if isinstance(b, dict) else None
+        if not isinstance(w, dict):
+            continue
+        if w.get("shape") == "polygon":
+            pts = w.get("points") or []
+            if len(pts) >= 3:
+                a = [float(p[0]) for p in pts]
+                z = [float(p[1]) for p in pts]
+                w.update(span=[min(a), max(a)], z_min=min(z), z_max=max(z))
+            w["shape"] = "rechteck"
+            geaendert = True
+        if "points" in w:
+            w.pop("points")
+            geaendert = True
+    return geaendert
+
+
 # (Zielversion, was sie tut, Funktion) — nur anhängen, nie umnummerieren
 MIGRATIONEN = [
     (1, "Pfeiler-Feld cutwater verworfen", _m1_cutwater),
@@ -1494,13 +1516,14 @@ MIGRATIONEN = [
     (5, "Berechnungskörper als Erdkörper-Eigenschaft", _m5_berechnungskoerper),
     (6, "unbenutzte Verortungsfelder verworfen", _m6_crs_felder),
     (7, "Verortung in die transform-Abbildung überführt", _m7_transform),
+    (8, "Polygonfenster als umschließendes Rechteck", _m8_fenster_polygon),
 ]
 SCHEMA_VERSION = MIGRATIONEN[-1][0]
 # Die Migrationen bis hierher prüfen die alte Form selbst — sie laufen
 # IMMER, auch auf gestempelten Daten: ein Dump mit Stempel 7 kann trotzdem
 # ein Altfeld tragen (Import, Handarbeit, Tests). Erst spätere Migrationen,
 # die sich nicht selbst erkennen, verlassen sich auf den Stempel.
-IDEMPOTENT_BIS = 7
+IDEMPOTENT_BIS = 8
 
 
 def migriere(daten: dict, bericht: list[str] | None = None) -> dict:

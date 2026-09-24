@@ -72,7 +72,7 @@ export const ENUM_LABELS = {
 // Auswahlwerte, die nur INNERHALB einer Untergruppe gelten — `shape` heißt
 // beim Pfeiler etwas anderes als beim Randfenster
 const GRUPPEN_ENUMS = {
-  window: { shape: ['rechteck', 'kreis', 'trapez', 'polygon'] },
+  window: { shape: ['rechteck', 'kreis', 'trapez'] },
   // Bearbeitungen: eine Aussparung ist rund oder rechteckig, nichts sonst
   aussparung: { shape: ['kreis', 'rechteck'] },
   // Was die Widerstandszone IST — daraus folgt, woraus der Beiwert kommt

@@ -65,12 +65,6 @@ export function fensterSpanne(win, e0, e1) {
       const b = Math.max(win.top_width ?? 0, win.bottom_width ?? 0) / 2
       return [win.center - b, win.center + b]
     }
-    if (win.shape === 'polygon' && win.points?.length) {
-      let lo = Infinity
-      let hi = -Infinity
-      for (const [e] of win.points) { lo = Math.min(lo, e); hi = Math.max(hi, e) }
-      return [lo, hi]
-    }
   }
   return [Math.min(e0, e1), Math.max(e0, e1)]
 }
@@ -80,11 +74,6 @@ function fensterHoehe(win, z0, z1) {
   if (win && !win.follow) {
     if (win.z_center != null) return win.z_center
     if (win.z_min != null && win.z_max != null) return (win.z_min + win.z_max) / 2
-    if (win.shape === 'polygon' && win.points?.length) {
-      let s = 0
-      for (const [, z] of win.points) s += z
-      return s / win.points.length
-    }
   }
   return (z0 + z1) / 2
 }

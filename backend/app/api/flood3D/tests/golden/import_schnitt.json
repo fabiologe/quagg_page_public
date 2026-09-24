@@ -293,7 +293,7 @@
      "lastfall": "",
      "regelwerk": []
     },
-    "schema_version": 7,
+    "schema_version": 8,
     "title": "PreProzessing-Abnahmefall",
     "transform": {
      "rotation_deg": 0.0,
@@ -1080,7 +1080,7 @@
      "lastfall": "",
      "regelwerk": []
     },
-    "schema_version": 7,
+    "schema_version": 8,
     "title": "PreProzessing-Abnahmefall",
     "transform": {
      "rotation_deg": 0.0,

@@ -12,7 +12,7 @@ Leitplanke: Numerik-Stand `2026-09-A` und die 15 Goldens bleiben unverändert.
 | B3 | Schätzung (und Bilanz) nur im Server | ☑ a Laufschätzung, c Bilanz; b Widerstand bewusst nicht | 2026-09-23 | (siehe unten) |
 | B4 | `schema_version` | ☑ | 2026-09-24 | (siehe unten) |
 | B5 | Betriebsdeckel | ☑ (Semaphor nur für Netzvorschau) | 2026-09-24 | (siehe unten) |
-| B6 | Fenster-Diät | ⏸ wartet auf Fabios Entscheidung | | |
+| B6 | Fenster-Diät | ☑ (Fabio: ja, 24.09.) | 2026-09-24 | (siehe unten) |
 
 ## B1 · Leichen und Kopien
 
@@ -163,3 +163,17 @@ Altfeld bauen — mit Stempel 7 übersprang `migriere` die Migration. Dasselbe k
 Betrieb passieren (gestempelte Daten mit Altfeld aus Import oder Handarbeit). Deshalb:
 die sieben idempotenten Migrationen laufen IMMER (`IDEMPOTENT_BIS = 7`); der Stempel sperrt
 nur künftige, nicht-idempotente. Tests 924.
+
+## B6 · Fenster-Diät
+
+Fensterform `polygon` samt Editor-Vorlagen Ei/Maul/Tropfen gestrichen (Fabio 24.09.: ja).
+Kein gespeicherter Fall nutzte sie; Migration 8 macht aus einem alten Polygonfenster das
+umschließende Rechteck (idempotent, `IDEMPOTENT_BIS = 8`). Weg: `BcWindow.points`,
+`casebuilder._poly_intervals` und die Polygon-Zweige in `resolve_window`, `fenster_flaeche`,
+`_window_delete_actions`, `validate._fenster_pruefen`, `rotate`; Client: Auswahl + Vorlagen
++ `profilePolygon` (PropertyPanel), Marker, Eckgriffe (objektZugriff), Randbilanz,
+Feldkunde. Bleiben: `rechteck`, `trapez`, `kreis`, `follow`. Die Pfeilerform `polygon` ist
+etwas anderes und bleibt.
+
+Tests: Backend 924 → 922 (3 Polygon-Tests weg, 1 Migrationstest dazu), Client 399 → 398.
+Referenzen: Goldstand Version 7 → 8, Schema-Schnappschuss ohne `polygon`/`points`.

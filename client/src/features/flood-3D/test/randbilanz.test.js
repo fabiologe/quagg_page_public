@@ -110,15 +110,6 @@ describe('fensterMittelpunkt', () => {
     expect(p).toEqual([104, 200, 51])
   })
 
-  it('y_max mit Polygonfenster: Schwerpunkt der Eckpunkte', () => {
-    const p = fensterMittelpunkt({ type: 'outflow_free', face: 'y_max',
-      window: { shape: 'polygon',
-        points: [[102, 50], [106, 50], [104, 52]] } }, grid)
-    expect(p[0]).toBeCloseTo(104)
-    expect(p[1]).toBeCloseTo(220)
-    expect(p[2]).toBeCloseTo(50.667, 3)
-  })
-
   it('z_max: Deckelmitte; Vorbelegung ohne face: Zufluss x_min', () => {
     expect(fensterMittelpunkt({ type: 'atmosphere', face: 'z_max' }, grid))
       .toEqual([105, 210, 54])

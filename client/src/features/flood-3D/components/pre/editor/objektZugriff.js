@@ -572,34 +572,6 @@ function handleAccess(kind, obj) {
     const zTop = obj.window?.z_max ?? dom.z_max
     const clampSpan = (v) => _r2(Math.min(Math.max(v, along[0]), along[1]))
     const shape = obj.window?.shape
-    if (shape === 'polygon') {
-      // Querschnitt zeichnen wie beim Rechen: jede Ecke einzeln greifbar —
-      // Kanten-Zug verschiebt sie entlang der Fläche, Z-Zug in der Höhe,
-      // Klick auf eine Kante fügt eine neue Ecke ein
-      const pts = obj.window.points
-      if (!pts || pts.length < 3) return null
-      return {
-        points: pts.map((q) => pt(q[0])),
-        closed: true,
-        zAt: (i) => pts[i][1],
-        insert: (o, i, p) => {
-          const list = o.window.points
-          const a = clampSpan(face.startsWith('x') ? p[1] : p[0])
-          const zMid = _r2((list[i][1] + list[(i + 1) % list.length][1]) / 2)
-          list.splice(i + 1, 0, [a, zMid])
-        },
-        remove: (o, i) => _removeAt(o.window.points, i, 3),
-        write: (o, i, p) => {
-          o.window.points[i] = [
-            clampSpan(face.startsWith('x') ? p[1] : p[0]),
-            o.window.points[i][1]]
-        },
-        writeZ: (o, i, dz) => {
-          const q = o.window.points[i]
-          q[1] = _r2(Math.min(Math.max(q[1] + dz, dom.z_min), dom.z_max))
-        },
-      }
-    }
     if (shape === 'kreis' || shape === 'trapez') {
       // Ein Mittelpunkt-Handle: Kanten-Zug = Lage, Z-Zug = Höhe der
       // Öffnung (kreis: Achse; trapez: ganzes Fenster hoch/runter)

@@ -1568,14 +1568,8 @@ def _fenster_pruefen(spec: CaseSpec, b, f) -> None:
             "kreis": ("center", "z_center", "diameter"),
             "trapez": ("center", "bottom_width", "top_width",
                        "z_min", "z_max"),
-            "polygon": ("points",),
         }[w.shape]
         missing = [k for k in required if getattr(w, k) is None]
-        if w.shape == "polygon" and not missing and len(w.points) < 3:
-            f(_finding(b.id, "fehler",
-                       "Fenster (polygon): mindestens 3 Eckpunkte "
-                       "erforderlich"))
-            return
         if missing:
             if w.shape == "rechteck":
                 f(_finding(b.id, "fehler",

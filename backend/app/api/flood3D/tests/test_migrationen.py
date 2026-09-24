@@ -82,3 +82,17 @@ def test_alle_gespeicherten_faelle_laden():
 
 def test_neuer_fall_traegt_die_aktuelle_version():
     assert fall_k().meta.schema_version == SCHEMA_VERSION
+
+
+def test_polygonfenster_wird_rechteck():
+    """B6: die Form polygon ist gestrichen — ein altes Fenster wird sein umschließendes Rechteck."""
+    d = _basis()
+    d["boundaries"][0]["window"] = {"shape": "polygon",
+                                    "points": [[0.2, 99.9], [0.8, 99.9], [0.5, 100.4]]}
+    bericht: list[str] = []
+    migriere(d, bericht)
+    w = d["boundaries"][0]["window"]
+    assert w["shape"] == "rechteck" and "points" not in w
+    assert w["span"] == [0.2, 0.8] and w["z_min"] == 99.9 and w["z_max"] == 100.4
+    assert "Polygonfenster als umschließendes Rechteck" in bericht
+    cs.CaseSpec.model_validate(d)

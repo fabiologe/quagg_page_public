@@ -228,13 +228,9 @@
           <option value="rechteck">Rechteck</option>
           <option value="kreis">Kreis (Rohrmündung)</option>
           <option value="trapez">Trapez (Gerinnequerschnitt)</option>
-          <option value="polygon">Polygon (Ecken ziehen)</option>
-          <!-- Ei/Maul/Tropfen sind POLYGON-VORLAGEN: sie setzen eine
-               passende Eckenliste ein und werden danach als Polygon
-               geführt — keine eigenen Fensterformen (Audit U3) -->
-          <option value="ei">Polygon-Vorlage: Eiprofil</option>
-          <option value="maul">Polygon-Vorlage: Maulprofil</option>
-          <option value="tropfen">Polygon-Vorlage: Tropfenprofil</option>
+          <!-- Polygon und die Vorlagen Ei/Maul/Tropfen gestrichen
+               (Fahrplan B6, 2026-09-24): seit dem Freispiegel-Zulauf
+               begrenzt ein Fenster nur Breite und Höhe -->
           <option v-for="ch in channels" :key="ch.id" :value="'follow:' + ch.id">
             an Gerinne „{{ ch.id }}“ gekoppelt
           </option>
@@ -672,50 +668,8 @@ function windowTemplate(kind) {
       top_width: Math.max(8 * cell, 2),
       z_min: zMid, z_max: Math.round((zMid + (dom.z_max - dom.z_min) / 4) * 100) / 100 }
   }
-  if (['polygon', 'ei', 'maul', 'tropfen'].includes(kind)) {
-    return { shape: 'polygon',
-      points: profilePolygon(kind, mid, zMid, Math.max(4 * cell, 1)) }
-  }
   return { span: [Math.round((e0 + len / 3) * 100) / 100,
     Math.round((e1 - len / 3) * 100) / 100] }
-}
-
-// Profil-Vorlagen als editierbare Eckpunkt-Polygone in (Kante, Höhe):
-// Sohle auf zBase, Breite B — danach frei verziehbar wie beim Rechen
-function profilePolygon(kind, mid, zBase, B) {
-  const r2 = (v) => Math.round(v * 100) / 100
-  const pts = []
-  if (kind === 'ei') {                    // b:h ≈ 2:3, unten schmaler
-    const H = 1.5 * B
-    for (let k = 0; k < 12; k++) {
-      const th = (2 * Math.PI * k) / 12
-      const u = (1 - Math.cos(th)) / 2    // 0 Sohle … 1 Scheitel
-      pts.push([r2(mid + (B / 2) * Math.sin(th) * (0.55 + 0.45 * u)),
-        r2(zBase + H * u)])
-    }
-    return pts
-  }
-  if (kind === 'maul') {                  // flache Sohle, gedrückter Bogen
-    const H = 0.75 * B
-    pts.push([r2(mid - B / 2), r2(zBase)], [r2(mid + B / 2), r2(zBase)])
-    for (let k = 1; k < 8; k++) {
-      const th = (Math.PI * k) / 8
-      pts.push([r2(mid + (B / 2) * Math.cos(th)), r2(zBase + H * Math.sin(th))])
-    }
-    return pts
-  }
-  if (kind === 'tropfen') {               // Kreis unten, Spitze oben
-    const R = B / 2
-    const H = 1.6 * B
-    for (const deg of [150, 180, 210, 240, 270, 300, 330, 0, 30]) {
-      const th = (deg * Math.PI) / 180
-      pts.push([r2(mid + R * Math.cos(th)), r2(zBase + R + R * Math.sin(th))])
-    }
-    pts.push([r2(mid), r2(zBase + H)])
-    return pts
-  }
-  return [[r2(mid - B / 2), r2(zBase)], [r2(mid + B / 2), r2(zBase)],
-    [r2(mid + B / 2), r2(zBase + B)], [r2(mid - B / 2), r2(zBase + B)]]
 }
 
 // Bauwerks-Material -> Wandrauheit (eigener Select statt Generikfeld,
@@ -847,12 +801,6 @@ function addWindowRefinement() {
     if (w.center == null || w.z_min == null) return
     const h2 = Math.max(w.bottom_width ?? 0, w.top_width ?? 0) / 2
     lo = w.center - h2; hi = w.center + h2; zlo = w.z_min; zhi = w.z_max
-  } else if (w.shape === 'polygon') {
-    if (!w.points?.length) return
-    const as = w.points.map((q) => q[0])
-    const zs = w.points.map((q) => q[1])
-    lo = Math.min(...as); hi = Math.max(...as)
-    zlo = Math.min(...zs); zhi = Math.max(...zs)
   } else if (w.span) {
     [lo, hi] = [...w.span].sort((a, b) => a - b)
     zlo = w.z_min ?? dom.z_min; zhi = w.z_max ?? dom.z_max

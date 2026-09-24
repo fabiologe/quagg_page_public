@@ -91,9 +91,6 @@ def _fenster_entlang(spec: CaseSpec, b) -> float | None:
             return (w.span[0] + w.span[1]) / 2
         if w.center is not None:
             return w.center
-        if w.points:
-            a = [p[0] for p in w.points]
-            return (min(a) + max(a)) / 2
     return (y0 + y1) / 2 if b.face.startswith("x") else (x0 + x1) / 2
 
 
@@ -400,8 +397,6 @@ def rotate_case(spec: CaseSpec, grad: float, base_dir: str | Path = ".") -> dict
             w.span = (min(e0, e1), max(e0, e1))
         if w.center is not None:
             w.center = round(neu_entlang, 4)
-        if w.points:
-            w.points = [(abbilden(p[0]), p[1]) for p in w.points]
     if spec.boundaries and not rechtwinklig:
         hinweise.append("Die Drehung ist kein Vielfaches von 90° — die "
                         "Randfenster sitzen jetzt auf der nächstgelegenen "

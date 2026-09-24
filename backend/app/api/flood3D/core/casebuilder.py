@@ -702,13 +702,6 @@ def resolve_window(spec: CaseSpec, b) -> dict | None:
                 "hi": w.center + half, "zlo": w.z_min, "zhi": w.z_max,
                 "center": w.center, "bw": w.bottom_width,
                 "tw": w.top_width, "z_w0": w.z_min, "z_w1": w.z_max}
-    if w.shape == "polygon":
-        if not w.points or len(w.points) < 3:
-            return None
-        a = [p[0] for p in w.points]
-        z = [p[1] for p in w.points]
-        return {"shape": "polygon", "lo": min(a), "hi": max(a),
-                "zlo": min(z), "zhi": max(z), "points": list(w.points)}
     if w.span is None:
         return None
     lo, hi = sorted(w.span)
@@ -767,7 +760,7 @@ def zulauf_lage(spec: CaseSpec, b, terrain=None, base_dir=None) -> dict | None:
                    Gelände liegt: eine Öffnung in der Wand, aus der Wasser
                    fällt — ebenfalls voller Querschnitt.
       freispiegel  alles, was bis auf die Sohle reicht (kein Fenster,
-                   Rechteck, Trapez, Polygon, an ein Gerinne gekoppelt):
+                   Rechteck, Trapez, an ein Gerinne gekoppelt):
                    der Wasserstand am Rand folgt dem Gebiet
                    (variableHeightFlowRateInletVelocity). Bis 2026-09-23
                    stand hier alpha = 1 über der GANZEN Fläche — ohne
@@ -930,12 +923,6 @@ def fenster_flaeche(spec: CaseSpec, b, terrain=None) -> float | None:
         return float(np.trapezoid(spec.domain.z_max - boden, s))
     if r["shape"] == "kreis":
         return math.pi * r["d"] ** 2 / 4
-    if r["shape"] == "polygon":
-        pts = r["points"]
-        n = len(pts)
-        doppelt = sum(pts[i][0] * pts[(i + 1) % n][1]
-                      - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
-        return abs(doppelt) / 2
     zlo = r["zlo"] if r["zlo"] is not None else spec.domain.z_min
     zhi = r["zhi"] if r["zhi"] is not None else spec.domain.z_max
     if r["shape"] == "trapez":
@@ -983,20 +970,6 @@ def _face_box(spec: CaseSpec, face: str, lo: float, hi: float,
     return (lo, y1 - 0.5, zlo), (hi, y1 + 0.5, zhi)
 
 
-def _poly_intervals(pts, z: float) -> list[tuple[float, float]]:
-    """Schnittintervalle eines geschlossenen Polygons mit der Höhe z."""
-    xs = []
-    n = len(pts)
-    for i in range(n):
-        a0, z0 = pts[i]
-        a1, z1 = pts[(i + 1) % n]
-        if (z0 <= z) != (z1 <= z):
-            t = (z - z0) / (z1 - z0)
-            xs.append(a0 + t * (a1 - a0))
-    xs.sort()
-    return list(zip(xs[0::2], xs[1::2]))
-
-
 def _window_delete_actions(spec: CaseSpec, b, set_name: str) -> str:
     """
     topoSet-delete-Aktionen, die das Fenster aus dem Patch-faceSet
@@ -1032,9 +1005,9 @@ def _window_delete_actions(spec: CaseSpec, b, set_name: str) -> str:
                       f"        p2      {vec(p2)};\n"
                       f"        radius  {r['d'] / 2:g};\n")
 
-    if r["shape"] in ("trapez", "polygon"):
+    if r["shape"] == "trapez":
         # Zellschicht-Streifen: exakt die Auflösung, in der das Netz die
-        # Form ohnehin abbildet; polygon per Scanline (auch konkav)
+        # Form ohnehin abbildet
         cell = spec.mesh.base_cell
         zdom = spec.domain.z_min
         k0 = math.floor((r["zlo"] - zdom) / cell)
@@ -1046,14 +1019,11 @@ def _window_delete_actions(spec: CaseSpec, b, set_name: str) -> str:
             if zb - za <= 1e-9:
                 continue
             zm = (za + zb) / 2
-            if r["shape"] == "polygon":
-                intervals = _poly_intervals(r["points"], zm)
-            else:
-                span_w = r["z_w1"] - r["z_w0"]
-                t = 0.0 if span_w <= 0 else (zm - r["z_w0"]) / span_w
-                t = min(max(t, 0.0), 1.0)
-                width = r["bw"] + (r["tw"] - r["bw"]) * t
-                intervals = [(r["center"] - width / 2, r["center"] + width / 2)]
+            span_w = r["z_w1"] - r["z_w0"]
+            t = 0.0 if span_w <= 0 else (zm - r["z_w0"]) / span_w
+            t = min(max(t, 0.0), 1.0)
+            width = r["bw"] + (r["tw"] - r["bw"]) * t
+            intervals = [(r["center"] - width / 2, r["center"] + width / 2)]
             for ilo, ihi in intervals:
                 lo = max(ilo, e0)
                 hi = min(ihi, e1)

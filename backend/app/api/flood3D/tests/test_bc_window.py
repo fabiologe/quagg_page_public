@@ -315,30 +315,6 @@ def test_stutzen_kleines_rohr_warnung():
 
 # ---- Polygon-Fenster (frei gezeichneter Querschnitt) ---------------------
 
-def test_polygon_scanline_konkav():
-    from ..core.casebuilder import _poly_intervals
-    # U-Profil (konkav): zwei getrennte Intervalle in der oberen Hälfte
-    pts = [(0, 0), (6, 0), (6, 4), (4, 4), (4, 2), (2, 2), (2, 4), (0, 4)]
-    assert _poly_intervals(pts, 1.0) == [(0.0, 6.0)]
-    assert _poly_intervals(pts, 3.0) == [(0.0, 2.0), (4.0, 6.0)]
-
-
-def test_polygon_fenster_erzeugt_streifen():
-    spec = _spec_mit_fenster(shape="polygon", points=[
-        (7.0, 94.0), (11.0, 94.0), (9.0, 96.0)])   # Dreieck
-    ts = topo_set_dict(spec)
-    assert ts.count("action  delete") == 4          # 2 m Höhe / 0.5er-Zellen
-    assert "randwand_zulauf" in (create_patch_dict(spec) or "")
-    assert not _messages(spec, "zulauf")
-
-
-def test_polygon_zu_wenig_punkte():
-    spec = _spec_mit_fenster(shape="polygon", points=[(7.0, 94.0), (11.0, 94.0)])
-    assert any("mindestens 3 Eckpunkte" in m for m in _messages(spec, "zulauf"))
-
-
-# ---- Material / Rauheit --------------------------------------------------
-
 def test_material_setzt_raue_wandfunktion():
     from ..core.casebuilder import initial_fields
     spec = build_spec_stage3()
