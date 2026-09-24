@@ -177,3 +177,12 @@ etwas anderes und bleibt.
 
 Tests: Backend 924 → 922 (3 Polygon-Tests weg, 1 Migrationstest dazu), Client 399 → 398.
 Referenzen: Goldstand Version 7 → 8, Schema-Schnappschuss ohne `polygon`/`points`.
+
+## Auslieferung (2026-09-24)
+
+pm2-Neustart 07:2x (API nach ≈ 10 s gesund), Build 07:25 (`Flood3DPreMain-fB6dEPhQ.js`,
+atomar über dist_neu, temporäre 2-GB-Swapdatei danach abgebaut). Vorher geprüft: keine
+fremde Datei neuer als der alte Build (die offenen CDE-Dateien waren schon live).
+Live nachgeprüft: `GET /runs/%2E%2E` → 422; `GET /cases/verifikation-wehr/geometry` liefert
+`netz_schaetzung.lauf` (feinste Zelle 0,031 m, 16 Kerne) und `wassertiefe` (Speicherkurve);
+https://quagg-engineering.org/tools/flood-3d → 200. Stand `e62701a`, nicht gepusht.
