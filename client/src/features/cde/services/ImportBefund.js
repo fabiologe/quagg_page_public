@@ -43,9 +43,10 @@ export function zaehltAlsBauteil(typ) {
  * @param {Array<{typ: string, anzahl: number}>} [opts.typen]  nur Bauteile (zaehltAlsBauteil)
  * @param {'ok'|'fehlt'} [opts.quelle]
  * @param {string|null} [opts.grund]    warum die Quelle fehlt
+ * @param {string[]} [opts.netz]         was die Achslese nicht lesen konnte (T6)
  * @returns {{schema, quelle, grund, bauteile, proxy, abgekuendigt, waisen, unbekannt, texte}}
  */
-export function importBefund({ schema = null, typen = [], quelle = 'ok', grund = null } = {}) {
+export function importBefund({ schema = null, typen = [], quelle = 'ok', grund = null, netz = [] } = {}) {
     const abgekuendigt = [];
     const waisen = [];
     const unbekannt = [];
@@ -88,7 +89,15 @@ export function importBefund({ schema = null, typen = [], quelle = 'ok', grund =
         texte.push({ schwere: 'hinweis', text: `${proxy} von ${bauteile} Bauteilen sind Proxys — `
             + 'was sie sind, sagt erst eine Bauformregel (Panel „Bauformen").' });
     }
-    return { schema, quelle, grund, bauteile, proxy, abgekuendigt, waisen, unbekannt, texte };
+    // DAS NETZ (Tragfähig, T6): eine Haltung ohne Ort fehlt sonst still im
+    // Längsschnitt und in der Prüfliste. Genannt wird, was fehlt — die ersten
+    // drei beim Namen, der Rest als Zahl.
+    if (netz?.length) {
+        const erste = netz.slice(0, 3).join('; ');
+        texte.push({ schwere: 'warnung', text: `${netz.length} × im Netz nicht verortet: ${erste}`
+            + (netz.length > 3 ? ` … und ${netz.length - 3} weitere.` : '.') });
+    }
+    return { schema, quelle, grund, bauteile, proxy, abgekuendigt, waisen, unbekannt, netz: [...(netz ?? [])], texte };
 }
 
 function _liste(eintraege) {

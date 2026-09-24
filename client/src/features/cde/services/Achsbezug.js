@@ -35,12 +35,19 @@ export const ACHSBEZUEGE = Object.freeze({
 export const ACHSBEZUG_VORGABE = 'mitte';
 
 /**
+ * Herkünfte, deren Höhe die SOHLE ist. `merkmale` (Tragfähig, T6): die Achse
+ * wird aus den Sohlhöhen des Merkmalssatzes gebaut (`achseAus` an der Regel) —
+ * sie meint die Sohle, weil sie aus nichts anderem besteht.
+ */
+const SOHLE_HERKUENFTE = Object.freeze(['axisRep', 'merkmale']);
+
+/**
  * Der Bezug, den die HERKUNFT einer Achse verspricht.
- * @param {string|null} herkunft  'axisRep' | 'extrusion' | 'mesh' | 'bauplan'
+ * @param {string|null} herkunft  'axisRep' | 'extrusion' | 'mesh' | 'bauplan' | 'merkmale'
  * @returns {'sohle'|'mitte'}
  */
 export function achsbezugVon(herkunft) {
-    return String(herkunft ?? '') === 'axisRep' ? 'sohle' : ACHSBEZUG_VORGABE;
+    return SOHLE_HERKUENFTE.includes(String(herkunft ?? '')) ? 'sohle' : ACHSBEZUG_VORGABE;
 }
 
 /** Ein gültiger Bezug, oder die Vorgabe. Nie `undefined` durchreichen. */

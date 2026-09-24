@@ -34,6 +34,14 @@ import { istBauform } from './Bauformen.js';
 export const REPO_KEY = 'bauformregeln';
 
 /**
+ * Was `knotenAus`/`achseAus` an einer Regel nennen MÜSSEN (Tragfähig, T6) —
+ * je Schlüssel der NAME eines Merkmals. Gelesen von der Achslese
+ * (`ifcleser/AchsenAusMerkmalen.js`) und geprüft vom Katalog.
+ */
+export const KNOTEN_FELDER = Object.freeze(['kennung', 'rechtswert', 'hochwert', 'sohle']);
+export const ACHSEN_FELDER = Object.freeze(['von', 'bis', 'sohleVon', 'sohleBis']);
+
+/**
  * Mitgelieferte Regeln.
  *
  * BEWUSST KLEIN und bewusst benannt: das hier ist die Konvention EINES
@@ -54,6 +62,12 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
         // Eine Haltung IST eine Kante im Netz (Teil XXIII, AE) — der Proxy
         // bekommt die Rolle aus dieser Regel, nicht aus seiner Klasse.
         netzrolle: 'kante',
+        // WO die Achse liegt (Tragfähig, T6): der Export hat keine Achsgeometrie,
+        // aber den Merkmalssatz „ProVI" — von Schacht zu Schacht, auf den
+        // Sohlhöhen der Haltung. Beobachtet an IFCOUT (18 Haltungen, 2026-09-24).
+        achseAus: { von: 'PVI_BEZEICHNUNG_VON', bis: 'PVI_BEZEICHNUNG_BIS',
+                    sohleVon: 'PVI_HOEHE_SOHLE_VON', sohleBis: 'PVI_HOEHE_SOHLE_BIS',
+                    dn: 'PVI_DURCHMESSER' },
     },
     {
         /**
@@ -86,6 +100,10 @@ export const MITGELIEFERTE_REGELN = Object.freeze([
                      operator: 'equals', value: 'Schacht' },
         bauform: 'koerper',
         netzrolle: 'knoten',
+        // Die Platzierung steht auf dem Ursprung — die Schachtmitte steht im
+        // Merkmalssatz (19 Schächte, 2026-09-24).
+        knotenAus: { kennung: 'PVI_BEZEICHNUNG', rechtswert: 'PVI_SCHACHT_RECHTSWERT',
+                     hochwert: 'PVI_SCHACHT_HOCHWERT', sohle: 'PVI_HOEHE_SOHLE', deckel: 'PVI_HOEHE_OK' },
     },
 ]);
 

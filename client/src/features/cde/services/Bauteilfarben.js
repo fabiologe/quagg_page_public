@@ -59,8 +59,15 @@ export const CLIP_RESERVE = 0.97;
  * Leichtes Beige mit halb so viel Stich wie das Hellbeige vor P4 (0xa29a8c,
  * Spanne 0,086 — es las sich unter dem Hauptlicht als braunes Gelände, und
  * der Aushub war darin nicht zu finden). Braun trägt weiter nur der Aushub.
+ *
+ * ZWEISEITIG (Tragfähig, T7, gemessen 2026-09-24): die Geländeanzeige ist eine
+ * offene Fläche, nach unten gewickelt (`gelaende/Anzeigenetz.js`, Umlauf der
+ * Rasteranzeige). Einseitig war sie von OBEN unsichtbar — nach „Ausheben"
+ * stand über das ganze Gelände der Hintergrund (32,41,50) statt (110,108,102),
+ * nur das Drahtgitter blieb. Mit `DoubleSide` im laufenden Bild: sofort wieder
+ * da. Zweiseitig ist auch fachlich richtig: die Kamera darf unters Gelände (K1).
  */
-export const GELAENDE_FARBE = Object.freeze({ farbe: 0xa4a198, deckkraft: 1, titel: 'Gelände' });
+export const GELAENDE_FARBE = Object.freeze({ farbe: 0xa4a198, deckkraft: 1, titel: 'Gelände', zweiseitig: true });
 
 /**
  * Der Katalog — DATEN, nach IFC-Typ. Nach Typ und nicht nach Rolle, damit er
@@ -152,7 +159,8 @@ export function kanaele(farbe) {
 export function materialWerte(eintrag) {
     if (!eintrag) return null;
     const deckkraft = Number.isFinite(eintrag.deckkraft) ? Math.min(1, Math.max(0, eintrag.deckkraft)) : 1;
-    return { color: eintrag.farbe, opacity: deckkraft, transparent: deckkraft < 1, depthWrite: deckkraft >= 1 };
+    return { color: eintrag.farbe, opacity: deckkraft, transparent: deckkraft < 1, depthWrite: deckkraft >= 1,
+             zweiseitig: eintrag.zweiseitig === true };
 }
 
 /**

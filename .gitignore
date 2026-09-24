@@ -112,6 +112,14 @@ backend/companion/*
 !backend/companion/Dockerfile
 !backend/app/
 backend/app/*
+# Das MCP-Werkzeug `ifc` (IFC-Konsistenz, Stufe 7): die CI prueft es
+# (backend/app/ifc/tests/test_mcp_werkzeuge.py) — ohne diese drei Dateien
+# scheiterte jeder Lauf am Import. Die Literatur-Dateien daneben bleiben lokal.
+!backend/app/mcp/
+backend/app/mcp/*
+!backend/app/mcp/__init__.py
+!backend/app/mcp/ifc_tools.py
+!backend/app/mcp/ifc_server.py
 !backend/app/api/
 backend/app/api/*
 !backend/app/api/flood2D/

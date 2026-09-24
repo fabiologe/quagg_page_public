@@ -1690,7 +1690,19 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
      */
     async function _ladeEbene(ebene) {
         try {
-            const gespeichert = await _repoFuer(ebene).get(REPO_KEY);
+            const ablage = _repoFuer(ebene);
+            const gespeichert = await ablage.get(REPO_KEY);
+            // NICHT ERREICHBAR ≠ LEER (Tragfähig, T3/T4): `get` gibt in beiden
+            // Fällen null. Ein leer gestartetes Journal würde beim nächsten
+            // Schritt über den Serverstand geschrieben — also nur lesen.
+            if (ablage.unerreichbar) {
+                nurLesen.value = { ebene, grund: `Der Server war beim Laden nicht erreichbar (${ablage.unerreichbar.text}) — der Verlauf ist nicht geladen. Bitte die Seite neu laden; nichts wird überschrieben.` };
+                return;
+            }
+            if (ablage.istUnlesbar?.(REPO_KEY)) {
+                nurLesen.value = { ebene, grund: 'Die Verlaufsdatei auf dem Server ist unlesbar — sie wird nur gelesen, nichts wird überschrieben. Bitte die Datei prüfen lassen.' };
+                return;
+            }
             if (gespeichert?.version === 2) {
                 _uebernimmV2(ebene, gespeichert);
             } else if (Array.isArray(gespeichert) && gespeichert.length) {
@@ -1726,12 +1738,15 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         const quelle = await lies(repo.withScope(`stand:${vonId}`));
         if (quelle?.version !== 2) return 0;
         const ziel = repo.withScope(`stand:${nachId}`);
+        // Ist der Server nicht erreichbar, WIRFT `getFrisch` (T3) — „nie über
+        // einen vorhandenen Verlauf" gilt dann, statt „dort liegt nichts".
         if (await lies(ziel)) return 0;
         const { schreibstand: _fremd, ...kopie } = quelle;
         const schritte = (kopie.commits ?? []).reduce((n, c) => n + (c.schritte?.length ?? 0), 0)
             + (kopie.sitzung?.schritte?.length ?? 0);
         if (!schritte) return 0;
-        await ziel.set(REPO_KEY, kopie);
+        const ok = await ziel.set(REPO_KEY, kopie);
+        if (ok === false || ok?.abgelehnt) return 0;
         return schritte;
     }
 

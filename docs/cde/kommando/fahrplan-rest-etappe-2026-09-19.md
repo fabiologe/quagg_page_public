@@ -56,7 +56,7 @@ Summe ohne R9: **5,5 Halbtage**; mit R9: **6,5**. R1 sofort, weil die Doku heute
 - **Rückgängig einer Version bei offener Bearbeitung** überschreibt spätere Arbeit derselben Bearbeitung (Kassensturz S5, Nebenbefund).
 - **E8 beim Wiederholen** nicht gebaut — bewusst (7a, Abweichung 3), der Fall kann nicht entstehen.
 - **Ein Commit für K1–K10** statt je Schritt einer (C1) — geschehen, nicht rückgängig zu machen; künftig wieder je Schritt.
-- **Katalogverlauf** (E4), **CI** (nie gelaufen), **Kennwerte und Pauschalen** (E4: nach dem Durchstich neu bewerten).
+- **Katalogverlauf** (E4), **CI** (lief seit 19.09., war rot — `app.mcp` fehlte im Repo; Kur 2026-09-24, `docs/cde/tragfaehig-2026-09-24.md`), **Kennwerte und Pauschalen** (E4: nach dem Durchstich neu bewerten).
 
 ## 5 · Stand (2026-09-19, spät — R1–R10 erledigt)
 

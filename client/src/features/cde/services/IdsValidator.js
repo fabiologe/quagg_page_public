@@ -108,13 +108,13 @@ function _matchesPreFilter(cond, ctx) {
  * @param {Map} args.fragmentsList
  * @param {FragmentsManager} args.fragmentsManager
  * @returns {Promise<{
- *   perSpec: Array<{ spec, applicable, passed, failed: Array<{modelId, localId, globalId, name, messages}> }>,
- *   summary: { specsChecked, errors, warnings, infos, totalApplicable, totalFailed, score },
+ *   perSpec: Array<{ spec, applicable, passed, failed: Array<{modelId, localId, globalId, name, messages}>, ungeprueft?, grund? }>,
+ *   summary: { specsChecked, errors, warnings, infos, ungeprueft, totalApplicable, totalFailed, score: number|null },
  * }>}
  */
 export async function validateIds({ specs, categoryGroups, fragmentsList, fragmentsManager } = {}) {
     const perSpec = [];
-    const summary = { specsChecked: 0, errors: 0, warnings: 0, infos: 0, totalApplicable: 0, totalFailed: 0, score: 1 };
+    const summary = { specsChecked: 0, errors: 0, warnings: 0, infos: 0, ungeprueft: 0, totalApplicable: 0, totalFailed: 0, score: 1 };
     const enabled = (specs ?? []).filter(s => s?.enabled !== false);
     if (!enabled.length || !categoryGroups?.length || !fragmentsList || !fragmentsManager) {
         return { perSpec, summary };
@@ -134,7 +134,7 @@ export async function validateIds({ specs, categoryGroups, fragmentsList, fragme
         // (IFC-Konsistenz, Stufe 5 — zwei Motoren, eine Zahl).
         const name = String(category).toUpperCase();
         const gruppen = categoryGroups.filter(g => String(g.name ?? '').toUpperCase() === name);
-        const elements = [];
+        let elements = [];
         for (const group of gruppen) {
             try {
                 const map = await group.groupData.get();
@@ -156,14 +156,27 @@ export async function validateIds({ specs, categoryGroups, fragmentsList, fragme
                     }
                 }
             } catch (e) {
+                // UNGEPRÜFT, nicht bestanden: vorher blieb die Kategorie leer,
+                // jede Regel hatte 0 anwendbare Elemente, und der Score stand
+                // auf 1 — die Vorschau bestand, ohne etwas gelesen zu haben.
+                // Dieselbe Lesart wie das Prüftor (`Pruefbericht.istOffen`).
                 console.warn('[IDS] Daten-Fetch fehlgeschlagen für', group.name, e?.message ?? e);
+                elements = { ungeprueft: true, grund: String(e?.message ?? e) };
+                break;
             }
         }
         dataByCategory.set(category, elements);
     }
 
     for (const spec of enabled) {
-        const elements = dataByCategory.get(spec.applicability?.category) ?? [];
+        const daten = dataByCategory.get(spec.applicability?.category) ?? [];
+        if (daten.ungeprueft) {
+            perSpec.push({ spec, applicable: 0, passed: 0, failed: [], ungeprueft: true, grund: daten.grund });
+            summary.specsChecked++;
+            summary.ungeprueft++;
+            continue;
+        }
+        const elements = daten;
         const applicable = elements.filter(el => _matchesPreFilter(spec.applicability?.psetCondition, el));
 
         const failed = [];
@@ -193,8 +206,10 @@ export async function validateIds({ specs, categoryGroups, fragmentsList, fragme
         }
     }
 
-    summary.score = summary.totalApplicable > 0
-        ? (summary.totalApplicable - summary.totalFailed) / summary.totalApplicable
-        : 1;
+    // Eine ungeprüfte Regel lässt keinen Anteil zu: `null` heißt „ungeprüft".
+    summary.score = summary.ungeprueft > 0 ? null
+        : summary.totalApplicable > 0
+            ? (summary.totalApplicable - summary.totalFailed) / summary.totalApplicable
+            : 1;
     return { perSpec, summary };
 }

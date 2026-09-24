@@ -9,6 +9,7 @@ Server) bleibt der CDE-Roadmap Stufe C vorbehalten.
 
 import hashlib
 import json
+import logging
 import os
 import re
 import uuid
@@ -23,6 +24,8 @@ from .audit import audit_schreiben
 # Der Kopf einer IFC-Datei steht EINMAL: app/ifc/kopf.py (rein, ohne ifcopenshell),
 # gespiegelt in ModelIdentity.js — beide gegen tests/daten/kopf_faelle.json.
 from app.ifc import kopf as ifc_kopf
+
+_log = logging.getLogger(__name__)
 
 ORDNER = "CDE"
 MANIFEST = "manifest.yaml"
@@ -715,11 +718,20 @@ _GUID_IN_IFC = re.compile(rb"#\d+\s*=\s*IFC[A-Z0-9_]+\s*\(\s*'([0-9A-Za-z_$]{22}
 
 
 def _globalids_der_datei(pfad: Path) -> set:
-    """Alle GlobalIds einer IFC-Datei — ohne ifcopenshell (der API-Server hat es nicht)."""
+    """Alle GlobalIds einer IFC-Datei — ohne ifcopenshell (der API-Server hat es nicht).
+
+    Fehlt die Datei, fuehrt sie nichts (leere Menge). Ist sie da, aber nicht
+    lesbar, ist die Antwort UNBEKANNT — dann wirft es (Tragfaehig, T4): vorher
+    kam eine leere Menge, und `journale_mit` meldete „kein Journal haengt
+    daran", obwohl niemand nachgesehen hatte.
+    """
     try:
         return {m.decode("ascii") for m in _GUID_IN_IFC.findall(pfad.read_bytes())}
-    except OSError:
+    except FileNotFoundError:
         return set()
+    except OSError as fehler:
+        raise CdeAbgelehnt(f"{pfad.name} ist nicht lesbar ({fehler}) — ob ein Journal daran haengt, "
+                           f"ist unbekannt") from fehler
 
 
 def _journal_schritte(roh) -> list:
@@ -800,8 +812,12 @@ def journale_mit(o: ordner.Ordner, sha256: str) -> list[dict]:
             continue
         try:
             roh = json.loads(datei.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
+        except (OSError, ValueError) as fehler:
+            # Ein unlesbares Journal kann an dieser Datei haengen — ungeprueft
+            # heisst nicht „haengt nicht" (T4).
+            _log.warning("cde: Journal %s unlesbar: %s", datei, fehler)
+            raise CdeAbgelehnt(f"Journal {datei.stem} ist unlesbar — ob es an dieser Datei haengt, "
+                               f"ist unbekannt; erst die Journaldatei pruefen") from fehler
         treffer = [_bezuege(x) & eigene for x in _journal_schritte(roh) if isinstance(x, dict)]
         je_journal.append((teile, [t for t in treffer if t]))
     offen = set().union(*(t for _, liste in je_journal for t in liste)) if je_journal else set()
@@ -845,15 +861,29 @@ def repo_key_pruefen(key: str) -> str:
 # auseinander, wie es beim Wasserzeichen schon passiert ist).
 
 
+# Unter diesem Schluessel meldet die Ablage, welche Dateien sie nicht lesen
+# konnte. `@` erlaubt `_KEY_MUSTER` nicht — kein echter Wert kann ihn verdecken.
+UNLESBAR = "@unlesbar"
+
+
 def _ablage_lesen(pfad: Path) -> dict:
+    """Die Ablage als {schluessel: wert}.
+
+    Eine unlesbare Datei war frueher einfach nicht da — der Client sah „fehlt",
+    startete leer und schrieb beim naechsten Schritt darueber (Tragfaehig, T4).
+    Jetzt steht ihr Schluessel unter `UNLESBAR`, und das Log sagt, welche.
+    """
     if not pfad.is_dir():
         return {}
-    daten = {}
+    daten, unlesbar = {}, []
     for datei in sorted(pfad.glob("*.json")):
         try:
             daten[datei.stem] = json.loads(datei.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
+        except (OSError, ValueError) as fehler:
+            _log.warning("cde: %s unlesbar: %s", datei, fehler)
+            unlesbar.append(datei.stem)
+    if unlesbar:
+        daten[UNLESBAR] = unlesbar
     return daten
 
 
@@ -928,8 +958,11 @@ def _journal_waechter(pfad: Path, key: str, wert) -> None:
         return
     try:
         gespeichert = _mindest_client(json.loads(ziel.read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        return
+    except (OSError, ValueError) as fehler:
+        # Unlesbar heisst nicht „frei": vorher durfte jeder Client die Datei
+        # ueberschreiben, und was darin stand, war weg (Tragfaehig, T4).
+        raise CdeZuAlt(f"Journal {key}: die gespeicherte Datei ist unlesbar ({fehler}) — sie wird nicht "
+                       f"ueberschrieben. Bitte die Datei pruefen lassen.") from fehler
     neu = _mindest_client(wert)
     if neu < gespeichert:
         raise CdeZuAlt(f"Journal {key}: gespeichert fuer Clients ab Stufe {gespeichert}, die Nutzlast "

@@ -237,6 +237,11 @@ export class RemoteBackend {
         this._api = api;
         this._cache = null;      // Map fullKey -> value
         this._register = null;   // { basis, dokumente }
+        this._geladen = false;
+        /** {status, text} — das ERSTE Laden scheiterte; bis zum Neuladen der Seite wird nichts geschrieben. */
+        this._ladeFehler = null;
+        /** Schlüssel, deren Datei auf dem Server unlesbar ist (Kurzform, ohne Präfix). */
+        this._unlesbar = [];
     }
 
     async _client() {
@@ -250,10 +255,30 @@ export class RemoteBackend {
 
     async _laden() {
         if (this._cache) return this._cache;
+        if (this._ladeFehler) throw repoUnerreichbar(this._ladeFehler);
         const api = await this._client();
-        const daten = (await api.get(`/projekte/${this.projektId}/cde/repo`)).data || {};
-        this._cache = new Map(Object.entries(daten).map(([k, v]) => [PREFIX + k, v]));
+        let daten;
+        try { daten = (await api.get(`/projekte/${this.projektId}/cde/repo`)).data || {}; }
+        catch (e) { this._ladeGescheitert(e); throw e; }
+        const { [UNLESBAR]: unlesbar, ...rest } = daten;
+        this._unlesbar = Array.isArray(unlesbar) ? unlesbar : [];
+        this._cache = new Map(Object.entries(rest).map(([k, v]) => [PREFIX + k, v]));
+        this._geladen = true;
         return this._cache;
+    }
+
+    /**
+     * NETZFEHLER IST NICHT „LEER" (Tragfähig, T3). `get` gibt bei einem Fehler
+     * `null` — dasselbe wie „Schlüssel fehlt". Scheiterte das ERSTE Laden,
+     * starteten die Stores deshalb leer, und das nächste `set` schrieb
+     * „leer + neu" über den Serverstand, sobald das Netz zurück war. Jetzt
+     * sperrt sich das Backend selbst: kein Schreiben bis zum Neuladen der
+     * Seite (ein späteres Nachladen heilte die leer gestarteten Stores nicht).
+     */
+    _ladeGescheitert(e) {
+        if (this._geladen) return;
+        this._ladeFehler = fehlerLesbar(e);
+        this._letzterFehler = this._ladeFehler;
     }
 
     async get(fullKey) {
@@ -270,18 +295,28 @@ export class RemoteBackend {
      * also — und dazu alles, was Kollegen inzwischen geschrieben haben.
      */
     async getFrisch(fullKey) {
+        // Scheitert der Abruf, WIRFT er (T3): der Mehrbenutzer-Wächter darf
+        // „unerreichbar" nicht als „dort liegt nichts" lesen. Der alte Cache
+        // bleibt stehen — er war richtig, nur nicht frisch.
+        const alt = this._cache;
         try {
             this._cache = null;
             const c = await this._laden();
             return c.has(fullKey) ? c.get(fullKey) : null;
-        } catch (e) { console.warn('[CDE remote] getFrisch', e?.message ?? e); return null; }
+        } catch (e) {
+            this._cache = alt;
+            console.warn('[CDE remote] getFrisch', e?.message ?? e);
+            throw e?.name === 'RepoUnerreichbar' ? e : repoUnerreichbar(fehlerLesbar(e));
+        }
     }
     async set(fullKey, value) {
         try {
-            const c = await this._laden();
-            c.set(fullKey, value);
+            await this._laden();
             const api = await this._client();
             await api.put(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`, value);
+            // Erst NACH dem PUT in den Cache — sonst bliebe bei einem Fehler
+            // ein Wert stehen, der nie auf dem Server ankam.
+            this._cache?.set(fullKey, value);
             return true;
         } catch (e) {
             // ABGELEHNT (Teil XXIV, Fahrplan R9): der Server-Wächter verweigert
@@ -298,10 +333,10 @@ export class RemoteBackend {
     }
     async delete(fullKey) {
         try {
-            const c = await this._laden();
-            c.delete(fullKey);
+            await this._laden();
             const api = await this._client();
             await api.delete(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`);
+            this._cache?.delete(fullKey);
             return true;
         } catch (e) { console.warn('[CDE remote] delete', e?.message ?? e); return false; }
     }
@@ -498,6 +533,9 @@ export class BueroBackend {
     constructor(api = null) {
         this._api = api;
         this._cache = null;
+        this._geladen = false;
+        this._ladeFehler = null;   // wie RemoteBackend (T3)
+        this._unlesbar = [];
     }
 
     async _client() {
@@ -517,9 +555,18 @@ export class BueroBackend {
 
     async _laden() {
         if (this._cache) return this._cache;
+        if (this._ladeFehler) throw repoUnerreichbar(this._ladeFehler);
         const api = await this._client();
-        const daten = (await api.get('/buero/cde/repo')).data || {};
-        this._cache = new Map(Object.entries(daten));
+        let daten;
+        try { daten = (await api.get('/buero/cde/repo')).data || {}; }
+        catch (e) {
+            if (!this._geladen) { this._ladeFehler = fehlerLesbar(e); this._letzterFehler = this._ladeFehler; }
+            throw e;
+        }
+        const { [UNLESBAR]: unlesbar, ...rest } = daten;
+        this._unlesbar = Array.isArray(unlesbar) ? unlesbar : [];
+        this._cache = new Map(Object.entries(rest));
+        this._geladen = true;
         return this._cache;
     }
 
@@ -534,10 +581,10 @@ export class BueroBackend {
     async set(fullKey, value) {
         const kurz = this._kurz(fullKey);
         try {
-            const cache = await this._laden();
-            cache.set(kurz, value);
+            await this._laden();
             const api = await this._client();
             await api.put(`/buero/cde/repo/${encodeURIComponent(kurz)}`, value);
+            this._cache?.set(kurz, value);
             return true;
         } catch (e) { console.warn('[CDE buero] set', e?.message ?? e); return false; }
     }
@@ -545,10 +592,10 @@ export class BueroBackend {
     async delete(fullKey) {
         const kurz = this._kurz(fullKey);
         try {
-            const cache = await this._laden();
-            cache.delete(kurz);
+            await this._laden();
             const api = await this._client();
             await api.delete(`/buero/cde/repo/${encodeURIComponent(kurz)}`);
+            this._cache?.delete(kurz);
             return true;
         } catch (e) { console.warn('[CDE buero] delete', e?.message ?? e); return false; }
     }
@@ -594,6 +641,21 @@ export function fehlerLesbar(e) {
     if (status === 422) return { status, text: 'Der Server hat die Datei abgelehnt (gleicher Name schon vorhanden?).' };
     if (status) return { status, text: `Server antwortete mit ${status}.` };
     return { status: null, text: e?.message ? `Kein Zugriff auf den Projektordner: ${e.message}` : 'Kein Zugriff auf den Projektordner.' };
+}
+
+/**
+ * Unter diesem Namen meldet der Server Schlüssel, deren Datei er nicht lesen
+ * konnte (`core/cde.py` `_ablage_lesen`). `@` ist in keinem Schlüssel erlaubt —
+ * ein echter Wert kann ihn nicht verdecken.
+ */
+export const UNLESBAR = '@unlesbar';
+
+/** Der Fehler „Projektordner nicht erreichbar" — `name` ist der Vertrag. */
+export function repoUnerreichbar(grund) {
+    const e = new Error(grund?.text ?? 'Projektordner nicht erreichbar.');
+    e.name = 'RepoUnerreichbar';
+    e.grund = grund ?? null;
+    return e;
 }
 
 export function waehleMitVorrang(projekt, buero, standard = null) {
@@ -761,6 +823,20 @@ export class RepoFacade {
      * dass ihm nur die Anmeldung fehlt.
      */
     get letzterFehler() { return this._backend?._letzterFehler ?? null; }
+
+    /**
+     * `{status, text}`, wenn das ERSTE Laden des Server-Repos scheiterte — dann
+     * schreibt das Backend bis zum Neuladen der Seite nichts (T3). Sonst null.
+     */
+    get unerreichbar() { return this._backend?._ladeFehler ?? null; }
+
+    /** Liegt dieser Schlüssel auf dem Server als unlesbare Datei? (T4) */
+    istUnlesbar(key) {
+        const b = this._backend;
+        if (!b?._unlesbar?.length) return false;
+        const voll = _key(this.scope, key);
+        return b._unlesbar.includes(typeof b._kurz === 'function' ? b._kurz(voll) : voll);
+    }
 
     /** Nach dem Anzeigen zurücksetzen — sonst klebt eine alte Meldung. */
     fehlerQuittieren() { if (this._backend) this._backend._letzterFehler = null; }

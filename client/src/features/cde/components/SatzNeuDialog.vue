@@ -98,7 +98,10 @@ async function anlegen() {
   try {
     // Wie `git branch`: dieselbe Modellauswahl — und auf Wunsch der Verlauf.
     const satz = await cde.satzAnlegen({ name: n, enthaelt: cde.aktiverSatz?.enthaelt ?? [] });
-    const kopiert = kopie ? await ae.kopiereSatz(von, satz.id) : 0;
+    // Der Satz STEHT schon; scheitert nur die Kopie (Server unerreichbar —
+    // `kopiereSatz` wirft dann, statt über einen Verlauf zu schreiben), sagt
+    // es die Warnung unten, nicht die Fehlermeldung „nicht angelegt".
+    const kopiert = kopie ? await ae.kopiereSatz(von, satz.id).catch(() => 0) : 0;
     await ae.setzeSatz(cde.aktiverSatzId);
     emit('angelegt', {
       satz, kopiert,

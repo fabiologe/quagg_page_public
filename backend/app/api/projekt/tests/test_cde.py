@@ -502,3 +502,51 @@ def test_ein_aelterer_tab_ueberschreibt_kein_neueres_journal(frische_db, app_con
     # Der Kern sagt dasselbe ohne Router.
     with pytest.raises(cde.CdeZuAlt):
         cde.repo_setzen(o, "global:aenderungen", stufe(3))
+
+
+def test_unlesbare_ablage_ist_nicht_leer(frische_db, app_conn, projekte_wurzel, caplog):
+    """Tragfaehig, T4: eine unlesbare Repo-Datei war fuer den Client „nicht da".
+
+    Vorher: der Schluessel fehlte im GET, der Client startete leer, und der
+    Journal-Waechter liess den naechsten PUT ueber die kaputte Datei. Jetzt
+    nennt der GET sie unter `@unlesbar`, das Log sagt welche, und ein Journal
+    wird nicht ueberschrieben.
+    """
+    p = projekte.anlegen(app_conn, name="Unlesbar", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    url = f"/FastAPI/projekte/{p['id']}/cde/repo"
+    assert c.put(f"{url}/global:panel-state", json={"offen": True}).status_code == 200
+    ablage = o.pfad / "CDE" / "_repo"
+    (ablage / "global:aenderungen.json").write_text('{"version": 2, "commits": [', encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        stand = c.get(url).json()
+    assert stand["@unlesbar"] == ["global:aenderungen"]
+    assert stand["global:panel-state"] == {"offen": True}                    # das Lesbare bleibt lesbar
+    assert "global:aenderungen" not in stand
+    assert any("unlesbar" in r.getMessage() for r in caplog.records)
+
+    antwort = c.put(f"{url}/global:aenderungen", json={"version": 2, "commits": [], "sitzung": None})
+    assert antwort.status_code == 409 and "unlesbar" in antwort.json()["detail"]
+    assert (ablage / "global:aenderungen.json").read_text(encoding="utf-8") == '{"version": 2, "commits": ['
+    # Andere Schluessel schreibt man weiter; ohne kaputte Datei faellt die Meldung weg.
+    assert c.put(f"{url}/global:panel-state", json={}).status_code == 200
+    (ablage / "global:aenderungen.json").unlink()
+    assert "@unlesbar" not in c.get(url).json()
+    # `@` kann kein echter Schluessel sein.
+    assert c.put(f"{url}/@unlesbar", json=[]).status_code == 422
+
+
+def test_entfernen_mit_unlesbarem_journal_wird_abgewiesen(frische_db, app_conn, projekte_wurzel):
+    """T4: ein unlesbares Journal kann an der Datei haengen — ungeprueft heisst nicht „haengt nicht"."""
+    p = projekte.anlegen(app_conn, name="Journal kaputt", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    d = _up(c, p["id"], "Gelaende.ifc", GELAENDE_IFC).json()
+    ablage = o.pfad / "CDE" / "_repo"
+    ablage.mkdir(exist_ok=True)
+    (ablage / "global:aenderungen.json").write_text("{kaputt", encoding="utf-8")
+    weg = c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}")
+    assert weg.status_code == 422 and "unlesbar" in weg.json()["detail"]
+    assert (o.pfad / "CDE" / "Gelaende.ifc").is_file()                      # vorher: verschoben

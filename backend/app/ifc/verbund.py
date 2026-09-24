@@ -1246,11 +1246,14 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
     # keines durchgelassen haben — aber nachsehen kostet nichts, und still
     # falsch ist die Sorte Fehler, gegen die diese Datei geschrieben ist.
     fremde = [p for p in ziel.by_type("IfcProject") if p.id() != geruest["projekt"].id()]
+    fremde_geblieben = []
     for p in fremde:
         try:
             ziel.remove(p)
-        except Exception:                         # noqa: BLE001
-            pass
+        except Exception as fehler:               # noqa: BLE001 — gemeldet, nicht verschluckt
+            # Vorher: `pass`, und der Bericht zaehlte es trotzdem als entfernt
+            # (Tragfaehig, T4). Das Prueftor faende es — aber der Bericht log.
+            fremde_geblieben.append(f"{p.GlobalId}: {fehler}")
 
     sag("Typen erklaeren")
     typen_erklaert = _typen_erklaeren(ziel, geruest)
@@ -1280,7 +1283,8 @@ def fuehre_zusammen(quellen, ziel_pfad, *, projektname: str = "Verbundmodell",
         "platzierungen_verankert": verankert,
         "einmalige_verschmolzen": verschmolzen,
         "dokumente": len(ziel.by_type("IfcDocumentInformation")),
-        "fremde_projekte_entfernt": len(fremde),
+        "fremde_projekte_entfernt": len(fremde) - len(fremde_geblieben),
+        "fremde_projekte_geblieben": fremde_geblieben,
         "typen_erklaert": typen_erklaert,
         "leere_beziehungen_entfernt": leere,
         "huelle": huelle(ziel),

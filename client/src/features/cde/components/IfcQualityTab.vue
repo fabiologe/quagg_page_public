@@ -15,8 +15,9 @@
       <!-- Ampel-Zusammenfassung -->
       <div class="q-summary">
         <div class="q-score" :class="scoreClass">
-          {{ Math.round(result.summary.score * 100) }} %
-          <small>bestanden</small>
+          <template v-if="result.summary.score == null">ungeprüft</template>
+          <template v-else>{{ Math.round(result.summary.score * 100) }} %</template>
+          <small>{{ result.summary.score == null ? 'nicht bestanden' : 'bestanden' }}</small>
         </div>
         <div class="q-stats">
           <span class="q-stat err" v-if="result.summary.errors">
@@ -25,7 +26,10 @@
           <span class="q-stat warn" v-if="result.summary.warnings">
             <CdeIcon name="status-warn" :size="12" /> {{ result.summary.warnings }} Warn-Regeln
           </span>
-          <span class="q-stat ok" v-if="!result.summary.errors && !result.summary.warnings">
+          <span class="q-stat err" v-if="result.summary.ungeprueft">
+            <CdeIcon name="status-error" :size="12" /> {{ result.summary.ungeprueft }} Regeln ungeprüft — Daten nicht lesbar
+          </span>
+          <span class="q-stat ok" v-if="!result.summary.errors && !result.summary.warnings && !result.summary.ungeprueft">
             <CdeIcon name="status-ok" :size="12" /> Alle Regeln bestanden
           </span>
           <span class="q-stat dim">{{ result.summary.totalFailed }} / {{ result.summary.totalApplicable }} Elemente auffällig</span>
@@ -39,7 +43,8 @@
             <CdeIcon class="q-sev" :class="sev(row).klasse" :name="sev(row).icon" :size="14" />
             <span class="q-name">{{ row.spec.name }}</span>
             <span class="q-count" :class="{ bad: row.failed.length }">
-              <template v-if="row.failed.length">{{ row.failed.length }} / {{ row.applicable }}</template>
+              <template v-if="row.ungeprueft">ungeprüft</template>
+              <template v-else-if="row.failed.length">{{ row.failed.length }} / {{ row.applicable }}</template>
               <CdeIcon v-else-if="row.applicable" name="check" :size="12" />
               <template v-else>0 Elem.</template>
             </span>
@@ -62,6 +67,9 @@
               <div v-if="row.failed.length > MAX_SHOWN" class="q-more">
                 … {{ row.failed.length - MAX_SHOWN }} weitere
               </div>
+            </div>
+            <div v-else-if="row.ungeprueft" class="q-pass-msg">
+              Ungeprüft: die Daten dieser Klasse ließen sich nicht lesen ({{ row.grund }}).
             </div>
             <div v-else class="q-pass-msg">
               {{ row.applicable ? 'Alle anwendbaren Elemente bestehen diese Regel.' : 'Keine passenden Elemente im Modell.' }}
@@ -196,6 +204,7 @@ function toggle(id) {
  * aus dem Token-Satz obendrauf.
  */
 function sev(row) {
+  if (row.ungeprueft) return { icon: 'status-error', klasse: 'err' };
   if (!row.failed.length) return { icon: 'status-ok', klasse: 'ok' };
   if (row.spec.severity === 'error')   return { icon: 'status-error', klasse: 'err' };
   if (row.spec.severity === 'warning') return { icon: 'status-warn',  klasse: 'warn' };
@@ -205,6 +214,7 @@ function sev(row) {
 // Fehlgeschlagene zuerst (error vor warning), dann bestandene, dann leere
 const sortedSpecs = computed(() => {
   const rank = (row) => {
+    if (row.ungeprueft) return -1;
     if (row.failed.length) return row.spec.severity === 'error' ? 0 : 1;
     return row.applicable ? 2 : 3;
   };
@@ -212,8 +222,10 @@ const sortedSpecs = computed(() => {
 });
 
 const scoreClass = computed(() => {
-  const s = props.result?.summary?.score ?? 1;
-  return s >= 0.95 ? 'good' : s >= 0.7 ? 'mid' : 'bad';
+  const s = props.result?.summary?.score;
+  if (s === null) return 'bad';
+  const v = s ?? 1;
+  return v >= 0.95 ? 'good' : v >= 0.7 ? 'mid' : 'bad';
 });
 </script>
 

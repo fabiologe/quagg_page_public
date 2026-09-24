@@ -2263,7 +2263,7 @@ export class IfcEngine {
                 const typen = q.typenImModell()
                     .filter(({ typ }) => zaehltAlsBauteil(typ))
                     .map(({ typ }) => ({ typ, anzahl: q.zaehle(typ) }));
-                out[modelId] = importBefund({ schema: q.schema(), typen });
+                out[modelId] = importBefund({ schema: q.schema(), typen, netz: this.achsenHinweise(modelId) });
             } catch (fehler) {
                 out[modelId] = importBefund({ quelle: 'fehlt', grund: String(fehler?.message ?? fehler) });
             }
@@ -2441,6 +2441,24 @@ export class IfcEngine {
      * CDE-Kanten tragen im Netz String-Schlüssel `cde:<globalId>` — die
      * localIds zweier Modelle dürfen kollidieren, GlobalIds nicht.
      */
+    /**
+     * Die wirksamen Bauformregeln und Typprofile für die ACHSLESE (Tragfähig, T6).
+     *
+     * Getrennt von `setzeJournalStand`, weil `entwerteNach` die Achsen VOR dem
+     * Journalstand liest — dort kämen die Regeln einen Durchlauf zu spät. Die
+     * Engine liest keinen Store; ohne Aufruf gelten die mitgelieferten Regeln.
+     */
+    setzeNetzregeln({ regeln = null, profile = null } = {}) {
+        this._netzregeln = Array.isArray(regeln) ? regeln : null;
+        this._netzprofile = profile && typeof profile === 'object' ? profile : null;
+    }
+
+    /** Was die Achslese je Modell nicht lesen konnte — Text je Fall (T6). */
+    achsenHinweise(modelId = null) {
+        const alle = this._achsenHinweise ?? new Map();
+        return modelId != null ? (alle.get(modelId) ?? []) : [...alle.values()].flat();
+    }
+
     setzeJournalStand({ kanten = [], knoten = [], gelaende = [], koerper = [], verdeckt = new Set(),
                         namen = new Map(), gelaendeKategorien = null, bauformVon = null,
                         gelaendeBrauchtMerkmale = false, lagen = new Map(), ableitungen = [],
@@ -2774,11 +2792,14 @@ export class IfcEngine {
      * `IfcRelDefinesByProperties` der Datei, und das ist für die Frage
      * „welche Kategorie ist Gelände?" fast immer unnötig.
      */
-    _gelaendeKontext(modelId, localId) {
+    _gelaendeKontext(modelId, localId, { mitMerkmalen = false } = {}) {
         const quelle = this.quelleVon(modelId);
         const zeile = quelle?.zeile(localId) ?? null;
         if (!zeile) return null;
-        const merkmale = this._gelaendeBrauchtMerkmale ? this._merkmaleVon(modelId) : null;
+        // Die Achslese hat die Merkmale schon (`_merkmale`) — nicht ein
+        // zweites Mal über alle Beziehungen laufen.
+        const merkmale = (mitMerkmalen || this._gelaendeBrauchtMerkmale)
+            ? (this._merkmale?.get(modelId) ?? this._merkmaleVon(modelId)) : null;
         return {
             // Über `kategorieVon`, NICHT über `zeile.type`: das ist die
             // Typkonstante als Zahl, und als Kategorie weitergereicht trifft

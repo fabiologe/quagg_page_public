@@ -3,6 +3,10 @@
 # Laeuft nur an, wenn dort etwas angefasst wurde. Der Probelauf (app.ifc.probe)
 # laeuft NICHT — er braucht die Gruppenmodelle der StorageBox. Was StorageBox
 # oder client/testdata-local braucht, wird uebersprungen; die Zahl steht im Log.
+# Die Projekt-Tests (backend/app/api/projekt/tests) laufen hier NICHT: ihr
+# conftest zieht app.api.flood2D.env_util und die Pedant-Datenbank nach, und
+# beides liegt nicht im Repo (gemessen 2026-09-24 an einem git-archive-Abzug).
+# Lokal: cd backend && venv/bin/python -m pytest app/api/projekt/tests -q
 name: IFC-Waechter
 
 on:
@@ -44,8 +48,11 @@ jobs:
         env:
           PYTHONPATH: '.'
         run: app/ifc/.venv-ifc/bin/python -m pytest app/ifc/tests -q -rs -p no:cacheprovider
+      # `shell: bash` heisst bei GitHub `bash -eo pipefail` — ohne es verschluckte
+      # `| tee` jeden Fehlschlag von vitest, und der Schritt blieb gruen.
       - name: CDE-Tests (Client)
         working-directory: client
+        shell: bash
         run: |
           npx vitest run src/features/cde/test 2>&1 | tee vitest.log
           echo "Uebersprungen (StorageBox/testdata-local fehlen im CI; auf dem Server 6):"

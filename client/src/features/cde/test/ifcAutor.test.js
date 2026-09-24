@@ -216,6 +216,29 @@ describe('erzeuge und loesche', () => {
         expect(r).toEqual({ ok: true, localId: 99 });
     });
 
+    it('erzeugeAlle: scheitert das Anwenden, ist KEIN Teil gebaut (kein ok:true mit localId)', async () => {
+        const f = fakeFragments();
+        f.editor.createElements = vi.fn(async (_mid, auftraege) => auftraege.map((_, i) => fakeElement(200 + i)));
+        f.editor.applyChanges = vi.fn(async () => { throw new Error('Worker weg'); });
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        const teil = () => ({ kategorie: 'IFCPIPESEGMENT', geometrie: new THREE.BufferGeometry() });
+        const r = await autor.erzeugeAlle('m1', [teil(), teil()]);
+        expect(r).toHaveLength(2);
+        expect(r.filter(x => x.ok)).toHaveLength(0);
+        for (const x of r) expect(x.grund).toMatch(/^anwenden_gescheitert: Worker weg/);
+        // Kein zweiter Auftrag hinterher — das Delta hat die Elemente schon.
+        expect(f.editor.createElements).toHaveBeenCalledTimes(1);
+    });
+
+    it('erzeugeAlle: gelingt das Anwenden, kommen die localIds in Eingabereihenfolge', async () => {
+        const f = fakeFragments();
+        f.editor.createElements = vi.fn(async (_mid, auftraege) => auftraege.map((_, i) => fakeElement(200 + i)));
+        const autor = new IfcAutor({ getFragments: () => f.manager });
+        const teil = () => ({ kategorie: 'IFCPIPESEGMENT', geometrie: new THREE.BufferGeometry() });
+        expect(await autor.erzeugeAlle('m1', [teil(), teil()]))
+            .toEqual([{ ok: true, localId: 200 }, { ok: true, localId: 201 }]);
+    });
+
     it('meldet ein nicht gefundenes Bauteil beim Löschen', async () => {
         const f = fakeFragments();
         f.editor.getElements = vi.fn(async () => []);

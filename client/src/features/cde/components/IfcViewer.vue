@@ -1118,6 +1118,13 @@ const { loading, recentModels, ablageHinweis } = ablage;
 watch(() => aenderungen.sicherFehler, (fehler) => {
   if (fehler) ablageHinweis.value = 'Verlauf nicht gespeichert — der Server ist nicht erreichbar. Fenster offen lassen; der nächste Schritt versucht es erneut.';
 });
+// Das ERSTE Laden des Projektordners scheiterte (Tragfähig, T3): das Journal
+// liest dann nur, und die übrigen Ablagen schreiben nichts — gesagt wird es im
+// Bild, sonst wirkte der leere Verlauf wie ein leeres Projekt.
+watch(() => aenderungen.nurLesen, (nl) => {
+  const g = repo.unerreichbar;
+  if (nl && g) ablageHinweis.value = `Projektordner nicht erreichbar (${g.text}) — es wird nur gelesen, nichts wird überschrieben. Bitte die Seite neu laden.`;
+});
 
 // ── AP-U4: Anker der Auswahl für das Kontextmenü am Objekt ─────────────────
 // Der Bildschirmpunkt wird im HUD projiziert; hier wird nur der WELT-Punkt
@@ -2056,9 +2063,18 @@ function gelaendeBrauchtMerkmale() {
   return (bearbeitung.regeln ?? []).some(r => r?.bauform === 'hoehenfeld' && r?.condition?.psetName);
 }
 
+/**
+ * Die Regeln und Typprofile, mit denen die Achslese Netzrollen erkennt (T6) —
+ * vor JEDEM `leseAchsen`, damit ein Proxy „Haltung" eine Kante wird.
+ */
+function netzregelnReichen() {
+  engine.value?.setzeNetzregeln?.({ regeln: bearbeitung.regeln ?? null, profile: bearbeitung.profilSatz ?? null });
+}
+
 async function entwerteNach(arten) {
   if (!entwertetGeometrie(arten)) return;
   try {
+    netzregelnReichen();
     const n = await engine.value?.leseAchsen()?.catch?.(() => 0) ?? 0;
     // Der JOURNALSTAND gleich mit (17.3): selbst erzeugte Rohre und Schächte
     // kommen ins Fachmodell, Verdecktes fliegt heraus. Die Engine liest kein
@@ -2501,6 +2517,7 @@ async function _modellmengeNachziehen() {
 
   // Die Achsen einmal zählen — davon hängt ab, ob der Längsschnitt bedienbar
   // ist. Fehler halten nichts auf: eine Datei ohne Leitungen hat eben keine.
+  netzregelnReichen();
   const achsen = await engine.value.leseAchsen().catch(() => 0);
   ansicht.setzeStand({ hatAchsen: achsen > 0 });
   // Der Beziehungsindex einmal je Modellmenge (B2) — danach nur Berührtes.

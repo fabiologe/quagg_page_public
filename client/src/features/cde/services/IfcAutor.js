@@ -471,6 +471,10 @@ export class IfcAutor {
             opacity: werte.opacity,
             transparent: werte.transparent,
             depthWrite: werte.depthWrite,
+            // Die Geländeanzeige ist offen und nach unten gewickelt — einseitig
+            // war sie von oben unsichtbar (T7). fragments liest `side` als
+            // `renderedFaces` und baut sein Material danach.
+            side: werte.zweiseitig ? THREE.DoubleSide : THREE.FrontSide,
         });
     }
 
@@ -548,8 +552,17 @@ export class IfcAutor {
                 console.warn('cde: gemeinsam erzeugen gescheitert, jetzt einzeln', fehler?.message ?? fehler);
             }
             if (elemente) {
+                // Scheitert das ANWENDEN, ist nichts im Modell — auch wenn
+                // `createElements` schon localIds vergab. Vorher kam trotzdem
+                // `ok: true` zurück, und das Journal hielt Bauteile für gebaut,
+                // die niemand sah. Kein Einzelweg danach: das Delta hat die
+                // Elemente schon, ein zweiter Auftrag baute sie doppelt.
                 try { await editor.applyChanges(modelId, elemente); }
-                catch (fehler) { console.warn('cde: änderungen anwenden', fehler?.message ?? fehler); }
+                catch (fehler) {
+                    console.warn('cde: änderungen anwenden', fehler?.message ?? fehler);
+                    const grund = `anwenden_gescheitert: ${fehler?.message ?? fehler}`;
+                    return liste.map(() => ({ ok: false, grund }));
+                }
                 return liste.map((_, i) => (elemente[i]?.localId != null
                     ? { ok: true, localId: elemente[i].localId }
                     : { ok: false, grund: 'nichts_erzeugt' }));

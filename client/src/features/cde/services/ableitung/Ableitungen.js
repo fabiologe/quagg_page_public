@@ -1608,12 +1608,17 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
         // Naht nicht).
         const ops = stapel?.opsVor ?? [];
         let urNetz = null;
-        try { urNetz = (await stapel?.urNetz?.()) ?? null; } catch { urNetz = null; }
+        // Scheitert das Lesen der Lieferung, wird es gesagt (Tragfähig, T7) —
+        // vorher fiel die Anzeige still aufs Raster, und das Gelände
+        // „verschob sich" fern jeder Bearbeitung, ohne dass irgendwo stand, warum.
+        let urNetzFehler = null;
+        try { urNetz = (await stapel?.urNetz?.()) ?? null; } catch (fehler) { urNetz = null; urNetzFehler = fehler?.message ?? String(fehler); }
         const netzTaugt = urNetz?.triCount > 0 && urNetz.triCount <= ANZEIGE_URNETZ_MAX;
         const flickenOpt = { zelle: ERDBAU_ZELLE, budget: ERDBAU_ZELLBUDGET, feinesUr: stapel?.feinesUr ?? null };
         let { flicken, zelle, warnungen } = await anzeigeFlicken(ur, stand, ops,
             netzTaugt ? { ...flickenOpt, randAufGrob: false, rand: 1 } : flickenOpt);
         let netz = null;
+        if (urNetzFehler) warnungen.push(`anzeige_raster: die Lieferung war nicht lesbar (${urNetzFehler}) — angezeigt als Raster`);
         if (urNetz?.triCount > ANZEIGE_URNETZ_MAX) {
             warnungen.push(`anzeige_raster: das Gelände hat ${urNetz.triCount} Dreiecke — angezeigt als Raster (Grenze ${ANZEIGE_URNETZ_MAX})`);
         } else if (netzTaugt && flicken.some(f => !f.urAusQuelle)) {

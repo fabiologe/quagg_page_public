@@ -20,6 +20,7 @@
 import { REZEPTE, istKategorie, istSchreibbar, rezeptNach } from '../Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../ableitung/Ableitungen.js';
 import { BAUFORMEN } from '../bauform/Bauformen.js';
+import { ACHSEN_FELDER, KNOTEN_FELDER } from '../bauform/Bauformregeln.js';
 import { EINGEBAUTE_PROFILE } from '../bauform/Typprofile.js';
 import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
@@ -257,6 +258,15 @@ function _bauformregel(r, fehler) {
     if (c.operator !== 'exists' && (c.propertyName || c.psetName) && !_einfach(c.value)) fehler.push('Der Vergleichswert fehlt.');
     if (r.bauform != null && !BAUFORMEN[r.bauform]) fehler.push(`Bauform „${r.bauform}" gibt es nicht.`);
     if (r.netzrolle != null && !NETZROLLEN.includes(r.netzrolle)) fehler.push(`Netzrolle „${r.netzrolle}" gibt es nicht.`);
+    // Wo Knoten und Achse eines Proxys liegen (Tragfähig, T6): Merkmalsnamen.
+    for (const [feld, pflicht, rolle] of [['knotenAus', KNOTEN_FELDER, 'knoten'], ['achseAus', ACHSEN_FELDER, 'kante']]) {
+        const spec = r[feld];
+        if (spec == null) continue;
+        if (!_istObjekt(spec)) { fehler.push(`\`${feld}\` ist keine Zuordnung von Merkmalsnamen.`); continue; }
+        if (r.netzrolle !== rolle) fehler.push(`\`${feld}\` gilt nur für die Netzrolle „${rolle}".`);
+        for (const k of pflicht) if (!_einfach(spec[k]) || !String(spec[k]).trim()) fehler.push(`\`${feld}.${k}\` fehlt (Name eines Merkmals).`);
+        for (const [k, v] of Object.entries(spec)) if (v != null && typeof v !== 'string') fehler.push(`\`${feld}.${k}\` ist kein Merkmalsname.`);
+    }
     if (r.priority != null && !Number.isFinite(r.priority)) fehler.push('`priority` ist keine Zahl.');
     if (r.enabled != null && typeof r.enabled !== 'boolean') fehler.push('`enabled` muss wahr oder falsch sein.');
     if (r.status != null && !['bestaetigt', 'verworfen'].includes(r.status)) fehler.push(`Status „${r.status}" gibt es nicht.`);

@@ -98,9 +98,10 @@ Die Where-Rules verdoppeln bis verdreifachen die Prüfzeit. Der eine Befund in
 der ProVI-Lieferung ist echt: `#51=IfcRelAggregates(…,())` — eine Zerlegung
 ohne Teile, `RelatedObjects` verlangt `SET [1:?]`.
 
-**Die SPF-Syntax misst `pruefe.py` bisher nicht.** `schema_pruefen()` übergibt
-das geöffnete Datei-Objekt; Parserfehler der C++-Schicht fängt `validate` nur,
-wenn es den PFAD bekommt (Docstring in `ifcopenshell/validate.py`).
+**Die SPF-Syntax misst `pruefe.py` inzwischen mit** (Nachtrag 2026-09-24):
+`schema_pruefen()` übergibt den PFAD, nicht das geöffnete Datei-Objekt — nur so
+fängt `validate` die Parserfehler der C++-Schicht (Docstring in
+`ifcopenshell/validate.py`); `teile.syntax` zählt sie.
 
 - **ifctester 0.8.5** ist installiert (IDS 1.0). venv 287 → 355 MB, ifcopenshell
   bleibt 0.8.5, numpy und shapely unberührt.

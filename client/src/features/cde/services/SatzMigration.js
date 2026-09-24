@@ -80,15 +80,18 @@ export async function migriere({ repo, manifest = [], satzAnlegen } = {}) {
     if (!repo || typeof satzAnlegen !== 'function') return bericht;
 
     const marke = await repo.get(MARKE).catch(() => null);
+    // Nicht erreichbar heißt NICHT „nichts zu übernehmen" (T3): sonst setzte
+    // die Marke sich hier, und die Migration liefe nie wieder.
+    if (repo.unerreichbar) return { ...bericht, fehler: [repo.unerreichbar.text] };
     if (marke && marke.fassung >= MARKE_FASSUNG) return bericht;
 
     let alteProjekte = null;
     try { alteProjekte = await repo.get('cde-projects'); } catch { /* nichts da */ }
     if (!Array.isArray(alteProjekte) || !alteProjekte.length) {
         // Nichts zu übernehmen — die Marke trotzdem setzen, sonst sucht jeder
-        // Aufruf aufs Neue.
-        await repo.set(MARKE, { fassung: MARKE_FASSUNG, am: Date.now(), angelegt: 0 });
-        return { ...bericht, gelaufen: true };
+        // Aufruf aufs Neue. Nur als „gelaufen" melden, wenn sie auch sitzt.
+        const ok = await repo.set(MARKE, { fassung: MARKE_FASSUNG, am: Date.now(), angelegt: 0 });
+        return { ...bericht, gelaufen: ok !== false };
     }
 
     const benutzt = new Set();

@@ -70,6 +70,29 @@ describe('validateIds', () => {
     expect(summary.totalFailed).toBe(1)
   })
 
+  it('Daten nicht lesbar → ungeprüft, NICHT bestanden (Score null)', async () => {
+    const specs = IDS_DEFAULT_SPECS.filter(s => s.id === 'spec-wall-external-flag')
+    const kaputt = { ...mocks('IFCWALL', [wall(1, { isExternal: true })]),
+      fragmentsManager: { getData: async () => { throw new Error('Worker weg') } } }
+    const { perSpec, summary } = await validateIds({ specs, ...kaputt })
+    expect(perSpec[0]).toMatchObject({ ungeprueft: true, applicable: 0, grund: 'Worker weg' })
+    expect(summary.ungeprueft).toBe(1)
+    expect(summary.score).toBeNull()
+    expect(summary.errors).toBe(0) // ungeprüft ist kein Befund am Bauteil — es ist keiner gelesen
+  })
+
+  it('eine ungeprüfte Kategorie verdirbt nicht die übrigen Regeln, aber den Gesamtanteil', async () => {
+    const specs = IDS_DEFAULT_SPECS.filter(s => ['spec-wall-external-flag', 'spec-space-name'].includes(s.id))
+    const waende = mocks('IFCWALL', [wall(1, { isExternal: true })])
+    const raeume = { name: 'IFCSPACE', groupData: { get: async () => { throw new Error('Gruppe weg') } } }
+    const { perSpec, summary } = await validateIds({ specs, ...waende, categoryGroups: [...waende.categoryGroups, raeume] })
+    const je = Object.fromEntries(perSpec.map(r => [r.spec.id, r]))
+    expect(je['spec-wall-external-flag']).toMatchObject({ applicable: 1, passed: 1 })
+    expect(je['spec-wall-external-flag'].ungeprueft).toBeUndefined()
+    expect(je['spec-space-name']).toMatchObject({ ungeprueft: true, grund: 'Gruppe weg' })
+    expect(summary.score).toBeNull()
+  })
+
   it('Kategorien ohne Elemente → Spec läuft leer durch, Score bleibt 1', async () => {
     const specs = IDS_DEFAULT_SPECS.filter(s => s.id === 'spec-chamber-name')
     const { perSpec, summary } = await validateIds({ specs, ...mocks('IFCWALL', []) })

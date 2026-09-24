@@ -14,7 +14,8 @@ import { formatGefaelle } from './AxisAnnotations.js';
 import { gefaelle, punkteDerAchse } from './geometrie/Stationierung.js';
 import { nnAusWelt } from './Hoehenbezug.js';
 
-const HERKUNFT = Object.freeze({ extrusion: 'aus der Extrusion', bauplan: 'aus dem Bauplan', mesh: 'aus dem Netz' });
+const HERKUNFT = Object.freeze({ extrusion: 'aus der Extrusion', bauplan: 'aus dem Bauplan', mesh: 'aus dem Netz',
+                                 merkmale: 'aus den Merkmalen (Bauformregel)' });
 
 /**
  * @param {object} achse  wie am Subjekt (`anfang`, `ende`, `polyline`|`punkte`, `laenge`, `dn`, `quelle`, `achsbezug`)
