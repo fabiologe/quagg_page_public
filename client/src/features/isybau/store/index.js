@@ -102,11 +102,10 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
         // Einstellungen des Rechenkerns, die der Nutzer wählen darf (mit dem Projekt gespeichert)
         berechnung: {
-            // Überstauverfahren: 'SLOT' (Preissmann-Schlitz, Voreinstellung) oder
-            // 'EXTRAN' (SWMM-Standard, Störungsgleichung). EXTRAN hielt am Übungsnetz
-            // die Bilanz, erzeugte aber 15–17 m Druckhöhe an flachen druckdichten
-            // Knoten — Messung in doc/04 Abschn. 5, doc/09 Befund 7.
-            ueberstauverfahren: 'SLOT'
+            // Überstauverfahren: 'AUTO' (Voreinstellung — SLOT und EXTRAN rechnen, das
+            // plausiblere nehmen, utils/swmm/ueberstauWahl.js), 'SLOT' (Preissmann-Schlitz)
+            // oder 'EXTRAN' (SWMM-Standard). Keines gewinnt überall — doc/04 Abschn. 5.
+            ueberstauverfahren: 'AUTO'
         },
         simulation: {
             status: 'idle', // idle, running, success, error
@@ -569,8 +568,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 inspections: data.inspections || [],
             });
             if (data.rain) Object.assign(this.rain, data.rain);
-            // Ohne gespeicherte Wahl: Voreinstellung SLOT (so rechneten auch alte Projekte).
-            this.berechnung.ueberstauverfahren = data.berechnung?.ueberstauverfahren === 'EXTRAN' ? 'EXTRAN' : 'SLOT';
+            // Ohne (gültige) gespeicherte Wahl: Voreinstellung Automatik.
+            const gespeichert = data.berechnung?.ueberstauverfahren;
+            this.berechnung.ueberstauverfahren = ['AUTO', 'SLOT', 'EXTRAN'].includes(gespeichert) ? gespeichert : 'AUTO';
             // Alte Projekte: ein „übernommener" KOSTRA-Einzelwert war nie ein Regen
             // (rechnete trocken). Nicht still weiterschleppen, sondern sagen.
             if (this.rain.method === 'kostra' && !this.rain.activeModelRain && this.rain.intensity > 0) {

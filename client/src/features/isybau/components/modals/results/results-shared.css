@@ -119,7 +119,7 @@
 .kpi-card .label { color: var(--isy-pixel-content-text-dim); font-size: var(--isy-fs-lg); margin-bottom: var(--isy-space-2); }
 .kpi-card .value { font-size: var(--isy-fs-xl); font-weight: 700; color: var(--isy-pixel-content-text); }
 .kpi-card .kpi-sub { font-size: var(--isy-fs-sm); color: var(--isy-pixel-content-text-dim); margin-top: var(--isy-space-1); }
-.kpi-danger .value { color: var(--isy-pixel-green); }
+.kpi-danger .value { color: var(--isy-pixel-danger); } /* war --isy-pixel-green: 17 % Bilanzfehler leuchtete grün */
 .kpi-warning .value { color: #f59e0b; }
 .kpi-success .value { color: #10b981; }
 
@@ -433,3 +433,8 @@ input[type="checkbox"],
 input[type="radio"] {
     accent-color: var(--isy-pixel-green);
 }
+
+/* Überstau-Automatik unter den Simulations-Parametern (ResultsGeneralTab) */
+.auto-titel { margin: var(--isy-space-3) 0 var(--isy-space-1); font-size: var(--isy-fs-sm); color: var(--isy-pixel-text); }
+.simple-table th { text-align: left; font-weight: normal; color: var(--isy-pixel-text-dim); padding: var(--isy-space-1) var(--isy-space-2) var(--isy-space-1) 0; border-bottom: 1px solid var(--isy-pixel-divider); }
+.auto-grund { margin: var(--isy-space-1) 0 0; font-size: var(--isy-fs-sm); color: var(--isy-pixel-text-dim); }

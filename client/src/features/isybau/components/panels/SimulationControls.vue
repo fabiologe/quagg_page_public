@@ -111,7 +111,7 @@
         </div>
 
         <div class="control-group"
-             title="Wie SWMM rechnet, wenn Schacht und Haltungen voll laufen (Druckabfluss). Preissmann-Schlitz (SLOT): Voreinstellung. EXTRAN (SWMM-Standard) hält die Massenbilanz oft besser, erzeugte am Übungsnetz aber unrealistische Druckhöhen an flachen, druckdichten Knoten.">
+             title="Wie SWMM rechnet, wenn Schacht und Haltungen voll laufen (Druckabfluss). Automatisch: SLOT und EXTRAN werden beide gerechnet (doppelte Rechenzeit), genommen wird das plausiblere Ergebnis — Bilanzfehler höchstens 5 % und kein Wasserspiegel über dem höchsten Deckel des Netzes. Die Begründung steht im Ergebnis.">
             <label>Überstauverfahren</label>
             <PixelSelect v-model="store.berechnung.ueberstauverfahren" :options="UEBERSTAU_OPTIONEN" />
         </div>
@@ -192,6 +192,7 @@ const invalidElementId = computed(() => store.simulation.invalidElementId);
 const preSolveWarnings = computed(() => store.simulation.preSolveWarnings);
 
 const UEBERSTAU_OPTIONEN = [
+    { value: 'AUTO', label: 'Automatisch (beide rechnen)' },
     { value: 'SLOT', label: 'Preissmann-Schlitz (SLOT)' },
     { value: 'EXTRAN', label: 'EXTRAN (SWMM-Standard)' }
 ];

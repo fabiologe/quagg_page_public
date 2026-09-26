@@ -15,6 +15,7 @@
  *     warnings:      [ string ]
  *   }
  */
+import { deckelhoehe } from './ueberstauWahl.js';
 
 // Kontinuitätsfehler ab diesem Betrag (%) gelten als massiv und erzeugen eine Warnung.
 export const CONTINUITY_ERROR_WARN_PCT = 10;
@@ -28,7 +29,7 @@ export class ResultsAssembler {
      * @param {object} args.inputNodes - id -> serialisierter Eingangs-Knoten (Node.toJSON())
      * @param {object} args.inputEdges - id -> serialisierte Eingangs-Haltung (Edge.toJSON())
      */
-    static assemble({ rptResult, timeSeries = [], inputNodes = {}, inputEdges = {} }) {
+    static assemble({ rptResult, timeSeries = [], inputNodes = {}, inputEdges = {}, beideVerfahrenGerechnet = false }) {
         const warnings = [];
         const { nodes = {}, edges = {}, subcatchments = {}, systemStats = {} } = rptResult || {};
 
@@ -36,7 +37,7 @@ export class ResultsAssembler {
         this.#mergeMaxStoredVolumes(nodes, timeSeries);
         this.#computeMaxAvailableVolumes(nodes, inputNodes);
         this.#flagRimOverflow(nodes, inputNodes);
-        this.#attachContinuityErrors(nodes, systemStats, warnings);
+        this.#attachContinuityErrors(nodes, systemStats, warnings, beideVerfahrenGerechnet);
 
         return { nodes, edges, subcatchments, systemStats, timeSeries, warnings };
     }
@@ -133,9 +134,7 @@ export class ResultsAssembler {
         for (const id of Object.keys(nodes)) {
             const input = inputNodes[id];
             if (!input || nodes[id].maxHGL === undefined) continue;
-            const rim = input.coverZ !== undefined && input.coverZ !== null
-                ? Number(input.coverZ)
-                : (Number(input.z) + Number(input.depth || 3));
+            const rim = deckelhoehe(input);
             if (nodes[id].maxHGL > (rim + 0.01)) {
                 nodes[id].overflow = true;
                 nodes[id].overflowReason = 'HGL > Rim';
@@ -147,7 +146,7 @@ export class ResultsAssembler {
      * Kontinuitätsfehler aus dem Report an die Knoten heften und massive Fehler
      * als Warnung durchreichen (bugs.txt #4: bislang komplett unsichtbar).
      */
-    static #attachContinuityErrors(nodes, systemStats, warnings) {
+    static #attachContinuityErrors(nodes, systemStats, warnings, beideVerfahrenGerechnet = false) {
         for (const entry of systemStats.continuityErrors || []) {
             if (!nodes[entry.id]) nodes[entry.id] = {};
             nodes[entry.id].continuityError = entry.error;
@@ -162,8 +161,10 @@ export class ResultsAssembler {
             // Keines der beiden Überstauverfahren gewinnt überall (doc/04 Abschn. 5:
             // Übungsnetz besser mit SLOT, test.xml nur mit EXTRAN) — daher der Hinweis.
             const verfahren = systemStats.analysisOptions?.surchargeMethod;
-            const anderes = verfahren === 'SLOT' ? 'EXTRAN' : verfahren === 'EXTRAN' ? 'Preissmann-Schlitz (SLOT)' : null;
-            warnings.push(
+            const anderes = beideVerfahrenGerechnet ? null
+                : verfahren === 'SLOT' ? 'EXTRAN' : verfahren === 'EXTRAN' ? 'Preissmann-Schlitz (SLOT)' : null;
+            // vorn einreihen: die Systemaussage vor den Einzelknoten
+            warnings.unshift(
                 `Systemweiter Kontinuitätsfehler der Abflussberechnung: ${sysErr.toFixed(1)} % — Modell prüfen (Zeitschritt, Instabilitäten)`
                 + (anderes ? `; Gegenprobe mit Überstauverfahren ${anderes} (Seitenleiste).` : '.')
             );

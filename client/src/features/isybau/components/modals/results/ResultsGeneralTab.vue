@@ -56,11 +56,28 @@
                 <tr><td>Einheiten:</td><td>{{ systemStats.analysisOptions?.flowUnits }}</td></tr>
                 <tr><td>Infiltration:</td><td>{{ systemStats.analysisOptions?.infiltrationMethod }}</td></tr>
                 <tr><td>Berechnungsverfahren:</td><td>{{ systemStats.analysisOptions?.flowRoutingMethod }}</td></tr>
-                <tr v-if="systemStats.analysisOptions?.surchargeMethod"><td>Überstauverfahren:</td><td>{{ systemStats.analysisOptions.surchargeMethod }}</td></tr>
+                <tr v-if="systemStats.analysisOptions?.surchargeMethod"><td>Überstauverfahren:</td><td>{{ systemStats.analysisOptions.surchargeMethod }}{{ systemStats.ueberstauWahl ? ' (automatisch gewählt)' : '' }}</td></tr>
                 <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
                 <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
                 <tr><td>Zeitschritt:</td><td>{{ systemStats.analysisOptions?.routingTimeStep }}</td></tr>
             </table>
+
+            <!-- Überstau-Automatik: beide Läufe und die Begründung der Wahl (utils/swmm/ueberstauWahl.js) -->
+            <template v-if="systemStats.ueberstauWahl">
+                <h4 class="auto-titel">Überstau-Automatik</h4>
+                <table class="simple-table">
+                    <tr><th>Verfahren</th><th>Bilanzfehler</th><th>max. über höchstem Deckel</th><th>nicht konv.</th><th>Bewertung</th></tr>
+                    <tr v-for="l in systemStats.ueberstauWahl.laeufe" :key="l.verfahren"
+                        :title="l.gruende.join(' · ') || 'plausibel'">
+                        <td><strong v-if="l.verfahren === systemStats.ueberstauWahl.gewaehlt">{{ l.verfahren }}</strong><span v-else>{{ l.verfahren }}</span></td>
+                        <td>{{ l.bilanz === null ? '—' : l.bilanz.toFixed(2) + ' %' }}</td>
+                        <td>{{ l.maxUeberHoechstemDeckel ? l.maxUeberHoechstemDeckel.m.toFixed(2) + ' m (' + l.maxUeberHoechstemDeckel.id + ')' : '—' }}</td>
+                        <td>{{ l.nichtKonv === null ? '—' : l.nichtKonv.toFixed(1) + ' %' }}</td>
+                        <td>{{ l.plausibel ? 'plausibel' : 'verworfen' }}</td>
+                    </tr>
+                </table>
+                <p class="auto-grund">{{ systemStats.ueberstauWahl.gewaehlt }} gewählt — {{ systemStats.ueberstauWahl.grund }}</p>
+            </template>
         </div>
 
         <!-- 2. Niederschlagsbilanz (Runoff Continuity) -->

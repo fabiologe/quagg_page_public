@@ -370,11 +370,13 @@ describe('loadProjectSnapshot: alter KOSTRA-Einzelwert und Überstauverfahren', 
         expect(store.ui.meldungen.map(m => m.text).join(' ')).toMatch(/KOSTRA-Einzelwert \(137/);
     });
 
-    it('übernimmt ein gespeichertes Überstauverfahren, alte Projekte bekommen die Voreinstellung SLOT', () => {
+    it('übernimmt ein gespeichertes Überstauverfahren, sonst Voreinstellung Automatik', () => {
         store.loadProjectSnapshot(leeresProjekt({ berechnung: { ueberstauverfahren: 'EXTRAN' } }));
         expect(store.berechnung.ueberstauverfahren).toBe('EXTRAN');
         expect(store.projectSnapshot.berechnung.ueberstauverfahren).toBe('EXTRAN');
-        store.loadProjectSnapshot(leeresProjekt({}));
+        store.loadProjectSnapshot(leeresProjekt({ berechnung: { ueberstauverfahren: 'SLOT' } }));
         expect(store.berechnung.ueberstauverfahren).toBe('SLOT');
+        store.loadProjectSnapshot(leeresProjekt({}));
+        expect(store.berechnung.ueberstauverfahren).toBe('AUTO');
     });
 });

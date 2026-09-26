@@ -60,7 +60,13 @@ export class SwmmBuilder {
 
         return {
             inpContent: inpString,
-            warnings: this.warnings
+            warnings: this.warnings,
+            // Für die Plausibilitätsprüfung der Überstau-Automatik (utils/swmm/ueberstauWahl.js):
+            // unterhalb einer Pumpe darf der Wasserspiegel um deren Nullförderhöhe höher liegen.
+            pumpen: this.specialLinks.pumps.filter(p => p.to).map(({ from, to }) => ({
+                ziel: to.id,
+                nullfoerderhoehe: computePumpCurvePoints(from).points[2].head
+            }))
         };
     }
 
@@ -387,6 +393,33 @@ LINKS                ALL
         }
         const geoeffnet = [];
 
+        // Knoten ohne Deckel (fiktiv, ISYBAU-Status 2) mit Flächenanschluss: SWMM prägt den
+        // Oberflächenabfluss als Zufluss auf und presst ihn notfalls unter Druck hinein —
+        // am Übungsnetz bis 16 m über Deckel (EXTRAN). Real staut der Abfluss an der
+        // Oberfläche. Solche Knoten dürfen daher überstauen — AUSSER in einer Druckleitung
+        // (vom Pumpenauslass bis zum nächsten Schacht mit Deckel) und außer bei einem vom
+        // Nutzer gesetzten Druckdeckel (Deckel vorhanden, „druckdicht").
+        const kantenAb = new Map();
+        for (const e of (this.store.getAllEdges || [])) {
+            if (!kantenAb.has(e.fromNodeId)) kantenAb.set(e.fromNodeId, []);
+            kantenAb.get(e.fromNodeId).push(e);
+        }
+        const knotenById = new Map(nodes.map(n => [n.id, n]));
+        const druckleitung = new Set();
+        for (const n of (this.store.getAllNodes || [])) {
+            if (Number(this.getBtyp(n)) !== 6) continue;          // Pumpe
+            const start = (kantenAb.get(n.id) || [])[0]?.toNodeId; // erste abgehende Haltung = Pumpe (addLinks)
+            const q = start ? [start] : [];
+            while (q.length) {
+                const id = q.shift();
+                const k = knotenById.get(id);
+                if (!k || k.isManhole !== false || druckleitung.has(id)) continue;
+                druckleitung.add(id);
+                for (const e of kantenAb.get(id) || []) q.push(e.toNodeId);
+            }
+        }
+        const flaechenGeoeffnet = [];
+
         for (const n of nodes) {
             // Überstau-Ableitung. Die Flags werden in Node.applyOverflowState()
             // normalisiert (isManhole=false erzwingt canOverflow=false), daher gilt:
@@ -398,9 +431,12 @@ LINKS                ALL
             let aPonded = 0;
 
             const offenesGerinne = anOffenemProfil.has(n.id);
-            if (offenesGerinne && !(n.isManhole !== false && n.canOverflow !== false)) geoeffnet.push(n.id);
+            const deckelOffen = n.isManhole !== false && n.canOverflow !== false;
+            const fiktivMitFlaeche = n.isManhole === false && (nodePondingMap.get(n.id) || 0) > 0 && !druckleitung.has(n.id);
+            if (offenesGerinne && !deckelOffen) geoeffnet.push(n.id);
+            else if (fiktivMitFlaeche && !deckelOffen) flaechenGeoeffnet.push(n.id);
 
-            if (offenesGerinne || (n.isManhole !== false && n.canOverflow !== false)) {
+            if (offenesGerinne || deckelOffen || fiktivMitFlaeche) {
                 surDepth = 0; // Overflows immediately
 
                 const calculatedArea = nodePondingMap.get(n.id);
@@ -413,6 +449,11 @@ LINKS                ALL
             }
 
             text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
+        }
+        if (flaechenGeoeffnet.length > 0) {
+            this.warnings.push(`${flaechenGeoeffnet.length} Knoten ohne Deckel mit Flächenanschluss dürfen überstauen `
+                + `(Oberflächenabfluss staut an der Oberfläche statt unter Druck einzuströmen): `
+                + `${flaechenGeoeffnet.slice(0, 8).join(', ')}${flaechenGeoeffnet.length > 8 ? ' …' : ''}`);
         }
         if (geoeffnet.length > 0) {
             this.warnings.push(`${geoeffnet.length} Knoten an offenen Gerinnen (Rechteck offen/Trapez) dürfen überstauen, `

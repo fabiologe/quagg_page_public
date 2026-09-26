@@ -158,6 +158,24 @@ describe('Übungsnetz, echter Rechenweg', () => {
         expect(niederschlagMm(store.simulation.results.report)).toBeCloseTo(36, 2);
     }, LAUFZEIT);
 
+    it('Automatik: beide Verfahren gerechnet und plausibel, kein Wasserspiegel über dem höchsten Deckel', async () => {
+        expect(store.berechnung.ueberstauverfahren).toBe('AUTO');
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        const { report, systemStats: { ueberstauWahl } } = store.simulation.results;
+        expect(ueberstauWahl.laeufe.map(l => l.verfahren)).toEqual(['SLOT', 'EXTRAN']);
+        expect(ueberstauWahl.laeufe.every(l => l.plausibel), JSON.stringify(ueberstauWahl.laeufe)).toBe(true);
+        // der ausgelieferte Bericht ist der des gewählten Laufs
+        expect(report).toMatch(new RegExp(`Surcharge Method \\.+ ${ueberstauWahl.gewaehlt}`));
+        const flow = abschnitt(report, 'Flow Routing Continuity');
+        const gewaehlt = ueberstauWahl.laeufe.find(l => l.verfahren === ueberstauWahl.gewaehlt);
+        expect(gewaehlt.bilanz).toBeCloseTo(zahlNach(flow, 'Continuity Error (%)'), 3);
+        const hoechsterDeckel = Math.max(...store.nodeArray.map(n => Number.isFinite(Number(n.coverZ)) ? Number(n.coverZ) : Number(n.z) + Number(n.depth)));
+        const block = report.slice(report.indexOf('Node Depth Summary'), report.indexOf('Node Inflow Summary'));
+        const maxHgl = Math.max(...block.split('\n').map(l => l.trim().split(/\s+/)).filter(p => /JUNCTION/.test(p[1])).map(p => parseFloat(p[4])));
+        expect(maxHgl).toBeLessThanOrEqual(hoechsterDeckel);
+    }, LAUFZEIT * 2);
+
     // Zwei Größen, weil die erste Kur (EXTRAN als Standard) die Bilanz hielt, aber
     // 15–17 m Wasserstand an 0,3 m tiefen Knoten erzeugte — Regel und Kur müssen
     // dieselbe Größe messen, hier also auch die Wasserstände.
@@ -170,5 +188,38 @@ describe('Übungsnetz, echter Rechenweg', () => {
         const knoten = [...store.nodes.keys()];
         const tiefste = Math.max(...knoten.map(id => berichteteMaxTiefe(report, id)).filter(Number.isFinite));
         expect(tiefste).toBeLessThan(10);
+    }, LAUFZEIT);
+});
+
+// Zweites Netz: hier unterscheiden sich die Verfahren wirklich (doc/04 Abschn. 5):
+// SLOT 14,3 % Bilanzfehler an Knoten 06004, EXTRAN 1,6 %.
+describe('test.xml, echter Rechenweg', () => {
+    it('Automatik wählt EXTRAN und verwirft SLOT wegen des Bilanzfehlers', async () => {
+        setActivePinia(createPinia());
+        const store = useIsybauStore();
+        store.loadParsedData(parseIsybauXML(readFileSync(pfad('./test.xml'), 'latin1')));
+        for (const a of store.areaArray) if (!(a.runoffCoeff > 0)) a.runoffCoeff = getRunoffCoeff(a.property, a.function, a.slope);
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        expect(store.simulation.status).toBe('success');
+        const { report, systemStats: { ueberstauWahl } } = store.simulation.results;
+        expect(ueberstauWahl.gewaehlt).toBe('EXTRAN');
+        expect(ueberstauWahl.grund).toMatch(/SLOT verworfen: Bilanzfehler 1\d,\d %/);
+        expect(Math.abs(zahlNach(abschnitt(report, 'Flow Routing Continuity'), 'Continuity Error (%)'))).toBeLessThan(5);
+    }, LAUFZEIT * 2);
+
+    // Der Hinweis nach dem Lauf zeigt nur die ersten Meldungen; bei test.xml standen
+    // 40 Neigungsklassen-Annahmen davor und die Bilanzwarnung war unsichtbar.
+    it('SLOT von Hand: Bilanzwarnung mit Gegenprobe-Vorschlag steht vorn', async () => {
+        setActivePinia(createPinia());
+        const store = useIsybauStore();
+        store.loadParsedData(parseIsybauXML(readFileSync(pfad('./test.xml'), 'latin1')));
+        for (const a of store.areaArray) if (!(a.runoffCoeff > 0)) a.runoffCoeff = getRunoffCoeff(a.property, a.function, a.slope);
+        store.berechnung.ueberstauverfahren = 'SLOT';
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        const { warnings, systemStats } = store.simulation.results;
+        expect(systemStats.ueberstauWahl).toBeUndefined();
+        expect(warnings[0]).toMatch(/Systemweiter Kontinuitätsfehler.*Gegenprobe mit Überstauverfahren EXTRAN/);
     }, LAUFZEIT);
 });

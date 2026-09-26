@@ -603,3 +603,38 @@ describe('SwmmBuilder: Optionen Regenintervall und Überstauverfahren', () => {
         expect(warnings.join(' ')).toMatch(/2 Knoten an offenen Gerinnen/);
     });
 });
+
+// doc/09 Befund 7, zweiter Schritt: Knoten ohne Deckel mit Flächenanschluss dürfen
+// überstauen (Oberflächenabfluss kann nicht gegen Druck einströmen) — außer in
+// einer Druckleitung hinter einer Pumpe; ein vom Nutzer gesetzter Druckdeckel bleibt.
+describe('SwmmBuilder: Überstau-Regeln je Knoten', () => {
+    const sur = (inp, id) => parseFloat((inp.split('\n').find(l => l.startsWith(id + ' ')) || '').trim().split(/\s+/)[4]);
+    const rohr = (id, von, nach) => new Edge({ id, fromNodeId: von, toNodeId: nach, length: 20, profile: { type: 0, height: 0.3, width: 0.3 } });
+    const kn = (id, z, extra = {}) => new Node({ id, x: z, y: 0, z, depth: 1, ...extra });
+
+    it('fiktiv + Fläche: überstaufähig; fiktiv ohne Fläche, Druckdeckel und Druckleitung: druckdicht', () => {
+        const nodes = [
+            kn('F1', 20, { isManhole: false }),                       // fiktiv, mit Fläche
+            kn('F2', 19, { isManhole: false }),                       // fiktiv, ohne Fläche
+            kn('D', 18, { isManhole: true, canOverflow: false }),     // Druckdeckel, mit Fläche
+            kn('P', 17, { bauwerkstyp: 6 }),                          // Pumpe
+            kn('L1', 16, { isManhole: false }),                       // Druckleitung, mit Fläche
+            kn('M', 15),                                               // Schacht mit Deckel beendet die Druckleitung
+            kn('F3', 14, { isManhole: false }),                       // fiktiv hinter dem Schacht, mit Fläche
+            new Node({ id: 'OUT', x: 13, y: 0, z: 13, depth: 1, type: 'Auslaufbauwerk' })
+        ];
+        const edges = [rohr('e1', 'F1', 'F2'), rohr('e2', 'F2', 'D'), rohr('e3', 'D', 'P'), rohr('e4', 'P', 'L1'),
+                       rohr('e5', 'L1', 'M'), rohr('e6', 'M', 'F3'), rohr('e7', 'F3', 'OUT')];
+        const flaeche = (id, nodeId) => ({ id, size: 0.1, runoffCoeff: 0.5, nodeId });
+        const areas = [flaeche('a1', 'F1'), flaeche('a2', 'D'), flaeche('a3', 'L1'), flaeche('a4', 'F3')];
+        const { inpContent, warnings } = buildInp(makeStore({ nodes, edges, areas }));
+        expect(sur(inpContent, 'F1')).toBe(0);
+        expect(sur(inpContent, 'F2')).toBe(100);
+        expect(sur(inpContent, 'D')).toBe(100);
+        expect(sur(inpContent, 'L1')).toBe(100);
+        expect(sur(inpContent, 'M')).toBe(0);
+        expect(sur(inpContent, 'F3')).toBe(0);
+        expect(warnings.find(w => w.includes('ohne Deckel mit Flächenanschluss'))).toMatch(/^2 Knoten .*: F1, F3$/);
+    });
+});
+
