@@ -57,7 +57,7 @@
                     <td>{{ edgeTypeLabel(edge.type) }}</td>
                     <td>{{ edge.maxFlow?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
                     <td>
-                        <span v-if="edge.type === 'PUMP'" class="na-hint" title="SWMM meldet für Pumpen keine Kapazität">n/a</span>
+                        <span v-if="edge.type === 'PUMP'" class="na-hint" title="SWMM meldet für Pumpen kein Qvoll">n/a</span>
                         <template v-else>{{ edge.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</template>
                     </td>
                     <td>
@@ -105,8 +105,8 @@
                         <div>Strömungsart: {{ getFlowClass(selectedEdgeId) }}</div>
                     </div>
                     <div class="col">
-                        <strong>Kapazität & Auslastung</strong>
-                        <div>Kapazität: {{ fmtZahl(selectedEdge?.capacity, 1) }} l/s</div>
+                        <strong>Qvoll & Auslastung</strong>
+                        <div>Qvoll: {{ fmtZahl(selectedEdge?.capacity, 1) }} l/s</div>
                         <div>Max. Q/Qvoll: {{ fmtZahl(selectedZustand.auslastung == null ? null : selectedZustand.auslastung / 100, 2) }}</div>
                         <div>Max. h/hvoll: {{ selectedEdge?.depthRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
                         <div v-if="selectedZustand.status === 'überlastet'" class="text-red">
@@ -243,7 +243,7 @@ const updateChart = (id) => {
                 fill: true
             },
             {
-                label: 'Kapazität (L/s)',
+                label: 'Qvoll (l/s)',
                 borderColor: DIAGRAMM.kapazitaet,
                 borderDash: [5, 5],
                 data: props.timeSeries.map(() => safeGet(props.edgeResults, id)?.capacity || 0)
