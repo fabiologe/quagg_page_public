@@ -45,8 +45,8 @@
   <SimulationDebugModal
     v-if="store.ui.showDebugModal"
     :is-open="store.ui.showDebugModal"
-    :input-text="store.simulation.results?.input || ''"
-    :report-text="store.simulation.results?.report || ''"
+    :input-text="store.simulation.fehlerBericht?.input || store.simulation.results?.input || ''"
+    :report-text="store.simulation.fehlerBericht?.report || store.simulation.results?.report || ''"
     @close="store.ui.showDebugModal = false"
   />
 

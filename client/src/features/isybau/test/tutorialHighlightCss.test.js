@@ -119,7 +119,9 @@ describe('Inline-Knoepfe entkommen der globalen Pixel-Button-Fassung', () => {
   it('das Regen-x traegt die Ausnahme-Klasse', () => {
     const src = read('components/panels/SimulationControls.vue');
     const knoepfe = [...src.matchAll(/class="rain-clear[^"]*"/g)].map(m => m[0]);
-    expect(knoepfe.length, 'x fehlt bei Modellregen oder KOSTRA').toBe(2);
+    // Seit es nur noch einen Regenweg gibt (KOSTRA-Übernahme = Blockregen,
+    // doc/09 Befund 1), steht genau ein x neben der Regenanzeige.
+    expect(knoepfe.length, 'x neben der Regenanzeige fehlt').toBe(1);
     for (const k of knoepfe) expect(k).toContain('plain-btn');
   });
 });

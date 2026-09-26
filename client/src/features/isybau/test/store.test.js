@@ -352,3 +352,29 @@ describe('clearRain (Regen wieder abwaehlen)', () => {
         expect(store.rain.method).toBe('model');
     });
 });
+
+// doc/09 Befund 1: ein „übernommener" KOSTRA-Einzelwert rechnete nie. Alte
+// Projekte, die so gespeichert sind, dürfen nicht still weiter trocken rechnen.
+describe('loadProjectSnapshot: alter KOSTRA-Einzelwert und Überstauverfahren', () => {
+    let store;
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        store = useIsybauStore();
+    });
+    const leeresProjekt = (extra) => ({ nodes: [], edges: [], areas: [], metadata: {}, ...extra });
+
+    it('meldet den alten KOSTRA-Einzelwert und räumt ihn ab', () => {
+        store.loadProjectSnapshot(leeresProjekt({ rain: { method: 'kostra', intensity: 137, activeModelRain: null } }));
+        expect(store.rain.intensity).toBe(0);
+        expect(store.rain.method).toBe('model');
+        expect(store.ui.meldungen.map(m => m.text).join(' ')).toMatch(/KOSTRA-Einzelwert \(137/);
+    });
+
+    it('übernimmt ein gespeichertes Überstauverfahren, alte Projekte bekommen die Voreinstellung SLOT', () => {
+        store.loadProjectSnapshot(leeresProjekt({ berechnung: { ueberstauverfahren: 'EXTRAN' } }));
+        expect(store.berechnung.ueberstauverfahren).toBe('EXTRAN');
+        expect(store.projectSnapshot.berechnung.ueberstauverfahren).toBe('EXTRAN');
+        store.loadProjectSnapshot(leeresProjekt({}));
+        expect(store.berechnung.ueberstauverfahren).toBe('SLOT');
+    });
+});

@@ -56,6 +56,7 @@
                 <tr><td>Einheiten:</td><td>{{ systemStats.analysisOptions?.flowUnits }}</td></tr>
                 <tr><td>Infiltration:</td><td>{{ systemStats.analysisOptions?.infiltrationMethod }}</td></tr>
                 <tr><td>Berechnungsverfahren:</td><td>{{ systemStats.analysisOptions?.flowRoutingMethod }}</td></tr>
+                <tr v-if="systemStats.analysisOptions?.surchargeMethod"><td>Überstauverfahren:</td><td>{{ systemStats.analysisOptions.surchargeMethod }}</td></tr>
                 <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
                 <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
                 <tr><td>Zeitschritt:</td><td>{{ systemStats.analysisOptions?.routingTimeStep }}</td></tr>

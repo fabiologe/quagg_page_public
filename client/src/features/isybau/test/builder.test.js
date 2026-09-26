@@ -568,3 +568,38 @@ describe('SwmmBuilder', () => {
         expect(warnings.some(w => w.includes('N1') && w.includes('abweichenden Tagesspitzenfaktoren'))).toBe(true);
     });
 });
+
+// doc/09 Befunde 2 und 7: Regenschreiber-Intervall und Überstauverfahren kommen
+// aus den Optionen, nicht mehr fest aus dem Builder.
+describe('SwmmBuilder: Optionen Regenintervall und Überstauverfahren', () => {
+    const zeile = (inp, re) => (inp.split('\n').find(l => re.test(l)) || '').trim();
+
+    it('schreibt das Regenintervall als H:MM (Minuten oder fertiger String)', () => {
+        for (const [iv, soll] of [[1, '0:01'], [5, '0:05'], [10, '0:10'], [90, '1:30'], ['0:15', '0:15']]) {
+            const { inpContent } = buildInp(makeStore(), { durationHours: 2, rainInterval: iv });
+            expect(zeile(inpContent, /^\s*RG1\s/)).toMatch(new RegExp(`INTENSITY\\s+${soll}\\s`));
+        }
+    });
+
+    it('Überstauverfahren: SLOT als Voreinstellung, EXTRAN auf Wunsch, Unbekanntes → SLOT', () => {
+        const verfahren = (opts) => zeile(buildInp(makeStore(), { durationHours: 2, ...opts }).inpContent, /^SURCHARGE_METHOD/);
+        expect(verfahren({})).toMatch(/SLOT$/);
+        expect(verfahren({ surchargeMethod: 'EXTRAN' })).toMatch(/EXTRAN$/);
+        expect(verfahren({ surchargeMethod: 'quatsch' })).toMatch(/SLOT$/);
+    });
+
+    it('Knoten an offenen Profilen (Rechteck offen, Trapez) dürfen überstauen, auch ohne Deckel', () => {
+        const knoten = (id, z) => new Node({ id, x: z, y: 0, z, depth: 0.3, isManhole: false });
+        const nodes = [knoten('A', 10), knoten('B', 9), knoten('C', 8), new Node({ id: 'OUT', x: 7, y: 0, z: 7, depth: 1, type: 'Auslaufbauwerk' })];
+        const edges = [
+            new Edge({ id: 'TR', fromNodeId: 'A', toNodeId: 'B', length: 20, profile: { type: 8, height: 0.25, width: 0.5 } }),
+            new Edge({ id: 'KR', fromNodeId: 'C', toNodeId: 'OUT', length: 20, profile: { type: 0, height: 0.3, width: 0.3 } })
+        ];
+        const { inpContent, warnings } = buildInp(makeStore({ nodes, edges }));
+        const sur = (id) => parseFloat(zeile(inpContent, new RegExp(`^${id}\\s+[\\d.]+\\s+[\\d.]+\\s+0\\s`)).split(/\s+/)[4]);
+        expect(sur('A')).toBe(0);    // am Trapez
+        expect(sur('B')).toBe(0);    // am Trapez
+        expect(sur('C')).toBe(100);  // nur Kreisprofil, ohne Deckel → druckdicht wie bisher
+        expect(warnings.join(' ')).toMatch(/2 Knoten an offenen Gerinnen/);
+    });
+});

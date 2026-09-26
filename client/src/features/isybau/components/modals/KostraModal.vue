@@ -102,6 +102,7 @@ import { vFokus } from '../../composables/vFokus.js';
 import { useIsybauStore } from '../../store/index.js';
 
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';
+import { kostraBlockRain } from '../../utils/RainModelService.js';
 import PixelSelect from '../common/PixelSelect.vue';
 const store = useIsybauStore();
 
@@ -230,8 +231,11 @@ const applyResult = () => {
     
     // Update Store directly to trigger watchers
     // Directly update state to avoid HMR issues with missing actions
-    store.rain.intensity = parseFloat(selectedValue.value);
-    store.rain.method = 'kostra';
+    store.setRainModel(kostraBlockRain({
+      rN: parseFloat(selectedValue.value),
+      dauer: Number(selectedCoords.value.duration),
+      wiederkehr: key
+    }));
     
     emit('select', {
       value: selectedValue.value,

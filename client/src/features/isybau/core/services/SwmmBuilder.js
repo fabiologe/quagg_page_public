@@ -15,8 +15,10 @@ export class SwmmBuilder {
         this.options = {
             durationHours: 6,
             startDate: new Date("2024-01-01T00:00:00"),
-            rainInterval: null, // "0:05"
-            rainSeries: []
+            rainInterval: null, // Minuten (Zahl) oder "H:MM"
+            rainSeries: [],
+            // Überstauverfahren des Rechenkerns (SWMM 5.2 UM Anh. D.2): 'SLOT' | 'EXTRAN'
+            surchargeMethod: 'SLOT'
         };
     }
 
@@ -98,7 +100,7 @@ SYS_FLOW_TOL         5
 LAT_FLOW_TOL         5
 MINIMUM_STEP         0.5
 THREADS              1
-SURCHARGE_METHOD     SLOT
+SURCHARGE_METHOD     ${this.options.surchargeMethod === 'EXTRAN' ? 'EXTRAN' : 'SLOT'}
 
 [REPORT]
 ;; Ohne diesen Block schreibt SWMM KEINE Objekte in die binäre .out-Datei
@@ -118,9 +120,17 @@ LINKS                ALL
     }
 
     addRaingages() {
-        // Logic for Rain Gage
+        // Regenschreiber-Intervall = Intervall der Regenreihe. SWMM hält jeden Wert
+        // genau ein Schreiber-Intervall lang: festes 0:05 halbierte einen 10-min-Regen
+        // und brach bei 1 min mit ERROR 159 ab (doc/09, Befund 2).
+        // Minuten (Zahl, vom Store) oder schon „H:MM" (String).
         let interval = '0:05';
-        if (this.options.rainInterval) interval = this.options.rainInterval;
+        const iv = this.options.rainInterval;
+        if (typeof iv === 'number' && iv > 0) {
+            interval = `${Math.floor(iv / 60)}:${String(Math.round(iv % 60)).padStart(2, '0')}`;
+        } else if (typeof iv === 'string' && iv) {
+            interval = iv;
+        }
 
         this.sections.push(`[RAINGAGES]
     ;;Name           Format    Interval SCF      Source
@@ -362,6 +372,21 @@ LINKS                ALL
             }
         }
 
+        // Knoten an offenen Profilen (Rechteck offen = 5, Trapez = 8 → RECT_OPEN/TRAPEZOIDAL):
+        // ein offenes Gerinne kann keinen Druck halten, das Wasser tritt dort aus.
+        // „Druckdicht" ergäbe an solchen Knoten Druckhöhen, die es nicht gibt — am
+        // Übungsnetz 13,6 % Bilanzfehler (SLOT) bzw. 15–17 m Wasserstand (EXTRAN),
+        // doc/09 Befund 7. Solche Knoten dürfen deshalb immer überstauen.
+        const OFFENE_PROFILE = new Set([5, 8]);
+        const anOffenemProfil = new Set();
+        for (const e of (this.store.getAllEdges || [])) {
+            if (OFFENE_PROFILE.has(Number(e.profile?.type))) {
+                anOffenemProfil.add(e.fromNodeId);
+                anOffenemProfil.add(e.toNodeId);
+            }
+        }
+        const geoeffnet = [];
+
         for (const n of nodes) {
             // Überstau-Ableitung. Die Flags werden in Node.applyOverflowState()
             // normalisiert (isManhole=false erzwingt canOverflow=false), daher gilt:
@@ -372,7 +397,10 @@ LINKS                ALL
             let surDepth = 100.0; // Sealed default
             let aPonded = 0;
 
-            if (n.isManhole !== false && n.canOverflow !== false) {
+            const offenesGerinne = anOffenemProfil.has(n.id);
+            if (offenesGerinne && !(n.isManhole !== false && n.canOverflow !== false)) geoeffnet.push(n.id);
+
+            if (offenesGerinne || (n.isManhole !== false && n.canOverflow !== false)) {
                 surDepth = 0; // Overflows immediately
 
                 const calculatedArea = nodePondingMap.get(n.id);
@@ -385,6 +413,10 @@ LINKS                ALL
             }
 
             text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad(n.depth)} 0          ${this.pad(surDepth)} ${this.pad(aPonded)}\n`;
+        }
+        if (geoeffnet.length > 0) {
+            this.warnings.push(`${geoeffnet.length} Knoten an offenen Gerinnen (Rechteck offen/Trapez) dürfen überstauen, `
+                + `obwohl sie als druckdicht/ohne Deckel markiert sind: ${geoeffnet.slice(0, 8).join(', ')}${geoeffnet.length > 8 ? ' …' : ''}`);
         }
         this.sections.push(text);
     }

@@ -17,6 +17,9 @@ import { loadTutorialDgm } from '../tutorial/loadTutorialDgm.js';
 import { WELCOME_STEP } from '../tutorial/tutorialSteps.js';
 import { TUTORIAL_INFO } from '../tutorial/tutorialInfo.js';
 import fs from 'fs';
+import { kostraBlockRain } from '../utils/RainModelService.js';
+
+const KOSTRA_BLOCK = kostraBlockRain({ rN: 120, dauer: 15, wiederkehr: 'RN_001A' });
 import path from 'path';
 
 const storeWith = (o = {}) => ({ areas: [], nodes: new Map(), edges: new Map(), ...o });
@@ -568,7 +571,7 @@ describe('Regen: Fuehrung durch das KOSTRA-Fenster', () => {
     expect(check(storeWith({ ui: {}, rain: { kostraData: null } }))).toBe(false);
     expect(check(storeWith({ ui: {}, rain: { kostraData: { 5: { RN_001A: 200 } } } }))).toBe(true);
     // ...oder wenn der Nutzer schon durchgeklickt und uebernommen hat
-    expect(check(storeWith({ ui: {}, rain: { method: 'kostra', intensity: 120 } }))).toBe(true);
+    expect(check(storeWith({ ui: {}, rain: { activeModelRain: KOSTRA_BLOCK } }))).toBe(true);
   });
 
   // Regressionsschutz: frueher stand hier ein eigenes Flag (ui.kostraResultReady),
@@ -583,11 +586,14 @@ describe('Regen: Fuehrung durch das KOSTRA-Fenster', () => {
     expect(stepById('ex-rain-abrufen').check(storeWith(nachAbruf))).toBe(true);
   });
 
-  it('uebernommen ist der Regen erst mit Methode UND Wert', () => {
+  // Frueher genuegte „Methode kostra + Wert" — ein Zustand, der nie regnete
+  // (doc/09, Befund 1). Jetzt zaehlt nur ein wirklich gesetzter KOSTRA-Blockregen.
+  it('uebernommen ist der Regen erst als gesetzter KOSTRA-Blockregen', () => {
     const check = stepById('ex-rain-uebernehmen').check;
-    expect(check(storeWith({ rain: { method: 'model', intensity: 120 } }))).toBe(false);
-    expect(check(storeWith({ rain: { method: 'kostra', intensity: 0 } }))).toBe(false);
-    expect(check(storeWith({ rain: { method: 'kostra', intensity: 120 } }))).toBe(true);
+    expect(check(storeWith({ rain: { method: 'kostra', intensity: 120 } }))).toBe(false);
+    expect(check(storeWith({ rain: { activeModelRain: { type: 'euler2', series: [{ time: 0, intensity: 12 }] } } }))).toBe(false);
+    expect(check(storeWith({ rain: { activeModelRain: { ...KOSTRA_BLOCK, series: [] } } }))).toBe(false);
+    expect(check(storeWith({ rain: { activeModelRain: KOSTRA_BLOCK } }))).toBe(true);
   });
 
   it('der Abschluss haengt NICHT am offenen Fenster', () => {

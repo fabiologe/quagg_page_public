@@ -41,7 +41,8 @@ export function leseFortschrittsSignale(store) {
         store.ui.showKostraModal,
         store.ui.showRainModal,
         // Regen und Berechnung
-        store.rain.method, store.rain.intensity,
+        store.rain.activeModelRain?.metadata?.source ?? null,
+        store.rain.activeModelRain?.series?.length ?? 0,
         !!store.rain.kostraData,
         // Nur die Kennung des Modellregens, nicht das Objekt: die Reihe hat je
         // nach Dauer und Intervall hunderte Punkte, und interessant ist allein,

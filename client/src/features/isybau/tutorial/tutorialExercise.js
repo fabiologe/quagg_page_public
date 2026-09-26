@@ -146,9 +146,11 @@ export const newAreaHasRunoff = (store, snap) => {
 export const simulationFinished = (store) =>
     ['success', 'error'].includes(store?.simulation?.status);
 
-/** Ein KOSTRA-Regen ist uebernommen (Methode umgestellt UND Wert gesetzt). */
+/** Ein KOSTRA-Regen ist uebernommen: der gesetzte Regen ist ein KOSTRA-Blockregen
+ *  (RainModelService.kostraBlockRain) — nicht bloss eine Zahl im Store. */
 export const kostraRainApplied = (store) =>
-    store?.rain?.method === 'kostra' && Number(store?.rain?.intensity) > 0;
+    store?.rain?.activeModelRain?.metadata?.source === 'kostra'
+    && (store.rain.activeModelRain.series?.length ?? 0) > 0;
 
 /**
  * Ein Modellregen ist gesetzt — also ein VERLAUF ueber die Zeit, nicht nur

@@ -18,6 +18,21 @@ export const calculateBlockRain = (intensity, duration, interval = 5) => {
 };
 
 /**
+ * Ein einzelner KOSTRA-Wert rN(D, T) als Bemessungsregen: Blockregen der Dauer D.
+ * Einziger Weg, auf dem „Übernehmen" im KOSTRA-Fenster Regen erzeugt — vorher
+ * setzte das Fenster nur eine Zahl, die nie in die Rechnung ging (doc/09, Befund 1).
+ * @param {{rN:number, dauer:number, wiederkehr:string, intervall?:number}} p
+ *   rN in l/(s·ha), dauer in min, wiederkehr als KOSTRA-Schlüssel (z. B. 'RN_001A')
+ * @returns {Object} Modellregen für store.setRainModel
+ */
+export const kostraBlockRain = ({ rN, dauer, wiederkehr, intervall = 5 }) => ({
+    id: `kostra-${dauer}-${wiederkehr}`,
+    type: 'block',
+    series: calculateBlockRain(rN, dauer, intervall),
+    metadata: { duration: dauer, interval: intervall, returnPeriod: wiederkehr, source: 'kostra', rN }
+});
+
+/**
  * Calculates Euler Type II Model Rain
  * @param {Object} kostraRow - KOSTRA data row for the selected return period (key: duration string '5', '10'..., value: intensity)
  * @param {number} duration - Total duration in minutes
@@ -92,27 +107,18 @@ export const calculateEulerType2 = (kostraRow, duration, interval = 5) => {
     // Sort blocks descending by height (or intensity, same thing)
     blocks.sort((a, b) => b.height - a.height);
 
+    // Anordnung nach DWA-A 118 (2006), Abschn. 5.2.2.1: Beginn des Spitzenintervalls
+    // beim 0,3-fachen der Dauer, auf ein Vielfaches von 5 min abgerundet; links davon
+    // die nächstniedrigeren Intervalle bis t = 0, rechts der Rest absteigend.
+    // (Früher abwechselnd links/rechts — Summe gleich, Verlauf nicht normgerecht, doc/09 Befund 3.)
     const resultSeries = new Array(steps).fill(null);
-    const peakIndex = Math.floor(steps * 0.3); // Peak at 30%
+    const peakStartMin = Math.floor((0.3 * duration) / 5) * 5;
+    const peakIndex = Math.min(steps - 1, Math.floor(peakStartMin / interval));
 
-    // Place peak
-    resultSeries[peakIndex] = blocks[0];
-
-    let left = peakIndex - 1;
-    let right = peakIndex + 1;
-
-    for (let i = 1; i < blocks.length; i++) {
-        if (left >= 0 && (i % 2 !== 0 || right >= steps)) {
-            resultSeries[left] = blocks[i];
-            left--;
-        } else if (right < steps) {
-            resultSeries[right] = blocks[i];
-            right++;
-        } else if (left >= 0) {
-            resultSeries[left] = blocks[i];
-            left--;
-        }
-    }
+    let b = 0;
+    resultSeries[peakIndex] = blocks[b++];
+    for (let i = peakIndex - 1; i >= 0; i--) resultSeries[i] = blocks[b++];
+    for (let i = peakIndex + 1; i < steps; i++) resultSeries[i] = blocks[b++];
 
     // Fill any nulls (shouldn't happen if logic is correct)
     return resultSeries.map((val, idx) => ({

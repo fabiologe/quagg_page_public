@@ -5,8 +5,12 @@ const MAGIC = 516114522;
 const SUB_VARS = 8, NODE_VARS = 6, LINK_VARS = 5, SYS_VARS = 15;
 
 /**
- * Baut eine minimale, strukturell gültige SWMM-.out-Datei:
- * Header → IDs → Properties → Var-Code-Blöcke → Ergebnis-Schritte → Trailer.
+ * Baut eine minimale SWMM-.out-Datei im Aufbau von solver/src/solver/output.c
+ * (output_open/output_end): Kopf → IDs → [InputStartPos] Eigenschaften mit Anzahl
+ * und Codes (Teilfläche 1, Knoten 3, Haltung 5) → Variablen-Codes → Startdatum +
+ * Ausgabeschritt → [OutputStartPos] Perioden → Schluss mit echten Positionen.
+ * (Die frühere Fassung ließ Eigenschaftsköpfe, Haltungseigenschaften und Startdatum
+ * weg — der Parser bestand den Test und scheiterte an echten Dateien, Befund 4b.)
  */
 function buildOutFile({ nodeSteps }) {
     const subIds = ['SC1'];
@@ -31,23 +35,27 @@ function buildOutFile({ nodeSteps }) {
     // IDs
     subIds.forEach(pushId); nodeIds.forEach(pushId); linkIds.forEach(pushId);
 
-    // Properties (Parser überspringt: Sub-Area + Node-Props 3×)
-    subIds.forEach(() => pushFloat(1.0));
-    nodeIds.forEach(() => { pushInt(0); pushFloat(100); pushFloat(3); });
+    const inputStart = offset;
+    // Eigenschaften: Teilfläche (1: Fläche), Knoten (3: Typ, Sohle, Tiefe), Haltung (5: Typ, Versatz ×2, Höhe, Länge)
+    pushInt(1); pushInt(0); subIds.forEach(() => pushFloat(1.0));
+    pushInt(3); pushInt(1); pushInt(2); pushInt(3); nodeIds.forEach(() => { pushInt(0); pushFloat(100); pushFloat(3); });
+    pushInt(5); pushInt(1); pushInt(4); pushInt(4); pushInt(3); pushInt(5); linkIds.forEach(() => { pushInt(0); pushFloat(0); pushFloat(0); pushFloat(0.3); pushFloat(50); });
 
-    // Var-Code-Blöcke (zusammenhängend, Sys-Block als Scan-Signatur [15][0..14])
+    // Ergebnisvariablen: Anzahl + Codes (enums.h)
     pushInt(SUB_VARS); for (let i = 0; i < SUB_VARS; i++) pushInt(i);
     pushInt(NODE_VARS); for (let i = 0; i < NODE_VARS; i++) pushInt(i);
     pushInt(LINK_VARS); for (let i = 0; i < LINK_VARS; i++) pushInt(i);
     pushInt(SYS_VARS); for (let i = 0; i < SYS_VARS; i++) pushInt(i);
+    pushDouble(45000); // Startdatum
+    pushInt(60);       // Ausgabeschritt (s)
 
     const resultsStart = offset;
 
     // Ergebnis-Schritte
     nodeSteps.forEach((step, s) => {
         pushDouble(45000 + s / 1440); // Julian Date, 1-min-Schritte
-        // Subcatchments (runoff an Index 3)
-        for (let v = 0; v < SUB_VARS; v++) pushFloat(v === 3 ? 0.5 : 0);
+        // Teilflächen: [Regen, Schnee, Verdunstung, Versickerung, Abfluss, …] — Abfluss = Code 4
+        for (let v = 0; v < SUB_VARS; v++) pushFloat(v === 4 ? 0.5 : v === 3 ? 9.9 : 0);
         // Nodes: [depth, head, vol, lat, totalInflow, flood]
         for (const nodeVals of step.nodes) {
             for (let v = 0; v < NODE_VARS; v++) pushFloat(nodeVals[v] ?? 0);
@@ -59,7 +67,7 @@ function buildOutFile({ nodeSteps }) {
     });
 
     // Trailer (6 × int32): [IDpos, InputPos, OutputPos, NumPeriods, ErrCode, Magic]
-    pushInt(0); pushInt(0); pushInt(resultsStart); pushInt(nodeSteps.length); pushInt(0); pushInt(MAGIC);
+    pushInt(28); pushInt(inputStart); pushInt(resultsStart); pushInt(nodeSteps.length); pushInt(0); pushInt(MAGIC);
 
     // Serialisieren
     const buf = new ArrayBuffer(offset);
@@ -92,6 +100,7 @@ describe('SwmmOutParser', () => {
         expect(step0.nodes.N1.inflow).toBeCloseTo(10, 3); // 0.01 CMS → 10 l/s
         expect(step0.edges.L1.q).toBeCloseTo(20, 3);      // |0.02| CMS → 20 l/s
         expect(step0.edges.L1.signedQ).toBeCloseTo(20, 3);
+        expect(step0.subcatchments.SC1.runoff).toBeCloseTo(0.5, 4); // Code 4, nicht die Versickerung (Code 3)
         expect(series[1].edges.L1.signedQ).toBeCloseTo(-10, 3);
 
         // Zeitachse relativ zum Start (1 min = 60 s)
@@ -104,14 +113,22 @@ describe('SwmmOutParser', () => {
         expect(() => new SwmmOutParser(junk).parse()).toThrow(/Magic/);
     });
 
-    it('wirft bei fehlender SysVars-Signatur statt Müll-Zeitreihen zu liefern', () => {
-        // Gültiger Header, aber danach nur Nullen — Struktur-Scan MUSS scheitern.
+    it('wirft bei unvollständiger Datei statt Müll-Zeitreihen zu liefern', () => {
+        // Gültiger Kopf, danach nur Nullen, kein Dateiende mit Kennzahl (abgebrochener Lauf).
         const buf = new ArrayBuffer(4096);
         const view = new DataView(buf);
         view.setInt32(0, MAGIC, true);
         view.setInt32(4, 52000, true);
         view.setInt32(8, 3, true);
         // 0 Objekte, keine Blöcke
-        expect(() => new SwmmOutParser(new Uint8Array(buf)).parse()).toThrow(/SysVars|Struktur/);
+        expect(() => new SwmmOutParser(new Uint8Array(buf)).parse()).toThrow(/Dateiende|Aufbau|Eigenschaft/);
+    });
+
+    it('wirft, wenn Aufbau und Dateilänge nicht zusammenpassen', () => {
+        const file = buildOutFile({ nodeSteps: [{ nodes: [[0.5], [0.2]] }] });
+        const kaputt = new Uint8Array(file.length + 4); // 4 Byte zu viel vor dem Schluss
+        kaputt.set(file.subarray(0, file.length - 24), 0);
+        kaputt.set(file.subarray(file.length - 24), file.length - 20);
+        expect(() => new SwmmOutParser(kaputt).parse()).toThrow(/Aufbau/);
     });
 });

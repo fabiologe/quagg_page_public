@@ -54,12 +54,7 @@
             <!-- Rain Status & Chart -->
             <div class="rain-status">
                 <div v-if="store.rain.activeModelRain" class="rain-info">
-                    <span class="rain-label"><strong>Modellregen:</strong> {{ store.rain.activeModelRain.type }}</span>
-                    <button class="rain-clear plain-btn" type="button" title="Regen entfernen"
-                            aria-label="Regen entfernen" @click="store.clearRain()">x</button>
-                </div>
-                <div v-else-if="store.rain.intensity > 0" class="rain-info">
-                    <span class="rain-label"><strong>KOSTRA:</strong> {{ store.rain.intensity }} l/(s·ha)</span>
+                    <span class="rain-label">{{ regenBeschriftung }}</span>
                     <button class="rain-clear plain-btn" type="button" title="Regen entfernen"
                             aria-label="Regen entfernen" @click="store.clearRain()">x</button>
                 </div>
@@ -115,6 +110,12 @@
             </div>
         </div>
 
+        <div class="control-group"
+             title="Wie SWMM rechnet, wenn Schacht und Haltungen voll laufen (Druckabfluss). Preissmann-Schlitz (SLOT): Voreinstellung. EXTRAN (SWMM-Standard) hält die Massenbilanz oft besser, erzeugte am Übungsnetz aber unrealistische Druckhöhen an flachen, druckdichten Knoten.">
+            <label>Überstauverfahren</label>
+            <PixelSelect v-model="store.berechnung.ueberstauverfahren" :options="UEBERSTAU_OPTIONEN" />
+        </div>
+
         <button @click="startSimulation" class="primary-btn" :disabled="loading" data-tutorial="run-simulation">
             <img v-if="!loading" class="ic" src="/saintv1d/icons/Computers-Devices-Electronics-Chipset--Streamline-Pixel.svg" />
             <img v-if="loading" class="ic spin" src="/saintv1d/icons/Interface-Essential-Synchronize-Arrows-Square-2--Streamline-Pixel.svg" />
@@ -128,6 +129,9 @@
             {{ error }}
             <button v-if="invalidElementId" class="error-link" @click="jumpToInvalidElement">
                 → Element öffnen
+            </button>
+            <button v-if="store.simulation.fehlerBericht" class="error-link" @click="store.ui.showDebugModal = true">
+                → SWMM-Bericht ansehen
             </button>
         </div>
         <div v-if="preSolveWarnings.length" class="warning-list">
@@ -170,6 +174,7 @@ import { computed, ref, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { buildResultsExport } from '../../utils/resultsExport.js';
 import { Bauwerkstyp, getEffectiveBauwerkstyp } from '../../utils/mappings.js';
+import PixelSelect from '../common/PixelSelect.vue';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 
@@ -185,6 +190,26 @@ const error = computed(() => store.simulation.error);
 const success = computed(() => store.simulation.status === 'success');
 const invalidElementId = computed(() => store.simulation.invalidElementId);
 const preSolveWarnings = computed(() => store.simulation.preSolveWarnings);
+
+const UEBERSTAU_OPTIONEN = [
+    { value: 'SLOT', label: 'Preissmann-Schlitz (SLOT)' },
+    { value: 'EXTRAN', label: 'EXTRAN (SWMM-Standard)' }
+];
+
+// „KOSTRA-Blockregen: 15 min · 1 a · 161,1 l/(s·ha)" bzw. „Modellregen: Euler Typ II · 60 min · 3 a"
+const REGENTYP = { block: 'Blockregen', euler2: 'Euler Typ II' };
+const regenBeschriftung = computed(() => {
+    const r = store.rain.activeModelRain;
+    if (!r) return '';
+    const m = r.metadata || {};
+    const T = m.returnPeriod ? `${parseInt(String(m.returnPeriod).replace(/\D/g, ''), 10)} a` : null;
+    const teile = [m.duration ? `${m.duration} min` : null, T];
+    if (m.source === 'kostra') {
+        teile.push(`${Number(m.rN).toLocaleString('de-DE', { maximumFractionDigits: 1 })} l/(s·ha)`);
+        return `KOSTRA-Blockregen: ${teile.filter(Boolean).join(' · ')}`;
+    }
+    return `Modellregen: ${[REGENTYP[r.type] || r.type, ...teile].filter(Boolean).join(' · ')}`;
+});
 
 const jumpToInvalidElement = () => {
     store.openPreprocessingFor(store.simulation.invalidElementId, store.simulation.invalidElementType);

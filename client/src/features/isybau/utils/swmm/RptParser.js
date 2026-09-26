@@ -155,6 +155,7 @@ export class RptParser {
             },
             infiltrationMethod: extractOption("Infiltration Method"),
             flowRoutingMethod: extractOption("Flow Routing Method"),
+            surchargeMethod: extractOption("Surcharge Method"),
             startDate: extractOption("Starting Date"),
             endDate: extractOption("Ending Date"),
             anteMoisture: extractOption("Antecedent Dry Days"),
@@ -543,10 +544,15 @@ export class RptParser {
         // All values are in hectare-m (first column). 1 ha·m = 10 000 m³.
         // The second column (10^6 ltr) is redundant: 1×10^6 ltr = 1 000 m³ → same volume, different unit.
         // Consumer code must multiply by 10 000 to get m³.
+        // Abschnitt = Überschrift bis einschließlich Zeile „Continuity Error (%)".
+        // NICHT am nächsten '\n  *' schneiden: das ist die ****-Unterstreichung
+        // direkt unter der Überschrift — der Abschnitt war dann leer, alle Werte
+        // 0 und die Qualitätsampel zeigte „100" bei 13,6 % Fehler (doc/09, Befund 0).
         const flowRoutingIdx = report.indexOf('Flow Routing Continuity');
-        const flowRoutingSection = flowRoutingIdx !== -1
-            ? report.slice(flowRoutingIdx, report.indexOf('\n  *', flowRoutingIdx + 1) >>> 0 || report.length)
-            : report;
+        const flowErrIdx = flowRoutingIdx !== -1 ? report.indexOf('Continuity Error (%)', flowRoutingIdx) : -1;
+        const flowErrZeilenende = flowErrIdx !== -1 ? report.indexOf('\n', flowErrIdx) : -1;
+        const flowRoutingSection = flowErrIdx === -1 ? ''
+            : report.slice(flowRoutingIdx, flowErrZeilenende === -1 ? undefined : flowErrZeilenende);
         const extractFlowStat = (regex) => {
             const match = flowRoutingSection.match(regex);
             return match ? parseFloat(match[1]) : 0;
@@ -564,7 +570,8 @@ export class RptParser {
         systemStats.flow.finalStoredVol    = extractFlowStat(/Final Stored Volume\s*\.+\s+([-\d\.]+)/);
         const flowErrMatch = flowRoutingSection.match(/Continuity Error \(%\)\s*\.+\s+([-\d\.]+)/);
         systemStats.flow.error = flowErrMatch ? parseFloat(flowErrMatch[1]) : 0;
-        systemStats.flow.inflowVol = systemStats.flow.externalInflow;
+        const f = systemStats.flow;
+        f.inflowVol = f.dryWeatherInflow + f.wetWeatherInflow + f.groundwaterInflow + f.rdiiInflow + f.externalInflow;
         // We'll trust the mass balance section if parsed, or regex these specific lines
 
 

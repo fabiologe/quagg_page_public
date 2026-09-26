@@ -91,6 +91,19 @@ async function runSimulation(data) {
             console.error("No report file found!");
         }
 
+        // Abbruch des Rechenkerns: Rückgabecode ≠ 0 oder ERROR-Zeilen im Bericht.
+        // Früher lief es trotzdem als Erfolg mit leerem Ergebnis weiter (doc/09, Befund 4).
+        const swmmFehler = reportData.split('\n').map(l => l.trim()).filter(l => /^ERROR \d+/.test(l));
+        if (res !== 0 || swmmFehler.length > 0) {
+            const was = swmmFehler.length ? swmmFehler.slice(0, 3).join(' · ') : `Fehlercode ${res}`;
+            self.postMessage({
+                command: 'ERROR',
+                message: `SWMM hat die Berechnung abgebrochen: ${was}`,
+                details: { report: reportData, input: inpString }
+            });
+            return;
+        }
+
         // Lookup maps of the input network (parsers/assembler expect plain objects)
         let nodesMap = {};
         let edgesMap = {};

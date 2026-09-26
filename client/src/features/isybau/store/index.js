@@ -100,13 +100,22 @@ export const useIsybauStore = defineStore('isybau-module', {
             importWarnings: [], // Sammelbericht übersprungener Elemente beim Import
             darkMode: typeof localStorage !== 'undefined' && localStorage.getItem('isybau-theme') === 'dark'
         },
+        // Einstellungen des Rechenkerns, die der Nutzer wählen darf (mit dem Projekt gespeichert)
+        berechnung: {
+            // Überstauverfahren: 'SLOT' (Preissmann-Schlitz, Voreinstellung) oder
+            // 'EXTRAN' (SWMM-Standard, Störungsgleichung). EXTRAN hielt am Übungsnetz
+            // die Bilanz, erzeugte aber 15–17 m Druckhöhe an flachen druckdichten
+            // Knoten — Messung in doc/04 Abschn. 5, doc/09 Befund 7.
+            ueberstauverfahren: 'SLOT'
+        },
         simulation: {
             status: 'idle', // idle, running, success, error
             results: null,
             error: null,
             invalidElementId: null, // Element, das eine Vorab-Validierung als Ursache identifiziert hat
             invalidElementType: null, // 'node' | 'edge'
-            preSolveWarnings: [] // nicht-fatale Vorab-Funde (z.B. WARN08), blockieren den Lauf nicht
+            preSolveWarnings: [], // nicht-fatale Vorab-Funde (z.B. WARN08), blockieren den Lauf nicht
+            fehlerBericht: null // { report, input } eines von SWMM abgebrochenen Laufs (Debug-Fenster)
         },
         // History
         history: {
@@ -136,6 +145,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             inspections: state.inspections,
             metadata:    state.metadata,
             rain:        state.rain,
+            berechnung:  state.berechnung,
         }),
 
         // Helper for Map Center (for KOSTRA ref)
@@ -183,8 +193,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.rain.activeModelRain = model; // Store full object for worker
         },
 
+        /** Rohtabelle eines KOSTRA-Abrufs ablegen. Setzt KEINEN Regen — das tut nur
+         *  setRainModel (früher schaltete ein Abruf den gesetzten Modellregen ab, doc/09 D2). */
         updateKostraData(data) {
-            this.rain.method = 'kostra';
             this.rain.kostraData = data;
         },
 
@@ -204,11 +215,6 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.rain.intensity = 0;
         },
 
-        setRainIntensity(val) {
-            this.rain.method = 'kostra'; // Implicitly switch to kostra if setting intensity directly? Or just set value.
-            // Actually KostraModal sets it based on selection
-            this.rain.intensity = val;
-        },
 
         /**
          * Loads parsed data from XML Parser or hydration logic.
@@ -563,6 +569,16 @@ export const useIsybauStore = defineStore('isybau-module', {
                 inspections: data.inspections || [],
             });
             if (data.rain) Object.assign(this.rain, data.rain);
+            // Ohne gespeicherte Wahl: Voreinstellung SLOT (so rechneten auch alte Projekte).
+            this.berechnung.ueberstauverfahren = data.berechnung?.ueberstauverfahren === 'EXTRAN' ? 'EXTRAN' : 'SLOT';
+            // Alte Projekte: ein „übernommener" KOSTRA-Einzelwert war nie ein Regen
+            // (rechnete trocken). Nicht still weiterschleppen, sondern sagen.
+            if (this.rain.method === 'kostra' && !this.rain.activeModelRain && this.rain.intensity > 0) {
+                this.melde(`Im Projekt stand ein KOSTRA-Einzelwert (${this.rain.intensity} l/(s·ha)), der nie gerechnet wurde. `
+                    + 'Bitte den Regen neu wählen (KOSTRA → Übernehmen oder Modellregen).', 'hinweis');
+            }
+            this.rain.method = 'model';
+            this.rain.intensity = 0;
         },
 
         /**
@@ -1098,6 +1114,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.simulation.invalidElementId = null;
             this.simulation.invalidElementType = null;
             this.simulation.preSolveWarnings = [];
+            this.simulation.fehlerBericht = null;
 
             // Vorab-Validierung gegen bekannte SWMM-Solver-Abbrüche (siehe
             // utils/preSolveValidation.js) — spart einen sinnlosen Solver-Start,
@@ -1132,10 +1149,14 @@ export const useIsybauStore = defineStore('isybau-module', {
                     areas: this.areaArray.map(a => a.toJSON ? a.toJSON() : a),
                     options: {
                         durationHours: this.rain.duration,
-                        rainMethod: this.rain.method,
-                        rainSeries: this.rain.method === 'model' && this.rain.activeModelRain
+                        // Einzige Regenquelle ist der gesetzte Modellregen (auch der
+                        // KOSTRA-Blockregen). Mit ihm geht sein Intervall mit — sonst
+                        // schrieb der Builder immer 5 min (doc/09, Befunde 1 und 2).
+                        rainSeries: this.rain.activeModelRain
                             ? JSON.parse(JSON.stringify(this.rain.activeModelRain.series))
                             : [],
+                        rainInterval: this.rain.activeModelRain?.metadata?.interval ?? 5,
+                        surchargeMethod: this.berechnung.ueberstauverfahren,
                         // Pass Kostra if needed, or handle in Worker
                         kostraData: this.rain.kostraData ? JSON.parse(JSON.stringify(this.rain.kostraData)) : null
                     }
@@ -1160,6 +1181,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             } catch (err) {
                 console.error(err);
                 this.simulation.error = err.message;
+                this.simulation.fehlerBericht = err.details || null;
                 this.simulation.status = 'error';
             }
         }

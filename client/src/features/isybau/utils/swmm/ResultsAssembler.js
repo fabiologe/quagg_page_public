@@ -159,8 +159,13 @@ export class ResultsAssembler {
         }
         const sysErr = systemStats.flow?.error;
         if (typeof sysErr === 'number' && Math.abs(sysErr) >= CONTINUITY_ERROR_WARN_PCT) {
+            // Keines der beiden Überstauverfahren gewinnt überall (doc/04 Abschn. 5:
+            // Übungsnetz besser mit SLOT, test.xml nur mit EXTRAN) — daher der Hinweis.
+            const verfahren = systemStats.analysisOptions?.surchargeMethod;
+            const anderes = verfahren === 'SLOT' ? 'EXTRAN' : verfahren === 'EXTRAN' ? 'Preissmann-Schlitz (SLOT)' : null;
             warnings.push(
-                `Systemweiter Kontinuitätsfehler der Abflussberechnung: ${sysErr.toFixed(1)} % — Modell prüfen (Zeitschritt, Instabilitäten).`
+                `Systemweiter Kontinuitätsfehler der Abflussberechnung: ${sysErr.toFixed(1)} % — Modell prüfen (Zeitschritt, Instabilitäten)`
+                + (anderes ? `; Gegenprobe mit Überstauverfahren ${anderes} (Seitenleiste).` : '.')
             );
         }
     }

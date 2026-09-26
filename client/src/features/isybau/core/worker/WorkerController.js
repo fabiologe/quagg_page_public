@@ -35,13 +35,16 @@ export class WorkerController {
     }
 
     handleMessage(e) {
-        const { command, results, message } = e.data;
+        const { command, results, message, details } = e.data;
 
         if (command === 'COMPLETE') {
             this.settleCurrentTask(task => task.resolve(results));
         } else if (command === 'ERROR') {
             console.error("Worker Error:", message);
-            this.failCurrentTask(new Error(message));
+            const err = new Error(message);
+            // Bericht/Eingabe eines abgebrochenen SWMM-Laufs (fürs Debug-Fenster)
+            if (details) err.details = details;
+            this.failCurrentTask(err);
         } else if (command === 'INIT_SUCCESS') {
         }
     }

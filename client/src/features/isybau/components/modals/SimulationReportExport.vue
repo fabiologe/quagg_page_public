@@ -542,6 +542,7 @@ async function exportPDF() {
         ['Einheiten',        stats.analysisOptions?.flowUnits            || '—'],
         ['Infiltration',     stats.analysisOptions?.infiltrationMethod   || '—'],
         ['Routing',          stats.analysisOptions?.flowRoutingMethod    || '—'],
+        ['Überstau',         stats.analysisOptions?.surchargeMethod      || '—'],
         ['Start',            stats.analysisOptions?.startDate            || '—'],
         ['Ende',             stats.analysisOptions?.endDate              || '—'],
         ['Zeitschritt',      stats.analysisOptions?.routingTimeStep      || '—'],

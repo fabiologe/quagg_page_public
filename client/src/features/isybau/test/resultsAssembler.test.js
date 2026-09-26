@@ -113,6 +113,16 @@ describe('ResultsAssembler', () => {
         expect(warnings.some(w => w.includes('Systemweiter'))).toBe(true);
     });
 
+    it('schlägt bei großem Bilanzfehler das jeweils andere Überstauverfahren vor', () => {
+        for (const [verfahren, vorschlag] of [['SLOT', 'EXTRAN'], ['EXTRAN', 'SLOT']]) {
+            const rpt = baseRpt();
+            rpt.systemStats.flow.error = 14.3;
+            rpt.systemStats.analysisOptions = { surchargeMethod: verfahren };
+            const { warnings } = ResultsAssembler.assemble({ rptResult: rpt, timeSeries: [], inputNodes: {}, inputEdges: {} });
+            expect(warnings.find(w => w.includes('Systemweiter'))).toMatch(new RegExp(`Gegenprobe mit Überstauverfahren.*${vorschlag}`));
+        }
+    });
+
     it('funktioniert ohne Zeitreihe (leere .out)', () => {
         const { nodes, timeSeries } = ResultsAssembler.assemble({
             rptResult: baseRpt(), timeSeries: [], inputNodes: inputNodes(), inputEdges: inputEdges()

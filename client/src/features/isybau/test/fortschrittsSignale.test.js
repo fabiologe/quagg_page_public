@@ -90,7 +90,7 @@ const VOLL = () => ({
         showPreprocessingModal: true,
         showKostraModal: true,
     },
-    rain: { method: 'kostra', intensity: 120, kostraData: { 5: { RN_001A: 200 } } },
+    rain: { kostraData: { 5: { RN_001A: 200 } }, activeModelRain: { id: 'k', type: 'block', series: [{}], metadata: { source: 'kostra' } } },
     simulation: { status: 'success', error: null, preSolveWarnings: [{ id: 'A' }] },
 });
 
