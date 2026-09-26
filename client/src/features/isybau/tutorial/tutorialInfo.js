@@ -55,7 +55,7 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Deshalb tauchen solche Flächen im SWMM-Modell als zwei Teilgebiete auf (z.B. FK001.1 und FK001.2) — das sind keine Doppelungen, sondern die beiden Hälften desselben Anschlusses.',
+        text: 'Deshalb tauchen solche Flächen im SWMM-Modell als zwei Teilgebiete auf (z. B. FK001.1 und FK001.1_2) — das sind keine Doppelungen, sondern die beiden Teile desselben Anschlusses (Voreinstellung 50/50, die Aufteilung ist einstellbar).',
       },
       { type: 'ref', text: 'DWA-A 118 — Hydraulische Bemessung von Entwässerungssystemen' },
     ],
@@ -70,7 +70,7 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Statt eines gemessenen Winkels verlangt ISYBAU nur eine von fünf Stufen: 1 = bis 1 % (eben, man sieht das Gefälle nicht), 2 = 1–4 % (leicht geneigt), 3 = 4–10 % (merkliche Böschung), 4 = 10–15 % (steil), 5 = über 15 % (sehr steil). Zur Orientierung: 10 % sind 10 m Höhenunterschied auf 100 m Weg, also etwa eine steile Hofeinfahrt. Das Tool rechnet aus der Stufe einen repräsentativen Prozentwert für SWMM.',
+        text: 'Statt eines gemessenen Winkels verlangt ISYBAU nur eine von fünf Stufen: 1 = bis 1 % (eben, man sieht das Gefälle nicht), 2 = 1–4 % (leicht geneigt), 3 = 4–10 % (merkliche Böschung), 4 = 10–14 % (steil), 5 = über 14 % (sehr steil). Zur Orientierung: 10 % sind 10 m Höhenunterschied auf 100 m Weg, also etwa eine steile Hofeinfahrt. Das Tool rechnet aus der Stufe einen repräsentativen Prozentwert für SWMM.',
       },
       {
         type: 'p',
@@ -138,11 +138,11 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Eine ISYBAU-XML kennt sechs Datenbereiche — Stammdaten, Zustandsdaten (Inspektion), hydraulische Daten, Grundstücksentwässerung, Referenzlisten und Metadaten. Der aktuelle Stand heißt ISYBAU XML-2013; mit der Fassung von 2018 kamen Felder hinzu und rutschten im Schema, weshalb ältere Dateien anders aufgebaut sein können.',
+        text: 'Eine ISYBAU-XML kennt sechs Datenbereiche — Stammdaten, Zustandsdaten (Inspektion), hydraulische Daten, Grundstücksentwässerung, Referenzlisten und Metadaten. Das Tool schreibt die Fassung 2017-07; ältere Fassungen (z. B. 2013) können anders aufgebaut sein.',
       },
       {
         type: 'p',
-        text: 'Die Stammdaten sind ein Knoten-Kanten-Modell: Schächte als Knoten, Haltungen als Kanten dazwischen, Flächen mit ihrem Anschlusspunkt. Genau diesen Teil liest das Tool ein — und genau diesen Teil schreibt „XML exportieren" wieder heraus. Inspektions- und Zustandsdaten einer eingelesenen Datei bleiben unangetastet.',
+        text: 'Die Stammdaten sind ein Knoten-Kanten-Modell: Schächte als Knoten, Haltungen als Kanten dazwischen, Flächen mit ihrem Anschlusspunkt. Genau diesen Teil liest das Tool ein — und genau diesen Teil schreibt „XML exportieren" wieder heraus. Inspektions- und Zustandsdaten werden gelesen, beim Export aber nicht mitgeschrieben.',
       },
       { type: 'ref', text: 'BFR Abwasser — Arbeitshilfen Abwasser, ISYBAU-XML' },
       { type: 'link', text: 'Format nachlesen: A-7 ISYBAU-Austauschformate', href: 'https://www.bfr-abwasser.de/html/A7ISYBAU_ATF_XML.html' },
@@ -183,11 +183,11 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'KOSTRA-DWD liefert für jede Koordinate in Deutschland die Regenhöhe hN je Dauerstufe D und Wiederkehrzeit T. Das Tool holt diese Werte direkt für die Netz-Koordinaten.',
+        text: 'KOSTRA-DWD liefert für jede Koordinate in Deutschland die Regenspende rN in l/(s·ha) je Dauerstufe D und Wiederkehrzeit T. Das Tool holt diese Werte direkt für die Netz-Koordinaten.',
       },
       {
         type: 'p',
-        text: 'Der Blockregen verteilt hN gleichmäßig über D — einfach, aber unrealistisch. Der Modellregen Euler Typ II legt die Spitzenintensität bei ca. 1/3 der Dauer und ist der Standard für Kanalnetz-Nachweise.',
+        text: 'Der Blockregen hält rN über die ganze Dauer D konstant — einfach, aber unrealistisch. Beim Modellregen Euler Typ II (DWA-A 118) beginnt das stärkste Intervall beim 0,3-Fachen der Dauer, auf 5 Minuten abgerundet; er ist der übliche Regen für Kanalnetz-Nachweise.',
       },
       {
         type: 'p',
@@ -196,7 +196,7 @@ export const TUTORIAL_INFO = {
       { type: 'formula', text: 'Q = psi · i · A' },
       {
         type: 'p',
-        text: 'psi = Spitzenabflussbeiwert (0..1), i = Regenspende in l/(s*ha), A = Fläche in ha. Das Tool rechnet diesen Handwert automatisch gegen das SWMM-Ergebnis.',
+        text: 'psi = Spitzenabflussbeiwert (0..1), i = Regenspende in l/(s*ha), A = Fläche in ha. Den Handwert kann man gegen den Spitzenabfluss im Ergebnisreiter „Teilflächen“ halten.',
       },
       { type: 'ref', text: 'DWA-A 118 — hydraulische Bemessung von Entwaesserungssystemen; KOSTRA-DWD 2020' },
     ],
@@ -243,7 +243,7 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Modellqualität: Der Kontinuitätsfehler (Massenbilanz) sollte unter ca. 5 % liegen. Deutlich höhere Werte deuten auf numerische Probleme hin — dann den Ergebnissen nicht blind vertrauen.',
+        text: 'Modellqualität: Der Kontinuitätsfehler (Massenbilanz) sollte unter 1 % liegen; bis 5 % ist das Ergebnis zu prüfen, darüber nicht belastbar. So stuft auch die Kachel „Modellgüte“ im Ergebnis ein — dazu Knoten mit 10 % Fehler und mehr.',
       },
       { type: 'ref', text: 'DWA-A 110; DWA-A 118 — Ueberstau- und Ueberflutungsnachweis' },
     ],
@@ -322,7 +322,7 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Systematisches Vorgehen: erst Datenvalidierung im Preprocessing, dann Handrechnung (Fließzeitverfahren) gegen das SWMM-Ergebnis halten, zuletzt den Debug-Report mit dem rohen .rpt lesen.',
+        text: 'Systematisches Vorgehen: erst Datenvalidierung im Preprocessing, dann eine Handrechnung (Fließzeitverfahren) gegen den Reiter „Teilflächen“ halten, zuletzt den Debug-Report mit dem rohen .rpt lesen.',
       },
       { type: 'ref', text: 'EPA SWMM 5 Users Manual — Troubleshooting' },
     ],

@@ -16,9 +16,13 @@
                     <th>Sohlhöhe (m)</th>
                     <th title="Max. Wassertiefe">Max. Wassertiefe (m)</th>
                     <th title="Max. Wasserspiegelhöhe (absolut, m ü. NHN)">Max. HGL (m ü. NHN)</th>
+                    <!-- nur mit Becken im Netz: sonst stünde hier überall „–" und t_max/Status
+                         rutschten aus dem Bild (Bildliste 13) -->
+                    <template v-if="hatSpeicher">
                     <th title="Nur Speicher/Becken: max. gespeichertes Volumen (SWMM Storage Volume Summary)">Max. Speichervol. (m³)</th>
                     <th title="Nur Speicher/Becken: nutzbares Volumen aus der Geometrie">Vmax (m³)</th>
                     <th title="Nur Speicher/Becken: max. Füllgrad (SWMM Max Pcnt Full)">Füllgrad (%)</th>
+                    </template>
                     <th title="Volumen, das über den Deckel austrat (SWMM Node Flooding)">Überstauvolumen (m³)</th>
                     <th title="Zeitpunkt des Maximums">t_max</th>
                     <th>Status</th>
@@ -36,9 +40,11 @@
                     <td>{{ fmtZahl(node.z, 2) }}</td>
                     <td>{{ fmtZahl(node.maxDepth, 2) }}</td>
                     <td>{{ fmtZahl(node.maxHGL, 2) }}</td>
+                    <template v-if="hatSpeicher">
                     <td>{{ nodeMaxVolume(node) != null ? fmtZahl(nodeMaxVolume(node), 0) : '–' }}</td>
                     <td>{{ nodeVmax(node) != null ? fmtZahl(nodeVmax(node), 0) : '–' }}</td>
                     <td>{{ nodeFillPct(node) != null ? fmtZahl(nodeFillPct(node), 1) : '–' }}</td>
+                    </template>
                     <!-- SWMM druckt 10^6 l mit 3 Stellen = 1 m³ Auflösung: keine Nachkommastellen -->
                     <td>{{ fmtZahl(node.floodingVolume || 0, 0) }}</td>
                      <td>{{ node.timeOfMaxDepth || '-' }}</td>
@@ -140,6 +146,8 @@ const storageEntry = (id) => props.systemStats?.storageSummary?.find(s => s.id =
 // Speichervolumen, Vmax und Füllgrad nur für Speicher (Becken): bei Schächten und
 // Auslässen war „Vmax" = Schachtzylinder und der Füllgrad bedeutungslos (P1.4).
 // Füllgrad aus SWMMs „Storage Volume Summary" (Max Pcnt Full), sonst Volumen / Vmax.
+const hatSpeicher = computed(() => (props.systemStats?.storageSummary?.length ?? 0) > 0
+    || [...(props.nodeResults?.values?.() ?? [])].some(r => r?.type === 'STORAGE'));
 const istSpeicher = (node) => !!node && (node.type === 'STORAGE' || !!storageEntry(node.id));
 
 const nodeMaxVolume = (node) => {

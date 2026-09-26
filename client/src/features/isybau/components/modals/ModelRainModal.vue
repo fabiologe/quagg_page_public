@@ -394,6 +394,19 @@ const apply = () => {
   flex-direction: column;
   gap: var(--isy-space-2);
 }
+/* Knopf VOR der Beschriftung: die allgemeine Formularregel gab jedem Eingabefeld die volle
+   Breite, der Radioknopf stand dadurch einzeln über seinem Text (Bildliste 08). */
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: var(--isy-space-2);
+  margin-bottom: 0;
+}
+.radio-group input[type="radio"] {
+  width: auto;
+  margin: 0;
+  flex: none;
+}
 
 .form-row {
   display: flex;

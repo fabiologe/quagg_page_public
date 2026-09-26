@@ -282,7 +282,8 @@ const applyResult = () => {
   background: var(--isy-pixel-content-bg);
   border-radius: var(--isy-radius-lg);
   width: 90%;
-  max-width: 500px;
+  /* alle neun Wiederkehrzeiten ohne Querscrollen (vorher 500 px: 50 a/100 a verdeckt) */
+  max-width: 760px;
   box-shadow: var(--isy-elev-3);
   display: flex;
   flex-direction: column;
@@ -519,4 +520,9 @@ const applyResult = () => {
   border-color: var(--isy-pixel-info-hover);
 }
 
+/* „10 min" nicht umbrechen */
+.kostra-table th,
+.kostra-table td {
+  white-space: nowrap;
+}
 </style>

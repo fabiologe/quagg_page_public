@@ -5,7 +5,15 @@ import { getRoughness } from './mappings.js';
  * @param {string} xmlString - The raw XML string.
  * @returns {Object} Parsed data structure (metadata, network, inspections, hydraulics).
  */
+// Hinweise des laufenden Imports (fehlende/ersetzte Werte). Der Parser war synchron und
+// still: fehlende Profilhöhe → 300 mm, fehlende Koordinaten → (0, 0), isolierte Knoten
+// ohne Sohle → 0 m. Jetzt wird jede Ersetzung gemeldet (P3), der Store zeigt sie im
+// Import-Sammelbericht.
+let hinweise = [];
+const hinweis = (text) => hinweise.push(text);
+
 export const parseIsybauXML = (xmlString) => {
+    hinweise = [];
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(xmlString, "application/xml");
 
@@ -18,13 +26,52 @@ export const parseIsybauXML = (xmlString) => {
     const network = parseNetwork(xmlDoc);
     const inspections = parseInspections(xmlDoc);
     const hydraulics = parseHydraulics(xmlDoc);
+    const ergaenzung = leseErgaenzung(xmlDoc);
+    if (ergaenzung) wendeErgaenzungAn(ergaenzung, network, hydraulics);
 
     return {
         metadata,
         network,
         inspections,
-        hydraulics
+        hydraulics,
+        warnings: hinweise
     };
+};
+
+/**
+ * SaintV-Ergänzung lesen: Felder, für die ISYBAU-XML kein Element hat (druckdicht,
+ * Aufteilung, konstanter Zufluss, Pumpensteuerung, Wasserverbrauch …). Der Export
+ * schreibt sie als XML-Kommentar ans Dateiende — schemakonform, für andere Programme
+ * unsichtbar (utils/xmlExporter.js, ERGAENZUNG_KENNUNG).
+ */
+export const ERGAENZUNG_KENNUNG = 'SaintV-1D-Ergaenzung';
+const leseErgaenzung = (doc) => {
+    for (const k of doc.childNodes) {
+        if (k.nodeType !== 8) continue; // Kommentar
+        const t = k.textContent.trim();
+        if (!t.startsWith(ERGAENZUNG_KENNUNG)) continue;
+        try {
+            return JSON.parse(t.slice(ERGAENZUNG_KENNUNG.length));
+        } catch (e) {
+            hinweis(`SaintV-Ergänzung in der Datei nicht lesbar (${e.message}) — Zusatzfelder (druckdicht, Aufteilung, Pumpensteuerung …) fehlen.`);
+        }
+    }
+    return null;
+};
+const wendeErgaenzungAn = (erg, network, hydraulics) => {
+    for (const [id, felder] of Object.entries(erg.knoten || {})) {
+        const n = network.nodes.get(id);
+        if (n) Object.assign(n, felder);
+    }
+    for (const [id, felder] of Object.entries(erg.haltungen || {})) {
+        const e = network.edges.get(id);
+        if (e) Object.assign(e, felder);
+    }
+    const flaechen = new Map((hydraulics?.areas || []).map(a => [a.id, a]));
+    for (const [id, felder] of Object.entries(erg.flaechen || {})) {
+        const a = flaechen.get(id);
+        if (a) Object.assign(a, felder);
+    }
 };
 
 const parseMetadata = (doc) => {
@@ -76,6 +123,14 @@ const parseNetwork = (doc) => {
 
     // Interpolate missing Z values
     interpolateZ(nodes, edges);
+
+    // Sohlhöhe 0 m unter einem Deckel weit darüber: steht so in der Datei (IGBWEST: SMP 0,
+    // DMP 215 m), ist aber fast sicher ein fehlender Wert. Nicht still ändern — melden.
+    const verdaechtig = [...nodes.values()].filter(n => n.z === 0 && Number(n.coverZ) > 20).map(n => n.id);
+    if (verdaechtig.length) {
+        hinweis(`${verdaechtig.length} Knoten mit Sohlhöhe 0 m, aber Deckelhöhe über 20 m — Sohle fehlt vermutlich in der Datei, bitte prüfen: `
+            + `${verdaechtig.slice(0, 8).join(', ')}${verdaechtig.length > 8 ? ' …' : ''}`);
+    }
 
     return { nodes, edges };
 };
@@ -163,11 +218,16 @@ const interpolateZ = (nodes, edges) => {
     }
 
     // Letzter Fallback: isolierte Knoten ohne bekannte Nachbarn → 0, damit
-    // nachgelagerte Berechnungen nicht auf null laufen.
+    // nachgelagerte Berechnungen nicht auf null laufen. Beides wird gemeldet.
+    const gemittelt = [], null0 = [];
     missingNodes.forEach(id => {
         const node = nodes.get(id);
-        if (node.z === null || node.z === undefined || isNaN(node.z)) node.z = 0;
+        if (node.z === null || node.z === undefined || isNaN(node.z)) { node.z = 0; null0.push(id); }
+        else gemittelt.push(id);
     });
+    const liste = (ids) => `${ids.slice(0, 8).join(', ')}${ids.length > 8 ? ' …' : ''}`;
+    if (gemittelt.length) hinweis(`${gemittelt.length} Knoten ohne Sohlhöhe — aus den Nachbarknoten gemittelt: ${liste(gemittelt)}`);
+    if (null0.length) hinweis(`${null0.length} Knoten ohne Sohlhöhe und ohne Nachbarn mit Sohlhöhe — 0 m gesetzt, bitte ergänzen: ${liste(null0)}`);
 };
 
 
@@ -264,6 +324,9 @@ const parseNode = (obj, id) => {
 
         const validX = !isNaN(px) ? px : 0;
         const validY = !isNaN(py) ? py : 0;
+        if ((isNaN(px) || isNaN(py)) && (attr === 'SMP' || i === 0)) {
+            hinweis(`Knoten ${id}: Koordinaten fehlen — bei (0, 0) gesetzt, bitte ergänzen.`);
+        }
         const validZ = !isNaN(pz) ? pz : null;
 
         if (attr === "SMP") {
@@ -429,11 +492,19 @@ const parseEdge = (obj, id) => {
     const bedWidthRaw = profil?.getElementsByTagName("Sohlbreite")[0]?.textContent;
     const bedWidth = bedWidthRaw != null ? parseFloat(bedWidthRaw) / 1000 : undefined;
 
+    const profilMass = (tagName) => {
+        const v = parseFloat(profil?.getElementsByTagName(tagName)[0]?.textContent);
+        return Number.isFinite(v) && v > 0 ? v / 1000 : 0;
+    };
+    if (!profilMass('Profilhoehe')) hinweis(`Haltung ${id}: Profilhöhe fehlt oder ist 0 — bitte ergänzen.`);
+    else if (profilartCode !== 0 && !profilMass('Profilbreite')) hinweis(`Haltung ${id}: Profilbreite fehlt — bitte ergänzen.`);
     const profile = {
         type: profilartCode,
         id: profil?.getElementsByTagName("Profilbezeichnung")[0]?.textContent || profil?.getElementsByTagName("ProfilID")[0]?.textContent || "",
-        height: parseFloat(profil?.getElementsByTagName("Profilhoehe")[0]?.textContent || 300) / 1000,
-        width: parseFloat(profil?.getElementsByTagName("Profilbreite")[0]?.textContent || 300) / 1000,
+        // Fehlende Maße NICHT erfinden (vorher 300 mm): 0 → die Vorab-Prüfung meldet das
+        // Profil (ERR_119), der Import-Bericht nennt die Haltung. Kreis: Breite = Höhe.
+        height: profilMass('Profilhoehe'),
+        width: profilMass('Profilbreite') || (profilartCode === 0 ? profilMass('Profilhoehe') : 0),
         ...(sgcShape ? { shape: sgcShape } : {}),
         ...(bedWidth !== undefined ? { bedWidth } : {}),
         ...(sideSlope !== undefined ? { sideSlope } : {}),
@@ -572,6 +643,8 @@ const parseHydraulics = (doc) => {
                         ref = f.getElementsByTagName("Referenz")[0]?.textContent;
                     }
 
+                    const groesse = parseNum(f.getElementsByTagName("Flaechengroesse")[0]?.textContent);
+                    if (!(groesse > 0)) hinweis(`Fläche ${id}: Flächengröße fehlt oder ist 0 — bitte ergänzen.`);
                     areas.push({
                         id,
                         points,

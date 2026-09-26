@@ -75,6 +75,8 @@
             <IsybauViewer
                 readonly
                 :netz-stand="store.netzStand"
+        :text-size="store.ui.textGroesse"
+        @update:text-size="store.setzeTextgroesse($event)"
                 :nodes="store.nodes"
                 :edges="store.edges"
                 :areas="store.areaArray"

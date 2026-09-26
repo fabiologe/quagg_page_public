@@ -631,7 +631,7 @@ import { useIsybauStore } from '../../store/index.js';
 // Die Ueberstau-Kopplung als reine Funktion — EINE Regel fuer Modell,
 // ElementInfo und dieses Fenster (siehe core/domain/Node.js).
 import { normalizeOverflowState } from '../../core/domain/Node.js';
-import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue';
+import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
@@ -706,6 +706,12 @@ const areas = ref([]);
  * ganzen Satz Zeilen aendert — Loeschen und Sammel-Anwenden.
  */
 const isDirty = ref(false);
+// Stand der Tabelle beim Öffnen — beim Schließen EINMAL verglichen (kein deep-Watcher
+// über 65 Felder je Tastendruck, siehe oben). Fängt auch getippte Änderungen (P4).
+// function-Deklarationen: der isOpen-Watcher (immediate) ruft sie schon im Setup auf.
+let anfangsStand = null;
+function tabellenStand() { return JSON.stringify([nodes.value, edges.value, areas.value]); }
+function hatAenderungen() { return isDirty.value || (anfangsStand !== null && tabellenStand() !== anfangsStand); }
 // Vorgemerkte Löschungen (werden erst mit "Übernehmen" wirksam)
 const deletedIds = ref({ nodes: [], edges: [] });
 
@@ -1317,6 +1323,7 @@ watch(() => props.isOpen, (newVal) => {
         store.ui.preprocessingFocusType = null;
         focusElement(focusId, focusType);
     }
+    anfangsStand = tabellenStand();
   }
 }, { immediate: true });
 
@@ -1513,7 +1520,18 @@ const exportXlsx = () => {
 // dort trägt der angezeigte Typ den Bauwerkstyp (syncBauwerkstypFromType).
 const typBleibtBeimUebernehmen = (t) => typeof t === 'string' && !['Bauwerk', 'Schacht', 'Standard'].includes(t);
 
-const close = () => { emit('close'); };
+
+// Escape (IsybauModals.vue) schließt über denselben Weg wie der ×-Knopf
+const aufSchliessenAnfrage = () => close();
+onMounted(() => window.addEventListener('isy-datenmaske-schliessen', aufSchliessenAnfrage));
+onBeforeUnmount(() => window.removeEventListener('isy-datenmaske-schliessen', aufSchliessenAnfrage));
+
+const close = () => {
+    // ×-Knopf und Escape: vorgemerkte Änderungen nicht still verwerfen (P4)
+    if (hatAenderungen()
+        && !window.confirm('Die Änderungen in „Daten bearbeiten" sind noch nicht übernommen. Verwerfen?')) return;
+    emit('close');
+};
 const apply = () => {
     // Normalization back to store
     emit('apply', {
@@ -1536,6 +1554,22 @@ const apply = () => {
 .modal-header { padding: var(--isy-space-3) var(--isy-space-4); background: var(--isy-pixel-bg); cursor: var(--isy-cursor-pan); }
 .header-left { display: flex; gap: var(--isy-space-4); align-items: center; }
 .bulk-btns { display: flex; gap: var(--isy-space-2); }
+/* Sammelleiste: war ungestaltet (Zähler und Knöpfe nackt übereinander, Bildliste 05) */
+.bulk-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--isy-space-4);
+  margin: var(--isy-space-2) 0;
+  padding: var(--isy-space-2) var(--isy-space-3);
+  background: var(--isy-pixel-bg-alt);
+  border: 1px solid var(--isy-pixel-border);
+  border-radius: var(--isy-radius-sm);
+}
+.bulk-count {
+  font-family: var(--isy-pixel-font);
+  font-size: var(--isy-fs-pixel-md);
+  color: var(--isy-pixel-text);
+}
 .bulk-btn-link { background: none; border: none; font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-border); cursor: var(--isy-cursor-hand); text-decoration: underline; padding: 0 var(--isy-space-1); }
 .bulk-btn-link.text-red { color: var(--isy-pixel-danger); }
 .ic-del { width: 13px; height: 13px; image-rendering: pixelated; filter: invert(35%) sepia(90%) saturate(700%) hue-rotate(330deg) brightness(90%); vertical-align: middle; }

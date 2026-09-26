@@ -22,6 +22,11 @@
 import { ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from './mappings.js';
 export const zahl = (hex) => parseInt(hex.slice(1), 16);
 
+/** Textgröße der 2D-Karten (Regler-Wert). 2 ≈ 11 px Zeilenhöhe der Schachtnamen (im Browser
+ *  gemessen: 1,25 → 8 px); vorher 0,5 ≈ 4 px — für Abbildungen musste der Regler jedes Mal
+ *  hochgezogen werden. */
+export const TEXTGROESSE_STANDARD = 2;
+
 /**
  * Auslastungsklassen einer Haltung — Auslastung = Q/Qvoll (maximaler Abfluss durch
  * Vollfüllungsabfluss), wie in den Arbeitshilfen Abwasser und im PDF-Bericht. Vorher

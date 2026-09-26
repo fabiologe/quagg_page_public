@@ -6,6 +6,7 @@ import { validateNetwork } from '../utils/preSolveValidation.js';
 import { detectCRS } from '../utils/KostraService.js';
 import { clipNewArea, snapPoint, hasSelfIntersection } from '../utils/areaClipping.js';
 import { syncBauwerkstypFromType } from '../utils/mappings.js';
+import { TEXTGROESSE_STANDARD } from '../utils/typPalette.js';
 import { useElementFocus } from '../composables/useElementFocus.js';
 
 // Feste Snap-Toleranz in Weltmetern (bewusst NICHT zoomabhängig in Pixeln —
@@ -69,6 +70,13 @@ function zuweisen(ziel, felder, abgelehnt = []) {
 }
 
 let workerControllerInstance = null;
+
+function leseTextgroesse() {
+    try {
+        const v = Number(localStorage.getItem('isybau-textgroesse'));
+        return Number.isFinite(v) && v >= 0.1 && v <= 3 ? v : TEXTGROESSE_STANDARD;
+    } catch { return TEXTGROESSE_STANDARD; }
+}
 
 export const useIsybauStore = defineStore('isybau-module', {
     state: () => ({
@@ -164,7 +172,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
             elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal
             importWarnings: [], // Sammelbericht übersprungener Elemente beim Import
-            darkMode: typeof localStorage !== 'undefined' && localStorage.getItem('isybau-theme') === 'dark'
+            darkMode: typeof localStorage !== 'undefined' && localStorage.getItem('isybau-theme') === 'dark',
+            // Textgröße beider 2D-Karten (Regler), im Browser gemerkt
+            textGroesse: leseTextgroesse()
         },
         // Einstellungen des Rechenkerns, die der Nutzer wählen darf (mit dem Projekt gespeichert)
         berechnung: {
@@ -294,7 +304,7 @@ export const useIsybauStore = defineStore('isybau-module', {
 
             // Sammelbericht: übersprungene Elemente werden dem User gemeldet
             // statt nur in der Konsole zu verschwinden.
-            const importWarnings = [];
+            const importWarnings = [...(parsedData.warnings || [])]; // Hinweise des Parsers (ersetzte/fehlende Werte)
 
             if (parsedData.metadata) {
                 this.metadata = parsedData.metadata;
@@ -432,7 +442,13 @@ export const useIsybauStore = defineStore('isybau-module', {
             for (const c of rawCatchments) {
                 if (!c.schmutzfracht) continue;
                 const match = this.areas.find(a => a.id === c.id);
-                if (match) match.schmutzfracht = c.schmutzfracht;
+                // zusammenführen: Werte aus der SaintV-Ergänzung (Wasserverbrauch, Spitzenfaktor)
+                // bleiben, ISYBAU-Gebietswerte füllen die Lücken (vorher: überschrieben)
+                if (match) {
+                    const zusammen = { ...c.schmutzfracht };
+                    for (const [k, v] of Object.entries(match.schmutzfracht || {})) if (v != null) zusammen[k] = v;
+                    match.schmutzfracht = zusammen;
+                }
             }
 
             console.log(`IsybauStore: Loaded ${this.nodes.size} nodes, ${this.edges.size} edges, ${this.areas.length} areas.`);
@@ -584,6 +600,12 @@ export const useIsybauStore = defineStore('isybau-module', {
          */
         flashFocus(id, type = 'node') {
             useElementFocus().focusElement({ type, id });
+        },
+
+        /** Textgröße beider 2D-Karten setzen (Regler) — im Browser gemerkt. */
+        setzeTextgroesse(v) {
+            this.ui.textGroesse = v;
+            try { localStorage.setItem('isybau-textgroesse', String(v)); } catch { /* Privatmodus */ }
         },
 
         /** Dark/Light umschalten (Sidebar-Button unten links) — persistiert in localStorage. */

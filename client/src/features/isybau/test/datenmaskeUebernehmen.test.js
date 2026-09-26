@@ -5,7 +5,7 @@
  * bekamen den Anzeige-Typ („Bauwerk"/„Standard") und verloren damit Auslass- bzw.
  * Verteiler-Eigenschaft. Weg wie in der App: Maske → Knopf → store.updateNetworkData.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { setActivePinia, createPinia } from 'pinia';
 import { nextTick } from 'vue';
@@ -54,5 +54,40 @@ describe('Datenmaske „Übernehmen" ohne Änderung', () => {
         expect(store.nodes.get('PW').bauwerkstyp).toBe(6);
         expect(['AP', 'DV', 'PW'].map(id => classifyPreview(store.nodes.get(id)))).toEqual(vorher.sections);
         expect(store.nodes.get('AP')).not.toHaveProperty('_typAnzeige');
+    });
+});
+
+// P4: Escape und × verwarfen getippte Änderungen ohne Rückfrage (die Merkmarke kannte
+// nur Löschen und Sammelbearbeitung).
+describe('Datenmaske schließen', () => {
+    let store;
+    beforeEach(() => { setActivePinia(createPinia()); store = useIsybauStore(); });
+    const bauen = () => {
+        store.loadParsedData({ network: { nodes: new Map([['S1', { id: 'S1', type: 'Schacht', x: 0, y: 0, z: 100, coverZ: 102 }]]), edges: new Map() }, hydraulics: { areas: [] } });
+        return mount(PreprocessingModal, {
+            props: { isOpen: true, network: { nodes: store.nodes, edges: store.edges }, hydraulics: { areas: store.areas } },
+            global: { stubs: { Teleport: true, DraggableModal: { template: '<div><slot/></div>' } } },
+        });
+    };
+    it('ohne Änderung: schließt ohne Rückfrage', async () => {
+        const frage = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        const w = bauen(); await nextTick();
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
+        expect(frage).not.toHaveBeenCalled();
+        expect(w.emitted('close')).toBeTruthy();
+        w.unmount(); frage.mockRestore();
+    });
+    it('getippte Änderung: Rückfrage; „Nein" lässt offen, „Ja" schließt', async () => {
+        const frage = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        const w = bauen(); await nextTick();
+        const feld = w.findAll('input[type="number"]')[0];
+        await feld.setValue('99.5');
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
+        expect(frage).toHaveBeenCalledOnce();
+        expect(w.emitted('close')).toBeUndefined();
+        frage.mockReturnValue(true);
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
+        expect(w.emitted('close')).toBeTruthy();
+        w.unmount(); frage.mockRestore();
     });
 });

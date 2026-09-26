@@ -160,13 +160,29 @@ describe('buildIsybauXML → parseIsybauXML (Roundtrip)', () => {
 });
 
 describe('buildIsybauXML Sonderfälle', () => {
-    it('Divider wird als Schacht exportiert und erzeugt eine Warnung', () => {
+    it('Divider: im ISYBAU-Teil ein Schacht (Warnung), SaintV liest ihn als Verteiler zurück', () => {
         const div = new Node({ id: 'DIV1', x: 0, y: 0, z: 10, type: 'Schacht' }).toJSON();
         div.type = 'Divider';
+        div.dividerType = 'CUTOFF';
+        div.dividerCutoffFlow = 12;
         const { xml, warnings } = buildIsybauXML({ nodes: [div], edges: [], areas: [] });
         expect(warnings.some(w => w.includes('DIV1'))).toBe(true);
+        expect(xml).toContain('<Schacht>'); // andere Programme sehen einen Schacht
         const parsed = parseIsybauXML(xml);
-        expect(parsed.network.nodes.get('DIV1').type).toBe('Schacht');
+        const n = parsed.network.nodes.get('DIV1');
+        expect([n.type, n.dividerType, n.dividerCutoffFlow]).toEqual(['Divider', 'CUTOFF', 12]);
+    });
+
+    it('SaintV-Ergänzung ist ein gültiger XML-Kommentar, auch mit „--" und < > in Werten', () => {
+        const n = new Node({ id: 'S1', x: 0, y: 0, z: 10 }).toJSON();
+        n.canOverflow = false;
+        const a = new Area({ id: 'F1', points: [], size: 1, nodeId: 'S1', schmutzfracht: { kommentar: 'a--b <x>', wasserverbrauch: 120 } }).toJSON();
+        const { xml } = buildIsybauXML({ nodes: [n], edges: [], areas: [a] });
+        const kommentar = xml.slice(xml.indexOf('<!--SaintV'));
+        expect(kommentar.slice(4, -4)).not.toContain('--');
+        const p = parseIsybauXML(xml);
+        expect(p.network.nodes.get('S1').canOverflow).toBe(false);
+        expect(p.hydraulics.catchments[0].schmutzfracht.kommentar).toBe('a--b <x>');
     });
 
     it('Fläche ohne Geometrie wird als Einzugsgebiet exportiert (Catchment-Fallback)', () => {

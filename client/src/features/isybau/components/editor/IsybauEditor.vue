@@ -10,7 +10,9 @@
             'cursor-split': store.editor.mode === 'splitEdge'
         }"
         :nodes="store.nodes"
-        :netz-stand="store.netzStand" 
+        :netz-stand="store.netzStand"
+        :text-size="store.ui.textGroesse"
+        @update:text-size="store.setzeTextgroesse($event)" 
         :edges="store.edges"
         :areas="store.areaArray" 
         :node-array="store.nodeArray"

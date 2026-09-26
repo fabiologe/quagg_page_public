@@ -388,7 +388,7 @@
 <script setup>
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor } from '../../utils/mappings.js';
-import { haltungsZustand, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';
+import { TEXTGROESSE_STANDARD, haltungsZustand, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -419,6 +419,8 @@ const contourCanvasHost = ref(null);
 const contourGpu = useContourGpuLayer();
 
 const props = defineProps({
+  // gemeinsame Textgröße beider Karten (v-model:text-size), null = lokal
+  textSize: { type: Number, default: null },
   // store.netzStand: neues Netz geladen → verschobene Beschriftungen gehören zum alten
   netzStand: { type: Number, default: 0 },
   nodes: {
@@ -486,7 +488,7 @@ const props = defineProps({
 
 
 
-const emit = defineEmits(['select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details', 'delete-elements', 'update-area-point', 'insert-area-point', 'remove-area-point']);
+const emit = defineEmits(['update:textSize', 'select-node', 'select-edge', 'select-area', 'update-element', 'save-element', 'map-click', 'map-dblclick', 'show-details', 'delete-elements', 'update-area-point', 'insert-area-point', 'remove-area-point']);
 
 const container = ref(null); // Reference to root div
 
@@ -741,8 +743,14 @@ watch(() => props.interactionMode, (m) => {
 // Mode State
 const mode = ref('pan'); // 'pan' | 'select'
 
-// Size State
-const textSizeMultiplier = ref(0.5);
+// Size State — Textgröße gemeinsam für Editor- und Ergebniskarte (P4): kommt als v-model:textSize
+// von außen (store.ui.textGroesse); ohne Bindung ein lokaler Wert. Vorher je Karte ein eigener
+// Regler mit Voreinstellung 0,5 (≈ 4 px Schrift).
+const lokaleTextgroesse = ref(TEXTGROESSE_STANDARD);
+const textSizeMultiplier = computed({
+  get: () => props.textSize ?? lokaleTextgroesse.value,
+  set: (v) => { lokaleTextgroesse.value = v; emit('update:textSize', v); },
+});
 
 // Selection State
 const selectedElement = ref(null);

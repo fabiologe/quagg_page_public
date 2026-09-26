@@ -3,6 +3,21 @@ import { LINK_BAUWERKSTYPEN, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_
 import { zahl, AUSLASTUNG_STUFEN, haltungsZustand, KNOTEN_ZUSTAND, UEBERSTAU_HELL, knotenUeberstaut, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
 
 const NETWORK_GROUP = '__network__';
+// Anteil der Bildhöhe (Sprite ohne Größenabnahme): 0,02 ≈ 20 px bei 1000 px Höhe (0,03 überlappte im Browser)
+export const UEBERSTAU_MARKER_GROESSE = 0.02;
+
+/** Kreis mit dunklem Rand als Textur; ohne Canvas (Tests in jsdom) ein schlichtes Quadrat. */
+function kreisTextur(farbe) {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext?.('2d');
+  if (!ctx) return null;
+  ctx.beginPath(); ctx.arc(32, 32, 27, 0, Math.PI * 2);
+  ctx.fillStyle = farbe; ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = '#2a0a14'; ctx.stroke();
+  return new THREE.CanvasTexture(c);
+}
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function getEdgeZ(val, fallback) {
@@ -224,6 +239,9 @@ export function useSceneBuilder() {
     selected   : new THREE.MeshStandardMaterial({ color: zahl(AUSWAHL), emissive: zahl(AUSWAHL_GLUT), roughness: 0.3 }),
     // Result overlay materials
     resOverflow : new THREE.MeshStandardMaterial({ color: zahl(UEBERSTAU_HELL), emissive: 0x5a1a30, roughness: 0.4 }), // helles Weinrot: Szene folgt nicht dem Theme
+    // Überstau-Marker in fester Bildschirmgröße (sizeAttenuation: false): der eingefärbte
+    // Schachtkörper allein ist 0,3–0,6 m groß und in der Netzübersicht kaum zu sehen (P4).
+    ueberstauMarker: new THREE.SpriteMaterial({ map: kreisTextur(UEBERSTAU_HELL), color: 0xffffff, sizeAttenuation: false, depthTest: false, transparent: true }),
     resSurcharge: new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.druckabfluss), emissive: 0x4a2000, roughness: 0.4 }),
     // Je Auslastungsstufe (Q/Qvoll, typPalette.AUSLASTUNG_STUFEN) ein Material: util0 … util4
     ...Object.fromEntries(AUSLASTUNG_STUFEN.map((st, i) => [`util${i}`,
@@ -328,7 +346,7 @@ export function useSceneBuilder() {
     const doWater = showResults && showWaterLevel;
     if (showNodes) _buildNodes(nodes, edges, bounds, zScale, networkGroup, nodeResults, edgeResults, showResults, doWater);
     if (showEdges) _buildEdges(edges, nodes, bounds, zScale, networkGroup, edgeResults, showResults, doWater);
-    if (showAreas) _buildAreas(areas, bounds, networkGroup);
+    if (showAreas) _buildAreas(areas, bounds, networkGroup, nodes, zScale);
   }
 
   function _buildNodes(nodes, edges, b, zScale, group, nodeResults, edgeResults, showResults, doWater) {
@@ -437,6 +455,12 @@ export function useSceneBuilder() {
       // überstauen (SwmmBuilder.addJunctions) — vorher schloss status !== 2 sie ganz aus.
       if (showResults && knotenUeberstaut(nodeResults.get(node.id))) {
         mesh.material = mats.resOverflow;
+        const marker = new THREE.Sprite(mats.ueberstauMarker);
+        marker.scale.set(UEBERSTAU_MARKER_GROESSE, UEBERSTAU_MARKER_GROESSE, 1);
+        marker.position.set(x, topY + 0.5 * zScale, nz);
+        marker.renderOrder = 10; // über Gelände und Rohren
+        marker.userData.ueberstauMarker = node.id;
+        group.add(marker); // nicht klickbar registrieren: die Auswahl tauscht Mesh-Materialien
       } else if (showResults && node.status !== 2) {
         if (LINK_BAUWERKSTYPEN.has(bwType)) {
           // Pumpe/Wehr/Drossel/Schieber haben selbst kein SWMM-Ergebnis — das
@@ -583,7 +607,24 @@ export function useSceneBuilder() {
     }
   }
 
-  function _buildAreas(areas, b, group) {
+  function _buildAreas(areas, b, group, nodes = new Map(), zScale = 1) {
+    // Höhe der Fläche = mittlere Deckelhöhe ihrer Anschlussknoten (dort fällt der Regen),
+    // sonst mittlerer Deckel des Netzes. Vorher fest 0,2 über dem tiefsten Punkt — mit
+    // Gelände lagen die Flächen als Ebene weit darunter (Bildliste, Bild 16).
+    const deckel = (n) => {
+      if (!n) return null;
+      const c = Number(n.coverZ);
+      if (Number.isFinite(c) && c > 0) return c;
+      const z = Number(n.z), d = Number(n.depth);
+      return Number.isFinite(z) && Number.isFinite(d) ? z + d : null;
+    };
+    const alle = [...(nodes.values?.() ?? [])].map(deckel).filter(v => v != null);
+    const netzMittel = alle.length ? alle.reduce((a, v) => a + v, 0) / alle.length : null;
+    const flaechenHoehe = (area) => {
+      const h = [area.nodeId, area.nodeId2].map(id => deckel(nodes.get?.(id))).filter(v => v != null);
+      const m = h.length ? h.reduce((a, v) => a + v, 0) / h.length : netzMittel;
+      return m == null ? 0.2 : (m - b.minZ) * zScale + 0.2;
+    };
     let idx = 0;
     for (const area of areas) {
       if (!area.points || area.points.length < 3) continue;
@@ -597,7 +638,7 @@ export function useSceneBuilder() {
       const mesh = new THREE.Mesh(geo, mats.area);
       // Höhen leicht staffeln + feste renderOrder: verhindert instabile
       // Transparenz-Sortierung (Flackern) zwischen überlappenden Flächen.
-      mesh.position.y = 0.2 + idx * 0.02;
+      mesh.position.y = flaechenHoehe(area) + idx * 0.02;
       mesh.renderOrder = 1 + idx;
       idx++;
       register(mesh, area, group);

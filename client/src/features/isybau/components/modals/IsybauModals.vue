@@ -153,8 +153,10 @@ const aufEscape = (e) => {
   if (document.querySelector('.isy-select-liste')) return;
   const flag = obersteOffene(store.ui);
   if (!flag) return;
-  store.ui[flag] = false;
   e.stopImmediatePropagation();
+  // Datenmaske: schließt selbst (fragt bei ungespeicherten Änderungen nach, P4)
+  if (flag === 'showPreprocessingModal') { window.dispatchEvent(new Event('isy-datenmaske-schliessen')); return; }
+  store.ui[flag] = false;
 };
 
 onMounted(() => window.addEventListener('keydown', aufEscape, true));

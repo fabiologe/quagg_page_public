@@ -73,3 +73,18 @@ describe('parseIsybauXML (Synthetik: z=0 bleibt erhalten)', () => {
         expect(Number.isNaN(n.z)).toBe(false);
     });
 });
+
+// P3: stille Ersatzwerte des Parsers werden gemeldet (Import-Sammelbericht)
+describe('Parser-Hinweise', () => {
+    it('IGBWEST: Sohle 0 m unter hohem Deckel und fehlende Profilhöhe werden genannt, nichts erfunden', () => {
+        const p = parseIsybauXML(readFileSync(join(here, '9161_IGBWEST_Hydraulik.xml'), 'latin1'));
+        const text = p.warnings.join('\n');
+        expect(text).toMatch(/Sohlhöhe 0 m, aber Deckelhöhe über 20 m/);
+        expect(text).toMatch(/Haltung FK001: Profilhöhe fehlt/);
+        expect(p.network.edges.get('FK001').profile.height).toBe(0); // vorher still 0,3 m
+    });
+    it('saubere Datei: keine Hinweise', () => {
+        const p = parseIsybauXML(testXml);
+        expect(p.warnings).toEqual([]);
+    });
+});

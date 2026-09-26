@@ -1,4 +1,19 @@
-import { getEffectiveBauwerkstyp } from './mappings.js';
+import { getEffectiveBauwerkstyp, getRoughness } from './mappings.js';
+import { Node } from '../core/domain/Node.js';
+
+/** Kennung des Ergänzungs-Kommentars — muss zu utils/xmlParser.js ERGAENZUNG_KENNUNG passen. */
+const ERGAENZUNG_KENNUNG = 'SaintV-1D-Ergaenzung';
+
+// Felder ohne ISYBAU-Element. Gemessen an der Rundreise Import → Bearbeiten → Export →
+// Import (test/xmlExporter.test.js): ohne Ergänzung wurden druckdicht zu offen,
+// Aufteilung 30 % zu 50 %, konstanter Zufluss und Pumpensteuerung zu 0, und die
+// Schmutzfracht verlor Wasserverbrauch/Spitzenfaktor (kein Trockenwetterzufluss mehr).
+const KNOTEN_ERGAENZUNG = ['canOverflow', 'isManhole', 'constantInflow', 'constantOutflow', 'outflowType',
+    'onDepth', 'offDepth', 'pumpRate', 'pumpHead', 'dischargeCoeff', 'initialOpening', 'initDepth',
+    'storageShape', 'evapFactor', 'weirType', 'orificeType', 'gated', 'lossCoeff', 'storageCurve',
+    'dividerType', 'dividerLinkId', 'dividerCutoffFlow', 'weirHeight', 'wehrWidth', 'maxOutflow',
+    'gateWidth', 'volume', 'maxDepth', 'is_sink'];
+const FLAECHEN_ERGAENZUNG = ['splitRatio', 'nodeId', 'nodeId2', 'schmutzfracht'];
 
 /**
  * Serialisiert den Store-Zustand (Knoten/Haltungen/Flächen) zurück in eine
@@ -30,11 +45,13 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
     // Koordinaten/Höhen mit 3 Nachkommastellen, sonstige Zahlen getrimmt.
     const coord = (v) => Number(v).toFixed(3);
     const num = (v, dec = 3) => {
+        if (v === null || v === undefined || v === '') return null; // Number(null) = 0 — fehlt bleibt fehlt
         const n = Number(v);
         if (!Number.isFinite(n)) return null;
         return String(parseFloat(n.toFixed(dec)));
     };
-    const fin = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+    // null/leer bleibt „fehlt" — Number(null) ist 0, fehlende Sohlhöhen kamen sonst als 0 m zurück
+    const fin = (v) => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
     const pos = (v) => { const n = fin(v); return n !== null && n > 0 ? n : null; };
 
     // Tag nur schreiben, wenn ein Wert existiert (Parser behandelt fehlende Tags als null)
@@ -110,7 +127,7 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
         const typeStr = String(n.type);
         if (btyp === null && typeStr === 'Auslaufbauwerk') btyp = 5;
         if (typeStr === 'Divider') {
-            warnings.push(`Knoten ${n.id}: Flow-Divider hat kein ISYBAU-Äquivalent — als Schacht exportiert (Divider-Parameter gehen verloren).`);
+            warnings.push(`Knoten ${n.id}: Verteiler hat kein ISYBAU-Äquivalent — für andere Programme als Schacht exportiert; die Verteiler-Parameter liest nur SaintV-1D zurück (Ergänzung am Dateiende).`);
         }
 
         let kern;
@@ -282,7 +299,41 @@ export const buildIsybauXML = ({ nodes = [], edges = [], areas = [], metadata = 
         + `</Datenkollektive>`
         + `</Identifikation>`;
 
-    return { xml: prettyPrint(xml), warnings };
+    return { xml: prettyPrint(xml) + ergaenzungsKommentar(nodes, edges, areas), warnings };
+};
+
+/**
+ * Zusatzfelder ohne ISYBAU-Element als XML-Kommentar am Dateiende. Ein Kommentar ist in
+ * jeder XML gültig und für andere Programme unsichtbar; SaintV liest ihn beim Import
+ * zurück (xmlParser.js). Nur Werte, die vom Vorgabewert abweichen.
+ */
+const ergaenzungsKommentar = (nodes, edges, areas) => {
+    const standard = new Node({ id: '_', x: 0, y: 0, z: 0 }).toJSON();
+    const gleich = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const knoten = {};
+    for (const n of nodes) {
+        const f = {};
+        for (const k of KNOTEN_ERGAENZUNG) if (n[k] !== undefined && !gleich(n[k], standard[k])) f[k] = n[k];
+        if (n.type === 'Divider') f.type = 'Divider'; // kein ISYBAU-Bauwerkstyp
+        if (Object.keys(f).length) knoten[n.id] = f;
+    }
+    const haltungen = {};
+    for (const e of edges) {
+        // Rauheit steht in ISYBAU nicht, der Import leitet sie aus dem Material ab
+        if (e.roughness != null && Number(e.roughness) !== getRoughness(e.material)) haltungen[e.id] = { roughness: e.roughness };
+    }
+    const flaechen = {};
+    for (const a of areas) {
+        const f = {};
+        for (const k of FLAECHEN_ERGAENZUNG) if (a[k] != null) f[k] = a[k];
+        if (a.splitRatio == null || Number(a.splitRatio) === 50) delete f.splitRatio;
+        if (Object.keys(f).length) flaechen[a.id] = f;
+    }
+    if (!Object.keys(knoten).length && !Object.keys(haltungen).length && !Object.keys(flaechen).length) return '';
+    // „--" ist in XML-Kommentaren verboten, < > könnten den Pretty-Printer stören → JSON-Escapes
+    const json = JSON.stringify({ version: 1, knoten, haltungen, flaechen })
+        .replace(/--/g, '-\\u002d').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+    return `\n<!--${ERGAENZUNG_KENNUNG}${json}-->\n`;
 };
 
 /**
