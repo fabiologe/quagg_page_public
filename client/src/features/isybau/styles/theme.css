@@ -251,6 +251,8 @@
    altes Beige-Computergehäuse-Plastik statt warmes Sandbeige). */
 :root[data-theme="light"],
 :root:not([data-theme]) {
+    /* Überstau (Weinrot) — = typPalette.js KNOTEN_ZUSTAND.ueberstau, 8,4 : 1 auf --isy-pixel-bg */
+    --isy-ueberstau:           #7b1e3a;
     --isy-pixel-bg:            #eeeae1;
     --isy-pixel-bg-alt:        #e2ddd0;
     --isy-pixel-bg-deep:       #d0c8b4;
@@ -320,6 +322,8 @@
 
 /* Pixel-Theme Oberflächen — Dunkel (unverändert, wie vor der Umstellung) */
 :root[data-theme="dark"] {
+    /* Überstau hell-weinrot — = typPalette.js UEBERSTAU_HELL; #7b1e3a hatte hier 1,9 : 1 */
+    --isy-ueberstau:           #d0527a;
     --isy-pixel-bg:            #040647;
     --isy-pixel-bg-alt:        #0a0d5c;
     --isy-pixel-bg-deep:       #06093a;

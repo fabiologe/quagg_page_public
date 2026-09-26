@@ -11,6 +11,8 @@
 </template>
 
 <script setup>
+// PDF-Texte nur mit Zeichen der jsPDF-Standardschrift (WinAnsi): kein Ψ/Δ — kamen als „¨" bzw. „"t" an
+// (Browserprüfung 2026-09-26, test/anzeige.test.js).
 import { ref, computed } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { jsPDF } from 'jspdf';
@@ -73,6 +75,7 @@ const C = {
   green:  [33, 150, 83],   // nachgedunkeltes --isy-pixel-green
   blue:   [52, 152, 219],  // unverändert (--isy-pixel-info)
   red:    [231, 76, 60],   // unverändert (--isy-pixel-danger)
+  weinrot:[123, 30, 58],   // Überstau (= typPalette KNOTEN_ZUSTAND.ueberstau), nicht das Rot von „Überlastet"
   orange: [243, 156, 18],  // unverändert (--isy-pixel-warning)
   bg:     [245, 242, 234], // war blasses Lavendel-Weiß — jetzt warmes Papier-Beige
   border: [200, 194, 178], // war helles Lavendel — jetzt gedecktes Beige-Grau
@@ -87,7 +90,7 @@ const fmtV = (ham)      => fmt((ham || 0) * 10000); // ha·m → m³
 
 // ─── Pixel font via canvas (uses Press Start 2P if loaded in browser) ─────────
 // Returns the rendered width in mm so callers can offset subsequent content.
-function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy) {
+function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy, maxWidthMm = Infinity) {
   try {
     const PX = 100;
     const tmpCtx = document.createElement('canvas').getContext('2d');
@@ -104,8 +107,12 @@ function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy) {
     ctx.fillStyle = `rgb(${colorArr[0]},${colorArr[1]},${colorArr[2]})`;
     ctx.fillText(text, 6, PX * 1.05);
 
-    const widthMm = (canvas.width / canvas.height) * heightMm;
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, widthMm, heightMm);
+    // Zu breit für die Spalte → proportional verkleinern (Seite 1: „Niederschlagsbilanz
+    // (Runoff)" lief in die Überschrift der rechten Spalte, Browserprüfung 2026-09-26).
+    let h = heightMm;
+    let widthMm = (canvas.width / canvas.height) * h;
+    if (widthMm > maxWidthMm) { h *= maxWidthMm / widthMm; widthMm = maxWidthMm; }
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y + (heightMm - h) / 2, widthMm, h);
     return widthMm;
   } catch (_) {
     // Fallback: standard helvetica
@@ -149,10 +156,10 @@ function pageFooter(doc, pageNum) {
 }
 
 // ─── Section title ────────────────────────────────────────────────────────────
-function sectionTitle(doc, y, text, x = ML) {
+function sectionTitle(doc, y, text, x = ML, maxWidthMm = Infinity) {
   doc.setFillColor(...C.purple);
   doc.rect(x, y, 2.5, 5.5, 'F');
-  drawPixelHeading(doc, text, x + 5, y + 0.5, 4.5, C.navy);
+  drawPixelHeading(doc, text, x + 5, y + 0.5, 4.5, C.navy, maxWidthMm - 5);
   return y + 11;
 }
 
@@ -241,12 +248,12 @@ function drawRainChart(doc, x, y, w, h, series, interval) {
 
   // Y left
   doc.setTextColor(...C.blue);
-  doc.text(`${maxI.toFixed(0)} l/s·ha`, x - 1, y + 3, { align: 'right' });
+  doc.text(`${fmt(maxI, 0)} l/s·ha`, x - 1, y + 3, { align: 'right' });
   doc.text('0', x - 1, y + chartH - 0.5, { align: 'right' });
 
   // Y right
   doc.setTextColor(...C.red);
-  doc.text(`${maxCum.toFixed(1)} mm`, x + w + 1, y + 3);
+  doc.text(`${fmt(maxCum, 1)} mm`, x + w + 1, y + 3);
 
   // X axis
   doc.setTextColor(...C.muted);
@@ -394,7 +401,7 @@ function drawNetwork(doc, x, y, w, h) {
       doc.setDrawColor(...C.green);
       doc.triangle(px, py - 2, px - 1.5, py + 1, px + 1.5, py + 1, 'F');
     } else {
-      const col = flooded ? C.red : surcharged ? C.orange : C.navy;
+      const col = flooded ? C.weinrot : surcharged ? C.orange : C.navy;
       doc.setFillColor(...col);
       doc.setDrawColor(255, 255, 255);
       doc.setLineWidth(0.3);
@@ -405,22 +412,27 @@ function drawNetwork(doc, x, y, w, h) {
   doc.restoreGraphicsState();
 
   // ── Legende ──
-  const ly = y + drawH + 1;
+  const ly0 = y + drawH + 1;
   const items = [
     { type: 'line', c: C.blue,   l: 'Haltung OK' },
     { type: 'line', c: C.orange, l: 'Belastet (h/d>70%)' },
     { type: 'line', c: C.red,    l: 'Überlastet' },
     { type: 'dot',  c: C.navy,   l: 'Schacht' },
-    { type: 'dot',  c: C.red,    l: 'Überstau/Überflutet' },
+    { type: 'dot',  c: C.weinrot, l: 'Überstau/Überflutet' },
     { type: 'tri',  c: C.green,  l: 'Auslass' },
-    { type: 'fill', c: [167,243,208], l: 'Fläche niedrig Ψ' },
-    { type: 'fill', c: [253,186,116], l: 'Fläche hoch Ψ' },
+    { type: 'fill', c: [167,243,208], l: 'Fläche, niedriger Abflussbeiwert' },
+    { type: 'fill', c: [253,186,116], l: 'Fläche, hoher Abflussbeiwert' },
   ];
+  // Breite je Eintrag gemessen, bei Platzmangel zweite Zeile (legendH = 9 mm reicht
+  // für zwei). Vorher fester 24-mm-Schritt mit `break` — der letzte Eintrag
+  // („Fläche, hoher Abflussbeiwert") fiel still weg (Browserprüfung 2026-09-26).
   let lx = x + 1;
+  let ly = ly0;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(4.5);
   for (const { type, c, l } of items) {
-    if (lx + 22 > x + w) break;
+    const breite = 5.5 + doc.getTextWidth(l) + 3;
+    if (lx + breite > x + w && lx > x + 1) { lx = x + 1; ly += 4.5; }
     doc.setFillColor(...c);
     doc.setDrawColor(...c);
     if (type === 'line') {
@@ -437,7 +449,7 @@ function drawNetwork(doc, x, y, w, h) {
     }
     doc.setTextColor(...C.muted);
     doc.text(l, lx + 5.5, ly + 3);
-    lx += 24;
+    lx += breite;
   }
 }
 
@@ -488,17 +500,17 @@ async function exportPDF() {
 
     // KPI boxes
     const kW = (CW - 9) / 4;
-    kpiBox(doc, ML,                cy, kW, 24, ['Niederschlag', '(Gesamthöhe)'],    `${rb.precipMm.toFixed(1)}`,              'mm', C.blue);
-    kpiBox(doc, ML + kW + 3,      cy, kW, 24, ['Oberfl.', 'Abfluss'],              `${rb.runoffMm.toFixed(1)}`,              'mm', C.purple);
-    kpiBox(doc, ML + (kW + 3) * 2,cy, kW, 24, ['Abfluss-', 'beiwert Ψ'],          `${rb.psi.toFixed(3)}`,                   '',   C.navy);
-    kpiBox(doc, ML + (kW + 3) * 3,cy, kW, 24, ['Kontinuitäts-', 'fehler Flow'],   `${(stats.flow?.error || 0).toFixed(2)}`, '%',  errColor);
+    kpiBox(doc, ML,                cy, kW, 24, ['Niederschlag', '(Gesamthöhe)'],    `${fmt(rb.precipMm, 1)}`,              'mm', C.blue);
+    kpiBox(doc, ML + kW + 3,      cy, kW, 24, ['Oberfl.', 'Abfluss'],              `${fmt(rb.runoffMm, 1)}`,              'mm', C.purple);
+    kpiBox(doc, ML + (kW + 3) * 2,cy, kW, 24, ['Abfluss-', 'beiwert'],          `${fmt(rb.psi, 3)}`,                   '',   C.navy);
+    kpiBox(doc, ML + (kW + 3) * 3,cy, kW, 24, ['Kontinuitäts-', 'fehler Flow'],   `${fmt(stats.flow?.error || 0, 2)}`, '%',  errColor);
     cy += 28;
 
     // Two-column layout: Niederschlagsbilanz | Simulations-Parameter
     const colW = (CW - 6) / 2;
     const col2x = ML + colW + 6;
-    let cyL = sectionTitle(doc, cy, 'Niederschlagsbilanz (Runoff)', ML);
-    let cyR = sectionTitle(doc, cy, 'Simulations-Parameter', col2x);
+    let cyL = sectionTitle(doc, cy, 'Niederschlagsbilanz (Runoff)', ML, colW);
+    let cyR = sectionTitle(doc, cy, 'Simulations-Parameter', col2x, colW);
 
     // Area badge
     doc.setFillColor(240, 253, 244);
@@ -522,13 +534,13 @@ async function exportPDF() {
       startY: cyL,
       head:   [['Posten', 'mm', 'm³']],
       body:   [
-        ['Niederschlag',      rb.precipMm.toFixed(2),       fmtV(stats.runoff?.precip)],
-        ['Verdunstung',       rb.evapMm.toFixed(2),         fmtV(stats.runoff?.evap)],
-        ['Infiltration',      rb.infilMm.toFixed(2),        fmtV(stats.runoff?.infil)],
-        ['Oberfl.-Abfluss',   rb.runoffMm.toFixed(2),       fmtV(stats.runoff?.runoff)],
-        ['Endspeicherung',    rb.finalStorageMm.toFixed(3), fmtV(stats.runoff?.finalStorage)],
-        ['Abflussbeiwert Ψ',  rb.psi.toFixed(3),            ''],
-        ['Kont.-Fehler Runoff',`${(stats.runoff?.error || 0).toFixed(3)} %`, ''],
+        ['Niederschlag',      fmt(rb.precipMm, 2),       fmtV(stats.runoff?.precip)],
+        ['Verdunstung',       fmt(rb.evapMm, 2),         fmtV(stats.runoff?.evap)],
+        ['Infiltration',      fmt(rb.infilMm, 2),        fmtV(stats.runoff?.infil)],
+        ['Oberfl.-Abfluss',   fmt(rb.runoffMm, 2),       fmtV(stats.runoff?.runoff)],
+        ['Endspeicherung',    fmt(rb.finalStorageMm, 3), fmtV(stats.runoff?.finalStorage)],
+        ['Abflussbeiwert',    fmt(rb.psi, 3),            ''],
+        ['Kont.-Fehler Runoff',`${fmt(stats.runoff?.error || 0, 3)} %`, ''],
       ],
       columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
     });
@@ -546,8 +558,8 @@ async function exportPDF() {
         ...(stats.ueberstauWahl ? [['Wahl', stats.ueberstauWahl.grund]] : []),
         ['Start',            stats.analysisOptions?.startDate            || '—'],
         ['Ende',             stats.analysisOptions?.endDate              || '—'],
-        ['Zeitschritt',      stats.analysisOptions?.routingTimeStep      || '—'],
-        ['Kont.-Fehler Flow',`${(stats.flow?.error || 0).toFixed(3)} %`],
+        ['Zeitschritt',      Number.isFinite(parseFloat(stats.analysisOptions?.routingTimeStep)) ? `${fmt(parseFloat(stats.analysisOptions.routingTimeStep), 2)} s` : '—'],
+        ['Kont.-Fehler Flow',`${fmt(stats.flow?.error || 0, 3)} %`],
       ],
     });
     const afterParams = doc.lastAutoTable.finalY;
@@ -563,7 +575,7 @@ async function exportPDF() {
       doc.setFontSize(6.5);
       doc.setTextColor(...C.muted);
       doc.text(
-        `Gesamt: ${totalMm.toFixed(1)} mm  ·  Spitze: ${peakI.toFixed(1)} l/s·ha  ·  Δt: ${interval} min  ·  Dauer: ${series.length * interval} min`,
+        `Gesamt: ${fmt(totalMm, 1)} mm  ·  Spitze: ${fmt(peakI, 1)} l/s·ha  ·  Intervall: ${interval} min  ·  Dauer: ${series.length * interval} min`,
         ML, cy
       );
       cy += 4;
@@ -596,7 +608,7 @@ async function exportPDF() {
       autoTable(doc, {
         ...tableDefaults(),
         startY: cy,
-        head:   [['Outfall', 'Angeschlossene Fläche (ha)', 'Mittl. Beiwert Ψ', 'Befestigte Fläche (ha)']],
+        head:   [['Outfall', 'Angeschlossene Fläche (ha)', 'Mittl. Abflussbeiwert', 'Befestigte Fläche (ha)']],
         body:   outfallCatchments.map(o => [
           o.outfallId,
           fmt(o.totalAreaHa, 4),
@@ -680,7 +692,7 @@ async function exportPDF() {
       didParseCell: (data) => {
         if (data.column.index === 6 && data.section === 'body') {
           const v = data.cell.raw;
-          if (v === 'ÜBERFLUTET')  data.cell.styles.textColor = C.red;
+          if (v === 'ÜBERFLUTET')  data.cell.styles.textColor = C.weinrot;
           else if (v === 'EINGESTAUT') data.cell.styles.textColor = C.orange;
           else data.cell.styles.textColor = [5, 150, 105];
         }
@@ -701,7 +713,7 @@ async function exportPDF() {
     autoTable(doc, {
       ...tableDefaults(),
       startY: cy,
-      head:   [['ID', 'Fläche (ha)', 'N (mm)', 'Infil. (mm)', 'Abfl. (mm)', 'Ψ', 'Q_peak (m³/s)']],
+      head:   [['ID', 'Fläche (ha)', 'N (mm)', 'Infil. (mm)', 'Abfl. (mm)', 'Abfl.-beiw.', 'Q_peak (m³/s)']],
       body:   areaEntries.map(([id, d]) => [
         id,
         // d (SWMM .rpt "Subcatchment Runoff Summary") hat KEIN size-Feld — die

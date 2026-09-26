@@ -19,6 +19,7 @@
  * Deshalb steht hier alles als '#rrggbb', und `zahl()` rechnet um.
  */
 
+import { ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from './mappings.js';
 export const zahl = (hex) => parseInt(hex.slice(1), 16);
 
 /**
@@ -41,10 +42,24 @@ export const auslastungsFarbe = (auslastung) =>
 
 /** Ergebniszustände eines Knotens. Eigene Achse, nicht die der Auslastung. */
 export const KNOTEN_ZUSTAND = {
-  ueberstau:    '#c0392b',
+  // Weinrot: eigene Farbe, nicht das Rot der Auslastung „> 90 %" (#c0392b) — beide standen
+  // in derselben Legende (2026-09-26, Wunsch Fabio: dunkelrot/weinrot).
+  ueberstau:    '#7b1e3a',
   druckabfluss: '#e67e22',
   wasserstand:  '#3498db',
 };
+
+/** Ist ein Knoten überstaut? Eine Bedingung für 2D-Karte und 3D-Szene (vorher prüfte 3D nur
+ *  `overflow` und übersah Knoten, deren Überstau nur als pondedVolume ankommt). */
+export const knotenUeberstaut = (res) => !!res && (!!res.overflow || (res.pondedVolume ?? 0) > 0);
+
+/** Weinrot, hell genug für dunkle Hintergründe (Dunkelmodus, 3D-Szene): #7b1e3a hatte dort
+ *  nur 1,9 : 1 Kontrast (Browserprüfung 2026-09-26). */
+export const UEBERSTAU_HELL = '#d0527a';
+
+/** 2D-Karte und Legende: Theme-Token (theme.css: hell = KNOTEN_ZUSTAND.ueberstau,
+ *  dunkel = UEBERSTAU_HELL). PDF (Papier) nimmt KNOTEN_ZUSTAND.ueberstau direkt. */
+export const UEBERSTAU_CSS = 'var(--isy-ueberstau, #7b1e3a)';
 
 /**
  * Bauwerke tragen KEINE Typfarbe mehr (Nutzer-Entscheidung).
@@ -62,7 +77,9 @@ export const BAUWERK = '#65625c';
 
 /** Datenqualität — kein Bauwerkstyp, sondern eine Aussage über den Datensatz. */
 export const DATENQUALITAET = {
-  fiktiv:        '#e74c3c',   // vom Import erzeugter Knoten
+  // Türkis (2026-09-26, Wunsch Fabio): vorher #e74c3c — in 3D neben dem Weinrot des Überstaus
+  // kaum zu unterscheiden und ohne Legende. Blau ist schon Fläche/Wasserstand/„≤ 50 %", Grün die Auswahl.
+  fiktiv:        '#139a9a',   // vom Import erzeugter Knoten
   ohneGeometrie: '#7f8c8d',   // Lage unbekannt
 };
 
@@ -99,3 +116,26 @@ export const DIAGRAMM = {
  * eine zweite Fassung anlegt:
  *   import { ENTWAESSERUNGSART_COLOR } from './mappings.js';
  */
+
+/**
+ * Legende der 2D-Karte. Ohne Ergebnisse: Kanaltyp (Standardfärbung). Mit Ergebnissen
+ * färbt der Viewer nach Auslastung (auslastungsFarbe) und Überstau — die Legende zeigte
+ * trotzdem weiter „Kanaltyp" (Browserprüfung 2026-09-26, doc/09 S2).
+ */
+export const legendenEintraege = (hatErgebnisse) => (hatErgebnisse
+  ? {
+      titel: 'Auslastung',
+      eintraege: [
+        ...AUSLASTUNG_STUFEN.map((s) => ({ label: s.text, color: s.farbe })),
+        { label: 'Schacht überstaut', color: UEBERSTAU_CSS },
+      ],
+    }
+  : {
+      titel: 'Kanaltyp',
+      eintraege: [
+        { label: 'Regenwasser', color: ENTWAESSERUNGSART_COLOR.KR },
+        { label: 'Schmutzwasser', color: ENTWAESSERUNGSART_COLOR.KS },
+        { label: 'Mischwasser', color: ENTWAESSERUNGSART_COLOR.KM },
+        { label: 'Unbekannt', color: ENTWAESSERUNGSART_DEFAULT_COLOR },
+      ],
+    });

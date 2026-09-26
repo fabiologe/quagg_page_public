@@ -158,6 +158,29 @@ describe('Übungsnetz, echter Rechenweg', () => {
         expect(niederschlagMm(store.simulation.results.report)).toBeCloseTo(36, 2);
     }, LAUFZEIT);
 
+    // doc/09 N3: Kapazität wurde als maxFlow / (2-stellig gerundetes Q/Qvoll) zurückgerechnet
+    // — R_002 zeigte 1 809,6 l/s. Soll: SWMMs eigene Vollfüllung, unabhängig gelesen aus
+    // einem Vergleichslauf derselben .inp mit [REPORT] INPUT YES („Cross Section Summary",
+    // m³/s mit 2 Nachkommastellen → ±5 l/s).
+    it('N3: Kapazität jeder Haltung = SWMM-Vollfüllung (Cross Section Summary)', async () => {
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        const { input, edges } = store.simulation.results;
+        const createSwmmModule = (await import('../utils/swmm_solver.js')).default;
+        const M = await createSwmmModule({ print: () => {}, printErr: () => {} });
+        M.FS.writeFile('/v.inp', input.replace(/^INPUT\s+NO/m, 'INPUT                YES'));
+        M.cwrap('swmm_run', 'number', ['string', 'string', 'string'])('/v.inp', '/v.rpt', '/v.out');
+        const rpt = M.FS.readFile('/v.rpt', { encoding: 'utf8' });
+        const block = rpt.slice(rpt.indexOf('Cross Section Summary'), rpt.indexOf('Analysis Options'));
+        const vollfuellung = Object.fromEntries(block.split('\n').map(l => l.trim().split(/\s+/))
+            .filter(p => p.length === 8 && Number.isFinite(parseFloat(p[7]))).map(p => [p[0], parseFloat(p[7]) * 1000]));
+        const ids = Object.keys(vollfuellung);
+        expect(ids.length).toBeGreaterThan(100);
+        for (const id of ids) expect(edges[id]?.capacity, id).toBeCloseTo(vollfuellung[id], -1); // ±5 l/s
+        expect(edges.R_002.capacity).toBeGreaterThan(235);
+        expect(edges.R_002.capacity).toBeLessThan(250);
+    }, LAUFZEIT);
+
     it('Automatik: beide Verfahren gerechnet und plausibel, kein Wasserspiegel über dem höchsten Deckel', async () => {
         expect(store.berechnung.ueberstauverfahren).toBe('AUTO');
         store.rain.duration = 3; euler2(store);

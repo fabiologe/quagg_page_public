@@ -298,8 +298,11 @@ export class RptParser {
             }
             // sonst (DUMMY/OUTLET, oder Orifice ohne Vollfülltiefe): nur maxFlow/timeOfMaxFlow
 
+            // Rückfall, falls der Worker keine Vollfüllung aus dem Rechenkern liefert:
+            // Q/Qvoll steht nur 2-stellig im Bericht — zurückrechnen erst ab 0,5
+            // (Rundungsfehler ≤ 1 %), darunter die Geometrie-Näherung (doc/09 N3).
             if (edges[id].flowCapacityRatio !== undefined) {
-                if (Math.abs(edges[id].flowCapacityRatio) > 0.01) {
+                if (Math.abs(edges[id].flowCapacityRatio) >= 0.5) {
                     edges[id].capacity = edges[id].maxFlow / edges[id].flowCapacityRatio;
                 } else if (type === 'CONDUIT') {
                     edges[id].capacity = calculateCapacity(id);

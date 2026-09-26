@@ -56,6 +56,33 @@ function rechneEinmal(inpString) {
     return { report, outBytes, abbruch };
 }
 
+/**
+ * Vollfüllung (Qvoll) je Haltung genau so, wie SWMM sie rechnet (link.c: qFull,
+ * schon in swmm_open) — über die Werkzeug-API statt aus dem Bericht. Der Bericht
+ * druckt Q/Qvoll nur 2-stellig; daraus zurückgerechnet ergab eine kaum ausgelastete
+ * Haltung Unsinn (R_002: 1 809,6 statt 242 l/s, doc/09 N3).
+ * @returns {Object<string, number>} id → qFull in m³/s (leer, wenn SWMM die Datei ablehnt)
+ */
+function vollfuellung(inpString, kantenIds) {
+    const SWMM_LINK = 3, SWMM_LINK_FULLFLOW = 406; // solver/src/solver/include/swmm5.h
+    const ergebnis = {};
+    Module.FS.writeFile('/vollfuellung.inp', inpString);
+    const fehler = Module.cwrap('swmm_open', 'number', ['string', 'string', 'string'])(
+        '/vollfuellung.inp', '/vollfuellung.rpt', '/vollfuellung.out');
+    try {
+        if (fehler !== 0) return ergebnis;
+        const index = Module.cwrap('swmm_getIndex', 'number', ['number', 'string']);
+        const wert = Module.cwrap('swmm_getValue', 'number', ['number', 'number']);
+        for (const id of kantenIds) {
+            const i = index(SWMM_LINK, String(id));
+            if (i >= 0) ergebnis[id] = wert(SWMM_LINK_FULLFLOW, i);
+        }
+    } finally {
+        Module.cwrap('swmm_close', 'number', [])();
+    }
+    return ergebnis;
+}
+
 function meldeAbbruch(abbruch, report, input) {
     self.postMessage({
         command: 'ERROR',
@@ -65,7 +92,7 @@ function meldeAbbruch(abbruch, report, input) {
 }
 
 /** Bericht + Binärausgabe eines Laufs zum Ergebnis-Kontrakt zusammenführen. */
-function zusammenfuehren({ report, outBytes, input, warnings, rptResult, nodesMap, edgesMap, beideVerfahrenGerechnet = false }) {
+function zusammenfuehren({ report, outBytes, input, warnings, rptResult, nodesMap, edgesMap, beideVerfahrenGerechnet = false, qFull = {} }) {
     let timeSeries = [];
     try {
         if (outBytes) {
@@ -79,7 +106,7 @@ function zusammenfuehren({ report, outBytes, input, warnings, rptResult, nodesMa
         warnings.push("Fehler beim Lesen der Zeitreihen (.out Datei): " + binErr.message + " — Ganglinien werden nicht angezeigt.");
     }
 
-    const assembled = ResultsAssembler.assemble({ rptResult, timeSeries, inputNodes: nodesMap, inputEdges: edgesMap, beideVerfahrenGerechnet });
+    const assembled = ResultsAssembler.assemble({ rptResult, timeSeries, inputNodes: nodesMap, inputEdges: edgesMap, beideVerfahrenGerechnet, vollfuellung: qFull });
     return {
         report,
         input,
@@ -117,12 +144,13 @@ async function runSimulation(data) {
         // ── Ein Verfahren (von Hand gewählt) ──────────────────────────────────
         if (data.options?.surchargeMethod !== 'AUTO') {
             const { inpContent, warnings } = bauen(null);
+            const qFull = vollfuellung(inpContent, Object.keys(edgesMap));
             const lauf = rechneEinmal(inpContent);
             if (lauf.abbruch) return meldeAbbruch(lauf.abbruch, lauf.report, inpContent);
             const rptResult = RptParser.parse(lauf.report, nodesMap, edgesMap);
             self.postMessage({
                 command: 'COMPLETE',
-                results: zusammenfuehren({ ...lauf, input: inpContent, warnings: [...warnings], rptResult, nodesMap, edgesMap })
+                results: zusammenfuehren({ ...lauf, input: inpContent, warnings: [...warnings], rptResult, nodesMap, edgesMap, qFull })
             });
             return;
         }
@@ -152,7 +180,8 @@ async function runSimulation(data) {
         }
         const results = zusammenfuehren({
             ...sieger.lauf, input: sieger.gebaut.inpContent, warnings, rptResult: sieger.rptResult, nodesMap, edgesMap,
-            beideVerfahrenGerechnet: true
+            beideVerfahrenGerechnet: true,
+            qFull: vollfuellung(sieger.gebaut.inpContent, Object.keys(edgesMap)) // unabhängig vom Überstauverfahren
         });
         results.systemStats.ueberstauWahl = wahl; // Ergebnisreiter + PDF lesen systemStats
         self.postMessage({ command: 'COMPLETE', results });

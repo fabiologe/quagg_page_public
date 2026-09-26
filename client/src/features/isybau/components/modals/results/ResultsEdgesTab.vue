@@ -17,10 +17,10 @@
                 <tbody>
                      <tr v-for="pump in systemStats.pumpingSummary" :key="pump.id" class="clickable-row" @click="selectEdge(pump.id)">
                         <td>{{ pump.id }}</td>
-                        <td>{{ pump.percentUtilized?.toFixed(1) }} %</td>
+                        <td>{{ fmtZahl(pump.percentUtilized, 1) }} %</td>
                         <td>{{ pump.startUps }}</td>
-                        <td>{{ (pump.maxFlow * 1000).toFixed(1) }}</td>
-                        <td>{{ pump.totalEnergy?.toFixed(2) }}</td>
+                        <td>{{ fmtZahl(pump.maxFlow * 1000, 1) }}</td>
+                        <td>{{ fmtZahl(pump.totalEnergy, 2) }}</td>
                      </tr>
                 </tbody>
           </table>
@@ -64,7 +64,7 @@
                             {{ edge.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}
                         </span>
                     </td>
-                    <td>{{ edge.utilization?.toFixed(0) }} %</td>
+                    <td>{{ fmtZahl(edge.utilization, 0) }} %</td>
                     <td>
                         <span v-if="['PUMP', 'WEIR', 'ORIFICE'].includes(edge.type)" class="na-hint" title="SWMM meldet für Pumpen/Wehre/Drosseln keine Fließgeschwindigkeit">n/a</span>
                         <template v-else>{{ edge.maxVelocity?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}</template>
@@ -101,7 +101,7 @@
                     </div>
                     <div class="col">
                         <strong>Kapazität & Auslastung</strong>
-                        <div>Kapazität: {{ selectedEdge?.capacity?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }} l/s</div>
+                        <div>Kapazität: {{ fmtZahl(selectedEdge?.capacity, 1) }} l/s</div>
                         <div>Max. Q/Qvoll: {{ selectedEdge?.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
                         <div>Max. h/hvoll: {{ selectedEdge?.depthRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
                         <div v-if="(selectedEdge?.flowCapacityRatio || 0) > 1.0" class="text-red">
@@ -112,26 +112,26 @@
                  <div class="engineer-inspector" v-if="selectedPumpSummary">
                     <div class="col">
                         <strong><img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Flash--Streamline-Pixel.svg" alt="" /> Pumpwerk-Betrieb</strong>
-                        <div>Nutzung: {{ selectedPumpSummary.percentUtilized?.toFixed(1) }} %</div>
+                        <div>Nutzung: {{ fmtZahl(selectedPumpSummary.percentUtilized, 1) }} %</div>
                         <div>Starts: {{ selectedPumpSummary.startUps }}</div>
-                        <div>Min./Mittl. Fluss: {{ (selectedPumpSummary.minFlow * 1000)?.toFixed(1) }} / {{ (selectedPumpSummary.avgFlow * 1000)?.toFixed(1) }} l/s</div>
+                        <div>Min./Mittl. Fluss: {{ fmtZahl(selectedPumpSummary.minFlow * 1000, 1) }} / {{ fmtZahl(selectedPumpSummary.avgFlow * 1000, 1) }} l/s</div>
                     </div>
                     <div class="col">
                         <strong>Energie</strong>
-                        <div>Energieverbrauch: {{ selectedPumpSummary.totalEnergy?.toFixed(2) }} kWh</div>
-                        <div>Fördervolumen: {{ selectedPumpSummary.totalVol?.toFixed(2) }} m³</div>
+                        <div>Energieverbrauch: {{ fmtZahl(selectedPumpSummary.totalEnergy, 2) }} kWh</div>
+                        <div>Fördervolumen: {{ fmtZahl(selectedPumpSummary.totalVol, 2) }} m³</div>
                         <div v-if="(selectedPumpSummary.pctTimeOffCurveLow || 0) + (selectedPumpSummary.pctTimeOffCurveHigh || 0) > 5" class="text-red">
-                            <img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> {{ (selectedPumpSummary.pctTimeOffCurveLow + selectedPumpSummary.pctTimeOffCurveHigh).toFixed(1) }} % der Zeit außerhalb der Kennlinie
+                            <img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> {{ fmtZahl(selectedPumpSummary.pctTimeOffCurveLow + selectedPumpSummary.pctTimeOffCurveHigh, 1) }} % der Zeit außerhalb der Kennlinie
                         </div>
                     </div>
                  </div>
                  <div class="surcharge-info" v-if="selectedEdge?.surcharge">
                      <strong>Einstau-Diagnose</strong>
                      <ul>
-                         <li>Dauer Vollfüllung (beidseitig): {{ selectedEdge?.surcharge?.hoursFullBoth?.toFixed(2) }} h</li>
-                         <li>Dauer Vollfüllung (oben): {{ selectedEdge?.surcharge?.hoursFullUp?.toFixed(2) }} h</li>
-                         <li>Dauer Vollfüllung (unten): {{ selectedEdge?.surcharge?.hoursFullDown?.toFixed(2) }} h</li>
-                         <li>Dauer über Vollfüllung: {{ selectedEdge?.surcharge?.hoursAboveFull?.toFixed(2) }} h</li>
+                         <li>Dauer Vollfüllung (beidseitig): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullBoth, 2) }} h</li>
+                         <li>Dauer Vollfüllung (oben): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullUp, 2) }} h</li>
+                         <li>Dauer Vollfüllung (unten): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullDown, 2) }} h</li>
+                         <li>Dauer über Vollfüllung: {{ fmtZahl(selectedEdge?.surcharge?.hoursAboveFull, 2) }} h</li>
                      </ul>
                  </div>
                  <div class="chart-box">
@@ -147,7 +147,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { DIAGRAMM } from '../../../utils/typPalette.js';
-import { Line, safeGet, formatTime, edgeTypeLabel, getRatioClass, chartOptions } from './resultsShared.js';
+import { Line, safeGet, formatTime, edgeTypeLabel, getRatioClass, chartOptions, fmtZahl } from './resultsShared.js';
 
 const props = defineProps({
   edges: { type: Map,    default: () => new Map() },

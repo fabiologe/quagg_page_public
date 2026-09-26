@@ -163,6 +163,20 @@
               :transform="getEdgeArrowTransform(edge)"
               vector-effect="non-scaling-stroke"
             />
+
+            <!-- Haltungsname: in der Mitte, entlang der Haltung gedreht, nie auf dem Kopf;
+                 leicht über der Linie, damit Pfeil und Linie frei bleiben. Klicks gehen an
+                 die Haltung (pointer-events: none). Größe über den Textgrößen-Regler. -->
+            <g v-if="scale > 0.001 && zeigeHaltungsname(edge)" :transform="haltungsNameTransform(edge)">
+              <text
+                x="0"
+                y="0"
+                class="edge-label"
+                text-anchor="middle"
+                :dy="-haltungsNameAbstand"
+                :style="{ fontSize: `${haltungsNameSchrift}px` }"
+              >{{ edge.id }}</text>
+            </g>
           </template>
         </g>
 
@@ -170,6 +184,16 @@
         <g class="nodes">
           <template v-for="node in nodeArray" :key="node.id">
             <g v-if="Number.isFinite(node.x) && Number.isFinite(node.y)">
+                <!-- Überstau-Ring: gut sichtbar auch bei Knoten ohne Deckel, die nur als kleines X
+                     gezeichnet werden (vorher ~2,6 px, im Dunkelmodus praktisch unsichtbar). -->
+                <circle
+                  v-if="istUeberstaut(node.id)"
+                  :cx="node.x - bounds.minX"
+                  :cy="bounds.maxY - node.y"
+                  :r="Math.max((node.diameter || 0) / 2 * arrowSizeMultiplier, (2.2 * baseUnit * arrowSizeMultiplier) / scale)"
+                  class="node-ueberstau-ring"
+                  vector-effect="non-scaling-stroke"
+                />
                 <!-- Node representation -->
                 <circle
                 v-if="node.diameter > 0"
@@ -226,13 +250,13 @@
                 />
 
                 <!-- Node Label -->
-                <g v-if="scale > 0.001" :transform="`translate(${(node.x - bounds.minX) + (labelOffsets.get(node.id)?.x || 0)}, ${(bounds.maxY - node.y) - (labelOffsets.get(node.id)?.y || 0)}) scale(${1/scale})`">
+                <g v-if="scale > 0.001 && schachtPlatz(node.id)" :transform="`translate(${(node.x - bounds.minX) + (labelOffsets.get(node.id)?.x || 0)}, ${(bounds.maxY - node.y) - (labelOffsets.get(node.id)?.y || 0)}) scale(${1/scale})`">
                   <text
-                    x="0"
+                    :x="schachtPlatz(node.id).dx"
                     y="0"
                     class="node-label"
                     :class="{ 'dragging': draggingLabelId === node.id }"
-                    :dy="`${-5 * textSizeMultiplier * baseUnit}`"
+                    :dy="schachtPlatz(node.id).dy"
                     text-anchor="middle"
                     :style="{ fontSize: `${4 * textSizeMultiplier * baseUnit}px` }"
                     @mousedown.stop.prevent="startLabelDrag(node, $event)"
@@ -264,12 +288,11 @@
       </g>
     </svg>
 
-    <!-- Entwässerungsart-Legende: Standard-Einfärbung von Kanten+Knoten nach
-         Kanaltyp (getEdgeColor/getNodeColor), immer sichtbar da kein Toggle
-         existiert. -->
+    <!-- Legende: ohne Ergebnisse Kanaltyp (Standardfärbung), mit Ergebnissen die
+         Auslastungsstufen, nach denen getEdgeColor dann färbt (utils/typPalette.js). -->
     <div class="entw-legend">
-      <div class="entw-legend-title">Kanaltyp</div>
-      <div v-for="item in entwLegendItems" :key="item.label" class="entw-legend-item">
+      <div class="entw-legend-title">{{ legende.titel }}</div>
+      <div v-for="item in legende.eintraege" :key="item.label" class="entw-legend-item">
         <span class="entw-dot" :style="{ background: item.color }"></span>{{ item.label }}
       </div>
       <div v-if="cursorCoords" class="entw-legend-coords">
@@ -345,8 +368,8 @@
 
 <script setup>
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
-import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../utils/mappings.js';
-import { auslastungsFarbe, BAUWERK, KNOTEN_ZUSTAND } from '../../utils/typPalette.js';
+import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor } from '../../utils/mappings.js';
+import { auslastungsFarbe, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -356,7 +379,7 @@ import DrawHintOverlay from './DrawHintOverlay.vue';
 import { resolveSpotlightTarget, centerTransform, scaleForRadius } from '../../utils/spotlightTarget.js';
 import { useContourGpuLayer } from './useContourGpuLayer.js';
 import { computeViewportWorldBounds } from '../../utils/geoBounds.js';
-import { closestPointOnSegment, dist } from '../../utils/geometry2d.js';
+import { closestPointOnSegment, dist, schriftWinkel, gedrehteHuelle, waehleBeschriftungen, platziereBeschriftungen } from '../../utils/geometry2d.js';
 
 const ezgLayer = useEzgLayer();
 // Singleton-Fokus (siehe composables/useElementFocus.js) — bewusst direkt
@@ -1102,49 +1125,149 @@ const getEdgeArrow = (edge) => {
   return n1 && n2;
 };
 
-const getEdgeArrowTransform = (edge) => {
+/** Mitte des mittleren Segments einer Haltung (SVG-Koordinaten) und ihre Richtung in Grad.
+ *  Gemeinsame Grundlage für Fließpfeil und Haltungsnamen. */
+const haltungsMitte = (edge) => {
   let x1, y1, x2, y2;
 
   if (edge.coords && edge.coords.length > 1) {
-    // Polyline: Find middle segment
-    const totalPoints = edge.coords.length;
-    const midIndex = Math.floor((totalPoints - 1) / 2);
-    
-    // Use the middle segment
+    // Polyline: mittleres Segment
+    const midIndex = Math.floor((edge.coords.length - 1) / 2);
     const p1 = edge.coords[midIndex];
     const p2 = edge.coords[midIndex + 1];
-    
     x1 = p1.x - bounds.value.minX;
     y1 = bounds.value.maxY - p1.y;
     x2 = p2.x - bounds.value.minX;
     y2 = bounds.value.maxY - p2.y;
-    
   } else {
-    // Straight Line Fallback
+    // Gerade Linie zwischen den Knoten
     const n1 = getNode(edge.fromNodeId);
     const n2 = getNode(edge.toNodeId);
-    if (!n1 || !n2) return '';
-    
+    if (!n1 || !n2) return null;
     x1 = n1.x - bounds.value.minX;
     y1 = bounds.value.maxY - n1.y;
     x2 = n2.x - bounds.value.minX;
     y2 = bounds.value.maxY - n2.y;
   }
-  
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  
-  const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
-  
-  return `translate(${mx}, ${my}) rotate(${angle}) scale(${(2.0 * arrowSizeMultiplier.value * baseUnit.value)/scale.value})`;
+  return {
+    x: (x1 + x2) / 2, y: (y1 + y2) / 2,
+    winkel: Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI,
+    laenge: Math.hypot(x2 - x1, y2 - y1) // Kartenmaß des Segments
+  };
 };
 
-const entwLegendItems = [
-  { label: 'Regenwasser', color: ENTWAESSERUNGSART_COLOR.KR },
-  { label: 'Schmutzwasser', color: ENTWAESSERUNGSART_COLOR.KS },
-  { label: 'Mischwasser', color: ENTWAESSERUNGSART_COLOR.KM },
-  { label: 'Unbekannt', color: ENTWAESSERUNGSART_DEFAULT_COLOR },
-];
+// Haltungsname nur, wenn er auf das Segment passt: Bildschirmlänge (Kartenmaß × scale)
+// ≥ geschätzte Textbreite. Ohne diese Regel lagen in der Übersicht 149 Namen à 5 px
+// übereinander (Browserprüfung 2026-09-26: 31 überlappende Paare); beim Hineinzoomen
+// erscheinen sie von selbst, dichte Knäuel bleiben aufgeräumt.
+const haltungsNameSchrift = computed(() => 3.2 * textSizeMultiplier.value * baseUnit.value);
+const passtAufHaltung = (edge, m) => {
+  const textbreite = String(edge.id).length * haltungsNameSchrift.value * 0.62;
+  return m.laenge * scale.value >= textbreite + 2 * haltungsNameSchrift.value;
+};
+
+// Zusätzlich kollisionsfrei (utils/geometry2d.js: waehleBeschriftungen): längere Haltungen
+// zuerst, kein Name über einem anderen Namen oder einer Knotenbeschriftung. Nur die Fit-Regel
+// ließ in der Übersicht noch 106 Namen mit 28 Überlappungen stehen (Browserprüfung 2026-09-26).
+// Hüllen im Kartenmaß: die Beschriftungsgruppen zeichnen mit scale(1/scale).
+// Fließpfeile als Hindernisse für alle Beschriftungen. Gezeichnet mit ±3 Einheiten ×
+// 2·Pfeilgröße·bu (getEdgeArrowTransform) → volle Kantenlänge 12·Pfeilgröße·bu; die Hülle
+// war zuerst nur halb so groß, bei großen Pfeilen berührten sie Namen (Browserprüfung 2026-09-26).
+const pfeilHindernisse = computed(() => {
+  const s = scale.value;
+  if (!(s > 0.001)) return [];
+  const kante = 12 * arrowSizeMultiplier.value * baseUnit.value / s;
+  const liste = [];
+  for (const edge of props.edgeArray || []) {
+    const m = haltungsMitte(edge);
+    if (m) liste.push({ ...gedrehteHuelle(m.x, m.y, kante, kante, m.winkel), von: edge.id });
+  }
+  return liste;
+});
+
+// Schachtbeschriftungen: 4 Plätze (oben = bisherige Lage, unten, rechts, links), der erste
+// freie gewinnt, sonst ausgeblendet (beim Hineinzoomen wieder da). Vom Nutzer verschobene
+// stehen fest und bleiben sichtbar. Vorrang: Bauwerke/Auslässe vor Schächten, dann ID.
+// Einheiten: dx/dy wie im <text> (Beschriftungsgruppe mit scale(1/scale)), Hüllen im Kartenmaß.
+const schachtPlatzierung = computed(() => {
+  const s = scale.value;
+  const plaetze = new Map();
+  if (!(s > 0.001)) return { plaetze, gesetzt: [] };
+  const t = textSizeMultiplier.value * baseUnit.value;
+  const fk = 4 * t;
+  const kandidaten = [];
+  for (const node of props.nodeArray || []) {
+    if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) continue;
+    const off = labelOffsets.get(node.id) || { x: 0, y: 0 };
+    const fest = (off.x || 0) !== 0 || (off.y || 0) !== 0;
+    const tw = String(node.id).length * fk * 0.62;
+    const nx = (node.x - bounds.value.minX) + (off.x || 0);
+    const ny = (bounds.value.maxY - node.y) - (off.y || 0);
+    // [dx, Grundlinie dy, Mitte y] in Beschriftungs-Einheiten
+    const lagen = [[0, -5 * t, -6.4 * t], [0, 7.8 * t, 6.4 * t], [tw / 2 + 3 * t, 1.4 * t, 0], [-(tw / 2 + 3 * t), 1.4 * t, 0]];
+    const genutzt = fest ? lagen.slice(0, 1) : lagen;
+    kandidaten.push({
+      id: node.id, fest, lagen: genutzt,
+      rang: getEffectiveBauwerkstyp(node) != null ? 0 : 1,
+      // Hülle mit Luft: reale Textbox ≈ 1,25 × Schriftgröße hoch, dazu etwas Rand in der Breite
+      plaetze: genutzt.map(([dx, , my]) => gedrehteHuelle(nx + dx / s, ny + my / s, (tw + t) / s, 1.25 * fk / s, 0))
+    });
+  }
+  kandidaten.sort((a, b) => a.rang - b.rang || String(a.id).localeCompare(String(b.id)));
+  // Pfeile sind hier KEINE Hindernisse: das kostete in der Übersicht die Hälfte der Schachtnamen
+  // (74 statt 144 von 153, Browserprüfung 2026-09-26). Sie zählen nur für Haltungsnamen.
+  const { wahl, gesetzt } = platziereBeschriftungen(kandidaten);
+  for (const k of kandidaten) {
+    const i = wahl.get(k.id);
+    if (i >= 0) plaetze.set(k.id, { dx: k.lagen[i][0], dy: k.lagen[i][1] });
+  }
+  return { plaetze, gesetzt };
+});
+const schachtPlatz = (id) => schachtPlatzierung.value.plaetze.get(id) || null;
+
+// Abstand des Haltungsnamens über der Linie (Beschriftungs-Einheiten): über den eigenen
+// Fließpfeil hinaus (Pfeil ±3 Einheiten × 2·Pfeilgröße·bu) plus kleiner Rand.
+const haltungsNameAbstand = computed(() =>
+  6 * arrowSizeMultiplier.value * baseUnit.value + 0.8 * textSizeMultiplier.value * baseUnit.value);
+
+const sichtbareHaltungsnamen = computed(() => {
+  const s = scale.value;
+  if (!(s > 0.001)) return new Set();
+  const fh = haltungsNameSchrift.value;    // Schriftgröße Haltungsname
+  // Hindernisse: gesetzte Schachtbeschriftungen + Fließpfeile aller Haltungen (eigener Pfeil
+  // zählt nicht — der Name steht ohnehin darüber, s. haltungsNameAbstand).
+  const hindernisse = [...schachtPlatzierung.value.gesetzt, ...pfeilHindernisse.value];
+  const kandidaten = [];
+  for (const edge of props.edgeArray || []) {
+    const m = haltungsMitte(edge);
+    if (!m || !passtAufHaltung(edge, m)) continue;
+    const w = schriftWinkel(m.winkel);
+    const r = (w * Math.PI) / 180;
+    const d = (haltungsNameAbstand.value + fh * 0.35) / s; // Versatz der Textmitte über der Linie
+    kandidaten.push({
+      id: edge.id,
+      prio: m.laenge,
+      huelle: gedrehteHuelle(m.x + d * Math.sin(r), m.y - d * Math.cos(r), (String(edge.id).length * fh * 0.62 + 0.3 * fh) / s, 1.25 * fh / s, w)
+    });
+  }
+  return waehleBeschriftungen(kandidaten, hindernisse);
+});
+const zeigeHaltungsname = (edge) => sichtbareHaltungsnamen.value.has(edge.id);
+
+const getEdgeArrowTransform = (edge) => {
+  const m = haltungsMitte(edge);
+  if (!m) return '';
+  return `translate(${m.x}, ${m.y}) rotate(${m.winkel}) scale(${(2.0 * arrowSizeMultiplier.value * baseUnit.value)/scale.value})`;
+};
+
+const haltungsNameTransform = (edge) => {
+  const m = haltungsMitte(edge);
+  if (!m) return '';
+  return `translate(${m.x}, ${m.y}) rotate(${schriftWinkel(m.winkel)}) scale(${1 / scale.value})`;
+};
+
+// Gleiche Bedingung wie getEdgeColor: liegen Ergebnisse an, färbt die Auslastung.
+const legende = computed(() => legendenEintraege((props.hydraulics?.size || 0) > 0));
 
 const getEdgeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
@@ -1171,6 +1294,8 @@ const getEdgeColor = (id) => {
 // ein Blick "Sonderbauwerk" signalisiert statt die Haltung optisch zu verbiegen.
 const SONDERBAUWERK_COLOR = BAUWERK;
 
+const istUeberstaut = (id) => knotenUeberstaut(props.nodeResults?.get?.(id));
+
 const getNodeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
 
@@ -1191,7 +1316,7 @@ const getNodeColor = (id) => {
 
   if (props.nodeResults && props.nodeResults.has(id)) {
     const res = props.nodeResults.get(id);
-    if (res.overflow || (res.pondedVolume && res.pondedVolume > 0)) return KNOTEN_ZUSTAND.ueberstau;
+    if (knotenUeberstaut(res)) return UEBERSTAU_CSS;
   }
 
   // Kein Ergebnis-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
@@ -1237,19 +1362,21 @@ const updateContourHover = (e) => {
   });
 };
 
+// Ziehen einer Schachtbeschriftung: erst ab 3 px Bewegung wird verschoben; wer nur klickt,
+// wählt beim Loslassen den Schacht aus (Fenster wie bisher). Früher wählte schon das Drücken
+// aus — jedes Verschieben öffnete das Bearbeitungsfenster (Browserprüfung 2026-09-26).
+const labelZiehen = { node: null, x0: 0, y0: 0, bewegt: false };
 const startLabelDrag = (node, e) => {
     if (e.button !== 0) return; // Only left click
     draggingLabelId.value = node.id;
-    
+    Object.assign(labelZiehen, { node, x0: e.clientX, y0: e.clientY, bewegt: false });
+
     // Convert click to world coords
     const coords = getEventCoords(e.clientX, e.clientY);
     if (coords) {
         startLabelX.value = coords.x;
         startLabelY.value = coords.y;
     }
-    
-    // Select the node so details pane opens potentially
-    selectElement(node, 'node', e);
 };
 
 // Calculate visually pleasing endpoint for the guide line, 
@@ -1318,6 +1445,11 @@ const pan = (e) => {
   }
 
   if (draggingLabelId.value) {
+      if (!labelZiehen.bewegt && Math.hypot(e.clientX - labelZiehen.x0, e.clientY - labelZiehen.y0) <= 3) {
+          boxSelect.active = false;
+          return;
+      }
+      labelZiehen.bewegt = true;
       const coords = getEventCoords(e.clientX, e.clientY);
       if (coords) {
           const dx = coords.x - startLabelX.value;
@@ -1376,6 +1508,8 @@ const endPan = () => {
 
   if (draggingLabelId.value) {
       draggingLabelId.value = null;
+      if (!labelZiehen.bewegt && labelZiehen.node) selectElement(labelZiehen.node, 'node');
+      labelZiehen.node = null;
   }
 
   isPanning.value = false;
@@ -1836,6 +1970,24 @@ svg.ezg-aerial-host {
 .msb-btn.msb-danger { border-color: var(--isy-pixel-danger); color: var(--isy-pixel-danger); }
 .msb-btn.msb-danger:hover { background: var(--isy-pixel-danger); color: var(--isy-pixel-text); }
 
+.node-ueberstau-ring {
+  fill: none;
+  stroke: var(--isy-ueberstau);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+/* Haltungsname: wie die Knotenbeschriftung (Halo über Luftbild), aber gedämpft
+   und nicht anklickbar — Klicks gehen an die Haltung darunter. */
+.edge-label {
+  fill: var(--isy-pixel-text-dim);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--isy-pixel-bg); /* Halo = Hintergrund des Modus; fest weiß war im Dunkelmodus weiß auf weiß */
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
 .node-label {
   fill: var(--isy-pixel-text);
   pointer-events: all;
@@ -1844,7 +1996,7 @@ svg.ezg-aerial-host {
      auch über Luftbildern lesbar, ohne ein eigenes <rect> pro Label zu
      brauchen. Gleiches Muster wie cde/IfcPdfExportModal.vue. */
   paint-order: stroke;
-  stroke: rgba(255,255,255,0.85);
+  stroke: var(--isy-pixel-bg); /* Halo = Hintergrund des Modus; fest weiß war im Dunkelmodus weiß auf weiß */
   stroke-width: 3px;
   stroke-linejoin: round;
   opacity: 1;

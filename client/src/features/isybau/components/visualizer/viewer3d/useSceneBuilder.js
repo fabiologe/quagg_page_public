@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { LINK_BAUWERKSTYPEN, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../../utils/mappings.js';
-import { zahl, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
+import { zahl, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL, knotenUeberstaut, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
 
 const NETWORK_GROUP = '__network__';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -223,7 +223,7 @@ export function useSceneBuilder() {
     ground     : new THREE.MeshStandardMaterial({ color: 0x1a2035, roughness: 1.0 }),
     selected   : new THREE.MeshStandardMaterial({ color: zahl(AUSWAHL), emissive: zahl(AUSWAHL_GLUT), roughness: 0.3 }),
     // Result overlay materials
-    resOverflow : new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.ueberstau), emissive: 0x6b0000, roughness: 0.4 }),
+    resOverflow : new THREE.MeshStandardMaterial({ color: zahl(UEBERSTAU_HELL), emissive: 0x5a1a30, roughness: 0.4 }), // helles Weinrot: Szene folgt nicht dem Theme
     resSurcharge: new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.druckabfluss), emissive: 0x4a2000, roughness: 0.4 }),
     utilHigh   : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[0].farbe), roughness: 0.4, side: THREE.DoubleSide }),
     utilMed    : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[1].farbe), roughness: 0.4, side: THREE.DoubleSide }),
@@ -428,7 +428,11 @@ export function useSceneBuilder() {
       if (!mesh) continue;
 
       // ── Result-based material override ─────────────────────────────
-      if (showResults && node.status !== 2) {
+      // Überstau gilt auch für Knoten ohne Deckel (Status 2): die dürfen seit 2026-09-26
+      // überstauen (SwmmBuilder.addJunctions) — vorher schloss status !== 2 sie ganz aus.
+      if (showResults && knotenUeberstaut(nodeResults.get(node.id))) {
+        mesh.material = mats.resOverflow;
+      } else if (showResults && node.status !== 2) {
         if (LINK_BAUWERKSTYPEN.has(bwType)) {
           // Pumpe/Wehr/Drossel/Schieber haben selbst kein SWMM-Ergebnis — das
           // liegt an der ausgehenden Haltung (siehe SwmmBuilder.addLinks()).
@@ -437,14 +441,14 @@ export function useSceneBuilder() {
           const res = relatedEdge ? edgeResults.get(relatedEdge.id) : null;
           if (res) {
             const util = res.utilization ?? (res.depthRatio != null ? res.depthRatio * 100 : null);
-            if      (util > 90)  mesh.material = mats.resOverflow;
-            else if (util >= 75) mesh.material = mats.resSurcharge;
+            // Auslastung der Haltung → Auslastungsfarben (wie die Legende), nicht die Überstaufarbe
+            if      (util > 90)  mesh.material = mats.utilHigh;
+            else if (util > 75)  mesh.material = mats.utilMed;
           }
         } else {
           const res = nodeResults.get(node.id);
           if (res) {
-            if (res.overflow)   mesh.material = mats.resOverflow;
-            else if (res.surcharged) mesh.material = mats.resSurcharge;
+            if (res.surcharged) mesh.material = mats.resSurcharge;
           }
         }
       }

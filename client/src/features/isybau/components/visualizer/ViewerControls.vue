@@ -203,6 +203,12 @@ const contourTitle = computed(() => {
   border-color: var(--isy-pixel-border-hover);
 }
 
+/* Text auf der dunklen Akzentfläche: konstanter heller Token (theme.css), sonst
+   grau auf grau — Beschriftung war im aktiven Zustand unsichtbar (2026-09-26). */
+.ezg-toggle-btn.active .ezg-label {
+  color: var(--isy-pixel-accent-text);
+}
+
 .ezg-toggle-btn.loading {
   opacity: 0.6;
   cursor: wait;

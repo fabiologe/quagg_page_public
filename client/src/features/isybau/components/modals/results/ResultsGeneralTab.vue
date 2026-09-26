@@ -14,11 +14,11 @@
         <div class="health-metrics">
             <div class="metric">
                  <span>Kontinuität</span>
-                 <strong>{{ (systemStats?.flow?.error || 0).toFixed(2) }} %</strong>
+                 <strong>{{ fmtZahl(systemStats?.flow?.error || 0, 2) }} %</strong>
             </div>
              <div class="metric">
                  <span>Instabilität</span>
-                 <strong>{{ (systemStats?.routingTimeStep?.notConverging || 0).toFixed(2) }} %</strong>
+                 <strong>{{ fmtZahl(systemStats?.routingTimeStep?.notConverging || 0, 2) }} %</strong>
             </div>
         </div>
     </div>
@@ -27,13 +27,13 @@
     <div class="kpi-grid">
         <div class="kpi-card">
             <div class="label">Niederschlag (Gesamthöhe)</div>
-            <div class="value">{{ runoffBilanz.precipMm.toFixed(1) }} mm</div>
-            <div class="kpi-sub">≙ {{ formatVolume((systemStats?.runoff?.precip || 0) * 10000) }} m³ · {{ totalCatchmentAreaHa.toFixed(2) }} ha</div>
+            <div class="value">{{ fmtZahl(runoffBilanz.precipMm, 1) }} mm</div>
+            <div class="kpi-sub">≙ {{ formatVolume((systemStats?.runoff?.precip || 0) * 10000) }} m³ · {{ fmtZahl(totalCatchmentAreaHa, 2) }} ha</div>
         </div>
         <div class="kpi-card">
             <div class="label">Oberflächenabfluss</div>
-            <div class="value">{{ runoffBilanz.runoffMm.toFixed(1) }} mm</div>
-            <div class="kpi-sub">Ψ = {{ runoffBilanz.psi.toFixed(3) }}</div>
+            <div class="value">{{ fmtZahl(runoffBilanz.runoffMm, 1) }} mm</div>
+            <div class="kpi-sub">Ψ = {{ fmtZahl(runoffBilanz.psi, 3) }}</div>
         </div>
          <div class="kpi-card">
             <div class="label">Zufluss Netz (Regen+Trocken)</div>
@@ -43,7 +43,7 @@
         <!-- Continuity Errors -->
         <div class="kpi-card" :class="getContinuityClass(systemStats?.flow?.error)">
              <div class="label">Kontinuitätsfehler (Flow)</div>
-             <div class="value">{{ (systemStats?.flow?.error || 0).toFixed(2) }} %</div>
+             <div class="value">{{ fmtZahl(systemStats?.flow?.error || 0, 2) }} %</div>
         </div>
     </div>
 
@@ -59,7 +59,7 @@
                 <tr v-if="systemStats.analysisOptions?.surchargeMethod"><td>Überstauverfahren:</td><td>{{ systemStats.analysisOptions.surchargeMethod }}{{ systemStats.ueberstauWahl ? ' (automatisch gewählt)' : '' }}</td></tr>
                 <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
                 <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
-                <tr><td>Zeitschritt:</td><td>{{ systemStats.analysisOptions?.routingTimeStep }}</td></tr>
+                <tr><td>Zeitschritt:</td><td>{{ fmtSekunden(systemStats.analysisOptions?.routingTimeStep) }}</td></tr>
             </table>
 
             <!-- Überstau-Automatik: beide Läufe und die Begründung der Wahl (utils/swmm/ueberstauWahl.js) -->
@@ -70,9 +70,9 @@
                     <tr v-for="l in systemStats.ueberstauWahl.laeufe" :key="l.verfahren"
                         :title="l.gruende.join(' · ') || 'plausibel'">
                         <td><strong v-if="l.verfahren === systemStats.ueberstauWahl.gewaehlt">{{ l.verfahren }}</strong><span v-else>{{ l.verfahren }}</span></td>
-                        <td>{{ l.bilanz === null ? '—' : l.bilanz.toFixed(2) + ' %' }}</td>
-                        <td>{{ l.maxUeberHoechstemDeckel ? l.maxUeberHoechstemDeckel.m.toFixed(2) + ' m (' + l.maxUeberHoechstemDeckel.id + ')' : '—' }}</td>
-                        <td>{{ l.nichtKonv === null ? '—' : l.nichtKonv.toFixed(1) + ' %' }}</td>
+                        <td>{{ l.bilanz === null ? '—' : fmtZahl(l.bilanz, 2) + ' %' }}</td>
+                        <td>{{ l.maxUeberHoechstemDeckel ? fmtZahl(l.maxUeberHoechstemDeckel.m, 2) + ' m (' + l.maxUeberHoechstemDeckel.id + ')' : '—' }}</td>
+                        <td>{{ l.nichtKonv === null ? '—' : fmtZahl(l.nichtKonv, 1) + ' %' }}</td>
                         <td>{{ l.plausibel ? 'plausibel' : 'verworfen' }}</td>
                     </tr>
                 </table>
@@ -88,7 +88,7 @@
             <div class="area-badge" :class="totalCatchmentAreaHa > 0 ? 'area-ok' : 'area-warn'">
                 <span class="area-badge-label">Bezugsfläche</span>
                 <span class="area-badge-val">
-                    {{ totalCatchmentAreaHa > 0 ? totalCatchmentAreaHa.toFixed(4) + ' ha' : '— (keine Flächen vorhanden)' }}
+                    {{ totalCatchmentAreaHa > 0 ? fmtZahl(totalCatchmentAreaHa, 4) + ' ha' : '— (keine Flächen vorhanden)' }}
                 </span>
                 <span class="area-badge-sub" v-if="totalCatchmentAreaHa > 0">
                     = {{ (totalCatchmentAreaHa * 10000).toLocaleString('de-DE') }} m²
@@ -106,48 +106,48 @@
                 <tbody>
                     <tr>
                         <td>Niederschlag</td>
-                        <td class="val-right">{{ runoffBilanz.precipMm.toFixed(2) }}</td>
+                        <td class="val-right">{{ fmtZahl(runoffBilanz.precipMm, 2) }}</td>
                         <td class="val-right">{{ formatVolume((systemStats?.runoff?.precip||0)*10000) }}</td>
                     </tr>
                     <tr>
                         <td>Verdunstung</td>
-                        <td class="val-right">{{ runoffBilanz.evapMm.toFixed(2) }}</td>
+                        <td class="val-right">{{ fmtZahl(runoffBilanz.evapMm, 2) }}</td>
                         <td class="val-right">{{ formatVolume((systemStats?.runoff?.evap||0)*10000) }}</td>
                     </tr>
                     <tr>
                         <td>Infiltration</td>
-                        <td class="val-right">{{ runoffBilanz.infilMm.toFixed(2) }}</td>
+                        <td class="val-right">{{ fmtZahl(runoffBilanz.infilMm, 2) }}</td>
                         <td class="val-right">{{ formatVolume((systemStats?.runoff?.infil||0)*10000) }}</td>
                     </tr>
                     <tr class="highlight-row">
                         <td><strong>Oberflächenabfluss</strong></td>
-                        <td class="val-right"><strong>{{ runoffBilanz.runoffMm.toFixed(2) }}</strong></td>
+                        <td class="val-right"><strong>{{ fmtZahl(runoffBilanz.runoffMm, 2) }}</strong></td>
                         <td class="val-right"><strong>{{ formatVolume((systemStats?.runoff?.runoff||0)*10000) }}</strong></td>
                     </tr>
                     <tr>
                         <td>Endspeicherung</td>
-                        <td class="val-right">{{ runoffBilanz.finalStorageMm.toFixed(3) }}</td>
+                        <td class="val-right">{{ fmtZahl(runoffBilanz.finalStorageMm, 3) }}</td>
                         <td class="val-right">{{ formatVolume((systemStats?.runoff?.finalStorage||0)*10000) }}</td>
                     </tr>
                     <tr class="highlight-row">
                         <td><strong>Abflussbeiwert Ψ</strong></td>
                         <td class="val-right" colspan="2">
-                            <strong>{{ runoffBilanz.psi.toFixed(3) }}</strong>
-                            <span class="bilanz-note">({{ runoffBilanz.runoffMm.toFixed(1) }} mm / {{ runoffBilanz.precipMm.toFixed(1) }} mm)</span>
+                            <strong>{{ fmtZahl(runoffBilanz.psi, 3) }}</strong>
+                            <span class="bilanz-note">({{ fmtZahl(runoffBilanz.runoffMm, 1) }} mm / {{ fmtZahl(runoffBilanz.precipMm, 1) }} mm)</span>
                         </td>
                     </tr>
                     <tr>
                         <td>Kontinuitätsfehler (Runoff)</td>
                         <td class="val-right" colspan="2">
                             <span :class="{'text-red': Math.abs(systemStats?.runoff?.error||0) > 2}">
-                                {{ (systemStats?.runoff?.error||0).toFixed(3) }} %
+                                {{ fmtZahl(systemStats?.runoff?.error||0, 3) }} %
                             </span>
                         </td>
                     </tr>
                 </tbody>
             </table>
             <p class="bilanz-footnote">
-                mm = ha·m × 1000 ÷ {{ totalCatchmentAreaHa > 0 ? totalCatchmentAreaHa.toFixed(4) + ' ha' : '? ha (Flächen fehlen)' }} Gesamtfläche
+                mm = ha·m × 1000 ÷ {{ totalCatchmentAreaHa > 0 ? fmtZahl(totalCatchmentAreaHa, 4) + ' ha' : '? ha (Flächen fehlen)' }} Gesamtfläche
             </p>
         </div>
 
@@ -155,17 +155,17 @@
         <div class="panel warning-panel" v-if="hasStabilityIssues">
             <h3><img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> Stabilitätsbericht</h3>
             <div class="detail-row">
-                <span>Min. Zeitschritt:</span> <strong>{{ systemStats.routingTimeStep?.min?.toFixed(4) }} s</strong>
+                <span>Min. Zeitschritt:</span> <strong>{{ fmtZahl(systemStats.routingTimeStep?.min, 4) }} s</strong>
             </div>
             <div class="detail-row">
-                <span>Nicht konvergierend:</span> <strong :class="{'text-red': (systemStats.routingTimeStep?.notConverging || 0) > 0}">{{ systemStats.routingTimeStep?.notConverging?.toFixed(2) }} %</strong>
+                <span>Nicht konvergierend:</span> <strong :class="{'text-red': (systemStats.routingTimeStep?.notConverging || 0) > 0}">{{ fmtZahl(systemStats.routingTimeStep?.notConverging, 2) }} %</strong>
             </div>
 
             <div v-if="systemStats?.nonConvergingNodes?.length" class="mt-2">
                 <strong>Kritische Knoten ({{ systemStats.nonConvergingNodes.length }} gesamt):</strong>
                 <ul class="mini-list stability-scroll">
                     <li v-for="node in systemStats.nonConvergingNodes.slice(0, 10)" :key="node.id">
-                        {{ node.id }} ({{ node.value }}%)
+                        {{ node.id }} ({{ fmtZahl(node.value, 2) }} %)
                     </li>
                 </ul>
                 <p v-if="systemStats.nonConvergingNodes.length > 10" class="stability-more">
@@ -219,10 +219,10 @@
                     <tbody>
                         <tr v-for="out in systemStats.outfallLoading || []" :key="out.id">
                             <td>{{ out.id }}</td>
-                            <td>{{ out.freq?.toFixed(1) }}</td>
-                            <td>{{ (out.avgFlow * 1000).toFixed(1) }}</td>
-                            <td>{{ (out.maxFlow * 1000).toFixed(1) }}</td>
-                            <td>{{ (out.totalVol * 1000).toFixed(1) }}</td>
+                            <td>{{ fmtZahl(out.freq, 1) }}</td>
+                            <td>{{ fmtZahl(out.avgFlow * 1000, 1) }}</td>
+                            <td>{{ fmtZahl(out.maxFlow * 1000, 1) }}</td>
+                            <td>{{ fmtZahl(out.totalVol * 1000, 1) }}</td>
                         </tr>
                         <tr v-if="!systemStats.outfallLoading?.length">
                             <td colspan="5" class="text-center text-muted">Keine Ausleitungen gefunden.</td>
@@ -246,11 +246,11 @@
             <div class="rain-meta">
                 <div class="rain-kpi">
                     <span>Gesamthöhe</span>
-                    <strong>{{ rainChartData.meta.totalMm.toFixed(1) }} mm</strong>
+                    <strong>{{ fmtZahl(rainChartData.meta.totalMm, 1) }} mm</strong>
                 </div>
                 <div class="rain-kpi">
                     <span>Spitzenintensität</span>
-                    <strong>{{ rainChartData.meta.peakIntensity.toFixed(1) }} l/s·ha</strong>
+                    <strong>{{ fmtZahl(rainChartData.meta.peakIntensity, 1) }} l/s·ha</strong>
                 </div>
                 <div class="rain-kpi">
                     <span>Zeitschritt</span>
@@ -272,7 +272,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { Bar, formatVolume, getContinuityClass } from './resultsShared.js';
+import { Bar, formatVolume, getContinuityClass, fmtZahl, fmtSekunden } from './resultsShared.js';
 
 const props = defineProps({
   /* default statt blossem Object: die Vorlage liest systemStats.analysisOptions
@@ -298,7 +298,7 @@ const modelQualityIssues = computed(() => {
         issues.push({
             key: `ce-${e.id}`, id: e.id,
             label: 'Kontinuitätsfehler (Knoten)',
-            value: `${e.error.toFixed(2)} %`,
+            value: `${fmtZahl(e.error, 2)} %`,
             severe: Math.abs(e.error) >= 10
         });
     }
@@ -314,7 +314,7 @@ const modelQualityIssues = computed(() => {
         issues.push({
             key: `crit-${c.type}-${c.id}`, id: c.id,
             label: `Zeitschritt-kritisch (${c.type === 'Link' ? 'Haltung' : 'Knoten'})`,
-            value: `${c.value.toFixed(1)} %`,
+            value: `${fmtZahl(c.value, 1)} %`,
             severe: c.value >= 50
         });
     }
@@ -383,7 +383,7 @@ const rainChartData = computed(() => {
     const cumulative = series.map(s => {
         const h = s.height_mm !== undefined ? s.height_mm : (s.intensity * interval * 0.006);
         cumMm += h;
-        return parseFloat(cumMm.toFixed(3));
+        return parseFloat(cumMm.toFixed(3)); // Zahl, keine Anzeige (Diagrammdaten)
     });
 
     const totalMm = cumulative[cumulative.length - 1] || 0;
@@ -398,7 +398,7 @@ const rainChartData = computed(() => {
                 {
                     type: 'bar',
                     label: 'Intensität (l/s·ha)',
-                    data: series.map(s => parseFloat((s.intensity || 0).toFixed(2))),
+                    data: series.map(s => parseFloat((s.intensity || 0).toFixed(2))), // Zahl, keine Anzeige (Diagrammdaten)
                     backgroundColor: 'rgba(52, 152, 219, 0.7)',
                     borderColor: 'rgba(52, 152, 219, 1)',
                     borderWidth: 1,
@@ -421,6 +421,7 @@ const rainChartData = computed(() => {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            locale: 'de-DE',
             interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { position: 'top', labels: { font: { size: 11 } } },

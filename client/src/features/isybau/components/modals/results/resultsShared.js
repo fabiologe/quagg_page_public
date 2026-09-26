@@ -26,14 +26,26 @@ export const safeGet = (source, key) => {
     return (source instanceof Map) ? source.get(key) : source[key];
 };
 
-export const formatVolume = (v) => v ? v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+export const formatVolume = (v) => (v ? v : 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Zahl für die Anzeige mit deutschem Dezimalkomma und festen Nachkommastellen;
+ *  „–" bei fehlendem Wert. Ersetzt toFixed (Dezimalpunkt) in allen Ergebnis-Reitern. */
+/** SWMM-Angabe wie „1.00 sec" → „1,00 s". */
+export const fmtSekunden = (text) => {
+    const v = parseFloat(text);
+    return Number.isFinite(v) ? `${v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s` : (text ?? '–');
+};
+
+export const fmtZahl = (v, stellen = 2) => (v == null || !Number.isFinite(Number(v)) ? '–'
+    : Number(v).toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen }));
 
 export const fmtVol = (v) => (v == null ? '-' : v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+/** Zeitachse der Ganglinien: ganze Minuten ab Simulationsbeginn als h:mm.
+ *  (Vorher m:ss aus Sekunden mit Gleitkommarest → „15:59" statt 16 min.) */
 export const formatTime = (seconds) => {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    return `${min}:${sec.toString().padStart(2, '0')}`;
+    const minuten = Math.round((Number(seconds) || 0) / 60);
+    return `${Math.floor(minuten / 60)}:${String(minuten % 60).padStart(2, '0')}`;
 };
 
 const NODE_TYPE_LABELS = {
@@ -77,6 +89,7 @@ export const getContinuityClass = (error) => {
 /** Basis-Optionen für die Ganglinien-Charts. */
 export const chartOptions = {
     responsive: true,
+    locale: 'de-DE', // Achsenbeschriftung mit Dezimalkomma (1,5 statt 1.5)
     maintainAspectRatio: false,
     elements: { point: { radius: 0 } }, // Optimize performance
     interaction: { mode: 'index', intersect: false }

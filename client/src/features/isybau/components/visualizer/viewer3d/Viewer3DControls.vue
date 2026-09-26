@@ -59,9 +59,10 @@
       <transition name="legend-fade">
         <div v-if="showResults" class="result-legend">
           <div class="legend-title">Legende</div>
-          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.ueberstau }" />Überstau / Einstau</div>
+          <div class="legend-row"><span class="dot" :style="{ background: UEBERSTAU_HELL }" />Überstau / Einstau</div>
           <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.druckabfluss }" />Druckabfluss</div>
           <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.wasserstand, opacity: 0.75 }" />Wasserstand</div>
+          <div class="legend-row"><span class="dot" :style="{ background: DATENQUALITAET.fiktiv }" />Knoten vom Import erzeugt (fiktiv)</div>
           <div class="legend-sep">Haltungen</div>
           <div class="legend-row" v-for="stufe in AUSLASTUNG_STUFEN" :key="stufe.text">
             <span class="dot" :style="{ background: stufe.farbe }" />{{ stufe.text }}
@@ -74,7 +75,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND } from '../../../utils/typPalette.js';
+import { AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL, DATENQUALITAET } from '../../../utils/typPalette.js';
 
 const props = defineProps({
   showNodes:      { type: Boolean, default: true  },

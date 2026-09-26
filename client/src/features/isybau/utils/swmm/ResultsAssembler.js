@@ -29,7 +29,7 @@ export class ResultsAssembler {
      * @param {object} args.inputNodes - id -> serialisierter Eingangs-Knoten (Node.toJSON())
      * @param {object} args.inputEdges - id -> serialisierte Eingangs-Haltung (Edge.toJSON())
      */
-    static assemble({ rptResult, timeSeries = [], inputNodes = {}, inputEdges = {}, beideVerfahrenGerechnet = false }) {
+    static assemble({ rptResult, timeSeries = [], inputNodes = {}, inputEdges = {}, beideVerfahrenGerechnet = false, vollfuellung = {} }) {
         const warnings = [];
         const { nodes = {}, edges = {}, subcatchments = {}, systemStats = {} } = rptResult || {};
 
@@ -37,6 +37,13 @@ export class ResultsAssembler {
         this.#mergeMaxStoredVolumes(nodes, timeSeries);
         this.#computeMaxAvailableVolumes(nodes, inputNodes);
         this.#flagRimOverflow(nodes, inputNodes);
+        // Kapazität (Qvoll) der Haltungen: SWMMs eigene Vollfüllung (Worker, swmm_getValue),
+        // nicht aus dem 2-stellig gedruckten Q/Qvoll zurückgerechnet (doc/09 N3).
+        for (const [id, qFull] of Object.entries(vollfuellung)) {
+            if (edges[id] && edges[id].type === 'CONDUIT' && Number.isFinite(qFull) && qFull > 0) {
+                edges[id].capacity = qFull * 1000; // m³/s → l/s
+            }
+        }
         this.#attachContinuityErrors(nodes, systemStats, warnings, beideVerfahrenGerechnet);
 
         return { nodes, edges, subcatchments, systemStats, timeSeries, warnings };

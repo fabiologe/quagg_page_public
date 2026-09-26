@@ -33,12 +33,12 @@
                      }">
                     <td>{{ node.id }}</td>
                     <td>{{ structureTypeLabel(node.bwType, node.type) }}</td>
-                    <td>{{ node.z?.toFixed(2) ?? '-' }}</td>
-                    <td>{{ node.maxDepth?.toFixed(2) ?? '-' }}</td>
-                    <td>{{ node.maxHGL?.toFixed(2) ?? '-' }}</td>
+                    <td>{{ fmtZahl(node.z, 2) }}</td>
+                    <td>{{ fmtZahl(node.maxDepth, 2) }}</td>
+                    <td>{{ fmtZahl(node.maxHGL, 2) }}</td>
                     <td>{{ fmtVol(nodeMaxVolume(node)) }}</td>
                     <td>{{ fmtVol(nodeVmax(node)) }}</td>
-                    <td>{{ nodeFillPct(node) != null ? nodeFillPct(node).toFixed(1) : '-' }}</td>
+                    <td>{{ nodeFillPct(node) != null ? fmtZahl(nodeFillPct(node), 1) : '-' }}</td>
                     <td>{{ (node.floodingVolume || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
                      <td>{{ node.timeOfMaxDepth || '-' }}</td>
                     <td>
@@ -47,8 +47,8 @@
                         <span v-else class="badge badge-green">OK</span>
                         <span v-if="node.continuityError != null && Math.abs(node.continuityError) >= 10"
                               class="badge badge-red"
-                              :title="`Kontinuitätsfehler ${node.continuityError.toFixed(1)} % — Ergebnis unzuverlässig`">
-                            Δ {{ node.continuityError.toFixed(0) }} %
+                              :title="`Kontinuitätsfehler ${fmtZahl(node.continuityError, 1)} % — Ergebnis unzuverlässig`">
+                            Δ {{ fmtZahl(node.continuityError, 0) }} %
                         </span>
                     </td>
                      <td>
@@ -77,25 +77,25 @@
                 <div class="engineer-inspector">
                     <div class="col">
                         <strong>Wassertiefen-Auswertung</strong>
-                        <div>Mittlere Wassertiefe: {{ selectedNodeResult?.avgDepth?.toFixed(2) }} m</div>
-                        <div>Max. Wassertiefe: {{ selectedNodeResult?.maxDepth?.toFixed(2) }} m</div>
-                        <div>Max. Wasserspiegel (HGL): {{ selectedNodeResult?.maxHGL?.toFixed(2) }} m</div>
-                        <div>Max. Einstautiefe (gemeldet): <strong>{{ selectedNodeResult?.reportedMaxDepth?.toFixed(2) }} m</strong></div>
+                        <div>Mittlere Wassertiefe: {{ fmtZahl(selectedNodeResult?.avgDepth, 2) }} m</div>
+                        <div>Max. Wassertiefe: {{ fmtZahl(selectedNodeResult?.maxDepth, 2) }} m</div>
+                        <div>Max. Wasserspiegel (HGL): {{ fmtZahl(selectedNodeResult?.maxHGL, 2) }} m</div>
+                        <div>Max. Einstautiefe (gemeldet): <strong>{{ fmtZahl(selectedNodeResult?.reportedMaxDepth, 2) }} m</strong></div>
                     </div>
                     <div class="col">
                         <strong>Zufluss & Überflutung</strong>
-                        <div>Max. seitl. Zufluss: {{ selectedNodeResult?.maxLatInflow?.toFixed(2) }} l/s</div>
-                        <div>Max. Gesamtzufluss: {{ selectedNodeResult?.maxTotalInflow?.toFixed(2) }} l/s</div>
-                        <div>Gesamtvol. Überflutung: {{ (selectedNodeResult?.floodingVolume || 0).toFixed(3) }} m³</div>
+                        <div>Max. seitl. Zufluss: {{ fmtZahl(selectedNodeResult?.maxLatInflow, 2) }} l/s</div>
+                        <div>Max. Gesamtzufluss: {{ fmtZahl(selectedNodeResult?.maxTotalInflow, 2) }} l/s</div>
+                        <div>Gesamtvol. Überflutung: {{ fmtVol(selectedNodeResult?.floodingVolume || 0) }} m³</div>
                         <div v-if="(selectedNodeResult?.floodingVolume || 0) > 0.001" class="text-red"><img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> Überflutung gemeldet</div>
                     </div>
                     <div class="col">
                         <strong>Volumen</strong>
                         <div>Max. gespeichert: {{ fmtVol(nodeMaxVolume(selectedNodeResult)) }} m³</div>
                         <div>Vmax (möglich): {{ fmtVol(nodeVmax(selectedNodeResult)) }} m³</div>
-                        <div>Max. Füllgrad: <strong>{{ nodeFillPct(selectedNodeResult) != null ? nodeFillPct(selectedNodeResult).toFixed(1) + ' %' : '-' }}</strong></div>
+                        <div>Max. Füllgrad: <strong>{{ nodeFillPct(selectedNodeResult) != null ? fmtZahl(nodeFillPct(selectedNodeResult), 1) + ' %' : '-' }}</strong></div>
                         <template v-if="storageEntry(selectedNodeId)">
-                            <div>Durchschnittl. Füllgrad: {{ storageEntry(selectedNodeId).avgPcntFull?.toFixed(1) }} %</div>
+                            <div>Durchschnittl. Füllgrad: {{ fmtZahl(storageEntry(selectedNodeId).avgPcntFull, 1) }} %</div>
                             <div>Max. Abfluss: {{ (storageEntry(selectedNodeId).maxOutflow * 1000)?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }} l/s</div>
                         </template>
                     </div>
@@ -113,7 +113,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { DIAGRAMM } from '../../../utils/typPalette.js';
-import { Line, safeGet, formatTime, fmtVol, structureTypeLabel, chartOptions } from './resultsShared.js';
+import { Line, safeGet, formatTime, fmtVol, fmtZahl, structureTypeLabel, chartOptions } from './resultsShared.js';
 import { classifyPreview, LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
 const props = defineProps({
