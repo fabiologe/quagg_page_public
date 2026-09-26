@@ -124,11 +124,17 @@ describe('Übungsnetz, echter Rechenweg', () => {
     }, LAUFZEIT);
 
     it('Befund 4: SWMM-Abbruch (ERROR 191) wird als Fehler gemeldet, nicht als Erfolg', async () => {
-        store.rain.duration = 0; // Ende = Beginn → SWMM ERROR 191
+        // Dauer 0 h (Ende = Beginn → ERROR 191) kann die Oberfläche seit P2.3 nicht mehr
+        // schicken; der Abbruch wird deshalb direkt am Worker-Code geprüft.
+        store.rain.duration = 0;
         blockregen(store, 100, 60, 5);
         await store.runSimulation();
-        expect(store.simulation.status).toBe('error');
-        expect(store.simulation.error).toMatch(/ERROR 191/);
+        expect(store.rain.duration).toBe(1);
+        expect(store.simulation.status).toBe('success');
+        const { WorkerImProzess } = await import('./helpers/workerImProzess.js');
+        const kaputt = structuredClone(WorkerImProzess.letzteNutzlast);
+        kaputt.options.durationHours = 0;
+        await expect(new WorkerImProzess().runSimulation(kaputt)).rejects.toThrow(/ERROR 191/);
     }, LAUFZEIT);
 
     it('Befund 2: Blockregen 100 l/(s·ha) · 60 min ergibt bei jedem Intervall 36 mm', async () => {

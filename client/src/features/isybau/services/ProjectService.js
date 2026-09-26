@@ -46,7 +46,11 @@ export async function listProjects() {
         .sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
 }
 
-export async function saveProject(name, storeSnapshot) {
+/**
+ * @param {number|null} ersetzeId  vorhandenes Projekt gleichen Namens überschreiben
+ *   (vorher entstand bei jedem Speichern ein weiteres Projekt mit demselben Namen)
+ */
+export async function saveProject(name, storeSnapshot, ersetzeId = null) {
     const db = await openDB();
     // Strip Vue reactive Proxy wrappers — IndexedDB structured clone can't handle them
     const plain = JSON.parse(JSON.stringify(storeSnapshot));
@@ -58,6 +62,10 @@ export async function saveProject(name, storeSnapshot) {
         areaCount: plain.areas.length,
         data:      plain,
     };
+    if (ersetzeId != null) {
+        await wrap(tx(db, 'readwrite').put({ ...record, id: ersetzeId }));
+        return ersetzeId;
+    }
     const id = await wrap(tx(db, 'readwrite').add(record));
     return id;
 }

@@ -101,6 +101,8 @@ const store = useIsybauStore();
 const ezgTitle = computed(() => {
   if (ezgLayer.status.value === 'loading') return 'EZG-Karte: Luftbild wird geladen...';
   if (ezgLayer.status.value === 'error') return `EZG-Karte: Fehler — ${ezgLayer.error.value || 'unbekannt'}`;
+  // geladen, aber mit Lücken (einzelne Kacheln fehlten)
+  if (ezgLayer.enabled.value && ezgLayer.error.value) return `EZG-Karte ausblenden — ${ezgLayer.error.value}`;
   if (ezgLayer.enabled.value && store.terrain) {
     return 'EZG-Karte ausblenden (Luftbild — Höhenlinien kommen vom eigenen DGM und bleiben davon unabhängig)';
   }

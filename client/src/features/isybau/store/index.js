@@ -23,9 +23,47 @@ function nurLesbar(obj, key) {
     }
     return false;
 }
-function zuweisen(ziel, felder) {
+// Zahlfelder, die auch „nicht gesetzt" (null) sein dürfen — dort erkennt die Typprüfung
+// am alten Wert nicht, dass eine Zahl gemeint ist.
+const ZAHLFELDER = new Set(['x', 'y', 'z', 'z1', 'z2', 'coverZ', 'depth', 'diameter', 'length', 'roughness',
+    'size', 'runoffCoeff', 'splitRatio', 'volume', 'constantInflow', 'onDepth', 'offDepth', 'pumpRate',
+    'weirHeight', 'height', 'width', 'initDepth', 'maxDepth', 'lossCoeff', 'lossIn', 'lossOut']);
+
+/**
+ * Nutzereingabe → Zahl. Leeres Feld = nicht gesetzt (null), „1,5" = 1.5.
+ * Vorher landete '' im Store und der Builder schrieb eine LEERE Spalte in die .inp
+ * (Spalten verrutschen, SWMM liest Unsinn oder bricht ab, P2.1).
+ * @returns {number|null|undefined} undefined = keine Zahl
+ */
+export function zahlAusEingabe(v) {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+    const t = String(v).trim().replace(',', '.');
+    if (t === '') return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+function zuweisen(ziel, felder, abgelehnt = []) {
     for (const [k, v] of Object.entries(felder)) {
-        if (!nurLesbar(ziel, k)) ziel[k] = v;
+        if (nurLesbar(ziel, k)) continue;
+        if ((typeof ziel[k] === 'number' || ZAHLFELDER.has(k)) && (typeof v === 'string' || typeof v === 'number')) {
+            const n = zahlAusEingabe(v);
+            if (n === undefined) { abgelehnt.push(`${k} = „${v}"`); continue; } // alten Wert behalten
+            ziel[k] = n;
+        } else if (k === 'profile' && v && typeof v === 'object') {
+            const p = { ...v };
+            for (const f of ['height', 'width']) {
+                if (f in p) {
+                    const n = zahlAusEingabe(p[f]);
+                    if (n === undefined) { abgelehnt.push(`${f} = „${p[f]}"`); p[f] = ziel.profile?.[f] ?? null; }
+                    else p[f] = n;
+                }
+            }
+            ziel[k] = p;
+        } else {
+            ziel[k] = v;
+        }
     }
     return ziel;
 }
@@ -75,6 +113,8 @@ export const useIsybauStore = defineStore('isybau-module', {
         // Wechsel gestartet wurde, darf ihr Ergebnis nicht an das neue Netz hängen;
         // der Viewer räumt daran verschobene Beschriftungen ab.
         netzStand: 0,
+        // Seit dem letzten Laden/Speichern bearbeitet? (Rückfrage vor Import, Warnung beim Schließen)
+        ungespeichert: false,
         // UI State for Modals
         // Sichtbarkeit ALLER Modals lebt hier — Komponenten togglen nur Flags,
         // die Verdrahtung übernimmt components/modals/IsybauModals.vue.
@@ -426,6 +466,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 invalidElementType: null, preSolveWarnings: [], fehlerBericht: null, veraltet: false
             });
             this.netzStand++;
+            this.ungespeichert = false;
             // Rückgängig darf nicht ins vorige Projekt zurückspringen
             this.history.undoStack = [];
             this.history.redoStack = [];
@@ -450,6 +491,7 @@ export const useIsybauStore = defineStore('isybau-module', {
         saveHistory() {
             // jede Bearbeitung läuft hier durch: ein vorhandenes Ergebnis zeigt ab jetzt einen alten Stand
             if (this.simulation.results) this.simulation.veraltet = true;
+            this.ungespeichert = true;
             const snapshot = {
                 nodes: Array.from(this.nodes.values()).map(n => n.toJSON ? n.toJSON() : n),
                 edges: Array.from(this.edges.values()).map(e => e.toJSON ? e.toJSON() : e),
@@ -957,7 +999,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.saveHistory();
             const edge = this.edges.get(id);
             if (edge) {
-                zuweisen(edge, props);
+                const abgelehnt = [];
+                zuweisen(edge, props, abgelehnt);
+                if (abgelehnt.length) this.melde(`Haltung ${id}: keine Zahl, nicht übernommen: ${abgelehnt.join(', ')}`);
             }
         },
 
@@ -968,7 +1012,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 // isManhole/canOverflow nie blind zuweisen — die Kopplung
                 // (isManhole=false erzwingt canOverflow=false) liegt im Node-Modell.
                 const { isManhole, canOverflow, ...rest } = props;
-                zuweisen(node, rest);
+                const abgelehnt = [];
+                zuweisen(node, rest, abgelehnt);
+                if (abgelehnt.length) this.melde(`Knoten ${id}: keine Zahl, nicht übernommen: ${abgelehnt.join(', ')}`);
                 // Typ-Dropdowns schreiben nur `type` — `bauwerkstyp` muss
                 // mitgezogen werden, sonst bliebe z.B. eine auf "Wehr"
                 // umgestellte Pumpe in SWMM weiterhin eine Pumpe
@@ -988,7 +1034,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Areas are in an array
             const area = this.areas.find(a => a.id === id);
             if (area) {
-                zuweisen(area, props);
+                const abgelehnt = [];
+                zuweisen(area, props, abgelehnt);
+                if (abgelehnt.length) this.melde(`Fläche ${id}: keine Zahl, nicht übernommen: ${abgelehnt.join(', ')}`);
             }
         },
 
@@ -1078,6 +1126,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             }
 
             // Bulk update from PreprocessingModal
+            const abgelehnt = [];
             if (data.nodes) {
                 // Create new map for reactivity
                 const pendingNodes = new Map(this.nodes);
@@ -1085,7 +1134,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                     const node = pendingNodes.get(updatedNode.id);
                     if (node) {
                         // Merge props back
-                        zuweisen(node, updatedNode);
+                        const vorher = abgelehnt.length;
+                        zuweisen(node, updatedNode, abgelehnt);
+                        for (let i = vorher; i < abgelehnt.length; i++) abgelehnt[i] = `${node.id}: ${abgelehnt[i]}`;
                         // s. updateNode(): type/bauwerkstyp synchron halten
                         if ('type' in updatedNode) syncBauwerkstypFromType(node);
                         // Überstau-Kopplung re-normalisieren (Bulk-Edit setzt teils nur canOverflow)
@@ -1102,17 +1153,29 @@ export const useIsybauStore = defineStore('isybau-module', {
                     if (edge) {
                         // Ensure profile is correctly deep merged or replaced
                         if (updatedEdge.profile) {
-                            edge.profile = { ...edge.profile, ...updatedEdge.profile };
+                            updatedEdge = { ...updatedEdge, profile: { ...edge.profile, ...updatedEdge.profile } };
                         }
-                        zuweisen(edge, updatedEdge);
+                        const vorher = abgelehnt.length;
+                        zuweisen(edge, updatedEdge, abgelehnt);
+                        for (let i = vorher; i < abgelehnt.length; i++) abgelehnt[i] = `${edge.id}: ${abgelehnt[i]}`;
                     }
                 });
                 this.edges = pendingEdges;
             }
 
             if (data.areas) {
-                // Areas array replacement
-                this.areas = data.areas.map(raw => {
+                // Areas array replacement. Zahlfelder vorher normieren: new Area() machte aus
+                // einem geleerten Feld Number('') = 0 (Fläche 0 ha, ψ 0, Aufteilung 0 %).
+                const alt = new Map(this.areas.map(a => [a.id, a]));
+                this.areas = data.areas.map(eingabe => {
+                    const raw = { ...eingabe };
+                    for (const f of ['size', 'runoffCoeff', 'splitRatio']) {
+                        if (!(f in raw)) continue;
+                        const n = zahlAusEingabe(raw[f]);
+                        if (n === undefined) { abgelehnt.push(`${raw.id}: ${f} = „${raw[f]}"`); raw[f] = alt.get(raw.id)?.[f] ?? null; }
+                        else raw[f] = n;
+                    }
+                    if (raw.splitRatio == null) delete raw.splitRatio; // Voreinstellung 50 %
                     try {
                         // If it's already an Area, great, otherwise hydrate
                         // Ideally we merge into existing IDs if possible to preserve refs?
@@ -1123,6 +1186,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                         return null;
                     }
                 }).filter(a => a !== null);
+            }
+            if (abgelehnt.length) {
+                this.melde(`Keine Zahl, nicht übernommen (alter Wert bleibt): ${abgelehnt.slice(0, 8).join(', ')}${abgelehnt.length > 8 ? ' …' : ''}`);
             }
         },
 
@@ -1192,6 +1258,13 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
 
         // Simulation Runner
+        /** Laufende Berechnung abbrechen (Knopf in der Seitenleiste). Der Worker wird beendet
+         *  und beim nächsten Lauf neu angelegt. */
+        simulationAbbrechen() {
+            if (this.simulation.status !== 'running') return;
+            workerControllerInstance?.terminate();
+        },
+
         async runSimulation() {
             if (this.simulation.status === 'running') {
                 console.warn('Simulation läuft bereits — zweiter Start ignoriert.');
@@ -1210,10 +1283,10 @@ export const useIsybauStore = defineStore('isybau-module', {
             // eine deutsche Meldung statt des rohen SWMM-Fehlertexts. Warnungen
             // (z.B. Sohlgefälle >= Haltungslänge) sind nicht fatal — der Solver
             // rechnet trotzdem weiter — und blockieren den Lauf daher nicht.
-            const findings = validateNetwork(this.nodeArray, this.edgeArray);
+            const findings = validateNetwork(this.nodeArray, this.edgeArray, this.areaArray);
             const firstError = findings.find(f => f.severity === 'error');
             if (firstError) {
-                const label = firstError.elementType === 'node' ? 'Knoten' : 'Haltung';
+                const label = { node: 'Knoten', edge: 'Haltung', area: 'Fläche' }[firstError.elementType] ?? '';
                 this.simulation.status = 'error';
                 this.simulation.error = firstError.id != null
                     ? `${label} ${firstError.id}: ${firstError.message}`
@@ -1229,6 +1302,24 @@ export const useIsybauStore = defineStore('isybau-module', {
                     elementType: f.elementType,
                     text: `${f.elementType === 'node' ? 'Knoten' : 'Haltung'} ${f.id}: ${f.message}`
                 }));
+
+            // Simulationsdauer 1–48 h (P2.3): leeres Feld ergab Ende = Beginn (SWMM-Abbruch),
+            // große Werte liefen minutenlang. Normieren und sagen, was gerechnet wird.
+            const dauerEingabe = zahlAusEingabe(this.rain.duration);
+            const dauer = Math.min(48, Math.max(1, Math.round(dauerEingabe ?? 4)));
+            if (dauer !== dauerEingabe) {
+                this.melde(`Simulationsdauer „${this.rain.duration}" → ${dauer} h (erlaubt 1–48 h).`, 'hinweis');
+                this.rain.duration = dauer;
+            }
+            const regen = this.rain.activeModelRain;
+            if (regen?.series?.length) {
+                const intervall = regen.metadata?.interval ?? 5;
+                const regenMin = regen.series.length * intervall;
+                if (regenMin > dauer * 60) {
+                    this.simulation.preSolveWarnings.push({ id: null, elementType: null,
+                        text: `Regen (${regenMin} min) ist länger als die Simulation (${dauer} h) — der Rest wird nicht gerechnet.` });
+                }
+            }
 
             const stand = this.netzStand;
             try {
@@ -1284,6 +1375,11 @@ export const useIsybauStore = defineStore('isybau-module', {
                 this.ui.showResultsModal = true; // Auto open results?
             } catch (err) {
                 if (stand !== this.netzStand) return; // Netz inzwischen gewechselt
+                if (err.abgebrochen) {
+                    this.simulation.status = 'idle';
+                    this.melde('Berechnung abgebrochen.', 'hinweis');
+                    return;
+                }
                 console.error(err);
                 this.simulation.error = err.message;
                 this.simulation.fehlerBericht = err.details || null;

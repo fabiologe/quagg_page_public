@@ -39,7 +39,9 @@ export const KostraApiService = {
             }
         } catch (error) {
             console.error('KOSTRA API Error:', error)
-            throw new Error('Fehler beim Abrufen der KOSTRA-Daten.')
+            // Meldung des Servers (z. B. „KOSTRA-Kontingent … erschoepft") nicht verschlucken
+            const detail = error?.response?.data?.detail
+            throw new Error(detail ? String(detail) : 'Fehler beim Abrufen der KOSTRA-Daten.')
         }
     }
 }

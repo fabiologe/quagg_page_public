@@ -475,7 +475,7 @@
                         <input v-model="filters.material" placeholder="Filtern …" class="filter-input"
                                aria-label="Haltungen nach Material filtern" @click.stop>
                     </th>
-                    <th>Rauheit</th>
+                    <th title="Strickler-Beiwert kSt in m^(1/3)/s">Rauheit kSt</th>
                     <th>Profil</th>
                     <th class="sortable" @click="sortBy('length')">Länge</th>
                     <th>Neigung %</th>

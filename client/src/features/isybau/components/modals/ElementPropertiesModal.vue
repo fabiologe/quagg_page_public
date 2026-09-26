@@ -77,12 +77,12 @@
               <PixelSelect v-model="formData.profileType" class="form-select" :options="PROFIL_OPTIONEN" />
             </div>
             <div class="form-group">
-               <label>Höhe (m) / DN (m)</label>
-               <input v-model.number="formData.geom1" type="number" step="0.001" class="form-input" required />
+               <label>Höhe / DN (mm)</label>
+               <input v-model.number="formData.geom1" type="number" step="1" min="1" class="form-input" required />
             </div>
             <div class="form-group" v-if="formData.profileType !== 0">
-                <label>Breite (m)</label>
-                <input v-model.number="formData.geom2" type="number" step="0.001" class="form-input" />
+                <label>Breite (mm)</label>
+                <input v-model.number="formData.geom2" type="number" step="1" min="0" class="form-input" />
                 <span v-if="formData.profileType === 8" class="hint">Sohlbreite</span>
             </div>
             <div class="form-group" v-if="formData.profileType === 8">
@@ -95,8 +95,8 @@
                              @change="updateRoughness" />
             </div>
              <div class="form-group">
-               <label>Rauheit (ks / n)</label>
-               <input v-model.number="formData.roughness" type="number" step="0.001" class="form-input" />
+               <label>Rauheit k<sub>St</sub> (m<sup>1/3</sup>/s)</label>
+               <input v-model.number="formData.roughness" type="number" step="1" min="1" class="form-input" />
                <small class="hint">Wird durch Material {{ formData.material }} gesetzt.</small>
             </div>
             <div class="form-group">
@@ -292,7 +292,7 @@ const initForm = () => {
         const toNode = props.availableNodes.find(n => n.id === props.elementData?.metaToId);
         Object.assign(defaults, {
             profileType: 0,
-            geom1: 0.3,
+            geom1: 300, // mm, wie Info-Fenster und Datentabelle (vorher hier m)
             material: defaultMat,
             roughness: getRoughness(defaultMat),
             z1: fromNode ? fromNode.z : null,
@@ -372,8 +372,8 @@ const save = () => {
     if (props.mode === 'edge') {
         data.profile = {
             type: data.profileType,
-            height: Number(data.geom1),
-            width: Number(data.geom2 || 0)
+            height: Number(data.geom1) / 1000, // mm → m (Store rechnet in m)
+            width: Number(data.geom2 || 0) / 1000
         };
         if (data.profileType === 8) {
             data.profile.slope = Number(data.slope || 1.5);

@@ -226,8 +226,81 @@ export function checkAuslaesse(nodes, edges) {
     return funde;
 }
 
-const NODE_RULES = [checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints];
-const EDGE_RULES = [checkConduitElevationDrop, checkConduitProfile];
+const endlich = (v) => typeof v === 'number' && Number.isFinite(v);
+const fehler = (id, elementType, code, message) => ({ id, elementType, severity: 'error', code, message });
+
+/** Zahlfelder eines Knotens (P2.1): ohne Sohlhöhe schrieb der Builder 0 m bzw. eine leere Spalte. */
+export function checkNodeZahlen(node) {
+    if (!endlich(node.z)) return fehler(node.id, 'node', 'ERR_Z', 'Sohlhöhe fehlt oder ist keine Zahl');
+    if (node.coverZ != null && !endlich(node.coverZ)) return fehler(node.id, 'node', 'ERR_Z', 'Deckelhöhe ist keine Zahl');
+    return null;
+}
+
+/** Zahlfelder einer Haltung (P2.1). */
+export function checkEdgeZahlen(edge) {
+    for (const [f, name] of [['z1', 'Sohlhöhe oben'], ['z2', 'Sohlhöhe unten'], ['length', 'Länge']]) {
+        if (edge[f] != null && !endlich(edge[f])) return fehler(edge.id, 'edge', 'ERR_ZAHL', `${name} ist keine Zahl`);
+    }
+    if (edge.roughness != null && !(endlich(edge.roughness) && edge.roughness > 0)) {
+        return fehler(edge.id, 'edge', 'ERR_ZAHL', `Rauheit muss > 0 sein (${edge.roughness})`);
+    }
+    return null;
+}
+
+/**
+ * Flächen (P2.4): Größe > 0, Abflussbeiwert 0–1, Aufteilung 0–100 %, Anschlussknoten vorhanden.
+ * Ohne Anschluss bzw. mit unbekanntem Knoten rechnete SWMM die Fläche nicht oder brach ab.
+ */
+export function checkAreas(areas, nodeById) {
+    const funde = [];
+    for (const a of areas) {
+        if (!(endlich(a.size) && a.size > 0)) funde.push(fehler(a.id, 'area', 'ERR_FLAECHE', `Flächengröße muss > 0 ha sein (${a.size ?? 'leer'})`));
+        if (a.runoffCoeff != null && !(endlich(a.runoffCoeff) && a.runoffCoeff >= 0 && a.runoffCoeff <= 1)) {
+            funde.push(fehler(a.id, 'area', 'ERR_FLAECHE', `Abflussbeiwert muss zwischen 0 und 1 liegen (${a.runoffCoeff})`));
+        }
+        if (a.nodeId2 && !(endlich(a.splitRatio) && a.splitRatio >= 0 && a.splitRatio <= 100)) {
+            funde.push(fehler(a.id, 'area', 'ERR_FLAECHE', `Aufteilung muss zwischen 0 und 100 % liegen (${a.splitRatio})`));
+        }
+        for (const k of [a.nodeId, a.nodeId2].filter(Boolean)) {
+            if (!nodeById.has(k)) funde.push(fehler(a.id, 'area', 'ERR_ANSCHLUSS', `Anschlussknoten „${k}" gibt es nicht`));
+        }
+    }
+    return funde;
+}
+
+/**
+ * Namen (P2.4): SWMM trennt Spalten an Leerzeichen, „;" beginnt einen Kommentar, und
+ * Namen gelten ohne Groß-/Kleinschreibung (hash.c: samestr) — „R1" und „r1" wären
+ * derselbe Knoten. Geprüft je Objektart (Knoten, Haltungen, Flächen), wie SWMM zählt.
+ */
+export function checkNamen(nodes, edges, areas) {
+    const funde = [];
+    for (const [liste, art, label] of [[nodes, 'node', 'Knoten'], [edges, 'edge', 'Haltung'], [areas, 'area', 'Fläche']]) {
+        const gesehen = new Map();
+        for (const el of liste) {
+            const id = String(el.id ?? '');
+            if (/\s|;|"/.test(id)) funde.push(fehler(el.id, art, 'ERR_NAME', `Name enthält Leerzeichen, „;" oder Anführungszeichen — SWMM kann ihn nicht lesen`));
+            const schluessel = id.toUpperCase();
+            if (gesehen.has(schluessel) && gesehen.get(schluessel) !== id) {
+                funde.push(fehler(el.id, art, 'ERR_NAME', `${label} „${gesehen.get(schluessel)}" und „${id}" sind für SWMM derselbe Name (Groß-/Kleinschreibung zählt nicht)`));
+            }
+            gesehen.set(schluessel, id);
+        }
+    }
+    return funde;
+}
+
+/** Verteiler (P2.4): braucht zwei Abgänge — sonst ließ der Builder den Knoten still weg (SWMM: ERROR 203). */
+export function checkVerteiler(nodes, edges) {
+    const aus = new Map();
+    for (const e of edges) { const v = e.fromNodeId ?? e.from; aus.set(v, (aus.get(v) || 0) + 1); }
+    return nodes
+        .filter(n => classifyPreview(n).section === '[DIVIDERS]' && (aus.get(n.id) || 0) < 2)
+        .map(n => fehler(n.id, 'node', 'ERR_DIVIDER', `Verteiler mit ${aus.get(n.id) || 0} abgehenden Haltungen — er braucht zwei`));
+}
+
+const NODE_RULES = [checkNodeZahlen, checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints];
+const EDGE_RULES = [checkEdgeZahlen, checkConduitElevationDrop, checkConduitProfile];
 
 /**
  * Prüft das gesamte Netz und liefert alle gefundenen Verstöße (nicht nur den ersten),
@@ -238,8 +311,11 @@ const EDGE_RULES = [checkConduitElevationDrop, checkConduitProfile];
  * @param {Array} edges - Edge-Instanzen oder POJOs (edgeArray-Format)
  * @returns {Array<{id, elementType, severity, code, message}>}
  */
-export function validateNetwork(nodes = [], edges = []) {
+export function validateNetwork(nodes = [], edges = [], areas = []) {
     const findings = [];
+    findings.push(...checkNamen(nodes, edges, areas));
+    findings.push(...checkVerteiler(nodes, edges));
+    if (areas.length) findings.push(...checkAreas(areas, new Map(nodes.map(n => [n.id, n]))));
     for (const node of nodes) {
         for (const rule of NODE_RULES) {
             const finding = rule(node);

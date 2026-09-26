@@ -108,3 +108,20 @@ describe('Modellregen: Wiederkehrzeit haengt an KOSTRA-Daten', () => {
         w.unmount();
     });
 });
+
+// P2.2: Anlegen-Dialog rechnete in m, Info-Fenster und Datentabelle in mm — „300" wurde 300 m
+describe('Haltung anlegen: Profil in mm wie überall', () => {
+    it('Voreinstellung 300 mm → Store 0,3 m', async () => {
+        const w = mount(ElementPropertiesModal, {
+            props: { isOpen: true, mode: 'edge', elementData: { metaFromId: 'K1', metaToId: 'K2' },
+                     availableNodes: [{ id: 'K1', z: 2 }, { id: 'K2', z: 1 }], availableEdges: [] },
+            ...HUELLE,
+        });
+        await nextTick();
+        expect(w.text()).toContain('Höhe / DN (mm)');
+        await w.find('form').trigger('submit');
+        const d = w.emitted('save')[0][0].data;
+        expect(d.profile.height).toBeCloseTo(0.3, 9);
+        w.unmount();
+    });
+});

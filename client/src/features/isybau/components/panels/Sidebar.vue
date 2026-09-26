@@ -134,6 +134,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { parseIsybauXML } from '../../utils/xmlParser.js';
+import { dekodiereXml } from '../../utils/xmlKodierung.js';
 import { buildIsybauXML } from '../../utils/xmlExporter.js';
 import TerminalHero from './TerminalHero.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -164,10 +165,23 @@ const handleFileUpload = async (event) => {
   if (xmlUploadLocked.value) { event.target.value = ''; return; }
   const file = event.target.files[0];
   if (!file) return;
-  const text = await file.text();
+  // Bearbeitetes Netz nicht kommentarlos ersetzen (P2.7)
+  if (store.nodes.size > 0 && store.ungespeichert
+      && !window.confirm('Das aktuelle Netz hat ungespeicherte Änderungen. Trotzdem die neue Datei laden?')) {
+    event.target.value = '';
+    return;
+  }
+  // Kodierung laut XML-Kopf (ISYBAU oft ISO-8859-1) — file.text() las immer UTF-8
+  const text = dekodiereXml(await file.arrayBuffer());
   try {
     const parsed = parseIsybauXML(text);
-    parsed.metadata.fileName = file.name;
+    parsed.metadata = { ...(parsed.metadata || {}), fileName: file.name };
+    const anzahl = parsed.network?.nodes?.size ?? parsed.network?.nodes?.length ?? 0;
+    if (!anzahl) {
+      // leere/fremde Datei: vorhandenes Netz behalten statt es durch ein leeres zu ersetzen
+      store.melde(`In „${file.name}" wurden keine Schächte gefunden — ist das eine ISYBAU-XML (Stammdaten)? Das aktuelle Netz bleibt.`, 'fehler');
+      return;
+    }
     store.loadParsedData(parsed);
   } catch (e) {
     console.error('Parse Error', e);

@@ -51,8 +51,11 @@ function ensureAerialWorker() {
         else pending.reject(new Error(msg.message || 'Luftbild-Worker-Fehler'));
     };
     aerialWorker.onerror = (err) => {
-        for (const pending of pendingAerialRequests.values()) pending.reject(err);
+        const fehler = new Error(`Luftbild-Worker abgestürzt: ${err?.message || err} — beim nächsten Laden neu gestartet.`);
+        for (const pending of pendingAerialRequests.values()) pending.reject(fehler);
         pendingAerialRequests.clear();
+        aerialWorker?.terminate();
+        aerialWorker = null; // nächster Abruf legt einen frischen Worker an (P2.8)
     };
     return aerialWorker;
 }
@@ -74,7 +77,7 @@ export async function fetchAerialImage(wgs84Bounds) {
 
     const worker = ensureAerialWorker();
     const reqId = ++aerialReqId;
-    const { buffer, mimeType } = await new Promise((resolve, reject) => {
+    const { buffer, mimeType, fehlend = 0, gesamt = 0 } = await new Promise((resolve, reject) => {
         pendingAerialRequests.set(reqId, { resolve, reject });
         worker.postMessage({ type: 'fetch', reqId, tileUrl: TILE_URL, tileSize: TILE_SIZE, z, xMin, yMin, tilesX, tilesY });
     });
@@ -93,5 +96,5 @@ export async function fetchAerialImage(wgs84Bounds) {
         minLat: tileY2lat(yMax + 1, z)
     };
 
-    return { imageUrl, actualWgs84Bounds };
+    return { imageUrl, actualWgs84Bounds, fehlend, gesamt };
 }

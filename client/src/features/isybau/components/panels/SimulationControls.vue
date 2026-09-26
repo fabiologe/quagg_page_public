@@ -124,6 +124,8 @@
         <div v-if="loading" class="progress-bar-container">
             <div class="progress-bar-fill"></div>
         </div>
+        <!-- Abbrechen: hängende oder zu lange Rechnung ohne Seiten-Neuladen beenden (P2.5) -->
+        <button v-if="loading" class="secondary-btn full" @click="store.simulationAbbrechen()">Abbrechen</button>
 
         <div v-if="error" class="error-msg">
             {{ error }}
@@ -137,7 +139,7 @@
         <div v-if="preSolveWarnings.length" class="warning-list">
             <div v-for="w in preSolveWarnings" :key="w.id + w.text" class="warning-msg">
                 {{ w.text }}
-                <button class="warning-link" @click="store.openPreprocessingFor(w.id, w.elementType)">
+                <button v-if="w.id != null" class="warning-link" @click="store.openPreprocessingFor(w.id, w.elementType)">
                     → Element öffnen
                 </button>
             </div>

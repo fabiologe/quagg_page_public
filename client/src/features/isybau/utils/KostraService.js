@@ -60,10 +60,20 @@ export const detectCRS = (x, y) => {
 
 import { KostraApiService } from '../../kostra/services/KostraApiService';
 
+/** Grober Rahmen Deutschlands (WGS84) — KOSTRA-DWD deckt nur Deutschland ab. */
+export const liegtInDeutschland = (lat, lon) =>
+    Number.isFinite(lat) && Number.isFinite(lon) && lat >= 47.2 && lat <= 55.1 && lon >= 5.8 && lon <= 15.1;
+
 export const fetchKostraData = async (lat, lon) => {
+    let data;
     try {
-        console.log(`Fetching KOSTRA data for ${lat}, ${lon}`);
-        const data = await KostraApiService.fetchRainData(lat, lon);
+        data = await KostraApiService.fetchRainData(lat, lon);
+    } catch (e) {
+        // Serverseitige Meldung (Kontingent, Konfiguration, DWD) weitergeben statt „null"
+        throw new Error(`KOSTRA-Abruf fehlgeschlagen: ${e?.message || e}`);
+    }
+    if (!data?.raw) return null; // Dienst antwortet, hat aber keine Werte für den Punkt
+    try {
 
         // We need r(15,1) -> Duration 15 min, Return Period 1 year (RN_001A)
         // The service returns 'raw' data which we assume follows the structure data[duration][return_period_key]

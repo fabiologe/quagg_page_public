@@ -1065,6 +1065,12 @@ LINKS                ALL
     // Helpers
     pad(val) {
         if (val === undefined || val === null) return "0".padEnd(10);
+        // Leeres Feld oder NaN ergäbe eine leere bzw. „NaN"-Spalte — SWMM liest dann die
+        // folgenden Spalten verschoben. Lieber hier abbrechen (die Vorab-Prüfung fängt das
+        // normalerweise schon, P2.1).
+        if (val === '' || (typeof val === 'number' && !Number.isFinite(val))) {
+            throw new Error(`Ungültiger Zahlenwert (${val === '' ? 'leer' : val}) in der Eingabedatei — bitte Daten prüfen.`);
+        }
         if (typeof val === 'number') {
             // Avoid massive decimals
             const s = val.toFixed(3); // 3 decimals usually enough for geometric

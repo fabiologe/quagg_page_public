@@ -62,4 +62,18 @@ describe('Ergebnis gehört zum Lauf', () => {
         expect(store.rain.activeModelRain).toBeNull();
         expect(store.rain.duration).toBe(2);
     });
+
+    // P2.3: leeres Feld ergab Ende = Beginn (SWMM-Abbruch); Regen länger als Simulation still abgeschnitten
+    it('Simulationsdauer wird auf 1–48 h normiert; zu langer Regen wird gemeldet', async () => {
+        const store = netz();
+        store.setRainModel({ id: 'lang', type: 'block', series: calculateBlockRain(20, 120, 5), metadata: { duration: 120, interval: 5 } });
+        store.rain.duration = '';
+        await store.runSimulation();
+        expect(store.simulation.status).toBe('success');
+        expect(store.rain.duration).toBe(4);
+        expect(store.simulation.preSolveWarnings.map(w => w.text).join(' ')).not.toMatch(/länger als die Simulation/);
+        store.rain.duration = 1;
+        await store.runSimulation();
+        expect(store.simulation.preSolveWarnings.map(w => w.text)).toContain('Regen (120 min) ist länger als die Simulation (1 h) — der Rest wird nicht gerechnet.');
+    }, 300000);
 });

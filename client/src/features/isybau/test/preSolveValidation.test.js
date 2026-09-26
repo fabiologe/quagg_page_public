@@ -228,3 +228,40 @@ describe('preSolveValidation', () => {
         });
     });
 });
+
+// P2.1 / P2.4: Zahlfelder, Flächen, Namen, Verteiler
+describe('Vorab-Prüfung P2', async () => {
+    const { validateNetwork } = await import('../utils/preSolveValidation.js');
+    const { zahlAusEingabe } = await import('../store/index.js');
+    const n = (id, z = 1, extra = {}) => ({ id, z, type: 'Schacht', ...extra });
+    const h = (id, von, nach, extra = {}) => ({ id, fromNodeId: von, toNodeId: nach, profile: { type: 0, height: 0.3 }, ...extra });
+    const codes = (f) => f.filter(x => x.severity === 'error').map(x => `${x.code}:${x.id}`);
+    const netz = [n('A', 2), n('B', 1), n('X', 0, { type: 'Auslaufbauwerk' })];
+    const kanten = [h('1', 'A', 'B'), h('2', 'B', 'X')];
+
+    it('Eingabe → Zahl: leer = nicht gesetzt, Komma = Punkt, Unsinn = undefined', () => {
+        expect([zahlAusEingabe(''), zahlAusEingabe(' 1,5 '), zahlAusEingabe('abc'), zahlAusEingabe(3), zahlAusEingabe(NaN)])
+            .toEqual([null, 1.5, undefined, 3, undefined]);
+    });
+    it('Sohlhöhe fehlt → Fehler', () => {
+        expect(codes(validateNetwork([n('A', null), ...netz.slice(1)], kanten))).toEqual(['ERR_Z:A']);
+    });
+    it('Fläche: 0 ha, ψ > 1, unbekannter Knoten, Aufteilung > 100 %', () => {
+        const flaechen = [
+            { id: 'F1', size: 0, nodeId: 'A' },
+            { id: 'F2', size: 1, runoffCoeff: 1.4, nodeId: 'A' },
+            { id: 'F3', size: 1, nodeId: 'Q' },
+            { id: 'F4', size: 1, nodeId: 'A', nodeId2: 'B', splitRatio: 120 },
+            { id: 'F5', size: 1, runoffCoeff: 0.5, nodeId: 'A', nodeId2: 'B', splitRatio: 0 },
+        ];
+        expect(codes(validateNetwork(netz, kanten, flaechen))).toEqual(['ERR_FLAECHE:F1', 'ERR_FLAECHE:F2', 'ERR_ANSCHLUSS:F3', 'ERR_FLAECHE:F4']);
+    });
+    it('Namen: Leerzeichen, „;", nur Groß-/Kleinschreibung verschieden', () => {
+        const f = validateNetwork([...netz, n('b', 1), n('C D', 1)], kanten);
+        expect(codes(f)).toEqual(expect.arrayContaining(['ERR_NAME:b', 'ERR_NAME:C D']));
+    });
+    it('Verteiler mit einem Abgang → Fehler (Builder ließ ihn still weg)', () => {
+        const f = validateNetwork([...netz, n('V', 1.5, { type: 'Divider' })], [...kanten, h('3', 'V', 'B')]);
+        expect(codes(f)).toContain('ERR_DIVIDER:V');
+    });
+});

@@ -23,7 +23,7 @@ function initModule() {
         })().catch(err => {
             console.error("Failed to initialize SWMM Module:", err);
             initPromise = null; // allow retry
-            self.postMessage({ command: 'ERROR', message: err.message });
+            self.postMessage({ command: 'ERROR', message: `Rechenkern (SWMM/WebAssembly) konnte nicht geladen werden: ${err.message} — bitte die Seite neu laden.`, absturz: true });
             throw err;
         });
     }
@@ -47,6 +47,11 @@ function rechneEinmal(inpString) {
         ? Module.FS.readFile(reportPath, { encoding: 'utf8' }) : '';
     // Kopie: der nächste Lauf überschreibt /out.out (Automatik rechnet zweimal).
     const outBytes = Module.FS.analyzePath(outPath).exists ? Module.FS.readFile(outPath).slice() : null;
+    // Dateien im virtuellen Speicher freigeben — die .out wächst mit Netzgröße und Dauer
+    // und blieb bis zum nächsten Lauf im WASM-Speicher liegen (P2.5).
+    for (const pfad of [inputPath, reportPath, outPath]) {
+        try { if (Module.FS.analyzePath(pfad).exists) Module.FS.unlink(pfad); } catch { /* egal */ }
+    }
 
     // Abbruch des Rechenkerns: Rückgabecode ≠ 0 oder ERROR-Zeilen im Bericht.
     // Früher lief es trotzdem als Erfolg mit leerem Ergebnis weiter (doc/09, Befund 4).
@@ -188,7 +193,10 @@ async function runSimulation(data) {
 
     } catch (err) {
         console.error("Simulation Error:", err);
-        self.postMessage({ command: 'ERROR', message: err.message });
+        // Absturz des Rechenkerns (Abort/RuntimeError) ≠ Fehler im Modell: der Worker ist danach
+        // nicht mehr verlässlich und wird vom WorkerController neu angelegt (P2.5).
+        const absturz = /Aborted|RuntimeError|memory|unreachable/i.test(String(err?.message || err));
+        self.postMessage({ command: 'ERROR', message: absturz ? `Rechenkern abgestürzt (${err.message}) — bitte erneut rechnen.` : err.message, absturz });
     }
 }
 

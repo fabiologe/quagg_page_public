@@ -101,7 +101,7 @@ import { ref, watch } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import { useIsybauStore } from '../../store/index.js';
 
-import { CRS_OPTIONS, transformToWGS84, fetchKostraData } from '../../utils/KostraService.js';
+import { CRS_OPTIONS, transformToWGS84, fetchKostraData, detectCRS, liegtInDeutschland } from '../../utils/KostraService.js';
 import { kostraBlockRain } from '../../utils/RainModelService.js';
 import PixelSelect from '../common/PixelSelect.vue';
 const store = useIsybauStore();
@@ -113,9 +113,13 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'select', 'data-loaded']);
 
-const selectedCRS = ref(CRS_OPTIONS[0].value);
 // Extend options with WGS84 locally
 const crsOptions = [...CRS_OPTIONS, { label: "WGS84 (GPS)", value: "EPSG:4326" }];
+// Vorbelegung aus dem Netz (bestätigtes bzw. beim Import geschätztes System), sonst aus den
+// Koordinaten geschätzt — vorher immer UTM 32, bei GK-Netzen landete der Punkt im Nirgendwo (P2.6).
+const netzCRS = store.metadata?.crs?.epsg;
+const selectedCRS = ref(crsOptions.some(o => o.value === netzCRS) ? netzCRS
+  : props.referencePoint ? detectCRS(props.referencePoint.x, props.referencePoint.y) : CRS_OPTIONS[0].value);
 
 const isFetching = ref(false);
 const result = ref(null);
@@ -152,7 +156,17 @@ const fetchData = async () => {
 
   try {
     const wgs84 = transformToWGS84(manualCoords.value.x, manualCoords.value.y, selectedCRS.value);
-    
+
+    // KOSTRA-DWD gibt es nur für Deutschland — ein falsches Koordinatensystem landet
+    // meist weit draußen. Vorher sagen, statt einen leeren Abruf zu zählen.
+    if (wgs84 && !liegtInDeutschland(wgs84[1], wgs84[0])) {
+      const [lon, lat] = wgs84;
+      const grad = (v, pos, neg) => `${Math.abs(v).toLocaleString('de-DE', { maximumFractionDigits: 3 })}° ${v < 0 ? neg : pos}`;
+      error.value = `Der Punkt liegt nicht in Deutschland (${grad(lat, 'N', 'S')}, ${grad(lon, 'O', 'W')}) — `
+        + 'KOSTRA-DWD hat dort keine Werte. Stimmt das Koordinatensystem?';
+      return;
+    }
+
     if (wgs84) {
       const data = await fetchKostraData(wgs84[1], wgs84[0]);
       if (data) {
@@ -177,7 +191,8 @@ const fetchData = async () => {
     }
   } catch (e) {
     console.error(e);
-    error.value = "Fehler beim Abrufen der Daten.";
+    // Meldung des Servers durchreichen (Kontingent erschöpft, nicht konfiguriert, DWD-Fehler)
+    error.value = e?.message || "Fehler beim Abrufen der Daten.";
   } finally {
     isFetching.value = false;
   }

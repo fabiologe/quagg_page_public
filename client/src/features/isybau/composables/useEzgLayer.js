@@ -134,10 +134,12 @@ function ensureContourWorker() {
     };
     contourWorker.onerror = (err) => {
         console.error('EZG-Karte: Kontur-Worker-Fehler', err.message || err);
-        contourError.value = err.message || 'Höhenlinien-Berechnung fehlgeschlagen';
+        contourError.value = `Höhenlinien-Berechnung fehlgeschlagen${err?.message ? ` (${err.message})` : ''}`;
         contourStatus.value = 'error';
         for (const resolve of pendingContourResolvers.values()) resolve(EMPTY_CONTOUR_RESULT);
         pendingContourResolvers.clear();
+        contourWorker?.terminate();
+        contourWorker = null; // nächster Aufruf legt einen frischen Worker an (P2.8)
     };
     return contourWorker;
 }
@@ -284,15 +286,17 @@ async function refreshAerial(wgs84Bounds, epsg) {
     status.value = 'loading';
     error.value = null;
     try {
-        const { imageUrl, actualWgs84Bounds } = await fetchAerialImage(wgs84Bounds);
+        const { imageUrl, actualWgs84Bounds, fehlend, gesamt } = await fetchAerialImage(wgs84Bounds);
         revokeCurrentImage();
         currentObjectUrl = imageUrl;
         aerialImageUrl.value = imageUrl;
         aerialImageBounds.value = wgs84BoundsToLocal(actualWgs84Bounds, epsg);
         status.value = 'ready';
+        // Teilweise geladen: Bild zeigen, Lücke benennen
+        if (fehlend) error.value = `Luftbild unvollständig: ${fehlend} von ${gesamt} Kacheln fehlen.`;
     } catch (e) {
         console.error('EZG-Karte: Luftbild-Laden fehlgeschlagen', e);
-        error.value = e.message || 'Laden fehlgeschlagen';
+        error.value = `Luftbild konnte nicht geladen werden: ${e.message || 'unbekannter Fehler'}`;
         status.value = 'error';
     }
 }

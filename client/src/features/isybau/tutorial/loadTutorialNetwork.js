@@ -6,6 +6,7 @@
  * Tutorial-Start ist ein seltener Einzelfall, kein Startpfad).
  */
 import { parseIsybauXML } from '../utils/xmlParser.js';
+import { dekodiereXml } from '../utils/xmlKodierung.js';
 
 export const TUTORIAL_NETWORK_URL = '/saintv1d/tutorial/Beispiel_Tutorial.xml';
 
@@ -29,7 +30,8 @@ export async function loadTutorialNetwork(store, { fetchImpl, url = TUTORIAL_NET
         if (!res?.ok) {
             return { ok: false, error: `Übungsnetz nicht ladbar (HTTP ${res?.status ?? '?'}).` };
         }
-        xml = await res.text();
+        // Kodierung laut XML-Kopf (die Übungsdatei ist ISO-8859-1)
+        xml = res.arrayBuffer ? dekodiereXml(await res.arrayBuffer()) : await res.text();
     } catch (e) {
         return { ok: false, error: `Übungsnetz nicht ladbar: ${e?.message || e}` };
     }

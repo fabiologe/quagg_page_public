@@ -47,11 +47,17 @@ self.onmessage = async (e) => {
                 );
             }
         }
-        await Promise.all(fetches);
+        // Eine fehlende Kachel (Randgebiet, kurzer Serverfehler) verwarf vorher das ganze
+        // Luftbild. Jetzt: Lücke lassen, nur wenn ALLE fehlen, ist es ein Fehler (P2.8).
+        const ergebnisse = await Promise.allSettled(fetches);
+        const fehlend = ergebnisse.filter(r => r.status === 'rejected');
+        if (fehlend.length === ergebnisse.length) {
+            throw new Error(`Luftbild nicht erreichbar (${fehlend[0].reason?.message || 'keine Kachel geladen'})`);
+        }
 
         const blob = await canvas.convertToBlob({ type: 'image/png' });
         const buffer = await blob.arrayBuffer();
-        self.postMessage({ type: 'result', reqId, buffer, mimeType: blob.type }, [buffer]);
+        self.postMessage({ type: 'result', reqId, buffer, mimeType: blob.type, fehlend: fehlend.length, gesamt: ergebnisse.length }, [buffer]);
     } catch (err) {
         self.postMessage({ type: 'error', reqId, message: err.message || String(err) });
     }

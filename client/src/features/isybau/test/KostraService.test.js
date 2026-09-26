@@ -22,3 +22,14 @@ describe('detectCRS', () => {
         expect(detectCRS(999999999, 1)).toBe('EPSG:25832');
     });
 });
+
+// P2.6: Punkt außerhalb Deutschlands (meist falsches Koordinatensystem) vor dem Abruf erkennen
+describe('liegtInDeutschland', async () => {
+    const { liegtInDeutschland, transformToWGS84 } = await import('../utils/KostraService.js');
+    it('Kaiserslautern ja, Nullpunkt nein; UTM-Koordinaten als GK gelesen → nein', () => {
+        expect(liegtInDeutschland(49.44, 7.77)).toBe(true);
+        expect(liegtInDeutschland(0, 0)).toBe(false);
+        const [lon, lat] = transformToWGS84(409737, 5479974, 'EPSG:31467'); // UTM-Wert, falsch als GK3
+        expect(liegtInDeutschland(lat, lon)).toBe(false);
+    });
+});

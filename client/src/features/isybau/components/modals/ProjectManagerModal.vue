@@ -90,6 +90,8 @@
 import { ref, watch } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import { listProjects, saveProject, loadProject, deleteProject } from '../../services/ProjectService.js';
+import { useIsybauStore } from '../../store/index.js';
+const store = useIsybauStore();
 
 const props = defineProps({
   isOpen:    Boolean,
@@ -122,7 +124,11 @@ async function save() {
   saving.value = true;
   errorMsg.value = null;
   try {
-    await saveProject(newName.value.trim(), props.snapshot);
+    const name = newName.value.trim();
+    const vorhanden = projects.value.find(p => p.name === name);
+    if (vorhanden && !window.confirm(`Ein Projekt „${name}" gibt es schon. Überschreiben?`)) return;
+    await saveProject(name, props.snapshot, vorhanden?.id ?? null);
+    store.ungespeichert = false;
     newName.value = '';
     await refresh();
   } catch (e) {

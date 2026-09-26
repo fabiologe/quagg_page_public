@@ -88,7 +88,7 @@
              </div>
              
              <div class="info-group">
-                 <label>Rauheit (kst)</label>
+                 <label>Rauheit k<sub>St</sub> (m<sup>1/3</sup>/s)</label>
                  <input type="number" v-model.number="localData.roughness" class="full-input">
              </div>
 

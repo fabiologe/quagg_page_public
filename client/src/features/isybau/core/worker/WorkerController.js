@@ -29,13 +29,14 @@ export class WorkerController {
             this.worker.onerror = (e) => {
                 console.error("Worker crashed:", e.message || e);
                 this.failCurrentTask(new Error(e.message || 'Worker-Fehler (Absturz beim Simulationslauf)'));
+                this.verwerfen(); // nächster Lauf mit frischem Worker (P2.5)
             };
             this.worker.postMessage({ command: 'INIT' });
         }
     }
 
     handleMessage(e) {
-        const { command, results, message, details } = e.data;
+        const { command, results, message, details, absturz } = e.data;
 
         if (command === 'COMPLETE') {
             this.settleCurrentTask(task => task.resolve(results));
@@ -45,6 +46,8 @@ export class WorkerController {
             // Bericht/Eingabe eines abgebrochenen SWMM-Laufs (fürs Debug-Fenster)
             if (details) err.details = details;
             this.failCurrentTask(err);
+            // Nach Absturz/Ladefehler ist der Worker unbrauchbar — beim nächsten Lauf neu anlegen
+            if (absturz) this.verwerfen();
         } else if (command === 'INIT_SUCCESS') {
         }
     }
@@ -98,11 +101,18 @@ export class WorkerController {
         });
     }
 
-    terminate() {
+    /** Worker beenden, ohne eine laufende Aufgabe anzufassen. */
+    verwerfen() {
         if (this.worker) {
             this.worker.terminate();
             this.worker = null;
         }
-        this.failCurrentTask(new Error('Simulation abgebrochen.'));
+    }
+
+    terminate() {
+        this.verwerfen();
+        const err = new Error('Simulation abgebrochen.');
+        err.abgebrochen = true;
+        this.failCurrentTask(err);
     }
 }

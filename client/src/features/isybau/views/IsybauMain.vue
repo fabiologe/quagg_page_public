@@ -143,6 +143,16 @@ import TutorialMascot from '../tutorial/TutorialMascot.vue';
 import '../styles/theme.css';
 
 const store = useIsybauStore();
+
+// Ungespeicherte Änderungen: Browser fragt vor dem Schließen/Neuladen des Tabs nach (P2.7).
+// Alles lebt nur im Speicher, bis „Projekte → Speichern" es in die IndexedDB schreibt.
+const vorDemVerlassen = (e) => {
+    if (!store.ungespeichert || store.nodes.size === 0) return;
+    e.preventDefault();
+    e.returnValue = '';
+};
+window.addEventListener('beforeunload', vorDemVerlassen);
+onBeforeUnmount(() => window.removeEventListener('beforeunload', vorDemVerlassen));
 const viewMode = ref('2d');
 const autoResultsFor3d = ref(false);
 

@@ -29,6 +29,15 @@ globalThis.self = {
 await import('../../utils/swmmWasmWorker.js');
 
 export class WorkerImProzess {
+    /** wie WorkerController.terminate: offene Aufgabe als abgebrochen beenden */
+    terminate() {
+        if (!offen) return;
+        const err = new Error('Simulation abgebrochen.');
+        err.abgebrochen = true;
+        offen.reject(err);
+        offen = null;
+    }
+
     /** Letzte übergebene Nutzlast — für Tests, die prüfen, was die Oberfläche schickt. */
     static letzteNutzlast = null;
 

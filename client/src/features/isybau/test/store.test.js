@@ -424,4 +424,27 @@ describe('loadProjectSnapshot: alter KOSTRA-Einzelwert und Überstauverfahren', 
             'Schacht „S_7" gibt es schon — nicht angelegt.',
             'Haltung „H_1" gibt es schon — nicht angelegt.']);
     });
+
+    // P2.1: geleerte Felder kamen als '' im Store an → leere Spalte in der .inp
+    it('Zahlfelder: leer → null, „1,5" → 1.5, Unsinn → alter Wert + Meldung', () => {
+        store.addNode(0, 0, { id: 'S_1', z: 100, coverZ: 102 });
+        store.updateNode('S_1', { z: '99,5', coverZ: '' });
+        expect([store.nodes.get('S_1').z, store.nodes.get('S_1').coverZ]).toEqual([99.5, null]);
+        store.updateNode('S_1', { z: 'abc' });
+        expect(store.nodes.get('S_1').z).toBe(99.5);
+        expect(store.ui.meldungen.at(-1).text).toContain('z = „abc"');
+        store.areas.push(new Area({ id: 'F', points: [], size: 0.5, runoffCoeff: 0.4, nodeId: 'S_1', nodeId2: 'S_1', splitRatio: 30 }));
+        store.updateNetworkData({ areas: [{ ...JSON.parse(JSON.stringify(store.areas[0])), size: '', runoffCoeff: 'x', splitRatio: '' }] });
+        const a = store.areas[0];
+        expect([a.size, a.runoffCoeff, a.splitRatio]).toEqual([0, 0.4, 50]);
+    });
+
+    it('„ungespeichert": nach Laden aus, nach Bearbeiten an (Rückfrage vor Import, Warnung beim Schließen)', () => {
+        store.loadProjectSnapshot({ nodes: [{ id: 'P1', x: 1, y: 1, z: 0 }], edges: [], areas: [] });
+        expect(store.ungespeichert).toBe(false);
+        store.updateNode('P1', { z: 2 });
+        expect(store.ungespeichert).toBe(true);
+        store.loadParsedData({ network: { nodes: new Map(), edges: new Map() } });
+        expect(store.ungespeichert).toBe(false);
+    });
 });
