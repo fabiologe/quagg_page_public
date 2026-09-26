@@ -38,6 +38,10 @@ export async function loadTutorialNetwork(store, { fetchImpl, url = TUTORIAL_NET
         const parsed = parseIsybauXML(xml);
         store.loadParsedData(parsed);
         if (store.metadata) store.metadata.fileName = 'Beispiel_Tutorial.xml';
+        // Die Übung beginnt ohne Regen: ein Regen oder KOSTRA-Abruf aus der vorigen
+        // Sitzung (anderer Standort!) hakte sonst die Regen-Schritte ungefragt ab.
+        store.clearRain?.();
+        if (store.rain) store.rain.kostraData = null;
         return {
             ok: true,
             nodes: store.nodes?.size ?? 0,

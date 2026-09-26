@@ -83,7 +83,7 @@ export class Area {
             edgeId: data.edgeId,
             nodeId: data.nodeId,   // Likely undefined in raw XML, added later
             nodeId2: data.nodeId2,
-            splitRatio: data.splitRatio || 50,
+            splitRatio: data.splitRatio ?? 50, // 0 % ist eine gültige Aufteilung
             schmutzfracht: data.schmutzfracht
         });
     }

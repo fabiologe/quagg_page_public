@@ -1223,6 +1223,10 @@ watch(() => props.isOpen, (newVal) => {
       return {
         ...n,
         type,
+        // Anzeige-Typ ≠ gespeicherter Typ (z. B. Anschlusspunkt → „Bauwerk"). Bleibt
+        // die Zeile unverändert, geht beim Übernehmen der gespeicherte zurück.
+        _typGespeichert: n.type,
+        _typAnzeige: type,
         constantInflow: n.constantInflow || 0,
         coverZ: n.coverZ !== undefined ? n.coverZ : (n.z + (n.depth || 0)),
         z: n.z !== undefined ? n.z : 0,
@@ -1290,7 +1294,9 @@ watch(() => props.isOpen, (newVal) => {
             height: (e.profile.height || 0) * 1000, 
             width: (e.profile.width || 0) * 1000
         },
-        z1: e.z1 || 0, z2: e.z2 || 0
+        // fehlende Sohlhöhe bleibt fehlend (= Sohle des Knotens); `|| 0` machte
+        // beim Übernehmen 0 m daraus, der XML-Export schrieb dann Sohlhöhe 0
+        z1: e.z1 ?? null, z2: e.z2 ?? null
       };
     });
 
@@ -1502,11 +1508,17 @@ const exportXlsx = () => {
     XLSX.writeFile(wb, filename);
 };
 
+// Eigene Knotenarten, die die Typ-Auswahl nicht kennt (Anschlusspunkt → Auslass
+// bei Punktkennung NN, Divider): unverändert übernehmen. 'Bauwerk'/'Schacht' nicht —
+// dort trägt der angezeigte Typ den Bauwerkstyp (syncBauwerkstypFromType).
+const typBleibtBeimUebernehmen = (t) => typeof t === 'string' && !['Bauwerk', 'Schacht', 'Standard'].includes(t);
+
 const close = () => { emit('close'); };
 const apply = () => {
     // Normalization back to store
     emit('apply', {
-        nodes: nodes.value,
+        nodes: nodes.value.map(({ _typGespeichert, _typAnzeige, ...n }) =>
+            (n.type === _typAnzeige && typBleibtBeimUebernehmen(_typGespeichert) ? { ...n, type: _typGespeichert } : n)),
         edges: edges.value.map(e => ({
             ...e,
             profile: { ...e.profile, height: e.profile.height / 1000, width: e.profile.width / 1000 }

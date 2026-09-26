@@ -1,4 +1,18 @@
 /**
+ * Zeitraster eines Modellregens aus Nutzereingaben: Intervall ganzzahlig 1–60 min,
+ * Dauer ganzzahlig und mindestens ein Intervall. Leeres Feld oder 0 als Intervall
+ * ergab vorher Math.ceil(D / 0) = ∞ Schritte — der Tab fror ein.
+ * @returns {{dauer:number, intervall:number}}
+ */
+export const zeitraster = (duration, interval) => {
+    const i = Math.round(Number(interval));
+    const intervall = Number.isFinite(i) && i >= 1 ? Math.min(i, 60) : 5;
+    const d = Math.round(Number(duration));
+    const dauer = Number.isFinite(d) && d > 0 ? Math.max(d, intervall) : Math.max(intervall, 60);
+    return { dauer, intervall };
+};
+
+/**
  * Calculates Block Rain Series
  * @param {number} intensity - Rainfall intensity in l/(s*ha)
  * @param {number} duration - Duration in minutes
@@ -6,12 +20,14 @@
  * @returns {Array} - Array of { time: number, intensity: number }
  */
 export const calculateBlockRain = (intensity, duration, interval = 5) => {
+    ({ dauer: duration, intervall: interval } = zeitraster(duration, interval));
     const steps = Math.ceil(duration / interval);
+    const r = Number(intensity);
     const series = [];
     for (let i = 0; i < steps; i++) {
         series.push({
             time: i * interval,
-            intensity: intensity
+            intensity: Number.isFinite(r) && r > 0 ? r : 0
         });
     }
     return series;
@@ -40,6 +56,7 @@ export const kostraBlockRain = ({ rN, dauer, wiederkehr, intervall = 5 }) => ({
  * @returns {Array} - Array of { time: number, intensity: number }
  */
 export const calculateEulerType2 = (kostraRow, duration, interval = 5) => {
+    ({ dauer: duration, intervall: interval } = zeitraster(duration, interval));
     const steps = Math.ceil(duration / interval);
     const blocks = [];
 

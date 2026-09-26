@@ -1,6 +1,7 @@
 import { getHortonParams, getEffectiveBauwerkstyp, classifyPreview, LINK_BAUWERKSTYPEN, Bauwerkstyp } from '../../utils/mappings.js';
 import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
 import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
+import { waehleErsatzAuslass, ersatzAuslassKandidaten } from '../../utils/preSolveValidation.js';
 /**
  * Builder Service for SWMM .inp generation.
  * Uses Domain Models (Node, Edge) instead of raw JSON.
@@ -255,12 +256,14 @@ LINKS                ALL
         }
 
         // Fallback-Auslauf wenn keiner gefunden
+        // Nur ein Knoten mit genau einer Haltung (Endknoten zuerst) — sonst ERROR 141 (doc/09 N1)
         if (outfalls.length === 0 && junctions.length > 0) {
-            const sorted = [...junctions].sort((a, b) => a.z - b.z);
-            const lowest = sorted[0];
-            junctions.splice(junctions.indexOf(lowest), 1);
-            outfalls.push(lowest);
-            this.warnings.push(`Kein Auslauf definiert — ${lowest.id} (tiefster Knoten) automatisch als Auslauf gesetzt.`);
+            const ersatz = waehleErsatzAuslass(ersatzAuslassKandidaten(junctions), edges);
+            if (ersatz) {
+                junctions.splice(junctions.indexOf(ersatz), 1);
+                outfalls.push(ersatz);
+                this.warnings.push(`Kein Auslauf definiert — ${ersatz.id} (Endknoten des Netzes) automatisch als Auslauf gesetzt.`);
+            }
         }
 
         this.addJunctions(junctions);

@@ -113,6 +113,13 @@ export class RptParser {
                         separatorCount++;
                         continue;
                     }
+                    // Leere Tabelle: SWMM druckt nur „No nodes were flooded." o. ä.
+                    // (statsrpt.c). Ohne dieses Ende liest der Parser die Zeilen der
+                    // NÄCHSTEN Tabelle als diese (Becken „überflutet" aus der Speichertabelle).
+                    if (separatorCount === 0 && /^No .* were /.test(line)) {
+                        inTable = false;
+                        continue;
+                    }
                     if (separatorCount < 2) continue;
                     if (line === '') {
                         // Allow blank lines before first separator (header spacing)

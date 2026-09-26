@@ -10,7 +10,7 @@
  * — nicht mehr, damit hier keine Fehlalarme entstehen, die der Solver selbst gar
  * nicht werfen würde.
  */
-import { getEffectiveBauwerkstyp, LINK_SECTION_BY_BTYP } from './mappings.js';
+import { getEffectiveBauwerkstyp, LINK_SECTION_BY_BTYP, classifyPreview } from './mappings.js';
 
 /** ERR_122 (link.c): Pumpe mit Anspringtiefe <= Abschalttiefe springt nie an. */
 export function checkPumpDepths(node) {
@@ -162,6 +162,70 @@ export function checkConduitProfile(edge) {
     return null;
 }
 
+/** Haltungen je Knoten, getrennt nach Zulauf und Ablauf. */
+function knotenGrade(edges) {
+    const ein = new Map(), aus = new Map();
+    for (const e of edges) {
+        const von = e.fromNodeId ?? e.from, nach = e.toNodeId ?? e.to;
+        aus.set(von, (aus.get(von) || 0) + 1);
+        ein.set(nach, (ein.get(nach) || 0) + 1);
+    }
+    return { ein: (id) => ein.get(id) || 0, aus: (id) => aus.get(id) || 0 };
+}
+
+/**
+ * Ersatz-Auslass für ein Netz ohne Auslass (SwmmBuilder und Vorab-Prüfung nutzen
+ * dieselbe Wahl). SWMM erlaubt an einem Auslass genau EINE Haltung
+ * (flowrout.c:316, sonst ERROR 141). Vorher: der tiefste Schacht — in
+ * 9161_IGBWEST ein Knoten mit z = 0 und zwei Haltungen → ERROR 141 + 145.
+ * Jetzt: ein Endknoten (eine Haltung, die hineinläuft), davon der tiefste;
+ * sonst irgendein Knoten mit genau einer Haltung; ohne jede Haltung der tiefste
+ * Knoten; sonst keiner (ein verwaister Knoten als Auslass ließe das Netz volllaufen).
+ * @param {Array} kandidaten  gewöhnliche Knoten (keine Bauwerke, die zum Link werden)
+ * @returns {object|null}
+ */
+export function waehleErsatzAuslass(kandidaten, edges) {
+    const g = knotenGrade(edges);
+    const tiefster = (liste) => liste.reduce((m, n) => (m === null || Number(n.z) < Number(m.z) ? n : m), null);
+    return tiefster(kandidaten.filter(n => g.ein(n.id) === 1 && g.aus(n.id) === 0))
+        ?? tiefster(kandidaten.filter(n => g.ein(n.id) + g.aus(n.id) === 1))
+        // Netz ganz ohne Haltungen: SWMM nimmt auch einen Auslass ohne Haltung
+        ?? (edges.length === 0 ? tiefster(kandidaten) : null);
+}
+
+/** Kandidaten für den Ersatz-Auslass: Knoten, die als [JUNCTIONS] ohne eigenen Link gerechnet würden. */
+export const ersatzAuslassKandidaten = (nodes) =>
+    nodes.filter(n => { const k = classifyPreview(n); return k.section === '[JUNCTIONS]' && !k.linkSection; });
+
+/**
+ * ERROR 141/145 vorab: Auslass mit mehr als einer Haltung, oder gar kein möglicher Auslass.
+ * SWMM brach sonst ab; die Meldung nannte nur den englischen Fehlertext.
+ */
+export function checkAuslaesse(nodes, edges) {
+    const g = knotenGrade(edges);
+    const auslaesse = nodes.filter(n => classifyPreview(n).section === '[OUTFALLS]');
+    const funde = [];
+    for (const n of auslaesse) {
+        const zahl = g.ein(n.id) + g.aus(n.id);
+        if (zahl > 1) {
+            const namen = edges.filter(e => (e.fromNodeId ?? e.from) === n.id || (e.toNodeId ?? e.to) === n.id).map(e => e.id);
+            funde.push({
+                id: n.id, elementType: 'node', severity: 'error', code: 'ERR_141',
+                message: `Auslass mit ${zahl} Haltungen (${namen.join(', ')}). SWMM erlaubt an einem Auslass genau eine — `
+                    + 'den Auslass hinter einen Schacht setzen, an dem die Haltungen zusammenlaufen, oder den Knotentyp ändern.'
+            });
+        }
+    }
+    if (auslaesse.length === 0 && nodes.length && !waehleErsatzAuslass(ersatzAuslassKandidaten(nodes), edges)) {
+        funde.push({
+            id: null, elementType: null, severity: 'error', code: 'ERR_145',
+            message: 'Das Netz hat keinen Auslass, und kein Knoten eignet sich als Ersatz (genau eine Haltung). '
+                + 'Bitte einen Knoten als Auslaufbauwerk festlegen.'
+        });
+    }
+    return funde;
+}
+
 const NODE_RULES = [checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints];
 const EDGE_RULES = [checkConduitElevationDrop, checkConduitProfile];
 
@@ -182,6 +246,7 @@ export function validateNetwork(nodes = [], edges = []) {
             if (finding) findings.push(finding);
         }
     }
+    findings.push(...checkAuslaesse(nodes, edges));
     if (edges.length) {
         const nodeById = new Map(nodes.map(n => [n.id, n]));
         for (const edge of edges) {

@@ -17,6 +17,7 @@
               class="form-input"
               required
             />
+            <p v-if="idFehler" class="feld-fehler">{{ idFehler }}</p>
           </div>
 
           <!-- Mode: NODE -->
@@ -157,6 +158,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
+import { useIsybauStore } from '../../store/index.js';
 import PixelSelect from '../common/PixelSelect.vue';
 import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 
@@ -321,10 +323,16 @@ const updateRoughness = () => {
     }
 };
 
-const generateId = (prefix) => {
-    // Simple ID gen, user can override
-    const typeStr = { node: 'S', edge: 'H', area: 'F' }[prefix] || 'E';
-    return `${typeStr}_${Math.floor(Date.now() % 10000)}`;
+const store = useIsybauStore();
+const generateId = (art) => store.freieId(art);
+
+// Doppelte ID überschrieb vorher das vorhandene Element still (Map.set).
+const idFehler = ref('');
+const idPruefen = () => {
+    const id = String(formData.value.id ?? '').trim();
+    if (!id) return 'Bitte eine ID eingeben.';
+    if (store.idVergeben(props.mode, id)) return `„${id}" gibt es schon — bitte eine andere ID (frei wäre z. B. ${store.freieId(props.mode)}).`;
+    return '';
 };
 
 /**
@@ -342,6 +350,9 @@ const auslassGewaehlt = () => (outletType.value === 'node'
     : !!outletEdgeId.value);
 
 const save = () => {
+    idFehler.value = idPruefen();
+    if (idFehler.value) return;
+    formData.value.id = String(formData.value.id).trim();
     if (props.mode === 'area' && !auslassGewaehlt()) {
         auslassFehlt.value = true;
         return;

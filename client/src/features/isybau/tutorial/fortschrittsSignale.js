@@ -42,6 +42,7 @@ export function leseFortschrittsSignale(store) {
         store.ui.showRainModal,
         // Regen und Berechnung
         store.rain.activeModelRain?.metadata?.source ?? null,
+        store.rain.activeModelRain?.type ?? null,
         store.rain.activeModelRain?.series?.length ?? 0,
         !!store.rain.kostraData,
         // Nur die Kennung des Modellregens, nicht das Objekt: die Reihe hat je

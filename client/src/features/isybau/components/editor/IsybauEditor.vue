@@ -52,6 +52,7 @@ import { useIsybauStore } from '../../store/index.js';
 import IsybauViewer from '../visualizer/IsybauViewer.vue';
 import EditorToolbox from './EditorToolbox.vue';
 import { computed, onMounted, onUnmounted } from 'vue';
+import { fokusInBedienelement } from '../../utils/tastatur.js';
 
 const store = useIsybauStore();
 
@@ -145,8 +146,7 @@ const handleAreaSelect = (element) => {
 
 const handleKeydown = (e) => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
-        const tag = document.activeElement.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (fokusInBedienelement(document.activeElement)) return;
 
         if (store.editor.selectedId) {
             store.removeSelection();

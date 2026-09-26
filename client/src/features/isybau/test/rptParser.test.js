@@ -151,4 +151,45 @@ describe('RptParser', () => {
             { id: 'RW031', error: -45.11 }
         ]);
     });
+    // SWMM druckt bei leeren Tabellen nur „No nodes were flooded." usw.
+    // (statsrpt.c:446/505/859). Der Parser las dann in die NÄCHSTE Tabelle weiter:
+    // Becken RRB bekam die Speicherwerte als Überflutung (31 m³, „ÜBERFLUTET").
+    it('leere Tabellen („No … were …") lesen nicht in die nächste Tabelle', () => {
+        const j = JSON.parse(readFileSync(join(here, 'simulation_results_2026-08-18.json'), 'utf8'));
+        expect(j.report).toContain('No nodes were flooded.');
+        const { nodes, edges } = RptParser.parse(j.report);
+        expect(nodes.RRB.overflow).toBeUndefined();
+        expect(nodes.RRB.floodingVolume).toBeUndefined();
+        expect(Object.values(nodes).filter(n => n.overflow)).toEqual([]);
+        // Überstau-Tabelle war NICHT leer: die drei Knoten bleiben erfasst
+        expect(Object.entries(nodes).filter(([, n]) => n.surcharged).map(([id]) => id).sort())
+            .toEqual(['EL_Moechn', 'FK001', 'FK003']);
+        expect(Object.values(edges).every(e => e.surcharge === undefined || !Number.isNaN(e.surcharge.hoursFullBoth))).toBe(true);
+    });
+
+    it('„No conduits were surcharged." → keine Vollfüllungsdauern aus der Pumpentabelle (Synthetik)', () => {
+        const report = [
+            '  *************************',
+            '  Conduit Surcharge Summary',
+            '  *************************',
+            '  ',
+            '  No conduits were surcharged.',
+            '  ',
+            '  ',
+            '  ***************',
+            '  Pumping Summary',
+            '  ***************',
+            '  ',
+            '  ---------------------------------------------------------------------------------------------------------',
+            '                                                  Min       Avg       Max     Total     Power    % Time Off',
+            '                        Percent   Number of      Flow      Flow      Flow    Volume     Usage    Pump Curve',
+            '  Pump                 Utilized   Start-Ups       CMS       CMS       CMS  10^6 ltr      Kw-hr    Low   High',
+            '  ---------------------------------------------------------------------------------------------------------',
+            '  EP                      45.20           3     0.010     0.015     0.020    12.345     2.500    1.1    0.0',
+            '',
+        ].join('\n');
+        const { edges, systemStats } = RptParser.parse(report);
+        expect(edges.EP).toBeUndefined();
+        expect(systemStats.pumpingSummary.map(p => p.id)).toEqual(['EP']);
+    });
 });

@@ -12,6 +12,24 @@ import { useElementFocus } from '../composables/useElementFocus.js';
 // siehe areaClipping.js snapPoint()-Doku).
 const AREA_SNAP_TOLERANCE_M = 0.4;
 
+// Nur schreibbare Felder übernehmen. Klassen-Getter (Area.effectiveArea) stehen im
+// toJSON-Klon, den ElementInfo zurückschickt, lassen sich aber nicht setzen:
+// Object.assign warf dort, und alle Felder danach (Anschluss, Aufteilung,
+// Schmutzfracht) gingen verloren.
+function nurLesbar(obj, key) {
+    for (let o = obj; o; o = Object.getPrototypeOf(o)) {
+        const d = Object.getOwnPropertyDescriptor(o, key);
+        if (d) return !!d.get && !d.set;
+    }
+    return false;
+}
+function zuweisen(ziel, felder) {
+    for (const [k, v] of Object.entries(felder)) {
+        if (!nurLesbar(ziel, k)) ziel[k] = v;
+    }
+    return ziel;
+}
+
 let workerControllerInstance = null;
 
 export const useIsybauStore = defineStore('isybau-module', {
@@ -388,7 +406,16 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.areas = [];
             this.inspections = [];
             this.editor.selectedId = null;
-            this.simulation.results = null;
+            this.editor.selectedType = null;
+            // Rechenstand gehört zum alten Netz: Status, Fehler, Vorab-Funde mit abräumen
+            // (sonst zeigte ein neues Netz „Berechnung fehlgeschlagen" des alten).
+            Object.assign(this.simulation, {
+                status: 'idle', results: null, error: null, invalidElementId: null,
+                invalidElementType: null, preSolveWarnings: [], fehlerBericht: null
+            });
+            // Rückgängig darf nicht ins vorige Projekt zurückspringen
+            this.history.undoStack = [];
+            this.history.redoStack = [];
             // terrain bewusst NICHT hier zurücksetzen: clear() läuft auch bei
             // jedem XML-Import (loadParsedData()) — DGM ist an den realen
             // Standort gebunden, nicht an den Netzentwurf, und soll genau den
@@ -534,9 +561,15 @@ export const useIsybauStore = defineStore('isybau-module', {
                     this.ui.showElementModal = false;
                     return;
                 }
-                const baseId = data.id || `Area_${Date.now()}`;
-                fragments.forEach((fragPoints, i) => {
-                    const properties = { ...data, id: fragments.length > 1 ? `${baseId}_${i + 1}` : baseId };
+                const baseId = data.id || this.freieId('area');
+                let n = 0;
+                const teilId = () => {
+                    let id;
+                    do { id = `${baseId}_${++n}`; } while (this.idVergeben('area', id));
+                    return id;
+                };
+                fragments.forEach((fragPoints) => {
+                    const properties = { ...data, id: fragments.length > 1 ? teilId() : baseId };
                     this.addArea({ points: fragPoints, properties });
                 });
             } else if (mode === 'edge') {
@@ -603,13 +636,41 @@ export const useIsybauStore = defineStore('isybau-module', {
 
         // --- CRUD Actions ---
 
+        /** Ist die ID in dieser Objektart schon vergeben? (SWMM: Namen je Art eindeutig) */
+        idVergeben(art, id) {
+            if (art === 'node') return this.nodes.has(id);
+            if (art === 'edge') return this.edges.has(id);
+            if (art === 'area') return this.areas.some(a => a.id === id);
+            return false;
+        },
+
+        /**
+         * Nächste freie ID „S_n"/„H_n"/„F_n" (höchste vorhandene Nummer + 1).
+         * Vorher `Date.now() % 10000` — nach 10 s Wiederholungsgefahr, ein zweiter
+         * Schacht mit gleicher ID überschrieb den ersten still.
+         */
+        freieId(art) {
+            const p = { node: 'S', edge: 'H', area: 'F' }[art] || 'E';
+            const ids = art === 'node' ? this.nodes.keys() : art === 'edge' ? this.edges.keys() : this.areas.map(a => a.id);
+            let max = 0;
+            for (const id of ids) {
+                const m = new RegExp(`^${p}_(\\d+)$`).exec(String(id));
+                if (m) max = Math.max(max, Number(m[1]));
+            }
+            return `${p}_${max + 1}`;
+        },
+
         addNode(x, y, properties = {}) {
-            this.saveHistory();
             let props = properties;
             // Legacy support: if 3rd arg is string (type)
             if (typeof properties === 'string') {
                 props = { type: properties };
             }
+            if (props?.id && this.nodes.has(props.id)) {
+                this.melde(`Schacht „${props.id}" gibt es schon — nicht angelegt.`);
+                return null;
+            }
+            this.saveHistory();
 
             const id = (props && props.id) || `N_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
             const node = new Node({
@@ -706,9 +767,13 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
 
         addEdge(payload) {
-            this.saveHistory();
             // Payload: { fromId, toId, properties }
             const { fromId, toId, properties = {} } = payload;
+            if (properties.id && this.edges.has(properties.id)) {
+                this.melde(`Haltung „${properties.id}" gibt es schon — nicht angelegt.`);
+                return null;
+            }
+            this.saveHistory();
 
 
             const id = properties.id || `E_${Date.now()}`;
@@ -873,7 +938,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.saveHistory();
             const edge = this.edges.get(id);
             if (edge) {
-                Object.assign(edge, props);
+                zuweisen(edge, props);
             }
         },
 
@@ -884,7 +949,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 // isManhole/canOverflow nie blind zuweisen — die Kopplung
                 // (isManhole=false erzwingt canOverflow=false) liegt im Node-Modell.
                 const { isManhole, canOverflow, ...rest } = props;
-                Object.assign(node, rest);
+                zuweisen(node, rest);
                 // Typ-Dropdowns schreiben nur `type` — `bauwerkstyp` muss
                 // mitgezogen werden, sonst bliebe z.B. eine auf "Wehr"
                 // umgestellte Pumpe in SWMM weiterhin eine Pumpe
@@ -904,7 +969,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             // Areas are in an array
             const area = this.areas.find(a => a.id === id);
             if (area) {
-                Object.assign(area, props);
+                zuweisen(area, props);
             }
         },
 
@@ -1001,7 +1066,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                     const node = pendingNodes.get(updatedNode.id);
                     if (node) {
                         // Merge props back
-                        Object.assign(node, updatedNode);
+                        zuweisen(node, updatedNode);
                         // s. updateNode(): type/bauwerkstyp synchron halten
                         if ('type' in updatedNode) syncBauwerkstypFromType(node);
                         // Überstau-Kopplung re-normalisieren (Bulk-Edit setzt teils nur canOverflow)
@@ -1020,7 +1085,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                         if (updatedEdge.profile) {
                             edge.profile = { ...edge.profile, ...updatedEdge.profile };
                         }
-                        Object.assign(edge, updatedEdge);
+                        zuweisen(edge, updatedEdge);
                     }
                 });
                 this.edges = pendingEdges;
@@ -1078,8 +1143,12 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
 
         addArea(payload) {
-            this.saveHistory();
             const { points, properties } = payload; // properties: { id, slope, ... }
+            if (properties.id && this.idVergeben('area', properties.id)) {
+                this.melde(`Fläche „${properties.id}" gibt es schon — nicht angelegt.`);
+                return null;
+            }
+            this.saveHistory();
 
             // Ensure ID
             const id = properties.id || `Area_${Date.now()}`;
@@ -1127,7 +1196,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             if (firstError) {
                 const label = firstError.elementType === 'node' ? 'Knoten' : 'Haltung';
                 this.simulation.status = 'error';
-                this.simulation.error = `${label} ${firstError.id}: ${firstError.message}`;
+                this.simulation.error = firstError.id != null
+                    ? `${label} ${firstError.id}: ${firstError.message}`
+                    : firstError.message; // netzweiter Befund (z. B. kein Auslass)
                 this.simulation.invalidElementId = firstError.id;
                 this.simulation.invalidElementType = firstError.elementType;
                 return;

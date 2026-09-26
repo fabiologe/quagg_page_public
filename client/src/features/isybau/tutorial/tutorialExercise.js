@@ -164,7 +164,9 @@ export const kostraRainApplied = (store) =>
  */
 export const modelRainApplied = (store) => {
     const regen = store?.rain?.activeModelRain;
-    return !!regen && Array.isArray(regen.series) && regen.series.length > 0;
+    // Nur Euler II: seit „Übernehmen" im KOSTRA-Fenster selbst einen Blockregen
+    // setzt, hakte eine reine Längenprüfung diesen Schritt sofort mit ab.
+    return !!regen && regen.type === 'euler2' && Array.isArray(regen.series) && regen.series.length > 0;
 };
 
 /** Jede Fläche hat einen plausiblen Abflussbeiwert (0 < ψ ≤ 1). */
@@ -628,8 +630,8 @@ export const EXERCISE_STEPS = [
         task: 'Uebernimm einen KOSTRA-Regen.',
         message:
             'Da sind sie. Such dir eine Zeile aus — fuer eine normale Bemessung nimmt man gern 5 Minuten '
-            + 'Dauer bei einer Wiederkehrzeit von 1 Jahr. Dann "Uebernehmen", und der Wert landet in '
-            + 'deiner Berechnung.',
+            + 'Dauer bei einer Wiederkehrzeit von 1 Jahr. Dann "Uebernehmen" — daraus wird ein Blockregen: '
+            + 'diese Intensitaet, gleichmaessig ueber die ganze Dauer.',
         hint: 'Kurz und heftig oder lang und sanft: kurze Dauern belasten kleine Rohre, lange die grossen.',
         // Bewusst OHNE `requires`: es zaehlt, dass der Regen wirklich gesetzt
         // ist. Waere das offene Fenster Bedingung, wuerde der Schritt beim
@@ -647,9 +649,9 @@ export const EXERCISE_STEPS = [
             : ['rain-config', 'modellregen-oeffnen']),
         task: 'Mach aus den KOSTRA-Werten einen Modellregen: 3 Jahre, 15 Minuten.',
         message:
-            'Der KOSTRA-Wert ist eine einzelne Zahl — so viel kommt im Schnitt runter. Ein echter '
-            + 'Regen faengt aber klein an, wird heftig und klingt wieder aus. Genau diesen Verlauf '
-            + 'braucht der Solver, sonst rechnet er mit Dauerberieselung.\n\n'
+            'Dein Blockregen regnet von der ersten bis zur letzten Minute gleich stark. Ein echter '
+            + 'Regen faengt aber klein an, wird heftig und klingt wieder aus — und die kurze Spitze '
+            + 'ist es, die ein Rohr ueberlastet. Diesen Verlauf baut der Modellregen.\n\n'
             + 'Mach "Modellregen" auf und nimm "Euler Typ II" — das ist jetzt waehlbar, weil die '
             + 'KOSTRA-Werte da sind. Dauer 15 Minuten, Wiederkehrzeit 3 Jahre. Dann uebernehmen.',
         hint: 'Regendaten -> Modellregen -> Euler Typ II -> Dauer 15 -> Wiederkehrzeit "3 Jahre" '

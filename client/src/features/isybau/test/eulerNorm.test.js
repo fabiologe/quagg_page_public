@@ -51,3 +51,21 @@ describe('Euler Typ II nach DWA-A 118 Abschn. 5.2.2.1', () => {
         }
     });
 });
+
+// Intervall leer/0 ergab Math.ceil(D / 0) = ∞ Schritte → Tab fror ein (Befund P0.4).
+describe('Zeitraster aus Nutzereingaben', () => {
+    it('leer, 0, negativ, Komma-Rest → gültiges Raster, beide Regenarten endlich', async () => {
+        const { zeitraster, calculateBlockRain } = await import('../utils/RainModelService.js');
+        expect(zeitraster(60, 0)).toEqual({ dauer: 60, intervall: 5 });
+        expect(zeitraster(60, '')).toEqual({ dauer: 60, intervall: 5 });
+        expect(zeitraster(60, -3)).toEqual({ dauer: 60, intervall: 5 });
+        expect(zeitraster(60, 2.4)).toEqual({ dauer: 60, intervall: 2 });
+        expect(zeitraster(60, 500)).toEqual({ dauer: 60, intervall: 60 });
+        expect(zeitraster('', 5)).toEqual({ dauer: 60, intervall: 5 });
+        expect(zeitraster(3, 5)).toEqual({ dauer: 5, intervall: 5 });
+        expect(calculateBlockRain(100, 60, 0)).toHaveLength(12);
+        expect(calculateBlockRain('', 60, 5).every(s => s.intensity === 0)).toBe(true);
+        expect(calculateEulerType2(zeile('RN_003A'), 60, 0)).toHaveLength(12);
+        expect(calculateEulerType2(zeile('RN_003A'), 60, '')).toHaveLength(12);
+    });
+});

@@ -31,6 +31,7 @@
               <input type="number" v-model.number="interval" step="1" min="1" max="60">
             </div>
           </div>
+          <p v-if="rasterHinweis" class="raster-hinweis">{{ rasterHinweis }}</p>
 
           <div v-if="rainType === 'block'" class="form-group">
             <label>Intensität (l/s*ha):</label>
@@ -99,7 +100,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
 import { useIsybauStore } from '../../store/index.js';
-import { calculateBlockRain, calculateEulerType2 } from '../../utils/RainModelService.js';
+import { calculateBlockRain, calculateEulerType2, zeitraster } from '../../utils/RainModelService.js';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 import PixelSelect from '../common/PixelSelect.vue';
@@ -171,6 +172,14 @@ watch(() => props.isOpen, (val) => {
   }
 });
 
+// Eingaben außerhalb des Rasters (leer, 0, Dauer < Intervall) nicht still ändern
+const rasterHinweis = computed(() => {
+  const { dauer, intervall } = zeitraster(duration.value, interval.value);
+  if (dauer === duration.value && intervall === interval.value) return '';
+  return `Gerechnet wird mit Dauer ${dauer} min und Intervall ${intervall} min `
+    + '(Intervall 1–60 min, Dauer mindestens ein Intervall).';
+});
+
 const generatedSeries = computed(() => {
   if (rainType.value === 'block') {
     return calculateBlockRain(intensity.value, duration.value, interval.value);
@@ -195,7 +204,7 @@ const chartData = computed(() => {
     labels: series.map(s => s.time + ' min'),
     datasets: [{
       label: 'Regenhöhe (mm)',
-      data: series.map(s => s.height_mm !== undefined ? s.height_mm : (s.intensity * interval.value * 0.006)), // Fallback for block rain
+      data: series.map(s => s.height_mm !== undefined ? s.height_mm : (s.intensity * zeitraster(duration.value, interval.value).intervall * 0.006)), // Fallback for block rain
       backgroundColor: '#3498db',
     }]
   };
@@ -230,12 +239,14 @@ const chartOptions = {
 const close = () => emit('close');
 
 const apply = () => {
+  // gerechnet wird mit dem normierten Raster (zeitraster) — das auch speichern
+  const { dauer, intervall } = zeitraster(duration.value, interval.value);
   const rainModel = {
     type: rainType.value,
     series: generatedSeries.value,
     metadata: {
-        duration: duration.value,
-        interval: interval.value,
+        duration: dauer,
+        interval: intervall,
         returnPeriod: rainType.value === 'euler2' ? selectedReturnPeriod.value : null
     }
   };
@@ -248,6 +259,14 @@ const apply = () => {
 
 <style scoped src="./shared/modalBase.css"></style>
 <style scoped>
+.raster-hinweis {
+  margin: 0 0 var(--isy-space-2);
+  padding: var(--isy-space-1) var(--isy-space-2);
+  font-size: var(--isy-fs-sm);
+  color: var(--isy-pixel-warning-soft-text);
+  background: var(--isy-pixel-warning-soft);
+  border: 1px solid var(--isy-pixel-warning-soft-border);
+}
 /* Cleaned up styles */
 .modal-header {
   padding: var(--isy-space-4);

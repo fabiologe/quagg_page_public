@@ -379,4 +379,49 @@ describe('loadProjectSnapshot: alter KOSTRA-Einzelwert und Überstauverfahren', 
         store.loadProjectSnapshot(leeresProjekt({}));
         expect(store.berechnung.ueberstauverfahren).toBe('AUTO');
     });
+    // Weg wie in ElementInfo.vue: initLocalData = JSON-Klon (enthält den Nur-Lese-
+    // Getter effectiveArea), save() schickt ihn an updateArea. Object.assign warf dort,
+    // alles danach (Anschluss, Aufteilung, Schmutzfracht) ging verloren.
+    it('Fläche speichern mit JSON-Klon aus ElementInfo: Anschluss und Aufteilung kommen an', () => {
+        store.areas.push(new Area({ id: 'A1', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], size: 0.5, runoffCoeff: 0.8 }));
+        const payload = { ...JSON.parse(JSON.stringify(store.areas[0])), nodeId: 'K1', nodeId2: 'K2', splitRatio: 30, schmutzfracht: { ew: 12 } };
+        expect(payload).toHaveProperty('effectiveArea');
+        expect(() => store.updateArea('A1', payload)).not.toThrow();
+        const a = store.areas[0];
+        expect([a.nodeId, a.nodeId2, a.splitRatio, a.schmutzfracht]).toEqual(['K1', 'K2', 30, { ew: 12 }]);
+        expect(a.effectiveArea).toBeCloseTo(0.4, 9);
+    });
+
+    it('Aufteilung 0 % bleibt 0 % (fromRaw machte 50 daraus)', () => {
+        expect(Area.fromRaw({ id: 'A', splitRatio: 0 }).splitRatio).toBe(0);
+        expect(Area.fromRaw({ id: 'A' }).splitRatio).toBe(50);
+    });
+
+    it('Rückgängig reicht nicht über einen Import/Projektwechsel zurück', () => {
+        store.addNode(0, 0, 'Schacht');
+        store.saveHistory();
+        store.addNode(5, 5, 'Schacht');
+        expect(store.history.undoStack.length).toBeGreaterThan(0);
+        store.loadProjectSnapshot({ nodes: [{ id: 'P1', x: 1, y: 1, z: 0 }], edges: [], areas: [] });
+        expect(store.history.undoStack).toEqual([]);
+        expect(store.history.redoStack).toEqual([]);
+        store.undo();
+        expect([...store.nodes.keys()]).toEqual(['P1']);
+    });
+    it('IDs: freie Nummer statt Date.now() % 10000, doppelte werden abgelehnt statt überschrieben', () => {
+        const a = store.addNode(0, 0, { id: 'S_7', z: 100 });
+        expect(store.freieId('node')).toBe('S_8');
+        expect(store.freieId('edge')).toBe('H_1');
+        expect(store.addNode(5, 5, { id: 'S_7', z: 1 })).toBeNull();
+        expect(a).not.toBeNull();
+        expect(store.nodes.size).toBe(1);
+        expect(store.nodes.get('S_7').z).toBe(100);
+        store.addNode(9, 9, { id: 'S_8' });
+        expect(store.addEdge({ fromId: 'S_7', toId: 'S_8', properties: { id: 'H_1' } })).not.toBeNull();
+        expect(store.addEdge({ fromId: 'S_8', toId: 'S_7', properties: { id: 'H_1' } })).toBeNull();
+        expect(store.edges.get('H_1').fromNodeId).toBe('S_7');
+        expect(store.ui.meldungen.map(m => m.text)).toEqual([
+            'Schacht „S_7" gibt es schon — nicht angelegt.',
+            'Haltung „H_1" gibt es schon — nicht angelegt.']);
+    });
 });

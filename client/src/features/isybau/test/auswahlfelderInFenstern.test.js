@@ -46,6 +46,7 @@ describe('Flaechen-Formular: Auslass ist Pflicht, auch ohne required', () => {
 
     it('speichert NICHT, solange kein Anschluss gewaehlt ist', async () => {
         const w = bauen();
+        await nextTick(); // Formular füllt sich nach einem Tick (initForm)
         await w.find('form').trigger('submit');
         expect(w.emitted('save')).toBeUndefined();
         expect(w.text()).toContain('Bitte einen Anschluss wählen.');
@@ -61,6 +62,24 @@ describe('Flaechen-Formular: Auslass ist Pflicht, auch ohne required', () => {
         await w.find('form').trigger('submit');
         expect(w.emitted('save')).toBeTruthy();
         expect(w.emitted('save')[0][0].data.nodeId).toBe('K2');
+        expect(w.emitted('save')[0][0].data.id).toBe('F_1');
+        w.unmount();
+    });
+
+    it('doppelte ID: Hinweis im Fenster, nichts gespeichert', async () => {
+        const { useIsybauStore } = await import('../store/index.js');
+        const { Area } = await import('../core/domain/Area.js');
+        useIsybauStore().areas.push(new Area({ id: 'F_1', points: [] }));
+        const w = bauen();
+        await nextTick();
+        const feld = auswahl(w).find(f => f.text().includes('Knoten wählen'));
+        await feld.trigger('click');
+        await eintraege(w).find(e => e.text() === 'K2').trigger('click');
+        await w.find('input.form-input').setValue('F_1');
+        await w.find('form').trigger('submit');
+        expect(w.emitted('save')).toBeUndefined();
+        expect(w.text()).toContain('„F_1" gibt es schon');
+        expect(w.text()).toContain('F_2');
         w.unmount();
     });
 });

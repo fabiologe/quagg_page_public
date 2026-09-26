@@ -120,6 +120,22 @@ describe('loadTutorialNetwork', () => {
     expect(store.metadata.fileName).toBe('Beispiel_Tutorial.xml');
   });
 
+  it('beginnt ohne Regen und ohne alten Rechenstand (echter Store)', async () => {
+    const { setActivePinia, createPinia } = await import('pinia');
+    const { useIsybauStore } = await import('../store/index.js');
+    setActivePinia(createPinia());
+    const store = useIsybauStore();
+    store.setRainModel({ id: 'k', type: 'block', series: [{ time: 0, intensity: 100 }], metadata: { source: 'kostra' } });
+    store.updateKostraData({ 5: { RN_001A: 200 } });
+    store.simulation.status = 'error';
+    store.simulation.error = 'ERROR 141';
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, text: async () => '<?xml version="1.0"?><Identifikation></Identifikation>' });
+    expect((await loadTutorialNetwork(store, { fetchImpl })).ok).toBe(true);
+    expect(store.rain.activeModelRain).toBeNull();
+    expect(store.rain.kostraData).toBeNull();
+    expect([store.simulation.status, store.simulation.error]).toEqual(['idle', null]);
+  });
+
   it('meldet einen HTTP-Fehler, statt zu werfen', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 404 });
     const res = await loadTutorialNetwork({}, { fetchImpl });
@@ -694,6 +710,14 @@ describe('Regen-Abfolge: erst die Statistik, dann der Verlauf', () => {
     // Leere Reihe zaehlt nicht: die entsteht, wenn die KOSTRA-Spalte fehlt.
     expect(s.check({ rain: { activeModelRain: { type: 'euler2', series: [] } } })).toBe(false);
     expect(s.check({ rain: { activeModelRain: { type: 'euler2', series: [{ time: 0, intensity: 12 }] } } })).toBe(true);
+    // Der KOSTRA-Blockregen aus dem Schritt davor ist KEIN Modellregen (hakte ihn sonst gleich mit ab)
+    expect(s.check({ rain: { activeModelRain: KOSTRA_BLOCK } })).toBe(false);
+  });
+
+  it('die Texte beschreiben den Blockregen, nicht mehr „eine Zahl"', () => {
+    const s = schritt('ex-rain-modellregen');
+    expect(s.message).not.toMatch(/einzelne Zahl|Dauerberieselung/);
+    expect(schritt('ex-rain-uebernehmen').message).toMatch(/Blockregen/);
   });
 
   it('zeigt auf den Weg ins Fenster, solange es zu ist', () => {
