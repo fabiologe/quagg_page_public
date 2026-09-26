@@ -14,6 +14,8 @@
  * und nicht nachgerechnet — so kann die Darstellung nicht von der wirklichen
  * Rechengrundlage abweichen, wenn sich die Aufteilungsregel einmal ändert.
  */
+import { haltungsZustand, knotenZustand } from './typPalette.js';
+
 
 const toArray = (collection) => {
     if (!collection) return [];
@@ -104,7 +106,8 @@ export function buildSubcatchmentProvenance(inpText, areas) {
             quellflaecheHa,
             aufgeteilt: parts.length > 1,
             grund: parts.length > 1
-                ? 'An eine Haltung angeschlossen — Fläche wird auf beide Endknoten der Haltung aufgeteilt (SwmmBuilder.js).'
+                ? `Auf zwei Knoten aufgeteilt (${num(src.splitRatio) ?? 50} % / ${100 - (num(src.splitRatio) ?? 50)} %, `
+                    + 'Anschluss an eine Haltung oder zwei Knoten, SwmmBuilder.js).'
                 : 'Direkt an einen Knoten angeschlossen.',
             teilgebiete: parts.map(p => ({ name: p.name, outlet: p.outlet, flaecheHa: p.areaHa })),
             summeTeilflaechenHa: Number(summeHa.toFixed(4)),
@@ -147,12 +150,15 @@ export function buildResultsExport({
         _hinweise: {
             zweck: 'Angereicherter Ergebnisexport: SWMM-Ergebnisse plus die Eingangsdaten, aus denen sie entstanden sind.',
             teilgebiete:
-                'Teilgebietsnamen mit Suffix "_2" sind KEINE Duplikate, sondern die zweite Hälfte einer '
-                + 'an eine Haltung angeschlossenen Fläche. Die Fläche wird auf beide Endknoten der Haltung '
-                + 'aufgeteilt; die Summe beider Teile ergibt die Quellfläche. Nachweis je Fläche unter '
+                'Teilgebietsnamen mit Suffix "_2" sind KEINE Duplikate, sondern der zweite Teil einer '
+                + 'auf zwei Knoten aufgeteilten Fläche (Verhältnis "aufteilungProzent", Voreinstellung 50 %). '
+                + 'Die Summe beider Teile ergibt die Quellfläche. Nachweis je Fläche unter '
                 + '"eingangsdaten.teilgebietsherkunft" (Feld "summeStimmtMitQuellflaeche").',
+            auslastung:
+                'Auslastung = Q/Qvoll (max. Abfluss / Vollfüllungsabfluss). Einstau = h/hvoll ≥ 0,99 oder '
+                + 'Vollfüllungsdauer > 0 — eine eigene Größe. Beides je Haltung unter "auswertung.haltungen".',
             rundung: 'Flächen im SWMM-Input sind auf 3 Nachkommastellen gerundet; Quellflächen stehen ungerundet daneben.',
-            einheiten: { flaeche: 'ha', laenge: 'm', hoehe: 'm ü. NHN', abfluss: 'siehe results.systemStats.analysisOptions.flowUnits' },
+            einheiten: EINHEITEN,
         },
         _erzeugt: {
             werkzeug: 'SaintV-1D — quagg-engineering.org',
@@ -193,15 +199,67 @@ export function buildResultsExport({
                 deckelhoehe: num(n.coverZ),
                 entwaesserungsart: n.entwaesserungsart ?? null,
             })),
-            regen: rain ? {
-                typ: rain.activeModelRain?.type ?? null,
-                stuetzstellen: rain.activeModelRain?.series?.length ?? null,
-                intensitaetLsHa: num(rain.intensity),
-                dauerH: num(rain.duration),
-            } : null,
+            // Der GERECHNETE Regen (results.lauf, P1.9) — nicht der danach gesetzte
+            regen: regenDesLaufs(results, rain),
             teilgebietsherkunft: herkunft,
         },
+        auswertung: {
+            haltungen: Object.entries(results?.edges || {}).map(([id, r]) => {
+                const z = haltungsZustand(r);
+                return {
+                    id,
+                    auslastungQQvollProzent: z.auslastung == null ? null : Number(z.auslastung.toFixed(1)),
+                    fuellungsgradHHvollProzent: r.depthRatio == null ? null : Number((r.depthRatio * 100).toFixed(0)),
+                    eingestaut: z.eingestaut,
+                    status: z.status,
+                };
+            }),
+            knoten: Object.entries(results?.nodes || {}).map(([id, r]) => ({
+                id, zustand: knotenZustand(r), ueberstauvolumenM3: num(r.floodingVolume) ?? 0,
+            })),
+        },
         ergebnisse: results ?? null,
+    };
+}
+
+/** Einheiten der eingebetteten Ergebnisfelder (RptParser/ResultsAssembler/SwmmOutParser). */
+const EINHEITEN = {
+    flaeche: 'ha', laenge: 'm', hoehe: 'm ü. NHN',
+    'ergebnisse.edges.*': {
+        maxFlow: 'l/s', capacity: 'l/s (Qvoll)', flowCapacityRatio: '– (Q/Qvoll, SWMM 2-stellig)',
+        depthRatio: '– (h/hvoll)', maxVelocity: 'm/s', timeOfMaxFlow: 'h:mm',
+        'surcharge.*': 'h (Dauer)',
+    },
+    'ergebnisse.nodes.*': {
+        maxDepth: 'm', maxHGL: 'm ü. NHN', floodingVolume: 'm³', totalInflowVolume: 'm³',
+        maxLatInflow: 'l/s', maxTotalInflow: 'l/s', maxVolumeStored: 'm³', maxAvailableVolume: 'm³',
+        continuityError: '%',
+    },
+    'ergebnisse.subcatchments.*': {
+        precip: 'mm', totalRunon: 'mm', totalEvap: 'mm', totalInfil: 'mm', impervRunoffMm: 'mm',
+        pervRunoffMm: 'mm', totalRunoffMm: 'mm', totalRunoffVol: '10^6 l (= 1000 m³)', peakRunoff: 'l/s',
+        runoffCoeff: '–',
+    },
+    'ergebnisse.systemStats.runoff': 'Volumen ha·m (1 ha·m = 10 000 m³), Felder *Mm in mm',
+    'ergebnisse.systemStats.flow': 'ha·m (1 ha·m = 10 000 m³), error in %',
+    'ergebnisse.timeSeries[].time': 's ab Simulationsbeginn',
+    'ergebnisse.timeSeries[].edges.*': { q: 'l/s', signedQ: 'l/s', v: 'm/s', vol: 'm³', fuellungsgrad: '– (A/Avoll)' },
+    'ergebnisse.timeSeries[].nodes.*': 'depth m, head m ü. NHN, inflow l/s, flooding l/s',
+};
+
+function regenDesLaufs(results, rain) {
+    const lauf = results?.lauf;
+    const r = lauf ? lauf.regen : rain?.activeModelRain;
+    if (!r && !rain) return null;
+    return {
+        typ: r?.type ?? null,
+        quelle: r?.metadata?.source ?? null,
+        dauerMin: num(r?.metadata?.duration),
+        intervallMin: num(r?.metadata?.interval),
+        wiederkehr: r?.metadata?.returnPeriod ?? null,
+        stuetzstellen: r?.series?.length ?? 0,
+        summeMm: r?.series ? Number(r.series.reduce((acc, p) => acc + (p.height_mm ?? p.intensity * (num(r.metadata?.interval) ?? 5) * 0.006), 0).toFixed(2)) : null,
+        simulationsdauerH: num(lauf ? lauf.dauerH : rain?.duration),
     };
 }
 

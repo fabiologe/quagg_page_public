@@ -26,6 +26,7 @@ const { useIsybauStore } = await import('../store/index.js');
 const { parseIsybauXML } = await import('../utils/xmlParser.js');
 const { calculateBlockRain, calculateEulerType2 } = await import('../utils/RainModelService.js');
 const { getRunoffCoeff } = await import('../utils/mappings.js');
+const { haltungsZustand } = await import('../utils/typPalette.js');
 
 const pfad = (rel) => fileURLToPath(new URL(rel, import.meta.url));
 const TUTORIAL_XML = readFileSync(pfad('../../../../public/saintv1d/tutorial/Beispiel_Tutorial.xml'), 'latin1');
@@ -244,5 +245,22 @@ describe('test.xml, echter Rechenweg', () => {
         const { warnings, systemStats } = store.simulation.results;
         expect(systemStats.ueberstauWahl).toBeUndefined();
         expect(warnings[0]).toMatch(/Systemweiter Kontinuitätsfehler.*Gegenprobe mit Überstauverfahren EXTRAN/);
+    }, LAUFZEIT);
+
+    // P1.1 (Entscheidung 2026-09-26): Auslastung = Q/Qvoll, Einstau getrennt. R_002 liegt im
+    // Rückstau voll (h/hvoll 1,00), führt aber kaum Wasser — vorher „Überlastet" (h/hvoll > 0,9).
+    it('P1.1: R_002 ist eingestaut, nicht überlastet; überlastet heißt Q > Qvoll', async () => {
+        const store = uebungsnetz();
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        const { edges } = store.simulation.results;
+        const r2 = haltungsZustand(edges.R_002);
+        expect(edges.R_002.depthRatio).toBeGreaterThanOrEqual(0.99);
+        expect(r2.auslastung).toBeLessThan(5);
+        expect(r2.status).toBe('eingestaut');
+        for (const [id, r] of Object.entries(edges)) {
+            const z = haltungsZustand(r);
+            if (z.status === 'überlastet') expect(Math.abs(r.maxFlow), id).toBeGreaterThan(r.capacity);
+        }
     }, LAUFZEIT);
 });

@@ -65,8 +65,16 @@ export const useIsybauStore = defineStore('isybau-module', {
             // und im projectSnapshot mitgeführt — bewusst hier deklariert statt
             // erst beim ersten Abruf zu entstehen: "noch kein Abruf" ist ein
             // Zustand, den man ablesen können muss.
-            kostraData: null
+            kostraData: null,
+            // Gesetzter Regenverlauf ({ id, type, series, metadata }) — der einzige, der
+            // gerechnet wird. Vorher nicht deklariert: ein Projekt ohne Regen übernahm
+            // beim Laden den Regen des vorigen Projekts (Object.assign ließ ihn stehen).
+            activeModelRain: null
         },
+        // Zählt Netzwechsel (Import, Projekt, Neu starten). Eine Rechnung, die vor dem
+        // Wechsel gestartet wurde, darf ihr Ergebnis nicht an das neue Netz hängen;
+        // der Viewer räumt daran verschobene Beschriftungen ab.
+        netzStand: 0,
         // UI State for Modals
         // Sichtbarkeit ALLER Modals lebt hier — Komponenten togglen nur Flags,
         // die Verdrahtung übernimmt components/modals/IsybauModals.vue.
@@ -132,7 +140,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             invalidElementId: null, // Element, das eine Vorab-Validierung als Ursache identifiziert hat
             invalidElementType: null, // 'node' | 'edge'
             preSolveWarnings: [], // nicht-fatale Vorab-Funde (z.B. WARN08), blockieren den Lauf nicht
-            fehlerBericht: null // { report, input } eines von SWMM abgebrochenen Laufs (Debug-Fenster)
+            fehlerBericht: null, // { report, input } eines von SWMM abgebrochenen Laufs (Debug-Fenster)
+            // Netz oder Regen nach dem Lauf geändert: das Ergebnis zeigt nicht mehr den Stand im Editor
+            veraltet: false
         },
         // History
         history: {
@@ -205,6 +215,7 @@ export const useIsybauStore = defineStore('isybau-module', {
         },
 
         setRainModel(model) {
+            if (this.simulation.results) this.simulation.veraltet = true;
             this.rain.method = 'model';
             this.rain.modelRainId = model.id;
             this.rain.activeModelRain = model; // Store full object for worker
@@ -226,6 +237,7 @@ export const useIsybauStore = defineStore('isybau-module', {
          * sind die abgerufenen Rohdaten des Standorts, kein Bemessungsregen.
          */
         clearRain() {
+            if (this.simulation.results) this.simulation.veraltet = true;
             this.rain.method = 'model';
             this.rain.modelRainId = null;
             this.rain.activeModelRain = null;
@@ -411,8 +423,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             // (sonst zeigte ein neues Netz „Berechnung fehlgeschlagen" des alten).
             Object.assign(this.simulation, {
                 status: 'idle', results: null, error: null, invalidElementId: null,
-                invalidElementType: null, preSolveWarnings: [], fehlerBericht: null
+                invalidElementType: null, preSolveWarnings: [], fehlerBericht: null, veraltet: false
             });
+            this.netzStand++;
             // Rückgängig darf nicht ins vorige Projekt zurückspringen
             this.history.undoStack = [];
             this.history.redoStack = [];
@@ -435,6 +448,8 @@ export const useIsybauStore = defineStore('isybau-module', {
 
         // --- History Actions ---
         saveHistory() {
+            // jede Bearbeitung läuft hier durch: ein vorhandenes Ergebnis zeigt ab jetzt einen alten Stand
+            if (this.simulation.results) this.simulation.veraltet = true;
             const snapshot = {
                 nodes: Array.from(this.nodes.values()).map(n => n.toJSON ? n.toJSON() : n),
                 edges: Array.from(this.edges.values()).map(e => e.toJSON ? e.toJSON() : e),
@@ -600,6 +615,10 @@ export const useIsybauStore = defineStore('isybau-module', {
                 hydraulics: { areas: data.areas || [] },
                 inspections: data.inspections || [],
             });
+            // Regen vollständig ersetzen: ein Projekt ohne Regen darf den des vorigen nicht erben
+            this.rain.modelRainId = null;
+            this.rain.activeModelRain = null;
+            this.rain.kostraData = null;
             if (data.rain) Object.assign(this.rain, data.rain);
             // Ohne (gültige) gespeicherte Wahl: Voreinstellung Automatik.
             const gespeichert = data.berechnung?.ueberstauverfahren;
@@ -1211,6 +1230,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                     text: `${f.elementType === 'node' ? 'Knoten' : 'Haltung'} ${f.id}: ${f.message}`
                 }));
 
+            const stand = this.netzStand;
             try {
                 // Serializing payload for Worker (Rescue Phase 3)
                 // Convert Maps to Arrays and ensure POJOs (toJSON)
@@ -1246,10 +1266,24 @@ export const useIsybauStore = defineStore('isybau-module', {
                 // Deep clone payload to strip all Vue Proxies and ensure worker safety
                 const cleanPayload = JSON.parse(JSON.stringify(payload));
                 const result = await workerControllerInstance.runSimulation(cleanPayload);
+                if (stand !== this.netzStand) {
+                    // Während der Rechnung wurde ein anderes Netz geladen — Ergebnis gehört nicht dazu
+                    this.melde('Die Berechnung gehörte zum vorher geladenen Netz und wurde verworfen.', 'hinweis');
+                    return;
+                }
+                // Was gerechnet wurde, gehört zum Ergebnis: Reiter, PDF und Export zeigen diesen
+                // Regen, auch wenn danach ein anderer gesetzt wird (P1.9).
+                result.lauf = {
+                    regen: payload.options.rainSeries.length ? JSON.parse(JSON.stringify(this.rain.activeModelRain)) : null,
+                    dauerH: payload.options.durationHours,
+                    zeitpunkt: new Date().toISOString(),
+                };
                 this.simulation.results = result;
                 this.simulation.status = 'success';
+                this.simulation.veraltet = false;
                 this.ui.showResultsModal = true; // Auto open results?
             } catch (err) {
+                if (stand !== this.netzStand) return; // Netz inzwischen gewechselt
                 console.error(err);
                 this.simulation.error = err.message;
                 this.simulation.fehlerBericht = err.details || null;

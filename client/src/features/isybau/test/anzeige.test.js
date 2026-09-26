@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { formatTime } from '../components/modals/results/resultsShared.js';
-import { legendenEintraege, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL, UEBERSTAU_CSS, knotenUeberstaut, DATENQUALITAET, AUSWAHL, FLAECHE } from '../utils/typPalette.js';
+import { legendenEintraege, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL, UEBERSTAU_CSS, knotenUeberstaut, knotenZustand, haltungsZustand, EINSTAU_CSS, DATENQUALITAET, AUSWAHL, FLAECHE } from '../utils/typPalette.js';
 import { schriftWinkel, gedrehteHuelle, waehleBeschriftungen, platziereBeschriftungen } from '../utils/geometry2d.js';
 import { fmtZahl, formatVolume } from '../components/modals/results/resultsShared.js';
 
@@ -32,6 +32,7 @@ describe('Legende der 2D-Karte', () => {
         expect(l.titel).toBe('Auslastung');
         expect(l.eintraege.slice(0, AUSLASTUNG_STUFEN.length)).toEqual(
             AUSLASTUNG_STUFEN.map(s => ({ label: s.text, color: s.farbe })));
+        expect(l.eintraege.at(-2)).toEqual({ label: 'Haltung eingestaut (gestrichelt)', color: EINSTAU_CSS, gestrichelt: true });
         expect(l.eintraege.at(-1)).toEqual({ label: 'Schacht überstaut', color: UEBERSTAU_CSS });
     });
 
@@ -72,12 +73,14 @@ describe('3D: vom Import erzeugte Knoten', () => {
     });
 });
 
-describe('Überstau-Bedingung (2D und 3D gemeinsam)', () => {
-    it('overflow oder Pfützenvolumen > 0', () => {
+describe('Knotenzustand (eine Regel für 2D, 3D, Reiter, PDF)', () => {
+    it('überstaut vor eingestaut vor ok', () => {
         expect(knotenUeberstaut({ overflow: true })).toBe(true);
-        expect(knotenUeberstaut({ pondedVolume: 21 })).toBe(true);
-        expect(knotenUeberstaut({ pondedVolume: 0, surcharged: true })).toBe(false);
-        expect(knotenUeberstaut(undefined)).toBe(false);
+        expect(knotenZustand({ floodingVolume: 21 })).toBe('überstaut');
+        expect(knotenZustand({ surcharged: true, overflow: true })).toBe('überstaut');
+        expect(knotenZustand({ surcharged: true })).toBe('eingestaut');
+        expect(knotenZustand({ pondedVolume: 5 })).toBe('ok'); // Feld setzt der Parser nie
+        expect(knotenZustand(undefined)).toBe('ok');
     });
 });
 
@@ -161,8 +164,46 @@ describe('PDF-Bericht: nur Zeichen, die die jsPDF-Standardschrift kennt', () => 
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .split('\n').map(z => z.replace(/\/\/.*$/, '')).join('\n');
 
+    // ≤ und ≥ kamen in der Kartenlegende verstümmelt an (Browserprüfung P1, 2026-09-26)
+    it('nur WinAnsi-Zeichen (cp1252) in Zeichenketten, auch in den Stufentexten aus typPalette', () => {
+        const cp1252Extra = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+        const ok = (ch) => ch.charCodeAt(0) < 0x100 || cp1252Extra.includes(ch);
+        const strings = [...ohneKommentare.matchAll(/(['`])((?:(?!\1)[^\n])*)\1/g)].map(m => m[2]);
+        expect(strings.filter(t => [...t].some(ch => !ok(ch)))).toEqual([]);
+        const winAnsi = (t) => String(t).replace(/≤/g, 'bis').replace(/≥/g, 'ab');
+        for (const st of AUSLASTUNG_STUFEN) expect([...winAnsi(st.text)].every(ok), st.text).toBe(true);
+        expect(quelle).toContain('winAnsi(st.text)');
+    });
+
     it('keine griechischen Buchstaben in Zeichenketten', () => {
         const funde = [...ohneKommentare.matchAll(/(['"`])((?:(?!\1).)*[Ͱ-Ͽ](?:(?!\1).)*)\1/g)].map(m => m[0]);
         expect(funde).toEqual([]);
+    });
+});
+
+// Entscheidung 2026-09-26: Auslastung = Q/Qvoll, Einstau (h/hvoll) getrennt.
+// Am echten Lauf: test/e2eTutorialnetz.test.js (R_002: h/hvoll 1,00 bei Q/Qvoll 1 %, vorher „Überlastet“).
+describe('Haltungszustand: Q/Qvoll und Einstau getrennt', () => {
+    it('eingestaut, aber gering ausgelastet → Status eingestaut, Farbe der Q/Qvoll-Stufe', () => {
+        const z = haltungsZustand({ type: 'CONDUIT', maxFlow: 41.2, capacity: 242.1, flowCapacityRatio: 0.17, depthRatio: 1.0 });
+        expect(z.auslastung).toBeCloseTo(17.02, 2);
+        expect(z.eingestaut).toBe(true);
+        expect(z.status).toBe('eingestaut');
+        expect(z.farbe).toBe(AUSLASTUNG_STUFEN.at(-1).farbe);
+    });
+    it('Q/Qvoll > 1 → überlastet (vor eingestaut); exaktes Qvoll vor gerundeter SWMM-Spalte', () => {
+        expect(haltungsZustand({ type: 'CONDUIT', maxFlow: 130, capacity: 100, flowCapacityRatio: 1.3, depthRatio: 1 }).status).toBe('überlastet');
+        expect(haltungsZustand({ type: 'CONDUIT', maxFlow: 95, capacity: 100, flowCapacityRatio: 1.0, depthRatio: 0.8 }).status).toBe('> 90 %');
+        expect(haltungsZustand({ type: 'CONDUIT', flowCapacityRatio: 0.6, depthRatio: 0.5 }).status).toBe('> 50 %');
+        expect(haltungsZustand({ type: 'CONDUIT', flowCapacityRatio: 0.3, depthRatio: 0.5, surcharge: { hoursFullBoth: 0.2 } }).status).toBe('eingestaut');
+        // 0,01 h ist SWMMs Druck-Untergrenze (statsrpt.c MAX(0.01, t)), kein Vollfüllen
+        expect(haltungsZustand({ type: 'CONDUIT', flowCapacityRatio: 0.04, depthRatio: 0.58, surcharge: { hoursFullBoth: 0.01, hoursFullDown: 2.8 } }).eingestaut).toBe(false);
+    });
+    it('Wehr/Drossel: kein Qvoll → keine Auslastung, keine Farbe', () => {
+        const z = haltungsZustand({ type: 'WEIR', maxFlow: 50, depthRatio: 0.4 });
+        expect([z.auslastung, z.farbe, z.status]).toEqual([null, null, '–']);
+    });
+    it('fünf Stufen, fünf verschiedene Farben', () => {
+        expect(new Set(AUSLASTUNG_STUFEN.map(s => s.farbe)).size).toBe(5);
     });
 });

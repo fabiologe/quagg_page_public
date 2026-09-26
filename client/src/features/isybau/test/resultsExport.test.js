@@ -150,3 +150,44 @@ describe('buildResultsExport', () => {
     expect(() => buildResultsExport({})).not.toThrow();
   });
 });
+
+// P1.6: mm aus SWMMs Spalte, Bezugsfläche aus der gerechneten .inp — nicht aus der
+// aktuellen Editorfläche (die sich nach dem Lauf ändern kann).
+describe('Niederschlagsbilanz', async () => {
+  const { niederschlagsBilanz, rechenflaecheAusInp } = await import('../utils/swmm/niederschlagsBilanz.js');
+  it('nimmt die mm-Spalte von SWMM, auch wenn die Editorfläche abweicht', () => {
+    const runoff = { precip: 0.194, precipMm: 43.27, runoff: 0.078, runoffMm: 17.4, infil: 0.091, infilMm: 20.3 };
+    const b = niederschlagsBilanz(runoff, 9.9); // Editor: doppelt so viel Fläche
+    expect(b.precipMm).toBe(43.27);
+    expect(b.runoffMm).toBe(17.4);
+    expect(b.psi).toBeCloseTo(0.402, 3);
+    expect(b.quelle).toBe('swmm');
+  });
+  it('Bezugsfläche = Summe [SUBCATCHMENTS] der .inp', () => {
+    const inp = '[SUBCATCHMENTS]\n;;Name Rain Outlet Area\nA1 RG N1 0.25 50 10 1 0\nA1_2 RG N2 0.25 50 10 1 0\n\n[SUBAREAS]\nA1 0.01 0.1 1 2 0 OUTLET\n';
+    expect(rechenflaecheAusInp(inp)).toBeCloseTo(0.5, 9);
+    expect(rechenflaecheAusInp('')).toBe(0);
+  });
+});
+
+// P1.11: Auswertung je Haltung (Q/Qvoll und Einstau getrennt), gerechneter Regen, Einheiten.
+describe('Ergebnisexport: Auswertung und Regen des Laufs', async () => {
+  const { buildResultsExport } = await import('../utils/resultsExport.js');
+  const results = {
+    edges: { R_002: { type: 'CONDUIT', maxFlow: 3, capacity: 242.1, flowCapacityRatio: 0.01, depthRatio: 1 } },
+    nodes: { S1: { overflow: true, floodingVolume: 21 } },
+    lauf: { regen: { type: 'euler2', series: [{ time: 0, intensity: 100, height_mm: 3 }, { time: 5, intensity: 50, height_mm: 1.5 }], metadata: { duration: 10, interval: 5, returnPeriod: 'RN_003A' } }, dauerH: 2 },
+  };
+  const ex = buildResultsExport({ results, areas: [], nodes: [], edges: [], rain: { activeModelRain: { type: 'block', series: [] }, duration: 9 }, erzeugtAm: 'x' });
+  it('Haltung: Q/Qvoll 1,2 %, Füllung 100 %, eingestaut', () => {
+    expect(ex.auswertung.haltungen).toEqual([{ id: 'R_002', auslastungQQvollProzent: 1.2, fuellungsgradHHvollProzent: 100, eingestaut: true, status: 'eingestaut' }]);
+    expect(ex.auswertung.knoten).toEqual([{ id: 'S1', zustand: 'überstaut', ueberstauvolumenM3: 21 }]);
+  });
+  it('Regen = der gerechnete (results.lauf), nicht der danach gesetzte', () => {
+    expect(ex.eingangsdaten.regen).toEqual({ typ: 'euler2', quelle: null, dauerMin: 10, intervallMin: 5, wiederkehr: 'RN_003A', stuetzstellen: 2, summeMm: 4.5, simulationsdauerH: 2 });
+  });
+  it('Einheiten je Feld, kein „utilization" mehr', () => {
+    expect(ex._hinweise.einheiten['ergebnisse.edges.*'].capacity).toBe('l/s (Qvoll)');
+    expect(JSON.stringify(ex)).not.toContain('utilization');
+  });
+});

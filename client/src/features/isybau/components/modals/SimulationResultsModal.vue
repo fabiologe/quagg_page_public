@@ -10,6 +10,9 @@
       <!-- Header -->
       <div class="modal-header">
           <h2>Simulationsergebnisse (Hydraulik)</h2>
+          <span v-if="veraltet" class="veraltet-hinweis" title="Netz oder Regen wurden nach dem Lauf geändert">
+            Veraltet — nach dem Lauf geändert, bitte neu rechnen
+          </span>
           <div class="header-actions">
             <SimulationReportExport
               :nodes="nodes"
@@ -21,6 +24,8 @@
               :system-stats="systemStats"
               :rain="rain"
               :total-catchment-area-ha="totalCatchmentAreaHa"
+              :time-series="timeSeries"
+              :inp="inp"
             />
             <button class="close-btn" @click="close" title="Schließen">✕</button>
           </div>
@@ -70,6 +75,7 @@
           :area-results="areaResults"
           :system-stats="systemStats"
           :time-series="timeSeries"
+          :inp="inp"
         />
       </div>
 
@@ -85,6 +91,7 @@ import ResultsGeneralTab from './results/ResultsGeneralTab.vue';
 import ResultsEdgesTab from './results/ResultsEdgesTab.vue';
 import ResultsNodesTab from './results/ResultsNodesTab.vue';
 import ResultsAreasTab from './results/ResultsAreasTab.vue';
+import { rechenflaecheAusInp } from '../../utils/swmm/niederschlagsBilanz.js';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -97,6 +104,8 @@ const props = defineProps({
   timeSeries: Array,
   systemStats: Object,
   rain: Object, // store.rain — enthält activeModelRain.series, method, intensity, duration
+  inp: { type: String, default: '' }, // Eingabedatei des Laufs (Bezugsfläche der Bilanz)
+  veraltet: { type: Boolean, default: false }, // Netz/Regen nach dem Lauf geändert
 });
 
 const emit = defineEmits(['close', 'show-debug']);
@@ -120,20 +129,24 @@ const focusEdge = (edgeId) => {
     focusEdgeId.value = edgeId;
 };
 
-// Gesamtfläche des Einzugsgebiets aus den Input-Areas (in ha) —
-// Bezugsfläche für die mm-Bilanzen (General-Tab) und den PDF-Export.
+// Bezugsfläche der Bilanz: Teilflächen der GERECHNETEN .inp (nicht der aktuelle Editorstand,
+// der sich nach dem Lauf ändern kann, und ohne Flächen ohne Anschluss). Rückfall: Editorfläche.
 const totalCatchmentAreaHa = computed(() => {
-    if (!props.areas) return 0;
-    let total = 0;
-    if (props.areas instanceof Map) {
-        for (const a of props.areas.values()) total += parseFloat(a.size || 0);
-    } else if (Array.isArray(props.areas)) {
-        for (const a of props.areas) total += parseFloat(a.size || 0);
-    } else {
-        for (const a of Object.values(props.areas)) total += parseFloat(a.size || 0);
-    }
-    return total;
+    const ausLauf = rechenflaecheAusInp(props.inp);
+    if (ausLauf > 0) return ausLauf;
+    const liste = props.areas instanceof Map ? [...props.areas.values()]
+        : Array.isArray(props.areas) ? props.areas : Object.values(props.areas || {});
+    return liste.reduce((summe, a) => summe + (parseFloat(a.size) || 0), 0);
 });
 </script>
 
 <style scoped src="./results/results-shared.css"></style>
+<style scoped>
+.veraltet-hinweis {
+  padding: var(--isy-space-1) var(--isy-space-2);
+  font-size: var(--isy-fs-sm);
+  color: var(--isy-pixel-warning-soft-text);
+  background: var(--isy-pixel-warning-soft);
+  border: 1px solid var(--isy-pixel-warning-soft-border);
+}
+</style>

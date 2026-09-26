@@ -74,6 +74,7 @@
         <div v-if="viewMode === 'result'" class="view-container">
             <IsybauViewer
                 readonly
+                :netz-stand="store.netzStand"
                 :nodes="store.nodes"
                 :edges="store.edges"
                 :areas="store.areaArray"

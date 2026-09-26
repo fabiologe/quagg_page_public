@@ -23,22 +23,69 @@ import { ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from './mapp
 export const zahl = (hex) => parseInt(hex.slice(1), 16);
 
 /**
- * Auslastungsklassen einer Haltung. Reihenfolge ist Teil des Vertrags: die
- * erste Stufe, deren Schwelle unterschritten wird, gewinnt.
+ * Auslastungsklassen einer Haltung — Auslastung = Q/Qvoll (maximaler Abfluss durch
+ * Vollfüllungsabfluss), wie in den Arbeitshilfen Abwasser und im PDF-Bericht. Vorher
+ * färbten Karte, 3D und Reiter nach h/hvoll (Füllungsgrad): eine eingestaute Haltung
+ * mit 17 % Q/Qvoll stand dort als „> 90 %" (Entscheidung Fabio 2026-09-26: Q/Qvoll,
+ * Einstau getrennt → haltungEingestaut).
  *
- * Schwellen durchgehend "größer als", wie es die Legende schon sagte. Der
- * 2D-Viewer benutzte für die zweite Stufe ">= 75" — eine exakt zu 75,0 %
- * ausgelastete Haltung war dort orange und in 3D gelb.
+ * Reihenfolge ist Teil des Vertrags: die erste Stufe, deren Schwelle
+ * überschritten wird, gewinnt. Schwellen durchgehend „größer als".
  */
 export const AUSLASTUNG_STUFEN = [
-  { ueber: 90, farbe: '#c0392b', text: '> 90 % Kapazität' },
-  { ueber: 75, farbe: '#e67e22', text: '> 75 % Kapazität' },
-  { ueber: 50, farbe: '#f1c40f', text: '> 50 % Kapazität' },
-  { ueber: -1, farbe: '#2980b9', text: '≤ 50 % Kapazität' },
+  { ueber: 100, farbe: '#c0392b', text: '> 100 % Qvoll (überlastet)', status: 'überlastet' },
+  { ueber: 90,  farbe: '#e67e22', text: '> 90 % Qvoll',               status: '> 90 %' },
+  { ueber: 75,  farbe: '#f1c40f', text: '> 75 % Qvoll',               status: '> 75 %' },
+  { ueber: 50,  farbe: '#5dade2', text: '> 50 % Qvoll',               status: '> 50 %' },
+  { ueber: -Infinity, farbe: '#2980b9', text: '≤ 50 % Qvoll',         status: '≤ 50 %' },
 ];
 
-export const auslastungsFarbe = (auslastung) =>
-  AUSLASTUNG_STUFEN.find((s) => (auslastung ?? 0) > s.ueber).farbe;
+export const auslastungsStufe = (auslastung) =>
+  AUSLASTUNG_STUFEN.find((s) => (auslastung ?? 0) > s.ueber);
+
+export const auslastungsFarbe = (auslastung) => auslastungsStufe(auslastung).farbe;
+
+/** Füllungsgrad h/hvoll, ab dem eine Haltung als eingestaut (voll) gilt. SWMM druckt h/hvoll
+ *  zweistellig, „1,00" kommt also schon ab 0,995 — 0,99 fängt das sicher. */
+export const EINSTAU_H_HVOLL = 0.99;
+
+/**
+ * Auslastung Q/Qvoll in % — aus dem exakten Qvoll des Rechenkerns (capacity, l/s,
+ * siehe ResultsAssembler), sonst aus SWMMs zweistelliger Q/Qvoll-Spalte. Wehre und
+ * Drosseln haben kein Qvoll → null.
+ */
+export const auslastungProzent = (res) => {
+  if (!res || ['WEIR', 'ORIFICE', 'OUTLET'].includes(res.type)) return null;
+  if (res.capacity > 0 && Number.isFinite(res.maxFlow)) return (Math.abs(res.maxFlow) / res.capacity) * 100;
+  if (Number.isFinite(res.flowCapacityRatio)) return res.flowCapacityRatio * 100;
+  return null;
+};
+
+/** SWMM druckt in „Conduit Surcharge Summary" jede Dauer mindestens als 0,01 h
+ *  (statsrpt.c: t = MAX(0.01, t)) — 0,01 heißt „unter der Auflösung", nicht „voll". */
+export const SWMM_DAUER_UNTERGRENZE_H = 0.01;
+
+/** Eingestaut: Haltung lief voll (h/hvoll ≥ 0,99 oder an beiden Enden länger als SWMMs
+ *  Untergrenze voll) — eigene Achse neben Q/Qvoll. Nur unten voll (Rückstau vom Unterlieger)
+ *  zählt nicht: R_002 im Übungsnetz, unten 2,8 h voll, h/hvoll 0,58. */
+export const haltungEingestaut = (res) => !!res
+  && ((res.depthRatio ?? 0) >= EINSTAU_H_HVOLL
+    || (res.surcharge?.hoursFullBoth ?? 0) > SWMM_DAUER_UNTERGRENZE_H);
+
+/**
+ * Ergebniszustand einer Haltung für alle Anzeigen (2D, 3D, Reiter, Info-Fenster, PDF).
+ * status: 'überlastet' (Q/Qvoll > 1) vor 'eingestaut' vor den Auslastungsstufen.
+ * @returns {{auslastung:number|null, stufe:object|null, eingestaut:boolean, status:string, farbe:string|null}}
+ */
+export const haltungsZustand = (res) => {
+  const auslastung = auslastungProzent(res);
+  const stufe = auslastung == null ? null : auslastungsStufe(auslastung);
+  const eingestaut = haltungEingestaut(res);
+  const status = stufe === AUSLASTUNG_STUFEN[0] ? 'überlastet'
+    : eingestaut ? 'eingestaut'
+      : stufe ? stufe.status : '–';
+  return { auslastung, stufe, eingestaut, status, farbe: stufe ? stufe.farbe : null };
+};
 
 /** Ergebniszustände eines Knotens. Eigene Achse, nicht die der Auslastung. */
 export const KNOTEN_ZUSTAND = {
@@ -49,9 +96,25 @@ export const KNOTEN_ZUSTAND = {
   wasserstand:  '#3498db',
 };
 
-/** Ist ein Knoten überstaut? Eine Bedingung für 2D-Karte und 3D-Szene (vorher prüfte 3D nur
- *  `overflow` und übersah Knoten, deren Überstau nur als pondedVolume ankommt). */
-export const knotenUeberstaut = (res) => !!res && (!!res.overflow || (res.pondedVolume ?? 0) > 0);
+/**
+ * Ergebniszustand eines Knotens — EINE Regel für 2D, 3D, Reiter, Info-Fenster und PDF
+ * (vorher: Überflutungsvolumen > 0,001 m³ im Reiter/PDF, `overflow` in 3D, dazu
+ * `pondedVolume`, das der Parser nie setzt).
+ *   'überstaut'  – Wasser trat über den Deckel aus: SWMM-Tabelle „Node Flooding" oder
+ *                  max. Wasserspiegel über Deckelhöhe (ResultsAssembler, `overflow`)
+ *   'eingestaut' – Wasserspiegel über dem Scheitel der höchsten Haltung, unter dem Deckel
+ *                  (SWMM „Node Surcharge Summary")
+ *   'ok'
+ */
+export const knotenZustand = (res) => {
+  if (!res) return 'ok';
+  if (res.overflow || (res.floodingVolume ?? 0) > 0) return 'überstaut';
+  if (res.surcharged) return 'eingestaut';
+  return 'ok';
+};
+
+/** Ist ein Knoten überstaut? (2D-Ring, 3D-Farbe, Legende) */
+export const knotenUeberstaut = (res) => knotenZustand(res) === 'überstaut';
 
 /** Weinrot, hell genug für dunkle Hintergründe (Dunkelmodus, 3D-Szene): #7b1e3a hatte dort
  *  nur 1,9 : 1 Kontrast (Browserprüfung 2026-09-26). */
@@ -60,6 +123,9 @@ export const UEBERSTAU_HELL = '#d0527a';
 /** 2D-Karte und Legende: Theme-Token (theme.css: hell = KNOTEN_ZUSTAND.ueberstau,
  *  dunkel = UEBERSTAU_HELL). PDF (Papier) nimmt KNOTEN_ZUSTAND.ueberstau direkt. */
 export const UEBERSTAU_CSS = 'var(--isy-ueberstau, #7b1e3a)';
+
+/** Einstau-Strichelung über der Auslastungsfarbe: Textfarbe des Themes (hebt sich von jeder Stufe ab). */
+export const EINSTAU_CSS = 'var(--isy-pixel-text, #222)';
 
 /**
  * Bauwerke tragen KEINE Typfarbe mehr (Nutzer-Entscheidung).
@@ -127,6 +193,7 @@ export const legendenEintraege = (hatErgebnisse) => (hatErgebnisse
       titel: 'Auslastung',
       eintraege: [
         ...AUSLASTUNG_STUFEN.map((s) => ({ label: s.text, color: s.farbe })),
+        { label: 'Haltung eingestaut (gestrichelt)', color: EINSTAU_CSS, gestrichelt: true },
         { label: 'Schacht überstaut', color: UEBERSTAU_CSS },
       ],
     }

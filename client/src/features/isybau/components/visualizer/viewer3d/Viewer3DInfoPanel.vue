@@ -157,13 +157,13 @@
 
           <!-- Node results -->
           <template v-if="!isEdge && !isArea">
-            <div class="info-row" v-if="result.overflow">
+            <div class="info-row" v-if="knotenZustand(result) === 'überstaut'">
               <span class="lbl">Status</span>
-              <span class="val res-bad">⚠ Überstau / Einstau</span>
+              <span class="val res-bad">⚠ Überstaut (über Deckel)</span>
             </div>
-            <div class="info-row" v-else-if="result.surcharged">
+            <div class="info-row" v-else-if="knotenZustand(result) === 'eingestaut'">
               <span class="lbl">Status</span>
-              <span class="val res-warn">↑ Druckabfluss</span>
+              <span class="val res-warn">↑ Eingestaut (über Rohrscheitel)</span>
             </div>
             <div class="info-row" v-else>
               <span class="lbl">Status</span>
@@ -178,8 +178,8 @@
               <span class="val">{{ result.maxTotalInflow.toFixed(1) }} l/s</span>
             </div>
             <div class="info-row" v-if="result.floodingVolume">
-              <span class="lbl">Überflutungsvolumen</span>
-              <span class="val res-bad">{{ result.floodingVolume.toFixed(1) }} m³</span>
+              <span class="lbl">Überstauvolumen</span>
+              <span class="val res-bad">{{ Math.round(result.floodingVolume) }} m³</span>
             </div>
           </template>
 
@@ -206,9 +206,13 @@
 
           <!-- Edge results -->
           <template v-if="isEdge">
-            <div class="info-row">
-              <span class="lbl">Auslastung</span>
-              <span class="val" :class="edgeUtilClass">{{ edgeUtil }}%</span>
+            <div class="info-row" v-if="edgeZustand.auslastung != null">
+              <span class="lbl">Auslastung Q/Qvoll</span>
+              <span class="val" :style="{ color: edgeZustand.farbe }">{{ Math.round(edgeZustand.auslastung) }} %</span>
+            </div>
+            <div class="info-row" v-if="result.depthRatio != null">
+              <span class="lbl">Füllung h/hvoll</span>
+              <span class="val" :class="{ 'res-bad': edgeZustand.eingestaut }">{{ Math.round(result.depthRatio * 100) }} %{{ edgeZustand.eingestaut ? ' (eingestaut)' : '' }}</span>
             </div>
             <div class="info-row" v-if="result.maxFlow != null">
               <span class="lbl">Max. Abfluss</span>
@@ -227,7 +231,7 @@
 
 <script setup>
 import { computed } from 'vue';
-import { BAUWERK, FLAECHE, DATENQUALITAET, AUSLASTUNG_STUFEN } from '../../../utils/typPalette.js';
+import { BAUWERK, FLAECHE, DATENQUALITAET, AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../../utils/typPalette.js';
 const BAUWERK_DUNKEL = 'var(--isy-pixel-border)';
 const resFarben = Object.fromEntries(
   AUSLASTUNG_STUFEN.map((st, i) => [`--res-${i + 1}`, st.farbe]),
@@ -307,19 +311,9 @@ const profileName = computed(() =>
     : '-'
 );
 
-const edgeUtil = computed(() => {
-  if (!props.result) return 0;
-  const u = props.result.utilization ?? (props.result.depthRatio != null ? props.result.depthRatio * 100 : 0);
-  return Math.round(u);
-});
-const edgeUtilClass = computed(() => {
-  const u = edgeUtil.value;
-  // Schwellen NICHT hier: AUSLASTUNG_STUFEN in utils/typPalette.js ist die
-  // einzige Quelle. Diese Funktion hatte dieselben drei Schwellen ein VIERTES
-  // Mal stehen - neben 3D-Szene, 2D-Viewer und Legende.
-  const i = AUSLASTUNG_STUFEN.findIndex((st) => (u ?? 0) > st.ueber);
-  return ['res-bad', 'res-warn', 'res-yellow', 'res-ok'][i];
-});
+// Q/Qvoll und Einstau aus EINER Regel (typPalette.haltungsZustand) — vorher stand hier
+// h/hvoll als „Auslastung" und die Schwellen ein viertes Mal.
+const edgeZustand = computed(() => haltungsZustand(props.result));
 </script>
 
 <style scoped>
@@ -416,5 +410,5 @@ const edgeUtilClass = computed(() => {
 .res-bad    { color: var(--res-1); }
 .res-warn   { color: var(--res-2); }
 .res-yellow { color: var(--res-3); }
-.res-ok     { color: var(--res-4); }
+.res-ok     { color: var(--res-5); }
 </style>

@@ -59,8 +59,8 @@
       <transition name="legend-fade">
         <div v-if="showResults" class="result-legend">
           <div class="legend-title">Legende</div>
-          <div class="legend-row"><span class="dot" :style="{ background: UEBERSTAU_HELL }" />Überstau / Einstau</div>
-          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.druckabfluss }" />Druckabfluss</div>
+          <div class="legend-row"><span class="dot" :style="{ background: UEBERSTAU_HELL }" />Schacht überstaut</div>
+          <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.druckabfluss }" />Schacht eingestaut</div>
           <div class="legend-row"><span class="dot" :style="{ background: KNOTEN_ZUSTAND.wasserstand, opacity: 0.75 }" />Wasserstand</div>
           <div class="legend-row"><span class="dot" :style="{ background: DATENQUALITAET.fiktiv }" />Knoten vom Import erzeugt (fiktiv)</div>
           <div class="legend-sep">Haltungen</div>

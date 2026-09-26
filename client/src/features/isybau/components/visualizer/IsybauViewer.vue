@@ -154,6 +154,24 @@
               :style="{ stroke: getEdgeColor(edge.id) }"
               @click.stop="selectElement(edge, 'edge', $event)"
             />
+            <!-- Eingestaut (h/hvoll ≥ 0,99): Strichelung über der Q/Qvoll-Farbe -->
+            <template v-if="edgeEingestaut(edge.id)">
+              <polyline
+                v-if="edge.coords && edge.coords.length > 1"
+                :points="getPolygonPoints(edge.coords)"
+                class="edge-einstau"
+                vector-effect="non-scaling-stroke"
+              />
+              <line
+                v-else-if="getNode(edge.fromNodeId) && getNode(edge.toNodeId)"
+                :x1="getNode(edge.fromNodeId).x - bounds.minX"
+                :y1="bounds.maxY - getNode(edge.fromNodeId).y"
+                :x2="getNode(edge.toNodeId).x - bounds.minX"
+                :y2="bounds.maxY - getNode(edge.toNodeId).y"
+                class="edge-einstau"
+                vector-effect="non-scaling-stroke"
+              />
+            </template>
             
             <!-- Direction Arrow -->
             <path
@@ -293,7 +311,8 @@
     <div class="entw-legend">
       <div class="entw-legend-title">{{ legende.titel }}</div>
       <div v-for="item in legende.eintraege" :key="item.label" class="entw-legend-item">
-        <span class="entw-dot" :style="{ background: item.color }"></span>{{ item.label }}
+        <span v-if="item.gestrichelt" class="entw-strich"></span>
+        <span v-else class="entw-dot" :style="{ background: item.color }"></span>{{ item.label }}
       </div>
       <div v-if="cursorCoords" class="entw-legend-coords">
         X: {{ cursorCoords.x.toFixed(2) }}<br>Y: {{ cursorCoords.y.toFixed(2) }}
@@ -369,7 +388,7 @@
 <script setup>
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor } from '../../utils/mappings.js';
-import { auslastungsFarbe, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';
+import { haltungsZustand, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';
 import ViewerControls from './ViewerControls.vue';
 import ElementInfo from './ElementInfo.vue';
 import LoadingOverlay from '../common/LoadingOverlay.vue';
@@ -400,6 +419,8 @@ const contourCanvasHost = ref(null);
 const contourGpu = useContourGpuLayer();
 
 const props = defineProps({
+  // store.netzStand: neues Netz geladen → verschobene Beschriftungen gehören zum alten
+  netzStand: { type: Number, default: 0 },
   nodes: {
     type: Map,
     required: true
@@ -1273,14 +1294,10 @@ const getEdgeColor = (id) => {
   if (selectedElement.value?.id === id) return null; // Let CSS handle selection
 
   if (props.hydraulics && props.hydraulics.has(id)) {
-    const res = props.hydraulics.get(id);
-    const util = res.utilization || 0;
-
-    // Vier Klassen, dieselben wie in der 3D-Ansicht und in deren Legende.
-    // Vorher gab es hier nur zwei (> 90 und >= 75) — eine zu 60 % ausgelastete
-    // Haltung sah aus wie eine leere. Solange Ergebnisse anliegen, uebersteuert
-    // die Auslastung die Entwaesserungsart-Faerbung vollstaendig, wie in 3D.
-    return auslastungsFarbe(util);
+    // Q/Qvoll-Stufen wie 3D, Reiter und PDF (typPalette.haltungsZustand). Solange
+    // Ergebnisse anliegen, übersteuert die Auslastung die Entwässerungsart-Färbung.
+    // Wehr/Drossel ohne Qvoll: Sonderbauwerk-Farbe.
+    return haltungsZustand(props.hydraulics.get(id)).farbe ?? SONDERBAUWERK_COLOR;
   }
 
   // Kein Auslastungs-Override aktiv: Entwässerungsart (KM/KR/KS) ist die
@@ -1293,6 +1310,8 @@ const getEdgeColor = (id) => {
 // wenn SWMM sie intern als Haltung/Link führt) — einheitlich graubeige, damit
 // ein Blick "Sonderbauwerk" signalisiert statt die Haltung optisch zu verbiegen.
 const SONDERBAUWERK_COLOR = BAUWERK;
+
+const edgeEingestaut = (id) => haltungsZustand(props.hydraulics?.get?.(id)).eingestaut;
 
 const istUeberstaut = (id) => knotenUeberstaut(props.nodeResults?.get?.(id));
 
@@ -1307,10 +1326,7 @@ const getNodeColor = (id) => {
     // hoher Auslastung), sonst bleibt es bei der hell-lila Grundfarbe.
     const edge = Array.from(props.edges?.values?.() || []).find(e => e.fromNodeId === id);
     const res = edge && props.hydraulics ? props.hydraulics.get(edge.id) : null;
-    if (res) {
-      const util = res.utilization || 0;
-      return auslastungsFarbe(util);
-    }
+    if (res) return haltungsZustand(res).farbe ?? SONDERBAUWERK_COLOR;
     return SONDERBAUWERK_COLOR;
   }
 
@@ -1332,6 +1348,7 @@ const accumulatedMove = ref(0);
 
 // Label Dragging State
 const labelOffsets = reactive(new Map());
+watch(() => props.netzStand, () => labelOffsets.clear());
 const draggingLabelId = ref(null);
 const startLabelX = ref(0);
 const startLabelY = ref(0);
@@ -1855,6 +1872,19 @@ svg.ezg-aerial-host {
   font-size: var(--isy-fs-pixel-sm);
   color: var(--isy-pixel-text-dim);
   line-height: 1.4;
+}
+.entw-strich {
+  width: 16px;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--isy-pixel-text) 0 4px, transparent 4px 7px);
+  flex-shrink: 0;
+}
+.edge-einstau {
+  stroke: var(--isy-pixel-text);
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 5;
+  fill: none;
+  pointer-events: none;
 }
 .entw-dot {
   width: 8px;

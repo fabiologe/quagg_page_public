@@ -191,13 +191,10 @@
                 <p>Aktivierbar über <em>"Ergebnis 3D"</em> in der Navigation oder den <em>"Ergebnisse"</em>-Toggle im Kontrollpanel.</p>
                 <table class="tech-table">
                     <tr><th>Farbe</th><th>Bedeutung (Knoten)</th></tr>
-                    <tr><td><span class="color-dot" style="background:#c0392b"></span> Rot</td><td>Überstau / Einstau — Wasser tritt an Oberfläche aus</td></tr>
-                    <tr><td><span class="color-dot" style="background:#e67e22"></span> Orange</td><td>Druckabfluss — Rohr / Schacht unter vollem Druck</td></tr>
-                    <tr><th>Farbe</th><th>Bedeutung (Haltungen — Auslastung)</th></tr>
-                    <tr><td><span class="color-dot" style="background:#c0392b"></span> Rot</td><td>&gt; 90 % Kapazität</td></tr>
-                    <tr><td><span class="color-dot" style="background:#e67e22"></span> Orange</td><td>&gt; 75 % Kapazität</td></tr>
-                    <tr><td><span class="color-dot" style="background:#f1c40f"></span> Gelb</td><td>&gt; 50 % Kapazität</td></tr>
-                    <tr><td><span class="color-dot" style="background:#2980b9"></span> Blau</td><td>≤ 50 % — unkritisch</td></tr>
+                    <tr><td><span class="color-dot" :style="{ background: UEBERSTAU_HELL }"></span> Weinrot</td><td>Schacht überstaut — Wasser tritt über den Deckel aus</td></tr>
+                    <tr><td><span class="color-dot" :style="{ background: KNOTEN_ZUSTAND.druckabfluss }"></span> Orange</td><td>Schacht eingestaut — Wasserspiegel über dem Rohrscheitel</td></tr>
+                    <tr><th>Farbe</th><th>Bedeutung (Haltungen — Auslastung Q/Qvoll)</th></tr>
+                    <tr v-for="st in AUSLASTUNG_STUFEN" :key="st.text"><td><span class="color-dot" :style="{ background: st.farbe }"></span></td><td>{{ st.text }}</td></tr>
                     <tr><th>Symbol</th><th>Bedeutung (Wasserstand)</th></tr>
                     <tr><td><span class="color-dot" style="background:#3498db;opacity:0.75"></span> Blau (transparent)</td><td>Scheibe im Schacht = maximaler Wasserstand. Ribbon in Haltung = max. Füllstand.</td></tr>
                 </table>
@@ -214,7 +211,8 @@
             <h5>📊 Ergebnistabellen</h5>
             <table class="tech-table">
                 <tr><th>Metrik</th><th>Bedeutung</th><th>Grenzwert</th></tr>
-                <tr><td><strong>Auslastung (d/D)</strong></td><td>Max. Wasserspiegelhöhe im Verhältnis zum Profilhöhe. Wert &gt; 1.0 = Druckabfluss.</td><td><span class="tag q-warn">&gt; 100 %</span></td></tr>
+                <tr><td><strong>Auslastung Q/Qvoll</strong></td><td>Max. Abfluss im Verhältnis zum Vollfüllungsabfluss (Qvoll aus dem Rechenkern). Nach ihr sind Karte, 3D und Tabellen gefärbt.</td><td><span class="tag q-warn">&gt; 100 % = überlastet</span></td></tr>
+                <tr><td><strong>Füllungsgrad h/hvoll</strong></td><td>Max. Wasserstand im Verhältnis zur Profilhöhe. Ab 0,99 gilt die Haltung als eingestaut (auch bei kleinem Abfluss, z. B. im Rückstau) — Karte: gestrichelt.</td><td>≥ 0,99 = eingestaut</td></tr>
                 <tr><td><strong>Überstauvolumen</strong></td><td>Wasser, das den Schacht verlässt und "oberirdisch steht". Wird als Ponded Volume modelliert.</td><td>&gt; 0 m³</td></tr>
                 <tr><td><strong>v_max</strong></td><td>Maximale Fließgeschwindigkeit in der Haltung.</td><td>&gt; 5 m/s (Erosion)</td></tr>
                 <tr><td><strong>Massenbilanz-Fehler</strong></td><td>Kontinuitätsfehler des gesamten Systems. Gütekriterium für die Modellstabilität.</td><td>&lt; 2 % = gut</td></tr>
@@ -331,6 +329,7 @@ Wehr1    S1     S2    TRANSVERSE  1.20      1.84</div>
 
 <script setup>
 import { ref } from 'vue';
+import { AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL } from '../../utils/typPalette.js';
 import DraggableModal from '../common/DraggableModal.vue';
 import { useTutorialGuide } from '../../tutorial/useTutorialGuide.js';
 

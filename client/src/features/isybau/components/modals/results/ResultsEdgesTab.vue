@@ -10,7 +10,8 @@
                         <th>ID</th>
                         <th>Nutzung (%)</th>
                         <th>Starts</th>
-                        <th>Max. Fluss (L/s)</th>
+                        <th>Max. Fluss (l/s)</th>
+                        <th>Fördervolumen (m³)</th>
                         <th>Energie (kWh)</th>
                     </tr>
                 </thead>
@@ -20,6 +21,7 @@
                         <td>{{ fmtZahl(pump.percentUtilized, 1) }} %</td>
                         <td>{{ pump.startUps }}</td>
                         <td>{{ fmtZahl(pump.maxFlow * 1000, 1) }}</td>
+                        <td>{{ fmtZahl(pump.totalVol * 1000, 0) }}</td>
                         <td>{{ fmtZahl(pump.totalEnergy, 2) }}</td>
                      </tr>
                 </tbody>
@@ -29,7 +31,7 @@
     <div class="toolbar">
         <input v-model="searchQuery" placeholder="Suche Haltung..." class="search-input" />
         <div class="filters">
-            <label><input type="checkbox" v-model="filterSurcharged" /> Nur Überlastung</label>
+            <label><input type="checkbox" v-model="filterSurcharged" /> Nur überlastet/eingestaut</label>
         </div>
     </div>
 
@@ -40,8 +42,8 @@
                     <th class="sortable" @click="sortKey='id'">ID</th>
                     <th>Typ</th>
                     <th class="sortable" @click="sortKey='maxFlow'" title="Max. Durchfluss (Betrag)">Max. Durchfluss (l/s)</th>
-                    <th class="sortable" @click="sortKey='capacity'">Kapazität (l/s)</th>
-                    <th class="sortable" @click="sortKey='ratio'" title="Max. Auslastungsgrad">Max. Q/Qvoll</th>
+                    <th class="sortable" @click="sortKey='capacity'" title="Vollfüllungsabfluss aus dem Rechenkern">Qvoll (l/s)</th>
+                    <th class="sortable" @click="sortKey='ratio'" title="Auslastung: max. Abfluss / Vollfüllungsabfluss">Max. Q/Qvoll</th>
                     <th class="sortable" @click="sortKey='depth'" title="Max. Füllungsgrad">Max. h/hvoll</th>
                     <th class="sortable" @click="sortKey='maxVelocity'" title="Max. Fließgeschwindigkeit (Betrag)">Max. v (m/s)</th>
                     <th>t_max</th>
@@ -50,7 +52,7 @@
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="edge in filteredEdges" :key="edge.id" :class="{'row-danger': (edge.depthRatio || 0) > 0.9, 'row-warning': (edge.depthRatio || 0) > 0.7 && (edge.depthRatio || 0) <= 0.9}">
+                <tr v-for="edge in filteredEdges" :key="edge.id" :class="{'row-danger': edge.zustand.status === 'überlastet', 'row-warning': edge.zustand.status === 'eingestaut'}">
                     <td>{{ edge.id }}</td>
                     <td>{{ edgeTypeLabel(edge.type) }}</td>
                     <td>{{ edge.maxFlow?.toLocaleString('de-DE', {minimumFractionDigits: 1, maximumFractionDigits: 1}) }}</td>
@@ -60,19 +62,22 @@
                     </td>
                     <td>
                         <span v-if="['WEIR', 'ORIFICE'].includes(edge.type)" class="na-hint" title="SWMM meldet für Wehre/Drosseln kein Q/Qvoll, nur den Durchfluss">n/a</span>
-                        <span v-else :class="getRatioClass(edge.flowCapacityRatio)">
-                            {{ edge.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}
+                        <span v-else :class="getRatioClass(edge.zustand.auslastung / 100)">
+                            {{ fmtZahl(edge.zustand.auslastung == null ? null : edge.zustand.auslastung / 100, 2) }}
                         </span>
                     </td>
-                    <td>{{ fmtZahl(edge.utilization, 0) }} %</td>
+                    <td>{{ edge.depthRatio == null ? '–' : fmtZahl(edge.depthRatio * 100, 0) + ' %' }}</td>
                     <td>
                         <span v-if="['PUMP', 'WEIR', 'ORIFICE'].includes(edge.type)" class="na-hint" title="SWMM meldet für Pumpen/Wehre/Drosseln keine Fließgeschwindigkeit">n/a</span>
                         <template v-else>{{ edge.maxVelocity?.toLocaleString('de-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) }}</template>
                     </td>
                     <td>{{ edge.timeOfMaxFlow }}</td>
                     <td>
-                        <span v-if="(edge.depthRatio || 0) > 0.9" class="badge badge-red">Überlastet</span>
-                        <span v-else-if="(edge.depthRatio || 0) > 0.7" class="badge badge-orange">Belastet</span>
+                        <!-- Q/Qvoll > 1 → überlastet; sonst h/hvoll ≥ 0,99 → eingestaut (typPalette.haltungsZustand) -->
+                        <span v-if="edge.zustand.status === 'überlastet'" class="badge badge-red">Überlastet</span>
+                        <span v-else-if="edge.zustand.status === 'eingestaut'" class="badge badge-orange">Eingestaut</span>
+                        <span v-else-if="edge.zustand.status === '> 90 %'" class="badge badge-orange">&gt; 90 % Qvoll</span>
+                        <span v-else-if="edge.zustand.status === '–'" class="na-hint">–</span>
                         <span v-else class="badge badge-green">OK</span>
                     </td>
                     <td>
@@ -102,9 +107,9 @@
                     <div class="col">
                         <strong>Kapazität & Auslastung</strong>
                         <div>Kapazität: {{ fmtZahl(selectedEdge?.capacity, 1) }} l/s</div>
-                        <div>Max. Q/Qvoll: {{ selectedEdge?.flowCapacityRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
+                        <div>Max. Q/Qvoll: {{ fmtZahl(selectedZustand.auslastung == null ? null : selectedZustand.auslastung / 100, 2) }}</div>
                         <div>Max. h/hvoll: {{ selectedEdge?.depthRatio?.toLocaleString('de-DE', {minimumFractionDigits: 2}) }}</div>
-                        <div v-if="(selectedEdge?.flowCapacityRatio || 0) > 1.0" class="text-red">
+                        <div v-if="selectedZustand.status === 'überlastet'" class="text-red">
                             <img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> System unter Druck
                         </div>
                     </div>
@@ -119,7 +124,8 @@
                     <div class="col">
                         <strong>Energie</strong>
                         <div>Energieverbrauch: {{ fmtZahl(selectedPumpSummary.totalEnergy, 2) }} kWh</div>
-                        <div>Fördervolumen: {{ fmtZahl(selectedPumpSummary.totalVol, 2) }} m³</div>
+                        <!-- SWMM: 10^6 Liter = 1000 m³ (vorher 1000× zu klein) -->
+                        <div>Fördervolumen: {{ fmtZahl(selectedPumpSummary.totalVol * 1000, 0) }} m³</div>
                         <div v-if="(selectedPumpSummary.pctTimeOffCurveLow || 0) + (selectedPumpSummary.pctTimeOffCurveHigh || 0) > 5" class="text-red">
                             <img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> {{ fmtZahl(selectedPumpSummary.pctTimeOffCurveLow + selectedPumpSummary.pctTimeOffCurveHigh, 1) }} % der Zeit außerhalb der Kennlinie
                         </div>
@@ -128,10 +134,10 @@
                  <div class="surcharge-info" v-if="selectedEdge?.surcharge">
                      <strong>Einstau-Diagnose</strong>
                      <ul>
-                         <li>Dauer Vollfüllung (beidseitig): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullBoth, 2) }} h</li>
-                         <li>Dauer Vollfüllung (oben): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullUp, 2) }} h</li>
-                         <li>Dauer Vollfüllung (unten): {{ fmtZahl(selectedEdge?.surcharge?.hoursFullDown, 2) }} h</li>
-                         <li>Dauer über Vollfüllung: {{ fmtZahl(selectedEdge?.surcharge?.hoursAboveFull, 2) }} h</li>
+                         <li>Dauer Vollfüllung (beidseitig): {{ dauerH(selectedEdge?.surcharge?.hoursFullBoth) }} h</li>
+                         <li>Dauer Vollfüllung (oben): {{ dauerH(selectedEdge?.surcharge?.hoursFullUp) }} h</li>
+                         <li>Dauer Vollfüllung (unten): {{ dauerH(selectedEdge?.surcharge?.hoursFullDown) }} h</li>
+                         <li>Dauer über Vollfüllung: {{ dauerH(selectedEdge?.surcharge?.hoursAboveFull) }} h</li>
                      </ul>
                  </div>
                  <div class="chart-box">
@@ -148,6 +154,7 @@
 import { ref, computed, watch } from 'vue';
 import { DIAGRAMM } from '../../../utils/typPalette.js';
 import { Line, safeGet, formatTime, edgeTypeLabel, getRatioClass, chartOptions, fmtZahl } from './resultsShared.js';
+import { haltungsZustand, SWMM_DAUER_UNTERGRENZE_H } from '../../../utils/typPalette.js';
 
 const props = defineProps({
   edges: { type: Map,    default: () => new Map() },
@@ -165,6 +172,9 @@ const selectedEdgeId = ref(null);
 const chartData = ref(null);
 
 const selectedEdge = computed(() => selectedEdgeId.value ? safeGet(props.edgeResults, selectedEdgeId.value) : null);
+const selectedZustand = computed(() => haltungsZustand(selectedEdge.value));
+// SWMM druckt Dauern mindestens als 0,01 h (Untergrenze, typPalette.SWMM_DAUER_UNTERGRENZE_H)
+const dauerH = (v) => (v != null && v <= SWMM_DAUER_UNTERGRENZE_H ? '< 0,01' : fmtZahl(v, 2));
 const selectedPumpSummary = computed(() =>
     props.systemStats?.pumpingSummary?.find(p => p.id === selectedEdgeId.value) || null
 );
@@ -173,7 +183,7 @@ const filteredEdges = computed(() => {
      if (!props.edges || !props.edgeResults) return [];
      let list = Array.from(props.edges.values()).map(e => {
          const res = safeGet(props.edgeResults, e.id) || {};
-         return { ...e, ...res }; // Merge Geometry + Results
+         return { ...e, ...res, zustand: haltungsZustand(safeGet(props.edgeResults, e.id)) }; // Geometrie + Ergebnis
      });
 
      if (searchQuery.value) {
@@ -181,13 +191,13 @@ const filteredEdges = computed(() => {
          list = list.filter(e => e.id.toLowerCase().includes(q));
      }
      if (filterSurcharged.value) {
-         list = list.filter(e => (e.depthRatio || 0) > 0.9);
+         list = list.filter(e => ['überlastet', 'eingestaut'].includes(e.zustand.status));
      }
 
      list.sort((a, b) => {
          if (sortKey.value === 'maxFlow') return (b.maxFlow || 0) - (a.maxFlow || 0);
          if (sortKey.value === 'capacity') return (b.capacity || 0) - (a.capacity || 0);
-         if (sortKey.value === 'ratio') return (b.flowCapacityRatio || 0) - (a.flowCapacityRatio || 0);
+         if (sortKey.value === 'ratio') return (b.zustand.auslastung || 0) - (a.zustand.auslastung || 0);
          if (sortKey.value === 'depth') return (b.depthRatio || 0) - (a.depthRatio || 0);
          if (sortKey.value === 'maxVelocity') return (b.maxVelocity || 0) - (a.maxVelocity || 0);
          return a.id.localeCompare(b.id);

@@ -4,7 +4,7 @@
     <div class="toolbar">
         <input v-model="searchQuery" placeholder="Suche Schacht..." class="search-input" />
         <div class="filters">
-            <label><input type="checkbox" v-model="filterFlooded" /> Nur Überstau</label>
+            <label><input type="checkbox" v-model="filterFlooded" /> Nur überstaut/eingestaut</label>
         </div>
     </div>
      <div class="table-scroll">
@@ -16,10 +16,10 @@
                     <th>Sohlhöhe (m)</th>
                     <th title="Max. Wassertiefe">Max. Wassertiefe (m)</th>
                     <th title="Max. Wasserspiegelhöhe (absolut, m ü. NHN)">Max. HGL (m ü. NHN)</th>
-                    <th title="Max. gespeichertes Volumen während der Simulation">Max. Speichervol. (m³)</th>
-                    <th title="Maximal mögliches Volumen (aus Geometrie)">Vmax (m³)</th>
-                    <th title="Max. Füllgrad: Max. Speichervol. / Vmax">Füllgrad (%)</th>
-                    <th title="Gesamtvolumen der Überflutung">Überflutungsvolumen (m³)</th>
+                    <th title="Nur Speicher/Becken: max. gespeichertes Volumen (SWMM Storage Volume Summary)">Max. Speichervol. (m³)</th>
+                    <th title="Nur Speicher/Becken: nutzbares Volumen aus der Geometrie">Vmax (m³)</th>
+                    <th title="Nur Speicher/Becken: max. Füllgrad (SWMM Max Pcnt Full)">Füllgrad (%)</th>
+                    <th title="Volumen, das über den Deckel austrat (SWMM Node Flooding)">Überstauvolumen (m³)</th>
                     <th title="Zeitpunkt des Maximums">t_max</th>
                     <th>Status</th>
                     <th>Aktion</th>
@@ -28,22 +28,23 @@
             <tbody>
                  <tr v-for="node in filteredNodes" :key="node.id"
                      :class="{
-                       'row-danger': (node.floodingVolume || 0) > 0.001,
-                       'row-warning': node.surcharged && !((node.floodingVolume || 0) > 0.001)
+                       'row-danger': knotenZustand(node) === 'überstaut',
+                       'row-warning': knotenZustand(node) === 'eingestaut'
                      }">
                     <td>{{ node.id }}</td>
                     <td>{{ structureTypeLabel(node.bwType, node.type) }}</td>
                     <td>{{ fmtZahl(node.z, 2) }}</td>
                     <td>{{ fmtZahl(node.maxDepth, 2) }}</td>
                     <td>{{ fmtZahl(node.maxHGL, 2) }}</td>
-                    <td>{{ fmtVol(nodeMaxVolume(node)) }}</td>
-                    <td>{{ fmtVol(nodeVmax(node)) }}</td>
-                    <td>{{ nodeFillPct(node) != null ? fmtZahl(nodeFillPct(node), 1) : '-' }}</td>
-                    <td>{{ (node.floodingVolume || 0).toLocaleString('de-DE', {minimumFractionDigits: 3}) }}</td>
+                    <td>{{ nodeMaxVolume(node) != null ? fmtZahl(nodeMaxVolume(node), 0) : '–' }}</td>
+                    <td>{{ nodeVmax(node) != null ? fmtZahl(nodeVmax(node), 0) : '–' }}</td>
+                    <td>{{ nodeFillPct(node) != null ? fmtZahl(nodeFillPct(node), 1) : '–' }}</td>
+                    <!-- SWMM druckt 10^6 l mit 3 Stellen = 1 m³ Auflösung: keine Nachkommastellen -->
+                    <td>{{ fmtZahl(node.floodingVolume || 0, 0) }}</td>
                      <td>{{ node.timeOfMaxDepth || '-' }}</td>
                     <td>
-                        <span v-if="(node.floodingVolume || 0) > 0.001" class="badge badge-red">ÜBERFLUTET</span>
-                        <span v-else-if="node.surcharged" class="badge badge-yellow">Eingestaut</span>
+                        <span v-if="knotenZustand(node) === 'überstaut'" class="badge badge-red">Überstaut</span>
+                        <span v-else-if="knotenZustand(node) === 'eingestaut'" class="badge badge-yellow">Eingestaut</span>
                         <span v-else class="badge badge-green">OK</span>
                         <span v-if="node.continuityError != null && Math.abs(node.continuityError) >= 10"
                               class="badge badge-red"
@@ -86,8 +87,8 @@
                         <strong>Zufluss & Überflutung</strong>
                         <div>Max. seitl. Zufluss: {{ fmtZahl(selectedNodeResult?.maxLatInflow, 2) }} l/s</div>
                         <div>Max. Gesamtzufluss: {{ fmtZahl(selectedNodeResult?.maxTotalInflow, 2) }} l/s</div>
-                        <div>Gesamtvol. Überflutung: {{ fmtVol(selectedNodeResult?.floodingVolume || 0) }} m³</div>
-                        <div v-if="(selectedNodeResult?.floodingVolume || 0) > 0.001" class="text-red"><img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> Überflutung gemeldet</div>
+                        <div>Überstauvolumen: {{ fmtZahl(selectedNodeResult?.floodingVolume || 0, 0) }} m³</div>
+                        <div v-if="knotenZustand(selectedNodeResult) === 'überstaut'" class="text-red"><img class="emoji-icon" src="/saintv1d/icons/Interface-Essential-Alert-Triangle-1--Streamline-Pixel.svg" alt="" /> Überflutung gemeldet</div>
                     </div>
                     <div class="col">
                         <strong>Volumen</strong>
@@ -112,7 +113,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { DIAGRAMM } from '../../../utils/typPalette.js';
+import { DIAGRAMM, knotenZustand } from '../../../utils/typPalette.js';
 import { Line, safeGet, formatTime, fmtVol, fmtZahl, structureTypeLabel, chartOptions } from './resultsShared.js';
 import { classifyPreview, LINK_BAUWERKSTYPEN } from '../../../utils/mappings.js';
 
@@ -136,19 +137,25 @@ const nodeChartData = ref(null);
 // Fallback für Becken.
 const storageEntry = (id) => props.systemStats?.storageSummary?.find(s => s.id === id) || null;
 
+// Speichervolumen, Vmax und Füllgrad nur für Speicher (Becken): bei Schächten und
+// Auslässen war „Vmax" = Schachtzylinder und der Füllgrad bedeutungslos (P1.4).
+// Füllgrad aus SWMMs „Storage Volume Summary" (Max Pcnt Full), sonst Volumen / Vmax.
+const istSpeicher = (node) => !!node && (node.type === 'STORAGE' || !!storageEntry(node.id));
+
 const nodeMaxVolume = (node) => {
-    if (!node) return null;
-    if (node.maxVolumeStored > 0) return node.maxVolumeStored;
-    return storageEntry(node.id)?.maxVol ?? null;
+    if (!istSpeicher(node)) return null;
+    return storageEntry(node.id)?.maxVol ?? (node.maxVolumeStored > 0 ? node.maxVolumeStored : null);
 };
 
-const nodeVmax = (node) => (node && node.maxAvailableVolume > 0) ? node.maxAvailableVolume : null;
+const nodeVmax = (node) => (istSpeicher(node) && node.maxAvailableVolume > 0) ? node.maxAvailableVolume : null;
 
 const nodeFillPct = (node) => {
+    if (!istSpeicher(node)) return null;
+    const swmm = storageEntry(node.id)?.maxPcntFull;
+    if (swmm != null) return swmm;
     const vmax = nodeVmax(node);
     const v = nodeMaxVolume(node);
-    if (vmax && v != null) return (v / vmax) * 100;
-    return storageEntry(node?.id)?.maxPcntFull ?? null;
+    return vmax && v != null ? (v / vmax) * 100 : null;
 };
 
 const selectedNodeResult = computed(() => {
@@ -183,7 +190,7 @@ const filteredNodes = computed(() => {
          list = list.filter(n => n.id.toLowerCase().includes(q));
      }
      if (filterFlooded.value) {
-         list = list.filter(n => (n.floodingVolume || 0) > 0.001);
+         list = list.filter(n => knotenZustand(n) !== 'ok');
      }
      return list;
 });

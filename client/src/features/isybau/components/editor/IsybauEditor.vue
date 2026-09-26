@@ -9,7 +9,8 @@
             'cursor-delete': store.editor.mode === 'delete',
             'cursor-split': store.editor.mode === 'splitEdge'
         }"
-        :nodes="store.nodes" 
+        :nodes="store.nodes"
+        :netz-stand="store.netzStand" 
         :edges="store.edges"
         :areas="store.areaArray" 
         :node-array="store.nodeArray"

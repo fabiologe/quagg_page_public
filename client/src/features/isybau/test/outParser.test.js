@@ -53,7 +53,9 @@ function buildOutFile({ nodeSteps }) {
 
     // Ergebnis-Schritte
     nodeSteps.forEach((step, s) => {
-        pushDouble(45000 + s / 1440); // Julian Date, 1-min-Schritte
+        // Julian Date, 1-min-Schritte; wie SWMM (output.c:383, gemessen an base.out):
+        // erstes Ergebnis einen Ausgabeschritt NACH dem Kopfdatum
+        pushDouble(45000 + (s + 1) / 1440);
         // Teilflächen: [Regen, Schnee, Verdunstung, Versickerung, Abfluss, …] — Abfluss = Code 4
         for (let v = 0; v < SUB_VARS; v++) pushFloat(v === 4 ? 0.5 : v === 3 ? 9.9 : 0);
         // Nodes: [depth, head, vol, lat, totalInflow, flood]
@@ -103,9 +105,10 @@ describe('SwmmOutParser', () => {
         expect(step0.subcatchments.SC1.runoff).toBeCloseTo(0.5, 4); // Code 4, nicht die Versickerung (Code 3)
         expect(series[1].edges.L1.signedQ).toBeCloseTo(-10, 3);
 
-        // Zeitachse relativ zum Start (1 min = 60 s)
-        expect(step0.time).toBe(0);
-        expect(series[1].time).toBeCloseTo(60, 0);
+        // Zeitachse ab Simulationsbeginn (Kopfdatum): erstes Ergebnis bei 1 min.
+        // Vorher ab dem ersten Ergebnis gezählt → alles einen Schritt zu früh.
+        expect(step0.time).toBeCloseTo(60, 6);
+        expect(series[1].time).toBeCloseTo(120, 6);
     });
 
     it('wirft bei ungültiger Magic Number', () => {

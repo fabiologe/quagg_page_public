@@ -231,7 +231,7 @@ export const TUTORIAL_INFO = {
     blocks: [
       {
         type: 'p',
-        text: 'Auslastung d/D: Verhältnis von maximalem Wasserstand zum Rohrdurchmesser. d/D < 0,9 gilt als unkritisch; ab 1,0 fließt die Haltung voll (Druckabfluss).',
+        text: 'Auslastung Q/Qvoll: maximaler Abfluss im Verhältnis zum Vollfüllungsabfluss der Haltung. Über 1,0 ist die Haltung überlastet. Davon getrennt der Einstau: steht das Wasser bis zum Rohrscheitel (h/hvoll ≥ 0,99), ist die Haltung eingestaut — das geht auch mit wenig Abfluss, etwa im Rückstau.',
       },
       {
         type: 'p',

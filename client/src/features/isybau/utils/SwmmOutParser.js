@@ -95,7 +95,7 @@ export class SwmmOutParser {
         const nodeCodes = readCodes();
         const linkCodes = readCodes();
         const sysCodes = readCodes();
-        this.readDouble(); // Startdatum
+        const kopfDatum = this.readDouble(); // Simulationsbeginn (output.c:383)
         this.readInt32();  // Ausgabeschritt (s)
 
         const numSubVars = subCodes.length, numNodeVars = nodeCodes.length;
@@ -144,7 +144,7 @@ export class SwmmOutParser {
                     signedQ: flow * 1000,       // mit Vorzeichen (Fließrichtung)
                     v: f32(this.offset + L_VEL),
                     vol: f32(this.offset + L_VOL),
-                    utilization: f32(this.offset + L_CAP) // Füllungsgrad A/Avoll (0–1)
+                    fuellungsgrad: f32(this.offset + L_CAP) // A/Avoll (0–1) — nicht Q/Qvoll
                 };
                 this.offset += numLinkVars * 4;
             }
@@ -152,11 +152,10 @@ export class SwmmOutParser {
             timeSeries.push(stepData);
         }
 
-        // Zeitachse in Sekunden ab dem ersten Ausgabezeitpunkt
-        if (timeSeries.length > 0) {
-            const startJD = timeSeries[0].date;
-            for (const step of timeSeries) step.time = (step.date - startJD) * 86400;
-        }
+        // Zeitachse in Sekunden ab Simulationsbeginn (Kopfdatum). Das erste Ergebnis
+        // liegt einen Ausgabeschritt danach (output.c:383). Vorher zählte die Achse ab dem
+        // ersten Ergebnis — jede Ganglinie stand einen Ausgabeschritt zu früh.
+        for (const step of timeSeries) step.time = (step.date - kopfDatum) * 86400;
         return timeSeries;
     }
 }

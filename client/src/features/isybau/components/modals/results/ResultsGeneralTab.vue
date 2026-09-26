@@ -2,14 +2,17 @@
   <div class="tab-pane">
 
     <!-- System Health Header -->
-    <div class="health-header" :class="getHealthClass(healthScore)">
+    <div class="health-header" :class="GUETE_KLASSE[guete.stufe]">
         <div class="score-circle">
-            <span class="score-val">{{ healthScore }}</span>
-            <span class="score-label">Health</span>
+            <span class="score-val">{{ guete.stufe === 'gut' ? '✓' : '!' }}</span>
+            <span class="score-label">Modellgüte</span>
         </div>
         <div class="health-text">
-            <h3>{{ getHealthTitle(healthScore) }}</h3>
-            <p>{{ getHealthDescription(healthScore) }}</p>
+            <h3>{{ guete.titel }}</h3>
+            <p>{{ guete.text }}</p>
+            <ul v-if="guete.gruende.length" class="guete-gruende">
+                <li v-for="g in guete.gruende" :key="g">{{ g }}</li>
+            </ul>
         </div>
         <div class="health-metrics">
             <div class="metric">
@@ -17,7 +20,7 @@
                  <strong>{{ fmtZahl(systemStats?.flow?.error || 0, 2) }} %</strong>
             </div>
              <div class="metric">
-                 <span>Instabilität</span>
+                 <span>nicht konvergiert</span>
                  <strong>{{ fmtZahl(systemStats?.routingTimeStep?.notConverging || 0, 2) }} %</strong>
             </div>
         </div>
@@ -147,7 +150,7 @@
                 </tbody>
             </table>
             <p class="bilanz-footnote">
-                mm = ha·m × 1000 ÷ {{ totalCatchmentAreaHa > 0 ? fmtZahl(totalCatchmentAreaHa, 4) + ' ha' : '? ha (Flächen fehlen)' }} Gesamtfläche
+                mm aus dem SWMM-Bericht (Runoff Quantity Continuity), bezogen auf die gerechneten Teilflächen ({{ totalCatchmentAreaHa > 0 ? fmtZahl(totalCatchmentAreaHa, 4) + ' ha' : '? ha' }})
             </p>
         </div>
 
@@ -273,6 +276,8 @@
 <script setup>
 import { computed } from 'vue';
 import { Bar, formatVolume, getContinuityClass, fmtZahl, fmtSekunden } from './resultsShared.js';
+import { niederschlagsBilanz } from '../../../utils/swmm/niederschlagsBilanz.js';
+import { modellGuete } from '../../../utils/swmm/modellGuete.js';
 
 const props = defineProps({
   /* default statt blossem Object: die Vorlage liest systemStats.analysisOptions
@@ -322,54 +327,12 @@ const modelQualityIssues = computed(() => {
     return issues;
 });
 
-// Health Score Logic
-const healthScore = computed(() => {
-    let score = 100;
-    const contErr = Math.abs(props.systemStats?.flow?.error || 0);
-    if (contErr > 1) score -= (contErr * 5); // -5 points per 1% error
-    const instab = props.systemStats?.routingTimeStep?.notConverging || 0;
-    if (instab > 0) score -= (instab * 2);
-    return Math.max(0, Math.min(100, Math.round(score)));
-});
+// Modellgüte in Stufen mit Begründung (utils/swmm/modellGuete.js) statt einer Punktzahl
+const guete = computed(() => modellGuete(props.systemStats));
+const GUETE_KLASSE = { gut: 'health-excellent', pruefen: 'health-warning', kritisch: 'health-critical' };
 
-const getHealthClass = (score) => {
-    if (score >= 90) return 'health-excellent';
-    if (score >= 70) return 'health-good';
-    if (score >= 50) return 'health-warning';
-    return 'health-critical';
-};
-
-const getHealthTitle = (score) => {
-    if (score >= 90) return 'Exzellent';
-    if (score >= 70) return 'Gut';
-    if (score >= 50) return 'Warnung';
-    return 'Kritisch';
-};
-
-const getHealthDescription = (score) => {
-    if (score >= 90) return 'Das Modell ist hydraulisch stabil und massenkonsistent.';
-    if (score >= 70) return 'Gute Ergebnisse, leichte Fehler in der Massenbilanz.';
-    if (score >= 50) return 'Signifikante Modellfehler. Bitte prüfen Sie die Warnungen.';
-    return 'Modell instabil (hoher Fehler). Ergebnisse nicht vertrauenswürdig.';
-};
-
-// mm-Werte aus ha·m rückrechnen, bezogen auf UNSERE Gesamtfläche (nicht SWMMs interne)
-const runoffBilanz = computed(() => {
-    const areaHa = props.totalCatchmentAreaHa;
-    const r = props.systemStats?.runoff || {};
-
-    const toMm = (volHaM) => areaHa > 0 ? (volHaM / areaHa) * 1000 : (r.precipMm > 0 ? volHaM / r.precip * r.precipMm : 0);
-
-    return {
-        precipMm:      areaHa > 0 ? toMm(r.precip)       : (r.precipMm       || 0),
-        evapMm:        areaHa > 0 ? toMm(r.evap)         : (r.evapMm         || 0),
-        infilMm:       areaHa > 0 ? toMm(r.infil)        : (r.infilMm        || 0),
-        runoffMm:      areaHa > 0 ? toMm(r.runoff)       : (r.runoffMm       || 0),
-        finalStorageMm:areaHa > 0 ? toMm(r.finalStorage) : (r.finalStorageMm || 0),
-        // Abflussbeiwert Ψ = Abflusshöhe / Niederschlagshöhe
-        psi: (r.precip > 0) ? (r.runoff / r.precip) : 0,
-    };
-});
+// mm aus SWMMs eigener Spalte (bezogen auf die gerechneten Teilflächen), utils/swmm/niederschlagsBilanz.js
+const runoffBilanz = computed(() => niederschlagsBilanz(props.systemStats?.runoff, props.totalCatchmentAreaHa));
 
 // Rain chart — rekonstruiert aus store.rain.activeModelRain.series
 const rainChartData = computed(() => {
@@ -454,4 +417,11 @@ const rainChartData = computed(() => {
 });
 </script>
 
+<style scoped>
+.guete-gruende {
+    margin: var(--isy-space-1) 0 0;
+    padding-left: var(--isy-space-4);
+    font-size: var(--isy-fs-sm);
+}
+</style>
 <style scoped src="./results-shared.css"></style>

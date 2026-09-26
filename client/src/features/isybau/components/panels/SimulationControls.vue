@@ -142,7 +142,8 @@
                 </button>
             </div>
         </div>
-        <div v-if="success" class="success-msg">Netz berechnet</div>
+        <div v-if="success && store.simulation.veraltet" class="veraltet-msg">Ergebnis veraltet — Netz oder Regen nach dem Lauf geändert</div>
+        <div v-else-if="success" class="success-msg">Netz berechnet</div>
 
         <!-- Actions for results -->
         <div v-if="success" class="results-actions">
@@ -480,6 +481,7 @@ const downloadResults = () => {
 }
 .warning-link:hover { color: var(--isy-pixel-text); }
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
+.veraltet-msg { margin-top: var(--isy-space-2); padding: var(--isy-space-1) var(--isy-space-2); font-size: var(--isy-fs-md); color: var(--isy-pixel-warning-soft-text); background: var(--isy-pixel-warning-soft); border: 1px solid var(--isy-pixel-warning-soft-border); }
 .input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
 .button-row { display: flex; gap: var(--isy-space-2); margin-bottom: var(--isy-space-2); }

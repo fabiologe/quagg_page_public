@@ -37,7 +37,9 @@
     :timeSeries="store.simulation.results?.timeSeries || []"
     :areaResults="new Map(Object.entries(store.simulation.results?.subcatchments || {}))"
     :systemStats="store.simulation.results?.systemStats || {}"
-    :rain="store.rain"
+    :rain="laufRegen"
+    :inp="store.simulation.results?.input || ''"
+    :veraltet="store.simulation.veraltet"
     @close="store.ui.showResultsModal = false"
     @show-debug="store.ui.showDebugModal = true"
   />
@@ -88,7 +90,7 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount } from 'vue';
+import { computed, onMounted, onBeforeUnmount } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
 import { obersteOffene } from '../../utils/modalEscape.js';
 import { useElementFocus } from '../../composables/useElementFocus.js';
@@ -106,6 +108,15 @@ import NewProjectLocationModal from './NewProjectLocationModal.vue';
 import { useEzgLayer } from '../../composables/useEzgLayer.js';
 
 const store = useIsybauStore();
+
+// Ergebnisfenster und PDF zeigen den Regen, mit dem GERECHNET wurde (results.lauf),
+// nicht den gerade gesetzten — sonst stand nach einem Regenwechsel der neue Regen
+// neben alten Ergebnissen (P1.9).
+const laufRegen = computed(() => {
+    const lauf = store.simulation.results?.lauf;
+    if (!lauf) return store.rain;
+    return { ...store.rain, activeModelRain: lauf.regen, duration: lauf.dauerH };
+});
 
 /**
  * Escape schliesst das oberste offene Modal.

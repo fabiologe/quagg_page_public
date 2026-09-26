@@ -28,11 +28,11 @@
 
              <!-- Warning Badges -->
              <div v-if="currentResult.floodWarning" class="flood-badge">
-                 ⚠️ ÜBERFLUTUNG: {{ currentResult.floodVolume?.toFixed(3) }} m³
-                 <div class="sub-text">(auf Gelände)</div>
+                 ⚠️ ÜBERSTAUT: {{ Math.round(currentResult.floodVolume) }} m³
+                 <div class="sub-text">(über den Deckel ausgetreten)</div>
              </div>
              <div v-else-if="currentResult.surcharged" class="flood-badge surcharge-badge">
-                 Eingestaut (Abfluss unter Druck)
+                 Eingestaut (Wasserspiegel über Rohrscheitel)
              </div>
              <div v-if="currentResult.continuityWarning" class="flood-badge">
                  ⚠️ Kontinuitätsfehler {{ currentResult.continuityError?.toFixed(1) }} % — Ergebnis unzuverlässig
@@ -51,11 +51,11 @@
                  </div>
                  <div class="info-row compact" v-if="currentResult.volume != null">
                      <span class="label">Max. Volumen:</span>
-                     <span class="value">{{ currentResult.volume.toFixed(3) }} m³</span>
+                     <span class="value">{{ Math.round(currentResult.volume) }} m³</span>
                  </div>
                  <div class="info-row compact" v-if="currentResult.vmax != null">
                      <span class="label">Vmax (möglich):</span>
-                     <span class="value">{{ currentResult.vmax.toFixed(3) }} m³</span>
+                     <span class="value">{{ Math.round(currentResult.vmax) }} m³</span>
                  </div>
              </template>
 
@@ -341,6 +341,7 @@ import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
 import PumpCurvePreview from '../common/PumpCurvePreview.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 import PixelSelect from '../common/PixelSelect.vue';
+import { haltungsZustand, knotenZustand } from '../../utils/typPalette.js';
 
 const presetKeyFor = (cw) => {
     const match = WeirCrestPresets.find(p => Math.abs(p.cw - cw) < 0.005);
@@ -546,11 +547,13 @@ const currentResult = computed(() => {
 
         return {
             maxDepth: res.maxDepth || 0,
-            volume: res.maxVolumeStored ?? null,
-            vmax: res.maxAvailableVolume ?? null,
-            isFlooded: !!res.overflow || floodVolume > 0.001,
-            surcharged: !!res.surcharged,
-            floodWarning: floodVolume > 0.001,
+            // Volumen/Vmax nur bei Speichern (Becken) — bei Schächten bedeutungslos (P1.4)
+            volume: res.type === 'STORAGE' ? (res.maxVolumeStored ?? null) : null,
+            vmax: res.type === 'STORAGE' ? (res.maxAvailableVolume ?? null) : null,
+            // eine Regel für alle Anzeigen (typPalette.knotenZustand)
+            isFlooded: knotenZustand(res) === 'überstaut',
+            surcharged: knotenZustand(res) === 'eingestaut',
+            floodWarning: knotenZustand(res) === 'überstaut',
             floodVolume,
             continuityError,
             continuityWarning: continuityError !== null && Math.abs(continuityError) >= 10
@@ -563,22 +566,12 @@ const currentResult = computed(() => {
         const res = props.hydraulics.get(props.selectedElement.id);
         if(!res) return null;
 
-        // Utilization Logic (Simplified - logic moved to Parser)
-        // Parser already calculates 'utilization' as capped Filling Degree (Max/Full Depth * 100)
-        let utilPercent = res.utilization || 0;
-
-        let displayVal = utilPercent;
-        let displayText = `${displayVal.toFixed(0)}%`;
-        let displayStyle = {};
-
-        // Visuals
-        if (displayVal >= 90) {
-             displayStyle = { color: '#c0392b', fontWeight: 'bold' }; // Red (Full/High)
-        } else if (displayVal >= 50) {
-             displayStyle = { color: '#f39c12', fontWeight: 'bold' }; // Yellow
-        } else {
-             displayStyle = { color: '#27ae60', fontWeight: 'bold' }; // Green
-        }
+        // Q/Qvoll und Einstau aus EINER Regel (typPalette.haltungsZustand); vorher stand
+        // hier h/hvoll als „Auslastung" mit eigenen Schwellen und Farben.
+        const z = haltungsZustand(res);
+        const displayText = z.auslastung == null ? null
+            : `${Math.round(z.auslastung)} % Q/Qvoll${z.eingestaut ? ' · eingestaut' : ''}`;
+        const displayStyle = z.farbe ? { color: z.farbe, fontWeight: 'bold' } : {};
 
         return {
             maxFlow: res.maxFlow ?? null,

@@ -19,6 +19,9 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { resolveSubcatchmentSize } from '../../utils/subcatchmentSize.js';
 import { summarizeOutfallCatchments } from '../../utils/outfallCatchments.js';
+import { AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../utils/typPalette.js';
+import { niederschlagsBilanz, spitzeAusGanglinie, faktorZuLs } from '../../utils/swmm/niederschlagsBilanz.js';
+import { parseInpSubcatchments } from '../../utils/resultsExport.js';
 
 const store = useIsybauStore();
 
@@ -32,6 +35,8 @@ const props = defineProps({
   systemStats:         { type: Object, default: () => ({}) },
   rain:                { type: Object, default: null },
   totalCatchmentAreaHa:{ type: Number, default: 0 },
+  timeSeries:          { type: Array,  default: () => [] },
+  inp:                 { type: String, default: '' },
 });
 
 const exporting = ref(false);
@@ -41,22 +46,8 @@ const rainSeries = computed(() => props.rain?.activeModelRain?.series || []);
 const rainInterval = computed(() => rainSeries.value.length > 1
   ? rainSeries.value[1].time - rainSeries.value[0].time : 5);
 
-const runoffBilanz = computed(() => {
-  const areaHa = props.totalCatchmentAreaHa;
-  const r = props.systemStats?.runoff || {};
-  const toMm = (vol) => areaHa > 0 ? (vol / areaHa) * 1000 : (r.precipMm > 0 ? vol / (r.precip || 1) * r.precipMm : 0);
-  return {
-    precipMm:       areaHa > 0 ? toMm(r.precip || 0)       : (r.precipMm       || 0),
-    evapMm:         areaHa > 0 ? toMm(r.evap || 0)         : (r.evapMm         || 0),
-    infilMm:        areaHa > 0 ? toMm(r.infil || 0)        : (r.infilMm        || 0),
-    runoffMm:       areaHa > 0 ? toMm(r.runoff || 0)       : (r.runoffMm       || 0),
-    finalStorageMm: areaHa > 0 ? toMm(r.finalStorage || 0) : (r.finalStorageMm || 0),
-    psi: (r.precip > 0) ? (r.runoff / r.precip) : 0,
-    // Ohne eigene Gesamtfläche stammen die mm-Werte aus SWMMs interner
-    // Flächenbasis — muss im Bericht gekennzeichnet werden.
-    areaBaseFallback: !(areaHa > 0),
-  };
-});
+// mm aus SWMMs eigener Spalte, gleiche Quelle wie der Ergebnisreiter
+const runoffBilanz = computed(() => niederschlagsBilanz(props.systemStats?.runoff, props.totalCatchmentAreaHa));
 
 // ─── Design constants (mm, RGB) ───────────────────────────────────────────────
 const A4W = 210, A4H = 297;
@@ -84,6 +75,12 @@ const C = {
   white:  [255, 255, 255],
 };
 
+// Die jsPDF-Standardschrift kann nur WinAnsi (cp1252): ≤/≥ kamen verstümmelt an
+const winAnsi = (t) => String(t).replace(/≤/g, 'bis').replace(/≥/g, 'ab');
+
+// Hex (typPalette) → RGB für jsPDF: dieselben Auslastungsfarben wie Karte und 3D
+const rgb = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt  = (v, d = 2) => (typeof v === 'number' ? v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }) : (v ?? '—'));
 const fmtV = (ham)      => fmt((ham || 0) * 10000); // ha·m → m³
@@ -92,7 +89,9 @@ const fmtV = (ham)      => fmt((ham || 0) * 10000); // ha·m → m³
 // Returns the rendered width in mm so callers can offset subsequent content.
 function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy, maxWidthMm = Infinity) {
   try {
-    const PX = 100;
+    // 48 px Schrifthöhe reichen für 4,5–7 mm hohe Überschriften (≈ 170–270 dpi); mit 100 px
+    // und ohne Kompression wog der Bericht 13,9 MB (Browserprüfung 2026-09-26, P1.10).
+    const PX = 48;
     const tmpCtx = document.createElement('canvas').getContext('2d');
     tmpCtx.font = `${PX}px "Press Start 2P", monospace`;
     const measW = tmpCtx.measureText(text).width;
@@ -104,6 +103,7 @@ function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy, maxWidth
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.font = `${PX}px "Press Start 2P", monospace`;
+    ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = `rgb(${colorArr[0]},${colorArr[1]},${colorArr[2]})`;
     ctx.fillText(text, 6, PX * 1.05);
 
@@ -112,7 +112,7 @@ function drawPixelHeading(doc, text, x, y, heightMm, colorArr = C.navy, maxWidth
     let h = heightMm;
     let widthMm = (canvas.width / canvas.height) * h;
     if (widthMm > maxWidthMm) { h *= maxWidthMm / widthMm; widthMm = maxWidthMm; }
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y + (heightMm - h) / 2, widthMm, h);
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y + (heightMm - h) / 2, widthMm, h, undefined, 'FAST');
     return widthMm;
   } catch (_) {
     // Fallback: standard helvetica
@@ -361,28 +361,36 @@ function drawNetwork(doc, x, y, w, h) {
     const tn = nodes.get(edge.toNodeId);
     if (!fn || !tn) continue;
 
-    const res   = edgeRes?.get(edge.id);
-    const depth = res?.depthRatio || 0;
+    // Q/Qvoll-Stufe wie 2D/3D (typPalette.haltungsZustand); Wehr/Drossel ohne Qvoll grau
+    const z   = haltungsZustand(edgeRes?.get(edge.id));
+    const i   = z.stufe ? AUSLASTUNG_STUFEN.indexOf(z.stufe) : -1;
+    const col = z.farbe ? rgb(z.farbe) : C.purple;
+    const lw  = i === 0 ? 0.9 : i === 1 ? 0.7 : 0.45;
 
-    let col, lw;
-    if (depth > 0.9)      { col = C.red;    lw = 0.9; }
-    else if (depth > 0.7) { col = C.orange; lw = 0.7; }
-    else                  { col = C.blue;   lw = 0.45; }
-
-    doc.setDrawColor(...col);
-    doc.setLineWidth(lw);
-
-    // Nutze coords (Polylinie) wenn vorhanden, sonst gerade Linie
-    if (edge.coords?.length >= 2) {
-      for (let i = 1; i < edge.coords.length; i++) {
-        const [x1, y1] = toP(edge.coords[i-1].x, edge.coords[i-1].y);
-        const [x2, y2] = toP(edge.coords[i].x,   edge.coords[i].y);
+    const strecke = () => {
+      // Nutze coords (Polylinie) wenn vorhanden, sonst gerade Linie
+      if (edge.coords?.length >= 2) {
+        for (let k = 1; k < edge.coords.length; k++) {
+          const [x1, y1] = toP(edge.coords[k-1].x, edge.coords[k-1].y);
+          const [x2, y2] = toP(edge.coords[k].x,   edge.coords[k].y);
+          doc.line(x1, y1, x2, y2);
+        }
+      } else {
+        const [x1, y1] = toP(fn.x, fn.y);
+        const [x2, y2] = toP(tn.x, tn.y);
         doc.line(x1, y1, x2, y2);
       }
-    } else {
-      const [x1, y1] = toP(fn.x, fn.y);
-      const [x2, y2] = toP(tn.x, tn.y);
-      doc.line(x1, y1, x2, y2);
+    };
+    doc.setDrawColor(...col);
+    doc.setLineWidth(lw);
+    strecke();
+    // Eingestaut (h/hvoll ≥ 0,99): gestrichelt darüber, wie in der 2D-Karte
+    if (z.eingestaut) {
+      doc.setDrawColor(...C.text);
+      doc.setLineWidth(0.2);
+      doc.setLineDashPattern([0.8, 0.8], 0);
+      strecke();
+      doc.setLineDashPattern([], 0);
     }
   }
 
@@ -392,8 +400,9 @@ function drawNetwork(doc, x, y, w, h) {
     const [px, py] = toP(node.x, node.y);
     const res        = nodeRes?.get(node.id);
     const isOutfall  = ['OUTFALL', 'Outfall'].includes(node.type);
-    const flooded    = (res?.floodingVolume || 0) > 0.001;
-    const surcharged = res?.surcharged;
+    const zustand    = knotenZustand(res);
+    const flooded    = zustand === 'überstaut';
+    const surcharged = zustand === 'eingestaut';
 
     if (isOutfall) {
       // Dreieck für Auslass
@@ -414,11 +423,11 @@ function drawNetwork(doc, x, y, w, h) {
   // ── Legende ──
   const ly0 = y + drawH + 1;
   const items = [
-    { type: 'line', c: C.blue,   l: 'Haltung OK' },
-    { type: 'line', c: C.orange, l: 'Belastet (h/d>70%)' },
-    { type: 'line', c: C.red,    l: 'Überlastet' },
+    ...[...AUSLASTUNG_STUFEN].reverse().map(st => ({ type: 'line', c: rgb(st.farbe), l: winAnsi(st.text) })),
+    { type: 'dash', c: C.text,   l: 'eingestaut (h/hvoll ab 0,99)' },
     { type: 'dot',  c: C.navy,   l: 'Schacht' },
-    { type: 'dot',  c: C.weinrot, l: 'Überstau/Überflutet' },
+    { type: 'dot',  c: C.orange, l: 'Schacht eingestaut' },
+    { type: 'dot',  c: C.weinrot, l: 'Schacht überstaut' },
     { type: 'tri',  c: C.green,  l: 'Auslass' },
     { type: 'fill', c: [167,243,208], l: 'Fläche, niedriger Abflussbeiwert' },
     { type: 'fill', c: [253,186,116], l: 'Fläche, hoher Abflussbeiwert' },
@@ -438,6 +447,11 @@ function drawNetwork(doc, x, y, w, h) {
     if (type === 'line') {
       doc.setLineWidth(1.2);
       doc.line(lx, ly + 2, lx + 4, ly + 2);
+    } else if (type === 'dash') {
+      doc.setLineWidth(0.3);
+      doc.setLineDashPattern([0.8, 0.8], 0);
+      doc.line(lx, ly + 2, lx + 4, ly + 2);
+      doc.setLineDashPattern([], 0);
     } else if (type === 'dot') {
       doc.circle(lx + 2, ly + 2, 1.2, 'F');
     } else if (type === 'tri') {
@@ -460,7 +474,7 @@ async function exportPDF() {
     // Pre-load pixel font so canvas rendering uses it (not fallback monospace)
     try { await document.fonts.load("10px 'Press Start 2P'"); } catch (_) {}
 
-    const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const doc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     const stats = props.systemStats || {};
     const rb    = runoffBilanz.value;
     const series = rainSeries.value;
@@ -492,8 +506,8 @@ async function exportPDF() {
     doc.setFontSize(6.5);
     doc.setTextColor(...C.muted);
     doc.text(`Erstellt: ${new Date().toLocaleString('de-DE')}  ·  Einzugsgebiet: ${(props.totalCatchmentAreaHa || 0).toLocaleString('de-DE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} ha  ·  ${props.nodes?.size || 0} Schächte  ·  ${props.edges?.size || 0} Haltungen`, ML, cy + 5.5);
-    if (rb.areaBaseFallback) {
-      doc.text('Hinweis: Keine Einzugsgebietsfläche vorhanden — mm-Werte beziehen sich auf die SWMM-interne Flächenbasis.', ML, cy + 9);
+    if (rb.quelle !== 'swmm') {
+      doc.text('Hinweis: Der SWMM-Bericht enthält keine mm-Werte — mm aus Volumen / Bezugsfläche gerechnet.', ML, cy + 9);
       cy += 4;
     }
     cy += 12;
@@ -628,38 +642,69 @@ async function exportPDF() {
     drawNetwork(doc, ML, cy, CW, 78);
     cy += 83;
 
-    cy = sectionTitle(doc, cy, `Haltungen (${props.edges?.size || 0})`);
-
+    // Haltungen = Kanäle (CONDUIT). Pumpen/Wehre/Drosseln haben kein Qvoll bzw. andere
+    // Kenngrößen und stehen in einer eigenen Tabelle (vorher „Pumpwerk" als Haltung).
+    const istSonderbauwerk = (res) => !!res?.type && res.type !== 'CONDUIT';
     const edgeRows = [];
-    for (const [id, edge] of (props.edges?.entries() || [])) {
-      const res = props.edgeResults?.get(id) || {};
-      const ratio = res.depthRatio || 0;
-      const status = ratio > 0.9 ? 'ÜBERLASTET' : ratio > 0.7 ? 'BELASTET' : 'OK';
+    const sonderRows = [];
+    const ART = { PUMP: 'Pumpe', WEIR: 'Wehr', ORIFICE: 'Drossel/Schieber', OUTLET: 'Auslass (Kennlinie)' };
+    for (const [id] of (props.edges?.entries() || [])) {
+      const res = props.edgeResults?.get(id);
+      if (istSonderbauwerk(res)) {
+        const pumpe = props.systemStats?.pumpingSummary?.find(p => p.id === id);
+        sonderRows.push([
+          id,
+          ART[res.type] ?? res.type,
+          fmt(res.maxFlow, 1),
+          pumpe ? fmt(pumpe.totalVol * 1000, 0) : '—',   // 10^6 l → m³
+          pumpe ? fmt(pumpe.percentUtilized, 1) : '—',
+          pumpe ? String(pumpe.startUps) : '—',
+          res.timeOfMaxFlow || '—',
+        ]);
+        continue;
+      }
+      const z = haltungsZustand(res);
       edgeRows.push([
         id,
-        fmt(res.maxFlow, 1),
-        fmt(res.capacity, 1),
-        fmt(res.flowCapacityRatio, 2),
-        fmt(res.maxVelocity, 2),
-        res.timeOfMaxFlow || '—',
-        status,
+        fmt(res?.maxFlow, 1),
+        fmt(res?.capacity, 1),
+        z.auslastung == null ? '—' : fmt(z.auslastung / 100, 2),
+        res?.depthRatio == null ? '—' : fmt(res.depthRatio, 2),
+        fmt(res?.maxVelocity, 2),
+        res?.timeOfMaxFlow || '—',
+        // wie der Reiter: überlastet / eingestaut / > 90 % / OK
+        z.status === 'überlastet' ? 'ÜBERLASTET' : z.status === 'eingestaut' ? 'EINGESTAUT'
+          : z.status === '> 90 %' ? '> 90 %' : z.status === '–' ? '—' : 'OK',
       ]);
     }
 
+    cy = sectionTitle(doc, cy, `Haltungen (${edgeRows.length}) — Auslastung Q/Qvoll, Einstau h/hvoll`);
     autoTable(doc, {
       ...tableDefaults(),
       startY: cy,
-      head:   [['ID', 'Max Q (l/s)', 'Kap. (l/s)', 'Q/Qvoll', 'v_max (m/s)', 't_max', 'Status']],
+      head:   [['ID', 'Max Q (l/s)', 'Qvoll (l/s)', 'Q/Qvoll', 'h/hvoll', 'v_max (m/s)', 't_max', 'Status']],
       body:   edgeRows,
       didParseCell: (data) => {
-        if (data.column.index === 6 && data.section === 'body') {
+        if (data.column.index === 7 && data.section === 'body') {
           const v = data.cell.raw;
           if (v === 'ÜBERLASTET') data.cell.styles.textColor = C.red;
-          else if (v === 'BELASTET') data.cell.styles.textColor = C.orange;
+          else if (v === 'EINGESTAUT' || v === '> 90 %') data.cell.styles.textColor = C.orange;
           else data.cell.styles.textColor = [5, 150, 105];
         }
       },
     });
+
+    if (sonderRows.length) {
+      let y0 = doc.lastAutoTable.finalY + 6;
+      if (y0 > 255) { doc.addPage(); y0 = 20; } // Überschrift nicht allein unten auf der Seite
+      cy = sectionTitle(doc, y0, `Pumpen und Sonderbauwerke (${sonderRows.length})`);
+      autoTable(doc, {
+        ...tableDefaults(),
+        startY: cy,
+        head:   [['ID', 'Art', 'Max Q (l/s)', 'Fördervol. (m³)', 'Laufzeit (%)', 'Starts', 't_max']],
+        body:   sonderRows,
+      });
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 3 — Schächte & Bauwerke
@@ -671,14 +716,14 @@ async function exportPDF() {
     const nodeRows = [];
     for (const [id, node] of (props.nodes?.entries() || [])) {
       const res    = props.nodeResults?.get(id) || {};
-      const flooded= (res.floodingVolume || 0) > 0.001;
-      const status = flooded ? 'ÜBERFLUTET' : res.surcharged ? 'EINGESTAUT' : 'OK';
+      const zustand= knotenZustand(res);
+      const status = zustand === 'überstaut' ? 'ÜBERSTAUT' : zustand === 'eingestaut' ? 'EINGESTAUT' : 'OK';
       nodeRows.push([
         id,
         fmt(node.z, 2),
         fmt(res.maxDepth, 2),
         fmt(res.maxHGL, 2),
-        fmt(res.floodingVolume || 0, 3),
+        fmt(res.floodingVolume || 0, 0),   // SWMM-Auflösung 1 m³
         res.timeOfMaxDepth || '—',
         status,
       ]);
@@ -687,12 +732,12 @@ async function exportPDF() {
     autoTable(doc, {
       ...tableDefaults(),
       startY: cy,
-      head:   [['ID', 'Sohle (m)', 'Max h (m)', 'Max HGL (m)', 'Übfl.-Vol. (m³)', 't_max', 'Status']],
+      head:   [['ID', 'Sohle (m)', 'Max h (m)', 'Max HGL (m)', 'Überstauvol. (m³)', 't_max', 'Status']],
       body:   nodeRows,
       didParseCell: (data) => {
         if (data.column.index === 6 && data.section === 'body') {
           const v = data.cell.raw;
-          if (v === 'ÜBERFLUTET')  data.cell.styles.textColor = C.weinrot;
+          if (v === 'ÜBERSTAUT')  data.cell.styles.textColor = C.weinrot;
           else if (v === 'EINGESTAUT') data.cell.styles.textColor = C.orange;
           else data.cell.styles.textColor = [5, 150, 105];
         }
@@ -706,6 +751,7 @@ async function exportPDF() {
     cy = 20;
     cy = sectionTitle(doc, cy, 'Teilflächen (Subcatchments)');
 
+    const flaecheGerechnet = new Map(parseInpSubcatchments(props.inp).map(t => [t.name, t]));
     const areaEntries = props.areaResults instanceof Map
       ? Array.from(props.areaResults.entries())
       : Object.entries(props.areaResults || {});
@@ -713,18 +759,18 @@ async function exportPDF() {
     autoTable(doc, {
       ...tableDefaults(),
       startY: cy,
-      head:   [['ID', 'Fläche (ha)', 'N (mm)', 'Infil. (mm)', 'Abfl. (mm)', 'Abfl.-beiw.', 'Q_peak (m³/s)']],
+      head:   [['ID', 'Fläche (ha)', 'N (mm)', 'Infil. (mm)', 'Abfl. (mm)', 'Abfl.-beiw.', 'Q_peak (l/s)']],
       body:   areaEntries.map(([id, d]) => [
         id,
-        // d (SWMM .rpt "Subcatchment Runoff Summary") hat KEIN size-Feld — die
-        // echte Flächengröße kommt aus der Eingabe-Fläche (core/domain/Area.js),
-        // inkl. Split-/".1"-Suffix-Auflösung, siehe subcatchmentSize.js.
-        fmt(resolveSubcatchmentSize(id, props.areas), 4),
+        // Fläche wie gerechnet (.inp des Laufs); ohne .inp aus der Eingabe-Fläche
+        // (Split-/".1"-Suffix-Auflösung, subcatchmentSize.js).
+        fmt(flaecheGerechnet.get(id)?.areaHa ?? resolveSubcatchmentSize(id, props.areas), 4),
         fmt(d.precip ?? 0, 2),
         fmt(d.totalInfil ?? 0, 2),
         fmt(d.totalRunoffMm ?? d.runoffMm ?? 0, 2),
         fmt(d.runoffCoeff ?? 0, 3),
-        fmt((d.peakRunoff ?? 0) / 1000, 4),
+        // Spitze aus der Ganglinie (l/s), nicht aus SWMMs zweistelliger CMS-Spalte
+        fmt(spitzeAusGanglinie(props.timeSeries, id, faktorZuLs(props.systemStats)) ?? d.peakRunoff ?? 0, 1),
       ]),
     });
 

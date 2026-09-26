@@ -315,9 +315,8 @@ export class RptParser {
                     edges[id].capacity = calculateCapacity(id);
                 }
             }
-            if (edges[id].depthRatio !== undefined) {
-                edges[id].utilization = edges[id].depthRatio * 100;
-            }
+            // Kein Feld „utilization" mehr: es war h/hvoll unter dem Namen Auslastung.
+            // Auslastung = Q/Qvoll, Einstau = h/hvoll → typPalette.haltungsZustand (P1.1/P1.11).
         });
 
         // Vmax (maxAvailableVolume) und Überstau-Kennzeichnung (HGL > Deckelhöhe)

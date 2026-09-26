@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { LINK_BAUWERKSTYPEN, ENTWAESSERUNGSART_COLOR, ENTWAESSERUNGSART_DEFAULT_COLOR } from '../../../utils/mappings.js';
-import { zahl, AUSLASTUNG_STUFEN, KNOTEN_ZUSTAND, UEBERSTAU_HELL, knotenUeberstaut, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
+import { zahl, AUSLASTUNG_STUFEN, haltungsZustand, KNOTEN_ZUSTAND, UEBERSTAU_HELL, knotenUeberstaut, BAUWERK, DATENQUALITAET, AUSWAHL, AUSWAHL_GLUT, FLAECHE } from '../../../utils/typPalette.js';
 
 const NETWORK_GROUP = '__network__';
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -225,10 +225,9 @@ export function useSceneBuilder() {
     // Result overlay materials
     resOverflow : new THREE.MeshStandardMaterial({ color: zahl(UEBERSTAU_HELL), emissive: 0x5a1a30, roughness: 0.4 }), // helles Weinrot: Szene folgt nicht dem Theme
     resSurcharge: new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.druckabfluss), emissive: 0x4a2000, roughness: 0.4 }),
-    utilHigh   : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[0].farbe), roughness: 0.4, side: THREE.DoubleSide }),
-    utilMed    : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[1].farbe), roughness: 0.4, side: THREE.DoubleSide }),
-    utilLow    : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[2].farbe), roughness: 0.4, side: THREE.DoubleSide }),
-    utilOk     : new THREE.MeshStandardMaterial({ color: zahl(AUSLASTUNG_STUFEN[3].farbe), roughness: 0.5, side: THREE.DoubleSide }),
+    // Je Auslastungsstufe (Q/Qvoll, typPalette.AUSLASTUNG_STUFEN) ein Material: util0 … util4
+    ...Object.fromEntries(AUSLASTUNG_STUFEN.map((st, i) => [`util${i}`,
+      new THREE.MeshStandardMaterial({ color: zahl(st.farbe), roughness: 0.4, side: THREE.DoubleSide })])),
     waterLevel : new THREE.MeshStandardMaterial({ color: zahl(KNOTEN_ZUSTAND.wasserstand), transparent: true, opacity: 0.75, roughness: 0.2, emissive: 0x0a2d4a }),
     // Entwässerungsart (ISYBAU KM/KR/KS) — Standard-Einfärbung an Haltungen
     // (ersetzt die bisherige Profilform-Farbe circle/rect/trapez/maul) und an
@@ -239,6 +238,12 @@ export function useSceneBuilder() {
     entwKS     : new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_COLOR.KS, roughness: 0.5, side: THREE.DoubleSide }),
     entwDefault: new THREE.MeshStandardMaterial({ color: ENTWAESSERUNGSART_DEFAULT_COLOR, roughness: 0.6, side: THREE.DoubleSide }),
   };
+
+  /** Index der Q/Qvoll-Stufe (typPalette.haltungsZustand), null ohne Qvoll (Wehr/Drossel). */
+  function utilIndex(res) {
+    const { stufe } = haltungsZustand(res);
+    return stufe ? AUSLASTUNG_STUFEN.indexOf(stufe) : null;
+  }
 
   function getEntwMaterial(entwaesserungsart) {
     if (entwaesserungsart === 'KM') return mats.entwKM;
@@ -256,7 +261,7 @@ export function useSceneBuilder() {
   // der Zustand über künftige buildScene()-Rebuilds hinweg erhalten (kein Reset).
   const WIREFRAME_MATERIAL_KEYS = [
     'fictive', 'noGeo', 'bauwerk',
-    'resOverflow', 'resSurcharge', 'utilHigh', 'utilMed', 'utilLow', 'utilOk',
+    'resOverflow', 'resSurcharge', ...AUSLASTUNG_STUFEN.map((_, i) => `util${i}`),
     'entwKM', 'entwKR', 'entwKS', 'entwDefault'
   ];
 
@@ -440,10 +445,10 @@ export function useSceneBuilder() {
           const relatedEdge = Array.from(edges.values()).find(e => (e.fromNodeId ?? e.from) === node.id);
           const res = relatedEdge ? edgeResults.get(relatedEdge.id) : null;
           if (res) {
-            const util = res.utilization ?? (res.depthRatio != null ? res.depthRatio * 100 : null);
-            // Auslastung der Haltung → Auslastungsfarben (wie die Legende), nicht die Überstaufarbe
-            if      (util > 90)  mesh.material = mats.utilHigh;
-            else if (util > 75)  mesh.material = mats.utilMed;
+            // Auslastung (Q/Qvoll) der Haltung → Auslastungsfarben (wie die Legende), nicht die
+            // Überstaufarbe; nur die beiden obersten Stufen, sonst bleibt die Bauwerksfarbe
+            const i = utilIndex(res);
+            if (i != null && i <= 1) mesh.material = mats[`util${i}`];
           }
         } else {
           const res = nodeResults.get(node.id);
@@ -543,11 +548,8 @@ export function useSceneBuilder() {
       if (showResults) {
         const res = edgeResults.get(edge.id);
         if (res != null) {
-          const util = res.utilization ?? (res.depthRatio != null ? res.depthRatio * 100 : null);
-          if      (util > 90) mat = mats.utilHigh;
-          else if (util > 75) mat = mats.utilMed;
-          else if (util > 50) mat = mats.utilLow;
-          else                mat = mats.utilOk;
+          const i = utilIndex(res);
+          if (i != null) mat = mats[`util${i}`];
         }
       }
 
@@ -556,7 +558,7 @@ export function useSceneBuilder() {
       // ── Water-surface ribbon inside pipe ────────────────────────────
       if (doWater) {
         const res = edgeResults.get(edge.id);
-        const dr  = res?.depthRatio ?? (res?.utilization != null ? res.utilization / 100 : null);
+        const dr  = res?.depthRatio ?? null;
         if (dr != null && dr > 0.01) {
           const clampedDr = Math.min(dr, 1.0);
           // Y offset from pipe centerline to water surface
