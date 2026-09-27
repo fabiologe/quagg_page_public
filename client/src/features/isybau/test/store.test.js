@@ -447,4 +447,22 @@ describe('loadProjectSnapshot: alter KOSTRA-Einzelwert und Überstauverfahren', 
         store.loadParsedData({ network: { nodes: new Map(), edges: new Map() } });
         expect(store.ungespeichert).toBe(false);
     });
+
+    // Fabio 2026-09-27: nach dem Speichern ist das Anlege-Werkzeug beendet, die Auswahl bleibt;
+    // Abbrechen behält die gezeichneten Punkte; Doppelklick erzeugt keinen doppelten Eckpunkt.
+    it('Werkzeug nach dem Speichern: Fläche/Schacht → Ansicht, Auswahl bleibt', () => {
+        store.addNode(0, 0, { id: 'A', z: 1 });
+        store.editor.selectedId = 'A'; store.editor.selectedType = 'node';
+        store.editor.mode = 'addArea';
+        for (const p of [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]) store.addDrawingPoint(p);
+        expect(store.editor.drawingPoints).toHaveLength(3); // doppelter Klick ignoriert
+        store.openElementModal('area', { points: [...store.editor.drawingPoints] });
+        store.ui.showElementModal = false; // Abbrechen
+        expect([store.editor.mode, store.editor.drawingPoints.length]).toEqual(['addArea', 3]);
+        store.createElement({ mode: 'area', data: { id: 'F1', points: [...store.editor.drawingPoints], nodeId: 'A', size: 0.005 } });
+        expect([store.editor.mode, store.editor.drawingPoints.length, store.editor.selectedId]).toEqual(['view', 0, 'A']);
+        store.editor.mode = 'addNode';
+        store.createElement({ mode: 'node', data: { id: 'S_9', x: 5, y: 5, z: 1 } });
+        expect(store.editor.mode).toBe('view');
+    });
 });

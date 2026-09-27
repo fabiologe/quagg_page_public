@@ -51,6 +51,9 @@ export function leseFortschrittsSignale(store) {
         store.rain.activeModelRain?.id ?? store.rain.activeModelRain?.series?.length ?? 0,
         store.simulation.status,
         store.simulation.error,
+        // Profilfehler (ERR_119) vs. anderer Abbruch: die Profil-Aufgabe
+        // schaltet erst weiter, wenn ein neuer Lauf NICHT mehr daran scheitert.
+        store.simulation.fehlerCode,
         store.simulation.preSolveWarnings.length,
     ];
 }

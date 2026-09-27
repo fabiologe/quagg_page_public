@@ -1,10 +1,11 @@
 <template>
   <!-- Zeichen-Vorschau des Tutorials: Geisterumriss der Fläche, die der Nutzer
-       gleich selbst zeichnen soll. Der Umriss zieht sich in Schleife selbst
-       nach, die Klickpunkte sind durchnummeriert — zusammen zeigt das
-       Reihenfolge UND Ort. `:key` startet die Animation neu, wenn derselbe
-       Umriss erneut gesetzt wird. -->
-  <g v-if="hint" class="draw-hint" :key="hint.token">
+       gleich selbst zeichnen soll. Der Umriss zieht sich dreimal selbst nach
+       und bleibt dann stehen; die Klickpunkte sind durchnummeriert — zusammen
+       zeigt das Reihenfolge UND Ort. Sobald der Nutzer selbst zeichnet, tritt
+       die Vorschau zurück (`leise`). `:key` startet die Animation neu, wenn
+       derselbe Umriss erneut gesetzt wird. -->
+  <g v-if="hint" class="draw-hint" :class="{ 'draw-hint--leise': leise }" :key="hint.token">
     <path class="draw-hint-fill" :d="hint.d" />
     <path
       class="draw-hint-trace"
@@ -47,6 +48,9 @@ const props = defineProps({
     // { minX, maxY, … } — Ursprung der lokalen SVG-Koordinaten
     bounds: { type: Object, required: true },
     scale: { type: Number, default: 1 },
+    // Der Nutzer zeichnet schon (erster eigener Punkt gesetzt): Vorschau blass und
+    // ruhig, damit sie seine rote Zeichenlinie nicht verdeckt (Fabio 2026-09-27)
+    leise: { type: Boolean, default: false },
 });
 
 const { hintPoints, hintToken } = useDrawingHint();
@@ -93,8 +97,13 @@ const hint = computed(() => {
   stroke-linejoin: round;
   stroke-linecap: round;
   stroke-dasharray: 100;
-  animation: draw-hint-trace 3.2s ease-in-out infinite;
+  /* Dreimal statt endlos: danach steht der fertige Umriss (forwards) — die
+     Endlosschleife lag dauerhaft über der eigenen Zeichnung (Fabio 2026-09-27). */
+  animation: draw-hint-trace 3.2s ease-in-out 3 forwards;
 }
+
+.draw-hint--leise { opacity: 0.3; transition: opacity 0.4s; }
+.draw-hint--leise .draw-hint-trace { animation: none; stroke-dashoffset: 0; }
 
 @keyframes draw-hint-trace {
   0%        { stroke-dashoffset: 100; }

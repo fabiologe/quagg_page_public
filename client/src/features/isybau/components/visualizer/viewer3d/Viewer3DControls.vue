@@ -24,7 +24,7 @@
       <span class="toggle-dot" />
       <span class="toggle-label">Gelände{{ terrainSource === 'api' ? ' (API, ~30m)' : '' }}</span>
     </label>
-    <label class="ctrl-toggle" title="Netz-Renderstyle: Solid (volle Körper) oder Drahtkörper (macht den Wasserstand im Rohr-/Schachtinneren sichtbar) — unabhängig davon, ob Ergebnisse angezeigt werden">
+    <label class="ctrl-toggle" title="Drahtkörper: Rohre und Schächte als Gitter (macht den Wasserstand im Inneren sichtbar) und die Dreiecke des Geländes (Neigung je Dreieck)">
       <input type="checkbox" :checked="wireframeMode" @change="$emit('update:wireframeMode', $event.target.checked)" />
       <span class="toggle-dot" />
       <span class="toggle-label">Drahtkörper</span>

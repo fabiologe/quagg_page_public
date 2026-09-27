@@ -56,6 +56,7 @@ const terrainFragmentShader = `
   uniform vec3 uColorHigh;
   uniform vec3 uLightDir;  // normalisiert, Weltkoordinaten
   uniform float uAmbient;  // Mindest-Helligkeit im Schatten (0..1)
+  uniform float uRelief;   // Streckung der Neigung NUR für die Schattierung
 
   void main() {
     #include <logdepthbuf_fragment>
@@ -72,11 +73,18 @@ const terrainFragmentShader = `
     vec3 fdy = dFdy(vWorldPos);
     vec3 normal = normalize(cross(fdx, fdy));
     if (normal.y < 0.0) normal = -normal; // Gelände zeigt "nach oben"
+    // Neigung für die Schattierung strecken: Kanalnetz-Gelände hat 1–5 % Gefälle,
+    // das änderte die Helligkeit um < 1 % — unsichtbar („braune Fläche“, 2026-09-27).
+    // Die Geometrie bleibt unverändert, nur das Licht „sieht“ steiler.
+    vec3 nRelief = normalize(vec3(normal.x * uRelief, normal.y, normal.z * uRelief));
 
-    float diffuse = max(dot(normal, uLightDir), 0.0);
+    float diffuse = max(dot(nRelief, uLightDir), 0.0);
     float shade = mix(uAmbient, 1.0, diffuse);
 
     gl_FragColor = vec4(col * shade, 1.0);
+    // Farben kommen linear an (THREE.Color); ohne Rückwandlung nach sRGB erschien
+    // #8b7355 als #422B17 — das ganze Gelände dunkelbraun.
+    #include <colorspace_fragment>
   }
 `;
 
@@ -107,8 +115,50 @@ function decimateGrid(terrain, maxCells) {
     return { gridData, ncols, nrows, cellsize: srcCellsize * stride, xll, yll };
 }
 
+/**
+ * Höhenspanne für die Farbrampe: 5–95-%-Perzentil der Höhen im Netzgebiet (mit Rand),
+ * statt Minimum/Maximum der ganzen Kachel — sonst lag das Netz bei einer großen
+ * Kachel mit fernen Hügeln in einem einzigen braunen Farbband.
+ * @param {{gridData, ncols, nrows, cellsize, xll, yll}} grid  bottom-up (row 0 = Süd)
+ * @param {{minX, minY, spanX, spanY}} [bounds]  Netz
+ * @returns {{min:number, max:number}}
+ */
+export function hoehenSpanne(grid, bounds) {
+    const { gridData, ncols, nrows, cellsize, xll, yll } = grid;
+    const werte = [], alle = [];
+    const rand = bounds ? Math.max(50, 0.25 * Math.max(bounds.spanX || 0, bounds.spanY || 0)) : 0;
+    const schritt = Math.max(1, Math.floor(Math.sqrt((ncols * nrows) / 40000))); // ≤ ~40 000 Stichproben
+    for (let row = 0; row < nrows; row += schritt) {
+        const y = yll + row * cellsize;
+        for (let col = 0; col < ncols; col += schritt) {
+            const v = gridData[row * ncols + col];
+            if (!(v > -9000)) continue;
+            alle.push(v);
+            const x = xll + col * cellsize;
+            if (bounds && x >= bounds.minX - rand && x <= bounds.minX + bounds.spanX + rand
+                && y >= bounds.minY - rand && y <= bounds.minY + bounds.spanY + rand) werte.push(v);
+        }
+    }
+    const basis = werte.length >= 20 ? werte : alle;
+    if (!basis.length) return { min: 0, max: 1 };
+    basis.sort((a, b) => a - b);
+    const q = (p) => basis[Math.min(basis.length - 1, Math.max(0, Math.round(p * (basis.length - 1))))];
+    const min = q(0.05), max = q(0.95);
+    return max - min >= 1 ? { min, max } : { min: min - 0.5, max: min + 0.5 };
+}
+
+// Licht aus Nordwest, 40° über dem Horizont (üblich für Schummerungen). Welt: +x = Ost,
+// Nord = −z (useSceneBuilder: z = −(y − centerY)).
+const LICHT_HOEHE = 40 * Math.PI / 180;
+const LICHT = new THREE.Vector3(
+    -Math.cos(LICHT_HOEHE) / Math.SQRT2, // West
+    Math.sin(LICHT_HOEHE),
+    -Math.cos(LICHT_HOEHE) / Math.SQRT2, // Nord
+);
+
 export function useTerrainLayer() {
     let mesh = null;
+    let kantenAn = false; // Dreieckskanten (Schalter „Drahtkörper“)
     let gridCenter = null; // { x, y } — Weltkoordinaten-Zentrum des aktuell gebauten Meshs
 
     function build(scene, terrain, bounds, zScale) {
@@ -159,27 +209,34 @@ export function useTerrainLayer() {
             geometry.setIndex(newIndices);
         }
 
+        const spanne = hoehenSpanne(grid, bounds);
         const material = new THREE.ShaderMaterial({
             uniforms: {
-                uMinZ: { value: Number.isFinite(terrain.minZ) ? terrain.minZ : 0 },
-                uMaxZ: { value: Number.isFinite(terrain.maxZ) ? terrain.maxZ : 1 },
+                uMinZ: { value: spanne.min },
+                uMaxZ: { value: spanne.max },
                 uColorLow: { value: new THREE.Color(zahl(GELAENDE.tief)) },  // dunkelgrün (Aue/Talgrund)
                 uColorMid: { value: new THREE.Color(zahl(GELAENDE.mitte)) },  // erdbraun (Hang)
                 uColorHigh: { value: new THREE.Color(zahl(GELAENDE.hoch)) }, // heller Stein (Kuppe)
-                uLightDir: { value: new THREE.Vector3(-0.4, 0.75, 0.35).normalize() },
-                // 0.4 -> 0.6: Nutzer-Feedback "zu starke Schatten" — Flächen, die vom
-                // fixen uLightDir wegzeigen (steile Böschungen/Grabenflanken), fielen
-                // auf 40% Helligkeit, wirkte hart/kontrastreich. Bewusst nicht höher
-                // (z.B. 0.8+), sonst geht die Relief-Wirkung des Hillshadings verloren.
-                uAmbient: { value: 0.6 },
+                uLightDir: { value: LICHT.clone() },
+                // Grundhelligkeit 0,4 und Relief ×4: flaches Gelände bei ~79 %, 3 % Gefälle
+                // zum Licht hin/weg ±~5,5 %. Früher 0,6 und ohne Streckung → < 1 % Unterschied.
+                // (2026-08: 0,4 ohne Streckung galt als „zu starke Schatten“ an steilen
+                // Böschungen — die Streckung sättigt dort, deshalb nicht härter als vorher.)
+                uAmbient: { value: 0.4 },
+                uRelief: { value: 4.0 },
             },
             vertexShader: terrainVertexShader,
             fragmentShader: terrainFragmentShader,
             side: THREE.DoubleSide,
+            // Fläche minimal nach hinten, damit die Dreieckskanten sauber darüber liegen
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
         });
         mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
         scene.add(mesh);
+        if (kantenAn) kantenAnlegen();
 
         gridCenter = { x: xll + width / 2, y: yll + height / 2 };
         updateTransform(bounds, zScale);
@@ -197,8 +254,34 @@ export function useTerrainLayer() {
         mesh.scale.z = zs;
     }
 
+    /** Dreieckskanten als Kind des Gelände-Meshs (erbt Drehung, Lage, Überhöhung). */
+    function kantenAnlegen() {
+        if (!mesh || mesh.userData.kanten) return;
+        const linien = new THREE.LineSegments(
+            new THREE.WireframeGeometry(mesh.geometry),
+            new THREE.LineBasicMaterial({ color: 0x2a241c, transparent: true, opacity: 0.35, depthWrite: false }),
+        );
+        linien.userData.gelaendeKanten = true;
+        mesh.add(linien);
+        mesh.userData.kanten = linien;
+    }
+    function kantenEntfernen() {
+        const linien = mesh?.userData.kanten;
+        if (!linien) return;
+        mesh.remove(linien);
+        linien.geometry.dispose();
+        linien.material.dispose();
+        mesh.userData.kanten = null;
+    }
+    /** Schalter „Drahtkörper“: zeigt die Dreiecke des Geländes (Neigung je Dreieck ablesbar). */
+    function setKanten(an) {
+        kantenAn = !!an;
+        if (kantenAn) kantenAnlegen(); else kantenEntfernen();
+    }
+
     function clear(scene) {
         if (mesh) {
+            kantenEntfernen();
             scene?.remove(mesh);
             mesh.geometry.dispose();
             mesh.material.dispose();
@@ -209,6 +292,7 @@ export function useTerrainLayer() {
 
     function dispose() {
         if (mesh) {
+            kantenEntfernen();
             mesh.geometry.dispose();
             mesh.material.dispose();
             mesh = null;
@@ -216,5 +300,5 @@ export function useTerrainLayer() {
         gridCenter = null;
     }
 
-    return { build, updateTransform, clear, dispose, getMesh: () => mesh };
+    return { build, updateTransform, clear, dispose, setKanten, getMesh: () => mesh };
 }

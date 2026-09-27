@@ -1,5 +1,11 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
+import { mount } from '@vue/test-utils';
+import { h } from 'vue';
+import fs from 'node:fs';
+import path from 'node:path';
 import { useDrawingHint } from '../composables/useDrawingHint.js';
+import DrawHintOverlay from '../components/visualizer/DrawHintOverlay.vue';
 
 describe('useDrawingHint (Zeichen-Vorschau)', () => {
   let hint;
@@ -48,5 +54,30 @@ describe('useDrawingHint (Zeichen-Vorschau)', () => {
     hint.showDrawingHint([{ x: 1, y: 2 }, { x: 3, y: 4 }]);
     hint.clearDrawingHint();
     expect(hint.hintPoints.value).toBeNull();
+  });
+});
+
+describe('DrawHintOverlay: verdeckt das eigene Zeichnen nicht', () => {
+  // Rückmeldung aus der Lehre (2026-09-27): die endlose Animation lag über der
+  // roten Zeichenlinie. Jetzt drei Durchläufe, und sobald der Nutzer selbst
+  // zeichnet, wird die Vorschau blass.
+  const svg = (leise) => mount(
+    { render: () => h('svg', [h(DrawHintOverlay, { bounds: { minX: 0, maxY: 10 }, leise })]) },
+  );
+
+  beforeEach(() => {
+    useDrawingHint().showDrawingHint([{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 1 }]);
+  });
+
+  it('blass erst ab dem ersten eigenen Punkt', () => {
+    expect(svg(false).find('.draw-hint').classes()).not.toContain('draw-hint--leise');
+    expect(svg(true).find('.draw-hint').classes()).toContain('draw-hint--leise');
+  });
+
+  it('die Animation läuft dreimal und bleibt dann stehen', () => {
+    const quelle = fs.readFileSync(path.resolve(__dirname, '../components/visualizer/DrawHintOverlay.vue'), 'utf-8');
+    const zeile = quelle.match(/animation:\s*draw-hint-trace[^;]*;/)[0];
+    expect(zeile).toMatch(/\b3 forwards/);
+    expect(zeile).not.toMatch(/infinite/);
   });
 });

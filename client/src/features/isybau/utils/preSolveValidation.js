@@ -11,6 +11,7 @@
  * nicht werfen würde.
  */
 import { getEffectiveBauwerkstyp, LINK_SECTION_BY_BTYP, classifyPreview } from './mappings.js';
+import { fmtZahl } from './zahlformat.js';
 
 /** ERR_122 (link.c): Pumpe mit Anspringtiefe <= Abschalttiefe springt nie an. */
 export function checkPumpDepths(node) {
@@ -155,8 +156,8 @@ export function checkConduitProfile(edge) {
             severity: 'error',
             code: 'ERR_119',
             message: isCircular
-                ? `Profil ungültig: Durchmesser (${profile.height} m) muss > 0 sein`
-                : `Profil ungültig: Höhe (${profile.height} m) und Breite (${profile.width} m) müssen > 0 sein`
+                ? `Profil ungültig: Durchmesser (${fmtZahl(profile.height)} m) muss > 0 sein`
+                : `Profil ungültig: Höhe (${fmtZahl(profile.height)} m) und Breite (${fmtZahl(profile.width)} m) müssen > 0 sein`
         };
     }
     return null;

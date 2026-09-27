@@ -59,7 +59,7 @@ describe('useTutorialGuide (Zustandsmaschine)', () => {
     guide.trigger('xml-imported', fakeStore);
     expect(guide.activeStep.value.id).toBe('reactive-xml-imported');
     expect(guide.activeStep.value.isTour).toBe(false);
-    expect(guide.activeStep.value.message).toContain('12 Schaechte');
+    expect(guide.activeStep.value.message).toContain('12 Schächte');
     expect(guide.activeStep.value.message).toContain('11 Haltungen');
   });
 
@@ -271,6 +271,17 @@ describe('Übungs-Modus: Voraussetzungen (requires)', () => {
     store.ui.demImportPanelOpen = false;           // "Abbrechen", kein Gelände
     guide.next();
     expect(guide.activeStep.value.id).toBe('ex-tour-projekte');
+  });
+
+  // Befund 2026-09-27: showExerciseStep rief resolveMessage(step) ohne Store —
+  // die Fehlerübergabe sagte deshalb immer „0 Sachen“ und nie die Meldung.
+  it('die Fehlerübergabe nennt die echte Meldung aus dem Store', () => {
+    const store = exerciseStore({
+      simulation: { status: 'error', error: 'Knoten X: Sohlhöhe fehlt', fehlerCode: 'ERR_145', preSolveWarnings: [] },
+    });
+    guide.startExercise(store);
+    walkTo(guide, 'ex-handover-fehler');
+    expect(guide.activeStep.value.message).toContain('Knoten X: Sohlhöhe fehlt');
   });
 
   it('optionale Schritte erhöhen die Aufgabenzahl nicht', () => {

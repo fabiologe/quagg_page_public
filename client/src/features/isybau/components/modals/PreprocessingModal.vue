@@ -479,7 +479,7 @@
                     <th>Profil</th>
                     <th class="sortable" @click="sortBy('length')">Länge</th>
                     <th>Neigung %</th>
-                    <th>H (mm)</th>
+                    <th data-tutorial="haltung-profilhoehe">H (mm)</th>
                     <th>B (mm)</th>
                     <th>Z1</th>
                     <th>Z2</th>

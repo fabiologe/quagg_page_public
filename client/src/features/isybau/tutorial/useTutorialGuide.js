@@ -72,7 +72,9 @@ function showExerciseStep() {
   const taskIndex = TASK_STEPS.indexOf(step);
   setActiveStep({
     ...step,
-    message: resolveMessage(step),
+    // Mit Store: die Fehlerübergabe nennt die echte Meldung (vorher ohne
+    // Store aufgerufen → immer „0 Sachen“, Befund 2026-09-27).
+    message: resolveMessage(step, exerciseStore),
     isTour: false,
     kind: 'exercise',
     // nur auf Aufgaben-Schritten gesetzt (sonst null -> Anzeige bleibt leer)

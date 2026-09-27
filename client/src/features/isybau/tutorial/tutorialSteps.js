@@ -32,7 +32,7 @@ export const WELCOME_STEP = {
   mood: 'happy',
   message:
     'Guten Tag Kanaltaucher! Ich bin deine Kanalratte. Wenn du magst, zeig ich dir, '
-    + 'wie man hier ein Kanalnetz durchrechnet — ein Uebungsnetz bring ich mit.',
+    + 'wie man hier ein Kanalnetz durchrechnet — ein Übungsnetz bring ich mit.',
 };
 
 // ── Exit-Rückfrage & Kill-Sequenz ────────────────────────────────────────────
@@ -66,7 +66,7 @@ export const REACTIVE_STEPS = {
     mood: 'happy',
     info: 'isybau-xml',
     message: (store) =>
-      `Netz geladen: ${store.nodes.size} Schaechte und ${store.edges.size} Haltungen. Sieht gut aus!`,
+      `Netz geladen: ${store.nodes.size} Schächte und ${store.edges.size} Haltungen. Sieht gut aus!`,
   },
   'import-warnings': {
     id: 'reactive-import-warnings',
@@ -91,27 +91,28 @@ export const REACTIVE_STEPS = {
     id: 'reactive-simulation-success',
     mood: 'happy',
     info: 'ergebnisse-lesen',
-    message: 'Berechnung fertig! Schau dir die Ergebnisse oben an.',
+    message: 'Berechnung fertig! Das Ergebnisfenster ist schon offen — fang mit „Allgemein & Diagnose“ an.',
   },
   'simulation-error': {
     id: 'reactive-simulation-error',
     mood: 'sad',
     info: 'fehlerdiagnose',
     message: (store) =>
-      `Mist, die Berechnung ist fehlgeschlagen${store.simulation.error ? `: ${store.simulation.error}` : '.'} Pruef die Daten im Preprocessing.`,
+      `Mist, die Berechnung ist fehlgeschlagen${store.simulation.error ? `: ${store.simulation.error}` : '.'} `
+      + (store.simulation.invalidElementId ? '„→ Element öffnen“ unter der Meldung führt direkt hin.' : 'Prüf die Daten in „Daten bearbeiten“.'),
   },
   'first-element-created': {
     id: 'reactive-first-element-created',
     mood: 'happy',
     once: true,
-    message: 'Dein erstes Element steht! Weiter so — Schacht fuer Schacht zum Netz.',
+    message: 'Dein erstes Element steht! Weiter so — Schacht für Schacht zum Netz.',
   },
   'location-set': {
     id: 'reactive-location-set',
     mood: 'happy',
     info: 'standort-georeferenz',
     once: true,
-    message: 'Startort gesetzt! Damit legt sich gleich die EZG-Karte mit Luftbild und Hoehenlinien unter dein Netz.',
+    message: 'Startort gesetzt! Damit legt sich gleich die EZG-Karte mit Luftbild und Höhenlinien unter dein Netz.',
   },
   'terrain-imported': {
     id: 'reactive-terrain-imported',
@@ -119,20 +120,20 @@ export const REACTIVE_STEPS = {
     info: 'dgm-gelaende',
     once: true,
     message: (store) =>
-      `Eigenes Gelaendemodell geladen: ${store.terrain.ncols}x${store.terrain.nrows} Zellen. Ab jetzt schlage ich dir Deckelhoehen daraus vor.`,
+      `Eigenes Geländemodell geladen: ${store.terrain.ncols}x${store.terrain.nrows} Zellen. Ab jetzt schlage ich dir Deckelhöhen daraus vor.`,
   },
   'ezg-enabled': {
     id: 'reactive-ezg-enabled',
     mood: 'surprised',
     info: 'ezg-karte',
     once: true,
-    message: 'EZG-Karte an: Luftbild und Hoehenlinien im Hintergrund helfen dir, das Netz am echten Gelaende auszurichten.',
+    message: 'EZG-Karte an: Luftbild und Höhenlinien im Hintergrund helfen dir, das Netz am echten Gelände auszurichten.',
   },
   'theme-toggled': {
     id: 'reactive-theme-toggled',
     mood: 'surprised',
     once: true,
     message: (store) =>
-      store.ui.darkMode ? 'Oh, jetzt wird es dunkel hier unten!' : 'Autsch, Tageslicht! Aber gut fuer die Augen.',
+      store.ui.darkMode ? 'Oh, jetzt wird es dunkel hier unten!' : 'Autsch, Tageslicht! Aber gut für die Augen.',
   },
 };

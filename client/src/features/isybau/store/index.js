@@ -194,6 +194,9 @@ export const useIsybauStore = defineStore('isybau-module', {
             error: null,
             invalidElementId: null, // Element, das eine Vorab-Validierung als Ursache identifiziert hat
             invalidElementType: null, // 'node' | 'edge'
+            // Kennung des Vorab-Befunds, der den Lauf gestoppt hat (z. B. 'ERR_119');
+            // null bei SWMM-Abbrüchen. Die Übung unterscheidet daran Profilfehler.
+            fehlerCode: null,
             preSolveWarnings: [], // nicht-fatale Vorab-Funde (z.B. WARN08), blockieren den Lauf nicht
             fehlerBericht: null, // { report, input } eines von SWMM abgebrochenen Laufs (Debug-Fenster)
             // Netz oder Regen nach dem Lauf geändert: das Ergebnis zeigt nicht mehr den Stand im Editor
@@ -501,7 +504,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             // (sonst zeigte ein neues Netz „Berechnung fehlgeschlagen" des alten).
             Object.assign(this.simulation, {
                 status: 'idle', results: null, error: null, invalidElementId: null,
-                invalidElementType: null, preSolveWarnings: [], fehlerBericht: null, veraltet: false
+                invalidElementType: null, fehlerCode: null, preSolveWarnings: [], fehlerBericht: null, veraltet: false
             });
             this.netzStand++;
             this.ungespeichert = false;
@@ -658,8 +661,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 // Überschneidungen ab, z.B. wenn nicht exakt gesnappt wurde).
                 const fragments = clipNewArea(points, this.areas);
                 if (fragments.length === 0) {
-                    console.warn('createElement: Fläche liegt komplett innerhalb bestehender Flächen — nichts angelegt.');
+                    this.melde('Die Fläche liegt ganz innerhalb vorhandener Flächen — nichts angelegt.', 'hinweis');
                     this.ui.showElementModal = false;
+                    this.werkzeugBeenden();
                     return;
                 }
                 const baseId = data.id || this.freieId('area');
@@ -691,6 +695,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 this.addNode(data.x, data.y, props);
             }
             this.ui.showElementModal = false;
+            this.werkzeugBeenden();
         },
 
         /** Gespeichertes Projekt (IndexedDB-Snapshot) in den Store laden. */
@@ -1242,10 +1247,26 @@ export const useIsybauStore = defineStore('isybau-module', {
         // areaClipping.js snapPoint().
         addDrawingPoint(point) {
             const snapped = snapPoint(point, this.areas, AREA_SNAP_TOLERANCE_M);
+            // Doppelklick zum Abschließen = zwei Einzelklicks an derselben Stelle:
+            // der zweite ergäbe einen doppelten Eckpunkt (Kante der Länge 0)
+            const letzter = this.editor.drawingPoints.at(-1);
+            if (letzter && Math.hypot(letzter.x - snapped.x, letzter.y - snapped.y) < 1e-3) return;
             this.editor.drawingPoints.push(snapped);
         },
 
         resetDrawing() {
+            this.editor.drawingPoints = [];
+        },
+
+        /**
+         * Anlege-Werkzeug nach dem Speichern beenden (Fabio 2026-09-27: „nach dem Speichern
+         * Werkzeugauswahl zurücksetzen“). Wie Escape, aber die Auswahl bleibt. Vorher blieb
+         * z. B. „Fläche zeichnen“ aktiv und der nächste Klick begann eine neue Fläche.
+         * Der Löschen-Modus ruft das bewusst NICHT auf (mehrere Elemente nacheinander).
+         */
+        werkzeugBeenden() {
+            this.editor.mode = 'view';
+            this.editor.edgeStartNode = null;
             this.editor.drawingPoints = [];
         },
 
@@ -1318,6 +1339,7 @@ export const useIsybauStore = defineStore('isybau-module', {
             this.simulation.error = null;
             this.simulation.invalidElementId = null;
             this.simulation.invalidElementType = null;
+            this.simulation.fehlerCode = null;
             this.simulation.preSolveWarnings = [];
             this.simulation.fehlerBericht = null;
 
@@ -1337,6 +1359,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                     : firstError.message; // netzweiter Befund (z. B. kein Auslass)
                 this.simulation.invalidElementId = firstError.id;
                 this.simulation.invalidElementType = firstError.elementType;
+                this.simulation.fehlerCode = firstError.code ?? null;
                 return;
             }
             this.simulation.preSolveWarnings = findings

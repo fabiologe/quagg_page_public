@@ -302,7 +302,7 @@
           shape-rendering="crispEdges"
         />
 
-        <DrawHintOverlay :bounds="bounds" :scale="scale" />
+        <DrawHintOverlay :bounds="bounds" :scale="scale" :leise="drawingPoints.length > 0" />
       </g>
     </svg>
 
@@ -757,6 +757,16 @@ const selectedElement = ref(null);
 
 const selectElement = (element, type, event = null) => {
   if (mode.value !== 'select' && isDragging.value) return;
+  // Zeichnen geht vor: Im Flächenmodus setzt JEDER Klick einen Eckpunkt — auch
+  // auf einer Nachbarfläche, einer Haltung oder einem Schacht. Vorher wählte der
+  // Klick das Element aus (.stop schluckte den Karten-Klick), und die Eckgriffe
+  // der ausgewählten Fläche fingen die nächsten Klicks ab. Gemessen an der
+  // Übung 2026-09-27: drei Klicks auf die Vorlagenpunkte → 1 Punkt. Ein neuer
+  // Schacht darf ebenso mitten in einer Fläche stehen.
+  if (event && (zeichnetFlaeche.value || (props.interactionMode === 'addNode' && type === 'area'))) {
+    handleMapClick(event);
+    return;
+  }
   // mode.value ist NUR der Pan/Select-Toggle (siehe ViewerControls.vue),
   // NICHT store.editor.mode/props.interactionMode — pickNodeRef/pickEdgeRef
   // gehören deshalb NICHT in diese Liste (wären hier nie erreichbar).
@@ -1025,7 +1035,10 @@ const getPolygonPoints = (points) => {
 // siehe IsybauMain.vue) zeigt nie Editier-Handles — dort läuft kein
 // update-area-point-Listener, das Ziehen würde sonst wirkungslos (aber
 // irreführend interaktiv aussehend) ins Leere laufen.
-const selectedAreaForEdit = computed(() => (!props.readonly && selectedElement.value?.points ? selectedElement.value : null));
+const zeichnetFlaeche = computed(() => props.interactionMode === 'addArea');
+// Beim Zeichnen keine Eckgriffe: sie lägen auf gemeinsamen Ecken genau dort,
+// wo der neue Umriss ansetzt, und fingen den Klick ab.
+const selectedAreaForEdit = computed(() => (!props.readonly && !zeichnetFlaeche.value && selectedElement.value?.points ? selectedElement.value : null));
 
 // vertexHandleRadius in Weltmetern, konstant in Bildschirm-Pixeln (r/scale) —
 // dasselbe Prinzip wie die bestehenden Zeichenpunkt-Handles.
@@ -1087,6 +1100,8 @@ const startVertexDrag = (area, index, e) => {
 
 /** Doppelklick auf eine Kante der AUSGEWÄHLTEN Fläche fügt dort einen neuen Eckpunkt ein. */
 const dblClickToAddVertex = (area, e) => {
+  // Doppelklick auf einer Nachbarfläche schließt beim Zeichnen die NEUE Fläche ab
+  if (zeichnetFlaeche.value) { handleMapDblClick(e); return; }
   if (selectedAreaForEdit.value?.id !== area.id) return;
   const coords = getEventCoords(e.clientX, e.clientY);
   if (!coords) return;

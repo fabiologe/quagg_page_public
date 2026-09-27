@@ -110,7 +110,7 @@
             </div>
         </div>
 
-        <div class="control-group"
+        <div class="control-group" data-tutorial="ueberstauverfahren"
              title="Wie SWMM rechnet, wenn Schacht und Haltungen voll laufen (Druckabfluss). Automatisch: SLOT und EXTRAN werden beide gerechnet (doppelte Rechenzeit), genommen wird das plausiblere Ergebnis — Bilanzfehler höchstens 5 % und kein Wasserspiegel über dem höchsten Deckel des Netzes. Die Begründung steht im Ergebnis.">
             <label>Überstauverfahren</label>
             <PixelSelect v-model="store.berechnung.ueberstauverfahren" class="sidebar-select" :options="UEBERSTAU_OPTIONEN" />
@@ -129,7 +129,7 @@
 
         <div v-if="error" class="error-msg">
             {{ error }}
-            <button v-if="invalidElementId" class="error-link" @click="jumpToInvalidElement">
+            <button v-if="invalidElementId" class="error-link" data-tutorial="fehler-element-oeffnen" @click="jumpToInvalidElement">
                 → Element öffnen
             </button>
             <button v-if="store.simulation.fehlerBericht" class="error-link" @click="store.ui.showDebugModal = true">

@@ -189,7 +189,10 @@ watch([showNodes, showEdges, showAreas, zScale, showResults, showWaterLevel], ()
 // mats.waterLevel (immer solide) durch die Rohr-/Schachtwände hindurch
 // sichtbar. Braucht KEINEN scheduleRebuild(), die laufende Render-Loop
 // (core.startLoop()) zeigt die Änderung im nächsten Frame von selbst.
-watch(wireframeMode, (v) => builder.setWireframe(v));
+watch(wireframeMode, (v) => {
+  builder.setWireframe(v);
+  terrainLayer.setKanten(v); // Gelände: Dreieckskanten, damit die Neigung je Dreieck lesbar ist
+});
 
 // ─── DGM-Terrain-Layer ──────────────────────────────────────────────────────
 // Bewusst getrennt vom renderKey/scheduleRebuild-Pfad oben: ein neuer DGM-

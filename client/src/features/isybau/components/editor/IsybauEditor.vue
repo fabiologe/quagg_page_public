@@ -42,6 +42,7 @@
         <button 
             v-if="store.editor.drawingPoints.length >= 3" 
             class="finish-btn"
+            data-tutorial="flaeche-abschliessen"
             @click="handleMapDblClick"
         >
             ✓ Fläche abschließen
@@ -221,8 +222,9 @@ const handleMapDblClick = () => {
         const areaM2 = calculatePolygonArea(points);
         const sizeHa = areaM2 / 10000;
 
+        // Punkte erst beim Speichern leeren (store.createElement → werkzeugBeenden):
+        // bricht man das Anlegen-Fenster ab, bleibt die gezeichnete Fläche stehen
         emit('create-area', { points, size: sizeHa });
-        store.resetDrawing();
     }
 };
 

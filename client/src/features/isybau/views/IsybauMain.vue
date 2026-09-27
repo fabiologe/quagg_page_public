@@ -99,7 +99,7 @@
 
     <!-- Validation Warnings Toast -->
     <Transition name="slide-up">
-        <div v-if="warningToast.show" class="warning-toast">
+        <div v-if="warningToast.show" class="warning-toast" :class="{ 'warning-toast--oben': ratteSpricht }">
             <div class="toast-header">
                 <span class="warning-icon">⚠️</span>
                 <strong>Datenvalidierung: Standardwerte verwendet</strong>
@@ -144,6 +144,7 @@ import IsybauViewer3D from '../components/visualizer/IsybauViewer3D.vue';
 // Modals + deren Verdrahtung leben zentral in IsybauModals.vue (store.ui.*)
 import IsybauModals from '../components/modals/IsybauModals.vue';
 import TutorialMascot from '../tutorial/TutorialMascot.vue';
+import { useTutorialGuide } from '../tutorial/useTutorialGuide.js';
 import '../styles/theme.css';
 
 const store = useIsybauStore();
@@ -200,8 +201,8 @@ const handleSplitEdge = (payload) => {
     const coords = payload.coords || null;
 
     store.splitEdgeWithNode(edgeId, coords);
-    // Switch back to view mode to prevent accidental subsequent clics
-    store.editor.mode = 'select';
+    // Werkzeug nach dem Schreiben beenden — wie nach jedem Anlegen (store.werkzeugBeenden)
+    store.werkzeugBeenden();
 };
 
 // „Ergebnisse anzeigen" aus dem Viewer-Popup: nur das Modal öffnen.
@@ -215,6 +216,11 @@ const handleShowDetails = () => {
 
 // --- Validation Warnings Toast ---
 const warningToast = ref({ show: false, messages: [] });
+// Der Übungsstart lädt ein Netz mit drei Profilen der Höhe 0 — der Import-
+// Bericht erscheint also bei JEDER Übung, und zwar unten rechts genau über der
+// Sprechblase (gemessen 2026-09-27). Solange die Ratte spricht: nach oben.
+const { activeStep: ratteSchritt } = useTutorialGuide();
+const ratteSpricht = computed(() => !!ratteSchritt.value);
 import rainGif from '../components/visualizer/raining-14436.gif';
 
 const showRainOverlay = ref(false);
@@ -472,6 +478,13 @@ watch(() => store.ui.importWarnings, (msgs) => {
     z-index: calc(var(--isy-z-top) + 1);
     font-size: var(--isy-fs-lg);
     color: var(--isy-toast-text);
+}
+/* unter der Kanaltyp-Legende statt über der Sprechblase */
+.warning-toast--oben {
+    bottom: auto;
+    top: 150px; /* Legende samt Koordinatenzeile endet bei ~138 px */
+    /* unter den Fenstern: sonst deckt er in der Übung die Datenmaske zu */
+    z-index: calc(var(--isy-z-panel) + 1);
 }
 
 .toast-header {

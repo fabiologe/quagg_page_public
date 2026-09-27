@@ -42,6 +42,7 @@
  */
 
 import { loadTutorialDgm } from './loadTutorialDgm.js';
+import { checkConduitProfile } from '../utils/preSolveValidation.js';
 
 // ── Hilfen: Store-Zugriff robust gegen Map/Array/Objekt ──────────────────────
 export const toArray = (collection) => {
@@ -187,6 +188,24 @@ export const allAreasHaveSlope = (store) => {
 };
 
 /** Alle genannten Knoten sind Auslaufbauwerke (Bauwerkstyp 5). */
+/** Der letzte Lauf wurde von der Vorab-Prüfung wegen eines Profils mit
+ *  Fläche 0 gestoppt (ERR_119, utils/preSolveValidation.js). */
+export const profilFehlerGemeldet = (store) =>
+    store?.simulation?.status === 'error' && store?.simulation?.fehlerCode === 'ERR_119';
+
+/** Keine Haltung mehr mit Höhe/Breite 0 — dieselbe Regel wie die Vorab-Prüfung. */
+export const alleProfileGueltig = (store) => {
+    const edges = toArray(store?.edges);
+    return edges.length > 0 && edges.every(e => !checkConduitProfile(e));
+};
+
+/** Neu gerechnet, und diesmal NICHT am Profil gescheitert: Erfolg oder ein
+ *  anderer Fehler (den übernimmt dann die Fehlerübergabe). Der alte Stand
+ *  „error + ERR_119“ steht noch im Store, bis neu gerechnet wird. */
+export const nachProfilGerechnet = (store) =>
+    store?.simulation?.status === 'success'
+    || (store?.simulation?.status === 'error' && store?.simulation?.fehlerCode !== 'ERR_119');
+
 export const nodesAreOutfalls = (store, ids = []) =>
     ids.length > 0 && ids.every(id => {
         const n = getNode(store, id);
@@ -206,7 +225,7 @@ export const EXERCISE_STEPS = [
         info: 'swmm-ueberblick',
         message:
             'Willkommen in meiner Werkstatt, Kanaltaucher! Ich hab dir ein Netz mitgebracht — da fehlen noch ein paar Sachen. '
-            + 'Die ergaenzen wir jetzt zusammen, Schritt fuer Schritt.',
+            + 'Die ergänzen wir jetzt zusammen, Schritt für Schritt.',
         // Reiner Begruessungsschritt: kein check -> [Weiter] schaltet weiter.
     },
 
@@ -219,26 +238,26 @@ export const EXERCISE_STEPS = [
         highlight: 'viewer-map',
         message:
             'Das hier ist deine Baustelle: die Karte. Jeder Punkt ist ein Schacht, jede Linie eine Haltung, '
-            + 'und jede Flaeche ein Stueck Land, von dem Regen in den Kanal laeuft. '
-            + 'Das Raster im Hintergrund ist dein Massstab — ein Kaestchen ist ein Meter.',
+            + 'und jede Fläche ein Stück Land, von dem Regen in den Kanal läuft. '
+            + 'Das Raster im Hintergrund ist dein Maßstab — ein Kästchen ist ein Meter.',
     },
     {
         id: 'ex-tour-controls',
         mood: 'asking',
         highlight: 'viewer-controls',
         message:
-            'Unten links liegt die Ansichts-Leiste. Dort schaltest du zwischen Ziehen und Auswaehlen um, '
-            + 'stellst das Raster ein und legst die EZG-Karte mit Luftbild und Hoehenlinien unter das Netz. '
-            + 'Verirrt? Der Rundpfeil holt die Ansicht zurueck aufs ganze Netz.',
+            'Unten links liegt die Ansichts-Leiste. Dort schaltest du zwischen Ziehen und Auswählen um, '
+            + 'stellst das Raster ein und legst die EZG-Karte mit Luftbild und Höhenlinien unter das Netz. '
+            + 'Verirrt? Der Rundpfeil holt die Ansicht zurück aufs ganze Netz.',
     },
     {
         id: 'ex-tour-toolbox',
         mood: 'happy',
         highlight: 'editor-toolbox',
         message:
-            'Oben in der Mitte haengt das Werkzeug. Damit setzt du Schaechte, ziehst Haltungen, '
-            + 'zeichnest Flaechen, teilst eine Leitung oder loeschst, was zu viel ist. '
-            + 'Ein Klick auf dasselbe Werkzeug legt es wieder weg.',
+            'Oben in der Mitte hängt das Werkzeug. Damit setzt du Schächte, ziehst Haltungen, '
+            + 'zeichnest Flächen, teilst eine Leitung oder löschst, was zu viel ist. '
+            + 'Nach dem Speichern legt sich ein Werkzeug von selbst weg.',
     },
     {
         id: 'ex-tour-sidebar',
@@ -246,7 +265,7 @@ export const EXERCISE_STEPS = [
         highlight: 'sidebar',
         message:
             'Und links ist die Kommandozentrale. Die gehen wir jetzt von oben nach unten durch — '
-            + 'Knopf fuer Knopf, damit du spaeter weisst, wo du greifen musst.',
+            + 'Knopf für Knopf, damit du später weißt, wo du greifen musst.',
     },
 
     // ── Kommandozentrale, Knopf fuer Knopf ──────────────────────────────────
@@ -260,8 +279,8 @@ export const EXERCISE_STEPS = [
         highlight: 'xml-import',
         info: 'isybau-xml',
         message:
-            '"XML importieren": So kommt ein fertiges Kanalnetz herein — eine ISYBAU-XML, wie sie dir '
-            + 'ein Vermesser oder die Kommune gibt. Dein Uebungsnetz ist genau so hereingekommen.',
+            '„XML importieren“: So kommt ein fertiges Kanalnetz herein — eine ISYBAU-XML, wie sie dir '
+            + 'ein Vermesser oder die Kommune gibt. Dein Übungsnetz ist genau so hereingekommen.',
     },
     {
         id: 'ex-tour-dgm',
@@ -269,9 +288,9 @@ export const EXERCISE_STEPS = [
         highlight: 'dgm-import',
         info: 'dgm-gelaende',
         message:
-            '"Gelaende (DGM) laden": Das ist die Hoehenkarte des Bodens. Damit weiss ich, wie das Land liegt — '
-            + 'ich kann dir dann Deckelhoehen vorschlagen und die Neigung deiner Flaechen ausrechnen. '
-            + 'Ich hab uns schon eins besorgt, vom Geoportal Rheinland-Pfalz, genau ueber unserem Netz. Soll ich?',
+            '„Gelände (DGM) laden“: Das ist die Höhenkarte des Bodens. Damit weiß ich, wie das Land liegt — '
+            + 'ich kann dir dann Deckelhöhen vorschlagen und die Neigung deiner Flächen ausrechnen. '
+            + 'Ich hab uns schon eins besorgt, vom Geoportal Rheinland-Pfalz, genau über unserem Netz. Soll ich?',
         action: {
             label: 'DGM laden',
             run: (store) => loadTutorialDgm(store),
@@ -288,9 +307,9 @@ export const EXERCISE_STEPS = [
         highlight: 'dgm-importieren',
         info: 'dgm-gelaende',
         message:
-            'Da ist die Rueckfrage: wie fein soll das Hoehenraster werden? Die Punkte liegen 5 m auseinander, '
-            + 'aber nicht lueckenlos — deshalb schlage ich 10 m vor, das fuellt die Loecher sauber auf. '
-            + 'Lass einfach alles so, wie es ist, und klick auf "Importieren".',
+            'Da ist die Rückfrage: wie fein soll das Höhenraster werden? Die Punkte liegen 5 m auseinander, '
+            + 'aber nicht lückenlos — deshalb schlage ich 10 m vor, das füllt die Löcher sauber auf. '
+            + 'Lass einfach alles so, wie es ist, und klick auf „Importieren“.',
         hint: 'Feiner ist nicht besser: unter dem Punktabstand erfindet die Rasterung nur Zwischenwerte.',
         optional: true,
         // Nur zeigen, wenn die Rueckfrage wirklich offen steht — wer das
@@ -303,9 +322,9 @@ export const EXERCISE_STEPS = [
         id: 'ex-tour-dgm-fertig',
         mood: 'happy',
         message:
-            'Geschafft — das Gelaende liegt jetzt unter dem Netz. Ein ehrlicher Hinweis: dieser Kartenausschnitt '
-            + 'deckt rund 87 % unseres Netzes ab, im Norden fehlt ein Streifen. Wo keine Hoehe da ist, kann ich '
-            + 'auch nichts vorschlagen — das gehoert zum Handwerk dazu.',
+            'Geschafft — das Gelände liegt jetzt unter dem Netz. Ein ehrlicher Hinweis: dieser Kartenausschnitt '
+            + 'deckt rund 87 % unseres Netzes ab, im Norden fehlt ein Streifen. Wo keine Höhe da ist, kann ich '
+            + 'auch nichts vorschlagen — das gehört zum Handwerk dazu.',
         requires: (store) => !!store?.terrain,
     },
     {
@@ -313,8 +332,8 @@ export const EXERCISE_STEPS = [
         mood: 'happy',
         highlight: 'projekte',
         message:
-            '"Projekte": Dein Speicherfach. Hier legst du den aktuellen Stand ab und holst ihn spaeter zurueck — '
-            + 'praktisch, bevor du etwas Groesseres ausprobierst.',
+            '„Projekte“: Dein Speicherfach. Hier legst du den aktuellen Stand ab und holst ihn später zurück — '
+            + 'praktisch, bevor du etwas Größeres ausprobierst.',
     },
     {
         id: 'ex-tour-neu-starten',
@@ -322,8 +341,8 @@ export const EXERCISE_STEPS = [
         highlight: 'neu-starten',
         info: 'standort-georeferenz',
         message:
-            '"Neu starten": Wenn du OHNE fertige Datei anfangen willst. Du waehlst zuerst einen Ort auf der Welt, '
-            + 'dann legen sich Luftbild und Hoehenlinien passend darunter und du zeichnest dein Netz von Hand.',
+            '„Neu starten“: Wenn du OHNE fertige Datei anfangen willst. Du wählst zuerst einen Ort auf der Welt, '
+            + 'dann legen sich Luftbild und Höhenlinien passend darunter und du zeichnest dein Netz von Hand.',
     },
     {
         id: 'ex-tour-xml-export',
@@ -331,17 +350,17 @@ export const EXERCISE_STEPS = [
         highlight: 'xml-export',
         info: 'isybau-xml',
         message:
-            '"XML exportieren": der Rueckweg. Dein bearbeitetes Netz wandert wieder als ISYBAU-XML hinaus — '
-            + 'die kannst du weitergeben oder in einem anderen Programm oeffnen. Was in so einer '
-            + 'Datei steht und wer sich das ausgedacht hat, erklaert [Mehr dazu].',
+            '„XML exportieren“: der Rückweg. Dein bearbeitetes Netz wandert wieder als ISYBAU-XML hinaus — '
+            + 'die kannst du weitergeben oder in einem anderen Programm öffnen. Was in so einer '
+            + 'Datei steht und wer sich das ausgedacht hat, erklärt [Mehr dazu].',
     },
     {
         id: 'ex-tour-stats',
         mood: 'happy',
         highlight: 'netz-stats',
         message:
-            'Diese Zeile ist dein Kassensturz: wie viele Schaechte, Haltungen und Flaechen gerade im Netz stecken. '
-            + 'Wenn du gleich etwas dazubaust, kannst du hier zuschauen, wie die Zahl waechst.',
+            'Diese Zeile ist dein Kassensturz: wie viele Knoten, Haltungen und Flächen gerade im Netz stecken. '
+            + 'Knoten sind Schächte und Bauwerke zusammen. Baust du gleich etwas dazu, wächst hier die Zahl.',
     },
     {
         id: 'ex-tour-rain',
@@ -349,32 +368,34 @@ export const EXERCISE_STEPS = [
         highlight: 'rain-config',
         info: 'bemessungsregen',
         message:
-            'Jetzt der Regen — ohne den passiert naemlich gar nichts. "Modellregen" baut dir einen kuenstlichen '
-            + 'Regen nach Lehrbuch, "KOSTRA" holt echte Statistikwerte fuer deine Koordinaten vom Deutschen Wetterdienst.',
+            'Jetzt der Regen — ohne den passiert nämlich gar nichts. „Modellregen“ baut dir einen künstlichen '
+            + 'Regen nach Lehrbuch, „KOSTRA“ holt echte Statistikwerte für deine Koordinaten vom Deutschen Wetterdienst.',
     },
     {
         id: 'ex-tour-daten',
         mood: 'asking',
         highlight: 'daten-bearbeiten',
         message:
-            '"Daten bearbeiten" oeffnet die grosse Tabelle. Dort siehst du alle Schaechte, Haltungen und Flaechen '
-            + 'untereinander und kannst viele auf einmal aendern — schneller als jeden einzeln auf der Karte anzuklicken.',
+            '„Daten bearbeiten“ öffnet die große Tabelle. Dort siehst du alle Schächte, Haltungen und Flächen '
+            + 'untereinander und kannst viele auf einmal ändern — schneller als jeden einzeln auf der Karte anzuklicken.',
     },
     {
         id: 'ex-tour-validieren',
         mood: 'asking',
         highlight: 'abfluss-validieren',
         message:
-            '"Abfluss validieren" ist mein Spuersinn: Ich schaue vorher ueber deine Flaechen und melde, was unplausibel '
-            + 'aussieht — ein fehlender Beiwert, eine Flaeche ohne Anschluss. Lieber hier stolpern als mitten in der Rechnung.',
+            '„Abfluss validieren“ klingt nach Prüfung — drück ruhig mal, er hat eine eigene Meinung dazu. '
+            + 'Die echte Prüfung läuft ohnehin von selbst: Vor jeder Berechnung schaue ich über dein Netz '
+            + 'und halte an, wenn etwas nicht rechenbar ist.',
     },
     {
         id: 'ex-tour-dauer',
         mood: 'happy',
-        highlight: 'sim-dauer',
+        highlight: ['sim-dauer', 'ueberstauverfahren'],
         message:
-            'Die Simulationsdauer sagt, wie lange wir das Netz beobachten. Der Regen ist meist nach kurzer Zeit vorbei, '
-            + 'aber das Wasser braucht noch, bis es durch ist — deshalb rechnet man laenger als es regnet.',
+            'Die Simulationsdauer sagt, wie lange wir das Netz beobachten — länger, als es regnet, weil das '
+            + 'Wasser danach noch unterwegs ist. Darunter das „Überstauverfahren“: wie gerechnet wird, wenn '
+            + 'Rohre voll laufen. „Automatisch“ passt fast immer.',
     },
     {
         id: 'ex-tour-run',
@@ -382,8 +403,9 @@ export const EXERCISE_STEPS = [
         highlight: 'run-simulation',
         info: 'dynamic-wave',
         message:
-            '"Berechnung starten" — der grosse rote Knopf. Damit rechnet der SWMM-Solver direkt hier im Browser durch, '
-            + 'Zeitschritt fuer Zeitschritt, wie sich das Wasser durch dein Netz schiebt.',
+            '„Berechnung starten“ — der große Knopf darunter. Damit rechnet SWMM direkt hier im Browser, '
+            + 'Zeitschritt für Zeitschritt, wie sich das Wasser durch dein Netz schiebt. Dauert es zu lange, '
+            + 'hält „Abbrechen“ die Rechnung an.',
     },
     {
         id: 'ex-tour-ansicht',
@@ -391,27 +413,35 @@ export const EXERCISE_STEPS = [
         highlight: 'ansicht-nav',
         message:
             'Ganz unten schaltest du die Ansicht um: der 2D-Editor zum Bauen, die 3D-Ansicht zum Anschauen. '
-            + 'Sobald gerechnet ist, kommen hier zwei weitere Knoepfe fuer die Ergebnisse dazu.',
+            + 'Sobald gerechnet ist, kommen hier zwei weitere Knöpfe für die Ergebnisse dazu.',
     },
     {
         id: 'ex-tour-theme',
         mood: 'surprised',
         highlight: 'theme-toggle',
         message:
-            'Und der Knopf ganz unten links macht das Licht aus. Wir Ratten moegen es ja dunkel — '
+            'Und der Knopf ganz unten links macht das Licht aus. Wir Ratten mögen es ja dunkel — '
             + 'aber probier ruhig, was deinen Augen besser passt. So, jetzt kennst du den Laden. Packen wir an!',
     },
     {
         id: 'ex-add-area',
         mood: 'asking',
         info: 'netzmodell',
-        highlight: 'editor-toolbox',
+        // Wandert mit dem Zeichnen: erst das m²-Werkzeug; beim Zeichnen nichts
+        // (der Rahmen laege sonst ueber der Karte); ab drei Punkten der Knopf
+        // "Flaeche abschliessen", den viele sonst uebersehen.
+        highlight: (store) => {
+            const punkte = store?.editor?.drawingPoints?.length ?? 0;
+            if (punkte >= 3) return 'flaeche-abschliessen';
+            if (store?.editor?.mode === 'addArea') return null;
+            return 'werkzeug-flaeche';
+        },
         task: 'Zeichne das fehlende Einzugsgebiet ein.',
         message:
-            'Schau mal: Ein Stueck Wiese fehlt noch — da faellt Regen hin, aber er kommt nirgends an. '
-            + 'Ich hab dir den Umriss hingemalt: drei Punkte, die Reihenfolge steht dran. '
-            + 'Nimm das Flaechen-Werkzeug und fahr ihn nach — Doppelklick schliesst die Flaeche.',
-        hint: 'Werkzeugleiste oben: das Symbol mit m². Der gruene Umriss zeigt, wo — genau treffen musst du nicht.',
+            'Schau mal: Ein Stück Wiese fehlt noch — da fällt Regen hin, aber er kommt nirgends an. '
+            + 'Ich hab dir den Umriss hingemalt, die Nummern zeigen die Reihenfolge. '
+            + 'Nimm das m²-Werkzeug, klick die drei Punkte nach und dann „✓ Fläche abschließen“.',
+        hint: 'Werkzeugleiste oben: das Symbol mit m². Der grüne Umriss zeigt, wo — genau treffen musst du nicht.',
         // Geisterumriss + Kamerafahrt dorthin (siehe composables/useDrawingHint.js).
         draw: TUTORIAL_AREA_POINTS,
         // Fertig gezeichnet = der Erstellen-Dialog steht. Die Flaeche selbst
@@ -427,12 +457,10 @@ export const EXERCISE_STEPS = [
         // sagte die Ratte "Befestigungsgrad" — ein Wort, das nirgends auf dem
         // Bildschirm stand: die Testleserin fand das Feld deshalb nicht.
         message:
-            'Gut gezeichnet! Das Formular fragt jetzt nach dem "Versiegelungsgrad" — das Feld '
-            + 'gleich unter der Groesse. Der Wert sagt, welcher Anteil des Regens von dieser '
-            + 'Flaeche ueberhaupt im Kanal ankommt: 1 waere ein Dach, von dem alles ablaeuft, '
-            + '0 ein Boden, der alles schluckt.\n\n'
-            + 'Wir haben hier Wiese — trag 0.2 ein. Also: 20 % laufen ab, der Rest versickert.',
-        hint: 'Zweites Feld von oben, "Versiegelungsgrad (0.0 - 1.0)": 0.2 eintragen.',
+            'Gut gezeichnet! Jetzt der „Versiegelungsgrad ψ“ unter der Größe: welcher Anteil des '
+            + 'Regens im Kanal ankommt. 1 ist ein Dach, 0 ein Boden, der alles schluckt.\n\n'
+            + 'Unsere Wiese: trag 0,2 ein — 20 % laufen ab, der Rest versickert.',
+        hint: 'Feld „Versiegelungsgrad ψ (0.0 - 1.0)“: 0,2 eintragen.',
         // Nur sinnvoll, solange der Dialog steht — bricht der Nutzer ab, wird
         // dieser Schritt uebersprungen statt ins Leere zu zeigen.
         requires: areaModalOpen,
@@ -446,11 +474,12 @@ export const EXERCISE_STEPS = [
         mood: 'asking',
         info: 'flaechenanschluss',
         highlight: 'area-auslass',
-        task: 'Haenge die Flaeche an die Haltung R_019.',
+        task: 'Hänge die Fläche an die Haltung R_019.',
         message:
-            'Und zuletzt: wohin laeuft das Wasser? Du kannst eine Flaeche an einen Schacht haengen '
-            + 'oder an eine ganze Haltung — hier nimm die Haltung R_019. Dann speichern.',
-        hint: 'Auslass -> "Haltung" anklicken -> R_019 aus der Liste -> Speichern.',
+            'Und zuletzt: Wohin läuft das Wasser? Eine Fläche hängt an einem Knoten oder an einer '
+            + 'ganzen Haltung — hier nimm die Haltung R_019. Dann „Speichern“; das Werkzeug legt sich '
+            + 'danach von selbst weg.',
+        hint: 'Auslass → „Haltung“ anklicken → R_019 aus der Liste → „Speichern“.',
         // Bewusst OHNE `requires`: hier zaehlt der Endzustand, nicht der offene
         // Dialog. Waere der Dialog Bedingung, wuerde der Schritt beim Speichern
         // mit falschem Anschluss stillschweigend uebersprungen — der Nutzer
@@ -470,15 +499,13 @@ export const EXERCISE_STEPS = [
         id: 'ex-runoff-coeff',
         mood: 'asking',
         info: 'befestigungsgrad',
-        task: 'Gib jeder Flaeche einen Versiegelungsgrad.',
+        task: 'Gib jeder Fläche einen Versiegelungsgrad.',
         message:
-            'Die uebrigen Flaechen im Netz haben noch keinen Wert. Das machst du nicht einzeln '
-            + 'auf der Karte, sondern in der Tabelle: "Daten bearbeiten" oeffnen, Reiter '
-            + '"Flaechen", Spalte "Versiegelungsgrad". Eine Zeile je Flaeche, eine Zahl je Zeile.\n\n'
-            + 'Faustwerte: Dach oder Asphalt 0.9 — Pflaster mit Fugen 0.6 — Schotter 0.4 — '
-            + 'Wiese 0.1. Beispiel: ein Grundstueck, halb Dach und halb Rasen, liegt bei rund 0.5.',
-        hint: 'Daten bearbeiten -> Reiter "Flaechen" -> Spalte "Versiegelungsgrad (0-1)". '
-            + 'Mehrere Zeilen anhaken und "Bearbeiten" setzt den Wert fuer alle auf einmal.',
+            'Die übrigen Flächen haben noch keinen Wert. Das geht schneller in der Tabelle: '
+            + '„Daten bearbeiten“, Reiter „Flächen“, Spalte „Versiegelungsgrad ψ“ — dann „Übernehmen“.\n\n'
+            + 'Faustwerte: Dach/Asphalt 0,9 · Pflaster 0,6 · Schotter 0,4 · Wiese 0,1.',
+        hint: 'Mehrere Zeilen anhaken und „✎ Bearbeiten“ setzt den Wert für alle auf einmal. '
+            + 'Halb Dach, halb Rasen liegt bei rund 0,5.',
         // Wandert mit: solange das Fenster zu ist, leuchtet der Knopf, der es
         // oeffnet; danach der Reiter bzw. die Spalte selbst (siehe
         // resolveStepHighlight — der Anker darf vom Zustand abhaengen).
@@ -494,16 +521,13 @@ export const EXERCISE_STEPS = [
         id: 'ex-slope',
         mood: 'asking',
         info: 'neigungsklasse',
-        task: 'Ergaenze die fehlenden Neigungsklassen.',
+        task: 'Ergänze die fehlenden Neigungsklassen.',
         message:
-            'Fehlt noch die Neigung. Sie entscheidet, wie schnell das Wasser unten ankommt: auf '
-            + 'einer ebenen Wiese sickert es in Ruhe weg, am Hang steht es sofort im Kanal.\n\n'
-            + 'Statt eines Winkels gibt ISYBAU fuenf Stufen vor: 1 ist fast eben (bis 1 %), '
-            + '2 leicht geneigt (bis 4 %), 3 eine merkliche Boeschung (bis 10 %), 4 steil '
-            + '(bis 14 %), 5 sehr steil. Dieselbe Tabelle wie eben, Spalte "Neigungsklasse". '
-            + 'Beispiel: unsere Wiese in ebener Ortslage — Klasse 1 oder 2.',
-        hint: 'Daten bearbeiten -> Reiter "Flaechen" -> Spalte "Neigungsklasse". Ist ein '
-            + 'Gelaendemodell geladen, rechnet der Knopf mit dem Hirn daneben die Stufe aus.',
+            'Fehlt noch die Neigung: Am Hang ist das Wasser schneller im Kanal als auf ebener Wiese.\n\n'
+            + 'ISYBAU kennt fünf Stufen: 1 fast eben (bis 1 %), 2 leicht (bis 4 %), 3 merklich '
+            + '(bis 10 %), 4 steil (bis 14 %), 5 sehr steil. Gleiche Tabelle, Spalte „Neigungsklasse“ '
+            + '— unsere Wiese: 1 oder 2. Dann „Übernehmen“.',
+        hint: 'Ist ein Geländemodell geladen, rechnet der Knopf mit dem Hirn in der Zeile die Stufe aus.',
         highlight: (store) => {
             if (!store?.ui?.showPreprocessingModal) return 'daten-bearbeiten';
             return store?.ui?.preprocessingTab === 'areas'
@@ -518,23 +542,24 @@ export const EXERCISE_STEPS = [
         info: 'auslaufbauwerk',
         highlight: 'daten-bearbeiten',
         message:
-            'Zum Schluss die Auslaesse. AL1_RBB und AL2_RRB stehen noch als normale Schaechte im Netz — '
-            + 'so weiss der Rechner nicht, wo das Wasser das System ueberhaupt verlaesst. '
-            + 'Zwei Elemente auf einmal aendert man am besten in der Datenbearbeitung. Mach sie auf — '
-            + 'der Reiter "Schaechte" ist schon der richtige.',
-        hint: '"Daten bearbeiten" in der Kommandoleiste.',
+            'Zum Schluss die Auslässe. AL1_RBB und AL2_RRB stehen noch als normale Schächte im Netz — '
+            + 'so weiß der Rechner nicht, wo das Wasser das System verlässt. Zwei Elemente auf einmal '
+            + 'änderst du am besten in „Daten bearbeiten“. Mach es auf.',
+        hint: '„Daten bearbeiten“ in der linken Leiste.',
         optional: true,
         check: (store) => store?.ui?.showPreprocessingModal === true,
     },
     {
         id: 'ex-outfalls-suchen',
         mood: 'asking',
-        highlight: 'preprocessing-suche',
+        // Die Datenmaske merkt sich den Reiter — nach den Flächen-Aufgaben
+        // steht sie auf „Flächen“, das Suchfeld der Schächte gibt es dann nicht.
+        highlight: (store) => (store?.ui?.preprocessingTab === 'nodes' ? 'preprocessing-suche' : 'preprocessing-tabs'),
         message:
-            'Du stehst im Reiter "Schaechte" — da sind die beiden noch drin. Tipp ins Suchfeld ueber '
-            + 'der ID-Spalte "AL", dann bleiben genau zwei Zeilen uebrig.\n\n'
-            + 'Hak beide an: das Kaestchen ganz links in der Zeile.',
-        hint: 'Die Suche filtert waehrend des Tippens. Haekchen ganz links, in beiden Zeilen.',
+            'Die beiden stehen im Reiter „Schächte“. Tipp dort ins Suchfeld über der ID-Spalte „AL“, '
+            + 'dann bleiben genau zwei Zeilen übrig.\n\n'
+            + 'Hak beide an: das Kästchen ganz links in der Zeile.',
+        hint: 'Die Suche filtert während des Tippens. Häkchen ganz links, in beiden Zeilen.',
         requires: (store) => store?.ui?.showPreprocessingModal === true,
         // Weiter, sobald zwei Zeilen angehakt sind — der Nutzer muss nicht
         // zusaetzlich [Weiter] druecken, wenn er die Sache schon getan hat.
@@ -563,13 +588,13 @@ export const EXERCISE_STEPS = [
             return 'preprocessing-suche';
         },
         message:
-            'Ueber der Tabelle steht jetzt "2 ausgewaehlt". Klick daneben auf "Bearbeiten" — das '
-            + 'Fenster fuer beide auf einmal.\n\n'
-            + 'Dort oben "Typ aendern" auf "Auslaufbauwerk" stellen und "Anwenden" druecken. Das '
-            + 'geht in EINEM Zug: du musst nicht erst auf "Bauwerk" und dann in den anderen Reiter.',
-        hint: '2 ausgewaehlt -> Bearbeiten -> Typ aendern -> Auslaufbauwerk -> Anwenden. '
-            + 'Danach sind die beiden aus dem Schacht-Reiter verschwunden — sie stehen jetzt unter '
-            + '"Bauwerke", und genau das soll so sein.',
+            'Über der Tabelle steht jetzt „2 ausgewählt“. Klick daneben auf „✎ Bearbeiten“ — das '
+            + 'Fenster für beide auf einmal.\n\n'
+            + 'Dort „Typ ändern“ auf „Auslaufbauwerk“ stellen und „Anwenden“ drücken. Das geht in '
+            + 'EINEM Zug: Du musst nicht erst auf „Bauwerk“ und dann in den anderen Reiter.',
+        hint: '2 ausgewählt → ✎ Bearbeiten → Typ ändern → Auslaufbauwerk → Anwenden. '
+            + 'Danach stehen die beiden nicht mehr unter „Schächte“, sondern unter „Bauwerke“ — '
+            + 'genau so soll es sein.',
         requires: (store) => store?.ui?.showPreprocessingModal === true,
     },
     {
@@ -582,9 +607,9 @@ export const EXERCISE_STEPS = [
             : 'daten-bearbeiten'),
         task: 'Mach AL1_RBB und AL2_RRB zu Auslaufbauwerken.',
         message:
-            'Und nicht vergessen: "Uebernehmen" druecken. Bis dahin sind deine Aenderungen nur vorgemerkt '
-            + 'und waeren beim Schliessen wieder weg.',
-        hint: 'Der gruene Knopf unten rechts im Fenster.',
+            'Und nicht vergessen: „Übernehmen“ drücken. Bis dahin sind deine Änderungen nur vorgemerkt — '
+            + 'wer vorher schließt, wird gefragt, ob er sie verwerfen will.',
+        hint: 'Der Knopf „Übernehmen“ unten rechts im Fenster.',
         // Bewusst OHNE `requires`: es zaehlt der Endzustand. Waere das offene
         // Fenster Bedingung, wuerde der Schritt beim Schliessen ohne
         // Uebernehmen stillschweigend uebersprungen.
@@ -595,8 +620,8 @@ export const EXERCISE_STEPS = [
         mood: 'asking',
         highlight: ['rain-config', 'kostra-oeffnen'],
         message:
-            'Das Netz steht — jetzt fehlt nur noch der Regen. Wie stark es bei uns schuettet, steht nicht '
-            + 'im Netz, sondern im KOSTRA-Atlas des Deutschen Wetterdienstes: Regenmengen fuer jeden '
+            'Das Netz steht — jetzt fehlt nur noch der Regen. Wie stark es bei uns schüttet, steht nicht '
+            + 'im Netz, sondern im KOSTRA-Atlas des Deutschen Wetterdienstes: Regenmengen für jeden '
             + 'Punkt in Deutschland, nach Dauer und Wiederkehrzeit. Mach das KOSTRA-Fenster auf.',
         hint: 'Regendaten -> KOSTRA.',
         optional: true,
@@ -608,8 +633,8 @@ export const EXERCISE_STEPS = [
         highlight: 'kostra-abrufen',
         message:
             'Deine Netzmitte ist schon eingetragen — ich brauch nur noch das passende Koordinatensystem, '
-            + 'dann hol ich die Werte fuer genau diesen Ort. Druck auf "Daten abrufen".',
-        hint: 'Ohne Ergebnis gibt es unten noch nichts zu uebernehmen — erst abrufen.',
+            + 'dann hol ich die Werte für genau diesen Ort. Druck auf „Daten abrufen“.',
+        hint: 'Ohne Ergebnis gibt es unten noch nichts zu übernehmen — erst abrufen.',
         requires: (store) => store?.ui?.showKostraModal === true,
         optional: true,
         // Ergebnis da ODER schon uebernommen: wer schnell klickt, wird nicht
@@ -627,12 +652,13 @@ export const EXERCISE_STEPS = [
         // Wie bei den Auslaessen: ohne offenes Fenster gibt es keinen
         // "Uebernehmen"-Knopf — dann zeigt die Ratte auf den Weg dorthin.
         highlight: (store) => (store?.ui?.showKostraModal ? 'kostra-uebernehmen' : 'kostra-oeffnen'),
-        task: 'Uebernimm einen KOSTRA-Regen.',
+        task: 'Übernimm einen KOSTRA-Regen.',
         message:
-            'Da sind sie. Such dir eine Zeile aus — fuer eine normale Bemessung nimmt man gern 5 Minuten '
-            + 'Dauer bei einer Wiederkehrzeit von 1 Jahr. Dann "Uebernehmen" — daraus wird ein Blockregen: '
-            + 'diese Intensitaet, gleichmaessig ueber die ganze Dauer.',
-        hint: 'Kurz und heftig oder lang und sanft: kurze Dauern belasten kleine Rohre, lange die grossen.',
+            'Da sind sie. Vorausgewählt sind 15 Minuten Dauer bei 1 Jahr Wiederkehrzeit — für eine erste '
+            + 'Rechnung genau richtig. „Übernehmen“ macht daraus einen Blockregen: diese Stärke, '
+            + 'gleichmäßig über die ganze Dauer.',
+        hint: 'Eine andere Zeile? „Detaillierte Datentabelle anzeigen“ klappt die Tabelle auf. '
+            + 'Kurze Dauern belasten kleine Rohre, lange die großen.',
         // Bewusst OHNE `requires`: es zaehlt, dass der Regen wirklich gesetzt
         // ist. Waere das offene Fenster Bedingung, wuerde der Schritt beim
         // Schliessen ohne Uebernehmen stillschweigend uebersprungen.
@@ -649,13 +675,12 @@ export const EXERCISE_STEPS = [
             : ['rain-config', 'modellregen-oeffnen']),
         task: 'Mach aus den KOSTRA-Werten einen Modellregen: 3 Jahre, 15 Minuten.',
         message:
-            'Dein Blockregen regnet von der ersten bis zur letzten Minute gleich stark. Ein echter '
-            + 'Regen faengt aber klein an, wird heftig und klingt wieder aus — und die kurze Spitze '
-            + 'ist es, die ein Rohr ueberlastet. Diesen Verlauf baut der Modellregen.\n\n'
-            + 'Mach "Modellregen" auf und nimm "Euler Typ II" — das ist jetzt waehlbar, weil die '
-            + 'KOSTRA-Werte da sind. Dauer 15 Minuten, Wiederkehrzeit 3 Jahre. Dann uebernehmen.',
-        hint: 'Regendaten -> Modellregen -> Euler Typ II -> Dauer 15 -> Wiederkehrzeit "3 Jahre" '
-            + '-> Uebernehmen. Die Vorschau daneben zeigt den Verlauf, den du baust.',
+            'Dein Blockregen regnet von Anfang bis Ende gleich stark. Ein echter Regen fängt klein an, '
+            + 'wird heftig und klingt aus — und die Spitze ist es, die ein Rohr überlastet.\n\n'
+            + 'Mach „Modellregen“ auf und nimm „Euler Typ II“ (geht jetzt, weil die KOSTRA-Werte da sind): '
+            + 'Dauer 15 Minuten, Wiederkehrzeit 3 Jahre, dann „Übernehmen“.',
+        hint: 'Regendaten → Modellregen → Euler Typ II → Dauer 15 → Wiederkehrzeit „3 Jahre“ '
+            + '→ Übernehmen. Die Vorschau daneben zeigt den Verlauf, den du baust.',
         // Wie bei KOSTRA bewusst OHNE `requires`: es zaehlt, dass der Regen am
         // Ende steht — nicht, ob das Fenster gerade offen ist.
         check: modelRainApplied,
@@ -668,8 +693,55 @@ export const EXERCISE_STEPS = [
         message:
             'Das Netz steht, der Regen hat einen Verlauf. Jetzt lass rechnen — und dann schauen wir '
             + 'zusammen, was das Modell dazu sagt.',
-        hint: 'Das dauert ein paar Sekunden. Der Rechner geht das Netz Zeitschritt fuer Zeitschritt durch.',
+        hint: 'Das dauert ein paar Sekunden. Der Rechner geht das Netz Zeitschritt für Zeitschritt durch.',
         check: simulationFinished,
+    },
+    {
+        id: 'ex-profil-oeffnen',
+        mood: 'sad',
+        highlight: 'fehler-element-oeffnen',
+        task: 'Öffne die Haltung mit dem kaputten Profil.',
+        message:
+            'Halt, die Prüfung vor dem Rechnen hat abgebrochen: Eine Haltung hat die Höhe 0 — ein Rohr '
+            + 'ohne Querschnitt. So kommt kein Tropfen durch, und SWMM würde gar nicht erst anfangen.\n\n'
+            + 'Unter der Meldung steht „→ Element öffnen“. Das bringt dich direkt zur Zeile.',
+        hint: 'Die Meldung steht links unter „Berechnung starten“.',
+        // Nur, wenn der Lauf wirklich am Profil gescheitert ist — andere
+        // Fehler übernimmt die Fehlerübergabe weiter unten.
+        requires: profilFehlerGemeldet,
+        check: (store) => !!store?.ui?.showPreprocessingModal,
+    },
+    {
+        id: 'ex-profil-korrigieren',
+        mood: 'asking',
+        task: 'Gib den Haltungen mit Höhe 0 eine echte Höhe.',
+        message:
+            'Hier ist die Zeile. Rot umrandet ist das Feld in der Spalte „H (mm)“ — und es gibt drei '
+            + 'solche Haltungen im Netz. Trag bei jeder eine Höhe ein (beim Kreisprofil ist das der '
+            + 'Durchmesser, z. B. 300 für DN 300) und dann „Übernehmen“.',
+        hint: 'Spalte „H (mm)“ im Reiter „Haltungen“: rote Felder sind die mit 0. '
+            + 'Die Werte der Nachbarhaltungen sind ein guter Anhalt.',
+        // Offen: Spalte UND „Übernehmen“ (getippte Zellen setzen
+        // preprocessingDirty nicht — das meldet nur Sammeländerungen).
+        // Zu: der Knopf, der die Tabelle öffnet.
+        highlight: (store) => {
+            if (!store?.ui?.showPreprocessingModal) return 'daten-bearbeiten';
+            if (store?.ui?.preprocessingTab !== 'edges') return 'preprocessing-tabs';
+            return ['haltung-profilhoehe', 'preprocessing-uebernehmen'];
+        },
+        requires: profilFehlerGemeldet,
+        check: alleProfileGueltig,
+    },
+    {
+        id: 'ex-run-2',
+        mood: 'asking',
+        highlight: 'run-simulation',
+        task: 'Rechne noch einmal.',
+        message: 'Sieht besser aus. Noch mal „Berechnung starten“ — mal sehen, ob der Rechner jetzt zufrieden ist.',
+        hint: 'Meldet die Prüfung noch etwas, führt „→ Element öffnen“ wieder direkt hin.',
+        // Gehört zum Profil-Umweg: nur wer ihn gegangen ist, soll neu rechnen.
+        requires: profilFehlerGemeldet,
+        check: nachProfilGerechnet,
     },
     {
         id: 'ex-handover-fehler',
@@ -680,14 +752,13 @@ export const EXERCISE_STEPS = [
             const fehler = store?.simulation?.error;
             const was = fehler
                 ? `Es hakt hier: ${fehler}`
-                : `Da sind ${warn} Sachen, die mir nicht gefallen.`;
+                : `Da sind ${warn} Hinweise, die mir nicht gefallen.`;
             return 'Tja. ' + was + '\n\n'
-                + 'Ich hab getan, was ich konnte — ab hier bist du dran. So ein Netz wird selten beim '
-                + 'ersten Anlauf sauber, und das ist normal: Meldungen abarbeiten, nachbessern, neu '
-                + 'rechnen. Genau das ist die Arbeit. Klick auf "-> Element oeffnen" neben einer '
-                + 'Meldung, dann bring ich dich direkt hin.';
+                + 'Ab hier bist du dran. Ein Netz wird selten beim ersten Anlauf sauber: Meldung lesen, '
+                + 'nachbessern, neu rechnen — genau das ist die Arbeit. „→ Element öffnen“ neben einer '
+                + 'Meldung bringt dich direkt hin.';
         },
-        hint: 'Fehler blockieren den Lauf, Warnungen nicht — die sind Hinweise, die du pruefen solltest.',
+        hint: 'Fehler blockieren den Lauf, Warnungen nicht — die sind Hinweise, die du prüfen solltest.',
         // Nur zeigen, wenn es tatsaechlich etwas zu meckern gibt.
         requires: (store) =>
             !!store?.simulation?.error || toArray(store?.simulation?.preSolveWarnings).length > 0,

@@ -43,6 +43,7 @@
         :class="{ active: store.editor.mode === 'addArea' }"
         @click="setMode('addArea')"
         title="Fläche zeichnen"
+        data-tutorial="werkzeug-flaeche"
       >
         <span style="font-weight: 900; font-family: 'Press Start 2P', monospace; font-size: var(--isy-fs-pixel-md); color: var(--isy-pixel-green);">m²</span>
       </button>

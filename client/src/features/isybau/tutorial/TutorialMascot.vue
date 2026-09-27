@@ -2,11 +2,20 @@
   <!-- v-show statt v-if: die vorgeladenen Lottie-Instanzen (mood-layer)
        bleiben dauerhaft im DOM — Mood-Wechsel ist nur noch Umblenden. -->
   <Transition :name="leaveTransition">
-    <div v-show="activeStep" class="tutorial-mascot">
+    <div v-show="activeStep" ref="rattenEl" class="tutorial-mascot" :class="{ 'tutorial-mascot--links': links }">
       <Transition name="bubble-fade">
         <div v-if="bubbleVisible && activeStep" class="speech-bubble">
           <button class="bubble-close" @click="guide.dismiss()">[x]</button>
-          <div class="bubble-text">{{ typedText }}<span class="cursor">_</span></div>
+          <!-- Klick (oder Enter/Leertaste bei Fokus) zeigt die Nachricht sofort ganz -->
+          <div
+            class="bubble-text"
+            :class="{ 'bubble-text--tippt': !tipp.fertig.value }"
+            tabindex="0"
+            :title="tipp.fertig.value ? null : 'Klicken: ganzen Text zeigen'"
+            @click="tipp.zeigeAlles()"
+            @keydown.enter.prevent="tipp.zeigeAlles()"
+            @keydown.space.prevent="tipp.zeigeAlles()"
+          >{{ tipp.text.value }}<span class="cursor">_</span></div>
 
           <!-- Übungs-Modus: Aufgabe + Fortschritt statt reinem Fließtext -->
           <div v-if="activeStep.kind === 'exercise' && activeStep.task" class="bubble-task">
@@ -36,7 +45,7 @@
               :disabled="actionRunning"
               @click="runStepAction()"
             >
-              {{ actionRunning ? '[Laedt...]' : `[${activeStep.action.label}]` }}
+              {{ actionRunning ? '[Lädt …]' : `[${activeStep.action.label}]` }}
             </button>
             <button class="bubble-btn" @click="guide.next()">[Weiter]</button>
             <button v-if="activeStep.info" class="bubble-btn bubble-btn-info" @click="guide.toggleInfo()">[Mehr dazu]</button>
@@ -81,8 +90,9 @@ import { resolveStepFocus, resolveStepDraw } from './tutorialExercise.js';
 import { leseFortschrittsSignale } from './fortschrittsSignale.js';
 import { useElementFocus } from '../composables/useElementFocus.js';
 import { useDrawingHint } from '../composables/useDrawingHint.js';
+import { useTippen } from './tippen.js';
+import { mussAusweichen, verschoben } from './ausweichen.js';
 
-const CHAR_DELAY_MS = 32;
 const BUBBLE_DELAY_MS = 450; // let the mascot rise in before the bubble types
 const STARTUP_DELAY_MS = 5000; // Ratte taucht 5s nach Seitenladen auf
 const GIF_DELAY_MS = 1000; // kurze Schrecksekunde, bevor Schuss-GIF + Knall kommen
@@ -191,34 +201,44 @@ onUnmounted(() => { clearFocus(); clearDrawingHint(); });
 const lottieEl = ref(null);
 const bubbleVisible = ref(false);
 const gifVisible = ref(false);
-const typedText = ref('');
+// Schreibmaschine der Sprechblase (tippen.js): 14 ms je Zeichen, Klick = alles
+const tipp = useTippen();
 // Nach der Kill-Sequenz verblasst die tote Ratte, statt nach unten
 // rauszurutschen. Muss ein eigener Ref sein: beim Leave ist activeStep
 // schon null, der Transition-Name braucht den letzten Step.
 const leaveTransition = ref('rise');
 
-let typingTimer = null;
+// Ausweichen (ausweichen.js): deckt die Ratte an ihrem Stammplatz rechts unten
+// ein hervorgehobenes Element zu, zieht sie nach links. Geprüft wird im
+// Takt — Fenster öffnen, schieben und scrollen sich, ohne dass der Store es merkt.
+const rattenEl = ref(null);
+const links = ref(false);
+let ausweichTimer = null;
+let stammRand = 16;
+function pruefeAusweichen() {
+  const el = rattenEl.value;
+  if (!el || !activeStep.value) { links.value = false; return; }
+  const box = el.getBoundingClientRect();
+  if (!box.width) return;
+  // Abstand zum rechten Rand am Stammplatz merken; steht sie links, wird der
+  // Stammplatz damit zurückgerechnet — sonst spränge sie hin und her.
+  if (!links.value) stammRand = window.innerWidth - box.right;
+  const dx = links.value ? (window.innerWidth - stammRand - box.width) - box.left : 0;
+  const ratte = [...el.querySelectorAll('.speech-bubble, .mascot-figure')]
+    .map(e => verschoben(e.getBoundingClientRect(), dx));
+  const ziele = [...document.querySelectorAll('.sv-tutorial-highlight')].map(e => e.getBoundingClientRect());
+  links.value = mussAusweichen(ratte, ziele);
+}
+
 let bubbleTimer = null;
 let gifTimer = null;
 
 function stopTyping() {
-  clearTimeout(typingTimer);
+  tipp.stop();
   clearTimeout(bubbleTimer);
   clearTimeout(gifTimer);
 }
 
-function typeMessage(message) {
-  typedText.value = '';
-  let i = 0;
-  const step = () => {
-    typedText.value += message[i];
-    i++;
-    if (i < message.length) {
-      typingTimer = setTimeout(step, CHAR_DELAY_MS);
-    }
-  };
-  step();
-}
 
 let sound = null;
 
@@ -361,7 +381,7 @@ watch(
     stopSpeakSound();
     bubbleVisible.value = false;
     gifVisible.value = false;
-    typedText.value = '';
+    tipp.leeren();
 
     if (!step) {
       hideMascotAnim();
@@ -382,7 +402,7 @@ watch(
     if (step.message) {
       bubbleTimer = setTimeout(() => {
         bubbleVisible.value = true;
-        typeMessage(step.message);
+        tipp.tippe(step.message);
         playSpeakSound();
       }, BUBBLE_DELAY_MS);
     }
@@ -393,6 +413,7 @@ watch(
 let startupTimer = null;
 
 onMounted(() => {
+  ausweichTimer = setInterval(pruefeAusweichen, 400);
   // ALLE Animations-Assets sofort vorladen (Lotties, GIF, MP3) — bis zum
   // Auftritt nach 5 s ist alles da, danach wird nur noch umgeblendet.
   preloadAllMoods();
@@ -402,6 +423,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearInterval(ausweichTimer);
   clearTimeout(startupTimer);
   stopTyping();
   stopSound();
@@ -422,6 +444,12 @@ onUnmounted(() => {
   gap: var(--isy-space-3);
   max-width: calc(100vw - 1.5rem);
   pointer-events: none;
+}
+
+/* Ausweichplatz links unten (siehe pruefeAusweichen) */
+.tutorial-mascot--links {
+  right: auto;
+  left: clamp(0.75rem, 1.4vw, 1.25rem);
 }
 
 /* Shotgun-Blast aus kill_rat.gif: gespiegelt (Lauf zeigt dann nach
@@ -462,7 +490,10 @@ onUnmounted(() => {
   margin-right: clamp(-2.5rem, -2.857vw, -0.95rem);
   top: -25px;
   left: clamp(15px, 2.857vw, 40px);
-  max-width: min(240px, 45vw);
+  /* Breiter als früher (240 px): mit lesbarer Schrift passen so ~40 Zeichen
+     je Zeile; auf dem Handy bleibt Platz für die Ratte daneben. */
+  width: max-content;
+  max-width: min(340px, calc(100vw - 170px));
   background: var(--isy-pixel-bg);
   border: 1px solid var(--isy-pixel-green-glow);
   border-radius: var(--isy-radius-sm);
@@ -497,17 +528,28 @@ onUnmounted(() => {
 }
 
 .bubble-text {
-  font-family: var(--isy-pixel-font);
-  font-size: var(--isy-fs-pixel-md);
-  line-height: 1.7;
-  color: var(--isy-pixel-green-glow);
-  text-shadow: var(--isy-pixel-text-glow);
+  /* Terminal bleibt, aber lesbar: Fließtext in der Mono-Schrift der
+     Lernkarte (13 px) statt Pixelschrift 8 px in Grün-Glühen — Rückmeldung
+     aus der Lehre 2026-09-27 („anstrengend zu lesen“). Pixelschrift nur
+     noch für Aufgabenzähler und Knöpfe. */
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--isy-fs-md);
+  line-height: 1.5;
+  color: var(--isy-pixel-text);
   white-space: pre-wrap;
   word-break: break-word;
+  /* Lange Nachrichten verdecken sonst die Karte */
+  max-height: min(45vh, 320px);
+  overflow-y: auto;
+  outline: none;
 }
+.bubble-text--tippt { cursor: var(--isy-cursor-hand); }
+.bubble-text:focus-visible { box-shadow: 0 0 0 1px var(--isy-pixel-green-glow); }
 
 .cursor {
   display: inline-block;
+  color: var(--isy-pixel-green-glow);
+  text-shadow: var(--isy-pixel-text-glow);
   animation: blink 0.85s step-start infinite;
 }
 
@@ -550,19 +592,19 @@ onUnmounted(() => {
   margin-top: var(--isy-space-2);
   padding-top: var(--isy-space-2);
   border-top: 1px solid var(--isy-pixel-border);
-  font-family: var(--isy-pixel-font);
-  font-size: var(--isy-fs-pixel-sm);
-  line-height: 1.6;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--isy-fs-md);
+  line-height: 1.45;
 }
-.task-state { color: var(--isy-pixel-green-bright); }
-.task-text { color: var(--isy-pixel-text-dim); }
+.task-state { color: var(--isy-pixel-green-text); font-family: var(--isy-pixel-font); font-size: var(--isy-fs-pixel-sm); white-space: pre; flex-shrink: 0; }
+.task-text { color: var(--isy-pixel-text); font-weight: bold; }
 
 .bubble-hint {
   margin-top: var(--isy-space-2);
-  font-family: var(--isy-pixel-font);
-  font-size: var(--isy-fs-pixel-sm);
-  line-height: 1.7;
-  color: var(--isy-pixel-border-hover);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--isy-fs-sm);
+  line-height: 1.5;
+  color: var(--isy-pixel-text-dim);
 }
 
 .exercise-progress {

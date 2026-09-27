@@ -8,8 +8,9 @@
 //   { type: 'ref', text }      Quellen-/Normverweis (gedimmt)
 //   { type: 'link', text, href }  anklickbarer Verweis nach draussen (neuer Tab)
 //
-// Titel erscheinen in 'Press Start 2P' (kein ä/ö/ü im Font — ASCII halten!),
-// Fließtext in 'Share Tech Mono' (Umlaute ok).
+// Titel erscheinen in 'Press Start 2P', Fließtext in 'Share Tech Mono' — beide
+// mit Umlauten (Google-Fonts-Satz „latin“; früher stand hier das Gegenteil,
+// und die Texte waren durchweg ae/oe/ue geschrieben).
 
 export const TUTORIAL_INFO = {
 
@@ -32,14 +33,14 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Im SWMM-Modell wird ψ als "%Imperv" (undurchlässiger Anteil) übergeben. Ein zu hoher Wert lässt das Netz überlastet aussehen, ein zu niedriger verharmlost den Starkregen — deshalb lohnt sich hier Sorgfalt.',
+        text: 'Im SWMM-Modell wird ψ als „%Imperv“ (undurchlässiger Anteil) übergeben. Ein zu hoher Wert lässt das Netz überlastet aussehen, ein zu niedriger verharmlost den Starkregen — deshalb lohnt sich hier Sorgfalt.',
       },
       { type: 'ref', text: 'DWA-A 118 — Hydraulische Bemessung von Entwässerungssystemen' },
     ],
   },
 
   flaechenanschluss: {
-    title: 'FLAECHENANSCHLUSS',
+    title: 'FLÄCHENANSCHLUSS',
     blocks: [
       {
         type: 'p',
@@ -179,7 +180,7 @@ export const TUTORIAL_INFO = {
     blocks: [
       {
         type: 'p',
-        text: 'Kanalnetze werden nicht für "irgendeinen" Regen bemessen, sondern für statistisch definierte Ereignisse: Ein Regen mit Wiederkehrzeit T = 5 a tritt im Mittel alle 5 Jahre auf. Je seltener, desto intensiver.',
+        text: 'Kanalnetze werden nicht für „irgendeinen“ Regen bemessen, sondern für statistisch definierte Ereignisse: Ein Regen mit Wiederkehrzeit T = 5 a tritt im Mittel alle 5 Jahre auf. Je seltener, desto intensiver.',
       },
       {
         type: 'p',
@@ -198,7 +199,7 @@ export const TUTORIAL_INFO = {
         type: 'p',
         text: 'psi = Spitzenabflussbeiwert (0..1), i = Regenspende in l/(s*ha), A = Fläche in ha. Den Handwert kann man gegen den Spitzenabfluss im Ergebnisreiter „Teilflächen“ halten.',
       },
-      { type: 'ref', text: 'DWA-A 118 — hydraulische Bemessung von Entwaesserungssystemen; KOSTRA-DWD 2020' },
+      { type: 'ref', text: 'DWA-A 118 — hydraulische Bemessung von Entwässerungssystemen; KOSTRA-DWD 2020' },
     ],
   },
 
@@ -209,7 +210,7 @@ export const TUTORIAL_INFO = {
         type: 'p',
         text: 'Die Dynamic-Wave-Berechnung löst die Saint-Venant-Gleichungen: Kontinuität (Massenerhaltung) plus Impulsgleichung mit allen Termen — Trägheit, Druck, Gefälle und Reibung.',
       },
-      { type: 'formula', text: 'dA/dt + dQ/dx = 0   (Kontinuitaet)' },
+      { type: 'formula', text: 'dA/dt + dQ/dx = 0   (Kontinuität)' },
       {
         type: 'p',
         text: 'Nur damit lassen sich Rückstau von unten, Fließumkehr, Einstau bis zur Geländeoberkante und druckabflussartige Zustände korrekt abbilden — genau die Effekte, die bei Starkregen zählen.',
@@ -245,7 +246,7 @@ export const TUTORIAL_INFO = {
         type: 'p',
         text: 'Modellqualität: Der Kontinuitätsfehler (Massenbilanz) sollte unter 1 % liegen; bis 5 % ist das Ergebnis zu prüfen, darüber nicht belastbar. So stuft auch die Kachel „Modellgüte“ im Ergebnis ein — dazu Knoten mit 10 % Fehler und mehr.',
       },
-      { type: 'ref', text: 'DWA-A 110; DWA-A 118 — Ueberstau- und Ueberflutungsnachweis' },
+      { type: 'ref', text: 'DWA-A 110; DWA-A 118 — Überstau- und Überflutungsnachweis' },
     ],
   },
 
@@ -254,52 +255,52 @@ export const TUTORIAL_INFO = {
     blocks: [
       {
         type: 'p',
-        text: 'Ein importiertes ISYBAU-XML bringt seine Koordinaten schon mit. Zeichnest du dagegen ein Netz von null, braucht das Tool einen Referenzpunkt — sonst weiss es nicht, wo auf der Erde dein Netz liegt.',
+        text: 'Ein importiertes ISYBAU-XML bringt seine Koordinaten schon mit. Zeichnest du dagegen ein Netz von null, braucht das Tool einen Referenzpunkt — sonst weiß es nicht, wo auf der Erde dein Netz liegt.',
       },
       {
         type: 'p',
-        text: 'Dieser Startort ("Neu starten": Adresssuche oder manuelle Koordinaten) treibt zwei Dinge an: die KOSTRA-Regendaten fuer den Bemessungsregen und die EZG-Karte (Luftbild + Hoehenlinien) als Zeichenhilfe.',
+        text: 'Dieser Startort („Neu starten“: Adresssuche oder manuelle Koordinaten) treibt zwei Dinge an: die KOSTRA-Regendaten für den Bemessungsregen und die EZG-Karte (Luftbild + Höhenlinien) als Zeichenhilfe.',
       },
       {
         type: 'p',
-        text: 'Ohne Startort bleibt beides deaktiviert — das Netz laesst sich trotzdem zeichnen und rechnen, nur eben ohne Ortsbezug.',
+        text: 'Ohne Startort bleibt beides deaktiviert — das Netz lässt sich trotzdem zeichnen und rechnen, nur eben ohne Ortsbezug.',
       },
     ],
   },
 
   'dgm-gelaende': {
-    title: 'EIGENES GELAENDEMODELL (DGM)',
+    title: 'EIGENES GELÄNDEMODELL (DGM)',
     blocks: [
       {
         type: 'p',
-        text: 'Ein DGM (Digitales Gelaendemodell) laesst sich als XYZ/TXT-Punktwolke oder als ESRI-ASCII-Grid (.asc) laden — deutlich praeziser als die 30-m-Hoehendaten der EZG-Karte.',
+        text: 'Ein DGM (Digitales Geländemodell) lässt sich als XYZ/TXT-Punktwolke oder als ESRI-ASCII-Grid (.asc) laden — deutlich präziser als die 30-m-Höhendaten der EZG-Karte.',
       },
       {
         type: 'p',
-        text: 'Irregulaere Punktwolken werden per TIN (Dreiecksvermaschung) trianguliert und auf ein regelmaessiges Raster gerechnet. Das Tool schlaegt dabei eine Zellweite aus der Punktdichte vor.',
+        text: 'Irreguläre Punktwolken werden per TIN (Dreiecksvermaschung) trianguliert und auf ein regelmäßiges Raster gerechnet. Das Tool schlägt dabei eine Zellweite aus der Punktdichte vor.',
       },
       {
         type: 'p',
-        text: 'Sobald ein DGM geladen ist, schlaegt das Tool Deckelhoehen an den Schaechten direkt aus dem Raster vor — das ist die Grundlage fuer einen belastbaren Ueberflutungsnachweis, denn der haengt an der Differenz zwischen Wasserspiegel und echter Gelaendehoehe.',
+        text: 'Sobald ein DGM geladen ist, schlägt das Tool Deckelhöhen an den Schächten direkt aus dem Raster vor — das ist die Grundlage für einen belastbaren Überflutungsnachweis, denn der hängt an der Differenz zwischen Wasserspiegel und echter Geländehöhe.',
       },
-      { type: 'ref', text: 'DWA-A 118 — Ueberstau- und Ueberflutungsnachweis' },
+      { type: 'ref', text: 'DWA-A 118 — Überstau- und Überflutungsnachweis' },
     ],
   },
 
   'ezg-karte': {
-    title: 'EZG-KARTE: LUFTBILD & HOEHENLINIEN',
+    title: 'EZG-KARTE: LUFTBILD & HÖHENLINIEN',
     blocks: [
       {
         type: 'p',
-        text: 'Die EZG-Karte legt ein georeferenziertes Luftbild (Esri World Imagery) und Hoehenlinien unter dein Netz — eine schnelle Orientierung am echten Gelaende, ohne eigene Vermessungsdaten.',
+        text: 'Die EZG-Karte legt ein georeferenziertes Luftbild (Esri World Imagery) und Höhenlinien unter dein Netz — eine schnelle Orientierung am echten Gelände, ohne eigene Vermessungsdaten.',
       },
       {
         type: 'p',
-        text: 'Die Hoehenlinien stammen aus SRTM/ASTER-Hoehendaten (Terrarium-Kacheln, ca. 30 m Rasterweite) — grob genug fuer die Einzugsgebiets-Form (daher der Name), aber kein Ersatz fuer eine echte Vermessung.',
+        text: 'Die Höhenlinien stammen aus SRTM/ASTER-Höhendaten (Terrarium-Kacheln, ca. 30 m Rasterweite) — grob genug für die Einzugsgebiets-Form (daher der Name), aber kein Ersatz für eine echte Vermessung.',
       },
       {
         type: 'p',
-        text: 'Ladest du ein eigenes DGM hoch, treten die 30-m-Hoehenlinien automatisch zurueck: das praezisere Modell gewinnt.',
+        text: 'Lädst du ein eigenes DGM hoch, treten die 30-m-Höhenlinien automatisch zurück: das präzisere Modell gewinnt.',
       },
       { type: 'ref', text: 'NASA SRTM / USGS EROS; Esri World Imagery' },
     ],
@@ -314,15 +315,15 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Kontinuitätsfehler über ca. 5 % bedeuten: Das Modell "erfindet" oder "verliert" Wasser. Meist stecken einzelne instabile Knoten dahinter — der Report nennt sie namentlich.',
+        text: 'Kontinuitätsfehler über ca. 5 % bedeuten: Das Modell „erfindet“ oder „verliert“ Wasser. Meist stecken einzelne instabile Knoten dahinter — der Report nennt sie namentlich.',
       },
       {
         type: 'p',
-        text: 'Sehr kurze Haltungen (< 1-2 m) zwingen den Solver zu winzigen Zeitschritten und provozieren Instabilitäten. Im Preprocessing zusammenlegen oder verlängern.',
+        text: 'Sehr kurze Haltungen (< 1-2 m) zwingen den Solver zu winzigen Zeitschritten und provozieren Instabilitäten. In „Daten bearbeiten“ zusammenlegen oder verlängern.',
       },
       {
         type: 'p',
-        text: 'Systematisches Vorgehen: erst Datenvalidierung im Preprocessing, dann eine Handrechnung (Fließzeitverfahren) gegen den Reiter „Teilflächen“ halten, zuletzt den Debug-Report mit dem rohen .rpt lesen.',
+        text: 'Systematisches Vorgehen: erst die Meldungen der Vorab-Prüfung abarbeiten (sie hält vor der Rechnung an und führt mit „→ Element öffnen“ zur Zeile), dann eine Handrechnung (Fließzeitverfahren) gegen den Reiter „Teilflächen“ halten, zuletzt den Debug-Report mit dem rohen .rpt lesen.',
       },
       { type: 'ref', text: 'EPA SWMM 5 Users Manual — Troubleshooting' },
     ],

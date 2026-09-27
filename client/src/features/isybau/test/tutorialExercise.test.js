@@ -14,7 +14,7 @@ import {
 } from '../tutorial/tutorialExercise.js';
 import { loadTutorialNetwork } from '../tutorial/loadTutorialNetwork.js';
 import { loadTutorialDgm } from '../tutorial/loadTutorialDgm.js';
-import { WELCOME_STEP } from '../tutorial/tutorialSteps.js';
+import { WELCOME_STEP, REACTIVE_STEPS } from '../tutorial/tutorialSteps.js';
 import { TUTORIAL_INFO } from '../tutorial/tutorialInfo.js';
 import fs from 'fs';
 import { kostraBlockRain } from '../utils/RainModelService.js';
@@ -187,6 +187,12 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
     ui: { showPreprocessingModal: true, preprocessingTab: 'areas' },
     rain: {},
   });
+  // Vierter Zustand: mitten im Flaechenzeichnen mit drei Punkten — nur dann
+  // zeigt ex-add-area auf "Flaeche abschliessen".
+  const GEZEICHNET = storeWith({
+    ui: {}, rain: {},
+    editor: { mode: 'addArea', drawingPoints: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] },
+  });
   const stepsWithHighlight = [...EXERCISE_STEPS, WELCOME_STEP]
     .filter(s => s.highlight)
     .flatMap((s) => {
@@ -194,6 +200,7 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
         ...(resolveStepHighlight(s, ZU) || []),
         ...(resolveStepHighlight(s, AUF) || []),
         ...(resolveStepHighlight(s, FLAECHEN) || []),
+        ...(resolveStepHighlight(s, GEZEICHNET) || []),
       ]);
       return Array.from(anker, h => [s.id, h]);
     });
@@ -204,6 +211,20 @@ describe('Highlight-Anker zeigen auf real existierende Elemente', () => {
 
   it.each(stepsWithHighlight)('Schritt "%s" hebt vorhandenen Anker "%s" hervor', (_id, anchor) => {
     expect(anchors.has(anchor)).toBe(true);
+  });
+});
+
+describe('Flaeche zeichnen: der Rahmen wandert mit', () => {
+  const schritt = EXERCISE_STEPS.find(s => s.id === 'ex-add-area');
+  const punkte = (n) => Array.from({ length: n }, (_, i) => ({ x: i, y: i * i }));
+  const bei = (mode, n) => resolveStepHighlight(schritt, storeWith({ ui: {}, editor: { mode, drawingPoints: punkte(n) } }));
+
+  it('Werkzeug -> freie Sicht beim Zeichnen -> "Flaeche abschliessen" ab drei Punkten', () => {
+    expect(bei('view', 0)).toEqual(['werkzeug-flaeche']);
+    expect(bei('addArea', 0)).toBeNull();
+    expect(bei('addArea', 2)).toBeNull();
+    expect(bei('addArea', 3)).toEqual(['flaeche-abschliessen']);
+    expect(bei('addArea', 5)).toEqual(['flaeche-abschliessen']);
   });
 });
 
@@ -343,10 +364,34 @@ describe('info-Schluessel zeigen auf vorhandene Lernkarten', () => {
     }
   });
 
-  it('Kartentitel bleiben ASCII (Pixel-Font kennt keine Umlaute)', () => {
-    for (const [key, card] of Object.entries(TUTORIAL_INFO)) {
-      expect(card.title, key).not.toMatch(/[äöüÄÖÜß]/);
+  // Früher hieß es, die Pixelschrift kenne keine Umlaute — deshalb stand das
+  // ganze Tutorial in ae/oe/ue. Die Schrift kann sie (Google-Fonts-Satz
+  // „latin“, die Oberfläche zeigt „Gelände“ darin). Jetzt umgekehrt: keine
+  // Umschreibungen mehr in dem, was die Ratte sagt oder die Karte zeigt.
+  it('Nutzertexte schreiben ä/ö/ü/ß aus, nicht ae/oe/ue', () => {
+    const texte = [];
+    const fake = {
+      nodes: { size: 1 }, edges: { size: 1 }, areas: [], terrain: { ncols: 1, nrows: 1 },
+      ui: { importWarnings: [] }, simulation: { error: 'X', preSolveWarnings: [] },
+    };
+    const aus = (k, v) => { if (typeof v === 'string') texte.push([k, v]); };
+    for (const s of [...EXERCISE_STEPS, WELCOME_STEP, ...Object.values(REACTIVE_STEPS)]) {
+      aus(s.id, typeof s.message === 'function' ? s.message(fake) : s.message);
+      aus(s.id, s.task); aus(s.id, s.hint); aus(s.id, s.action?.label);
     }
+    for (const [key, card] of Object.entries(TUTORIAL_INFO)) {
+      aus(key, card.title);
+      for (const b of card.blocks) aus(key, b.text);
+    }
+    // Echte Wörter mit ae/oe/ue — neue hier eintragen, wenn sie wirklich so heißen.
+    const echt = new Set(['dauer', 'dauern', 'dauert', 'dauerstufe', 'simulationsdauer', 'zuerst',
+      'schauen', 'schaue', 'anschauen', 'aktuellen', 'aktuell', 'querschnitt', 'manuelle', 'raues',
+      'bauen', 'neue', 'neuen', 'quelle', 'feuer', 'mauer', 'steuer']);
+    const verdaechtig = texte.flatMap(([k, t]) => (t.match(/[A-Za-zäöüß]*(?:ae|oe|ue|Ae|Oe|Ue|AE|OE|UE)[A-Za-zäöüß]*/g) || [])
+      .filter(w => !echt.has(w.toLowerCase()))
+      .map(w => `${k}: ${w}`));
+    expect(texte.length).toBeGreaterThan(100);
+    expect(verdaechtig).toEqual([]);
   });
 });
 
@@ -632,10 +677,11 @@ describe('Abschluss: Berechnung starten und uebergeben', () => {
   const sim = (o) => storeWith({ simulation: { status: 'idle', error: null, preSolveWarnings: [], ...o } });
 
   it('die Berechnung ist der letzte Handgriff, danach folgt die Uebergabe', () => {
+    // Dazwischen nur der Profil-Umweg (greift allein bei ERR_119, siehe
+    // tutorialProfilAufgabe.test.js).
     const i = EXERCISE_STEPS.indexOf(lauf);
-    expect(EXERCISE_STEPS[i + 1]).toBe(fehler);
-    expect(EXERCISE_STEPS[i + 2]).toBe(fertig);
-    expect(EXERCISE_STEPS[i + 2]).toBe(EXERCISE_STEPS[EXERCISE_STEPS.length - 1]);
+    expect(EXERCISE_STEPS.slice(i + 1).map(s => s.id)).toEqual(
+      ['ex-profil-oeffnen', 'ex-profil-korrigieren', 'ex-run-2', 'ex-handover-fehler', 'ex-done']);
   });
 
   it('der Lauf gilt als erledigt, egal ob er glueckt oder scheitert', () => {
@@ -692,9 +738,10 @@ describe('Regen-Abfolge: erst die Statistik, dann der Verlauf', () => {
       .toBeLessThan(reihe.indexOf('ex-run'));
   });
 
-  it('zaehlt als Aufgabe 7 von 8, die Berechnung als 8 von 8', () => {
-    expect(aufgaben.map(s => s.id).slice(-2)).toEqual(['ex-rain-modellregen', 'ex-run']);
-    expect(aufgaben).toHaveLength(8);
+  it('zaehlt als Aufgabe 7 von 11, die Berechnung als 8, dann der Profil-Umweg', () => {
+    expect(aufgaben.map(s => s.id).slice(-5)).toEqual(
+      ['ex-rain-modellregen', 'ex-run', 'ex-profil-oeffnen', 'ex-profil-korrigieren', 'ex-run-2']);
+    expect(aufgaben).toHaveLength(11);
   });
 
   it('nennt Wiederkehrzeit und Dauer, die er meint', () => {
@@ -738,7 +785,7 @@ describe('Auslass-Abfolge: der Weg, den es wirklich gibt', () => {
 
   it('sucht im Schacht-Reiter und schaltet weiter, sobald zwei Zeilen angehakt sind', () => {
     const s = schritt('ex-outfalls-suchen');
-    expect(s.message).toMatch(/Schaechte/);
+    expect(s.message).toMatch(/„Schächte“/);
     expect(s.check(ui({ preprocessingSelection: 0 }))).toBe(false);
     expect(s.check(ui({ preprocessingSelection: 1 }))).toBe(false);
     expect(s.check(ui({ preprocessingSelection: 2 }))).toBe(true);
