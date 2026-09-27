@@ -35,7 +35,7 @@
                  Eingestaut (Wasserspiegel über Rohrscheitel)
              </div>
              <div v-if="currentResult.continuityWarning" class="flood-badge">
-                 ⚠️ Kontinuitätsfehler {{ currentResult.continuityError?.toFixed(1) }} % — Ergebnis unzuverlässig
+                 ⚠️ Kontinuitätsfehler {{ fmtZahl(currentResult.continuityError, 1) }} % — Ergebnis unzuverlässig
              </div>
              <div v-if="relatedLinkId" class="link-hint-box">
                  ⚙️ Hydraulisches Ergebnis (Durchfluss, Auslastung) siehe Haltung <strong>{{ relatedLinkId }}</strong> im Ergebnis-Modal.
@@ -46,7 +46,7 @@
                  <div class="info-row compact">
                      <span class="label">Max. Tiefe:</span>
                      <span class="value" :class="{'text-red': currentResult.isFlooded}">
-                         {{ currentResult.maxDepth?.toFixed(3) }} m
+                         {{ fmtZahl(currentResult.maxDepth, 3) }} m
                      </span>
                  </div>
                  <div class="info-row compact" v-if="currentResult.volume != null">
@@ -63,16 +63,18 @@
              <template v-if="elementType === 'edge'">
                  <div class="info-row compact" v-if="currentResult.maxFlow != null">
                      <span class="label">Max. Abfluss:</span>
-                     <span class="value">{{ currentResult.maxFlow.toFixed(1) }} l/s</span>
+                     <span class="value">{{ fmtZahl(currentResult.maxFlow, 1) }} l/s</span>
                  </div>
                  <div class="info-row compact" v-if="currentResult.maxVelocity != null">
                      <span class="label">Max. Geschwindigkeit:</span>
-                     <span class="value">{{ currentResult.maxVelocity.toFixed(2) }} m/s</span>
+                     <span class="value">{{ fmtZahl(currentResult.maxVelocity, 2) }} m/s</span>
                  </div>
                  <div v-if="currentResult.utilizationText" class="info-row compact">
                      <span class="label">Auslastung:</span>
-                     <span class="value" :style="currentResult.utilizationStyle">
-                         {{ currentResult.utilizationText }}
+                     <!-- Stufenfarbe als Punkt, Text in Textfarbe: als Schrift erreichten
+                          Gelb/Hellblau auf hellem Grund nur 1,4–2,1 : 1 -->
+                     <span class="value">
+                         <span v-if="currentResult.utilizationFarbe" class="stufen-punkt" :style="{ background: currentResult.utilizationFarbe }"></span>{{ currentResult.utilizationText }}
                      </span>
                  </div>
              </template>
@@ -88,7 +90,7 @@
              </div>
              
              <div class="info-group">
-                 <label>Rauheit k<sub>St</sub> (m<sup>1/3</sup>/s)</label>
+                 <label>Rauheit kSt (Strickler)</label>
                  <input type="number" v-model.number="localData.roughness" class="full-input">
              </div>
 
@@ -145,7 +147,7 @@
             </div>
             <div class="info-group">
                 <label>Tiefe (m)</label>
-                <div class="value-display">{{ derivedDepth != null ? derivedDepth.toFixed(2) : '–' }}</div>
+                <div class="value-display">{{ derivedDepth != null ? fmtZahl(derivedDepth, 2) : '–' }}</div>
                 <small class="hint-text">Automatisch aus Deckelhöhe − Sohlhöhe.</small>
             </div>
 
@@ -268,7 +270,7 @@
         <template v-else-if="!readonly && elementType === 'area'">
             <div class="info-group">
                 <label>Fläche (ha)</label>
-                <div class="value-display">{{ localData.size?.toFixed(4) }}</div>
+                <div class="value-display">{{ fmtZahl(localData.size, 4) }}</div>
             </div>
             
              <div class="info-group">
@@ -342,6 +344,7 @@ import PumpCurvePreview from '../common/PumpCurvePreview.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 import PixelSelect from '../common/PixelSelect.vue';
 import { haltungsZustand, knotenZustand } from '../../utils/typPalette.js';
+import { fmtZahl } from '../../utils/zahlformat.js';
 
 const presetKeyFor = (cw) => {
     const match = WeirCrestPresets.find(p => Math.abs(p.cw - cw) < 0.005);
@@ -571,13 +574,12 @@ const currentResult = computed(() => {
         const z = haltungsZustand(res);
         const displayText = z.auslastung == null ? null
             : `${Math.round(z.auslastung)} % Q/Qvoll${z.eingestaut ? ' · eingestaut' : ''}`;
-        const displayStyle = z.farbe ? { color: z.farbe, fontWeight: 'bold' } : {};
 
         return {
             maxFlow: res.maxFlow ?? null,
             maxVelocity: res.maxVelocity ?? null,
             utilizationText: displayText,
-            utilizationStyle: displayStyle,
+            utilizationFarbe: z.farbe,
         };
     }
 
@@ -955,5 +957,13 @@ input[type="checkbox"] { accent-color: var(--isy-pixel-green); }
 .slide-up-leave-to {
   transform: translateY(calc(100% + 2rem));
   opacity: 0;
+}
+.stufen-punkt {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--isy-space-1);
+  border-radius: 50%;
+  vertical-align: middle;
 }
 </style>

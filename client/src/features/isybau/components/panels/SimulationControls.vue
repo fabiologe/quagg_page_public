@@ -113,7 +113,7 @@
         <div class="control-group"
              title="Wie SWMM rechnet, wenn Schacht und Haltungen voll laufen (Druckabfluss). Automatisch: SLOT und EXTRAN werden beide gerechnet (doppelte Rechenzeit), genommen wird das plausiblere Ergebnis — Bilanzfehler höchstens 5 % und kein Wasserspiegel über dem höchsten Deckel des Netzes. Die Begründung steht im Ergebnis.">
             <label>Überstauverfahren</label>
-            <PixelSelect v-model="store.berechnung.ueberstauverfahren" :options="UEBERSTAU_OPTIONEN" />
+            <PixelSelect v-model="store.berechnung.ueberstauverfahren" class="sidebar-select" :options="UEBERSTAU_OPTIONEN" />
         </div>
 
         <button @click="startSimulation" class="primary-btn" :disabled="loading" data-tutorial="run-simulation">
@@ -484,6 +484,8 @@ const downloadResults = () => {
 .warning-link:hover { color: var(--isy-pixel-text); }
 .success-msg { color: var(--isy-pixel-border); margin-top: var(--isy-space-2); font-weight: 700; font-size: var(--isy-fs-md); }
 .veraltet-msg { margin-top: var(--isy-space-2); padding: var(--isy-space-1) var(--isy-space-2); font-size: var(--isy-fs-md); color: var(--isy-pixel-warning-soft-text); background: var(--isy-pixel-warning-soft); border: 1px solid var(--isy-pixel-warning-soft-border); }
+/* gleiche Breite und Innenabstand wie das Feld „Simulationsdauer“ darüber */
+.sidebar-select { width: 100%; padding: var(--isy-space-2); }
 .input-with-action input { width: 100%; padding: var(--isy-space-2); border: 1px solid var(--isy-pixel-text-dim); border-radius: var(--isy-radius-md); box-sizing: border-box; color: var(--isy-pixel-border); }
 .input-with-action input:focus { outline: none; border-color: var(--isy-pixel-border); }
 .button-row { display: flex; gap: var(--isy-space-2); margin-bottom: var(--isy-space-2); }

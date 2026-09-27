@@ -28,16 +28,14 @@ export const safeGet = (source, key) => {
 
 export const formatVolume = (v) => (v ? v : 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Zahl für die Anzeige mit deutschem Dezimalkomma und festen Nachkommastellen;
- *  „–" bei fehlendem Wert. Ersetzt toFixed (Dezimalpunkt) in allen Ergebnis-Reitern. */
 /** SWMM-Angabe wie „1.00 sec" → „1,00 s". */
 export const fmtSekunden = (text) => {
     const v = parseFloat(text);
     return Number.isFinite(v) ? `${v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s` : (text ?? '–');
 };
 
-export const fmtZahl = (v, stellen = 2) => (v == null || !Number.isFinite(Number(v)) ? '–'
-    : Number(v).toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen }));
+// eine Quelle für alle Anzeigen (utils/zahlformat.js)
+export { fmtZahl } from '../../../utils/zahlformat.js';
 
 export const fmtVol = (v) => (v == null ? '-' : v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 

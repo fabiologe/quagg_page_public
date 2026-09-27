@@ -58,7 +58,8 @@ describe('Datenmaske „Übernehmen" ohne Änderung', () => {
 });
 
 // P4: Escape und × verwarfen getippte Änderungen ohne Rückfrage (die Merkmarke kannte
-// nur Löschen und Sammelbearbeitung).
+// nur Löschen und Sammelbearbeitung). Rückfrage seit der Designprüfung 2026-09-27 im
+// Stil des Moduls (store.frage / Bestaetigung.vue) statt window.confirm.
 describe('Datenmaske schließen', () => {
     let store;
     beforeEach(() => { setActivePinia(createPinia()); store = useIsybauStore(); });
@@ -69,25 +70,52 @@ describe('Datenmaske schließen', () => {
             global: { stubs: { Teleport: true, DraggableModal: { template: '<div><slot/></div>' } } },
         });
     };
+    const warte = () => new Promise(r => setTimeout(r, 0));
     it('ohne Änderung: schließt ohne Rückfrage', async () => {
-        const frage = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        const nativ = vi.spyOn(window, 'confirm');
         const w = bauen(); await nextTick();
-        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
-        expect(frage).not.toHaveBeenCalled();
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen')); await warte();
+        expect(store.ui.frage).toBeNull();
+        expect(nativ).not.toHaveBeenCalled();
         expect(w.emitted('close')).toBeTruthy();
-        w.unmount(); frage.mockRestore();
+        w.unmount(); nativ.mockRestore();
     });
-    it('getippte Änderung: Rückfrage; „Nein" lässt offen, „Ja" schließt', async () => {
-        const frage = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    it('getippte Änderung: Rückfrage im Modul; „Abbrechen" lässt offen, „Verwerfen" schließt', async () => {
+        const nativ = vi.spyOn(window, 'confirm');
         const w = bauen(); await nextTick();
-        const feld = w.findAll('input[type="number"]')[0];
-        await feld.setValue('99.5');
-        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
-        expect(frage).toHaveBeenCalledOnce();
+        await w.findAll('input[type="number"]')[0].setValue('99.5');
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen')); await warte();
+        expect(store.ui.frage).toMatchObject({ titel: 'Änderungen verwerfen?', ja: 'Verwerfen' });
+        store.frageBeantworten(false); await warte();
         expect(w.emitted('close')).toBeUndefined();
-        frage.mockReturnValue(true);
-        window.dispatchEvent(new Event('isy-datenmaske-schliessen'));
+        window.dispatchEvent(new Event('isy-datenmaske-schliessen')); await warte();
+        store.frageBeantworten(true); await warte();
         expect(w.emitted('close')).toBeTruthy();
-        w.unmount(); frage.mockRestore();
+        expect(nativ).not.toHaveBeenCalled();
+        w.unmount(); nativ.mockRestore();
+    });
+});
+
+describe('Rückfrage (Bestaetigung.vue)', () => {
+    beforeEach(() => setActivePinia(createPinia()));
+    it('zeigt Titel/Text/Knöpfe, Enter = Ja, Escape = Nein, Klick auf die Verdunkelung = Nein', async () => {
+        const { default: Bestaetigung } = await import('../components/common/Bestaetigung.vue');
+        const store = useIsybauStore();
+        const w = mount(Bestaetigung, { global: { stubs: { Teleport: true } }, attachTo: document.body });
+        let antwort = store.frage('Wirklich?', { titel: 'Löschen', ja: 'Löschen' });
+        await nextTick();
+        expect(w.text()).toContain('Löschen');
+        expect(w.text()).toContain('Wirklich?');
+        expect(w.findAll('button').map(b => b.text())).toEqual(['Abbrechen', 'Löschen']);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        expect(await antwort).toBe(true);
+        antwort = store.frage('Nochmal?'); await nextTick();
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(await antwort).toBe(false);
+        antwort = store.frage('Und?'); await nextTick();
+        await w.find('.modal-overlay').trigger('click');
+        expect(await antwort).toBe(false);
+        expect(store.ui.frage).toBeNull();
+        w.unmount();
     });
 });

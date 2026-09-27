@@ -19,19 +19,19 @@
           </div>
           <div class="info-row" v-if="element.profile?.height">
             <span class="lbl">Dimension</span>
-            <span class="val">{{ (element.profile.height * 1000).toFixed(0) }} mm</span>
+            <span class="val">{{ fmtZahl(element.profile.height * 1000, 0) }} mm</span>
           </div>
           <div class="info-row" v-if="element.length">
             <span class="lbl">Länge</span>
-            <span class="val">{{ element.length.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.length, 2) }} m</span>
           </div>
           <div class="info-row" v-if="element.z1 != null">
             <span class="lbl">SH Anfang</span>
-            <span class="val">{{ element.z1?.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.z1, 2) }} m</span>
           </div>
           <div class="info-row" v-if="element.z2 != null">
             <span class="lbl">SH Ende</span>
-            <span class="val">{{ element.z2?.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.z2, 2) }} m</span>
           </div>
         </template>
 
@@ -39,7 +39,7 @@
         <template v-else-if="isArea">
           <div class="info-row">
             <span class="lbl">Größe</span>
-            <span class="val">{{ element.size?.toFixed(4) }} ha</span>
+            <span class="val">{{ fmtZahl(element.size, 4) }} ha</span>
           </div>
           <div class="info-row" v-if="element.runoffCoeff != null">
             <span class="lbl">Versiegelungsgrad ψ</span>
@@ -52,19 +52,19 @@
           <!-- Common node fields -->
           <div class="info-row" v-if="element.z != null">
             <span class="lbl">Sohlhöhe</span>
-            <span class="val">{{ element.z?.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.z, 2) }} m</span>
           </div>
           <div class="info-row" v-if="element.coverZ">
             <span class="lbl">Deckelhöhe</span>
-            <span class="val">{{ element.coverZ?.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.coverZ, 2) }} m</span>
           </div>
           <div class="info-row" v-if="element.depth">
             <span class="lbl">Tiefe</span>
-            <span class="val">{{ element.depth?.toFixed(2) }} m</span>
+            <span class="val">{{ fmtZahl(element.depth, 2) }} m</span>
           </div>
           <div class="info-row" v-if="element.diameter">
             <span class="lbl">Durchmesser</span>
-            <span class="val">{{ (element.diameter * 1000).toFixed(0) }} mm</span>
+            <span class="val">{{ fmtZahl(element.diameter * 1000, 0) }} mm</span>
           </div>
 
           <!-- Fiktiver Knoten — always shown first, overrides bwType badges -->
@@ -111,11 +111,11 @@
             <div class="type-badge sonderbauwerk">〰 Wehr / Überlauf</div>
             <div class="info-row" v-if="element.weirHeight">
               <span class="lbl">Wehrhöhe</span>
-              <span class="val">{{ element.wehrHeight?.toFixed(2) ?? element.weirHeight?.toFixed(2) }} m</span>
+              <span class="val">{{ fmtZahl(element.wehrHeight ?? element.weirHeight, 2) }} m</span>
             </div>
             <div class="info-row" v-if="element.weirWidth || element.bauwerkData?.wehrLaenge">
               <span class="lbl">Wehrlänge</span>
-              <span class="val">{{ (element.bauwerkData?.wehrLaenge ?? element.weirWidth)?.toFixed(2) }} m</span>
+              <span class="val">{{ fmtZahl(element.bauwerkData?.wehrLaenge ?? element.weirWidth, 2) }} m</span>
             </div>
             <div class="info-row" v-if="element.dischargeCoeff">
               <span class="lbl">Beiwert Cw</span>
@@ -171,11 +171,11 @@
             </div>
             <div class="info-row" v-if="result.reportedMaxDepth != null">
               <span class="lbl">Max. Wasserstand</span>
-              <span class="val">{{ result.reportedMaxDepth?.toFixed(2) ?? '–' }} m</span>
+              <span class="val">{{ fmtZahl(result.reportedMaxDepth, 2) }} m</span>
             </div>
             <div class="info-row" v-if="result.maxTotalInflow">
               <span class="lbl">Max. Zufluss</span>
-              <span class="val">{{ result.maxTotalInflow.toFixed(1) }} l/s</span>
+              <span class="val">{{ fmtZahl(result.maxTotalInflow, 1) }} l/s</span>
             </div>
             <div class="info-row" v-if="result.floodingVolume">
               <span class="lbl">Überstauvolumen</span>
@@ -187,7 +187,7 @@
           <template v-if="pumpSummary">
             <div class="info-row">
               <span class="lbl">Pumpe: Nutzung</span>
-              <span class="val">{{ pumpSummary.percentUtilized?.toFixed(1) }} %</span>
+              <span class="val">{{ fmtZahl(pumpSummary.percentUtilized, 1) }} %</span>
             </div>
             <div class="info-row">
               <span class="lbl">Pumpe: Starts</span>
@@ -195,7 +195,7 @@
             </div>
             <div class="info-row" v-if="pumpSummary.totalEnergy != null">
               <span class="lbl">Energie</span>
-              <span class="val">{{ pumpSummary.totalEnergy.toFixed(2) }} kWh</span>
+              <span class="val">{{ fmtZahl(pumpSummary.totalEnergy, 2) }} kWh</span>
             </div>
           </template>
 
@@ -208,7 +208,8 @@
           <template v-if="isEdge">
             <div class="info-row" v-if="edgeZustand.auslastung != null">
               <span class="lbl">Auslastung Q/Qvoll</span>
-              <span class="val" :style="{ color: edgeZustand.farbe }">{{ Math.round(edgeZustand.auslastung) }} %</span>
+              <!-- Stufenfarbe als Punkt, nicht als Schrift (Kontrast, siehe ElementInfo.vue) -->
+              <span class="val"><span class="stufen-punkt" :style="{ background: edgeZustand.farbe }"></span>{{ Math.round(edgeZustand.auslastung) }} %</span>
             </div>
             <div class="info-row" v-if="result.depthRatio != null">
               <span class="lbl">Füllung h/hvoll</span>
@@ -216,11 +217,11 @@
             </div>
             <div class="info-row" v-if="result.maxFlow != null">
               <span class="lbl">Max. Abfluss</span>
-              <span class="val">{{ result.maxFlow.toFixed(2) }} l/s</span>
+              <span class="val">{{ fmtZahl(result.maxFlow, 2) }} l/s</span>
             </div>
             <div class="info-row" v-if="result.maxVelocity != null">
               <span class="lbl">Max. Geschw.</span>
-              <span class="val">{{ result.maxVelocity.toFixed(2) }} m/s</span>
+              <span class="val">{{ fmtZahl(result.maxVelocity, 2) }} m/s</span>
             </div>
           </template>
         </template>
@@ -232,6 +233,7 @@
 <script setup>
 import { computed } from 'vue';
 import { BAUWERK, FLAECHE, DATENQUALITAET, AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../../utils/typPalette.js';
+import { fmtZahl } from '../../../utils/zahlformat.js';
 const BAUWERK_DUNKEL = 'var(--isy-pixel-border)';
 const resFarben = Object.fromEntries(
   AUSLASTUNG_STUFEN.map((st, i) => [`--res-${i + 1}`, st.farbe]),
@@ -411,4 +413,12 @@ const edgeZustand = computed(() => haltungsZustand(props.result));
 .res-warn   { color: var(--res-2); }
 .res-yellow { color: var(--res-3); }
 .res-ok     { color: var(--res-5); }
+.stufen-punkt {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--isy-space-1);
+  border-radius: 50%;
+  vertical-align: middle;
+}
 </style>

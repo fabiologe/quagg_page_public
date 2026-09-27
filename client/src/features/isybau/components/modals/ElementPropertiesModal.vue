@@ -95,7 +95,7 @@
                              @change="updateRoughness" />
             </div>
              <div class="form-group">
-               <label>Rauheit k<sub>St</sub> (m<sup>1/3</sup>/s)</label>
+               <label>Rauheit kSt (Strickler)</label>
                <input v-model.number="formData.roughness" type="number" step="1" min="1" class="form-input" />
                <small class="hint">Wird durch Material {{ formData.material }} gesetzt.</small>
             </div>

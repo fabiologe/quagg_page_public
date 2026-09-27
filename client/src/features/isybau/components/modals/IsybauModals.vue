@@ -151,6 +151,7 @@ const aufEscape = (e) => {
   // dem Aufklappen — er kaeme also zuerst dran. `defaultPrevented` hilft
   // nicht, beide sitzen in der Capture-Phase.
   if (document.querySelector('.isy-select-liste')) return;
+  if (store.ui.frage) return; // die Rückfrage (Bestaetigung.vue) behandelt Escape selbst
   const flag = obersteOffene(store.ui);
   if (!flag) return;
   e.stopImmediatePropagation();
@@ -194,12 +195,12 @@ const handleEzgCrsCancel = () => {
 };
 
 // --- "Neu starten": Standort-Anker für ein leeres/neues Projekt ---
-const handleNewProjectLocationConfirm = ({ epsg, x, y, label }) => {
+const handleNewProjectLocationConfirm = async ({ epsg, x, y, label }) => {
     // Bestätigung erst hier, unmittelbar vor dem destruktiven Schritt — nicht
     // schon beim Öffnen des Modals. Suchen/Stöbern bleibt so folgenlos, erst
     // "Bestätigen & Loslegen" bei bestehendem Netz kann etwas kosten.
     if (store.nodes.size > 0) {
-        if (!confirm('Neues Projekt starten? Der aktuelle Netzentwurf geht verloren.')) return;
+        if (!(await store.frage('Der aktuelle Netzentwurf geht verloren.', { titel: 'Neues Projekt starten?', ja: 'Neu starten' }))) return;
         store.clear();
     }
     store.setOriginAnchor({ epsg, x, y, label });

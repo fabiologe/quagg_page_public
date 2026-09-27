@@ -1183,8 +1183,8 @@ const applyBulkEdit = () => {
     triggerUndo(`${updateCount} Elemente aktualisiert. "Übernehmen" zum Speichern klicken!`, null, 'info');
 };
 
-const deleteSelected = () => {
-    if (!confirm(`Sicher, dass du ${selectedIds.value.length} Elemente löschen möchtest? Wird erst mit "Übernehmen" endgültig.`)) return;
+const deleteSelected = async () => {
+    if (!(await store.frage(`${selectedIds.value.length} Elemente löschen? Endgültig wird es erst mit „Übernehmen“.`, { titel: 'Löschen', ja: 'Löschen' }))) return;
 
     // Lokal entfernen UND als gelöscht vormerken — beim Übernehmen räumt
     // store.updateNetworkData die Elemente dann wirklich aus dem Store.
@@ -1526,10 +1526,10 @@ const aufSchliessenAnfrage = () => close();
 onMounted(() => window.addEventListener('isy-datenmaske-schliessen', aufSchliessenAnfrage));
 onBeforeUnmount(() => window.removeEventListener('isy-datenmaske-schliessen', aufSchliessenAnfrage));
 
-const close = () => {
+const close = async () => {
     // ×-Knopf und Escape: vorgemerkte Änderungen nicht still verwerfen (P4)
     if (hatAenderungen()
-        && !window.confirm('Die Änderungen in „Daten bearbeiten" sind noch nicht übernommen. Verwerfen?')) return;
+        && !(await store.frage('Die Änderungen in „Daten bearbeiten“ sind noch nicht übernommen.', { titel: 'Änderungen verwerfen?', ja: 'Verwerfen' }))) return;
     emit('close');
 };
 const apply = () => {

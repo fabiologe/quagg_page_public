@@ -124,12 +124,14 @@
 
 
     <Meldungen />
+    <Bestaetigung />
 </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import Meldungen from '../components/common/Meldungen.vue';
+import Bestaetigung from '../components/common/Bestaetigung.vue';
 import { useIsybauStore } from '../store/index.js';
 import { sampleTerrainAt } from '../utils/terrainSampling.js';
 import Sidebar from '../components/panels/Sidebar.vue';

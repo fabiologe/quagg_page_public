@@ -167,7 +167,7 @@ const handleFileUpload = async (event) => {
   if (!file) return;
   // Bearbeitetes Netz nicht kommentarlos ersetzen (P2.7)
   if (store.nodes.size > 0 && store.ungespeichert
-      && !window.confirm('Das aktuelle Netz hat ungespeicherte Änderungen. Trotzdem die neue Datei laden?')) {
+      && !(await store.frage('Das aktuelle Netz hat ungespeicherte Änderungen. Sie gehen beim Laden der neuen Datei verloren.', { titel: 'Neue Datei laden?', ja: 'Laden' }))) {
     event.target.value = '';
     return;
   }

@@ -613,6 +613,14 @@ html[data-theme] label:has(input[type="checkbox"]), html[data-theme] label:has(i
     cursor: var(--isy-cursor-gesperrt);
 }
 
+/* Beschriftungen OHNE Kästchen/Knopf: der Browser gibt <label> von sich aus den
+   Systempfeil (UA-Stylesheet `cursor: default`) — im Modul stand dort überall der
+   Windows-Pfeil statt des Pixel-Zeigers. :where() = ohne Gewicht, die Hand-Regel
+   für klickbare Labels oben gewinnt weiter. */
+:where(.isybau-main, html[data-theme]) label {
+    cursor: var(--isy-cursor-zeiger);
+}
+
 /**
  * Universelles Pixel-Aussehen fuer Eingabe- und Auswahlfelder.
  *
@@ -709,6 +717,17 @@ html[data-theme] .isy-select {
     background-repeat: no-repeat !important;
     background-position: right var(--isy-space-2) center !important;
     padding-right: var(--isy-space-6) !important;
+}
+
+/* Auswahlfeld OHNE eigene Größenklasse (KOSTRA, Modellregen, EZG-Koordinatensystem,
+   Neu starten, Seitenleiste): ohne Innenabstand klebte der Text an der linken
+   Pixelkante, und die Schrift erbte 16 px statt der 13 px der Eingabefelder.
+   :where() = ohne Gewicht, damit .small-select/.form-select … ihre Werte behalten. */
+:where(.isybau-main, html[data-theme]) .isy-select {
+    padding-top: var(--isy-space-1);
+    padding-bottom: var(--isy-space-1);
+    padding-left: var(--isy-space-2);
+    font-size: var(--isy-fs-md);
 }
 
 /* Formularelemente erben den Zeiger NICHT. Browser setzen ihnen im eigenen

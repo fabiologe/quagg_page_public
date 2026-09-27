@@ -126,7 +126,7 @@ async function save() {
   try {
     const name = newName.value.trim();
     const vorhanden = projects.value.find(p => p.name === name);
-    if (vorhanden && !window.confirm(`Ein Projekt „${name}" gibt es schon. Überschreiben?`)) return;
+    if (vorhanden && !(await store.frage(`Ein Projekt „${name}“ gibt es schon.`, { titel: 'Überschreiben?', ja: 'Überschreiben' }))) return;
     await saveProject(name, props.snapshot, vorhanden?.id ?? null);
     store.ungespeichert = false;
     newName.value = '';

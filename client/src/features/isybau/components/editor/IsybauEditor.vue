@@ -65,9 +65,9 @@ const props = defineProps({
 const isDrawMode = computed(() => ['addNode', 'addEdge', 'addArea', 'splitEdge'].includes(store.editor.mode));
 
 // Box-Select: Mehrfach-Löschen in EINEM Undo-Schritt
-const handleDeleteElements = (ids) => {
+const handleDeleteElements = async (ids) => {
     if (!ids?.length) return;
-    if (!confirm(`${ids.length} Elemente löschen? (Haltungen an gelöschten Schächten werden mit entfernt)`)) return;
+    if (!(await store.frage(`${ids.length} Elemente löschen? Haltungen an gelöschten Schächten werden mit entfernt.`, { titel: 'Löschen', ja: 'Löschen' }))) return;
     store.removeMany(ids);
 };
 

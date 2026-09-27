@@ -70,6 +70,9 @@ function zuweisen(ziel, felder, abgelehnt = []) {
 }
 
 let workerControllerInstance = null;
+// Auflöser der offenen Rückfrage (store.frage) — eine Funktion gehört nicht in den
+// reaktiven Zustand (Snapshot/DevTools), deshalb hier außerhalb.
+let frageAufloeser = null;
 
 function leseTextgroesse() {
     try {
@@ -172,6 +175,8 @@ export const useIsybauStore = defineStore('isybau-module', {
             preprocessingFocusType: null, // 'node' | 'edge' | 'area' — nötig, da Haltungs- und Schacht-IDs in ISYBAU-Daten kollidieren können
             elementModal: { mode: 'node', data: {} }, // Kontext fürs Erstellen-Modal
             importWarnings: [], // Sammelbericht übersprungener Elemente beim Import
+            // offene Rückfrage { titel, text, ja, nein } (components/common/Bestaetigung.vue)
+            frage: null,
             darkMode: typeof localStorage !== 'undefined' && localStorage.getItem('isybau-theme') === 'dark',
             // Textgröße beider 2D-Karten (Regler), im Browser gemerkt
             textGroesse: leseTextgroesse()
@@ -257,6 +262,23 @@ export const useIsybauStore = defineStore('isybau-module', {
             const zeit = dauerMs ?? (art === 'erfolg' ? 4000 : null);
             if (zeit) setTimeout(() => this.meldungSchliessen(id), zeit);
             return id;
+        },
+
+        /**
+         * Rückfrage im Stil des Moduls statt window.confirm (Designprüfung 2026-09-27).
+         * @returns {Promise<boolean>} true = bestätigt
+         */
+        frage(text, { titel = 'Bitte bestätigen', ja = 'OK', nein = 'Abbrechen' } = {}) {
+            if (frageAufloeser) frageAufloeser(false); // eine offene Frage gilt als verneint
+            this.ui.frage = { titel, text, ja, nein };
+            return new Promise((resolve) => { frageAufloeser = resolve; });
+        },
+
+        frageBeantworten(ja) {
+            const aufloeser = frageAufloeser;
+            frageAufloeser = null;
+            this.ui.frage = null;
+            aufloeser?.(!!ja);
         },
 
         meldungSchliessen(id) {
