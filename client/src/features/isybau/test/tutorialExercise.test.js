@@ -462,6 +462,15 @@ describe('Uebungs-Einzugsgebiet: Umriss, Befestigung, Anschluss', () => {
     expect(EXERCISE_STEPS[i + 2]).toBe(anschluss);
   });
 
+  // Der ψ-Wert steht bis zum Speichern nur im Formular: der Schritt kann nicht
+  // vorher weiterschalten. Also muss ER schon den Anschluss nennen — sonst
+  // erfährt man von R_019 erst nach einem [Weiter] (Befund T11).
+  it('der Formular-Schritt zeigt ψ UND Auslass und nennt R_019', () => {
+    expect(resolveStepHighlight(befestigung, storeWith({ ui: {} }))).toEqual(['area-befestigung', 'area-auslass']);
+    expect(befestigung.message).toMatch(/R_019/);
+    expect(befestigung.message).toMatch(/„Speichern“/);
+  });
+
   it('der Umriss liegt im Netz — nicht 630 m daneben', () => {
     // Der zweite Eckpunkt war als 409059.31 angegeben; das laege weit
     // westlich ausserhalb der Netzausdehnung (X 409572..409924). Dieser Test

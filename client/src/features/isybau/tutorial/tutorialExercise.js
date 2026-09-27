@@ -452,15 +452,20 @@ export const EXERCISE_STEPS = [
         id: 'ex-area-befestigung',
         mood: 'asking',
         info: 'befestigungsgrad',
-        highlight: 'area-befestigung',
+        // Beide Felder auf einmal: der Wert steht bis zum Speichern nur im
+        // Formular, dieser Schritt kann also nicht vorher weiterschalten — mit
+        // nur dem ψ-Feld musste man [Weiter] drücken, um den Anschluss zu
+        // erfahren (Befund T11, 2026-09-27).
+        highlight: ['area-befestigung', 'area-auslass'],
         // Der Text nennt das Feld genau so, wie es im Formular steht. Vorher
         // sagte die Ratte "Befestigungsgrad" — ein Wort, das nirgends auf dem
         // Bildschirm stand: die Testleserin fand das Feld deshalb nicht.
         message:
             'Gut gezeichnet! Jetzt der „Versiegelungsgrad ψ“ unter der Größe: welcher Anteil des '
-            + 'Regens im Kanal ankommt. 1 ist ein Dach, 0 ein Boden, der alles schluckt.\n\n'
-            + 'Unsere Wiese: trag 0,2 ein — 20 % laufen ab, der Rest versickert.',
-        hint: 'Feld „Versiegelungsgrad ψ (0.0 - 1.0)“: 0,2 eintragen.',
+            + 'Regens im Kanal ankommt. Unsere Wiese: trag 0,2 ein — 20 % laufen ab.\n\n'
+            + 'Darunter „Auslass“: wohin das Wasser läuft. Klick „Haltung“ an, wähl R_019 '
+            + 'und dann „Speichern“.',
+        hint: '„Versiegelungsgrad ψ (0.0 - 1.0)“: 0,2 → Auslass „Haltung“ → R_019 → „Speichern“.',
         // Nur sinnvoll, solange der Dialog steht — bricht der Nutzer ab, wird
         // dieser Schritt uebersprungen statt ins Leere zu zeigen.
         requires: areaModalOpen,
