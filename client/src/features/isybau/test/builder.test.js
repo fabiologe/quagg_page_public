@@ -728,3 +728,25 @@ describe('SwmmBuilder: Überstau-Regeln je Knoten', () => {
     });
 });
 
+
+describe('Profile, die SWMM nur näherungsweise kennt (Fahrplan Grenzen, Stufe 6)', () => {
+    const baue = (typ) => {
+        const nodes = [new Node({ id: 'N1', x: 0, y: 0, z: 100 }), new Node({ id: 'N2', x: 100, y: 0, z: 99 })];
+        const edges = [new Edge({ id: 'E', fromNodeId: 'N1', toNodeId: 'N2', length: 100, profile: { type: typ, height: 0.6, width: 0.9 } })];
+        edges[0].status = 1; // geplant: volle Nennweite, damit die Maße unverändert bleiben
+        return buildInp(makeStore({ nodes, edges }));
+    };
+    const form = (inp) => inp.split('[XSECTIONS]')[1].split('[')[0].split('\n').find(l => l.startsWith('E ')).trim().split(/\s+/)[1];
+
+    it('Kreis doppelwandig (4) ist ein Kreis — ohne Meldung', () => {
+        const { inpContent, warnings } = baue(4);
+        expect(form(inpContent)).toBe('CIRCULAR');
+        expect(warnings.some(w => /angenähert|gerechnet \(Breite/.test(w))).toBe(false);
+    });
+    it.each([[2, 'ARCH', /Maulprofil/], [6, 'EGG', /Eiprofil/], [11, 'CIRCULAR', /Bogenförmig/], [13, 'CIRCULAR', /Andere Profilart/]])(
+        'Profilart %i → %s, mit Meldung statt still', (typ, soll, text) => {
+            const { inpContent, warnings } = baue(typ);
+            expect(form(inpContent)).toBe(soll);
+            expect(warnings.find(w => text.test(w))).toMatch(/: E$/);
+        });
+});

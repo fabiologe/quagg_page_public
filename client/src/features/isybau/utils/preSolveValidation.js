@@ -146,7 +146,9 @@ export function checkStorageCurveHasEnoughPoints(node) {
 export function checkConduitProfile(edge) {
     const profile = edge.profile;
     if (!profile) return null;
-    const isCircular = profile.type === 0;
+    // Profile, für die der Übersetzer nur die Höhe braucht (Kreis, Kreis doppelwandig,
+    // Ei, Sonderprofile als Kreis) — die Breite darf dort 0 sein.
+    const isCircular = [0, 1, 4, 6, 9, 10, 11, 12, 13].includes(Number(profile.type));
     const heightOk = Number(profile.height) > 0;
     const widthOk = isCircular || Number(profile.width) > 0;
     if (!heightOk || !widthOk) {
@@ -156,7 +158,7 @@ export function checkConduitProfile(edge) {
             severity: 'error',
             code: 'ERR_119',
             message: isCircular
-                ? `Profil ungültig: Durchmesser (${fmtZahl(profile.height)} m) muss > 0 sein`
+                ? `Profil ungültig: ${[0, 4].includes(Number(profile.type)) ? 'Durchmesser' : 'Höhe'} (${fmtZahl(profile.height)} m) muss > 0 sein`
                 : `Profil ungültig: Höhe (${fmtZahl(profile.height)} m) und Breite (${fmtZahl(profile.width)} m) müssen > 0 sein`
         };
     }

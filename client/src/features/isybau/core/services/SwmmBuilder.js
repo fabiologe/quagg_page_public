@@ -916,6 +916,22 @@ LINKS                ALL
 
         const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
+        // Profile, die SWMM nur näherungsweise kennt — gesammelt, EINE Meldung je Profilart
+        // (vorher still als Kreis bzw. ARCH). Exakte DIN-4263-Formen bräuchten die Maße der
+        // Norm (CUSTOM-Querschnitt), die hier nicht vorliegen.
+        const genaehert = new Map();
+        const naeherung = (typ, id) => { if (!genaehert.has(typ)) genaehert.set(typ, []); genaehert.get(typ).push(id); };
+        const NAEHERUNG_TEXT = {
+            2: 'Maulprofil als SWMM-ARCH angenähert (Form weicht von DIN 4263 ab)',
+            6: 'Eiprofil H/B ≠ 3/2 als Ei 3:2 gerechnet (Breite nicht berücksichtigt)',
+            7: 'Maulprofil H/B ≠ 1,66/2 als SWMM-ARCH angenähert',
+            9: 'Doppeltrapezprofil als Kreis (Höhe = Durchmesser) angenähert',
+            10: 'U-förmiges Profil als Kreis (Höhe = Durchmesser) angenähert',
+            11: 'Bogenförmiges Profil als Kreis (Höhe = Durchmesser) angenähert',
+            12: 'Ovales Profil als Kreis (Höhe = Durchmesser) angenähert',
+            13: 'Andere Profilart als Kreis (Höhe = Durchmesser) angenähert',
+        };
+
         // Pumpe/Wehr/Drossel/Schieber: ein Bauwerksknoten hat konzeptionell EINE
         // Pumpe/EIN Wehr, nicht mehrere. Nur die erste ausgehende Haltung wird zum
         // Sonderlink; weitere ausgehende Haltungen bleiben normale Conduits (mit
@@ -1021,10 +1037,11 @@ LINKS                ALL
                 geom1 = pHeight;
 
                 // Type Mapping
-                if (pType === 0 || pType === 'Circular' || pType === 'Kreisprofil') {
-                    shape = 'CIRCULAR';
-                } else if (pType === 1 || pType === 'Egg') { // Eiprofil
+                if (pType === 0 || pType === 4 || pType === 'Circular' || pType === 'Kreisprofil') {
+                    shape = 'CIRCULAR'; // 4 = Kreis doppelwandig: hydraulisch ein Kreis
+                } else if (pType === 1 || pType === 6 || pType === 'Egg') { // Eiprofil
                     shape = 'EGG';
+                    if (pType === 6) naeherung(6, e.id); // SWMM-EGG hat fest H/B = 3/2
                 } else if (pType === 3 || pType === 'Rechteckprofil') { // Rechteck geschlossen
                     shape = 'RECT_CLOSED';
                     geom2 = pWidth > 0 ? pWidth : pHeight;
@@ -1041,11 +1058,12 @@ LINKS                ALL
                 } else if (pType === 2 || pType === 7) { // Maulprofil -> ARCH (Reference)
                     shape = 'ARCH';
                     geom2 = pWidth > 0 ? pWidth : pHeight;
+                    naeherung(pType, e.id); // SWMM-ARCH (US-Normrohr) ≠ Maulprofil DIN 4263
                 } else {
-                    // Default to Circular if type is unknown or explicit default
-                    // User Request (Step 1374): Remove "Flat Pipe Heuristic" (Width > Height).
-                    // Strict pType adherence.
+                    // Doppeltrapez, U-förmig, bogenförmig, oval, andere: ohne Formdaten
+                    // als Kreis (Höhe = Durchmesser) — gemeldet, nicht mehr still.
                     shape = 'CIRCULAR';
+                    naeherung(pType, e.id);
                 }
             }
 
@@ -1071,6 +1089,10 @@ LINKS                ALL
             xsections += `${this.pad(e.id)} ${this.pad(shape)} ${this.pad(geom1)} ${this.pad(geom2)} ${this.pad(geom3)} ${this.pad(geom4)} 1\n`;
         }
 
+        for (const [typ, ids] of genaehert) {
+            this.warnings.push(`${NAEHERUNG_TEXT[typ] ?? `Profilart ${typ} als Kreis angenähert`}: `
+                + `${ids.slice(0, 8).join(', ')}${ids.length > 8 ? ` … (${ids.length})` : ''}`);
+        }
         this.sections.push(conduits);
         this.sections.push(xsections);
     }

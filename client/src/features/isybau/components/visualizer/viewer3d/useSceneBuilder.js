@@ -536,7 +536,9 @@ export function useSceneBuilder() {
 
       let geo, mat;
 
-      if (pType === 4 || pType === 8) {
+      // 4 ist „Kreisprofil (doppelwandig)“ (utils/mappings.js Profilart) — war hier als
+      // Trapez gezeichnet; es läuft jetzt unten mit den Kreisen.
+      if (pType === 8) {
         // Trapezkanalquerschnitt — open channel, no top lid
         geo = buildOrientedPipe(trapezoidPts(h, w), path3D, true);
       } else if (pType === 5) {
@@ -545,10 +547,10 @@ export function useSceneBuilder() {
       } else if (pType === 3 || pType === 'Rechteckprofil') {
         // Geschlossenes Rechteckprofil
         geo = buildOrientedPipe(rectPts(h, w), path3D, false);
-      } else if (pType === 2) {
+      } else if (pType === 2 || pType === 7) {
         // Maulprofil (horseshoe section)
         geo = buildOrientedPipe(maulprofilPts(h, w), path3D, false);
-      } else if (pType === 1 || pType === 'Egg') {
+      } else if (pType === 1 || pType === 6 || pType === 'Egg') {
         // Eiprofil
         geo = buildOrientedPipe(eggPts(h, w), path3D, false);
       } else {

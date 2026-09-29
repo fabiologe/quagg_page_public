@@ -240,12 +240,14 @@
                 <h5>🌧️ Profile</h5>
                 <table class="tech-table">
                     <tr><th>Profil (ISYBAU)</th><th>SWMM</th></tr>
-                    <tr><td>Kreis (0)</td><td>CIRCULAR</td></tr>
+                    <tr><td>Kreis (0), Kreis doppelwandig (4)</td><td>CIRCULAR</td></tr>
                     <tr><td>Ei (1)</td><td>EGG</td></tr>
-                    <tr><td>Maul (2)</td><td>ARCH</td></tr>
+                    <tr><td>Ei H/B ≠ 3/2 (6)</td><td>EGG — Näherung, Breite unberücksichtigt</td></tr>
+                    <tr><td>Maul (2, 7)</td><td>ARCH — Näherung, Form weicht von DIN 4263 ab</td></tr>
                     <tr><td>Rechteck geschlossen (3)</td><td>RECT_CLOSED</td></tr>
                     <tr><td>Rechteck offen (5)</td><td>RECT_OPEN</td></tr>
                     <tr><td>Trapez (8)</td><td>TRAPEZOIDAL</td></tr>
+                    <tr><td>Doppeltrapez, U-förmig, bogenförmig, oval, andere (9–13)</td><td>CIRCULAR — Näherung (Höhe = Durchmesser); jede Näherung wird im Ergebnis gemeldet</td></tr>
                 </table>
             </div>
           </div>
