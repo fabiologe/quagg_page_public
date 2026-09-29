@@ -499,6 +499,15 @@ async function exportPDF() {
     // PAGE 1 — Zusammenfassung
     // ════════════════════════════════════════════════════════════════════════
     let cy = 20;
+    // Abschnitt (Überschrift + Tabelle/Grafik) nur beginnen, wenn er ganz auf die Seite
+    // passt — sonst stand die Überschrift allein unten (Tabellenkopf S. 1, Zeilen S. 2).
+    const UNTEN = 297 - 12;
+    const mitPlatz = (y, hoehe) => {
+      if (y + hoehe <= UNTEN) return y;
+      doc.addPage();
+      return 20;
+    };
+    const tabellenHoehe = (zeilen) => 11 + 7 + zeilen * 6; // Überschrift, Kopf, Zeilen
 
     // Report title
     doc.setFont('helvetica', 'bold');
@@ -597,6 +606,7 @@ async function exportPDF() {
 
     // Rain Chart
     if (series.length > 0) {
+      cy = mitPlatz(cy, 11 + 4 + 48);
       cy = sectionTitle(doc, cy, `Modellregen — ${props.rain?.activeModelRain?.type === 'euler2' ? 'Euler Typ II' : 'Blockregen'}`);
       const totalMm = series.reduce((s, p) => s + (p.height_mm ?? p.intensity * interval * 0.006), 0);
       const peakI   = Math.max(...series.map(s => s.intensity || 0));
@@ -614,7 +624,8 @@ async function exportPDF() {
 
     // Ausleitungen
     if (stats.outfallLoading?.length) {
-      cy = sectionTitle(doc, cy + 2, `Ausleitungen (${stats.outfallLoading.length})`);
+      cy = mitPlatz(cy + 2, tabellenHoehe(stats.outfallLoading.length));
+      cy = sectionTitle(doc, cy, `Ausleitungen (${stats.outfallLoading.length})`);
       autoTable(doc, {
         ...tableDefaults(),
         startY: cy,
@@ -634,7 +645,8 @@ async function exportPDF() {
     // Ausleitung, siehe outfallCatchments.js für die (vereinfachte) Herleitung.
     const outfallCatchments = summarizeOutfallCatchments(props.areas, props.nodes, props.edges);
     if (outfallCatchments.length) {
-      cy = sectionTitle(doc, cy + 2, `Ausleitungen — angeschlossene Einzugsgebiete (${outfallCatchments.length})`);
+      cy = mitPlatz(cy + 2, tabellenHoehe(outfallCatchments.length));
+      cy = sectionTitle(doc, cy, `Ausleitungen — angeschlossene Einzugsgebiete (${outfallCatchments.length})`);
       autoTable(doc, {
         ...tableDefaults(),
         startY: cy,
@@ -646,13 +658,16 @@ async function exportPDF() {
           fmt(o.impervAreaHa, 4),
         ]),
       });
+      cy = doc.lastAutoTable.finalY + 4;
     }
 
     // ════════════════════════════════════════════════════════════════════════
     // PAGE 2 — Netzwerk + Haltungen
     // ════════════════════════════════════════════════════════════════════════
-    doc.addPage();
-    cy = 20;
+    // Neue Seite, solange Seite 1 nicht übergelaufen ist; sonst auf der Folgeseite
+    // weiter (statt einer Seite mit nur dem Überlauf).
+    if (doc.internal.getNumberOfPages() === 1) { doc.addPage(); cy = 20; }
+    else cy = mitPlatz(cy + 2, 11 + 83);
 
     cy = sectionTitle(doc, cy, 'Netzwerk-Übersicht');
     drawNetwork(doc, ML, cy, CW, 78);
