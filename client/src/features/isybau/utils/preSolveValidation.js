@@ -254,6 +254,20 @@ export function checkEdgeZahlen(edge) {
  */
 export function checkAreas(areas, nodeById) {
     const funde = [];
+    // Fehlender Abflussbeiwert: gerechnet wird mit der Programmvorgabe (psiWirksam),
+    // aber nicht still — EIN Hinweis für alle (eine Datei ohne ψ hat ihn meist bei
+    // keiner Fläche). Die Kennung der ersten Fläche lässt „→ Element öffnen“ in die
+    // Datenmaske springen, die dort die Vorgabe zum Übernehmen einträgt.
+    // Keine Sperre: viele ISYBAU-Dateien führen gar keinen Abflussbeiwert.
+    const ohnePsi = areas.filter(a => a.runoffCoeff == null);
+    if (ohnePsi.length) {
+        const beispiele = ohnePsi.slice(0, 3).map(a => a.id).join(', ') + (ohnePsi.length > 3 ? ' …' : '');
+        funde.push({
+            id: ohnePsi[0].id, elementType: 'area', severity: 'warning', code: 'WARN_PSI_VORGABE', sammel: true,
+            message: `${ohnePsi.length} Fläche${ohnePsi.length === 1 ? '' : 'n'} ohne Abflussbeiwert ψ (${beispiele}) — `
+                + 'gerechnet mit der Programmvorgabe je Flächenfunktion; in „Daten bearbeiten“ prüfen',
+        });
+    }
     for (const a of areas) {
         if (!(endlich(a.size) && a.size > 0)) funde.push(fehler(a.id, 'area', 'ERR_FLAECHE', `Flächengröße muss > 0 ha sein (${a.size ?? 'leer'})`));
         if (a.runoffCoeff != null && !(endlich(a.runoffCoeff) && a.runoffCoeff >= 0 && a.runoffCoeff <= 1)) {

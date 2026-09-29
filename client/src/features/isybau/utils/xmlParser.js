@@ -655,7 +655,11 @@ const parseHydraulics = (doc) => {
                         pollution: parseInt(f.getElementsByTagName("Verschmutzungsklasse")[0]?.textContent || 0),
                         slope: parseInt(f.getElementsByTagName("Neigungsklasse")[0]?.textContent || 0),
                         size: parseNum(f.getElementsByTagName("Flaechengroesse")[0]?.textContent), // In hectares (ha)
-                        runoffCoeff: parseNum(f.getElementsByTagName("Abflussbeiwert")[0]?.textContent),
+                        // Fehlt der Wert, NICHT 0 eintragen: 0 hieße „kein Abfluss“ und
+                        // übersteuert die Programmvorgabe in Area (Befund 8). null = fehlt.
+                        runoffCoeff: f.getElementsByTagName("Abflussbeiwert")[0]?.textContent?.trim()
+                            ? parseNum(f.getElementsByTagName("Abflussbeiwert")[0].textContent)
+                            : null,
                         edgeId: ref
                     });
                 }

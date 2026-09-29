@@ -316,6 +316,9 @@ export const getRoughness = (material) => {
 
 // Horton Infiltration Parameters (Max, Min, Decay, DryTime, MaxInfil)
 // Based on Green-Ampt/Horton Soil Types
+// DERZEIT UNBENUTZT (2026-09-29): ψ ist ein Abflussbeiwert, der durchlässige
+// Rest erzeugt keinen Abfluss (SwmmBuilder.addSubcatchments). Bleibt für einen
+// späteren Verlustansatz nach DWA-M 165-1 (Befestigungsgrad + Versickerung).
 export const getHortonParams = (func) => {
     // defaults: maxRate (mm/hr), minRate (mm/hr), decay (1/hr), dryTime (days), maxInfil (mm)
 
@@ -352,6 +355,16 @@ export const getHortonParams = (func) => {
     // Clay / Loam mix
     return { max: 25.0, min: 5.0, decay: 4.0, dry: 7.0, maxVol: 0 };
 };
+
+/**
+ * Der Abflussbeiwert, mit dem gerechnet wird: der eingetragene, sonst die
+ * Programmvorgabe je Flächenfunktion/Neigung (getRunoffCoeff). EINE Stelle für
+ * Übersetzer, Auslass-Übersicht und Fläche — fehlt ψ, meldet die Vorab-Prüfung
+ * das (WARN_PSI_VORGABE), gerechnet wird trotzdem nicht mit 0.
+ */
+export const psiWirksam = (area) => (area?.runoffCoeff ?? null) !== null && Number.isFinite(Number(area.runoffCoeff))
+    ? Number(area.runoffCoeff)
+    : getRunoffCoeff(area?.property, area?.function, area?.slope);
 
 export const getRunoffCoeff = (property, func, slopeClass) => {
     // Logic based on Function and Slope (Prioritized over Type)

@@ -88,3 +88,21 @@ describe('Parser-Hinweise', () => {
         expect(p.warnings).toEqual([]);
     });
 });
+
+describe('Abflussbeiwert der Flächen (Befund 8)', () => {
+    // test.xml hat bei keiner Fläche ein <Abflussbeiwert>. Vorher wurde daraus
+    // 0 — „kein Abfluss“ —, und die Programmvorgabe in Area griff nicht, weil
+    // 0 als bewusst gesetzt galt. Jetzt: fehlt = null, Area setzt die Vorgabe.
+    const flaechen = parseIsybauXML(testXml).hydraulics.areas;
+
+    it('fehlender Abflussbeiwert wird null, nicht 0', () => {
+        expect(flaechen.length).toBeGreaterThan(0);
+        expect(flaechen.every(a => a.runoffCoeff === null)).toBe(true);
+    });
+
+    it('ein eingetragener Wert — auch 0 — bleibt', () => {
+        const xml = testXml.replace(/(<Flaechengroesse>[^<]*<\/Flaechengroesse>)/, '$1<Abflussbeiwert>0</Abflussbeiwert>');
+        const erste = parseIsybauXML(xml).hydraulics.areas.find(a => a.runoffCoeff !== null);
+        expect(erste?.runoffCoeff).toBe(0);
+    });
+});

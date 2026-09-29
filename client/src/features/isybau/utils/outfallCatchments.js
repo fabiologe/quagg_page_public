@@ -18,7 +18,7 @@
  * bei solchen Netzen leer bleiben, obwohl die Simulation selbst genau diesen
  * Fallback nutzt.
  */
-import { classifyPreview } from './mappings.js';
+import { classifyPreview, psiWirksam } from './mappings.js';
 
 function toArray(collection) {
     if (!collection) return [];
@@ -120,7 +120,7 @@ export function summarizeOutfallCatchments(areas, nodes, edges) {
         for (const part of parts) {
             const outfallId = traceToOutfall(part.nodeId);
             if (!outfallId) continue;
-            addContribution(outfallId, sizeHa * part.fraction, area.runoffCoeff);
+            addContribution(outfallId, sizeHa * part.fraction, psiWirksam(area)); // wie der Übersetzer
         }
     }
 

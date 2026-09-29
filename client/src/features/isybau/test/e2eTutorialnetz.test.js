@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { setActivePinia, createPinia } from 'pinia';
 import { JSDOM } from 'jsdom';
+import { KOSTRA, uebungsnetzHerrichten, abschnitt, zahlNach, niederschlagMm, berichteteMaxTiefe } from './helpers/rptKennzahlen.js';
 
 // xmlParser.js braucht DOMParser (Browser-API), Umgebung ist node (für WASM).
 globalThis.DOMParser ??= new JSDOM('').window.DOMParser;
@@ -28,28 +29,15 @@ const { calculateBlockRain, calculateEulerType2 } = await import('../utils/RainM
 const { getRunoffCoeff } = await import('../utils/mappings.js');
 const { haltungsZustand } = await import('../utils/typPalette.js');
 
-const pfad = (rel) => fileURLToPath(new URL(rel, import.meta.url));
-const TUTORIAL_XML = readFileSync(pfad('../../../../public/saintv1d/tutorial/Beispiel_Tutorial.xml'), 'latin1');
-const KOSTRA = JSON.parse(readFileSync(pfad('./fixtures/kostra_beispielstandort.json'), 'utf8'));
 
 const LAUFZEIT = 120_000;
 
 // ── Übungsnetz so herrichten, wie es die Übung verlangt ─────────────────────
 function uebungsnetz() {
     setActivePinia(createPinia());
-    const store = useIsybauStore();
-    store.loadParsedData(parseIsybauXML(TUTORIAL_XML));
-    // Die Übung lässt diese Profile korrigieren (Vorab-Prüfung blockiert sonst).
-    for (const [id, h] of [['R-0030', 0.5], ['80454891V1', 0.3], ['80454893V2', 0.3]]) {
-        store.edges.get(id).profile.height = h;
-    }
-    // Die Übung macht beide Auslässe zu Auslaufbauwerken (Typ 5).
-    for (const id of ['AL1_RBB', 'AL2_RRB']) store.nodes.get(id).bauwerkstyp = 5;
-    // Die Datei hat keine Abflussbeiwerte (setzt der Student) → Programmvorgaben.
-    for (const a of store.areaArray) {
-        if (!(a.runoffCoeff > 0)) a.runoffCoeff = getRunoffCoeff(a.property, a.function, a.slope);
-    }
-    return store;
+    // Profile korrigiert, Auslässe als Auslaufbauwerk, Abflussbeiwerte aus den
+    // Programmvorgaben — wie am Ende der Übung (helpers/rptKennzahlen.js).
+    return uebungsnetzHerrichten(useIsybauStore(), { parseIsybauXML, getRunoffCoeff });
 }
 
 function blockregen(store, rN, dauer, intervall) {
@@ -70,27 +58,9 @@ function euler2(store, T = 'RN_003A', dauer = 60, intervall = 5) {
     });
 }
 
-// ── Aus dem SWMM-Originalbericht lesen (unabhängig vom RptParser) ────────────
-const abschnitt = (rpt, titel) => {
-    const start = rpt.indexOf(titel);
-    if (start < 0) return '';
-    const ende = rpt.indexOf('Continuity Error (%)', start);
-    return rpt.slice(start, rpt.indexOf('\n', ende));
-};
-const zahlNach = (text, label) => {
-    const m = text.match(new RegExp(label.replace(/[()]/g, '\\$&') + '\\s*\\.+\\s+([-\\d.]+)'));
-    return m ? parseFloat(m[1]) : NaN;
-};
-const niederschlagMm = (rpt) => {
-    const m = rpt.match(/Total Precipitation\s*\.+\s+[-\d.]+\s+([-\d.]+)/);
-    return m ? parseFloat(m[1]) : NaN;
-};
-/** „Node Depth Summary": Spalte „Reported Max Depth" (Maximum über die Ausgabeschritte). */
-const berichteteMaxTiefe = (rpt, knoten) => {
-    const block = rpt.slice(rpt.indexOf('Node Depth Summary'), rpt.indexOf('Node Inflow Summary'));
-    const zeile = block.split('\n').find(l => l.trim().split(/\s+/)[0] === knoten);
-    return zeile ? parseFloat(zeile.trim().split(/\s+/).pop()) : NaN;
-};
+const pfad = (rel) => fileURLToPath(new URL(rel, import.meta.url));
+
+// Aus dem SWMM-Originalbericht lesen (unabhängig vom RptParser): helpers/rptKennzahlen.js
 
 describe('Übungsnetz, echter Rechenweg', () => {
     let store;
@@ -253,17 +223,19 @@ describe('test.xml, echter Rechenweg', () => {
         expect(warnings[0]).toMatch(/Systemweiter Kontinuitätsfehler.*Gegenprobe mit Überstauverfahren EXTRAN/);
     }, LAUFZEIT);
 
-    // P1.1 (Entscheidung 2026-09-26): Auslastung = Q/Qvoll, Einstau getrennt. R_002 liegt im
-    // Rückstau voll (h/hvoll 1,00), führt aber kaum Wasser — vorher „Überlastet" (h/hvoll > 0,9).
-    it('P1.1: R_002 ist eingestaut, nicht überlastet; überlastet heißt Q > Qvoll', async () => {
+    // P1.1 (Entscheidung 2026-09-26): Auslastung = Q/Qvoll, Einstau getrennt. Eine Haltung, die
+    // im Rückstau voll steht, aber weniger als Qvoll führt, ist „eingestaut", nicht „überlastet"
+    // (vorher h/hvoll > 0,9 = überlastet). Früher an R_002 festgemacht — seit ψ nicht mehr
+    // doppelt zählt (Fahrplan Stufe 1), steht R_002 nicht mehr voll; geprüft wird die Regel.
+    it('P1.1: eingestaut ≠ überlastet; überlastet heißt Q > Qvoll', async () => {
         const store = uebungsnetz();
         store.rain.duration = 3; euler2(store);
         await store.runSimulation();
         const { edges } = store.simulation.results;
-        const r2 = haltungsZustand(edges.R_002);
-        expect(edges.R_002.depthRatio).toBeGreaterThanOrEqual(0.99);
-        expect(r2.auslastung).toBeLessThan(5);
-        expect(r2.status).toBe('eingestaut');
+        const eingestaut = Object.entries(edges).filter(([, r]) => haltungsZustand(r).status === 'eingestaut');
+        expect(eingestaut.length, 'am Übungsnetz stehen Haltungen im Rückstau voll').toBeGreaterThan(0);
+        // Voll (h/hvoll ≥ 0,99 oder beidseitig voll) UND höchstens Qvoll — sonst wäre sie überlastet
+        for (const [id, r] of eingestaut) expect(Math.abs(r.maxFlow), id).toBeLessThanOrEqual(r.capacity);
         for (const [id, r] of Object.entries(edges)) {
             const z = haltungsZustand(r);
             if (z.status === 'überlastet') expect(Math.abs(r.maxFlow), id).toBeGreaterThan(r.capacity);

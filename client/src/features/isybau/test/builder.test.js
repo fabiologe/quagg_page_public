@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SwmmBuilder } from '../core/services/SwmmBuilder.js';
+import { SwmmBuilder, KEIN_ABFLUSS_MM_H } from '../core/services/SwmmBuilder.js';
 import { Node } from '../core/domain/Node.js';
 import { Edge } from '../core/domain/Edge.js';
 
@@ -461,6 +461,32 @@ describe('SwmmBuilder', () => {
         expect(warnings.some(w => w.includes('F2') && w.includes('Gefälleklasse'))).toBe(true);
         const subLine = inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0].split('\n').find(l => l.startsWith('F2'));
         expect(subLine.trim().split(/\s+/)[6]).toBe('0.500');
+    });
+
+    // === Abflussbeiwert ψ: der Rest der Fläche erzeugt keinen Abfluss ===
+    // Vorher Horton je Flächenfunktion auf dem „durchlässigen“ Rest: unter
+    // Starkregen lief er mit ab, SWMM rechnete ψ_eff 0,74 statt 0,49
+    // (doc/GrenzenEvaluierung.md B1). Am echten Rechenweg gemessen in
+    // kennwerteUebungsnetz.test.js; hier nur, WAS in die .inp geschrieben wird.
+    it('ψ wird %Imperv, der Rest bekommt eine Versickerung, die nie überschritten wird', () => {
+        const { inpContent } = buildInp(makeStore({
+            ...baseNetwork(),
+            areas: [
+                { id: 'FV', size: 0.5, runoffCoeff: 0.9, slope: 1, nodeId: 'N1', function: 3 }, // Verkehr: vorher 15→3 mm/h
+                { id: 'FG', size: 0.5, runoffCoeff: 0.2, slope: 1, nodeId: 'N1', function: 2 },
+            ],
+        }));
+        const zeile = (abschnitt, id) => inpContent.split(`[${abschnitt}]`)[1].split('[')[0]
+            .split('\n').find(l => l.startsWith(id)).trim().split(/\s+/);
+        expect(parseFloat(zeile('SUBCATCHMENTS', 'FV')[4])).toBeCloseTo(90);
+        expect(parseFloat(zeile('SUBCATCHMENTS', 'FG')[4])).toBeCloseTo(20);
+        for (const id of ['FV', 'FG']) {
+            const [, maxRate, minRate] = zeile('INFILTRATION', id).map(Number);
+            expect(minRate).toBe(KEIN_ABFLUSS_MM_H);
+            expect(maxRate).toBe(KEIN_ABFLUSS_MM_H);
+        }
+        // Keine KOSTRA-Intensität kommt auch nur in die Nähe (5 min, 100 a ≈ 300 mm/h)
+        expect(KEIN_ABFLUSS_MM_H).toBeGreaterThanOrEqual(1000);
     });
 
     // === Regen: kein Fake-Sturm mehr, wenn keine Regenreihe konfiguriert ist ===

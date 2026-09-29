@@ -461,11 +461,11 @@ export const EXERCISE_STEPS = [
         // sagte die Ratte "Befestigungsgrad" — ein Wort, das nirgends auf dem
         // Bildschirm stand: die Testleserin fand das Feld deshalb nicht.
         message:
-            'Gut gezeichnet! Jetzt der „Versiegelungsgrad ψ“ unter der Größe: welcher Anteil des '
+            'Gut gezeichnet! Jetzt der „Abflussbeiwert ψ“ unter der Größe: welcher Anteil des '
             + 'Regens im Kanal ankommt. Unsere Wiese: trag 0,2 ein — 20 % laufen ab.\n\n'
             + 'Darunter „Auslass“: wohin das Wasser läuft. Klick „Haltung“ an, wähl R_019 '
             + 'und dann „Speichern“.',
-        hint: '„Versiegelungsgrad ψ (0.0 - 1.0)“: 0,2 → Auslass „Haltung“ → R_019 → „Speichern“.',
+        hint: '„Abflussbeiwert ψ (0.0 - 1.0)“: 0,2 → Auslass „Haltung“ → R_019 → „Speichern“.',
         // Nur sinnvoll, solange der Dialog steht — bricht der Nutzer ab, wird
         // dieser Schritt uebersprungen statt ins Leere zu zeigen.
         requires: areaModalOpen,
@@ -504,10 +504,10 @@ export const EXERCISE_STEPS = [
         id: 'ex-runoff-coeff',
         mood: 'asking',
         info: 'befestigungsgrad',
-        task: 'Gib jeder Fläche einen Versiegelungsgrad.',
+        task: 'Gib jeder Fläche einen Abflussbeiwert.',
         message:
             'Die übrigen Flächen haben noch keinen Wert. Das geht schneller in der Tabelle: '
-            + '„Daten bearbeiten“, Reiter „Flächen“, Spalte „Versiegelungsgrad ψ“ — dann „Übernehmen“.\n\n'
+            + '„Daten bearbeiten“, Reiter „Flächen“, Spalte „Abflussbeiwert ψ“ — dann „Übernehmen“.\n\n'
             + 'Faustwerte: Dach/Asphalt 0,9 · Pflaster 0,6 · Schotter 0,4 · Wiese 0,1.',
         hint: 'Mehrere Zeilen anhaken und „✎ Bearbeiten“ setzt den Wert für alle auf einmal. '
             + 'Halb Dach, halb Rasen liegt bei rund 0,5.',

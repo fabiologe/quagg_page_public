@@ -256,6 +256,19 @@ describe('Vorab-Prüfung P2', async () => {
         ];
         expect(codes(validateNetwork(netz, kanten, flaechen))).toEqual(['ERR_FLAECHE:F1', 'ERR_FLAECHE:F2', 'ERR_ANSCHLUSS:F3', 'ERR_FLAECHE:F4']);
     });
+    // Fehlender ψ (viele ISYBAU-Dateien führen keinen Abflussbeiwert): nicht still
+    // 0 (Befund 8) und nicht still die Vorgabe, sondern EIN Hinweis — ohne Sperre.
+    it('fehlender Abflussbeiwert: ein Sammelhinweis, kein Fehler', () => {
+        const flaechen = ['F1', 'F2', 'F3', 'F4'].map(id => ({ id, size: 1, nodeId: 'A', runoffCoeff: null }));
+        flaechen.push({ id: 'F5', size: 1, nodeId: 'A', runoffCoeff: 0 }); // 0 ist ein Wert
+        const funde = validateNetwork(netz, kanten, flaechen);
+        const psi = funde.filter(f => f.code === 'WARN_PSI_VORGABE');
+        expect(psi).toHaveLength(1);
+        expect(psi[0].severity).toBe('warning');
+        expect(psi[0].id).toBe('F1'); // Sprungziel „→ Element öffnen“
+        expect(psi[0].message).toMatch(/^4 Flächen ohne Abflussbeiwert ψ \(F1, F2, F3 …\)/);
+        expect(funde.some(f => f.severity === 'error')).toBe(false);
+    });
     it('Namen: Leerzeichen, „;", nur Groß-/Kleinschreibung verschieden', () => {
         const f = validateNetwork([...netz, n('b', 1), n('C D', 1)], kanten);
         expect(codes(f)).toEqual(expect.arrayContaining(['ERR_NAME:b', 'ERR_NAME:C D']));

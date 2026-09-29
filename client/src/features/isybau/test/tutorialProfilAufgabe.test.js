@@ -19,7 +19,7 @@ vi.mock('../core/worker/WorkerController.js', async () => ({
 const { useIsybauStore } = await import('../store/index.js');
 const { parseIsybauXML } = await import('../utils/xmlParser.js');
 const { useTutorialGuide } = await import('../tutorial/useTutorialGuide.js');
-const { EXERCISE_STEPS, alleProfileGueltig } = await import('../tutorial/tutorialExercise.js');
+const { EXERCISE_STEPS, alleProfileGueltig, allAreasHaveRunoffCoeff } = await import('../tutorial/tutorialExercise.js');
 
 const XML = readFileSync(fileURLToPath(new URL('../../../../public/saintv1d/tutorial/Beispiel_Tutorial.xml', import.meta.url)), 'latin1');
 const KAPUTT = ['R-0030', '80454891V1', '80454893V2'];
@@ -42,6 +42,15 @@ function guideBisLauf(store) {
 }
 
 describe('Übung: Profile mit Höhe 0 reparieren (echter Store)', () => {
+    // Die Übungsdatei hat keinen <Abflussbeiwert>. Seit ψ nicht mehr still ergänzt
+    // wird (Area: fehlt = null), bleibt die Aufgabe „Abflussbeiwert eintragen“ offen.
+    it('das Übungsnetz kommt ohne Abflussbeiwerte — die Aufgabe dazu bleibt offen', () => {
+        const store = netz();
+        expect(store.areaArray.length).toBe(38);
+        expect(store.areaArray.every(a => a.runoffCoeff === null)).toBe(true);
+        expect(allAreasHaveRunoffCoeff(store)).toBe(false);
+    });
+
     it('das Übungsnetz bringt genau die drei kaputten Profile mit', () => {
         const store = netz();
         expect(alleProfileGueltig(store)).toBe(false);

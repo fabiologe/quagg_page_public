@@ -118,7 +118,7 @@
                <input v-model.number="formData.size" type="number" step="0.0001" class="form-input" required />
              </div>
              <div class="form-group" data-tutorial="area-befestigung">
-               <label>Versiegelungsgrad ψ (0.0 - 1.0)</label>
+               <label>Abflussbeiwert ψ (0.0 - 1.0)</label>
                <input v-model.number="formData.runoffCoeff" type="number" step="0.01" min="0" max="1" class="form-input" required />
              </div>
              <div class="form-group">

@@ -1,7 +1,12 @@
-import { getHortonParams, getEffectiveBauwerkstyp, classifyPreview, LINK_BAUWERKSTYPEN, Bauwerkstyp } from '../../utils/mappings.js';
+import { getEffectiveBauwerkstyp, psiWirksam, classifyPreview, LINK_BAUWERKSTYPEN, Bauwerkstyp } from '../../utils/mappings.js';
 import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
 import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
 import { waehleErsatzAuslass, ersatzAuslassKandidaten } from '../../utils/preSolveValidation.js';
+
+// Versickerungsrate des durchlässigen Flächenanteils: so hoch, dass kein Regen
+// darauf abfließt (ψ ist schon der Abflussbeiwert, siehe addSubcatchments).
+// 1000 mm/h liegt weit über jeder KOSTRA-Intensität (5 min, 100 a ≈ 300 mm/h).
+export const KEIN_ABFLUSS_MM_H = 1000;
 /**
  * Builder Service for SWMM .inp generation.
  * Uses Domain Models (Node, Edge) instead of raw JSON.
@@ -174,7 +179,8 @@ LINKS                ALL
 
             const rainGage = 'RG1';
             const sizeHa = this.safeFloat(area.size, 0.01);
-            const imperv = this.safeFloat(area.runoffCoeff, 0.5) * 100;
+            // Fehlt ψ: Programmvorgabe statt pauschal 0,5 (Vorab-Prüfung meldet es, WARN_PSI_VORGABE)
+            const imperv = psiWirksam(area) * 100;
             const width = Math.sqrt(sizeHa * 10000);
 
             // Slope mapping: Neigungsklasse (1-5, siehe mappings.js) -> repräsentativer SWMM %Slope
@@ -201,16 +207,16 @@ LINKS                ALL
 
                 const subWidth = Math.sqrt(subAreaSize * 10000);
 
-                // Horton Parameters based on Function (1=Roof, 2=Green, 3=Traffic)
-                // Use area.functionId (mapped from UI? Usually mapped to 'flaechenfunktion')
-                // Assuming area.function (int code) exists. Note: 'flaechenfunktion' is mostly used in parsing.
-                // The Area model might need to ensure it carries this prop.
-                // XML Parser maps 'function' (int).
-                const horton = getHortonParams(area.function);
-
+                // ψ ist ein ABFLUSSBEIWERT (ISYBAU „Abflussbeiwert“): der Anteil des
+                // Regens, der ankommt. Er geht als undurchlässiger Anteil ein; der Rest
+                // der Fläche darf dann KEINEN Abfluss mehr erzeugen, sonst zählt SWMM
+                // doppelt. Vorher lag hier Horton je Flächenfunktion (Verkehr 15→3 mm/h …)
+                // — unter Starkregen lief der „durchlässige“ Rest mit ab: ψ 0,49 ergab
+                // 0,74 Oberflächenabfluss, Spitze +19 % (doc/GrenzenEvaluierung.md, B1).
+                // Die Verluste stecken schon in ψ, daher auch nur ein Rest-Muldenverlust.
                 subcatchments += `${this.pad(subName)} ${this.pad(rainGage)} ${this.pad(outlet)} ${this.pad(subAreaSize)} ${this.pad(imperv)} ${this.pad(subWidth)} ${this.pad(slope)} 0\n`;
                 subareas += `${this.pad(subName)} 0.01       0.1        0.05       0.05       25         OUTLET    \n`;
-                infiltration += `${this.pad(subName)} ${this.pad(horton.max)} ${this.pad(horton.min)} ${this.pad(horton.decay)} ${this.pad(horton.dry)} 0\n`;
+                infiltration += `${this.pad(subName)} ${this.pad(KEIN_ABFLUSS_MM_H)} ${this.pad(KEIN_ABFLUSS_MM_H)} 4          7          0\n`;
             };
 
             if (hasSplit) {

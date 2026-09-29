@@ -475,7 +475,9 @@ watch(() => store.ui.importWarnings, (msgs) => {
     box-shadow: var(--isy-elev-3);
     border-radius: var(--isy-radius-sm);
     padding: var(--isy-space-4);
-    z-index: calc(var(--isy-z-top) + 1);
+    /* Unter den Fenstern: über ihnen deckte er „Übernehmen“ der Datenmaske zu
+       (unten rechts, gemessen 2026-09-29) — das Fenster ist die laufende Arbeit. */
+    z-index: calc(var(--isy-z-panel) + 1);
     font-size: var(--isy-fs-lg);
     color: var(--isy-toast-text);
 }
@@ -483,8 +485,6 @@ watch(() => store.ui.importWarnings, (msgs) => {
 .warning-toast--oben {
     bottom: auto;
     top: 150px; /* Legende samt Koordinatenzeile endet bei ~138 px */
-    /* unter den Fenstern: sonst deckt er in der Übung die Datenmaske zu */
-    z-index: calc(var(--isy-z-panel) + 1);
 }
 
 .toast-header {

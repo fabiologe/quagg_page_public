@@ -2,7 +2,7 @@
  * Domain Model for an Area (Fläche) in the sewer network.
  * Represents surface areas contributing to runoff.
  */
-import { getRunoffCoeff, getMapping } from '../../utils/mappings.js';
+import { getMapping, psiWirksam } from '../../utils/mappings.js';
 
 export class Area {
     constructor({
@@ -36,13 +36,12 @@ export class Area {
         // Metrics
         this.size = Number(size); // in hectares (ha)
 
-        // Hydrology
-        // If runoffCoeff is explicit, use it. Else calculate default.
-        if (runoffCoeff !== null && runoffCoeff !== undefined && !isNaN(runoffCoeff)) {
-            this.runoffCoeff = Number(runoffCoeff);
-        } else {
-            this.runoffCoeff = getRunoffCoeff(this.property, this.function, this.slope);
-        }
+        // Hydrologie: Abflussbeiwert ψ (0–1). Fehlt er, bleibt er FEHLEND (null) —
+        // kein stiller Vorgabewert: die Vorab-Prüfung meldet ihn, und „Daten
+        // bearbeiten“ schlägt beim Öffnen die Programmvorgabe vor (getRunoffCoeff).
+        // Vorher setzte der Import 0 (Befund 8) bzw. hier still die Vorgabe.
+        const psi = runoffCoeff === null || runoffCoeff === undefined || runoffCoeff === '' ? NaN : Number(runoffCoeff);
+        this.runoffCoeff = Number.isFinite(psi) ? psi : null;
 
         // Connection
         // Can be connected to an Edge (legacy) or directly to Node(s)
@@ -103,7 +102,7 @@ export class Area {
      * = Size * RunoffCoeff
      */
     get effectiveArea() {
-        return this.size * (this.runoffCoeff || 0);
+        return this.size * psiWirksam(this);
     }
 
     toJSON() {

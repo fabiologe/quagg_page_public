@@ -16,7 +16,7 @@ export const TUTORIAL_INFO = {
 
   // ── Lernstoff zu den interaktiven Uebungen (tutorialExercise.js) ──────────
   befestigungsgrad: {
-    title: 'VERSIEGELUNGSGRAD',
+    title: 'ABFLUSSBEIWERT',
     blocks: [
       {
         type: 'p',
@@ -25,7 +25,7 @@ export const TUTORIAL_INFO = {
       { type: 'formula', text: 'Q = ψ · i · A     ψ = 0 (alles versickert) … 1 (alles fließt ab)' },
       {
         type: 'p',
-        text: 'Zwei Wörter, eine Zahl: Eingetragen wird der Versiegelungsgrad — wie viel der Fläche zugebaut ist. Weil genau dieser Anteil abfließt, rechnet das Modell damit als Abflussbeiwert weiter, und unter diesem Namen taucht der Wert später im Ergebnis und in der ISYBAU-Datei wieder auf.',
+        text: 'Eingetragen wird der Abflussbeiwert ψ — so heißt der Wert auch in der ISYBAU-Datei. Er ist nicht dasselbe wie der Versiegelungsgrad (wie viel der Fläche zugebaut ist): Auch von einem Dach kommt nicht jeder Tropfen an, und bei Starkregen fließt auch von Rasen etwas ab. ψ fasst das zu einer Zahl zusammen.',
       },
       {
         type: 'p',
@@ -33,7 +33,7 @@ export const TUTORIAL_INFO = {
       },
       {
         type: 'p',
-        text: 'Im SWMM-Modell wird ψ als „%Imperv“ (undurchlässiger Anteil) übergeben. Ein zu hoher Wert lässt das Netz überlastet aussehen, ein zu niedriger verharmlost den Starkregen — deshalb lohnt sich hier Sorgfalt.',
+        text: 'Im SWMM-Modell geht ψ als undurchlässiger Anteil „%Imperv“ ein, der Rest der Fläche versickert vollständig — so kommt genau der eingegebene Anteil als Abfluss an. Ein zu hoher Wert lässt das Netz überlastet aussehen, ein zu niedriger verharmlost den Starkregen — deshalb lohnt sich hier Sorgfalt.',
       },
       { type: 'ref', text: 'DWA-A 118 — Hydraulische Bemessung von Entwässerungssystemen' },
     ],

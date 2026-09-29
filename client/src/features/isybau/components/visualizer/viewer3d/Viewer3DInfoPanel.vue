@@ -42,7 +42,7 @@
             <span class="val">{{ fmtZahl(element.size, 4) }} ha</span>
           </div>
           <div class="info-row" v-if="element.runoffCoeff != null">
-            <span class="lbl">Versiegelungsgrad ψ</span>
+            <span class="lbl">Abflussbeiwert ψ</span>
             <span class="val">{{ element.runoffCoeff }}</span>
           </div>
         </template>

@@ -116,7 +116,7 @@
                     <!-- Areas Bulk Edit -->
                      <template v-if="activeTab === 'areas'">
                         <div class="bulk-field">
-                            <label>Versiegelungsgrad ψ (0.0 - 1.0):</label>
+                            <label>Abflussbeiwert ψ (0.0 - 1.0):</label>
                             <input type="number" v-model.number="bulkForm.runoffCoeff" step="0.1" placeholder="Unverändert" class="bulk-input">
                         </div>
                     </template>
@@ -543,7 +543,7 @@
                       <th class="col-checkbox sticky-left-1"><input type="checkbox" @change="toggleSelectAll($event, filteredAreas)"></th>
                       <th class="col-id sticky-left-2">ID</th>
                       <th>Fläche (ha)</th>
-                      <th data-tutorial="flaechen-versiegelung">Versiegelungsgrad ψ (0-1)</th>
+                      <th data-tutorial="flaechen-versiegelung">Abflussbeiwert ψ (0-1)</th>
                       <th>Funktion (Horton)</th>
                       <th data-tutorial="flaechen-neigung">Neigungsklasse</th>
                       <th>Anschluss 1</th>
@@ -564,7 +564,7 @@
                         </td>
                         <td>{{ area.size.toFixed(4) }}</td>
                         <td>
-                            <input :aria-label="`Versiegelungsgrad ψ für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
+                            <input :aria-label="`Abflussbeiwert ψ für ${area.id}`" type="number" v-model.number="area.runoffCoeff" step="0.1" class="small-input" @click.stop :class="{ 'invalid': area.runoffCoeff < 0 || area.runoffCoeff > 1 }">
                         </td>
                         <td>
                              <PixelSelect v-model="area.function" class="medium-select" :options="flaechenfunktionOptionen" @click.stop />
@@ -661,7 +661,7 @@ const showSchmutzfrachtDialog = ref(false);
 /**
  * Der offene Reiter liegt im Store, nicht in einem lokalen ref.
  *
- * Grund: das Tutorial zeigt auf Spalten im Flaechen-Reiter ("Versiegelungsgrad
+ * Grund: das Tutorial zeigt auf Spalten im Flaechen-Reiter ("Abflussbeiwert
  * ψ", "Neigungsklasse"). Sein Leuchten haengt an einem Watcher ueber dem
  * Store — ein lokales ref sieht der nicht, das Leuchten bliebe also aus, wenn
  * der Nutzer den Reiter erst nach dem Oeffnen wechselt.
@@ -1309,7 +1309,8 @@ watch(() => props.isOpen, (newVal) => {
     // Init Areas
     areas.value = props.hydraulics.areas.map(a => ({
         ...a,
-          runoffCoeff: a.runoffCoeff || getRunoffCoeff(a.property, a.function, a.slope),
+          // ?? statt ||: ein bewusst eingetragenes ψ = 0 (Fläche ohne Abfluss) bleibt stehen
+          runoffCoeff: a.runoffCoeff ?? getRunoffCoeff(a.property, a.function, a.slope),
           nodeId: a.nodeId || '',
           slope: [1, 2, 3, 4, 5].includes(a.slope) ? a.slope : null,
     }));
@@ -1472,7 +1473,7 @@ const exportXlsx = () => {
     XLSX.utils.book_append_sheet(wb, wsEdges, 'Haltungen');
 
     // --- Flächen ---
-    const areaHeaders = ['ID', 'Fläche (ha)', 'Versiegelungsgrad ψ', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)',
+    const areaHeaders = ['ID', 'Fläche (ha)', 'Abflussbeiwert ψ', 'Funktion', 'Anschluss 1', 'Anschluss 2', 'Split (%)',
         'Gebietsname', 'Kommentar', 'Einwohnerwerte (E)', 'Einwohnerdichte (E/ha)', 'Wasserverbrauch (l/E·d)', 'Tagesspitzenfaktor', 'Trockenwetterkennung'];
     const areaRows = areas.value.map(a => {
         const sf = a.schmutzfracht;

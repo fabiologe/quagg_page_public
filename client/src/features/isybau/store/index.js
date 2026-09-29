@@ -1367,7 +1367,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 .map(f => ({
                     id: f.id,
                     elementType: f.elementType,
-                    text: `${f.elementType === 'node' ? 'Knoten' : 'Haltung'} ${f.id}: ${f.message}`
+                    // Sammelhinweise (z. B. „38 Flächen ohne ψ“) tragen die Kennung nur für den Sprung
+                    text: f.sammel ? f.message
+                        : `${{ node: 'Knoten', edge: 'Haltung', area: 'Fläche' }[f.elementType] ?? 'Haltung'} ${f.id}: ${f.message}`
                 }));
 
             // Simulationsdauer 1–48 h (P2.3): leeres Feld ergab Ende = Beginn (SWMM-Abbruch),

@@ -8,14 +8,14 @@
                     <th>Fläche (ha)</th>
                     <th title="Fließbreite, wie gerechnet (.inp)">Breite (m)</th>
                     <th title="Geländegefälle, wie gerechnet (.inp) — nicht die Neigungsklasse">Gefälle (%)</th>
-                    <th title="Versiegelungsgrad, wie gerechnet (.inp)">Versiegelungsgrad (%)</th>
-                    <th title="Abflussbeiwert (Ergebnis)">Abflussbeiwert</th>
+                    <th title="Eingegebener Abflussbeiwert ψ, wie gerechnet (.inp, %Imperv)">Abflussbeiwert ψ (Eingabe, %)</th>
+                    <th title="Abfluss / Niederschlag laut SWMM — gleich der Eingabe, der Rest der Fläche versickert">Abflussbeiwert (Ergebnis)</th>
                     <th title="Niederschlagshöhe (mm)">Niederschlag (mm)</th>
                     <th title="Zufluss von extern (mm)">Zufluss extern (mm)</th>
                     <th title="Verdunstung (mm)">Verdunstung (mm)</th>
                     <th title="Infiltration (mm)">Infiltration (mm)</th>
-                    <th title="Abfluss Versiegelt (mm)">Abfluss Vers. (mm)</th>
-                    <th title="Abfluss Unversiegelt (mm)">Abfluss Unvers. (mm)</th>
+                    <th title="Abfluss vom abflusswirksamen Anteil ψ (mm)">Abfluss ψ-Anteil (mm)</th>
+                    <th title="Abfluss vom Rest der Fläche (mm) — versickert vollständig, daher 0">Abfluss Rest (mm)</th>
                     <th title="Gesamtabflusshöhe (mm)">Gesamtabflusshöhe (mm)</th>
                     <th title="Abflussvolumen = Abflusshöhe × Fläche">Volumen (m³)</th>
                     <th title="Spitzenabfluss aus der Ganglinie (.out)">Spitzenabfluss (l/s)</th>
