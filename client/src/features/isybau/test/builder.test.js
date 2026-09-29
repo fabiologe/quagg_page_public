@@ -200,8 +200,25 @@ describe('SwmmBuilder', () => {
         expect(xsLine).toMatch(/TRIANGULAR/);
     });
 
-    it('Drossel: orificeType SIDE statt hardcoded BOTTOM', () => {
+    // Fahrplan Grenzen, Stufe 5: Drossel mit Q_max = Abflussregler (Q nahezu konstant,
+    // DWA-A 111) statt Blende bei 1 m Druckhöhe (bei 3 m Einstau +73 %).
+    it('Drossel mit Max. Abfluss: [OUTLETS] TABULAR/DEPTH, Kennlinie 0 → Q_max ab 0,10 m', () => {
         const drosselNode = new Node({ id: 'D1', x: 0, y: 0, z: 100, depth: 3, bauwerkstyp: 8, maxOutflow: 15, orificeType: 'SIDE', gated: true });
+        const outfall = new Node({ id: 'O1', x: 10, y: 0, z: 90 });
+        const { inpContent } = buildInp(makeStore({
+            nodes: [drosselNode, outfall],
+            edges: [new Edge({ id: 'ED', fromNodeId: 'D1', toNodeId: 'O1', length: 10 })]
+        }));
+        expect(inpContent).not.toContain('[ORIFICES]');
+        const line = inpContent.split('[OUTLETS]')[1].split('[')[0].split('\n').find(l => l.startsWith('ED')).trim().split(/\s+/);
+        expect(line).toEqual(['ED', 'D1', 'O1', '0', 'TABULAR/DEPTH', 'REG_ED', 'YES']);
+        const kurve = inpContent.split('[OUTLETS]')[1].split('[CURVES]')[1].split('[')[0].split('\n')
+            .filter(l => l.startsWith('REG_ED')).map(l => l.trim().split(/\s+/).filter(t => t !== 'Rating').slice(1).map(Number));
+        expect(kurve).toEqual([[0, 0], [0.1, 0.015], [100, 0.015]]);
+    });
+
+    it('Drossel ohne Max. Abfluss: weiter Blende (Lage SIDE, Klappe)', () => {
+        const drosselNode = new Node({ id: 'D1', x: 0, y: 0, z: 100, depth: 3, bauwerkstyp: 8, orificeType: 'SIDE', gated: true });
         const outfall = new Node({ id: 'O1', x: 10, y: 0, z: 90 });
         const { inpContent } = buildInp(makeStore({
             nodes: [drosselNode, outfall],
@@ -242,17 +259,16 @@ describe('SwmmBuilder', () => {
         expect(parseFloat(tokens[10])).toBeCloseTo(36, 1);
     });
 
-    it('Gedrosselter Auslauf: constantOutflow wirkt jetzt hydraulisch (Orifice statt reiner Kommentar)', () => {
+    it('Gedrosselter Auslauf: constantOutflow wirkt als Abflussregler (Outlet statt Kommentar)', () => {
         const upstream = new Node({ id: 'S1', x: 0, y: 0, z: 100 });
         const outfall = new Node({ id: 'O1', x: 10, y: 0, z: 90, outflowType: 'throttled', constantOutflow: 25 });
         const { inpContent } = buildInp(makeStore({
             nodes: [upstream, outfall],
             edges: [new Edge({ id: 'E1', fromNodeId: 'S1', toNodeId: 'O1', length: 10 })]
         }));
-        expect(inpContent).toContain('[ORIFICES]');
-        const orificeLine = inpContent.split('[ORIFICES]')[1].split('[')[0].split('\n').find(l => l.startsWith('E1'));
-        expect(orificeLine).toBeDefined();
-        expect(orificeLine).toMatch(/S1\s+O1\s+BOTTOM/);
+        const reglerZeile = inpContent.split('[OUTLETS]')[1].split('[')[0].split('\n').find(l => l.startsWith('E1'));
+        expect(reglerZeile).toMatch(/S1\s+O1\s+0\s+TABULAR\/DEPTH\s+REG_E1\s+NO/);
+        expect(inpContent).toMatch(/REG_E1\s+0\.10\s+0\.02500/);
         // Die Kante darf NICHT auch als normaler Conduit auftauchen
         const conduitSection = inpContent.split('[CONDUITS]')[1]?.split('[')[0] || '';
         expect(conduitSection.split('\n').find(l => l.startsWith('E1'))).toBeUndefined();

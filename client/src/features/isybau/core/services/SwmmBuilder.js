@@ -493,6 +493,13 @@ LINKS                ALL
         // nur 'free'/'throttled' an. FIXED ohne den von outfall_readParams (node.c)
         // geforderten 4. Token "Stage Data" hätte den Solver mit ERR_ITEMS abgebrochen.)
         for (const n of nodes) {
+            // Fester Wasserstand (Vorfluter): FIXED mit dem 4. Token „Stage Data“ (node.c
+            // outfall_readParams). Ohne Wert bleibt es FREE — die Vorab-Prüfung meldet das.
+            const stage = Number(n.outfallStage);
+            if (n.outflowType === 'fixed' && n.outfallStage != null && Number.isFinite(stage)) {
+                text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad('FIXED')} ${this.pad(stage)} NO\n`;
+                continue;
+            }
             text += `${this.pad(n.id)} ${this.pad(n.z)} ${this.pad('FREE')}${n.outflowType === 'throttled' ? ' ;Throttled' : ''} \n`;
         }
         this.sections.push(text);
@@ -648,11 +655,25 @@ LINKS                ALL
         if (!this.specialLinks.orifices.length) return;
         let text = '[ORIFICES]\n;;Name           Node1          Node2          Type         Offset     Cd         Gated    CloseTime\n';
         let xs   = '[XSECTIONS]\n;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels\n';
+        let blenden = 0;
+        const regler = []; // Drosseln mit bekanntem Q_max → [OUTLETS] (Abflussregler)
 
         for (const { id, from, to, subtype } of this.specialLinks.orifices) {
             if (!to || !from) { this.warnings.push(`Orifice ${id}: Kein Start-/Zielknoten — übersprungen.`); continue; }
             const bd = from.bauwerkData;
             let diameter = 0.3;
+
+            // Drossel mit bekanntem Q_max: Abflussregler statt Blende. Eine Blende, bei
+            // 1 m Druckhöhe ausgelegt, lässt bei 3 m Einstau √3 = 73 % mehr durch; reale
+            // Drosseleinrichtungen (Wirbeldrossel, Abflussregler, DWA-A 111) halten Q
+            // nahezu konstant (Fahrplan „Grenzen beheben“, Stufe 5).
+            const qMax = subtype === 'drossel'
+                ? (this.safeFloat(from.maxOutflow, 0) > 0 ? this.safeFloat(from.maxOutflow) : this.safeFloat(bd?.nennleistung, 0))
+                : subtype === 'auslaufDrossel' ? this.safeFloat(to.constantOutflow, 0) : 0;
+            if (qMax > 0) {
+                regler.push({ id, from, to, qMax, gated: subtype === 'drossel' && from.gated ? 'YES' : 'NO' });
+                continue;
+            }
 
             if (subtype === 'drossel') {
                 // Priorität: UI maxOutflow > XML nennleistung
@@ -693,9 +714,35 @@ LINKS                ALL
 
             text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} ${this.pad(orificeType)}0          0.65       ${this.pad(gated)}0\n`;
             xs   += `${this.pad(id)} CIRCULAR   ${this.pad(diameter)} 0          0          0          1\n`;
+            blenden++;
+        }
+        if (blenden) {
+            this.sections.push(text);
+            this.sections.push(xs);
+        }
+        this.addAbflussregler(regler);
+    }
+
+    /**
+     * Abflussregler als SWMM-Outlet mit Kennlinie Q(h) über der Einlaufsohle:
+     * linear von 0 auf Q_max bis 0,10 m Wasserstand, darüber konstant. Die kurze
+     * Rampe verhindert, dass ein leerer Schacht „leergesaugt“ wird (Q > 0 bei h = 0).
+     * Format: link.c outlet_readParams — Name N1 N2 Offset TABULAR/DEPTH Kurve Gated.
+     */
+    addAbflussregler(regler) {
+        if (!regler.length) return;
+        let text = '[OUTLETS]\n;;Name           Node1          Node2          Offset     Type             QTable     Gated\n';
+        let kurven = '[CURVES]\n;;Name           Type       Depth      Flow\n';
+        for (const { id, from, to, qMax, gated } of regler) {
+            const q = (qMax / 1000).toFixed(5); // l/s → m³/s (FLOW_UNITS CMS)
+            const kurve = `REG_${id}`;
+            text += `${this.pad(id)} ${this.pad(from.id)} ${this.pad(to.id)} 0          TABULAR/DEPTH    ${this.pad(kurve)} ${gated}\n`;
+            kurven += `${this.pad(kurve)} Rating     0          0\n`
+                + `${this.pad(kurve)}            0.10       ${q}\n`
+                + `${this.pad(kurve)}            100        ${q}\n`;
         }
         this.sections.push(text);
-        this.sections.push(xs);
+        this.sections.push(kurven);
     }
 
     addPumps() {

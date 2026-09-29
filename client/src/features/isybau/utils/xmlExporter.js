@@ -8,7 +8,7 @@ const ERGAENZUNG_KENNUNG = 'SaintV-1D-Ergaenzung';
 // Import (test/xmlExporter.test.js): ohne Ergänzung wurden druckdicht zu offen,
 // Aufteilung 30 % zu 50 %, konstanter Zufluss und Pumpensteuerung zu 0, und die
 // Schmutzfracht verlor Wasserverbrauch/Spitzenfaktor (kein Trockenwetterzufluss mehr).
-const KNOTEN_ERGAENZUNG = ['canOverflow', 'isManhole', 'constantInflow', 'constantOutflow', 'outflowType',
+const KNOTEN_ERGAENZUNG = ['canOverflow', 'isManhole', 'constantInflow', 'constantOutflow', 'outflowType', 'outfallStage',
     'onDepth', 'offDepth', 'pumpRate', 'pumpHead', 'dischargeCoeff', 'initialOpening', 'initDepth',
     'storageShape', 'evapFactor', 'weirType', 'orificeType', 'gated', 'lossCoeff', 'storageCurve',
     'dividerType', 'dividerLinkId', 'dividerCutoffFlow', 'weirHeight', 'wehrWidth', 'maxOutflow',

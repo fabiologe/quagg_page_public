@@ -420,6 +420,10 @@
                              <input :aria-label="`Abfluss in l/s für ${node.id}`" type="number" v-model.number="node.constantOutflow" step="0.1" class="small-input" @click.stop>
                              <span class="hint-text">Max. Abfluss (l/s)</span>
                          </div>
+                         <div class="input-group" v-if="node.outflowType === 'fixed'">
+                             <input :aria-label="`Wasserstand in m NHN für ${node.id}`" type="number" v-model.number="node.outfallStage" step="0.01" class="small-input" @click.stop>
+                             <span class="hint-text">Wasserstand (m NHN)</span>
+                         </div>
                       </div>
 
                       <!-- Generic Bauwerk -->
@@ -947,6 +951,8 @@ const verteilerartOptionen = [
 const auslaufartOptionen = [
     { value: 'free', label: 'Freier Auslauf' },
     { value: 'throttled', label: 'Gedrosselt' },
+    // Rückstau aus dem Vorfluter (DWA-M 165-1, 6.3.2.5: Randbedingungen angeben)
+    { value: 'fixed', label: 'Fester Wasserstand' },
 ];
 
 const profilOptionen = optionenAusZuordnung(Profilart);

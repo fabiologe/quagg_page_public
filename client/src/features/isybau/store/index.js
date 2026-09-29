@@ -30,7 +30,7 @@ function nurLesbar(obj, key) {
 // am alten Wert nicht, dass eine Zahl gemeint ist.
 const ZAHLFELDER = new Set(['x', 'y', 'z', 'z1', 'z2', 'coverZ', 'depth', 'diameter', 'length', 'roughness',
     'size', 'runoffCoeff', 'splitRatio', 'volume', 'constantInflow', 'onDepth', 'offDepth', 'pumpRate',
-    'weirHeight', 'height', 'width', 'initDepth', 'maxDepth', 'lossCoeff', 'lossIn', 'lossOut']);
+    'weirHeight', 'height', 'width', 'initDepth', 'maxDepth', 'lossCoeff', 'lossIn', 'lossOut', 'outfallStage']);
 
 /**
  * Nutzereingabe → Zahl. Leeres Feld = nicht gesetzt (null), „1,5" = 1.5.

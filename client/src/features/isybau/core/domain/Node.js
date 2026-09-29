@@ -65,6 +65,10 @@ export class Node {
         this.weirHeight = Number(options.weirHeight) || 0;
         this.constantOutflow = Number(options.constantOutflow) || 0;
         this.outflowType = options.outflowType || 'free';
+        // Fester Wasserstand am Auslass (m NHN, outflowType 'fixed') — z. B. Vorfluter.
+        // Leer = nicht gesetzt (Vorab-Prüfung meldet es, wenn 'fixed' gewählt ist).
+        this.outfallStage = options.outfallStage == null || options.outfallStage === '' || !Number.isFinite(Number(options.outfallStage))
+            ? null : Number(options.outfallStage);
 
         // Sonderbauwerk-Parameter (Wehr/Drossel/Schieber/Pumpe/Speicher) —
         // müssen hier deklariert sein, sonst verwirft toJSON() sie und der
@@ -153,6 +157,7 @@ export class Node {
             weirHeight: data.weirHeight,
             constantOutflow: data.constantOutflow,
             outflowType: data.outflowType,
+            outfallStage: data.outfallStage,
             canOverflow: data.canOverflow,
             punktkennung: data.punktkennung,
             bauwerkstyp:  data.bauwerkstyp,
@@ -226,6 +231,7 @@ export class Node {
             weirHeight: this.weirHeight,
             constantOutflow: this.constantOutflow,
             outflowType: this.outflowType,
+            outfallStage: this.outfallStage,
             canOverflow: this.canOverflow,
             isManhole: this.isManhole,
             punktkennung: this.punktkennung,

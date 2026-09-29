@@ -207,6 +207,12 @@ export function checkAuslaesse(nodes, edges) {
     const auslaesse = nodes.filter(n => classifyPreview(n).section === '[OUTFALLS]');
     const funde = [];
     for (const n of auslaesse) {
+        // Fester Wasserstand gewählt, aber keiner eingetragen: der Übersetzer schriebe
+        // sonst still FREE (Fahrplan Grenzen, Stufe 5)
+        if (n.outflowType === 'fixed' && !(n.outfallStage != null && Number.isFinite(Number(n.outfallStage)))) {
+            funde.push({ id: n.id, elementType: 'node', severity: 'error', code: 'ERR_STAGE',
+                message: 'Auslass mit festem Wasserstand, aber ohne Wert — Wasserstand (m NHN) eintragen oder Auslaufart ändern' });
+        }
         const zahl = g.ein(n.id) + g.aus(n.id);
         if (zahl > 1) {
             const namen = edges.filter(e => (e.fromNodeId ?? e.from) === n.id || (e.toNodeId ?? e.to) === n.id).map(e => e.id);
