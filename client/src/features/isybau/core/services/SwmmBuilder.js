@@ -4,6 +4,7 @@ import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
 import { waehleErsatzAuslass, ersatzAuslassKandidaten } from '../../utils/preSolveValidation.js';
 import { manningN, haltungsGefaelle, istBestand, BESTAND_FAKTOR } from '../../utils/rauheit.js';
 import { slopePercentToClass } from '../../utils/slopeSuggestion.js';
+import { fmtZahl } from '../../utils/zahlformat.js';
 
 // Versickerungsrate des durchlässigen Flächenanteils: so hoch, dass kein Regen
 // darauf abfließt (ψ ist schon der Abflussbeiwert, siehe addSubcatchments).
@@ -628,7 +629,7 @@ LINKS                ALL
                 crestHt = Math.max(0, bd.wehrSchwelle - from.z);
             } else {
                 crestHt = this.safeFloat(from.depth, 2.0) * 0.7;
-                this.warnings.push(`Wehr ${id}: Schwellenhöhe fehlt, gesetzt auf 70% Schachttiefe (${crestHt.toFixed(2)} m).`);
+                this.warnings.push(`Wehr ${id}: Schwellenhöhe fehlt, gesetzt auf 70% Schachttiefe (${fmtZahl(crestHt, 2)} m).`);
             }
 
             // Wehrbreite: UI wehrWidth > XML LaengeWehrschwelle > 1.0m
@@ -788,7 +789,7 @@ LINKS                ALL
             // auseinanderlaufen können (siehe utils/pumpCurve.js).
             const { H_d, Q_d, estimated, points } = computePumpCurvePoints(from);
             if (estimated) {
-                this.warnings.push(`Pumpe ${id}: Keine Förderleistung angegeben, Schätzung aus Leistung: ${(Q_d * 1000).toFixed(1)} l/s.`);
+                this.warnings.push(`Pumpe ${id}: Keine Förderleistung angegeben, Schätzung aus Leistung: ${fmtZahl(Q_d * 1000, 1)} l/s.`);
             }
 
             // PUMP3 Kennlinie: X-Value = Förderhöhe (Head), Y-Value = Förderleistung
@@ -864,7 +865,7 @@ LINKS                ALL
                 : withFactor[0].tagesspitzenfaktor;
 
             if (new Set(withFactor.map(c => c.tagesspitzenfaktor)).size > 1) {
-                this.warnings.push(`Knoten ${nodeId}: mehrere Flächen mit abweichenden Tagesspitzenfaktoren — gewichteter Mittelwert (${peakFactor.toFixed(2)}) verwendet.`);
+                this.warnings.push(`Knoten ${nodeId}: mehrere Flächen mit abweichenden Tagesspitzenfaktoren — gewichteter Mittelwert (${fmtZahl(peakFactor, 2)}) verwendet.`);
             }
 
             const values = buildDwfPatternValues(peakFactor);
@@ -998,7 +999,7 @@ LINKS                ALL
                     length = 10.0; // Fallback default as in legacy
                     this.warnings.push(`Haltung ${e.id}: Länge fehlte / 0, gesetzt auf 10.0m.`);
                 } else {
-                    this.warnings.push(`Haltung ${e.id}: Länge fehlte, berechnet aus Koordinaten: ${length.toFixed(2)} m.`);
+                    this.warnings.push(`Haltung ${e.id}: Länge fehlte, berechnet aus Koordinaten: ${fmtZahl(length, 2)} m.`);
                 }
             }
 
