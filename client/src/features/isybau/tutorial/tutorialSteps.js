@@ -73,7 +73,9 @@ export const REACTIVE_STEPS = {
     mood: 'surprised',
     info: 'isybau-xml',
     message: (store) =>
-      `Oha — beim Import gab es ${store.ui.importWarnings.length} Warnung(en). Schau dir die Meldung unten rechts an.`,
+      // Die Meldung steht oben rechts, solange die Ratte spricht (IsybauMain, warning-toast--oben)
+      `Oha — beim Import gab es ${store.ui.importWarnings.length === 1 ? 'eine Warnung' : `${store.ui.importWarnings.length} Warnungen`}. `
+      + 'Schau dir die Meldung oben rechts an.',
   },
   'rain-configured': {
     id: 'reactive-rain-configured',

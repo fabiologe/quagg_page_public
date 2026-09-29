@@ -322,7 +322,7 @@
     <!-- Höhenlinien-Hover-Tooltip — gleicher Sprechblasen-Stil wie
          .tool-hint/.drawing-tooltip (EditorToolbox.vue/IsybauEditor.vue). -->
     <div v-if="contourHover" class="contour-hover-tooltip" :style="{ left: (contourHover.clientX + 14) + 'px', top: (contourHover.clientY + 14) + 'px' }">
-      Höhe: {{ contourHover.elevation != null ? contourHover.elevation.toFixed(1) + ' m' : '–' }}
+      Höhe: {{ contourHover.elevation != null ? fmtZahl(contourHover.elevation, 1) + ' m' : '–' }}
     </div>
 
     <!-- EZG-Karte: Höhenlinien, GPU-gerendert (Three.js/WebGL) statt SVG —
@@ -386,6 +386,7 @@
 </template>
 
 <script setup>
+import { fmtZahl } from '../../utils/zahlformat.js';
 import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { getMapping, getEffectiveBauwerkstyp, LINK_BAUWERKSTYPEN, getEntwaesserungsartColor } from '../../utils/mappings.js';
 import { TEXTGROESSE_STANDARD, haltungsZustand, BAUWERK, KNOTEN_ZUSTAND, UEBERSTAU_CSS, knotenUeberstaut, legendenEintraege } from '../../utils/typPalette.js';

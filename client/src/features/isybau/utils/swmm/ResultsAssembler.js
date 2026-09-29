@@ -16,6 +16,7 @@
  *   }
  */
 import { deckelhoehe } from './ueberstauWahl.js';
+import { fmtZahl } from '../zahlformat.js';
 
 // Kontinuitätsfehler ab diesem Betrag (%) gelten als massiv und erzeugen eine Warnung.
 export const CONTINUITY_ERROR_WARN_PCT = 10;
@@ -159,7 +160,7 @@ export class ResultsAssembler {
             nodes[entry.id].continuityError = entry.error;
             if (Math.abs(entry.error) >= CONTINUITY_ERROR_WARN_PCT) {
                 warnings.push(
-                    `Knoten ${entry.id}: massiver Kontinuitätsfehler (${entry.error.toFixed(1)} %) — Ergebnisse an diesem Knoten sind unzuverlässig.`
+                    `Knoten ${entry.id}: massiver Kontinuitätsfehler (${fmtZahl(entry.error, 1)} %) — Ergebnisse an diesem Knoten sind unzuverlässig.`
                 );
             }
         }
@@ -172,7 +173,7 @@ export class ResultsAssembler {
                 : verfahren === 'SLOT' ? 'EXTRAN' : verfahren === 'EXTRAN' ? 'Preissmann-Schlitz (SLOT)' : null;
             // vorn einreihen: die Systemaussage vor den Einzelknoten
             warnings.unshift(
-                `Systemweiter Kontinuitätsfehler der Abflussberechnung: ${sysErr.toFixed(1)} % — Modell prüfen (Zeitschritt, Instabilitäten)`
+                `Systemweiter Kontinuitätsfehler der Abflussberechnung: ${fmtZahl(sysErr, 1)} % — Modell prüfen (Zeitschritt, Instabilitäten)`
                 + (anderes ? `; Gegenprobe mit Überstauverfahren ${anderes} (Seitenleiste).` : '.')
             );
         }

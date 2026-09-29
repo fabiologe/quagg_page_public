@@ -30,11 +30,11 @@
         </div>
 
         <div v-if="result" class="result-box">
-          <h4>Ergebnis für {{ result.location.lat.toFixed(4) }}, {{ result.location.lon.toFixed(4) }}</h4>
+          <h4>Ergebnis für {{ fmtZahl(result.location.lat, 4) }}° N, {{ fmtZahl(result.location.lon, 4) }}° O</h4>
           
           <div class="result-summary">
             <div class="result-value">
-              <span class="label">Ausgewählt:</span>
+              <span class="label">Ausgewählt: </span>
               <span class="value">{{ selectedCoords.duration }} min · {{ wiederkehrText(selectedCoords.key) }} — {{ fmtZahl(selectedValue, 1) }} l/(s·ha)</span>
             </div>
             <button class="apply-btn" data-tutorial="kostra-uebernehmen" @click="applyResult">Übernehmen</button>
@@ -60,7 +60,7 @@
                       :class="{ 'selected-cell': isSelected(d, key) }"
                       class="clickable-cell"
                     >
-                      {{ getValue(d, key) }}
+                      {{ zelle(getValue(d, key)) }}
                     </td>
                   </tr>
                 </tbody>
@@ -199,6 +199,9 @@ const durations = computed(() => kostraDauern(result.value?.raw));
 const VORGABE = { duration: MIN_REGENDAUER_MIN, key: 'RN_001A' };
 const selectedValue = ref(null);
 const selectedCoords = ref({ ...VORGABE });
+
+// Anzeige mit Dezimalkomma; gerechnet wird mit dem Rohwert (getValue)
+const zelle = (v) => (v === '-' || v == null ? '–' : fmtZahl(v, 1));
 
 const getValue = (duration, key) => {
   if (!result.value || !result.value.raw) return '-';

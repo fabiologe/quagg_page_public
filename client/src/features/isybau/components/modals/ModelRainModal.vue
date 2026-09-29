@@ -79,7 +79,7 @@
                       @click="selectedReturnPeriod = rp.key"
                       class="clickable-cell"
                     >
-                      {{ getKostraValue(d, rp.key) }}
+                      {{ getKostraValue(d, rp.key) === '-' || getKostraValue(d, rp.key) == null ? '–' : fmtZahl(getKostraValue(d, rp.key), 1) }}
                     </td>
                   </tr>
                 </tbody>
@@ -106,6 +106,7 @@ import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 import PixelSelect from '../common/PixelSelect.vue';
 import { WIEDERKEHRZEITEN, kostraDauern, regenDauerHinweis } from '../../utils/regenNorm.js';
+import { fmtZahl } from '../../utils/zahlformat.js';
 
 /* Wiederkehrzeiten als Liste fuer PixelSelect.vue — die Schluessel sind die
    KOSTRA-Spaltennamen (RN_*, siehe utils/kostra*), die Beschriftung ist das,
