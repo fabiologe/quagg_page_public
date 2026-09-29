@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { kanalfliesszeit, vollflaeche } from '../utils/swmm/fliesszeit.js';
-import { empfohleneRegendauer, regenDauerHinweis, kostraDauern, regenDauerMin } from '../utils/regenNorm.js';
+import { empfohleneRegendauer, regenDauerHinweis, kostraDauern, regenDauerMin, ueberstauNachweis } from '../utils/regenNorm.js';
 
 // Kreis DN 300: A = 0,070686 m²; Q_voll 70,686 l/s → v_voll = 1,000 m/s
 const kreis = { type: 0, height: 0.3 };
@@ -58,5 +58,24 @@ describe('Regendauer nach DWA-A 118:2024 (5.5.1)', () => {
     it('Regendauer aus den Metadaten, sonst Schritte × Intervall', () => {
         expect(regenDauerMin({ metadata: { duration: 90 } })).toBe(90);
         expect(regenDauerMin({ series: new Array(12), metadata: { interval: 5 } })).toBe(60);
+    });
+});
+
+describe('Überstaunachweis nach DWA-A 118:2024, Tab. 4', () => {
+    const euler = (T, D = 60) => ({ metadata: { returnPeriod: T, duration: D } });
+    it('T = 3 a deckt Bestand SK 1–3, Neubau SK 1–2', () => {
+        expect(ueberstauNachweis(euler('RN_003A'), 0)).toEqual({ text: 'T = 3 a deckt Bestand SK 1–3, Neubau SK 1–2 — erfüllt: kein Knoten überstaut', erfuellt: true });
+    });
+    it('überstaute Knoten → nicht erfüllt', () => {
+        expect(ueberstauNachweis(euler('RN_005A'), 14).erfuellt).toBe(false);
+        expect(ueberstauNachweis(euler('RN_005A'), 14).text).toMatch(/Bestand SK 1–4, Neubau SK 1–3 — nicht erfüllt: 14 Knoten/);
+    });
+    it('Tabellenwerte: SK 4 Neubau erst ab 10 a; 1 a reicht nur für Bestand SK 1', () => {
+        expect(ueberstauNachweis(euler('RN_010A'), 0).text).toMatch(/Neubau SK 1–4/);
+        expect(ueberstauNachweis(euler('RN_001A'), 0).text).toMatch(/Bestand SK 1, Neubau keine SK/);
+    });
+    it('Regen unter 60 min oder ohne Wiederkehrzeit: kein Nachweis', () => {
+        expect(ueberstauNachweis(euler('RN_003A', 15), 0).erfuellt).toBeNull();
+        expect(ueberstauNachweis({ metadata: {} }, 0)).toBeNull();
     });
 });

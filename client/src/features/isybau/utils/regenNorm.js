@@ -59,3 +59,40 @@ export function regenDauerHinweis(dauerMin) {
 /** Empfohlene Regendauer aus der Fließzeit: max(60, 2·t_f), auf 5 min aufgerundet. */
 export const empfohleneRegendauer = (fliesszeitMin) =>
     Math.max(MIN_REGENDAUER_MIN, Math.ceil((2 * (Number(fliesszeitMin) || 0)) / 5) * 5);
+
+/**
+ * DWA-A 118 (Januar 2024), Abschn. 6.2.1, Tabelle 4 „Hydraulische Anforderungen an
+ * Entwässerungssysteme“: Überstauhäufigkeit „einmal in x Jahren“ (Bestand / Neubau)
+ * und Überflutungshäufigkeit je Schutzkategorie (SK). Die Beispiele sind gekürzt.
+ */
+export const SCHUTZKATEGORIEN = [
+    { sk: 1, text: 'gering — z. B. ländliche Gebiete, Grün- und Freiflächen', bestand: 1, neubau: 2, ueberflutung: 10 },
+    { sk: 2, text: 'mäßig — z. B. Wohn- und Mischgebiete ohne genutzte Untergeschosse', bestand: 2, neubau: 3, ueberflutung: 20 },
+    { sk: 3, text: 'stark — z. B. Stadtzentren, genutzte Untergeschosse, Gewerbe, Tiefgaragen', bestand: 3, neubau: 5, ueberflutung: 30 },
+    { sk: 4, text: 'sehr stark — z. B. kritische Infrastruktur', bestand: 5, neubau: 10, ueberflutung: 50 },
+];
+
+const bereich = (liste) => (liste.length ? (liste.length === 1 ? `SK ${liste[0]}` : `SK ${liste[0]}–${liste.at(-1)}`) : 'keine SK');
+
+/**
+ * Wofür ein gerechneter Einzelmodellregen als Überstaunachweis taugt (A 118:2024,
+ * 5.5.1: der Überstau entspricht der Wiederkehrzeit des Regens; 6.2.1 Tab. 4).
+ * @param {object} regen  activeModelRain (metadata.returnPeriod, duration)
+ * @param {number} ueberstauKnoten  Zahl überstauter Knoten des Laufs
+ * @returns {{ text: string, erfuellt: boolean|null } | null}  null = Regen ohne Wiederkehrzeit
+ */
+export function ueberstauNachweis(regen, ueberstauKnoten) {
+    const jahre = WIEDERKEHRZEITEN.find(w => w.key === regen?.metadata?.returnPeriod)?.jahre;
+    if (!jahre) return null;
+    const dauer = regenDauerMin(regen);
+    if (dauer != null && dauer < MIN_REGENDAUER_MIN) {
+        return { text: `T = ${jahre} a, aber ${dauer} min < ${MIN_REGENDAUER_MIN} min — kein Nachweisregen`, erfuellt: null };
+    }
+    const bestand = SCHUTZKATEGORIEN.filter(k => k.bestand <= jahre).map(k => k.sk);
+    const neubau = SCHUTZKATEGORIEN.filter(k => k.neubau <= jahre).map(k => k.sk);
+    const deckt = `T = ${jahre} a deckt Bestand ${bereich(bestand)}, Neubau ${bereich(neubau)}`;
+    if (!(ueberstauKnoten >= 0)) return { text: deckt, erfuellt: null };
+    return ueberstauKnoten > 0
+        ? { text: `${deckt} — nicht erfüllt: ${ueberstauKnoten} Knoten überstaut`, erfuellt: false }
+        : { text: `${deckt} — erfüllt: kein Knoten überstaut`, erfuellt: true };
+}

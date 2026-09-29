@@ -64,6 +64,8 @@ describe('Kennwerte Übungsnetz (Messlatte)', () => {
         // Die Übungsdatei hatte 23 Rohrsohlen 1–5 cm unter der Schachtsohle (still angehoben);
         // sie ist korrigiert (2026-09-29) — kein Hinweis mehr, gleiche SWMM-Geometrie.
         expect(store.simulation.preSolveWarnings.some(w => /Rohrsohle unter der Schachtsohle/.test(w.text))).toBe(false);
+        // Überstaunachweis (A 118:2024 Tab. 4) zählt dieselben Knoten wie SWMMs „Node Flooding Summary“
+        expect(store.simulation.results.systemStats.ueberstauKnoten).toBe(k.ueberstau);
         const tf = store.simulation.results.systemStats.fliesszeit;
         expect(tf.minuten).toBeGreaterThan(1);
         expect(tf.minuten).toBeLessThan(30);

@@ -6,7 +6,7 @@ import { validateNetwork } from '../utils/preSolveValidation.js';
 import { detectCRS } from '../utils/KostraService.js';
 import { clipNewArea, snapPoint, hasSelfIntersection } from '../utils/areaClipping.js';
 import { syncBauwerkstypFromType } from '../utils/mappings.js';
-import { TEXTGROESSE_STANDARD } from '../utils/typPalette.js';
+import { TEXTGROESSE_STANDARD, knotenZustand } from '../utils/typPalette.js';
 import { regenDauerHinweis, regenDauerMin } from '../utils/regenNorm.js';
 import { kanalfliesszeit } from '../utils/swmm/fliesszeit.js';
 import { useElementFocus } from '../composables/useElementFocus.js';
@@ -1454,6 +1454,10 @@ export const useIsybauStore = defineStore('isybau-module', {
                     result.systemStats.fliesszeit = kanalfliesszeit({
                         edges: this.edgeArray, areas: this.areaArray, ergebnis: result.edges || {},
                     });
+                    // Überstaute Knoten — EINE Regel wie in Reiter, Karte und PDF (knotenZustand);
+                    // Grundlage des Überstaunachweises nach A 118:2024 Tab. 4 (utils/regenNorm.js)
+                    result.systemStats.ueberstauKnoten = Object.values(result.nodes || {})
+                        .filter(n => knotenZustand(n) === 'überstaut').length;
                 }
                 this.simulation.results = result;
                 this.simulation.status = 'success';

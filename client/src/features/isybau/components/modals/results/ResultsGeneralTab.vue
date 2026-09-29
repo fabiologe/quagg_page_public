@@ -69,6 +69,10 @@
                     <td title="Längster Weg von einem Flächenanschluss bis zum Auslass, mit Vollfüllgeschwindigkeit — ohne Oberflächenfließzeit">Kanalfließzeit:</td>
                     <td>≈ {{ fmtZahl(regenPruefung.fliesszeit.minuten, 0) }} min ({{ regenPruefung.fliesszeit.von }} → {{ regenPruefung.fliesszeit.nach }})</td>
                 </tr>
+                <tr v-if="nachweis">
+                    <td title="DWA-A 118:2024, Abschn. 6.2.1, Tabelle 4: Überstauhäufigkeit je Schutzkategorie (SK 1 gering … SK 4 sehr stark)">Überstaunachweis (A 118, Tab. 4):</td>
+                    <td :class="{ 'text-red': nachweis.erfuellt === false }">{{ nachweis.text }}</td>
+                </tr>
                 <tr v-if="regenPruefung">
                     <td>Regendauer (DWA-A 118:2024):</td>
                     <td :class="{ 'text-red': regenPruefung.zuKurz }">
@@ -298,7 +302,7 @@ import { computed } from 'vue';
 import { Bar, formatVolume, getContinuityClass, fmtZahl, fmtSekunden } from './resultsShared.js';
 import { niederschlagsBilanz } from '../../../utils/swmm/niederschlagsBilanz.js';
 import { modellGuete } from '../../../utils/swmm/modellGuete.js';
-import { regenDauerMin, empfohleneRegendauer, wiederkehrText } from '../../../utils/regenNorm.js';
+import { regenDauerMin, empfohleneRegendauer, wiederkehrText, ueberstauNachweis } from '../../../utils/regenNorm.js';
 
 const props = defineProps({
   /* default statt blossem Object: die Vorlage liest systemStats.analysisOptions
@@ -356,6 +360,9 @@ const GUETE_KLASSE = { gut: 'health-excellent', pruefen: 'health-warning', kriti
 const runoffBilanz = computed(() => niederschlagsBilanz(props.systemStats?.runoff, props.totalCatchmentAreaHa));
 
 // Rain chart — rekonstruiert aus store.rain.activeModelRain.series
+/** Überstaunachweis nach A 118:2024 Tab. 4 — nur bei einem Regen mit Wiederkehrzeit. */
+const nachweis = computed(() => ueberstauNachweis(props.rain?.activeModelRain, props.systemStats?.ueberstauKnoten));
+
 /** Kanalfließzeit (Store, nach dem Lauf) gegen die gerechnete Regendauer. */
 const regenPruefung = computed(() => {
     const fliesszeit = props.systemStats?.fliesszeit;

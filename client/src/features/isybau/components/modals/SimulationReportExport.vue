@@ -22,7 +22,7 @@ import { summarizeOutfallCatchments } from '../../utils/outfallCatchments.js';
 import { AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../utils/typPalette.js';
 import { niederschlagsBilanz, spitzeAusGanglinie, faktorZuLs } from '../../utils/swmm/niederschlagsBilanz.js';
 import { parseInpSubcatchments } from '../../utils/resultsExport.js';
-import { regenDauerMin, empfohleneRegendauer, wiederkehrText } from '../../utils/regenNorm.js';
+import { regenDauerMin, empfohleneRegendauer, wiederkehrText, ueberstauNachweis } from '../../utils/regenNorm.js';
 import { bilanzStufe } from '../../utils/swmm/modellGuete.js';
 
 const store = useIsybauStore();
@@ -578,6 +578,8 @@ async function exportPDF() {
         ['Zeitschritt',      Number.isFinite(parseFloat(stats.analysisOptions?.routingTimeStep)) ? `${fmt(parseFloat(stats.analysisOptions.routingTimeStep), 2)} s` : '—'],
         ['Kont.-Fehler Flow',`${fmt(stats.flow?.error || 0, 3)} %`],
         ['Rauheit',         'kb nach DWA-A 110 (0,75 mm); Bestand 95 % DN'],
+        // DWA-A 118:2024 (6.2.1, Tab. 4): wofür der Regen als Überstaunachweis taugt
+        ...((() => { const u = ueberstauNachweis(props.rain?.activeModelRain, stats.ueberstauKnoten); return u ? [['Überstaunachweis A 118', u.text]] : []; })()),
         // DWA-A 118:2024 (5.5.1): Regendauer ≥ 2 × Fließzeit, mindestens 60 min
         ...(stats.fliesszeit ? [
           ['Kanalfließzeit', `ca. ${fmt(stats.fliesszeit.minuten, 0)} min (${stats.fliesszeit.von} bis ${stats.fliesszeit.nach})`], // nur cp1252 im PDF
