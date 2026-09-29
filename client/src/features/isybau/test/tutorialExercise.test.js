@@ -756,7 +756,7 @@ describe('Regen-Abfolge: erst die Statistik, dann der Verlauf', () => {
   it('nennt Wiederkehrzeit und Dauer, die er meint', () => {
     const s = schritt('ex-rain-modellregen');
     expect(s.task).toMatch(/3 Jahre/);
-    expect(s.task).toMatch(/15 Minuten/);
+    expect(s.task).toMatch(/60 Minuten/); // DWA-A 118:2024 (5.5.1): mindestens 60 min
     expect(s.message).toMatch(/Euler Typ II/);
   });
 

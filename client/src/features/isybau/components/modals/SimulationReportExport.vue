@@ -22,6 +22,7 @@ import { summarizeOutfallCatchments } from '../../utils/outfallCatchments.js';
 import { AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../utils/typPalette.js';
 import { niederschlagsBilanz, spitzeAusGanglinie, faktorZuLs } from '../../utils/swmm/niederschlagsBilanz.js';
 import { parseInpSubcatchments } from '../../utils/resultsExport.js';
+import { regenDauerMin, empfohleneRegendauer, wiederkehrText } from '../../utils/regenNorm.js';
 
 const store = useIsybauStore();
 
@@ -574,6 +575,15 @@ async function exportPDF() {
         ['Ende',             stats.analysisOptions?.endDate              || '—'],
         ['Zeitschritt',      Number.isFinite(parseFloat(stats.analysisOptions?.routingTimeStep)) ? `${fmt(parseFloat(stats.analysisOptions.routingTimeStep), 2)} s` : '—'],
         ['Kont.-Fehler Flow',`${fmt(stats.flow?.error || 0, 3)} %`],
+        // DWA-A 118:2024 (5.5.1): Regendauer ≥ 2 × Fließzeit, mindestens 60 min
+        ...(stats.fliesszeit ? [
+          ['Kanalfließzeit', `ca. ${fmt(stats.fliesszeit.minuten, 0)} min (${stats.fliesszeit.von} bis ${stats.fliesszeit.nach})`], // nur cp1252 im PDF
+          ['Regendauer A 118', (() => {
+            const d = regenDauerMin(props.rain?.activeModelRain);
+            const e = empfohleneRegendauer(stats.fliesszeit.minuten);
+            return `${d ?? '—'} min, empfohlen mind. ${e} min${d != null && d < e ? ' (zu kurz)' : ''}`;
+          })()],
+        ] : []),
       ],
     });
     const afterParams = doc.lastAutoTable.finalY;
@@ -589,7 +599,8 @@ async function exportPDF() {
       doc.setFontSize(6.5);
       doc.setTextColor(...C.muted);
       doc.text(
-        `Gesamt: ${fmt(totalMm, 1)} mm  ·  Spitze: ${fmt(peakI, 1)} l/s·ha  ·  Intervall: ${interval} min  ·  Dauer: ${series.length * interval} min`,
+        `Gesamt: ${fmt(totalMm, 1)} mm  ·  Spitze: ${fmt(peakI, 1)} l/s·ha  ·  Intervall: ${interval} min  ·  Dauer: ${series.length * interval} min`
+          + (props.rain?.activeModelRain?.metadata?.returnPeriod ? `  ·  T = ${wiederkehrText(props.rain.activeModelRain.metadata.returnPeriod)} (KOSTRA-DWD)` : ''),
         ML, cy
       );
       cy += 4;

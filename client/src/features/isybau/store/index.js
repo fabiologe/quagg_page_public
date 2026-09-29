@@ -7,6 +7,8 @@ import { detectCRS } from '../utils/KostraService.js';
 import { clipNewArea, snapPoint, hasSelfIntersection } from '../utils/areaClipping.js';
 import { syncBauwerkstypFromType } from '../utils/mappings.js';
 import { TEXTGROESSE_STANDARD } from '../utils/typPalette.js';
+import { regenDauerHinweis, regenDauerMin } from '../utils/regenNorm.js';
+import { kanalfliesszeit } from '../utils/swmm/fliesszeit.js';
 import { useElementFocus } from '../composables/useElementFocus.js';
 
 // Feste Snap-Toleranz in Weltmetern (bewusst NICHT zoomabhängig in Pixeln —
@@ -1381,6 +1383,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 this.rain.duration = dauer;
             }
             const regen = this.rain.activeModelRain;
+            // DWA-A 118:2024 (5.5.1): Einzelmodellregen ≥ 60 min — Hinweis, keine Sperre
+            const dauerHinweis = regenDauerHinweis(regenDauerMin(regen));
+            if (dauerHinweis) this.simulation.preSolveWarnings.push({ id: null, elementType: null, text: dauerHinweis });
             if (regen?.series?.length) {
                 const intervall = regen.metadata?.interval ?? 5;
                 const regenMin = regen.series.length * intervall;
@@ -1438,6 +1443,13 @@ export const useIsybauStore = defineStore('isybau-module', {
                     dauerH: payload.options.durationHours,
                     zeitpunkt: new Date().toISOString(),
                 };
+                // Kanalfließzeit → empfohlene Regendauer (DWA-A 118:2024, 5.5.1), einmal hier
+                // gerechnet, damit Ergebnisfenster und PDF denselben Wert zeigen.
+                if (result.systemStats) {
+                    result.systemStats.fliesszeit = kanalfliesszeit({
+                        edges: this.edgeArray, areas: this.areaArray, ergebnis: result.edges || {},
+                    });
+                }
                 this.simulation.results = result;
                 this.simulation.status = 'success';
                 this.simulation.veraltet = false;

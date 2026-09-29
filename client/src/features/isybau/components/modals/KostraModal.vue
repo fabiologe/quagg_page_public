@@ -35,7 +35,7 @@
           <div class="result-summary">
             <div class="result-value">
               <span class="label">Ausgewählt:</span>
-              <span class="value">{{ selectedValue }} l/(s·ha)</span>
+              <span class="value">{{ selectedCoords.duration }} min · {{ wiederkehrText(selectedCoords.key) }} — {{ fmtZahl(selectedValue, 1) }} l/(s·ha)</span>
             </div>
             <button class="apply-btn" data-tutorial="kostra-uebernehmen" @click="applyResult">Übernehmen</button>
           </div>
@@ -47,22 +47,14 @@
                 <thead>
                   <tr>
                     <th>Dauer</th>
-                    <th>1 a</th>
-                    <th>2 a</th>
-                    <th>3 a</th>
-                    <th>5 a</th>
-                    <th>10 a</th>
-                    <th>20 a</th>
-                    <th>30 a</th>
-                    <th>50 a</th>
-                    <th>100 a</th>
+                    <th v-for="w in WIEDERKEHRZEITEN" :key="w.key">{{ w.kurz }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="d in durations" :key="d">
                     <td>{{ d }} min</td>
                     <td 
-                      v-for="key in ['RN_001A', 'RN_002A', 'RN_003A', 'RN_005A', 'RN_010A', 'RN_020A', 'RN_030A', 'RN_050A', 'RN_100A']" 
+                      v-for="{ key } in WIEDERKEHRZEITEN"
                       :key="key"
                       @click="selectValue(d, key)"
                       :class="{ 'selected-cell': isSelected(d, key) }"
@@ -97,12 +89,14 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { vFokus } from '../../composables/vFokus.js';
 import { useIsybauStore } from '../../store/index.js';
 
 import { CRS_OPTIONS, transformToWGS84, fetchKostraData, detectCRS, liegtInDeutschland } from '../../utils/KostraService.js';
 import { kostraBlockRain } from '../../utils/RainModelService.js';
+import { WIEDERKEHRZEITEN, MIN_REGENDAUER_MIN, kostraDauern, wiederkehrText } from '../../utils/regenNorm.js';
+import { fmtZahl } from '../../utils/zahlformat.js';
 import PixelSelect from '../common/PixelSelect.vue';
 const store = useIsybauStore();
 
@@ -198,9 +192,13 @@ const fetchData = async () => {
   }
 };
 
-const durations = [5, 10, 15, 20, 30, 45, 60, 90, 120]; // Common durations in min
+// Dauerstufen aus den abgerufenen Daten (bis 24 h), nicht fest 5 … 120 min
+const durations = computed(() => kostraDauern(result.value?.raw));
+// Vorauswahl 60 min / 1 a: DWA-A 118:2024 (5.5.1) verlangt für Einzelmodellregen
+// mindestens 60 min (vorher 15 min — utils/regenNorm.js)
+const VORGABE = { duration: MIN_REGENDAUER_MIN, key: 'RN_001A' };
 const selectedValue = ref(null);
-const selectedCoords = ref({ duration: 15, key: 'RN_001A' }); // Default selection
+const selectedCoords = ref({ ...VORGABE });
 
 const getValue = (duration, key) => {
   if (!result.value || !result.value.raw) return '-';
@@ -223,22 +221,13 @@ const isSelected = (duration, key) => {
 // Initialize selection when result changes
 watch(result, (newVal) => {
   if (newVal) {
-    selectedValue.value = newVal.r_15_1;
-    selectedCoords.value = { duration: 15, key: 'RN_001A' };
+    selectedCoords.value = { ...VORGABE };
+    const v = getValue(VORGABE.duration, VORGABE.key);
+    selectedValue.value = v !== '-' && v != null ? v : newVal.r_15_1;
+    if (v === '-' || v == null) selectedCoords.value = { duration: 15, key: 'RN_001A' };
   }
 });
 
-const returnPeriodMap = {
-  'RN_001A': '1 a',
-  'RN_002A': '2 a',
-  'RN_003A': '3 a',
-  'RN_005A': '5 a',
-  'RN_010A': '10 a',
-  'RN_020A': '20 a',
-  'RN_030A': '30 a',
-  'RN_050A': '50 a',
-  'RN_100A': '100 a'
-};
 
 const applyResult = () => {
   if (selectedValue.value) {
@@ -255,7 +244,7 @@ const applyResult = () => {
     emit('select', {
       value: selectedValue.value,
       duration: selectedCoords.value.duration,
-      returnPeriodLabel: returnPeriodMap[key] || key
+      returnPeriodLabel: WIEDERKEHRZEITEN.find(w => w.key === key)?.kurz || key
     });
     close();
   }

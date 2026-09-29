@@ -32,6 +32,7 @@
             </div>
           </div>
           <p v-if="rasterHinweis" class="raster-hinweis">{{ rasterHinweis }}</p>
+          <p v-if="dauerHinweis" class="raster-hinweis">{{ dauerHinweis }}</p>
 
           <div v-if="rainType === 'block'" class="form-group">
             <label>Intensität (l/s*ha):</label>
@@ -64,7 +65,7 @@
                       @click="selectedReturnPeriod = rp.key"
                       class="clickable-col"
                     >
-                      {{ rp.label }}
+                      {{ rp.kurz }}
                     </th>
                   </tr>
                 </thead>
@@ -104,21 +105,12 @@ import { calculateBlockRain, calculateEulerType2, zeitraster } from '../../utils
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
 import PixelSelect from '../common/PixelSelect.vue';
+import { WIEDERKEHRZEITEN, kostraDauern, regenDauerHinweis } from '../../utils/regenNorm.js';
 
 /* Wiederkehrzeiten als Liste fuer PixelSelect.vue — die Schluessel sind die
    KOSTRA-Spaltennamen (RN_*, siehe utils/kostra*), die Beschriftung ist das,
    was der Ingenieur sagt. */
-const WIEDERKEHR_OPTIONEN = [
-    { value: 'RN_001A', label: '1 Jahr' },
-    { value: 'RN_002A', label: '2 Jahre' },
-    { value: 'RN_003A', label: '3 Jahre' },
-    { value: 'RN_005A', label: '5 Jahre' },
-    { value: 'RN_010A', label: '10 Jahre' },
-    { value: 'RN_020A', label: '20 Jahre' },
-    { value: 'RN_030A', label: '30 Jahre' },
-    { value: 'RN_050A', label: '50 Jahre' },
-    { value: 'RN_100A', label: '100 Jahre' },
-];
+const WIEDERKEHR_OPTIONEN = WIEDERKEHRZEITEN.map(w => ({ value: w.key, label: w.lang }));
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
@@ -139,18 +131,9 @@ const interval = ref(5);
 const intensity = ref(120);
 const selectedReturnPeriod = ref('RN_001A');
 
-const durations = [5, 10, 15, 20, 30, 45, 60, 90, 120];
-const returnPeriods = [
-  { key: 'RN_001A', label: '1 a' },
-  { key: 'RN_002A', label: '2 a' },
-  { key: 'RN_003A', label: '3 a' },
-  { key: 'RN_005A', label: '5 a' },
-  { key: 'RN_010A', label: '10 a' },
-  { key: 'RN_020A', label: '20 a' },
-  { key: 'RN_030A', label: '30 a' },
-  { key: 'RN_050A', label: '50 a' },
-  { key: 'RN_100A', label: '100 a' }
-];
+// Dauerstufen aus den Daten (bis 24 h), nicht fest 5 … 120 min (utils/regenNorm.js)
+const durations = computed(() => kostraDauern(props.kostraData));
+const returnPeriods = WIEDERKEHRZEITEN;
 
 const getKostraValue = (d, key) => {
   if (!props.kostraData) return '-';
@@ -171,6 +154,9 @@ watch(() => props.isOpen, (val) => {
     }
   }
 });
+
+// DWA-A 118:2024 (5.5.1): Einzelmodellregen mindestens 60 min — Hinweis, keine Sperre
+const dauerHinweis = computed(() => regenDauerHinweis(zeitraster(duration.value, interval.value).dauer));
 
 // Eingaben außerhalb des Rasters (leer, 0, Dauer < Intervall) nicht still ändern
 const rasterHinweis = computed(() => {

@@ -63,6 +63,17 @@
                 <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
                 <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
                 <tr><td>Zeitschritt:</td><td>{{ fmtSekunden(systemStats.analysisOptions?.routingTimeStep) }}</td></tr>
+                <!-- DWA-A 118:2024 (5.5.1): Regendauer ≥ 2 × Fließzeit, mindestens 60 min (utils/regenNorm.js) -->
+                <tr v-if="regenPruefung">
+                    <td title="Längster Weg von einem Flächenanschluss bis zum Auslass, mit Vollfüllgeschwindigkeit — ohne Oberflächenfließzeit">Kanalfließzeit:</td>
+                    <td>≈ {{ fmtZahl(regenPruefung.fliesszeit.minuten, 0) }} min ({{ regenPruefung.fliesszeit.von }} → {{ regenPruefung.fliesszeit.nach }})</td>
+                </tr>
+                <tr v-if="regenPruefung">
+                    <td>Regendauer (DWA-A 118:2024):</td>
+                    <td :class="{ 'text-red': regenPruefung.zuKurz }">
+                        gerechnet {{ regenPruefung.dauer ?? '–' }} min · empfohlen ≥ {{ regenPruefung.empfohlen }} min{{ regenPruefung.zuKurz ? ' — zu kurz' : '' }}
+                    </td>
+                </tr>
             </table>
 
             <!-- Überstau-Automatik: beide Läufe und die Begründung der Wahl (utils/swmm/ueberstauWahl.js) -->
@@ -263,6 +274,14 @@
                     <span>Dauer</span>
                     <strong>{{ rainChartData.meta.steps * rainChartData.meta.interval }} min</strong>
                 </div>
+                <div v-if="rainChartData.meta.wiederkehr" class="rain-kpi">
+                    <span>Wiederkehrzeit</span>
+                    <strong>{{ rainChartData.meta.wiederkehr }}</strong>
+                </div>
+                <div v-if="rainChartData.meta.quelle" class="rain-kpi">
+                    <span>Quelle</span>
+                    <strong>{{ rainChartData.meta.quelle }}</strong>
+                </div>
             </div>
         </div>
         <div class="rain-chart-box">
@@ -278,6 +297,7 @@ import { computed } from 'vue';
 import { Bar, formatVolume, getContinuityClass, fmtZahl, fmtSekunden } from './resultsShared.js';
 import { niederschlagsBilanz } from '../../../utils/swmm/niederschlagsBilanz.js';
 import { modellGuete } from '../../../utils/swmm/modellGuete.js';
+import { regenDauerMin, empfohleneRegendauer, wiederkehrText } from '../../../utils/regenNorm.js';
 
 const props = defineProps({
   /* default statt blossem Object: die Vorlage liest systemStats.analysisOptions
@@ -335,6 +355,15 @@ const GUETE_KLASSE = { gut: 'health-excellent', pruefen: 'health-warning', kriti
 const runoffBilanz = computed(() => niederschlagsBilanz(props.systemStats?.runoff, props.totalCatchmentAreaHa));
 
 // Rain chart — rekonstruiert aus store.rain.activeModelRain.series
+/** Kanalfließzeit (Store, nach dem Lauf) gegen die gerechnete Regendauer. */
+const regenPruefung = computed(() => {
+    const fliesszeit = props.systemStats?.fliesszeit;
+    if (!fliesszeit) return null;
+    const dauer = regenDauerMin(props.rain?.activeModelRain);
+    const empfohlen = empfohleneRegendauer(fliesszeit.minuten);
+    return { fliesszeit, dauer, empfohlen, zuKurz: dauer != null && dauer < empfohlen };
+});
+
 const rainChartData = computed(() => {
     const series = props.rain?.activeModelRain?.series;
     if (!series || series.length === 0) return null;
@@ -352,9 +381,13 @@ const rainChartData = computed(() => {
     const totalMm = cumulative[cumulative.length - 1] || 0;
     const peakIntensity = Math.max(...series.map(s => s.intensity || 0));
     const method = props.rain?.activeModelRain?.type || props.rain?.method || '';
+    const md = props.rain?.activeModelRain?.metadata || {};
+    // Wiederkehrzeit und Quelle standen bisher nirgends im Ergebnis
+    const wiederkehr = md.returnPeriod ? wiederkehrText(md.returnPeriod) : '';
+    const quelle = md.source === 'kostra' || md.returnPeriod ? 'KOSTRA-DWD' : '';
 
     return {
-        meta: { totalMm, peakIntensity, interval, method, steps: series.length },
+        meta: { totalMm, peakIntensity, interval, method, steps: series.length, wiederkehr, quelle },
         chart: {
             labels: series.map(s => s.time + ' min'),
             datasets: [

@@ -158,7 +158,7 @@ export const kostraRainApplied = (store) =>
  * eine Intensitaet.
  *
  * Geprueft wird die Reihe selbst, nicht ihre Kenndaten: die Aufgabe nennt
- * 3 Jahre und 15 Minuten als das, was man hier ueblicherweise nimmt, aber wer
+ * 3 Jahre und 60 Minuten als das, was man hier ueblicherweise nimmt, aber wer
  * bewusst eine andere Wiederkehrzeit waehlt, hat die Sache trotzdem
  * verstanden. Ein leerer Verlauf zaehlt nicht — den erzeugt das Fenster, wenn
  * die KOSTRA-Spalte fehlt.
@@ -659,9 +659,9 @@ export const EXERCISE_STEPS = [
         highlight: (store) => (store?.ui?.showKostraModal ? 'kostra-uebernehmen' : 'kostra-oeffnen'),
         task: 'Übernimm einen KOSTRA-Regen.',
         message:
-            'Da sind sie. Vorausgewählt sind 15 Minuten Dauer bei 1 Jahr Wiederkehrzeit — für eine erste '
-            + 'Rechnung genau richtig. „Übernehmen“ macht daraus einen Blockregen: diese Stärke, '
-            + 'gleichmäßig über die ganze Dauer.',
+            'Da sind sie. Vorausgewählt sind 60 Minuten bei 1 Jahr Wiederkehrzeit — kürzer darf ein '
+            + 'Nachweisregen nach DWA-A 118 nicht sein. „Übernehmen“ macht daraus einen Blockregen: '
+            + 'diese Stärke, gleichmäßig über die ganze Dauer.',
         hint: 'Eine andere Zeile? „Detaillierte Datentabelle anzeigen“ klappt die Tabelle auf. '
             + 'Kurze Dauern belasten kleine Rohre, lange die großen.',
         // Bewusst OHNE `requires`: es zaehlt, dass der Regen wirklich gesetzt
@@ -678,14 +678,14 @@ export const EXERCISE_STEPS = [
         highlight: (store) => (store?.ui?.showRainModal
             ? 'modellregen-uebernehmen'
             : ['rain-config', 'modellregen-oeffnen']),
-        task: 'Mach aus den KOSTRA-Werten einen Modellregen: 3 Jahre, 15 Minuten.',
+        task: 'Mach aus den KOSTRA-Werten einen Modellregen: 3 Jahre, 60 Minuten.',
         message:
             'Dein Blockregen regnet von Anfang bis Ende gleich stark. Ein echter Regen fängt klein an, '
             + 'wird heftig und klingt aus — und die Spitze ist es, die ein Rohr überlastet.\n\n'
             + 'Mach „Modellregen“ auf und nimm „Euler Typ II“ (geht jetzt, weil die KOSTRA-Werte da sind): '
-            + 'Dauer 15 Minuten, Wiederkehrzeit 3 Jahre, dann „Übernehmen“.',
-        hint: 'Regendaten → Modellregen → Euler Typ II → Dauer 15 → Wiederkehrzeit „3 Jahre“ '
-            + '→ Übernehmen. Die Vorschau daneben zeigt den Verlauf, den du baust.',
+            + 'Dauer 60 Minuten (steht schon da), Wiederkehrzeit 3 Jahre, dann „Übernehmen“.',
+        hint: 'Regendaten → Modellregen → Euler Typ II → Dauer 60 → Wiederkehrzeit „3 Jahre“ '
+            + '→ Übernehmen. Die kurze Spitze steckt im 60-min-Regen mit drin.',
         // Wie bei KOSTRA bewusst OHNE `requires`: es zaehlt, dass der Regen am
         // Ende steht — nicht, ob das Fenster gerade offen ist.
         check: modelRainApplied,

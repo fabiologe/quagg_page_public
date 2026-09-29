@@ -46,8 +46,8 @@ async function lauf(regen) {
     expect(store.simulation.status, store.simulation.error).toBe('success');
     const k = kennzahlen(store.simulation.results.report);
     const psi = psiEingabe(store.areaArray);
-    console.log(`[Kennwerte] ${regen}: ψ_Eingabe ${psi.toFixed(3)} | ψ_eff ${k.psiEff.toFixed(3)} | Q_Auslässe ${k.qAuslaesse.toFixed(0)} l/s | Überstau ${k.ueberstau} Knoten | Volllauf ${k.volllauf} Haltungen | Bilanz ${k.bilanz} %`);
-    return { k, psi };
+    console.log(`[Kennwerte] ${regen}: ψ_Eingabe ${psi.toFixed(3)} | ψ_eff ${k.psiEff.toFixed(3)} | Q_Auslässe ${k.qAuslaesse.toFixed(0)} l/s | Überstau ${k.ueberstau} Knoten | Volllauf ${k.volllauf} Haltungen | Bilanz ${k.bilanz} % | Kanalfließzeit ${store.simulation.results.systemStats.fliesszeit?.minuten.toFixed(1)} min (${store.simulation.results.systemStats.fliesszeit?.von} → ${store.simulation.results.systemStats.fliesszeit?.nach})`);
+    return { k, psi, store };
 }
 
 describe('Kennwerte Übungsnetz (Messlatte)', () => {
@@ -55,8 +55,15 @@ describe('Kennwerte Übungsnetz (Messlatte)', () => {
     // Oberflächenabfluss liefern. Vorher 0,737 bei ψ 0,493 (unbefestigter Rest
     // erzeugte über Horton zusätzlich Abfluss).
     it.each(Object.keys(REGEN))('%s: SWMM setzt das eingegebene ψ um (± 0,02)', async (regen) => {
-        const { k, psi } = await lauf(regen);
+        const { k, psi, store } = await lauf(regen);
         expect(k.niederschlag).toBeGreaterThan(5);
+        // Stufe 2: Regen < 60 min → Hinweis nach DWA-A 118:2024 (5.5.1), ≥ 60 min → keiner
+        const a118 = store.simulation.preSolveWarnings.filter(w => /DWA-A 118:2024/.test(w.text));
+        expect(a118.length, regen).toBe(/15 min/.test(regen) ? 1 : 0);
+        // Stufe 2: Kanalfließzeit liegt vor; das Übungsnetz ist klein → Empfehlung 60 min
+        const tf = store.simulation.results.systemStats.fliesszeit;
+        expect(tf.minuten).toBeGreaterThan(1);
+        expect(tf.minuten).toBeLessThan(30);
         expect(Math.abs(k.psiEff - psi)).toBeLessThan(0.02);
         expect(Math.abs(k.bilanz)).toBeLessThan(5);
     }, LAUFZEIT);
