@@ -334,8 +334,40 @@ const EDGE_RULES = [checkEdgeZahlen, checkConduitElevationDrop, checkConduitProf
  * @param {Array} edges - Edge-Instanzen oder POJOs (edgeArray-Format)
  * @returns {Array<{id, elementType, severity, code, message}>}
  */
+/**
+ * Rohrsohle unter der Schachtsohle: SWMM kennt keinen negativen Versatz — der
+ * Übersetzer hebt die Rohrsohle auf die Schachtsohle (SwmmBuilder.addLinks), das
+ * Gefälle ändert sich still. Gemessen: 80454007K liegt 3,6 cm unter der Sohle,
+ * SWMM rechnet 1,78 statt 1,46 % Gefälle, Vollfüllung +10 %. EIN Sammelhinweis,
+ * Sprung zur Haltung mit der größten Abweichung (Fahrplan „Grenzen beheben“).
+ */
+export const SOHLE_TOLERANZ_M = 0.01;
+export function checkRohrsohlen(nodes, edges) {
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const funde = [];
+    for (const e of edges) {
+        for (const [z, knotenId] of [[e.z1, e.fromNodeId ?? e.from], [e.z2, e.toNodeId ?? e.to]]) {
+            const k = nodeById.get(knotenId);
+            if (z == null || !endlich(Number(z)) || !k || !endlich(Number(k.z))) continue;
+            const tiefer = Number(k.z) - Number(z);
+            if (tiefer > SOHLE_TOLERANZ_M) funde.push({ id: e.id, knoten: knotenId, tiefer });
+        }
+    }
+    if (!funde.length) return [];
+    funde.sort((a, b) => b.tiefer - a.tiefer);
+    const haltungen = [...new Set(funde.map(f => f.id))];
+    const g = funde[0];
+    return [{
+        id: g.id, elementType: 'edge', severity: 'warning', code: 'WARN_SOHLE', sammel: true,
+        message: `${haltungen.length} Haltung${haltungen.length === 1 ? '' : 'en'} mit Rohrsohle unter der Schachtsohle `
+            + `(größte: ${g.id} am Knoten ${g.knoten}, ${fmtZahl(g.tiefer * 100, 1)} cm) — gerechnet wird ab Schachtsohle, `
+            + 'das Gefälle weicht von den Sohlhöhen ab; Sohlhöhen prüfen',
+    }];
+}
+
 export function validateNetwork(nodes = [], edges = [], areas = []) {
     const findings = [];
+    findings.push(...checkRohrsohlen(nodes, edges));
     findings.push(...checkNamen(nodes, edges, areas));
     findings.push(...checkVerteiler(nodes, edges));
     if (areas.length) findings.push(...checkAreas(areas, new Map(nodes.map(n => [n.id, n]))));

@@ -269,6 +269,23 @@ describe('Vorab-Prüfung P2', async () => {
         expect(psi[0].message).toMatch(/^4 Flächen ohne Abflussbeiwert ψ \(F1, F2, F3 …\)/);
         expect(funde.some(f => f.severity === 'error')).toBe(false);
     });
+    // Rohrsohle unter der Schachtsohle: der Übersetzer hebt sie still an, das
+    // Gefälle ändert sich (80454007K: +10 % Vollfüllung) — jetzt ein Sammelhinweis.
+    it('Rohrsohle unter der Schachtsohle: ein Hinweis, Sprung zur größten Abweichung', () => {
+        const knoten = [n('S1', 100), n('S2', 99)];
+        const kanten = [
+            new Edge({ id: 'OK', fromNodeId: 'S1', toNodeId: 'S2', length: 50, z1: 100.00, z2: 99.00 }),
+            new Edge({ id: 'TIEF', fromNodeId: 'S1', toNodeId: 'S2', length: 50, z1: 99.964, z2: 99.00 }),
+            new Edge({ id: 'KNAPP', fromNodeId: 'S1', toNodeId: 'S2', length: 50, z1: 99.995, z2: 99.00 }), // < 1 cm: Rundung
+            new Edge({ id: 'UNTEN', fromNodeId: 'S1', toNodeId: 'S2', length: 50, z1: 100.00, z2: 98.98 }),
+        ];
+        const f = validateNetwork(knoten, kanten).filter(x => x.code === 'WARN_SOHLE');
+        expect(f).toHaveLength(1);
+        expect(f[0].severity).toBe('warning');
+        expect(f[0].id).toBe('TIEF');
+        expect(f[0].message).toMatch(/^2 Haltungen mit Rohrsohle unter der Schachtsohle \(größte: TIEF am Knoten S1, 3,6 cm\)/);
+    });
+
     it('Namen: Leerzeichen, „;", nur Groß-/Kleinschreibung verschieden', () => {
         const f = validateNetwork([...netz, n('b', 1), n('C D', 1)], kanten);
         expect(codes(f)).toEqual(expect.arrayContaining(['ERR_NAME:b', 'ERR_NAME:C D']));

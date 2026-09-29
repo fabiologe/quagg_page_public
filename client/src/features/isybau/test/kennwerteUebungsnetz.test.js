@@ -61,6 +61,9 @@ describe('Kennwerte Übungsnetz (Messlatte)', () => {
         const a118 = store.simulation.preSolveWarnings.filter(w => /DWA-A 118:2024/.test(w.text));
         expect(a118.length, regen).toBe(/15 min/.test(regen) ? 1 : 0);
         // Stufe 2: Kanalfließzeit liegt vor; das Übungsnetz ist klein → Empfehlung 60 min
+        // Die Übungsdatei hatte 23 Rohrsohlen 1–5 cm unter der Schachtsohle (still angehoben);
+        // sie ist korrigiert (2026-09-29) — kein Hinweis mehr, gleiche SWMM-Geometrie.
+        expect(store.simulation.preSolveWarnings.some(w => /Rohrsohle unter der Schachtsohle/.test(w.text))).toBe(false);
         const tf = store.simulation.results.systemStats.fliesszeit;
         expect(tf.minuten).toBeGreaterThan(1);
         expect(tf.minuten).toBeLessThan(30);
