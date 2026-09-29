@@ -20,7 +20,8 @@ export class Area {
         nodeId = null,
         nodeId2 = null,
         splitRatio = 50,
-        schmutzfracht = null
+        schmutzfracht = null,
+        slopePercent = null
     }) {
         this.id = id;
         this.points = points; // Array of {x, y}
@@ -32,6 +33,10 @@ export class Area {
         this.usage = usage;
         this.pollution = pollution;
         this.slope = slope;
+        // Mittleres Geländegefälle in % aus dem DGM („Hirn“-Knopf). Gilt nur, solange es
+        // zur Neigungsklasse passt — wer die Klasse danach von Hand ändert, meint die Klasse
+        // (SwmmBuilder.addSubcatchments). null = nicht aus dem DGM bestimmt.
+        this.slopePercent = slopePercent == null || slopePercent === '' || !Number.isFinite(Number(slopePercent)) ? null : Number(slopePercent);
 
         // Metrics
         this.size = Number(size); // in hectares (ha)
@@ -83,7 +88,8 @@ export class Area {
             nodeId: data.nodeId,   // Likely undefined in raw XML, added later
             nodeId2: data.nodeId2,
             splitRatio: data.splitRatio ?? 50, // 0 % ist eine gültige Aufteilung
-            schmutzfracht: data.schmutzfracht
+            schmutzfracht: data.schmutzfracht,
+            slopePercent: data.slopePercent
         });
     }
 
@@ -122,7 +128,8 @@ export class Area {
             nodeId: this.nodeId,
             nodeId2: this.nodeId2,
             splitRatio: this.splitRatio,
-            schmutzfracht: this.schmutzfracht
+            schmutzfracht: this.schmutzfracht,
+            slopePercent: this.slopePercent
         };
     }
 }

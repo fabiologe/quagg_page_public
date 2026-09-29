@@ -750,3 +750,19 @@ describe('Profile, die SWMM nur näherungsweise kennt (Fahrplan Grenzen, Stufe 6
             expect(warnings.find(w => text.test(w))).toMatch(/: E$/);
         });
 });
+
+describe('Flächengefälle aus dem DGM (Fahrplan Grenzen, Stufe 7)', () => {
+    const gefaelle = (area) => {
+        const nodes = [new Node({ id: 'N1', x: 0, y: 0, z: 100 }), new Node({ id: 'N2', x: 100, y: 0, z: 99 })];
+        const edges = [new Edge({ id: 'E', fromNodeId: 'N1', toNodeId: 'N2', length: 100 })];
+        const { inpContent } = buildInp(makeStore({ nodes, edges, areas: [{ id: 'F', size: 0.5, runoffCoeff: 0.5, nodeId: 'N1', ...area }] }));
+        return parseFloat(inpContent.split('[SUBCATCHMENTS]')[1].split('[')[0].split('\n').find(l => l.startsWith('F')).trim().split(/\s+/)[6]);
+    };
+    it('echtes Gefälle statt Klassenmitte, wenn es zur Klasse passt', () => {
+        expect(gefaelle({ slope: 3 })).toBeCloseTo(7, 3);                     // Klassenmitte
+        expect(gefaelle({ slope: 3, slopePercent: 5.2 })).toBeCloseTo(5.2, 3); // aus dem DGM
+    });
+    it('Klasse danach von Hand geändert → die Klasse gilt', () => {
+        expect(gefaelle({ slope: 1, slopePercent: 5.2 })).toBeCloseTo(0.5, 3);
+    });
+});

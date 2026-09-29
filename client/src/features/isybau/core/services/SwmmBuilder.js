@@ -3,6 +3,7 @@ import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
 import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
 import { waehleErsatzAuslass, ersatzAuslassKandidaten } from '../../utils/preSolveValidation.js';
 import { manningN, haltungsGefaelle, istBestand, BESTAND_FAKTOR } from '../../utils/rauheit.js';
+import { slopePercentToClass } from '../../utils/slopeSuggestion.js';
 
 // Versickerungsrate des durchlässigen Flächenanteils: so hoch, dass kein Regen
 // darauf abfließt (ψ ist schon der Abflussbeiwert, siehe addSubcatchments).
@@ -187,6 +188,13 @@ LINKS                ALL
             // Slope mapping: Neigungsklasse (1-5, siehe mappings.js) -> repräsentativer SWMM %Slope
             const SLOPE_CLASS_PERCENT = { 1: 0.5, 2: 2.5, 3: 7.0, 4: 12.0, 5: 20.0 };
             let slope = SLOPE_CLASS_PERCENT[area.slope];
+            // Echtes Gefälle aus dem DGM statt Klassenmitte — nur, solange es zur Klasse
+            // passt (sonst hat der Nutzer die Klasse danach bewusst geändert). Fahrplan
+            // „Grenzen beheben“, Stufe 7. Untergrenze 0,1 %: SWMM braucht Gefälle > 0.
+            const dgm = Number(area.slopePercent);
+            if (area.slopePercent != null && Number.isFinite(dgm) && slopePercentToClass(dgm) === Number(area.slope)) {
+                slope = Math.max(0.1, dgm);
+            }
             if (slope === undefined) {
                 slope = 0.5;
                 this.warnings.push(`Fläche ${name}: Gefälleklasse fehlte oder ungültig (Wert: ${area.slope}), gesetzt auf 0.5 % (Standard, Neigungsklasse 1).`);

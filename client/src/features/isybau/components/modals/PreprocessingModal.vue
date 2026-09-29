@@ -1091,6 +1091,7 @@ const suggestSlope = (area) => {
     const result = suggestSlopeClassFromTerrain(area.points, store.terrain);
     if (result) {
         area.slope = result.slopeClass;
+        area.slopePercent = result.avgSlopePercent; // gerechnet wird mit dem echten Gefälle
     } else {
         console.warn(`Neigung aus DGM: keine gültigen Höhendaten innerhalb der Fläche ${area.id} gefunden.`);
     }

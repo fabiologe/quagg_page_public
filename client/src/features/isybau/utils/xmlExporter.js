@@ -13,7 +13,7 @@ const KNOTEN_ERGAENZUNG = ['canOverflow', 'isManhole', 'constantInflow', 'consta
     'storageShape', 'evapFactor', 'weirType', 'orificeType', 'gated', 'lossCoeff', 'storageCurve',
     'dividerType', 'dividerLinkId', 'dividerCutoffFlow', 'weirHeight', 'wehrWidth', 'maxOutflow',
     'gateWidth', 'volume', 'maxDepth', 'is_sink'];
-const FLAECHEN_ERGAENZUNG = ['splitRatio', 'nodeId', 'nodeId2', 'schmutzfracht'];
+const FLAECHEN_ERGAENZUNG = ['splitRatio', 'nodeId', 'nodeId2', 'schmutzfracht', 'slopePercent'];
 
 /**
  * Serialisiert den Store-Zustand (Knoten/Haltungen/Flächen) zurück in eine

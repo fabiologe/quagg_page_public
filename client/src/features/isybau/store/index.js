@@ -30,7 +30,7 @@ function nurLesbar(obj, key) {
 // am alten Wert nicht, dass eine Zahl gemeint ist.
 const ZAHLFELDER = new Set(['x', 'y', 'z', 'z1', 'z2', 'coverZ', 'depth', 'diameter', 'length', 'roughness',
     'size', 'runoffCoeff', 'splitRatio', 'volume', 'constantInflow', 'onDepth', 'offDepth', 'pumpRate',
-    'weirHeight', 'height', 'width', 'initDepth', 'maxDepth', 'lossCoeff', 'lossIn', 'lossOut', 'outfallStage']);
+    'weirHeight', 'height', 'width', 'initDepth', 'maxDepth', 'lossCoeff', 'lossIn', 'lossOut', 'outfallStage', 'slopePercent']);
 
 /**
  * Nutzereingabe → Zahl. Leeres Feld = nicht gesetzt (null), „1,5" = 1.5.
@@ -1225,7 +1225,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 const alt = new Map(this.areas.map(a => [a.id, a]));
                 this.areas = data.areas.map(eingabe => {
                     const raw = { ...eingabe };
-                    for (const f of ['size', 'runoffCoeff', 'splitRatio']) {
+                    for (const f of ['size', 'runoffCoeff', 'splitRatio', 'slopePercent']) {
                         if (!(f in raw)) continue;
                         const n = zahlAusEingabe(raw[f]);
                         if (n === undefined) { abgelehnt.push(`${raw.id}: ${f} = „${raw[f]}"`); raw[f] = alt.get(raw.id)?.[f] ?? null; }
