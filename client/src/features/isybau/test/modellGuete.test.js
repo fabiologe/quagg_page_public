@@ -1,7 +1,8 @@
 /** P1.8: Modellgüte in Stufen. IGBWEST (Browser 2026-09-26): Systembilanz −0,14 %,
  *  Knoten 451170437 mit 26,1 % Kontinuitätsfehler → vorher „100 Exzellent". */
 import { describe, it, expect } from 'vitest';
-import { modellGuete } from '../utils/swmm/modellGuete.js';
+import { modellGuete, bilanzStufe } from '../utils/swmm/modellGuete.js';
+import { getContinuityClass } from '../components/modals/results/resultsShared.js';
 
 describe('Modellgüte', () => {
     it('IGBWEST: Knotenfehler 26 % → prüfen, mit Grund', () => {
@@ -22,5 +23,23 @@ describe('Modellgüte', () => {
     });
     it('ohne Angaben: gut', () => {
         expect(modellGuete(undefined).stufe).toBe('gut');
+    });
+});
+
+describe('bilanzStufe — eine Einstufung für Fenster und PDF (Fahrplan Grenzen, Stufe 3)', () => {
+    // Vorher: Fenster ≤ 1 / (1, 5] / > 5, PDF < 1 / [1, 5) / ≥ 5 — genau an den
+    // Grenzen zeigten beide verschiedene Farben.
+    it('Grenzen: 1 % ist noch gut, 5 % noch prüfen', () => {
+        expect(bilanzStufe(0)).toBe('gut');
+        expect(bilanzStufe(1)).toBe('gut');
+        expect(bilanzStufe(1.01)).toBe('pruefen');
+        expect(bilanzStufe(5)).toBe('pruefen');
+        expect(bilanzStufe(5.01)).toBe('kritisch');
+        expect(bilanzStufe(-5.8)).toBe('kritisch');
+    });
+    it('die Kachel im Fenster folgt derselben Regel', () => {
+        expect(getContinuityClass(1)).toBe('kpi-success');
+        expect(getContinuityClass(5)).toBe('kpi-warning');
+        expect(getContinuityClass(-5.8)).toBe('kpi-danger');
     });
 });

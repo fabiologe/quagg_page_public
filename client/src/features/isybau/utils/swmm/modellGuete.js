@@ -11,6 +11,19 @@
 import { BILANZ_GRENZE_PCT } from './ueberstauWahl.js';
 import { CONTINUITY_ERROR_WARN_PCT } from './ResultsAssembler.js';
 
+/**
+ * Stufe eines Bilanzfehlers (%) — EINE Regel für Kachel, Modellgüte und PDF.
+ * Vorher: Fenster ≤ 1 / (1, 5] / > 5, PDF < 1 / [1, 5) / ≥ 5 — genau 1 % und
+ * genau 5 % bekamen verschiedene Farben (Fahrplan „Grenzen beheben“, Stufe 3).
+ *   ≤ 1 %  gut · ≤ 5 % (BILANZ_GRENZE_PCT) prüfen · darüber kritisch
+ */
+export function bilanzStufe(prozent) {
+    const f = Math.abs(Number(prozent) || 0);
+    if (f > BILANZ_GRENZE_PCT) return 'kritisch';
+    if (f > 1) return 'pruefen';
+    return 'gut';
+}
+
 export const STUFEN = {
     gut: { titel: 'Gut', text: 'Massenbilanz geschlossen, keine auffälligen Knoten.' },
     pruefen: { titel: 'Prüfen', text: 'Ergebnisse brauchbar, einzelne Auffälligkeiten — Gründe beachten.' },
@@ -28,8 +41,9 @@ export function modellGuete(systemStats = {}) {
     const fmt = (v) => v.toLocaleString('de-DE', { maximumFractionDigits: 1 });
 
     const sys = Math.abs(systemStats?.flow?.error ?? 0);
-    if (sys > BILANZ_GRENZE_PCT) { hoch('kritisch'); gruende.push(`Systembilanz ${fmt(sys)} % (> ${BILANZ_GRENZE_PCT} %)`); }
-    else if (sys > 1) { hoch('pruefen'); gruende.push(`Systembilanz ${fmt(sys)} % (> 1 %)`); }
+    const sysStufe = bilanzStufe(sys);
+    if (sysStufe === 'kritisch') { hoch('kritisch'); gruende.push(`Systembilanz ${fmt(sys)} % (> ${BILANZ_GRENZE_PCT} %)`); }
+    else if (sysStufe === 'pruefen') { hoch('pruefen'); gruende.push(`Systembilanz ${fmt(sys)} % (> 1 %)`); }
 
     const nk = systemStats?.routingTimeStep?.notConverging ?? 0;
     if (nk > 10) { hoch('kritisch'); gruende.push(`${fmt(nk)} % der Zeitschritte nicht konvergiert`); }

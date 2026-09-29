@@ -19,6 +19,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 export { Line, Bar } from 'vue-chartjs';
 
 import { Bauwerkstyp } from '../../../utils/mappings.js';
+import { bilanzStufe } from '../../../utils/swmm/modellGuete.js';
 
 /** Map-/Objekt-agnostischer Zugriff auf Ergebnis-Sammlungen. */
 export const safeGet = (source, key) => {
@@ -77,12 +78,9 @@ export const getRatioClass = (ratio) => {
     return '';
 };
 
-export const getContinuityClass = (error) => {
-    const absErr = Math.abs(error || 0);
-    if (absErr > 5) return 'kpi-danger';
-    if (absErr > 1) return 'kpi-warning';
-    return 'kpi-success';
-};
+/** Farbklasse der Kachel „Kontinuitätsfehler“ — Stufen aus modellGuete.bilanzStufe (wie das PDF). */
+export const getContinuityClass = (error) =>
+    ({ kritisch: 'kpi-danger', pruefen: 'kpi-warning', gut: 'kpi-success' })[bilanzStufe(error)];
 
 /** Basis-Optionen für die Ganglinien-Charts. */
 export const chartOptions = {

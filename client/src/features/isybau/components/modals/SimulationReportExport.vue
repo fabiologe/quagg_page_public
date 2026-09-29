@@ -23,6 +23,7 @@ import { AUSLASTUNG_STUFEN, haltungsZustand, knotenZustand } from '../../utils/t
 import { niederschlagsBilanz, spitzeAusGanglinie, faktorZuLs } from '../../utils/swmm/niederschlagsBilanz.js';
 import { parseInpSubcatchments } from '../../utils/resultsExport.js';
 import { regenDauerMin, empfohleneRegendauer, wiederkehrText } from '../../utils/regenNorm.js';
+import { bilanzStufe } from '../../utils/swmm/modellGuete.js';
 
 const store = useIsybauStore();
 
@@ -482,7 +483,8 @@ async function exportPDF() {
     const interval = rainInterval.value;
 
     const contErr = Math.abs(stats.flow?.error || 0);
-    const errColor = contErr < 1 ? C.green : contErr < 5 ? C.orange : C.red;
+    // dieselben Stufen wie im Ergebnisfenster (modellGuete.bilanzStufe) — vorher < 1 / < 5
+    const errColor = { gut: C.green, pruefen: C.orange, kritisch: C.red }[bilanzStufe(contErr)];
 
     // tableDefaults — no didDrawPage; headers/footers are applied in a final pass
     const tableDefaults = (extra = {}) => ({
