@@ -1,3 +1,4 @@
+import { manningN, istBestand, BESTAND_FAKTOR } from '../rauheit.js';
 
 /**
  * specialized Parser for SWMM .rpt files (Text Report)
@@ -63,12 +64,9 @@ export class RptParser {
             let slope = Math.abs(z1 - z2) / len;
             if (slope < 0.001) slope = 0.001;
 
-            // Roughness
-            let n = 0.013;
-            if (edge.roughness > 0) {
-                if (edge.roughness > 1.0) n = 1.0 / edge.roughness; // Strickler
-                else n = edge.roughness;
-            }
+            // Rauheit wie im Übersetzer (utils/rauheit.js, DWA-A 110), Bestand mit 95 % DN
+            const n = manningN(edge, { gefaelle: slope }).n;
+            if (istBestand(edge) && [0, 1, 2, 3, 4, 6, 7].includes(Number(type))) { h *= BESTAND_FAKTOR; w *= BESTAND_FAKTOR; }
 
             // Area/Radius Calculation (Simplified for Circular/Rect)
             let A = 0, R = 0;

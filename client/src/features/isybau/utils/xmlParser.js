@@ -1,4 +1,3 @@
-import { getRoughness } from './mappings.js';
 
 /**
  * Parses ISYBAUXML content.
@@ -466,7 +465,9 @@ const parseEdge = (obj, id) => {
 
     const length = parseFloat(obj.getElementsByTagName("Laenge")[0]?.textContent) || 0;
     const material = obj.getElementsByTagName("Material")[0]?.textContent;
-    const roughness = getRoughness(material);
+    // Rauheit steht nicht in ISYBAU: leer = automatisch aus Material und Lage
+    // (utils/rauheit.js, DWA-A 110); ein bewusst gesetzter kSt kommt über die Ergänzung.
+    const roughness = null;
     const status = parseInt(obj.getElementsByTagName("Status")[0]?.textContent || 0);
     // Kanaltyp (KM/KR/KS) — siehe parseNode für Details, dort steht der Wert
     // genauso häufig (in ISYBAU-Praxisdaten sogar zuverlässiger: 51/51 Kanten

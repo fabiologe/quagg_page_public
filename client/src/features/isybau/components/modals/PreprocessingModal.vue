@@ -510,7 +510,9 @@
                                    @change="updateRoughness(edge)" @click.stop />
                     </td>
                     <td>
-                      <input :aria-label="`Rauheit für ${edge.id}`" type="number" v-model.number="edge.roughness" class="small-input" @click.stop>
+                      <input :aria-label="`Rauheit für ${edge.id}`" type="number" v-model.number="edge.roughness" class="small-input" @click.stop
+                             :placeholder="`≈ ${kStAuto(edge)}`"
+                             title="Leer = automatisch nach DWA-A 110 (betriebliche Rauheit kb aus Material und Lage). Eine Zahl hier ist ein fester kSt.">
                     </td>
                     <td>
                       <PixelSelect v-model="edge.profile.type" class="small-select" :options="profilOptionen"
@@ -636,7 +638,8 @@ import DraggableModal from '../common/DraggableModal.vue';
 import CurveTableEditor from '../common/CurveTableEditor.vue';
 import SchmutzfrachtDialog from '../common/SchmutzfrachtDialog.vue';
 import PixelSelect from '../common/PixelSelect.vue';
-import { getMapping, getRoughness, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, resolveNodeUiType, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
+import { manningN, rauheitManuell } from '../../utils/rauheit.js';
+import { getMapping, getRunoffCoeff, MaterialRoughness, Bauwerkstyp, Profilart, Flaechenfunktion, Neigungsklasse, classifyPreview, resolveNodeUiType, WeirCrestPresets, lossCoeffHint, LossCoeffDefaults, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 import { checkPumpDepths, checkPumpHead, checkNodeInitDepth, checkStorageCurveSequence, checkStorageCurveHasEnoughPoints } from '../../utils/preSolveValidation.js';
 import { depthFromCoverAndZ, coverZFromZAndDepth } from '../../utils/heightCoupling.js';
 import { suggestSlopeClassFromTerrain } from '../../utils/slopeSuggestion.js';
@@ -1281,15 +1284,13 @@ watch(() => props.isOpen, (newVal) => {
       let material = e.material;
       let roughness = e.roughness;
 
-      // Ensure we display Strickler (Kst) in UI
-      // If roughness is provided but looks like Manning (<= 1.0), convert to Strickler
-      if (roughness && roughness <= 1.0 && roughness > 0) {
-          roughness = parseFloat((1.0 / roughness).toFixed(1)); 
-      }
-      
-      // Fallback defaults
-      if (e.profile.type === 8 && !material) { material = 'Erde'; roughness = 25; }
-      if (!roughness || roughness <= 0) roughness = getRoughness(material);
+      // Rauheit: leer = automatisch (DWA-A 110, utils/rauheit.js) — nur ein bewusst
+      // eingetragener kSt steht im Feld. Altes Manning-n (≤ 1) als kSt zeigen; die
+      // früher mitgespeicherte Materialvorgabe gilt als automatisch.
+      roughness = rauheitManuell({ material, roughness });
+      if (roughness && roughness <= 1.0) roughness = parseFloat((1.0 / roughness).toFixed(1));
+
+      if (e.profile.type === 8 && !material) material = 'Erde'; // Gerinne: kSt aus dem Material
       
       return {
         ...e,
@@ -1367,11 +1368,18 @@ function focusElement(id, type) {
 };
 
 
-const updateRoughness = (edge) => { edge.roughness = getRoughness(edge.material); };
+// Materialwechsel: Rauheit wieder automatisch (DWA-A 110) — nicht die Materialvorgabe festschreiben
+const updateRoughness = (edge) => { edge.roughness = null; };
 const onProfileChange = (edge) => {
-    if (edge.profile.type === 8) { edge.material = 'Erde'; edge.roughness = 25; }
+    if (edge.profile.type === 8) { edge.material = 'Erde'; edge.roughness = null; }
     // Add default dims based on profile?
 };
+/** Automatische Rauheit als kSt — Platzhalter im leeren kSt-Feld (Maße hier in mm). */
+const kStAuto = (edge) => Math.round(manningN(
+    { ...edge, roughness: null, profile: { ...edge.profile, height: (edge.profile?.height || 0) / 1000, width: (edge.profile?.width || 0) / 1000 } },
+    { gefaelle: (parseFloat(calculateSlope(edge)) || 0) / 100 },
+).kSt);
+
 const calculateSlope = (edge) => {
      if (!edge.length) return 0;
      return (((edge.z1 - edge.z2) / edge.length) * 100).toFixed(2);

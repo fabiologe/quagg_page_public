@@ -2,7 +2,7 @@
  * Domain Model for an Edge (Haltung/Leitung) connecting two Nodes.
  */
 export class Edge {
-    constructor({ id, fromNodeId, toNodeId, length, roughness = 0.011, profile = null, type = "Haltung", coords = [], material = null, z1 = null, z2 = null, entwaesserungsart = null }) {
+    constructor({ id, fromNodeId, toNodeId, length, roughness = null, profile = null, type = "Haltung", coords = [], material = null, z1 = null, z2 = null, entwaesserungsart = null }) {
         this.id = id;
         this.fromNodeId = fromNodeId;
         this.toNodeId = toNodeId;
@@ -11,7 +11,10 @@ export class Edge {
         if (this.length <= 0) this.length = 10.0; // Fail-safe default
 
         // Physics
-        this.roughness = Number(roughness); // Manning n usually
+        // Rauheit: leer = automatisch (kb nach DWA-A 110, utils/rauheit.js); eine Zahl
+        // ist ein bewusst gesetzter kSt (Werte ≤ 1: altes Manning-n). Vorher Vorgabe
+        // 0,011 (Manning) neben kSt aus dem Parser — zwei Einheiten in einem Feld.
+        this.roughness = roughness == null || roughness === '' || !Number.isFinite(Number(roughness)) ? null : Number(roughness);
         this.material = material;
 
         // Geometric Profile

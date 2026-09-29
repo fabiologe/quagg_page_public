@@ -63,6 +63,7 @@
                 <tr><td>Startdatum:</td><td>{{ systemStats.analysisOptions?.startDate }}</td></tr>
                 <tr><td>Enddatum:</td><td>{{ systemStats.analysisOptions?.endDate }}</td></tr>
                 <tr><td>Zeitschritt:</td><td>{{ fmtSekunden(systemStats.analysisOptions?.routingTimeStep) }}</td></tr>
+                <tr><td>Rauheit:</td><td title="utils/rauheit.js — Transport- und Sammelkanal werden nicht unterschieden">betriebliche Rauheit kb nach DWA-A 110 (Sammelkanal 0,75 mm); Bestand mit 95 % der Nennweite</td></tr>
                 <!-- DWA-A 118:2024 (5.5.1): Regendauer ≥ 2 × Fließzeit, mindestens 60 min (utils/regenNorm.js) -->
                 <tr v-if="regenPruefung">
                     <td title="Längster Weg von einem Flächenanschluss bis zum Auslass, mit Vollfüllgeschwindigkeit — ohne Oberflächenfließzeit">Kanalfließzeit:</td>

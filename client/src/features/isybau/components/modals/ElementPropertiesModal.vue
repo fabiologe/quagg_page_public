@@ -96,8 +96,8 @@
             </div>
              <div class="form-group">
                <label>Rauheit kSt (Strickler)</label>
-               <input v-model.number="formData.roughness" type="number" step="1" min="1" class="form-input" />
-               <small class="hint">Wird durch Material {{ formData.material }} gesetzt.</small>
+               <input v-model.number="formData.roughness" type="number" step="1" min="1" class="form-input" placeholder="automatisch" />
+               <small class="hint">Leer = automatisch nach DWA-A 110 (betriebliche Rauheit aus Material und Lage).</small>
             </div>
             <div class="form-group">
                 <label>Anschlusshöhe Oben (mNHN)</label>
@@ -160,7 +160,7 @@ import { vFokus } from '../../composables/vFokus.js';
 import DraggableModal from '../common/DraggableModal.vue';
 import { useIsybauStore } from '../../store/index.js';
 import PixelSelect from '../common/PixelSelect.vue';
-import { MaterialRoughness, getRoughness, Bauwerkstyp, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
+import { MaterialRoughness, Bauwerkstyp, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 
 const props = defineProps({
   isOpen: Boolean,
@@ -294,7 +294,7 @@ const initForm = () => {
             profileType: 0,
             geom1: 300, // mm, wie Info-Fenster und Datentabelle (vorher hier m)
             material: defaultMat,
-            roughness: getRoughness(defaultMat),
+            roughness: null, // automatisch (DWA-A 110, utils/rauheit.js)
             z1: fromNode ? fromNode.z : null,
             z2: toNode ? toNode.z : null
         });
@@ -317,10 +317,9 @@ const initForm = () => {
   }
 };
 
+// Materialwechsel: Rauheit bleibt automatisch (DWA-A 110) — nichts festschreiben
 const updateRoughness = () => {
-    if (formData.value.material) {
-        formData.value.roughness = getRoughness(formData.value.material);
-    }
+    formData.value.roughness = null;
 };
 
 const store = useIsybauStore();

@@ -489,6 +489,54 @@ describe('SwmmBuilder', () => {
         expect(KEIN_ABFLUSS_MM_H).toBeGreaterThanOrEqual(1000);
     });
 
+    // === Rauheit nach DWA-A 110 und 95 % Nennweite im Bestand (Fahrplan Grenzen, Stufe 4) ===
+    const kanal = (inp, id) => inp.split('[CONDUITS]')[1].split('[')[0].split('\n').find(l => l.startsWith(id)).trim().split(/\s+/);
+    const quer = (inp, id) => inp.split('[XSECTIONS]')[1].split('[')[0].split('\n').find(l => l.startsWith(id)).trim().split(/\s+/);
+    const netzMit = (kanten) => makeStore({
+        nodes: [new Node({ id: 'N1', x: 0, y: 0, z: 100 }), new Node({ id: 'N2', x: 100, y: 0, z: 99.5 })],
+        edges: kanten,
+    });
+
+    it('Bestand (Status 0) mit 95 % der Nennweite, Planung (Status 1) voll; Gerinne nie', () => {
+        const bestand = new Edge({ id: 'B', fromNodeId: 'N1', toNodeId: 'N2', length: 100, profile: { type: 0, height: 0.4 } });
+        const geplant = new Edge({ id: 'P', fromNodeId: 'N1', toNodeId: 'N2', length: 100, profile: { type: 0, height: 0.4 } });
+        geplant.status = 1;
+        const rinne = new Edge({ id: 'R', fromNodeId: 'N1', toNodeId: 'N2', length: 100, profile: { type: 5, height: 0.4, width: 0.6 } });
+        const { inpContent } = buildInp(netzMit([bestand, geplant, rinne]));
+        expect(parseFloat(quer(inpContent, 'B')[2])).toBeCloseTo(0.38, 3);
+        expect(parseFloat(quer(inpContent, 'P')[2])).toBeCloseTo(0.4, 3);
+        expect(parseFloat(quer(inpContent, 'R')[2])).toBeCloseTo(0.4, 3);
+    });
+
+    it('n aus kb 0,75 mm mit 5 Stellen; fester kSt geht vor; Druckleitung hinter Pumpe kb 0,25', () => {
+        const auto = new Edge({ id: 'A', fromNodeId: 'N1', toNodeId: 'N2', length: 100, material: 'PVC', profile: { type: 0, height: 0.3 } });
+        const fest = new Edge({ id: 'F', fromNodeId: 'N1', toNodeId: 'N2', length: 100, material: 'PVC', roughness: 60, profile: { type: 0, height: 0.3 } });
+        const { inpContent } = buildInp(netzMit([auto, fest]));
+        const nAuto = parseFloat(kanal(inpContent, 'A')[4]);
+        expect(kanal(inpContent, 'A')[4]).toMatch(/^0\.\d{5}$/);
+        expect(1 / nAuto).toBeGreaterThan(84);   // kb 0,75 mm, DN 300 → kSt ≈ 85–86
+        expect(1 / nAuto).toBeLessThan(88);      // vorher Kunststoff 95 (bzw. 0,011 nach Rundung)
+        expect(parseFloat(kanal(inpContent, 'F')[4])).toBeCloseTo(1 / 60, 5);
+    });
+
+    it('Druckleitung hinter der Pumpe (bis zum nächsten Schacht mit Deckel): kb 0,25 mm', () => {
+        const nodes = [
+            new Node({ id: 'PW', x: 0, y: 0, z: 95, bauwerkstyp: 6, onDepth: 1, offDepth: 0.3, pumpRate: 10, pumpHead: 5 }),
+            new Node({ id: 'D', x: 10, y: 0, z: 100, isManhole: false }),
+            new Node({ id: 'S', x: 110, y: 0, z: 99.5 }),
+            new Node({ id: 'S2', x: 210, y: 0, z: 99 }),
+        ];
+        const edges = [
+            new Edge({ id: 'PUMPE', fromNodeId: 'PW', toNodeId: 'D', length: 10, profile: { type: 0, height: 0.2 } }),
+            new Edge({ id: 'DL', fromNodeId: 'D', toNodeId: 'S', length: 100, material: 'PVC', profile: { type: 0, height: 0.3 } }),
+            new Edge({ id: 'FS', fromNodeId: 'S', toNodeId: 'S2', length: 100, material: 'PVC', profile: { type: 0, height: 0.3 } }),
+        ];
+        const { inpContent } = buildInp(makeStore({ nodes, edges }));
+        const kStDruck = 1 / parseFloat(kanal(inpContent, 'DL')[4]);
+        const kStFrei = 1 / parseFloat(kanal(inpContent, 'FS')[4]);
+        expect(kStDruck).toBeGreaterThan(kStFrei + 5); // glatter: keine Schachtverluste
+    });
+
     // === Regen: kein Fake-Sturm mehr, wenn keine Regenreihe konfiguriert ist ===
     it('Ohne konfigurierten Regen: [TIMESERIES] liefert nur 0.0 mm/h, kein 10mm/h-Fake-Ereignis', () => {
         const { inpContent, warnings } = buildInp(makeStore({

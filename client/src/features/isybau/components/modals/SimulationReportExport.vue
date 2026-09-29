@@ -577,6 +577,7 @@ async function exportPDF() {
         ['Ende',             stats.analysisOptions?.endDate              || '—'],
         ['Zeitschritt',      Number.isFinite(parseFloat(stats.analysisOptions?.routingTimeStep)) ? `${fmt(parseFloat(stats.analysisOptions.routingTimeStep), 2)} s` : '—'],
         ['Kont.-Fehler Flow',`${fmt(stats.flow?.error || 0, 3)} %`],
+        ['Rauheit',         'kb nach DWA-A 110 (0,75 mm); Bestand 95 % DN'],
         // DWA-A 118:2024 (5.5.1): Regendauer ≥ 2 × Fließzeit, mindestens 60 min
         ...(stats.fliesszeit ? [
           ['Kanalfließzeit', `ca. ${fmt(stats.fliesszeit.minuten, 0)} min (${stats.fliesszeit.von} bis ${stats.fliesszeit.nach})`], // nur cp1252 im PDF

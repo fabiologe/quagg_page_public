@@ -2,6 +2,7 @@ import { getEffectiveBauwerkstyp, psiWirksam, classifyPreview, LINK_BAUWERKSTYPE
 import { computePumpCurvePoints } from '../../utils/pumpCurve.js';
 import { buildDwfPatternValues } from '../../utils/dwfPattern.js';
 import { waehleErsatzAuslass, ersatzAuslassKandidaten } from '../../utils/preSolveValidation.js';
+import { manningN, haltungsGefaelle, istBestand, BESTAND_FAKTOR } from '../../utils/rauheit.js';
 
 // Versickerungsrate des durchlässigen Flächenanteils: so hoch, dass kein Regen
 // darauf abfließt (ψ ist schon der Abflussbeiwert, siehe addSubcatchments).
@@ -234,6 +235,36 @@ LINKS                ALL
         this.sections.push(infiltration);
     }
 
+    /**
+     * Knoten einer Druckleitung: vom Pumpenauslass bis zum nächsten Schacht mit
+     * Deckel. Gebraucht für die Überstauregel (addJunctions) und die Rauheit
+     * (Druckleitung kb 0,25 mm, DWA-A 110). Einmal je Übersetzung gerechnet.
+     */
+    druckleitungsKnoten() {
+        if (this._druckleitung) return this._druckleitung;
+        const kantenAb = new Map();
+        for (const e of (this.store.getAllEdges || [])) {
+            if (!kantenAb.has(e.fromNodeId)) kantenAb.set(e.fromNodeId, []);
+            kantenAb.get(e.fromNodeId).push(e);
+        }
+        const knotenById = new Map((this.store.getAllNodes || []).map(n => [n.id, n]));
+        const druckleitung = new Set();
+        for (const n of (this.store.getAllNodes || [])) {
+            if (Number(this.getBtyp(n)) !== 6) continue;          // Pumpe
+            const start = (kantenAb.get(n.id) || [])[0]?.toNodeId; // erste abgehende Haltung = Pumpe (addLinks)
+            const q = start ? [start] : [];
+            while (q.length) {
+                const id = q.shift();
+                const k = knotenById.get(id);
+                if (!k || k.isManhole !== false || druckleitung.has(id)) continue;
+                druckleitung.add(id);
+                for (const e of kantenAb.get(id) || []) q.push(e.toNodeId);
+            }
+        }
+        this._druckleitung = druckleitung;
+        return druckleitung;
+    }
+
     safeFloat(val, def = 0) {
         if (val === undefined || val === null || val === '') return def;
         const f = parseFloat(val);
@@ -408,25 +439,7 @@ LINKS                ALL
         // Oberfläche. Solche Knoten dürfen daher überstauen — AUSSER in einer Druckleitung
         // (vom Pumpenauslass bis zum nächsten Schacht mit Deckel) und außer bei einem vom
         // Nutzer gesetzten Druckdeckel (Deckel vorhanden, „druckdicht").
-        const kantenAb = new Map();
-        for (const e of (this.store.getAllEdges || [])) {
-            if (!kantenAb.has(e.fromNodeId)) kantenAb.set(e.fromNodeId, []);
-            kantenAb.get(e.fromNodeId).push(e);
-        }
-        const knotenById = new Map(nodes.map(n => [n.id, n]));
-        const druckleitung = new Set();
-        for (const n of (this.store.getAllNodes || [])) {
-            if (Number(this.getBtyp(n)) !== 6) continue;          // Pumpe
-            const start = (kantenAb.get(n.id) || [])[0]?.toNodeId; // erste abgehende Haltung = Pumpe (addLinks)
-            const q = start ? [start] : [];
-            while (q.length) {
-                const id = q.shift();
-                const k = knotenById.get(id);
-                if (!k || k.isManhole !== false || druckleitung.has(id)) continue;
-                druckleitung.add(id);
-                for (const e of kantenAb.get(id) || []) q.push(e.toNodeId);
-            }
-        }
+        const druckleitung = this.druckleitungsKnoten();
         const flaechenGeoeffnet = [];
 
         for (const n of nodes) {
@@ -918,20 +931,14 @@ LINKS                ALL
                 }
             }
 
-            // Roughness: Input is kst (Strickler), Output is Manning (n)
-            // n = 1 / kst
-            let kst = this.safeFloat(e.roughness, 0);
-            let roughness = 0.011;
-
-            if (kst <= 0) {
-                roughness = 0.011; // Default
-                this.warnings.push(`Haltung ${e.id}: Rauheit fehlte, gesetzt auf 0.011(PVC).`);
-            } else if (kst > 1.0) {
-                roughness = 1.0 / kst; // Assume Kst (Strickler) -> Manning
-            } else {
-                roughness = kst; // Assume Manning (already < 1.0), avoid double inversion
-            }
-            console.log(`[SwmmBuilder] Link ${e.id}: Input kst=${kst}, Output Manning=${roughness.toFixed(4)}`);
+            // Rauheit nach DWA-A 110 (utils/rauheit.js): betriebliche Rauheit kb aus
+            // Material und Lage, als gleichwertiges Manning-n bei Vollfüllung; ein
+            // bewusst eingetragener kSt geht vor, offene Gerinne behalten kSt.
+            // Vorher 1/kSt je Material — Wandrauheit ohne Schachtverluste.
+            const roughness = manningN(e, {
+                druckleitung: this.druckleitungsKnoten().has(e.fromNodeId),
+                gefaelle: haltungsGefaelle(e, n1, n2),
+            }).n;
 
             // Calc Offsets
             // InOffset = Z1 - NodeFrom.Z, OutOffset = Z2 - NodeTo.Z
@@ -948,7 +955,9 @@ LINKS                ALL
             if (z1 !== -9999) inOffset = Math.max(0, z1 - n1Z);
             if (z2 !== -9999) outOffset = Math.max(0, z2 - n2Z);
 
-            conduits += `${this.pad(e.id)} ${this.pad(e.fromNodeId)} ${this.pad(e.toNodeId)} ${this.pad(length)} ${this.pad(roughness)} ${this.pad(inOffset)} ${this.pad(outOffset)} 0 0\n`;
+            // n mit 5 Stellen: pad() rundet auf 3 — aus 0,0105 (kSt 95) wurde 0,011 (kSt 91),
+            // aus 0,0125 (kSt 80) 0,013 (kSt 77): ±5 % Leistungsfähigkeit nur durch Rundung.
+            conduits += `${this.pad(e.id)} ${this.pad(e.fromNodeId)} ${this.pad(e.toNodeId)} ${this.pad(length)} ${roughness.toFixed(5).padEnd(10)} ${this.pad(inOffset)} ${this.pad(outOffset)} 0 0\n`;
 
             // XSections
             let shape = 'CIRCULAR';
@@ -1004,6 +1013,13 @@ LINKS                ALL
                 this.warnings.push(`Haltung ${e.id}: Profilbreite fehlte / 0, gesetzt auf 1.000m.`);
             }
             if (shape === 'TRAPEZOIDAL' && geom2 <= 0.001) geom2 = 1.0;
+
+            // Bestand (ISYBAU-Status 0 „vorhanden“): mit 95 % der Nennweite rechnen —
+            // DWA-A 110, 5.2.2 (Ablagerungen, Querschnittsminderung). Nur geschlossene Profile.
+            if (istBestand(e) && ['CIRCULAR', 'EGG', 'ARCH', 'RECT_CLOSED'].includes(shape)) {
+                geom1 *= BESTAND_FAKTOR;
+                if (geom2 > 0) geom2 *= BESTAND_FAKTOR;
+            }
 
             xsections += `${this.pad(e.id)} ${this.pad(shape)} ${this.pad(geom1)} ${this.pad(geom2)} ${this.pad(geom3)} ${this.pad(geom4)} 1\n`;
         }

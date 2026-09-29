@@ -909,6 +909,9 @@ export const useIsybauStore = defineStore('isybau-module', {
                 length: dist,
                 ...properties
             });
+            // Von Hand gezeichnet = geplant (ISYBAU-Status 1): gerechnet mit voller Nennweite.
+            // Bestand (Status 0) rechnet mit 95 % (DWA-A 110, utils/rauheit.js).
+            edge.status = properties.status ?? 1;
             this.edges.set(id, edge);
 
             // Force Reactivity for Maps (Pinia/Vue 3 sometimes needs this for getters to trigger)
@@ -1018,6 +1021,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 z1: edgeZ1,
                 z2: edgeZNew
             });
+            newEdge1.status = clonedProps.status ?? 0; // Teilstücke behalten Bestand/Planung
             this.edges.set(newEdgeId1, newEdge1);
 
             // 3. Zweite neue Haltung (von newNode zu altem endNode)
@@ -1033,6 +1037,7 @@ export const useIsybauStore = defineStore('isybau-module', {
                 z1: edgeZNew,
                 z2: edgeZ2
             });
+            newEdge2.status = clonedProps.status ?? 0;
             this.edges.set(newEdgeId2, newEdge2);
 
             // 4. Alte Haltung löschen

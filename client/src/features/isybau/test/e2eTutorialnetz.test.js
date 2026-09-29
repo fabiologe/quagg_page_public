@@ -223,6 +223,37 @@ describe('test.xml, echter Rechenweg', () => {
         expect(warnings[0]).toMatch(/Systemweiter Kontinuitätsfehler.*Gegenprobe mit Überstauverfahren EXTRAN/);
     }, LAUFZEIT);
 
+    // Fahrplan Grenzen, Stufe 4: geschlossene Bestandsrohre rechnen mit der betrieblichen
+    // Rauheit kb 0,75 mm und 95 % der Nennweite (DWA-A 110). Soll unabhängig vom Code:
+    // Prandtl-Colebrook bei Vollfüllung, hier ausgeschrieben.
+    it('A 110: SWMM-Vollfüllung geschlossener Bestandsrohre = Prandtl-Colebrook (kb 0,75 mm, 95 % DN)', async () => {
+        const store = uebungsnetz();
+        store.rain.duration = 3; euler2(store);
+        await store.runSimulation();
+        const { edges } = store.simulation.results;
+        const pc = (d, I) => {
+            const s = Math.sqrt(2 * 9.81 * d * I);
+            const v = -2 * Math.log10((2.51 * 1.31e-6) / (d * s) + 0.75e-3 / (3.71 * d)) * s;
+            return v * Math.PI * d * d / 4 * 1000; // l/s
+        };
+        // Gefälle wie SWMM: Rohrsohle unter der Knotensohle wird auf die Knotensohle gehoben
+        // (Versatz ≥ 0, SwmmBuilder.addLinks) — z. B. 80454007K: 311,13 unter 311,166.
+        const gefaelle = (e) => {
+            const a = store.nodes.get(e.fromNodeId)?.z, b = store.nodes.get(e.toNodeId)?.z;
+            if (a == null || b == null) return 0; // Haltung ohne Knoten: nicht prüfbar
+            return (Math.max(e.z1, a) - Math.max(e.z2, b)) / e.length;
+        };
+        const pruefbar = store.edgeArray.filter(e => Number(e.profile?.type) === 0 && Number(e.status) === 0
+            && !['MA', 'OB', 'ZG'].includes(String(e.material).toUpperCase()) && e.roughness == null
+            && e.z1 != null && e.z2 != null && e.length > 0 && gefaelle(e) >= 0.002 && edges[e.id]?.capacity > 0);
+        expect(pruefbar.length).toBeGreaterThan(10);
+        for (const e of pruefbar) {
+            const soll = pc(0.95 * e.profile.height, gefaelle(e));
+            expect(edges[e.id].capacity / soll, e.id).toBeGreaterThan(0.97);
+            expect(edges[e.id].capacity / soll, e.id).toBeLessThan(1.03);
+        }
+    }, LAUFZEIT);
+
     // P1.1 (Entscheidung 2026-09-26): Auslastung = Q/Qvoll, Einstau getrennt. Eine Haltung, die
     // im Rückstau voll steht, aber weniger als Qvoll führt, ist „eingestaut", nicht „überlastet"
     // (vorher h/hvoll > 0,9 = überlastet). Früher an R_002 festgemacht — seit ψ nicht mehr

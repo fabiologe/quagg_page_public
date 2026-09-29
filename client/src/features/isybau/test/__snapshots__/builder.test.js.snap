@@ -70,13 +70,13 @@ N3               50.000     50.000
 
 [CONDUITS]
 ;;Name           Node1          Node2          Length     Roughness  InOffset   OutOffset  InitFlow   MaxFlow
-E1               N1               N2               100.000    0.011      0.000      0.000      0 0
-E2               N3               N1               70.000     0.011      0.000      0.000      0 0
+E1               N1               N2               100.000    0.01163    0.000      0.000      0 0
+E2               N3               N1               70.000     0.01160    0.000      0.000      0 0
 
 [XSECTIONS]
 ;;Link           Shape      Geom1      Geom2      Geom3      Geom4      Barrels
-E1               CIRCULAR         0.300      0.000      0.000      0.000      1
-E2               CIRCULAR         0.300      0.000      0.000      0.000      1
+E1               CIRCULAR         0.285      0.000      0.000      0.000      1
+E2               CIRCULAR         0.285      0.000      0.000      0.000      1
 
 [TIMESERIES]
 ;;Name           Date       Time       Value

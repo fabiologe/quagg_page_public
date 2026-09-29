@@ -91,7 +91,9 @@
              
              <div class="info-group">
                  <label>Rauheit kSt (Strickler)</label>
-                 <input type="number" v-model.number="localData.roughness" class="full-input">
+                 <input type="number" v-model.number="localData.roughness" class="full-input"
+                        :placeholder="`automatisch ≈ ${kStAuto}`"
+                        title="Leer = automatisch nach DWA-A 110 (betriebliche Rauheit kb aus Material und Lage). Eine Zahl hier ist ein fester kSt.">
              </div>
 
              <div class="info-group">
@@ -334,7 +336,8 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useIsybauStore } from '../../store/index.js';
-import { getMapping, getRoughness, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
+import { manningN, rauheitManuell } from '../../utils/rauheit.js';
+import { getMapping, MaterialRoughness, Bauwerkstyp, WeirCrestPresets, LINK_BAUWERKSTYPEN, LINK_SECTION_BY_BTYP, getEffectiveBauwerkstyp, resolveNodeUiType, lossCoeffHint, Neigungsklasse, optionenAusZuordnung, optionenAusSchluesseln } from '../../utils/mappings.js';
 // EINE Regel für die Überstau-Kopplung — geteilt mit dem Node-Modell und
 // PreprocessingModal.vue.
 import { normalizeOverflowState } from '../../core/domain/Node.js';
@@ -514,7 +517,9 @@ function initLocalData(el) {
         data.profile.height = (data.profile.height || 0) * 1000;
         data.profile.width = (data.profile.width || 0) * 1000;
         
-        if (!data.roughness) data.roughness = getRoughness(data.material);
+        // leer = automatisch (DWA-A 110); nur ein bewusst gesetzter kSt steht im Feld
+        data.roughness = rauheitManuell(data);
+        if (data.roughness && data.roughness <= 1.0) data.roughness = parseFloat((1 / data.roughness).toFixed(1));
     } 
     else if (elementType.value === 'node') {
         // Ensure standard fields
@@ -587,14 +592,26 @@ const currentResult = computed(() => {
 });
 
 // Actions
+// Materialwechsel: Rauheit wieder automatisch (DWA-A 110)
 const updateRoughness = () => {
-    localData.value.roughness = getRoughness(localData.value.material);
+    localData.value.roughness = null;
 };
+
+/** Automatische Rauheit als kSt — Platzhalter im leeren Feld (Profilmaße hier in mm). */
+const kStAuto = computed(() => {
+    const e = localData.value;
+    if (!e?.profile) return '';
+    const L = Number(e.length), gefaelle = L > 0 && e.z1 != null && e.z2 != null ? (e.z1 - e.z2) / L : 0;
+    return Math.round(manningN(
+        { ...e, roughness: null, profile: { ...e.profile, height: (e.profile.height || 0) / 1000, width: (e.profile.width || 0) / 1000 } },
+        { gefaelle },
+    ).kSt);
+});
 
 const onProfileChange = () => {
     if (localData.value.profile.type === 8) { // Trapez
         localData.value.material = 'Erde';
-        localData.value.roughness = 25;
+        localData.value.roughness = null; // Gerinne: kSt aus dem Material (Erde 25)
     }
 };
 

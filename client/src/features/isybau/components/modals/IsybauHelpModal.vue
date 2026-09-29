@@ -124,7 +124,7 @@
 
                 <h5>🛠️ Werkzeuge (Leiste oben)</h5>
                 <ul>
-                    <li><strong>Schacht, Haltung, Fläche:</strong> anlegen; Haltungen in Fließrichtung (erst oberer, dann unterer Schacht); Flächen per Klick je Eckpunkt, Abschluss mit Doppelklick oder Enter. Profilmaße in mm, Rauheit als kSt (Strickler).</li>
+                    <li><strong>Schacht, Haltung, Fläche:</strong> anlegen; Haltungen in Fließrichtung (erst oberer, dann unterer Schacht); Flächen per Klick je Eckpunkt, Abschluss mit Doppelklick oder Enter. Profilmaße in mm. Rauheit: leer = automatisch nach DWA-A 110 (betriebliche Rauheit kb 0,75 mm, Mauerwerk/Ortbeton 1,50, Druckleitung 0,25 mm; offene Gerinne kSt aus dem Material); eine Zahl im Feld ist ein fester kSt. Bestandshaltungen (ISYBAU-Status „vorhanden“) rechnen mit 95 % der Nennweite.</li>
                     <li><strong>Haltung teilen:</strong> Knoten in eine bestehende Haltung einbauen.</li>
                     <li><strong>Rechteckauswahl:</strong> Rahmen aufziehen (Shift = hinzufügen), dann gemeinsam löschen oder bearbeiten.</li>
                     <li><strong>Eckpunkte einer Fläche:</strong> ausgewählte Fläche — Punkte ziehen, Doppelklick auf eine Kante fügt einen Punkt ein.</li>

@@ -31,7 +31,9 @@ describe('ISYBAU-Rundreise', () => {
       s.updateArea(split.id, { splitRatio: 30, runoffCoeff: 0.77, slope: 3 });
       const direkt = s.areaArray.find(a => a.id !== split.id);
       s.updateArea(direkt.id, { runoffCoeff: 0.45, schmutzfracht: { einwohnerwerte: 120, einwohnerdichte: 60, wasserverbrauch: 130, tagesspitzenfaktor: 2.1 } });
-      s.updateEdge('R_010', { roughness: 70, material: 'PVC-U' });
+      // kSt 60 ≠ Materialvorgabe: bewusst gesetzt. (Ein Wert GLEICH der Vorgabe gilt als
+      // „automatisch“ — so speicherten ihn alte Projekte mit, utils/rauheit.js rauheitManuell.)
+      s.updateEdge('R_010', { roughness: 60, material: 'PVC-U' });
       s.updateEdge('R_011', { profile: { ...s.edges.get('R_011').profile, height: 0.4 } });
       s.updateNode('R_010', { isManhole: false, canOverflow: false }); // druckdicht
       s.updateNode('R_011', { coverZ: s.nodes.get('R_011').coverZ + 0.2, diameter: 1.5 });
@@ -68,7 +70,7 @@ describe('ISYBAU-Rundreise', () => {
       const split2 = s2.areas.find(a => a.id === s.areaArray.find(a => a.splitRatio === 30).id);
       expect(split2.splitRatio).toBe(30);
       expect(s2.areas.find(a => a.schmutzfracht?.wasserverbrauch === 130)?.schmutzfracht.tagesspitzenfaktor).toBe(2.1);
-      expect(s2.edges.get('R_010').roughness).toBe(70);
+      expect(s2.edges.get('R_010').roughness).toBe(60);
     }
     if (datei.includes('IGBWEST')) expect(s2.edges.get('626.32').z1).toBeNull(); // fehlt bleibt fehlt
    });
