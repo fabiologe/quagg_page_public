@@ -559,13 +559,28 @@ export function merkmaleVon(bauplan) {
 }
 
 export function mengenVon(bauplan, kennzahlen) {
-    const teil = rezeptNach(bauplan?.rezept)?.teile?.find?.(t => t.rolle === bauplan?.rolle);
+    const r = rezeptNach(bauplan?.rezept);
+    const teil = r?.teile?.find?.(t => t.rolle === bauplan?.rolle);
     const out = {};
     for (const [feld, kennzahl] of Object.entries(teil?.menge ?? {})) {
         const v = kennzahlen?.[kennzahl];
         if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[feld] = v;
     }
+    // EIN EIGENES BAUTEIL (Teil XXVI, Z4): die Mengen aus seinem Körper und seinen
+    // Feldern — derselbe Ausgang, ein anderer Eingang.
+    if (!teil && typeof r?.mengen === 'function') Object.assign(out, r.mengen(bauplan?.parameter ?? {}));
     return out;
+}
+
+/**
+ * WIE die Mengen gemessen sind — der Schlüssel, den der Schreiber in einen Text
+ * übersetzt (`eigenbau.MENGEN_METHODEN`): 'raster' für Ableitungsteile (Differenz
+ * der Geländeraster), 'koerper' für eigene Bauteile, null ohne Mengen.
+ */
+export function mengenMethodeVon(bauplan) {
+    const r = rezeptNach(bauplan?.rezept);
+    if (r?.teile?.find?.(t => t.rolle === bauplan?.rolle)?.menge) return 'raster';
+    return typeof r?.mengen === 'function' ? 'koerper' : null;
 }
 
 /**

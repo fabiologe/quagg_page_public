@@ -204,6 +204,9 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         // OPTIONAL (Teil XXVI, Z3): bSI-Merkmale aus Rezeptfeldern. Nur wenn es welche
         // gibt — ein Paket ohne sie bleibt Byte für Byte, was es war.
         ...(Object.keys(teil.merkmale ?? {}).length ? { merkmale: teil.merkmale } : {}),
+        // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
+        // Schreibers ist (Raster, der Erdbau). Ein Erdbau-Paket bleibt so, wie es war.
+        ...(teil.mengenMethode && teil.mengenMethode !== 'raster' ? { mengenMethode: teil.mengenMethode } : {}),
     };
 }
 

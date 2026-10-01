@@ -180,6 +180,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             tragend('Pset_SlabCommon'),
         ],
         geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
+        // Mengen (Teil XXVI, Z4) nach Qto_SlabBaseQuantities: Fläche und Umfang in der Draufsicht.
+        menge: { depth: 'dicke', netArea: 'grundflaeche', perimeter: 'umfang', netVolume: 'volumen' },
     },
     {
         /**
@@ -219,6 +221,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
                      profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
+        // Qto_WallBaseQuantities: „Length — along center line" = die gezeichnete Achse.
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
     },
     {
         /**
@@ -243,5 +247,6 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
                      profil: { art: 'rechteck', breite: 'breite', tiefe: 'dicke', einheit: 'm' } },
+        menge: { length: 'achslaenge', width: 'breite', height: 'dicke', netVolume: 'volumen' },
     },
 ]);

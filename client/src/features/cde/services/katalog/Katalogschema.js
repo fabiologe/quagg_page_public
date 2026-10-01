@@ -23,7 +23,8 @@ import { BAUFORMEN } from '../bauform/Bauformen.js';
 import { ACHSEN_FELDER, KNOTEN_FELDER } from '../bauform/Bauformregeln.js';
 import { EINGEBAUTE_PROFILE } from '../bauform/Typprofile.js';
 import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
-import { GEOMETRIE_ARTEN, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
+import { GEOMETRIE_ARTEN, KOERPERMASSE, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
+import { getPsetsForType } from '../../data/pset-templates.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { ACHSBEZUEGE } from '../Achsbezug.js';
 import { zielfehler } from './Merkmalsziele.js';
@@ -48,7 +49,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
-    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung',
+    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset']);
 
@@ -165,6 +166,7 @@ function _rezept(d, fehler) {
     for (const k of ['icon', 'symbol', 'beschreibung']) if (d[k] !== undefined && typeof d[k] !== 'string') fehler.push(`\`${k}\` muss ein Text sein.`);
     if (typeof d.symbol === 'string' && !symbolNach(d.symbol)) fehler.push(`Plansymbol „${d.symbol}" gibt es nicht.`);
     const felder = _felder(d.felder, fehler);
+    if (d.menge !== undefined) _menge(d, felder, fehler);
     // EIN FELD, DAS EIN bSI-MERKMAL IST (Teil XXVI, Z3): Satz und Merkmal müssen
     // für die Vorgabeklasse gelten, der Feldtyp zum Merkmal passen.
     for (const f of felder.values()) {
@@ -234,6 +236,43 @@ function _rezept(d, fehler) {
     if ((g.art === 'platte' || g.art === 'flaeche') && !d.geschlossen) fehler.push(`Eine ${g.art === 'platte' ? 'Platte' : 'Fläche'} braucht einen geschlossenen Umriss.`);
     if (g.art === 'sweep' && d.mindestPunkte < 2) fehler.push('Ein Sweep braucht mindestens 2 Punkte.');
     if (d.netzrolle === 'kante' && g.art !== 'sweep' && g.art !== 'band') fehler.push('Eine Kante im Netz braucht eine Achse (sweep oder band).');
+}
+
+/** Mengentypen, die zueinander passen: eine Länge darf eine positive Länge füllen. */
+const MENGENFAMILIE = Object.freeze({
+    IfcLengthMeasure: 'laenge', IfcPositiveLengthMeasure: 'laenge', IfcNonNegativeLengthMeasure: 'laenge',
+    IfcAreaMeasure: 'flaeche', IfcVolumeMeasure: 'volumen',
+});
+
+/**
+ * DIE MENGEN EINES REZEPTS (Teil XXVI, Z4): `menge: { netVolume: 'volumen', width: 'dicke' }`.
+ * Ziel ist die Vorlage `Qto_<Klasse>BaseQuantities` der Vorgabeklasse — dieselbe
+ * Regel wie `schema.qto_vorlage` im Schreiber. Jede Menge muss darin stehen, und
+ * ihre Quelle (Körpermass oder Zahlfeld in m) muss den passenden Typ liefern —
+ * ein Volumen aus einer Länge wäre eine falsche Zahl mit richtigem Namen.
+ */
+function _menge(d, felder, fehler) {
+    if (!_istObjekt(d.menge)) { fehler.push('`menge` ist ein Objekt { Mengenname: Quelle }.'); return; }
+    const kat = String(d.kategorieVorgabe ?? '').toUpperCase();
+    const ziel = `QTO_${kat.slice(3)}BASEQUANTITIES`;
+    const vorlage = getPsetsForType(kat).find(([n]) => n.toUpperCase() === ziel);
+    if (!vorlage) { fehler.push(`Für ${kat} gibt es keine Mengenvorlage (${ziel}) — \`menge\` hätte kein Ziel.`); return; }
+    const [vname, v] = vorlage;
+    for (const [menge, quelle] of Object.entries(d.menge)) {
+        const name = menge.slice(0, 1).toUpperCase() + menge.slice(1);
+        const prop = v.props.find(p => p.name === name);
+        if (!prop) { fehler.push(`Menge „${menge}" steht nicht in ${vname}.`); continue; }
+        const feld = felder.get(quelle);
+        const typ = KOERPERMASSE[quelle]?.typ
+            ?? (feld?.typ === 'zahl' && (feld.einheit ?? 'm') === 'm' ? 'IfcLengthMeasure' : null);
+        if (!typ) {
+            fehler.push(`Menge „${menge}": „${quelle}" ist weder ein Körpermass (${Object.keys(KOERPERMASSE).join(', ')}) noch ein Zahlfeld in m.`);
+            continue;
+        }
+        if (MENGENFAMILIE[prop.type] !== MENGENFAMILIE[typ]) {
+            fehler.push(`Menge „${menge}" ist ${prop.type}, „${quelle}" liefert ${typ}.`);
+        }
+    }
 }
 
 function _typprofil(p, fehler, { rollen }) {

@@ -87,7 +87,7 @@ function form(p) {
         oben: k(p), version: p.version, crs: p.crs,
         bauteile: p.bauteile.map(b => ({
             cdeId: b.cdeId, klasse: b.klasse, rezept: b.rezept, predefinedType: b.predefinedType,
-            schluessel: k(b), merkmale: b.merkmale ?? null, mengen: k(b.mengen),
+            schluessel: k(b), merkmale: b.merkmale ?? null, mengen: k(b.mengen), mengenMethode: b.mengenMethode ?? null,
             geometrie: b.punkte.length >= 3 && b.dreiecke.length > 0,
         })),
         uebersprungen: p.uebersprungen.map(u => u.grund),
@@ -111,6 +111,17 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
             expect(nach[id].klasse).toBe('IFCWALL');
             expect(nach[id].merkmale).toEqual({ Pset_WallCommon: { LoadBearing: true, IsExternal: true } });
         }
+
+        // Z4: die Mengen der Kammer aus Abschnitt 6 des Fahrplans — von Hand gerechnet.
+        const r3 = (v) => Math.round(v * 1000) / 1000;
+        expect(r3(nach[KAMMER.bodenplatte].mengen.netVolume)).toBe(6.624);           // 4,60 · 3,60 · 0,40
+        expect(r3(nach[KAMMER.bodenplatte].mengen.netArea)).toBe(16.56);             // 4,60 · 3,60
+        expect(r3(nach[KAMMER.decke].mengen.netVolume)).toBe(4.14);                  // 4,60 · 3,60 · 0,25
+        expect(r3(nach[KAMMER.wandNord].mengen.netVolume)).toBe(3.45);               // 4,60 · 0,30 · 2,50
+        expect(r3(nach[KAMMER.wandWest].mengen.netVolume)).toBe(2.25);               // 3,00 · 0,30 · 2,50
+        const beton = paket.bauteile.reduce((a, b) => a + b.mengen.netVolume, 0);
+        expect(r3(beton)).toBe(22.164);
+        expect(paket.bauteile.every(b => b.mengenMethode === 'koerper')).toBe(true);
 
         if (process.env.BAUWERK_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(paket));
         expect(existsSync(FIXTURE), 'Fixture fehlt: BAUWERK_VERTRAG_SCHREIBEN=1 npx vitest run src/features/cde/test/bauwerkVertrag.test.js').toBe(true);

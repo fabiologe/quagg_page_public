@@ -131,6 +131,15 @@ KANTEN_ARTEN = {
 }
 MENGEN_METHODE = ("Quagg CDE: Differenz der Gelaenderaster vor und nach dem Vorgang "
                   "(Mittel der vier Knoten je Zelle); der Koerper ist die Gegenprobe")
+# WIE gemessen wurde (Teil XXVI, Z4). Bis Z4 trugen nur Erdbauteile Mengen, und
+# der Text oben war fuer jede Menge wahr. Eine Wand misst man nicht am Raster:
+# ihr Text stuende sonst falsch in der Datei. Der Client nennt den SCHLUESSEL
+# (`mengenMethode`), die Texte stehen hier — ohne Schluessel gilt der alte.
+MENGEN_METHODEN = {
+    "raster": MENGEN_METHODE,
+    "koerper": ("Quagg CDE: aus dem Bauplan — Laengen und Flaechen aus Achse und Umriss "
+                "(waagerecht), Masse aus dem Rezept, Volumen aus dem geschlossenen Koerper"),
+}
 # Vorlagentyp -> (Mengenklasse, Wertattribut)
 _MENGENTYP = {"Q_VOLUME": ("IfcQuantityVolume", "VolumeValue"), "Q_LENGTH": ("IfcQuantityLength", "LengthValue"),
               "Q_AREA": ("IfcQuantityArea", "AreaValue"), "Q_WEIGHT": ("IfcQuantityWeight", "WeightValue"),
@@ -314,7 +323,7 @@ def _qto_vorlage(klasse: str):
     return S.qto_vorlage(klasse)
 
 
-def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_id: str):
+def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_id: str, methode=None):
     """Die Mengen eines Bauteils als `IfcElementQuantity` nach der Vorlage seiner Klasse.
 
     Ein Schluessel `undisturbedVolume` wird `UndisturbedVolume`, sein Typ
@@ -347,8 +356,11 @@ def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_i
         werte.append(f.create_entity(typ[0], Name=name, **{typ[1]: zahl}))
     if not werte:
         return None
+    text = MENGEN_METHODEN.get(methode or "raster")
+    if text is None:
+        warnungen.append(f"{cde_id}: Messmethode {methode!r} unbekannt — MethodOfMeasurement leer gelassen")
     qto = f.create_entity("IfcElementQuantity", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto"),
-                          OwnerHistory=besitz, Name=vorlage["name"], MethodOfMeasurement=MENGEN_METHODE,
+                          OwnerHistory=besitz, Name=vorlage["name"], MethodOfMeasurement=text,
                           Quantities=werte)
     f.create_entity("IfcRelDefinesByProperties", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|qto|rel"),
                     OwnerHistory=besitz, RelatedObjects=[el], RelatingPropertyDefinition=qto)
@@ -575,7 +587,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             # Die Vorlage (A1/A9b) — auch an Klassen ohne Typobjekt lesbar.
             "Vorlage": (b.get("typ") or {}).get("id") if isinstance(b.get("typ"), dict) else None,
         }, schluessel=f"{satz}|{cde_id}")
-        if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id):
+        if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id,
+                   methode=b.get("mengenMethode")):
             mengen_n += 1
         merkmale_n += _bsi_merkmale(f, besitz, el, klasse, pt, b.get("merkmale"), f"{satz}|{cde_id}",
                                     warnungen, cde_id)

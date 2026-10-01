@@ -247,3 +247,38 @@ def test_vertrag_kammer_traegt_die_bsi_merkmale_der_ids(kammer):
     for regel in ("Decken — Tragend markiert", "Wände — IsExternal markiert", "Wände — Tragend/nichttragend markiert"):
         assert regel not in verfehlt
     assert verfehlt == ["Außenwände — Brandschutz-Klasse"]
+
+
+def _qto(datei):
+    """{GlobalId: (Satzname, Methode, {Menge: Wert})} aller IfcElementQuantity."""
+    aus = {}
+    for r in datei.by_type("IfcRelDefinesByProperties"):
+        q = r.RelatingPropertyDefinition
+        if not q.is_a("IfcElementQuantity"):
+            continue
+        werte = {m.Name: round(getattr(m, m.attribute_name(3)), 6) for m in q.Quantities}
+        for o in r.RelatedObjects:
+            aus[o.GlobalId] = (q.Name, q.MethodOfMeasurement, werte)
+    return aus
+
+
+def test_vertrag_kammer_traegt_ihre_mengen(kammer):
+    """Fund 5 (Z4): eigene Bauteile kamen ohne Qto ins IFC. Jetzt die Zahlen aus
+    Abschnitt 6 des Fahrplans — 22,164 m3 Beton, von Hand gerechnet."""
+    from app.ifc import guids
+    from app.ifc.eigenbau import MENGEN_METHODEN
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    qto = _qto(datei)
+    gid = lambda cde: guids.guid_aus_cde_id(cde)                                  # noqa: E731
+    platte = qto[gid("cde-KA-bodenplatte")]
+    assert platte[0] == "Qto_SlabBaseQuantities"
+    assert platte[2] == {"Depth": 0.4, "NetArea": 16.56, "Perimeter": 16.4, "NetVolume": 6.624}
+    wand = qto[gid("cde-KA-wand-nord")]
+    assert wand[0] == "Qto_WallBaseQuantities"
+    assert wand[2] == {"Length": 4.6, "Width": 0.3, "Height": 2.5, "NetVolume": 3.45}
+    assert qto[gid("cde-KA-wand-west")][2]["NetVolume"] == 2.25
+    assert qto[gid("cde-KA-decke")][2]["NetVolume"] == 4.14
+    assert round(sum(v[2]["NetVolume"] for v in qto.values()), 6) == 22.164
+    # Die Messmethode sagt die Wahrheit: KOERPER, nicht Gelaenderaster.
+    assert {v[1] for v in qto.values()} == {MENGEN_METHODEN["koerper"]}
+    assert kammer["bericht"]["mengen"] == 6

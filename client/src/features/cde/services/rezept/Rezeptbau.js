@@ -17,6 +17,9 @@ import {
     punktXYZ, punkteAus, stabKoerper, sweepKoerper,
 } from './Geometriebau.js';
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
+import { meshVolume } from '../geometrie/MeshOps.js';
+import { stationiere } from '../geometrie/Stationierung.js';
+import { ringFlaeche } from '../geometrie/hilfen.js';
 import { bezugOder } from '../Achsbezug.js';
 
 /**
@@ -88,6 +91,61 @@ export function geometrieSchluessel(art) {
 export function profilSchluessel(art) {
     const p = PROFIL_ARTEN[art];
     return p ? [...PROFIL_IMMER, ...p.masse, ...p.weitere] : [];
+}
+
+/**
+ * DIE MASSE EINES KÖRPERS, aus denen ein Rezept seine Mengen nennt (Teil XXVI, Z4).
+ *
+ * Bis Z4 trugen nur Ableitungen Mengen (Aushub, Auftrag — aus Kennzahlen des
+ * Laufs); eine eigene Platte, Wand oder ein Fundament kam OHNE Qto ins IFC
+ * (Fund 5). Jetzt deklariert ein Rezept `menge: { netVolume: 'volumen',
+ * width: 'dicke', … }`: links der Mengenname der bSI-Vorlage seiner Klasse,
+ * rechts ein Körpermass von hier oder ein Zahlfeld in Metern.
+ *
+ * Gerechnet wird an EINER Stelle, mit dem Kern: Längen waagerecht entlang der
+ * Linie (`stationiere`, wie das Gefälle), Flächen in der Draufsicht
+ * (`ringFlaeche`), das Volumen am geschlossenen Körper (`meshVolume`). Ein
+ * offener Körper hat KEIN Volumen — nie eine Null.
+ */
+export const KOERPERMASSE = Object.freeze({
+    volumen:      Object.freeze({ typ: 'IfcVolumeMeasure', text: 'Volumen des geschlossenen Körpers' }),
+    achslaenge:   Object.freeze({ typ: 'IfcLengthMeasure', text: 'waagerechte Länge der gezeichneten Linie' }),
+    grundflaeche: Object.freeze({ typ: 'IfcAreaMeasure', text: 'Fläche des Umrisses in der Draufsicht' }),
+    umfang:       Object.freeze({ typ: 'IfcLengthMeasure', text: 'Umfang des Umrisses in der Draufsicht' }),
+});
+
+function _koerpermass(name, geo, parameter, vorgabe) {
+    const punkte = punkteAus(parameter).map(punktXYZ);
+    if (name === 'achslaenge') return punkte.length >= 2 ? stationiere(punkte).laenge : undefined;
+    if (name === 'umfang') return punkte.length >= 3 ? stationiere([...punkte, punkte[0]]).laenge : undefined;
+    if (name === 'grundflaeche') return punkte.length >= 3 ? ringFlaeche(punkte) : undefined;
+    if (name === 'volumen') {
+        const k = _koerper(geo, parameter, vorgabe);
+        if (!k?.positions?.length) return undefined;
+        const v = meshVolume(k.positions, k.positions.length / 9);
+        return v.closed ? v.volume : undefined;
+    }
+    return undefined;
+}
+
+/** `mengen(parameter)` → `{ netVolume: 7.5, … }` — nur endliche, nicht negative Werte. */
+function _mengen(d, vorgabe) {
+    if (!d.menge) return undefined;
+    return (parameter = {}) => {
+        const out = {};
+        for (const [menge, quelle] of Object.entries(d.menge)) {
+            let v;
+            if (KOERPERMASSE[quelle]) v = _koerpermass(quelle, d.geometrie, parameter, vorgabe);
+            else {
+                // Ein Feld: der Wert des Bauplans, sonst die Vorgabe — fehlt beides,
+                // gibt es keine Menge (anders als `massAus`, das dann 0 sagt).
+                const roh = parameter?.[quelle] ?? vorgabe(quelle);
+                v = roh === null || roh === undefined || roh === '' ? undefined : Number(roh);
+            }
+            if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[menge] = v;
+        }
+        return out;
+    };
 }
 
 /** Die Vorgabe eines Feldes — der Rückfall, wenn ein Bauplan das Mass nicht nennt. */
@@ -346,6 +404,9 @@ export function rezeptAusDeklaration(d) {
             if (sohlen) r.sohlen = sohlen;
         }
     }
+    // Die Mengen aus Körpermassen und Feldern (Z4) — nur, wenn die Deklaration sie nennt.
+    const mengen = GEOMETRIE_ARTEN[d.geometrie?.art] ? _mengen(d, _vorgabeIn(d.felder)) : undefined;
+    if (mengen) r.mengen = mengen;
     if (typeof r.fachmodell !== 'function') r.fachmodell = _fachmodell(d);
     // Was dieses Bauteil HAT (AE) — abgeleitet, nie von Hand gepflegt.
     r.liefert = Object.freeze([...eigenschaftenVon({ bauform: d.bauform, rezept: d })]);

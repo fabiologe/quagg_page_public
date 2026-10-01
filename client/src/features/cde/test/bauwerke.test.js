@@ -157,3 +157,57 @@ describe('Z3 — die Merkmale eines Bauplans', () => {
         expect(merkmaleVon({ rezept: 'rohr', parameter: { dn: 300 } })).toEqual({});
     });
 });
+
+// ── Z4 — Mengen eigener Bauteile ────────────────────────────────────────────
+
+describe('Z4 — ein eigenes Bauteil trägt seine Mengen (Fund 5)', () => {
+    const { mengenVon, mengenMethodeVon } = REZEPTE_MODUL;
+    const runde = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Math.round(v * 1000) / 1000]));
+
+    it('Platte 5,00 × 5,00 × 0,20 → Volumen 5,000 m³, Fläche 25,000 m², Umfang 20,000 m', () => {
+        const plan = { rezept: 'platte', parameter: { punkte: [[0, 210, 0], [5, 210, 0], [5, 210, 5], [0, 210, 5]], dicke: 0.2 } };
+        expect(runde(mengenVon(plan))).toEqual({ depth: 0.2, netArea: 25, perimeter: 20, netVolume: 5 });
+        expect(mengenMethodeVon(plan)).toBe('koerper');
+    });
+
+    it('Wand aus Z2 → Länge 10,000, Breite 0,300, Höhe 2,500, Volumen 7,500 m³', () => {
+        const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        expect(runde(mengenVon(plan))).toEqual({ length: 10, width: 0.3, height: 2.5, netVolume: 7.5 });
+    });
+
+    it('Streifenfundament → Länge 10,000, Breite 1,200, Höhe 0,400, Volumen 4,800 m³', () => {
+        const plan = gezeichnet('streifenfundament-zeichnen', FUSS, { name: 'F', kategorie: 'IFCFOOTING', hoehe: '', breite: 1.2, dicke: 0.4 });
+        expect(runde(mengenVon(plan))).toEqual({ length: 10, width: 1.2, height: 0.4, netVolume: 4.8 });
+    });
+
+    it('die Länge ist WAAGERECHT — eine geneigte Wand ist nicht länger, als ihr Grundriss', () => {
+        const schraeg = [{ x: 0, y: 210, z: 0 }, { x: 10, y: 211, z: 0 }];
+        const plan = gezeichnet('wand-zeichnen', schraeg, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        expect(runde(mengenVon(plan)).length).toBe(10);
+    });
+
+    it('ein Rohr hat (noch) keine Mengendeklaration — keine Mengen, keine Methode', () => {
+        const plan = { rezept: 'rohr', parameter: { punkte: [[0, 0, 0], [10, 0, 0]], dn: 300 } };
+        expect(mengenVon(plan)).toEqual({});
+        expect(mengenMethodeVon(plan)).toBeNull();
+    });
+});
+
+describe('Z4 — das Katalogschema prüft Mengen gegen die Vorlage', () => {
+    const rezept = (menge) => ({
+        id: 'probe-menge', titel: 'Probe', bauform: 'flaeche+dicke', kategorieVorgabe: 'IFCSLAB',
+        mindestPunkte: 3, geschlossen: true, felder: [{ name: 'dicke', typ: 'zahl', einheit: 'm', vorgabe: 0.2 }],
+        geometrie: { art: 'platte', dicke: 'dicke' }, menge,
+    });
+    const fehlerVon = (menge) => pruefeEintrag('rezept', rezept(menge)).fehler.join(' ');
+    it('eine passende Deklaration besteht', () => {
+        expect(pruefeEintrag('rezept', rezept({ netVolume: 'volumen', depth: 'dicke' })).ok).toBe(true);
+    });
+    it.each([
+        [{ netVolume: 'dicke' }, /IfcVolumeMeasure.*IfcLengthMeasure/],          // ein Volumen aus einer Länge
+        [{ hoehe: 'dicke' }, /steht nicht in Qto_SlabBaseQuantities/],
+        [{ netVolume: 'gewicht' }, /weder ein Körpermass/],
+    ])('%j wird abgewiesen', (menge, grund) => {
+        expect(fehlerVon(menge)).toMatch(grund);
+    });
+});
