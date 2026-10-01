@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenVon, merkmaleVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
@@ -832,6 +832,7 @@ export class IfcAutor {
                 geschlossen: g.geschlossen ?? null,
                 kennzahlen: a?.kennzahlen ?? null,
                 mengen: mengenVon(schritt.wert, a?.kennzahlen),
+                merkmale: merkmaleVon(schritt.wert),
                 fachmodell: erdbau ? 'erdbau' : 'cde',
                 vorgang: erdbau && ableitung ? { ableitung, art: schritt.wert?.rezept ?? null,
                                                  reihe: a?.kennzahlen?.reihe ?? null, titel: titel.get(ableitung) ?? null } : null,

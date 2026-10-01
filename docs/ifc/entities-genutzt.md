@@ -64,7 +64,7 @@ classDiagram
   style IfcVirtualElement fill:#dcedc8,stroke:#558b2f
 ```
 
-### IfcBuiltElement — 23 genutzt
+### IfcBuiltElement — 24 genutzt
 
 ```mermaid
 classDiagram
@@ -78,6 +78,7 @@ classDiagram
   IfcBuiltElement <|-- IfcDeepFoundation
   IfcBuiltElement <|-- IfcDoor
   IfcBuiltElement <|-- IfcEarthworksElement
+  IfcBuiltElement <|-- IfcFooting
   IfcBuiltElement <|-- IfcKerb
   IfcBuiltElement <|-- IfcMember
   IfcBuiltElement <|-- IfcNavigationElement
@@ -102,6 +103,7 @@ classDiagram
   style IfcDoor fill:#dcedc8,stroke:#558b2f
   style IfcEarthworksElement fill:#dcedc8,stroke:#558b2f
   style IfcEarthworksFill fill:#dcedc8,stroke:#558b2f
+  style IfcFooting fill:#dcedc8,stroke:#558b2f
   style IfcKerb fill:#dcedc8,stroke:#558b2f
   style IfcMember fill:#dcedc8,stroke:#558b2f
   style IfcNavigationElement fill:#dcedc8,stroke:#558b2f
@@ -313,6 +315,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcFlowFitting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFlowFitting.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcFlowSegment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFlowSegment.htm) | Kategorien, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcFlowTreatmentDevice](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFlowTreatmentDevice.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcFooting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFooting.htm) | Bauteilrezepte | nein | IFC4X3_ADD2 |
 | [IfcFurnishingElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFurnishingElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcGeographicElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcGeographicElement.htm) | Bauteilrezepte, Gelände, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcGeoslice](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcGeoslice.htm) | Typprofile | nein | IFC4X3_ADD2 |
@@ -364,7 +367,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcTypeObject](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcTypeObject.htm) | Verbund | nein | IFC4X3_ADD2 |
 | [IfcValve](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcValve.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcVirtualElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcVirtualElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWall.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWall.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcWindow](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWindow.htm) | Typprofile | nein | IFC4X3_ADD2 |
 
 ## Ressourcen (nicht unter IfcRoot)
@@ -408,4 +411,4 @@ Geometrie, Einheiten, Werte, Stile — ohne GlobalId, deshalb nicht im Baum oben
 | IfcTriangulatedFaceSet | Eigenbau |
 | IfcUnitAssignment | Verbund |
 
-Im Code genannt, aber keine Klasse des Schnappschusses — Datentypen oder Klassen älterer Schemata, die ADD2 nicht mehr führt (9): `IfcBoolean`, `IfcDateTime`, `IfcIdentifier`, `IfcInteger`, `IfcLabel`, `IfcPresentationStyleAssignment`, `IfcReal`, `IfcText`, `IfcVolumeMeasure`.
+Im Code genannt, aber keine Klasse des Schnappschusses — Datentypen oder Klassen älterer Schemata, die ADD2 nicht mehr führt (11): `IfcBoolean`, `IfcCountMeasure`, `IfcDateTime`, `IfcIdentifier`, `IfcInteger`, `IfcLabel`, `IfcLogical`, `IfcPresentationStyleAssignment`, `IfcReal`, `IfcText`, `IfcVolumeMeasure`.

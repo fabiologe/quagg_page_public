@@ -31,9 +31,26 @@
  *   symbol               Plansymbol im Lageplan (`PlanSymbols.js`) statt Linienzug
  */
 
+import { JA_NEIN } from '../katalog/Merkmalsziele.js';
+
 /** Felder, die jedes gezeichnete Bauteil hat. */
 const NAME = Object.freeze({ name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true });
 const TYP = Object.freeze({ name: 'kategorie', titel: 'IFC-Typ', typ: 'text' });
+
+/**
+ * Tragend — ein Feld, das zugleich ein bSI-Merkmal ist (Teil XXVI, Z3, Fabios E22).
+ * Vorgabe „ja": eine Platte, eine Wand, ein Fundament trägt, wenn niemand etwas
+ * anderes sagt. Ein Belag ist ein anderer Typ (IfcCovering) — für den gilt der
+ * Satz nicht, und der Schreiber lässt ihn weg und sagt es.
+ *
+ * LEER ERLAUBT, und leer heisst Vorgabe. Ein NEUES Feld an einem BESTEHENDEN
+ * Rezept darf kein Pflichtfeld sein: `pruefe` füllt keine Vorgabe auf, und
+ * jedes alte Kommando „Platte zeichnen" ohne dieses Feld wäre abgelehnt worden
+ * (gefunden von der Reichweite-Ratsche, Z3). Die Vorgabe greift beim Sammeln
+ * der Merkmale (`merkmaleAusFeldern`), wie ein fehlendes Mass beim Bauen.
+ */
+const tragend = (satz) => Object.freeze({ name: 'tragend', titel: 'Tragend (leer = ja)', typ: 'auswahl', optionen: JA_NEIN,
+                                         vorgabe: 'ja', leerErlaubt: true, setzbar: true, pset: `${satz}.LoadBearing` });
 
 export const EINGEBAUTE_REZEPTE = Object.freeze([
     {
@@ -160,6 +177,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             NAME, TYP,
             { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.2, setzbar: true },
+            tragend('Pset_SlabCommon'),
         ],
         geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
     },
@@ -193,6 +211,10 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3, setzbar: true },
             { name: 'wandhoehe', titel: 'Wandhöhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 30, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+            tragend('Pset_WallCommon'),
+            // Aussen: im Tiefbau steht die Wand meist im Erdreich (IDS „Wände — IsExternal").
+            { name: 'aussen', titel: 'Aussenwand (leer = ja)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'ja',
+              leerErlaubt: true, setzbar: true, pset: 'Pset_WallCommon.IsExternal' },
         ],
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
@@ -216,6 +238,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'hoehe', titel: 'Sohle des Fundaments', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.6, setzbar: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.4, setzbar: true },
+            tragend('Pset_FootingCommon'),
         ],
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',

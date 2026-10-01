@@ -45,8 +45,9 @@ import { PROBEN_ALLE, VORLAGEN, WELT } from './hilfen/werkzeugProben.js';
 const HEUTE = Object.freeze({
     // Teil XXVI, Z2: +6 Werkzeuge (Wand und Streifenfundament: je Zeichnen und
     // zwei „… ändern"), alle sechs ohne Oberfläche ausführbar — 64/41 → 70/47.
-    werkzeuge: 70,
-    ausgefuehrt: 47,
+    // Z3: +4 Setzer für Felder, die bSI-Merkmale sind (tragend ×3, aussen) — 74/51.
+    werkzeuge: 74,
+    ausgefuehrt: 51,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

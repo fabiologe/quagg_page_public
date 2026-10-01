@@ -201,6 +201,9 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         hinweis: entartet ? `${entartet} entartete Dreiecke beim Verschweissen entfernt` : null,
         // OPTIONAL (Paket v2, A9b): nur mit Vorlage — ein älterer Schreiber übergeht ihn.
         ...(typ ? { typ } : {}),
+        // OPTIONAL (Teil XXVI, Z3): bSI-Merkmale aus Rezeptfeldern. Nur wenn es welche
+        // gibt — ein Paket ohne sie bleibt Byte für Byte, was es war.
+        ...(Object.keys(teil.merkmale ?? {}).length ? { merkmale: teil.merkmale } : {}),
     };
 }
 

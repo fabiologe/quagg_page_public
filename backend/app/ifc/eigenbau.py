@@ -227,7 +227,11 @@ def _wert(f, v):
 
 
 def _merkmale(f, besitz, objekt, satzname: str, werte: dict, schluessel: str):
-    """Merkmalssatz mit abgeleiteten GlobalIds. Praefix `Quagg_` — `Pset_` ist bSI-reserviert."""
+    """Merkmalssatz mit abgeleiteten GlobalIds.
+
+    Eigene Saetze tragen das Praefix `Quagg_` — `Pset_` ist bSI-reserviert und
+    kommt nur ueber `_bsi_merkmale`, gegen die Vorlage geprueft (Teil XXVI, Z3).
+    """
     eigenschaften = [
         f.create_entity("IfcPropertySingleValue", Name=str(k), NominalValue=_wert(f, v))
         for k, v in werte.items() if v is not None and v != "" and v != []
@@ -351,6 +355,64 @@ def _mengen(f, besitz, el, mengen: dict, schluessel: str, warnungen: list, cde_i
     return qto
 
 
+def _nach_vorlage(typ: str, wert):
+    """Ein Paketwert, getypt nach der bSI-Vorlage — oder None, wenn er nicht passt.
+
+    Nie geraten: ein Text wird kein Wahrheitswert, eine Zahl kein Text. Was nicht
+    passt, nennt der Aufrufer im Bericht.
+    """
+    if typ in ("IfcBoolean", "IfcLogical"):
+        return wert if isinstance(wert, bool) else None
+    if typ in ("IfcLabel", "IfcText", "IfcIdentifier"):
+        return wert.strip() if isinstance(wert, str) and wert.strip() else None
+    if isinstance(wert, bool) or not isinstance(wert, (int, float)) or not math.isfinite(wert):
+        return None
+    if typ in ("IfcInteger", "IfcCountMeasure"):
+        return int(wert) if float(wert).is_integer() else None
+    return float(wert)
+
+
+def _bsi_merkmale(f, besitz, el, klasse: str, pt, merkmale, schluessel: str, warnungen: list, cde_id: str) -> int:
+    """bSI-Merkmalssaetze aus dem Paket (Teil XXVI, Z3) — nur, was die Vorlage fuer DIESE Klasse kennt.
+
+    Der Client sammelt sie aus Rezeptfeldern, die ein Ziel nennen
+    (`pset: 'Pset_WallCommon.LoadBearing'`). Entschieden wird HIER, gegen den
+    Schema-Schnappschuss: gilt der Satz fuer die Klasse (samt PredefinedType)?
+    Gibt es das Merkmal, ist es ein Einzelwert, passt der Wert zu seinem Typ?
+    Was nicht passt, steht als Warnung im Bericht — nie still in der Datei, nie
+    still verworfen. Ein Bauteil, dessen Typ der Planer geaendert hat (Platte
+    als IfcCovering), bekommt so keinen Pset_SlabCommon.
+
+    @returns Zahl der geschriebenen Saetze
+    """
+    if not isinstance(merkmale, dict) or not merkmale:
+        return 0
+    gilt = set(S.vorlagen_fuer(klasse, pt))
+    n = 0
+    for satzname, werte in merkmale.items():
+        vorlage = S.vorlage(satzname)
+        if vorlage is None or not str(vorlage.get("art", "")).startswith("PSET_") or vorlage["name"] not in gilt:
+            warnungen.append(f"{cde_id}: Merkmalssatz {satzname} gilt nicht fuer {klasse} — nicht geschrieben")
+            continue
+        typen = {m[0]: (m[1], m[2]) for m in vorlage["merkmale"]}
+        getypt = {}
+        for name, wert in (werte or {}).items():
+            art, typ = typen.get(name, (None, None))
+            if art != "P_SINGLEVALUE":
+                warnungen.append(f"{cde_id}: {vorlage['name']}.{name} "
+                                 + ("steht nicht in der Vorlage" if art is None else f"ist kein Einzelwert ({art})")
+                                 + " — nicht geschrieben")
+                continue
+            w = _nach_vorlage(typ, wert)
+            if w is None:
+                warnungen.append(f"{cde_id}: {vorlage['name']}.{name} erwartet {typ}, bekam {wert!r} — nicht geschrieben")
+                continue
+            getypt[name] = (typ, w)
+        if getypt and _merkmale(f, besitz, el, vorlage["name"], getypt, schluessel=schluessel) is not None:
+            n += 1
+    return n
+
+
 def _ifc_id(wert: str | None) -> str | None:
     """Eine Kennung, wie sie im IFC steht: CDE-Kennungen werden abgeleitet, echte bleiben."""
     if not wert:
@@ -426,6 +488,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     produkte, uebersprungen, warnungen = [], [], []
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
     mengen_n = 0
+    merkmale_n = 0                                   # bSI-Saetze aus Rezeptfeldern (Teil XXVI, Z3)
     if crs is None:
         warnungen.append("Paket ohne Bezugssystem — die Datei traegt Landeskoordinaten ohne "
                          "Georeferenz; der Verbund entscheidet an den Lieferungen")
@@ -514,6 +577,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         }, schluessel=f"{satz}|{cde_id}")
         if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id):
             mengen_n += 1
+        merkmale_n += _bsi_merkmale(f, besitz, el, klasse, pt, b.get("merkmale"), f"{satz}|{cde_id}",
+                                    warnungen, cde_id)
         docs, geliefert = _quelldokumente_von(b, quell_dokumente)
         if docs:
             quelle = {"QuellDokument": "; ".join(str(d.get("datei") or d["sha256"][:12]) for d in docs),
@@ -640,6 +705,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "wirte_offen": len(offen),
         "stile": len(stile),
         "mengen": mengen_n,
+        "merkmalsaetze": merkmale_n,
         "vorgaenge": vorgaenge,
         "typen": typen_n,
         "kanten": len(kanten_neu),

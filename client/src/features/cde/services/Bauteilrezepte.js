@@ -38,6 +38,7 @@
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
+import { merkmaleAusFeldern } from './katalog/Merkmalsziele.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
 import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
@@ -548,6 +549,15 @@ export function istAnzeigeform(bauplan) {
  *
  * @returns {{undisturbedVolume?, compactedVolume?, length?}}  nur, was gerechnet ist
  */
+/**
+ * Die bSI-Merkmale eines Bauplans aus den Feldern seines Rezepts (Teil XXVI, Z3).
+ * Neben `mengenVon` und auf demselben Weg: der Autor hängt sie ans Teil, das
+ * Paket reicht sie durch, der Schreiber prüft sie gegen die Vorlage.
+ */
+export function merkmaleVon(bauplan) {
+    return merkmaleAusFeldern(rezeptNach(bauplan?.rezept)?.felder, bauplan?.parameter ?? {});
+}
+
 export function mengenVon(bauplan, kennzahlen) {
     const teil = rezeptNach(bauplan?.rezept)?.teile?.find?.(t => t.rolle === bauplan?.rolle);
     const out = {};

@@ -13,6 +13,7 @@ import { nachId } from '../services/Bearbeitungen.js';
 import * as REZEPTE_MODUL from '../services/Bauteilrezepte.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
+import { JA_NEIN } from '../services/katalog/Merkmalsziele.js';
 
 const UMRISS = [[0, 210, 0], [5, 210, 0], [5, 210, 5], [0, 210, 5]];
 
@@ -105,5 +106,54 @@ describe('Z2 — die Wand steht auf ihrer Linie (E20: Fusslinie, Höhe nach oben
         const { rezeptNach } = REZEPTE_MODUL;
         expect(rezeptNach(plan.rezept).netzrolle ?? null).toBeNull();
         expect(rezeptNach(plan.rezept).liefert).not.toContain('netzrolle:kante');
+    });
+});
+
+// ── Z3 — Felder, die bSI-Merkmale sind ──────────────────────────────────────
+
+describe('Z3 — ein Rezeptfeld darf ein bSI-Merkmal sein (E22)', () => {
+    const rezept = (feld, kategorieVorgabe = 'IFCSLAB') => ({
+        id: 'probe-merkmal', titel: 'Probe', bauform: 'flaeche+dicke', kategorieVorgabe,
+        mindestPunkte: 3, geschlossen: true,
+        felder: [{ name: 'dicke', typ: 'zahl', vorgabe: 0.2 }, feld], geometrie: { art: 'platte', dicke: 'dicke' },
+    });
+    const ja = { name: 'tragend', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'ja', leerErlaubt: true };
+    const fehlerVon = (feld, k) => pruefeEintrag('rezept', rezept(feld, k)).fehler.join(' ');
+
+    it('ein passendes Ziel besteht', () => {
+        expect(pruefeEintrag('rezept', rezept({ ...ja, pset: 'Pset_SlabCommon.LoadBearing' })).ok).toBe(true);
+    });
+    it.each([
+        ['Pset_SlabCommon.LoadBearing', 'IFCCOVERING', /gilt nicht für IFCCOVERING/],
+        ['Pset_SlabCommon.Tragfaehig', 'IFCSLAB', /steht nicht in Pset_SlabCommon/],
+        ['Pset_GibtsNicht.LoadBearing', 'IFCSLAB', /kennt das Wörterbuch nicht/],
+        ['LoadBearing', 'IFCSLAB', /Pset_Satz\.Merkmal/],
+        ['Pset_SlabCommon.Status', 'IFCSLAB', /Aufzählung/],
+    ])('%s an %s wird beim Laden abgewiesen', (pset, k, grund) => {
+        expect(fehlerVon({ ...ja, pset }, k)).toMatch(grund);
+    });
+    it('ein Wahrheitswert braucht eine Auswahl ja/nein, kein Textfeld', () => {
+        expect(fehlerVon({ name: 'tragend', typ: 'text', pset: 'Pset_SlabCommon.LoadBearing' })).toMatch(/ja\/nein/);
+    });
+    it('alle eingebauten Rezepte bestehen mit ihren Merkmalszielen', () => {
+        for (const id of ['platte', 'wand', 'streifenfundament']) {
+            expect(REZEPTE_MODUL.rezeptNach(id).felder.some(f => f.pset), id).toBe(true);
+        }
+    });
+});
+
+describe('Z3 — die Merkmale eines Bauplans', () => {
+    const { merkmaleVon } = REZEPTE_MODUL;
+    it('ohne Angabe gilt die Vorgabe — wie bei einem fehlenden Mass', () => {
+        expect(merkmaleVon({ rezept: 'platte', parameter: { dicke: 0.2 } })).toEqual({ Pset_SlabCommon: { LoadBearing: true } });
+        expect(merkmaleVon({ rezept: 'wand', parameter: {} }))
+            .toEqual({ Pset_WallCommon: { LoadBearing: true, IsExternal: true } });
+    });
+    it('„nein" wird falsch, nicht weggelassen', () => {
+        expect(merkmaleVon({ rezept: 'wand', parameter: { tragend: 'nein', aussen: 'nein' } }))
+            .toEqual({ Pset_WallCommon: { LoadBearing: false, IsExternal: false } });
+    });
+    it('ein Rezept ohne Merkmalsfelder liefert nichts — ein Rohr bleibt, was es war', () => {
+        expect(merkmaleVon({ rezept: 'rohr', parameter: { dn: 300 } })).toEqual({});
     });
 });

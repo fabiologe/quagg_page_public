@@ -128,11 +128,73 @@ def test_kein_raumelement_kommt_durch_den_bauteilweg(tmp_path, klasse):
     assert bericht["bauteile"] == 0 and "Raumelement" in bericht["uebersprungen"][0]["grund"]
 
 
-def test_probe_eigene_platte_verfehlt_heute_die_ids(tmp_path):
-    """Fund 2, STAND VOR Z3: der Eigenbau schreibt keinen bSI-Merkmalssatz."""
+def test_probe_platte_ohne_merkmale_verfehlt_die_ids(tmp_path):
+    """Fund 2, die KONTROLLE: ein Paket ohne Merkmale traegt keinen bSI-Satz —
+    so war jede eigene Platte bis Z3 (Z0 hielt es fest). Bleibt wahr: der
+    Schreiber erfindet nichts, er schreibt, was das Paket mitbringt."""
     ziel = tmp_path / "platte.ifc"
     baue_datei(_paket(_bauteil("cde-probe-platte", "IFCSLAB")), ziel, schluessel="probe")
     assert _verfehlt(ziel) == ["Decken — Tragend markiert"]
+
+
+# ── Z3 — bSI-Merkmale aus dem Paket ─────────────────────────────────────────
+
+def _merkmale_in(pfad, cde_id="cde-probe"):
+    from app.ifc import guids
+    datei = ifcopenshell.open(str(pfad))
+    el = datei.by_guid(guids.guid_aus_cde_id(cde_id))
+    aus = {}
+    for r in el.IsDefinedBy or []:
+        satz = r.RelatingPropertyDefinition
+        if satz.is_a("IfcPropertySet") and satz.Name.startswith("Pset_"):
+            aus[satz.Name] = {p.Name: (p.NominalValue.is_a(), p.NominalValue.wrappedValue) for p in satz.HasProperties}
+    return aus
+
+
+def test_platte_mit_tragend_besteht_die_ids(tmp_path):
+    """Fund 2, seit Z3: 1 -> 0 von 18 verfehlt."""
+    ziel = tmp_path / "platte.ifc"
+    b = _bauteil("cde-probe", "IFCSLAB", merkmale={"Pset_SlabCommon": {"LoadBearing": True}})
+    bericht = baue_datei(_paket(b), ziel, schluessel="probe")
+    assert bericht["merkmalsaetze"] == 1 and not [w for w in bericht["warnungen"] if "Merkmal" in w]
+    assert _merkmale_in(ziel) == {"Pset_SlabCommon": {"LoadBearing": ("IfcBoolean", True)}}
+    assert _verfehlt(ziel) == []
+    assert _regeln(ziel) == []
+
+
+def test_wand_mit_tragend_und_aussen_besteht_die_ids(tmp_path):
+    """Eine Wand verfehlte ohne Merkmale ZWEI Regeln (IsExternal, LoadBearing)."""
+    ohne, mit = tmp_path / "ohne.ifc", tmp_path / "mit.ifc"
+    baue_datei(_paket(_bauteil("cde-probe", "IFCWALL", masse=(10.0, 0.3, 2.5))), ohne, schluessel="probe")
+    assert _verfehlt(ohne) == ["Wände — IsExternal markiert", "Wände — Tragend/nichttragend markiert"]
+    b = _bauteil("cde-probe", "IFCWALL", masse=(10.0, 0.3, 2.5),
+                 merkmale={"Pset_WallCommon": {"LoadBearing": True, "IsExternal": False}})
+    baue_datei(_paket(b), mit, schluessel="probe")
+    assert _merkmale_in(mit) == {"Pset_WallCommon": {"LoadBearing": ("IfcBoolean", True),
+                                                     "IsExternal": ("IfcBoolean", False)}}
+    assert _verfehlt(mit) == []
+
+
+def test_ein_satz_fuer_eine_andere_klasse_wird_genannt_nicht_geschrieben(tmp_path):
+    """Der Planer hat aus der Platte einen Belag gemacht: Pset_SlabCommon gilt fuer IfcCovering nicht."""
+    ziel = tmp_path / "belag.ifc"
+    b = _bauteil("cde-probe", "IFCCOVERING", merkmale={"Pset_SlabCommon": {"LoadBearing": True}})
+    bericht = baue_datei(_paket(b), ziel, schluessel="probe")
+    assert bericht["merkmalsaetze"] == 0 and _merkmale_in(ziel) == {}
+    assert any("Pset_SlabCommon gilt nicht fuer IfcCovering" in w for w in bericht["warnungen"])
+
+
+@pytest.mark.parametrize("werte, grund", [
+    ({"LoadBearing": "ja"}, "erwartet IfcBoolean"),            # ein Text wird kein Wahrheitswert
+    ({"Tragfaehig": True}, "steht nicht in der Vorlage"),       # ein Merkmal, das es nicht gibt
+    ({"Status": "NEW"}, "ist kein Einzelwert"),                 # Aufzaehlung — nicht in dieser Stufe
+])
+def test_was_nicht_zur_vorlage_passt_wird_genannt(tmp_path, werte, grund):
+    ziel = tmp_path / "x.ifc"
+    bericht = baue_datei(_paket(_bauteil("cde-probe", "IFCSLAB", merkmale={"Pset_SlabCommon": werte})),
+                         ziel, schluessel="probe")
+    assert bericht["merkmalsaetze"] == 0 and _merkmale_in(ziel) == {}
+    assert any(grund in w for w in bericht["warnungen"]), bericht["warnungen"]
 
 
 def test_probe_bauteil_ohne_geometrie_wird_uebersprungen(tmp_path):
@@ -142,3 +204,46 @@ def test_probe_bauteil_ohne_geometrie_wird_uebersprungen(tmp_path):
     bericht = baue_datei(_paket(ohne), tmp_path / "leer.ifc", schluessel="probe")
     assert bericht["bauteile"] == 0
     assert bericht["uebersprungen"] == [{"cdeId": "cde-probe-leer", "grund": "ohne Geometrie"}]
+
+
+# ── DER VERTRAG: die Kammer aus der echten Kette des Clients ──────────────────
+#
+# `client/src/features/cde/test/bauwerkVertrag.test.js` zeichnet die Kammer ueber
+# die Werkzeuge, baut sie im Autor und legt GENAU dieses Paket hier ab. Er waechst
+# mit dem Teil: Z3 Merkmale, Z4 Mengen, Z5 Bauwerk, Z6 Raum.
+
+KAMMER = DATEN / "paket_bauwerke.json"
+
+
+@pytest.fixture(scope="module")
+def kammer(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(KAMMER.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("kammer") / "kammer.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="kammer")
+    return {"paket": paket, "ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def test_vertrag_kammer_sechs_bauteile_ohne_verstoss(kammer):
+    from app.ifc.pruefe import offen
+    assert kammer["bericht"]["bauteile"] == 6 and kammer["bericht"]["uebersprungen"] == []
+    fehl = [b for b in kammer["pruefung"]["befunde"] if offen(b)]
+    assert fehl == [], fehl
+
+
+def test_vertrag_kammer_traegt_die_bsi_merkmale_der_ids(kammer):
+    """Fund 2 an der echten Kette. Ohne Merkmale verfehlte die Kammer drei Regeln
+    (Decken — Tragend; Waende — IsExternal; Waende — Tragend). Jetzt keine davon.
+
+    EINE Regel verfehlt sie NEU, und das ist ehrlich so (Fund 9, Fahrplan):
+    „Aussenwaende — Brandschutz-Klasse" gilt nur fuer Waende mit IsExternal = TRUE
+    und greift erst, WEIL die Waende jetzt als Aussenwand markiert sind. Eine
+    Hochbau-Regel (Schwere Warnung, „im Brandschutz-Konzept erwartet"). Fuer eine
+    Beckenwand im Erdreich wird keine Feuerwiderstandsklasse erfunden, und die
+    kanonische IDS wird nicht ohne Fabio geaendert.
+    """
+    assert kammer["bericht"]["merkmalsaetze"] == 6
+    verfehlt = _verfehlt(kammer["ziel"])
+    for regel in ("Decken — Tragend markiert", "Wände — IsExternal markiert", "Wände — Tragend/nichttragend markiert"):
+        assert regel not in verfehlt
+    assert verfehlt == ["Außenwände — Brandschutz-Klasse"]

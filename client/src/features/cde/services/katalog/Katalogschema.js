@@ -26,6 +26,7 @@ import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { ACHSBEZUEGE } from '../Achsbezug.js';
+import { zielfehler } from './Merkmalsziele.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
 import { AUFLOCKERUNG, GRABENREGELN } from '../gelaende/Grabenregeln.js';
@@ -49,7 +50,7 @@ const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
     'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung',
 ]);
-const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar']);
+const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset']);
 
 const _einfach = (w) => ['string', 'number', 'boolean'].includes(typeof w);
 const _istObjekt = (o) => !!o && typeof o === 'object' && !Array.isArray(o);
@@ -164,6 +165,13 @@ function _rezept(d, fehler) {
     for (const k of ['icon', 'symbol', 'beschreibung']) if (d[k] !== undefined && typeof d[k] !== 'string') fehler.push(`\`${k}\` muss ein Text sein.`);
     if (typeof d.symbol === 'string' && !symbolNach(d.symbol)) fehler.push(`Plansymbol „${d.symbol}" gibt es nicht.`);
     const felder = _felder(d.felder, fehler);
+    // EIN FELD, DAS EIN bSI-MERKMAL IST (Teil XXVI, Z3): Satz und Merkmal müssen
+    // für die Vorgabeklasse gelten, der Feldtyp zum Merkmal passen.
+    for (const f of felder.values()) {
+        if (f.pset === undefined) continue;
+        const zf = zielfehler(f, String(d.kategorieVorgabe ?? '').toUpperCase());
+        if (zf) fehler.push(zf);
+    }
 
     const g = d.geometrie;
     if (!_istObjekt(g) || !GEOMETRIE_ARTEN[g.art]) {

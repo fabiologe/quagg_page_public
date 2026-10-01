@@ -151,6 +151,11 @@ const NEU = [
     { id: 'wand-wandhoehe-setzen', el: eigen('cde-W1'), werte: [{ wandhoehe: 3 }] },
     { id: 'streifenfundament-breite-setzen', el: eigen('cde-FU1'), werte: [{ breite: 0.8 }] },
     { id: 'streifenfundament-dicke-setzen', el: eigen('cde-FU1'), werte: [{ dicke: 0.5 }] },
+    // Teil XXVI, Z3: Felder, die zugleich ein bSI-Merkmal sind.
+    { id: 'platte-tragend-setzen', el: eigen('cde-PL1'), werte: [{ tragend: 'nein' }] },
+    { id: 'wand-tragend-setzen', el: eigen('cde-W1'), werte: [{ tragend: 'nein' }] },
+    { id: 'wand-aussen-setzen', el: eigen('cde-W1'), werte: [{ aussen: 'nein' }] },
+    { id: 'streifenfundament-tragend-setzen', el: eigen('cde-FU1'), werte: [{ tragend: 'nein' }] },
     { id: 'merkmalssatz-setzen', el: eigen('cde-L1'), werte: [{ satz: 'Pset_Test', merkmale: [{ name: 'A', value: 1 }] }] },
     { id: 'bauform-auslegen', el: { ...ROHR_G, stand: {} }, werte: [{ bauform: 'achse+profil' }] },
     { id: 'loeschen', el: eigen('cde-L1'), werte: [{}] },
