@@ -39,6 +39,7 @@ import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
 import { merkmaleAusFeldern } from './katalog/Merkmalsziele.js';
+import { BAUWERKSTYP_OPTIONEN } from './katalog/Bauwerkstypen.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
 import { rezeptAusDeklaration } from './rezept/Rezeptbau.js';
@@ -372,6 +373,9 @@ const BAUWERK_REZEPT = Object.freeze({
         { name: 'name', titel: 'Bezeichnung', typ: 'text' },
         { name: 'art', titel: 'Art', typ: 'auswahl', vorgabe: 'anlage',
           optionen: Object.entries(BAUWERKSARTEN).map(([wert, a]) => ({ wert, titel: a.titel })) },
+        // Der Bauwerkstyp (Z7) — eine Klassifizierung, kein PredefinedType; setzbar.
+        { name: 'bauwerkstyp', titel: 'Bauwerkstyp', typ: 'auswahl', leerErlaubt: true, setzbar: true,
+          optionen: BAUWERKSTYP_OPTIONEN },
     ],
     baue: null,
 });

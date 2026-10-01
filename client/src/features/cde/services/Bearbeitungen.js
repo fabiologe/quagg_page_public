@@ -82,6 +82,7 @@ import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigensch
 import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
+import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -570,8 +571,9 @@ const SETZ_OPERATIONEN = Object.freeze({
             if (s.tut === 'anlegen') {
                 const name = String(werte?.name ?? '').trim();
                 if (!name || !BAUWERKSARTEN[werte?.art]) return null;
+                const typ = werte?.bauwerkstyp && klassifikationVon(werte.bauwerkstyp) ? { bauwerkstyp: werte.bauwerkstyp } : {};
                 // Die Kennung vergibt der Aufrufer (E2, `neu`) — `erzeugtEintrag` zieht sie.
-                return erzeugtEintrag({ rezept: behaelterRezept(), name, parameter: { art: werte.art } });
+                return erzeugtEintrag({ rezept: behaelterRezept(), name, parameter: { art: werte.art, ...typ } });
             }
             const plan = el?.stand?.bauplan;
             if (!plan?.rezept) return null;
@@ -3601,6 +3603,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'name', titel: 'Bezeichnung', typ: 'text' },
             { name: 'art', titel: 'Art', typ: 'auswahl',
               optionen: Object.entries(BAUWERKSARTEN).map(([wert, a]) => ({ wert, titel: `${a.titel} — ${a.text}` })) },
+            { name: 'bauwerkstyp', titel: 'Bauwerkstyp (leer = keiner)', typ: 'auswahl', leerErlaubt: true,
+              optionen: BAUWERKSTYP_OPTIONEN },
         ],
         setzt: { art: 'bauwerk', tut: 'anlegen' },
         vorgangstitel: (werte) => (werte?.name ? `Bauwerk „${werte.name}" anlegen` : null),

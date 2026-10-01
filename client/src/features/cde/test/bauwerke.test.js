@@ -14,6 +14,7 @@ import * as REZEPTE_MODUL from '../services/Bauteilrezepte.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { eigenbauBaum } from '../services/Bauwerksstruktur.js';
 import { kandidatenAus } from '../services/kommando/Kandidaten.js';
+import { BAUWERKSKLASSIFIKATION, klassifikationVon } from '../services/katalog/Bauwerkstypen.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { JA_NEIN } from '../services/katalog/Merkmalsziele.js';
 
@@ -321,5 +322,20 @@ describe('Z5e — Bauwerk anlegen, zuordnen, lösen', () => {
     it('ohne Bauwerk sagt Zuordnen, was zu tun ist', () => {
         const s = new Map([['cde-P', PLATTE]]);
         expect(nachId('bauwerk-zuordnen').warumNicht(el(s, 'cde-P'), { bauwerk: '' }, kontext(s))).toMatch(/erst eines anlegen/);
+    });
+});
+
+// ── Z7 — der Bauwerkstyp ────────────────────────────────────────────────────
+
+describe('Z7 — der Bauwerkstyp ist eine Klassifizierung aus dem Katalog', () => {
+    it('nur belegte Kürzel — mit System, Ausgabe und Quelle', () => {
+        expect(Object.keys(BAUWERKSKLASSIFIKATION.typen)).toEqual(['RUEB', 'RKB', 'RRB', 'RRSB', 'PW']);
+        expect(klassifikationVon('RUEB')).toMatchObject({ system: 'Arbeitshilfen Abwasser', edition: '2015-12', code: 'RUEB',
+                                                          name: 'Regenüberlaufbecken' });
+        expect(klassifikationVon('RRG')).toBeNull();          // in der Quelle abgeschnitten — nicht gelesen, nicht drin
+    });
+    it('ein unbekanntes Kürzel kommt nicht in den Bauplan', () => {
+        const s = mitKennungen(() => 'cde-N', () => nachId('bauwerk-anlegen').anwenden({}, { name: 'X', art: 'anlage', bauwerkstyp: 'ERFUNDEN' }, {}));
+        expect('bauwerkstyp' in s.nachher.parameter).toBe(false);
     });
 });

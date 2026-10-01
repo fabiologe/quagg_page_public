@@ -46,6 +46,7 @@
  */
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAushub } from './Kategorien.js';
+import { klassifikationVon } from './katalog/Bauwerkstypen.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -306,10 +307,13 @@ export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), 
 /** Ein Bauwerk fürs Paket: Kennung, Art, Name, und wozu es selbst gehört. */
 export function bauwerkFuersPaket({ globalId, wert }) {
     const p = wert?.parameter ?? {};
+    const klassifikation = p.bauwerkstyp ? klassifikationVon(p.bauwerkstyp) : null;
     return {
         cdeId: globalId,
         art: p.art ?? null,
         name: wert?.name ?? p.name ?? '',
         ...(p.teilVon ? { teilVon: p.teilVon } : {}),
+        // Der Bauwerkstyp als Klassifizierung (Z7) — aus dem Katalog, samt Quelle.
+        ...(klassifikation ? { klassifikation } : {}),
     };
 }

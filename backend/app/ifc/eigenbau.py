@@ -516,6 +516,7 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
         else:
             eintraege[cid] = w
     behaelter = {}
+    klassen = {}                                     # (System, Ausgabe) -> IfcClassification
 
     def anlegen(cid, pfad=()):
         if cid in behaelter:
@@ -558,12 +559,45 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
                             RelatedObjects=[inst])
         _merkmale(f, besitz, inst, PSET_CDE, {"CdeId": cid, "Rezept": "bauwerk", "Art": w["art"]},
                   schluessel=f"{satz}|{cid}")
+        if w.get("klassifikation") is not None:
+            _klassifizieren(f, besitz, inst, w.get("klassifikation"), f"{satz}|{cid}", klassen, warnungen, cid)
         behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None}
         return behaelter[cid]
 
     for cid in eintraege:
         anlegen(cid)
     return behaelter
+
+
+def _klassifizieren(f, besitz, inst, klassifikation, schluessel: str, cache: dict, warnungen: list, cid: str) -> bool:
+    """Den Bauwerkstyp als Klassifizierung (Teil XXVI, Z7 — S5).
+
+    IfcFacility hat keinen PredefinedType, eine Beckenklasse gibt es nicht —
+    der Bauwerkstyp ist eine KLASSIFIZIERUNG: nachschlagbar, versioniert, und ein
+    Empfaenger muss keine Merkmalsnamen erraten. Je System (Name + Ausgabe) EIN
+    IfcClassification; der Code kommt aus dem Katalog des Clients, mit Quelle.
+    """
+    if not isinstance(klassifikation, dict):
+        return False
+    system, code = str(klassifikation.get("system") or "").strip(), str(klassifikation.get("code") or "").strip()
+    if not system or not code:
+        warnungen.append(f"{cid}: Klassifizierung ohne System oder Code — nicht geschrieben")
+        return False
+    edition = str(klassifikation.get("edition") or "").strip() or None
+    schl = (system, edition)
+    if schl not in cache:
+        cache[schl] = f.create_entity("IfcClassification", Name=system, Edition=edition,
+                                      Source=klassifikation.get("quelle") or None)
+    ref = f.create_entity("IfcClassificationReference", Identification=code,
+                          Name=klassifikation.get("name") or None, ReferencedSource=cache[schl])
+    f.create_entity("IfcRelAssociatesClassification", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|klassifikation"),
+                    OwnerHistory=besitz, RelatedObjects=[inst], RelatingClassification=ref)
+    return True
+
+
+def _tragend(b) -> bool:
+    """Traegt dieses Paket-Bauteil laut seinen bSI-Merkmalen (Z3)? Nur ein ausdrueckliches TRUE zaehlt."""
+    return any(isinstance(w, dict) and w.get("LoadBearing") is True for w in (b.get("merkmale") or {}).values())
 
 
 def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str | None = None,
@@ -602,6 +636,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     stile = {}
     produkte, uebersprungen, warnungen = [], [], list(behaelter_warnungen)
     raeume = []                                      # IfcSpace — zerlegt, nie enthalten (Z6)
+    tragwerke = 0                                    # IfcBuiltSystem LOADBEARING je Bauwerk (Z7)
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
     mengen_n = 0
     merkmale_n = 0                                   # bSI-Saetze aus Rezeptfeldern (Teil XXVI, Z3)
@@ -835,6 +870,25 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         # Datei — an jeder Fachmodell-Gruppe, denn es gilt fuer die ganze Ausgabe.
         ausgelassen = [a for a in paket.get("ausgelassen") or [] if isinstance(a, dict) and a.get("globalId")]
         weg_vorgaenge = "; ".join(sorted({str(a["vorgang"]) for a in ausgelassen if a.get("vorgang")}))[:250]
+        # DAS TRAGWERK je Bauwerk (Teil XXVI, Z7 — S7): ein IfcBuiltSystem LOADBEARING mit
+        # allen Teilen, die laut Merkmal tragen (Z3). Die Zuordnung folgt aus dem
+        # Merkmal, nicht aus einer zweiten Pflege; das System dient seinem Bauwerk
+        # (IfcRelServicesBuildings, wo es ein Raumelement ist).
+        tragwerke = 0
+        for cid, b_ziel in behaelter.items():
+            glieder = [el for el, b in geschrieben if b.get("teilVon") == cid and _tragend(b)]
+            if not glieder:
+                continue
+            name = b_ziel["inst"].Name or cid
+            system = f.create_entity("IfcBuiltSystem", GlobalId=guids.guid_aus_cde_id(f"{satz}|tragwerk|{cid}"),
+                                     OwnerHistory=besitz, Name=f"Tragwerk {name}", PredefinedType="LOADBEARING")
+            f.create_entity("IfcRelAssignsToGroup", GlobalId=guids.guid_aus_cde_id(f"{satz}|tragwerk|{cid}|rel"),
+                            OwnerHistory=besitz, RelatedObjects=glieder, RelatingGroup=system)
+            if b_ziel["rolle"] != "baugruppe":
+                f.create_entity("IfcRelServicesBuildings", GlobalId=guids.guid_aus_cde_id(f"{satz}|tragwerk|{cid}|dient"),
+                                OwnerHistory=besitz, RelatingSystem=system, RelatedBuildings=[b_ziel["inst"]])
+            tragwerke += 1
+
         je_fachmodell = {}
         baugruppen = [(x["inst"], {"fachmodell": "cde"}) for x in behaelter.values() if x["rolle"] == "baugruppe"]
         for el, b in [*geschrieben, *baugruppen]:
@@ -893,6 +947,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "merkmalsaetze": merkmale_n,
         "bauwerke": len(behaelter),
         "raeume": len(raeume),
+        "tragwerke": tragwerke,
         "vorgaenge": vorgaenge,
         "typen": typen_n,
         "kanten": len(kanten_neu),

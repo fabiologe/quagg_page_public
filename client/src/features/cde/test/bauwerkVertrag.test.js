@@ -78,7 +78,8 @@ export function kammerStand({ mitBauwerk = true } = {}) {
     zeichne(s, 'raum-zeichnen', RAUM, [P(0.3, 210.0, 0.3), P(4.3, 210.0, 0.3), P(4.3, 210.0, 3.3), P(0.3, 210.0, 3.3)],
             { name: 'Kammerraum', hoehe: '', raumhoehe: 2.5 });
     if (mitBauwerk) {
-        const b = mitKennungen(() => BAUWERK, () => nachId('bauwerk-anlegen').anwenden({}, { name: 'Kammer', art: 'anlage' }, {}));
+        const b = mitKennungen(() => BAUWERK, () => nachId('bauwerk-anlegen').anwenden({},
+            { name: 'Kammer', art: 'anlage', bauwerkstyp: 'RRB' }, {}));
         s.set(b.globalId, b.nachher);
         for (const id of [...Object.values(KAMMER), RAUM]) ordneZu(s, id, BAUWERK);
     }
@@ -153,7 +154,10 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         expect(paket.bauteile.every(b => b.mengenMethode === 'koerper')).toBe(true);
         expect(nach[RAUM].merkmale).toBeUndefined();                 // ein Raum hat keine bSI-Felder
         // Z5e: die Kammer ist ein Bauwerk — angelegt und zugeordnet über die Werkzeuge.
-        expect(paket.bauwerke).toEqual([{ cdeId: BAUWERK, art: 'anlage', name: 'Kammer' }]);
+        expect(paket.bauwerke).toEqual([{ cdeId: BAUWERK, art: 'anlage', name: 'Kammer',
+            // Z7: der Bauwerkstyp als Klassifizierung — aus dem Katalog, mit Quelle.
+            klassifikation: { system: 'Arbeitshilfen Abwasser', edition: '2015-12', code: 'RRB', name: 'Regenrückhaltebecken',
+                              quelle: 'Arbeitshilfen Abwasser (Stand 2015-12), Anhang A-1 „Kürzel der Bauwerktypen"' } }]);
         expect(paket.bauteile.every(b => b.teilVon === BAUWERK)).toBe(true);
 
         if (process.env.BAUWERK_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(paket));
@@ -174,7 +178,7 @@ describe('Z5d — Autor und Paket reichen ein Bauwerk durch', () => {
         expect(g.bauwerke.map(b => b.globalId)).toEqual(['cde-KA']);
         const paket = baueEigenbauPaket({ teile: g.bauteile, stand: s, bauwerke: g.bauwerke,
                                           nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y }) });
-        expect(paket.bauwerke).toEqual([{ cdeId: 'cde-KA', art: 'anlage', name: 'Kammer' }]);
+        expect(paket.bauwerke.map(({ cdeId, art, name }) => ({ cdeId, art, name }))).toEqual([{ cdeId: 'cde-KA', art: 'anlage', name: 'Kammer' }]);
         expect(paket.bauteile.every(b => b.teilVon === 'cde-KA')).toBe(true);
     });
     it('ohne Bauwerke trägt das Paket keinen Schlüssel `bauwerke` und kein `teilVon`', async () => {

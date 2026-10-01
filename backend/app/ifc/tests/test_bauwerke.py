@@ -505,3 +505,65 @@ def test_vertrag_kammer_hat_ihren_raum(kammer):
     verfehlt = _verfehlt(kammer["ziel"])
     assert "Räume — Name vorhanden" not in verfehlt and "Räume — Fläche dokumentiert" not in verfehlt
     assert _regeln(kammer["ziel"]) == []
+
+
+# ── Z7 — Klassifizierung und Tragwerk ────────────────────────────────────────
+
+def _tragwerke(datei):
+    return {s.Name: sorted(o.Name for r in s.IsGroupedBy for o in r.RelatedObjects)
+            for s in datei.by_type("IfcBuiltSystem")}
+
+
+def test_vertrag_kammer_hat_ein_tragwerk(kammer):
+    """Z7 an der echten Kette: die sechs Bauteile tragen laut Merkmal (Z3) — also
+    stehen sie im Tragwerk der Kammer, und das Tragwerk dient der Kammer."""
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    assert _tragwerke(datei) == {"Tragwerk Kammer": ["Bodenplatte", "Decke", "Längswand Nord", "Längswand Süd",
+                                                     "Querwand Ost", "Querwand West"]}
+    dient = [(r.RelatingSystem.Name, [b.Name for b in r.RelatedBuildings]) for r in datei.by_type("IfcRelServicesBuildings")]
+    assert dient == [("Tragwerk Kammer", ["Kammer"])]
+    assert kammer["bericht"]["tragwerke"] == 1
+
+
+def test_wer_nicht_traegt_steht_nicht_im_tragwerk(tmp_path):
+    """Die Gegenprobe des Fahrplans: eine Platte „nicht tragend" -> eine weniger."""
+    ziel = tmp_path / "t.ifc"
+    paket = _georef(_paket(
+        _bauteil("cde-a", "IFCSLAB", teilVon="cde-K", merkmale={"Pset_SlabCommon": {"LoadBearing": True}}),
+        _bauteil("cde-b", "IFCSLAB", teilVon="cde-K", merkmale={"Pset_SlabCommon": {"LoadBearing": False}}),
+        _bauteil("cde-c", "IFCSLAB", teilVon="cde-K"),                       # ohne Angabe: nicht tragend
+        bauwerke=[{"cdeId": "cde-K", "art": "anlage", "name": "Kammer"}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    assert _tragwerke(ifcopenshell.open(str(ziel))) == {"Tragwerk Kammer": ["cde-a"]}
+    _sauber(ziel)
+
+
+def test_der_bauwerkstyp_ist_eine_klassifizierung(tmp_path):
+    """IfcFacility hat keinen PredefinedType — der Bauwerkstyp ist eine Klassifizierung,
+    je System EINE IfcClassification, auch fuer zwei Bauwerke."""
+    ziel = tmp_path / "k.ifc"
+    k = lambda code, name: {"system": "Arbeitshilfen Abwasser", "edition": "2015-12", "code": code, "name": name,
+                            "quelle": "Arbeitshilfen Abwasser (2015-12), Anhang A-1"}       # noqa: E731
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-1"), _bauteil("cde-b", "IFCSLAB", teilVon="cde-2"),
+                           bauwerke=[{"cdeId": "cde-1", "art": "anlage", "name": "Becken 1", "klassifikation": k("RUEB", "Regenüberlaufbecken")},
+                                     {"cdeId": "cde-2", "art": "anlage", "name": "Becken 2", "klassifikation": k("RRB", "Regenrückhaltebecken")}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    datei = ifcopenshell.open(str(ziel))
+    systeme = datei.by_type("IfcClassification")
+    assert [(c.Name, c.Edition) for c in systeme] == [("Arbeitshilfen Abwasser", "2015-12")]
+    nach = {r.RelatedObjects[0].Name: (r.RelatingClassification.Identification, r.RelatingClassification.Name)
+            for r in datei.by_type("IfcRelAssociatesClassification")}
+    assert nach == {"Becken 1": ("RUEB", "Regenüberlaufbecken"), "Becken 2": ("RRB", "Regenrückhaltebecken")}
+    _sauber(ziel)
+
+
+def test_vertrag_kammer_ist_klassifiziert(kammer):
+    """Z7 an der echten Kette: der Bauwerkstyp, beim Anlegen gewaehlt, steht als
+    Klassifizierung an der IfcFacility — mit System, Ausgabe und Quelle aus dem Katalog."""
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    rel = datei.by_type("IfcRelAssociatesClassification")
+    assert [(r.RelatedObjects[0].is_a(), r.RelatedObjects[0].Name) for r in rel] == [("IfcFacility", "Kammer")]
+    ref = rel[0].RelatingClassification
+    assert (ref.Identification, ref.Name) == ("RRB", "Regenrückhaltebecken")
+    assert (ref.ReferencedSource.Name, ref.ReferencedSource.Edition) == ("Arbeitshilfen Abwasser", "2015-12")
+    assert "Anhang A-1" in ref.ReferencedSource.Source

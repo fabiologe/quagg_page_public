@@ -169,6 +169,7 @@ const NEU = [
     { id: 'streifenfundament-tragend-setzen', el: eigen('cde-FU1'), werte: [{ tragend: 'nein' }] },
     { id: 'bauwerk-zuordnen', el: eigen('cde-PL1'), werte: [{ bauwerk: 'cde-BW1' }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
+    { id: 'bauwerk-bauwerkstyp-setzen', el: eigen('cde-BW1'), werte: [{ bauwerkstyp: 'RRB' }] },
     { id: 'merkmalssatz-setzen', el: eigen('cde-L1'), werte: [{ satz: 'Pset_Test', merkmale: [{ name: 'A', value: 1 }] }] },
     { id: 'bauform-auslegen', el: { ...ROHR_G, stand: {} }, werte: [{ bauform: 'achse+profil' }] },
     { id: 'loeschen', el: eigen('cde-L1'), werte: [{}] },

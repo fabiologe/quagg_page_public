@@ -12,6 +12,9 @@ flowchart LR
   IfcRelAssignsToGroup{{IfcRelAssignsToGroup}}
   IfcRelAssignsToGroup -->|"RelatedObjects (Menge)"| IfcObjectDefinition
   IfcGroup -->|"RelatingGroup"| IfcRelAssignsToGroup
+  IfcRelAssociatesClassification{{IfcRelAssociatesClassification}}
+  IfcRelAssociatesClassification -->|"RelatedObjects (Menge)"| IfcDefinitionSelect
+  IfcClassificationSelect -->|"RelatingClassification"| IfcRelAssociatesClassification
   IfcRelAssociatesDocument{{IfcRelAssociatesDocument}}
   IfcRelAssociatesDocument -->|"RelatedObjects (Menge)"| IfcDefinitionSelect
   IfcDocumentSelect -->|"RelatingDocument"| IfcRelAssociatesDocument
@@ -27,9 +30,13 @@ flowchart LR
   IfcRelDefinesByType{{IfcRelDefinesByType}}
   IfcRelDefinesByType -->|"RelatedObjects (Menge)"| IfcObject
   IfcTypeObject -->|"RelatingType"| IfcRelDefinesByType
+  IfcRelServicesBuildings{{IfcRelServicesBuildings}}
+  IfcSystem -->|"RelatingSystem"| IfcRelServicesBuildings
+  IfcRelServicesBuildings -->|"RelatedBuildings (Menge)"| IfcSpatialElement
   IfcRelVoidsElement{{IfcRelVoidsElement}}
   IfcElement -->|"RelatingBuildingElement"| IfcRelVoidsElement
   IfcRelVoidsElement -->|"RelatedOpeningElement"| IfcFeatureElementSubtraction
+  style IfcClassificationSelect stroke-dasharray: 4 3
   style IfcDefinitionSelect stroke-dasharray: 4 3
   style IfcDocumentSelect stroke-dasharray: 4 3
   style IfcPropertySetDefinitionSelect stroke-dasharray: 4 3

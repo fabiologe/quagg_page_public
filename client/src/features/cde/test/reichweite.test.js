@@ -48,8 +48,9 @@ const HEUTE = Object.freeze({
     // Z3: +4 Setzer für Felder, die bSI-Merkmale sind (tragend ×3, aussen) — 74/51.
     // Z5e: +3 Bauwerk anlegen / zuordnen / lösen, alle ohne Oberfläche — 77/54.
     // Z6: +2 Raum zeichnen, lichte Höhe ändern — 79/56.
-    werkzeuge: 79,
-    ausgefuehrt: 56,
+    // Z7: +1 Bauwerkstyp ändern (Klassifizierung) — 80/57.
+    werkzeuge: 80,
+    ausgefuehrt: 57,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),
