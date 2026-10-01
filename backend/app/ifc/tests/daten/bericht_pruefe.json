@@ -105,6 +105,16 @@
    ]
   },
   {
+   "id": "V07b",
+   "titel": "kein Teil einer Zerlegung steht zusaetzlich in der Raumgliederung",
+   "ok": true,
+   "sagt": "0 Teil(e) doppelt eingeordnet",
+   "zahl": 0,
+   "stufe": "verbund",
+   "schwere": "warnung",
+   "beispiele": []
+  },
+  {
    "id": "V08",
    "titel": "jedes Bauteil traegt seine Herkunft (Fachmodell-Gruppe)",
    "ok": false,
@@ -441,8 +451,8 @@
  ],
  "verstoesse": 1,
  "speicher": {
-  "rss_max_mb": 297,
+  "rss_max_mb": 296,
   "vmpeak_mb": 563,
-  "vmhwm_mb": 297
+  "vmhwm_mb": 296
  }
 }

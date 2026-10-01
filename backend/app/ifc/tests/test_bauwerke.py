@@ -368,3 +368,74 @@ def test_was_nicht_stimmt_wird_genannt_und_an_die_site_gehaengt(tmp_path, bauwer
     assert any(grund in w for w in bericht["warnungen"]), bericht["warnungen"]
     assert _regeln(ziel) == []
     _sauber(ziel)
+
+
+# ── Z5b — Pruefregel V07b: keine Doppelzaehlung ─────────────────────────────
+
+def _v07b(datei):
+    from app.ifc.pruefe import verbundregeln
+    return next(b for b in verbundregeln(datei) if b["id"] == "V07b")
+
+
+def test_v07b_schweigt_beim_schreiber_und_meldet_die_doppelzaehlung(tmp_path):
+    """Fund 6: V07 zaehlt Zerlegung als Einordnung — und schwieg, wenn ein Teil
+    ZUSAETZLICH enthalten war. Der Schreiber tut das nie; eine Datei von anderswo kann es."""
+    from app.ifc.pruefe import offen
+    ziel = tmp_path / "baugruppe.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-G"), _bauteil("cde-b", "IFCSLAB", teilVon="cde-G"),
+                           bauwerke=[{"cdeId": "cde-G", "art": "baugruppe", "name": "Fertigteil"}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    datei = ifcopenshell.open(str(ziel))
+    sauber = _v07b(datei)
+    assert (sauber["ok"], sauber["zahl"], sauber["schwere"]) == (True, 0, "warnung")
+
+    # Dieselbe Datei, ein Teil ZUSAETZLICH an der Site enthalten — wie es ein anderes Werkzeug schreiben koennte.
+    site = datei.by_type("IfcSite")[0]
+    teil = next(e for e in datei.by_type("IfcSlab") if e.Name == "cde-a")
+    rel = next(r for r in datei.by_type("IfcRelContainedInSpatialStructure") if r.RelatingStructure == site)
+    rel.RelatedElements = [*rel.RelatedElements, teil]
+    doppelt = _v07b(datei)
+    assert (doppelt["ok"], doppelt["zahl"]) == (False, 1)
+    assert "Teil von IfcElementAssembly" in doppelt["beispiele"][0]
+    assert not offen(doppelt)                      # meldet, sperrt nicht (Vereinbarung, keine Where-Rule)
+
+
+def test_v07b_kennt_raumgliederung_nicht_als_zerlegung(tmp_path):
+    """Site > Facility ist Raumgliederung, kein Bauteil-Zerlegen: eine Anlage mit Teilen bleibt ohne Befund."""
+    ziel = tmp_path / "anlage.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-K"),
+                           bauwerke=[{"cdeId": "cde-K", "art": "anlage", "name": "Kammer"}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    assert _v07b(ifcopenshell.open(str(ziel)))["ok"] is True
+
+
+# ── Z5c — die Anlage uebersteht den Verbund ─────────────────────────────────
+
+def test_im_verbund_bleibt_die_anlage_mit_ihren_teilen(tmp_path):
+    """Fund 7, von „gelesen" zu „gemessen": `_site_aufloesen` haengt JEDEN Verweis auf
+    die Eigenbau-Site an die Verbund-Site um. Eine Facility darunter ueberlebt — mit
+    ihren Teilen, und der Verbund hat danach genau EINE Site (V05)."""
+    from app.ifc import verbund as V
+    from app.ifc.pruefe import offen, pruefe
+    from app.ifc.tests.test_eigenbau import _gelieferte_gelaendedatei
+    geliefert = tmp_path / "gelaende.ifc"
+    _gelieferte_gelaendedatei(geliefert)
+    eigen = tmp_path / "eigenbau.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-K"), _bauteil("cde-b", "IFCWALL", teilVon="cde-K"),
+                           bauwerke=[{"cdeId": "cde-K", "art": "anlage", "name": "Kammer"}]))
+    baue_datei(paket, eigen, schluessel="verbund-anlage")
+    ziel = tmp_path / "verbund.ifc"
+    V.fuehre_zusammen([V.Quelle(geliefert, name="Gelaendelieferung", sha256="d" * 64),
+                       V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+                      ziel, projektname="Verbund mit Anlage", bearbeiter="pytest")
+    datei = ifcopenshell.open(str(ziel))
+    sites = datei.by_type("IfcSite")
+    assert len(sites) == 1
+    anlage = datei.by_type("IfcFacility")
+    assert [a.Name for a in anlage] == ["Kammer"]
+    eltern = [r.RelatingObject for r in datei.by_type("IfcRelAggregates") if anlage[0] in r.RelatedObjects]
+    assert eltern == sites                                       # unter DER Site des Verbunds
+    teile = sorted(e.Name for r in anlage[0].ContainsElements for e in r.RelatedElements)
+    assert teile == ["cde-a", "cde-b"]
+    fehl = [b for b in pruefe(ziel)["befunde"] if offen(b)]
+    assert fehl == [], fehl

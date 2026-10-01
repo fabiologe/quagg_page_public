@@ -157,7 +157,11 @@ def test_lieferung_meldet_verbundregeln_nur_und_zaehlt_fuer_den_zweiten_motor(re
     assert set(ergebnis["zaehlung"]) == {"schema", "entitaeten", "produkte", "raumwurzeln", "kontexte"}
     assert (ergebnis["zaehlung"]["schema"], ergebnis["zaehlung"]["raumwurzeln"]) == ("IFC4X3_ADD2", 1)
     # Im Verbund-Modus bleibt jede Verbundregel ein Fehler — so ist das Tor gemeint.
-    assert all(x["schwere"] == "fehler" for x in P.pruefe(regelverstoss)["befunde"] if x["stufe"] == "verbund")
+    # AUSGENOMMEN, benannt an einer Stelle (Teil XXVI, Z5b): Regeln, die eine
+    # VEREINBARUNG pruefen (P.VEREINBARUNGEN, heute V07b) — sie melden, sperren nie.
+    verbund = [x for x in P.pruefe(regelverstoss)["befunde"] if x["stufe"] == "verbund"]
+    assert all(x["schwere"] == "fehler" for x in verbund if x["id"] not in P.VEREINBARUNGEN)
+    assert [x["schwere"] for x in verbund if x["id"] in P.VEREINBARUNGEN] == ["warnung"] * len(P.VEREINBARUNGEN)
 
 
 def test_ein_paket_mit_misserfolg_sperrt_ein_leeres_nicht(regelverstoss):

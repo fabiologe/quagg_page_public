@@ -4,7 +4,7 @@ STUFEN, in der Reihenfolge des offiziellen Validierungsdienstes von
 buildingSMART, dazu die eigenen:
 
   schema   SPF-Syntax, EXPRESS-Schema, Where-Rules    -> ifcopenshell.validate (mit PFAD)
-  verbund  was ein Verbund leisten muss (V00-V08)      -> hier
+  verbund  was ein Verbund leisten muss (V00-V08, V07b)  -> hier
   ids      Projektanforderungen (IDS 1.0)              -> ifctester
   gherkin  normative Regeln (Implementer Agreements)   -> nicht eingerichtet (README)
   motor    der ZWEITE Motor (V09)                      -> probe.zweiter_motor
@@ -55,6 +55,11 @@ SCHWEREN = ("fehler", "warnung", "hinweis")
 # melden diese Regeln, sperren aber nicht. Konformitaet (SPF), genau ein Projekt
 # (V01) und gueltige GlobalIds (V04) bleiben auch dort Fehler.
 NUR_IM_VERBUND = ("V00", "V02", "V03", "V05", "V06a", "V06b", "V07", "V08")
+# Verbundregeln, die eine VEREINBARUNG pruefen statt einer Leistung des Verbunds
+# (Teil XXVI, Z5b): sie melden IMMER als Warnung und sperren nie — auch im
+# Verbund-Modus. V07b: kein Teil einer Zerlegung zusaetzlich in der
+# Raumgliederung (buildingSMART-Implementer-Vereinbarung, keine Where-Rule).
+VEREINBARUNGEN = ("V07b",)
 GHERKIN_GRUND = ("nicht eingerichtet — buildingSMART ifc-gherkin-rules verlangt eigene numpy- und "
                  "shapely-Fassungen und django (backend/app/ifc/README.md, Pruefaufwand und Werkzeuge)")
 
@@ -275,6 +280,28 @@ def verbundregeln(datei) -> list:
                      f"{len(ohne_raum)} ohne Zuordnung, {len(ohne_wirt)} Aussparung(en) ohne Wirt"
                      + (f" — z. B. {beispiele}" if beispiele else ""),
                      len(ohne_raum) + len(ohne_wirt), beispiele=ohne_wirt + ohne_raum))
+
+    # V07b (Teil XXVI, Z5b): ein Teil einer ZERLEGUNG steht nicht zusaetzlich in der
+    # Raumgliederung. V07 zaehlt beides als „eingeordnet" — und schweigt deshalb,
+    # wenn eine Bodenplatte in ihrer Baugruppe UND in der Site steht. Wer die Datei
+    # auswertet, zaehlt sie dann zweimal. Keine Where-Rule, eine Vereinbarung von
+    # buildingSMART: Schwere Warnung — es sperrt nicht, aber es sagt es.
+    # Raumgliederung ist keine Bauteilzerlegung: nur Zerlegungen, deren Ganzes ein
+    # ELEMENT ist (Baugruppe), zaehlen — nicht Site > Facility > Raum.
+    enthalten_ids = set()
+    for rel in datei.by_type("IfcRelContainedInSpatialStructure"):
+        enthalten_ids.update(e.id() for e in (rel.RelatedElements or []))
+    doppelt = []
+    for rel in datei.by_type("IfcRelAggregates"):
+        ganzes = rel.RelatingObject
+        if ganzes is None or not ganzes.is_a("IfcElement"):
+            continue
+        doppelt += [f"{t.is_a()} {t.GlobalId} (Teil von {ganzes.is_a()} {ganzes.GlobalId})"
+                    for t in rel.RelatedObjects or [] if t.id() in enthalten_ids]
+    b.append(_befund("V07b", "kein Teil einer Zerlegung steht zusaetzlich in der Raumgliederung",
+                     not doppelt, f"{len(doppelt)} Teil(e) doppelt eingeordnet"
+                     + (f" — z. B. {doppelt[:2]}" if doppelt else ""),
+                     len(doppelt), schwere="warnung" if "V07b" in VEREINBARUNGEN else "fehler", beispiele=doppelt))
 
     gruppen = [g for g in datei.by_type("IfcGroup") if g.ObjectType == "Fachmodell"]
     in_gruppen = set()

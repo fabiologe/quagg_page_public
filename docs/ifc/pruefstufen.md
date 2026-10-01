@@ -32,6 +32,7 @@ flowchart TD
 | V06a | verbund | Georeferenzierung vorhanden (CRS + MapConversion) | Fehler im Verbund, Warnung bei einer einzelnen Lieferung |
 | V06b | verbund | groesste Koordinate liegt im Fenster des Bezugssystems | Fehler im Verbund, Warnung bei einer einzelnen Lieferung |
 | V07 | verbund | jedes Bauteil haengt in der Raumgliederung (Aussparungen ueber ihren Wirt) | Fehler im Verbund, Warnung bei einer einzelnen Lieferung |
+| V07b | verbund | kein Teil einer Zerlegung steht zusaetzlich in der Raumgliederung | Fehler |
 | V08 | verbund | jedes Bauteil traegt seine Herkunft (Fachmodell-Gruppe) | Fehler im Verbund, Warnung bei einer einzelnen Lieferung |
 | V10 | verbund | Eigenbau vollstaendig — jedes Bauteil des Journals ist gebaut | Fehler |
 | V11 | verbund | Eigenbau: Leeres und Ausgeblendetes | Hinweis |
