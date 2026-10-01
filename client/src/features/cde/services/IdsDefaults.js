@@ -9,7 +9,9 @@
  * das Backend prüft sie verbindlich mit ifctester, hier wird sie für die
  * Vorschau übersetzt (services/IdsXml.js). Was die Vorschau nicht kann, steht
  * in IDS_NICHT_IN_VORSCHAU — beim Starter-Set die zwei Typ-Regeln des
- * Erdbau-Containers (PredefinedType als Aufzählung, xs:restriction).
+ * Erdbau-Containers (PredefinedType als Aufzählung, xs:restriction) und seit
+ * Fund 9 (Teil XXVI) die Wand-Brandschutzregel: sie gilt nur in einem Gebäude
+ * (`partOf IfcBuilding`), und die Raumgliederung sieht die Vorschau nicht.
  *
  * Die zwölf bisherigen Regeln kommen inhaltlich unverändert heraus (gleiche
  * Kennung, Schwere, Anwendbarkeit, Anforderung); dazu zwei Erdbau-Mengenregeln

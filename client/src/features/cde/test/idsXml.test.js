@@ -19,11 +19,15 @@ const nameVerlangt = '<requirements><attribute cardinality="required"><name><sim
     + '</attribute></requirements>';
 
 describe('Die Starter-IDS wird zur Vorschau — vollständig', () => {
-    it('18 Spezifikationen — genau die zwei Aufzählungen fallen aus der Vorschau, mit Grund', () => {
+    it('18 Spezifikationen — die zwei Aufzählungen und die Gebäude-Regel fallen aus der Vorschau, mit Grund', () => {
         expect(IDS_STARTER_TITEL).toBe('Quagg Starter-Anforderungen');
-        expect(IDS_DEFAULT_SPECS).toHaveLength(16);
-        expect(IDS_NICHT_IN_VORSCHAU.map(n => n.id)).toEqual(['spec-aushub-typ', 'spec-auftrag-typ']);
-        for (const n of IDS_NICHT_IN_VORSCHAU) expect(n.gruende.join(' | ')).toMatch(/PredefinedType mit Wertvorgabe/);
+        expect(IDS_DEFAULT_SPECS).toHaveLength(15);
+        expect(IDS_NICHT_IN_VORSCHAU.map(n => n.id)).toEqual(['spec-wall-fire-rating', 'spec-aushub-typ', 'spec-auftrag-typ']);
+        const [brand, ...typ] = IDS_NICHT_IN_VORSCHAU;
+        // Fund 9 (Teil XXVI): die Brandschutzregel gilt nur in einem Gebäude — `partOf`
+        // kennt die Vorschau nicht; das Urteil spricht ifctester im Prüftor.
+        expect(brand.gruende.join(' | ')).toMatch(/Anwendbarkeit über partOf/);
+        for (const n of typ) expect(n.gruende.join(' | ')).toMatch(/PredefinedType mit Wertvorgabe/);
     });
 
     it('die Herkunft-Regel gilt für Elemente der CDE — eine Bedingung ohne Wert heißt „vorhanden"', () => {
@@ -38,21 +42,21 @@ describe('Die Starter-IDS wird zur Vorschau — vollständig', () => {
 
     it('die bisherigen Kennungen bleiben — das Cockpit merkt sich Ergebnisse je Kennung', () => {
         for (const id of ['spec-space-name', 'spec-space-area', 'spec-wall-external-flag', 'spec-wall-loadbearing',
-            'spec-wall-fire-rating', 'spec-door-external-flag', 'spec-door-fire-rating', 'spec-window-external-flag',
+            'spec-door-external-flag', 'spec-door-fire-rating', 'spec-window-external-flag',
             'spec-slab-loadbearing', 'spec-column-loadbearing', 'spec-chamber-name', 'spec-pipe-system']) {
             expect(IDS_DEFAULT_SPECS.find(s => s.id === id), id).toBeTruthy();
         }
     });
 
     it('Schwere, Bedingung und Anforderung kommen richtig an', () => {
-        const brand = IDS_DEFAULT_SPECS.find(s => s.id === 'spec-wall-fire-rating');
+        const brand = IDS_DEFAULT_SPECS.find(s => s.id === 'spec-door-fire-rating');
         expect(brand.severity).toBe('warning');
         expect(brand.applicability).toEqual({
-            category: 'IFCWALL',
-            psetCondition: { psetName: 'Pset_WallCommon', propertyName: 'IsExternal', value: 'TRUE' },
+            category: 'IFCDOOR',
+            psetCondition: { psetName: 'Pset_DoorCommon', propertyName: 'IsExternal', value: 'TRUE' },
         });
         expect(brand.requirements).toEqual([
-            { kind: 'pset', psetName: 'Pset_WallCommon', propertyName: 'FireRating', message: 'FireRating fehlt' },
+            { kind: 'pset', psetName: 'Pset_DoorCommon', propertyName: 'FireRating', message: 'FireRating fehlt' },
         ]);
         expect(IDS_DEFAULT_SPECS.find(s => s.id === 'spec-chamber-name'))
             .toMatchObject({ severity: 'error', requirements: [{ kind: 'attribute', name: 'Name' }] });

@@ -89,13 +89,20 @@
                 </property>
             </requirements>
         </specification>
-        <specification name="Außenwände — Brandschutz-Klasse" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-wall-fire-rating" description="FireRating wird im Brandschutz-Konzept erwartet." instructions="Schwere: Warnung">
+        <specification name="Außenwände — Brandschutz-Klasse" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="spec-wall-fire-rating" description="FireRating wird im Brandschutz-Konzept erwartet — für Wände eines Gebäudes (partOf IfcBuilding), nicht für eine Beckenwand im Erdreich." instructions="Schwere: Warnung">
             <applicability minOccurs="0" maxOccurs="unbounded">
                 <entity>
                     <name>
                         <simpleValue>IFCWALL</simpleValue>
                     </name>
                 </entity>
+                <partOf>
+                    <entity>
+                        <name>
+                            <simpleValue>IFCBUILDING</simpleValue>
+                        </name>
+                    </entity>
+                </partOf>
                 <property dataType="IFCBOOLEAN">
                     <propertySet>
                         <simpleValue>Pset_WallCommon</simpleValue>

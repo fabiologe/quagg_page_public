@@ -146,16 +146,21 @@ def test_starter_ist_gueltiges_ids_1_0_mit_schwere():
 
 @pytest.fixture(scope="module")
 def waende(tmp_path_factory) -> Path:
-    """Eine Aussenwand ohne FireRating, eine Innenwand — beide mit IsExternal und LoadBearing."""
+    """Eine Aussenwand ohne FireRating, eine Innenwand — beide mit IsExternal und
+    LoadBearing, beide in einem Gebaeude. Dazu eine Beckenwand (aussen, ohne
+    FireRating) direkt in der Site: seit Fund 9 (Teil XXVI) gilt die
+    Brandschutzregel nur fuer Waende eines Gebaeudes (`partOf IfcBuilding`)."""
     run = ifcopenshell.api.run
     f = ifcopenshell.file(schema="IFC4X3_ADD2")
     projekt = run("root.create_entity", f, ifc_class="IfcProject", name="P")
     run("unit.assign_unit", f)
     site = run("root.create_entity", f, ifc_class="IfcSite", name="S")
     run("aggregate.assign_object", f, relating_object=projekt, products=[site])
-    for name, aussen in (("Aussen", True), ("Innen", False)):
+    gebaeude = run("root.create_entity", f, ifc_class="IfcBuilding", name="G")
+    run("aggregate.assign_object", f, relating_object=site, products=[gebaeude])
+    for name, aussen, ort in (("Aussen", True, gebaeude), ("Innen", False, gebaeude), ("Becken", True, site)):
         wand = run("root.create_entity", f, ifc_class="IfcWall", name=name)
-        run("spatial.assign_container", f, relating_structure=site, products=[wand])
+        run("spatial.assign_container", f, relating_structure=ort, products=[wand])
         pset = run("pset.add_pset", f, product=wand, name="Pset_WallCommon")
         run("pset.edit_pset", f, pset=pset, properties={"IsExternal": aussen, "LoadBearing": True})
     pfad = tmp_path_factory.mktemp("ids") / "waende.ifc"
@@ -164,7 +169,8 @@ def waende(tmp_path_factory) -> Path:
 
 
 def test_aussenwand_ohne_brandschutz_ist_genau_eine_warnung(waende):
-    """Die Bedingung IsExternal=TRUE greift (gemessen: TRUE und true gleich), die Anforderung trifft genau eine Wand."""
+    """Die Bedingung IsExternal=TRUE greift (gemessen: TRUE und true gleich), die Anforderung trifft genau eine
+    Wand — die im Gebaeude. Die Beckenwand in der Site ist nicht anwendbar (Fund 9)."""
     befunde = [b for b in P.pruefe(waende, ids=[STARTER])["befunde"] if b["stufe"] == "ids"]
     assert len(befunde) == 18
     rot = [b for b in befunde if b["ok"] is False]

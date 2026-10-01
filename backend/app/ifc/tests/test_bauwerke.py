@@ -235,18 +235,18 @@ def test_vertrag_kammer_traegt_die_bsi_merkmale_der_ids(kammer):
     """Fund 2 an der echten Kette. Ohne Merkmale verfehlte die Kammer drei Regeln
     (Decken — Tragend; Waende — IsExternal; Waende — Tragend). Jetzt keine davon.
 
-    EINE Regel verfehlt sie NEU, und das ist ehrlich so (Fund 9, Fahrplan):
-    „Aussenwaende — Brandschutz-Klasse" gilt nur fuer Waende mit IsExternal = TRUE
-    und greift erst, WEIL die Waende jetzt als Aussenwand markiert sind. Eine
-    Hochbau-Regel (Schwere Warnung, „im Brandschutz-Konzept erwartet"). Fuer eine
-    Beckenwand im Erdreich wird keine Feuerwiderstandsklasse erfunden, und die
-    kanonische IDS wird nicht ohne Fabio geaendert.
+    Fund 9: bis zu Fabios Entscheidung verfehlte sie EINE Regel neu —
+    „Aussenwaende — Brandschutz-Klasse" griff, WEIL die Waende als Aussenwand
+    markiert sind. Eine Hochbau-Regel; seit Fund 9 gilt sie nur fuer Waende
+    eines Gebaeudes (`partOf IfcBuilding`, gemessen mit ifctester: am
+    Vergleichsmodell 2 -> 2 anwendbar, an der Kammer 4 -> 0). Eine
+    Feuerwiderstandsklasse fuer die Beckenwand wird nicht erfunden.
     """
     assert kammer["bericht"]["merkmalsaetze"] == 6
     verfehlt = _verfehlt(kammer["ziel"])
     for regel in ("Decken — Tragend markiert", "Wände — IsExternal markiert", "Wände — Tragend/nichttragend markiert"):
         assert regel not in verfehlt
-    assert verfehlt == ["Außenwände — Brandschutz-Klasse"]
+    assert verfehlt == []
 
 
 def _qto(datei):

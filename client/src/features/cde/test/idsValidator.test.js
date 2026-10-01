@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { validateIds } from '../services/IdsValidator'
 import { IDS_DEFAULT_SPECS } from '../services/IdsDefaults'
 
-function wall(localId, { name = '', isExternal, fireRating } = {}) {
+function wall(localId, { name = '', isExternal, fireRating, pset = 'Pset_WallCommon' } = {}) {
   const props = []
   if (isExternal !== undefined) props.push({ Name: { value: 'IsExternal' }, NominalValue: { value: isExternal } })
   if (fireRating !== undefined) props.push({ Name: { value: 'FireRating' }, NominalValue: { value: fireRating } })
@@ -12,7 +12,7 @@ function wall(localId, { name = '', isExternal, fireRating } = {}) {
     _localId: { value: localId },
     GlobalId: { value: `GID-${localId}` },
     Name: { value: name },
-    IsDefinedBy: [{ Name: { value: 'Pset_WallCommon' }, HasProperties: props }],
+    IsDefinedBy: [{ Name: { value: pset }, HasProperties: props }],
   }
 }
 
@@ -39,15 +39,18 @@ describe('validateIds', () => {
     expect(summary.errors).toBe(1) // Spec hat severity error
   })
 
-  it('wendet den psetCondition-Pre-Filter an (FireRating nur für Außenwände)', async () => {
+  // Seit Fund 9 (Teil XXVI) prüft die Vorschau die Wand-Brandschutzregel nicht mehr
+  // (`partOf IfcBuilding`); dieselbe Form hat die Türen-Regel.
+  it('wendet den psetCondition-Pre-Filter an (FireRating nur für Außentüren)', async () => {
+    const tuer = (id, o) => wall(id, { ...o, pset: 'Pset_DoorCommon' })
     const items = [
-      wall(1, { isExternal: true }),               // außen, kein FireRating → fail
-      wall(2, { isExternal: false }),              // innen → nicht anwendbar
-      wall(3, { isExternal: true, fireRating: 'F90' }), // außen, ok
+      tuer(1, { isExternal: true }),               // außen, kein FireRating → fail
+      tuer(2, { isExternal: false }),              // innen → nicht anwendbar
+      tuer(3, { isExternal: true, fireRating: 'T30' }), // außen, ok
     ]
-    const specs = IDS_DEFAULT_SPECS.filter(s => s.id === 'spec-wall-fire-rating')
-    const { perSpec } = await validateIds({ specs, ...mocks('IFCWALL', items) })
-    expect(perSpec[0].applicable).toBe(2) // nur die beiden Außenwände
+    const specs = IDS_DEFAULT_SPECS.filter(s => s.id === 'spec-door-fire-rating')
+    const { perSpec } = await validateIds({ specs, ...mocks('IFCDOOR', items) })
+    expect(perSpec[0].applicable).toBe(2) // nur die beiden Außentüren
     expect(perSpec[0].failed.map(f => f.localId)).toEqual([1])
   })
 

@@ -81,9 +81,10 @@ describe('Zwei Motoren, eine Zahl — die Starter-IDS am Vergleichsmodell', () =
     });
 
     it('das Modell trifft jede Regel — sonst wäre die Gleichheit billig', () => {
-        expect(ergebnis.perSpec).toHaveLength(16);
+        // 15 seit Fund 9 (Teil XXVI): die Wand-Brandschutzregel (`partOf IfcBuilding`) urteilt nur ifctester.
+        expect(ergebnis.perSpec).toHaveLength(15);
         expect(SOLL.spezifikationen.filter(s => NICHT.has(s.kennung)).map(s => s.kennung))
-            .toEqual(['spec-aushub-typ', 'spec-auftrag-typ']);
+            .toEqual(['spec-wall-fire-rating', 'spec-aushub-typ', 'spec-auftrag-typ']);
         expect(ergebnis.perSpec.filter(p => p.applicable === 0).map(p => p.spec.id)).toEqual([]);
     });
 });
