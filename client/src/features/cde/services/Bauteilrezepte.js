@@ -63,18 +63,43 @@ export function istKategorie(name) {
 }
 
 /**
- * Darf der Eigenbau diesen Typ SCHREIBEN? Im Zielschema IFC4X3_ADD2, nicht
- * abstrakt, ein IfcProduct — dieselbe Regel wie `schema.ist_schreibbar` im
- * Backend, aus demselben Schnappschuss erzeugt.
+ * Darf der Eigenbau diesen Typ als BAUTEIL schreiben? Im Zielschema
+ * IFC4X3_ADD2, nicht abstrakt, ein IfcProduct, KEIN Raumelement — dieselbe
+ * Regel wie `schema._schreibbar` im Backend, aus demselben Schnappschuss.
+ * EINE Regel, zwei Antworten: `istSchreibbar` (ja/nein) und
+ * `warumNichtSchreibbar` (der Satz für Formular und Katalog).
  *
  * Bis 2026-09-11 genügte „steht im Wörterbuch": damit ging auch
  * `IFCPIPESEGMENTCULVERT` durch (eine bSDD-Abflachung, keine Klasse) oder ein
  * abstraktes `IFCFEATUREELEMENT` — und erst der Schreiber im Backend lehnte ab,
  * nachdem der Eintrag längst im Journal stand.
+ *
+ * Bis 2026-10-01 (Teil XXVI, Z1) gingen auch RAUMELEMENTE durch: `IFCSPACE`,
+ * `IFCFACILITY`, sogar `IFCSITE`. Eine Platte als `IFCSPACE` bestand die
+ * Bauplanprüfung ohne Befund, und der Schreiber hängte sie in die
+ * Enthalten-Beziehung — zwei Where-Rules verletzt (WR31, WR41; gemessen).
+ * Raumelemente bekommen in Teil XXVI ihren eigenen Weg.
  */
+function _schreibbar(name) {
+    const n = String(name ?? '').toUpperCase().trim();
+    const e = ENTITY_META[n];
+    if (!e) return `„${name}" ist kein IFC-Typ (nicht in IFC 4.3)`;
+    if (!e.schema.includes('IFC4X3_ADD2')) return `„${name}" gibt es in IFC 4.3 nicht (lesbar, aber nicht schreibbar)`;
+    if (e.abstract) return `„${name}" ist abstrakt`;
+    if (!e.hierarchy.includes('IfcProduct')) return `„${name}" ist kein Bauteil (kein IfcProduct)`;
+    if (e.hierarchy.includes('IfcSpatialElement')) {
+        return `„${name}" ist ein Raumelement — es gehört in die Gliederung eines Bauwerks, nicht in ein Bauteil`;
+    }
+    return null;
+}
+
 export function istSchreibbar(name) {
-    const e = ENTITY_META[String(name ?? '').toUpperCase().trim()];
-    return !!e && e.schema.includes('IFC4X3_ADD2') && !e.abstract && e.hierarchy.includes('IfcProduct');
+    return _schreibbar(name) === null;
+}
+
+/** Warum der Eigenbau diesen Typ nicht als Bauteil schreibt — null, wenn er es tut. */
+export function warumNichtSchreibbar(name) {
+    return _schreibbar(name);
 }
 
 /** Der Schwerpunkt einer Punktliste in XZ (Welt), oder null. */
@@ -668,9 +693,8 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
         fehler.push(`${r.titel}: mindestens ${r.mindestPunkte} Punkte, ${punkte.length} gesetzt`);
     }
     const typ = kategorie ?? r.kategorieVorgabe;
-    if (!istSchreibbar(typ)) {
-        fehler.push(`„${typ}" ist kein IFC-Typ, den der Eigenbau schreiben kann (IFC 4.3, konkret, ein Bauteil)`);
-    }
+    const nicht = warumNichtSchreibbar(typ);
+    if (nicht) fehler.push(`${nicht} — keine Klasse, die der Eigenbau schreiben kann`);
     return fehler;
 }
 

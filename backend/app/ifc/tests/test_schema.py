@@ -29,9 +29,13 @@ def _ifc():
 
 
 def _ist_produkt(decl) -> bool:
+    return _erbt_von(decl, "IfcProduct")
+
+
+def _erbt_von(decl, wurzel) -> bool:
     t = decl
     while t is not None:
-        if t.name() == "IfcProduct":
+        if t.name() == wurzel:
             return True
         t = t.supertype()
     return False
@@ -97,7 +101,12 @@ def test_abfragen_des_schreibers_sagen_dasselbe_wie_ifcopenshell():
     abweichend = []
     for d in s.entities():
         n = d.name()
-        erwartet = n if (not d.is_abstract() and _ist_produkt(d)) else None
+        # Teil XXVI, Z1 (2026-10-01): ein Raumelement ist kein BAUTEIL. Bis dahin galt
+        # „konkret und ein IfcProduct", und ein IfcSpace im Bauteilweg verletzte
+        # WR31 + WR41 (gemessen, test_bauwerke.py). Die Erwartung folgt der Regel —
+        # ausdruecklich angepasst, nicht stillschweigend.
+        erwartet = (n if (not d.is_abstract() and _ist_produkt(d) and not _erbt_von(d, "IfcSpatialElement"))
+                    else None)
         if S.ist_schreibbar(n) != erwartet:
             abweichend.append(("schreibbar", n))
         attr = {a.name(): a for a in d.all_attributes()}.get("PredefinedType")
@@ -150,6 +159,13 @@ def test_schreibbar_heisst_add2_konkret_produkt():
     assert S.ist_schreibbar("IfcProxy") is None                   # Waise: lesbar, nicht schreibbar
     assert S.ist_schreibbar("IfcPipeSegmentCulvert") is None      # bSDD-Abflachung, keine Klasse
     assert S.ist_schreibbar("") is None
+    # Raumelemente: in der Gliederung zerlegt, nie im Bauteilweg enthalten (Teil XXVI, Z1).
+    assert S.ist_schreibbar("IfcSpace") is None
+    assert S.ist_schreibbar("IfcFacility") is None
+    assert S.ist_schreibbar("IfcSite") is None
+    assert "Raumelement" in S.warum_nicht_schreibbar("IfcSpace")
+    assert S.warum_nicht_schreibbar("IfcFeatureElement") == "IfcFeatureElement ist abstrakt"
+    assert S.warum_nicht_schreibbar("IfcSlab") is None
 
 
 def test_normierung_wie_der_client():

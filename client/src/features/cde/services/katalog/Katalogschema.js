@@ -17,7 +17,7 @@
  * JSON, also keine Funktion; ein STRING „baue" wäre harmlos, aber er zeigte,
  * dass jemand Code erwartet. Deshalb eine Liste erlaubter Schlüssel.
  */
-import { REZEPTE, istKategorie, istSchreibbar, rezeptNach } from '../Bauteilrezepte.js';
+import { REZEPTE, istKategorie, rezeptNach, warumNichtSchreibbar } from '../Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../ableitung/Ableitungen.js';
 import { BAUFORMEN } from '../bauform/Bauformen.js';
 import { ACHSEN_FELDER, KNOTEN_FELDER } from '../bauform/Bauformregeln.js';
@@ -150,9 +150,8 @@ function _rezept(d, fehler) {
     else if (REZEPTE[id] || ABLEITUNGEN[id]) fehler.push(`Id „${id}" ist eingebaut — eine Bibliothek überschreibt kein eingebautes Rezept.`);
     if (!String(d.titel ?? '').trim()) fehler.push('Der Titel fehlt.');
     if (!BAUFORMEN[d.bauform]) fehler.push(`Bauform „${d.bauform}" gibt es nicht.`);
-    if (!istSchreibbar(d.kategorieVorgabe)) {
-        fehler.push(`„${d.kategorieVorgabe}" ist kein IFC-Typ, den der Eigenbau schreiben kann (IFC 4.3, konkret, ein Bauteil).`);
-    }
+    const nicht = warumNichtSchreibbar(d.kategorieVorgabe);
+    if (nicht) fehler.push(`${nicht} — keine Klasse, die der Eigenbau schreiben kann.`);
     if (!Number.isInteger(d.mindestPunkte) || d.mindestPunkte < 1) fehler.push('`mindestPunkte` muss eine ganze Zahl ≥ 1 sein.');
     if (d.hoechstPunkte !== undefined && !(Number.isInteger(d.hoechstPunkte) && d.hoechstPunkte >= (d.mindestPunkte ?? 1))) {
         fehler.push('`hoechstPunkte` muss eine ganze Zahl ≥ `mindestPunkte` sein.');

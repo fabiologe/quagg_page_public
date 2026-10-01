@@ -97,7 +97,7 @@ def test_gold_traegt_etwas(tmp_path):
     assert all(len(soll[n]["merkmale"]) > 30 for n in GOLD_PAKETE)
 
 
-# ── PROBEN (Funde der Vorpruefung, Stand vor Z1) ────────────────────────────
+# ── PROBEN (Funde der Vorpruefung) ─────────────────────────────────────────
 
 def test_probe_platte_ist_schemagerecht(tmp_path):
     """Die Kontrolle zur Raumelement-Probe: dieselbe Geometrie als Platte."""
@@ -106,16 +106,26 @@ def test_probe_platte_ist_schemagerecht(tmp_path):
     assert _regeln(ziel) == []
 
 
-def test_probe_raumelement_im_bauteilweg_ist_heute_schemawidrig(tmp_path):
-    """Fund 1, STAND VOR Z1: ein IfcSpace im Bauteilweg landet in der Enthalten-Beziehung.
+def test_raumelement_im_bauteilweg_wird_uebersprungen_mit_grund(tmp_path):
+    """Fund 1, seit Z1: ein Raumelement im Bauteilweg wird NICHT mehr geschrieben.
 
-    WR31: Raumelemente duerfen nicht ENTHALTEN sein. WR41: ein Raumelement muss
-    unter einem anderen ZERLEGT haengen. Z1 dreht diese Erwartung um.
+    Bis Z1 (Z0 hielt es fest) landete ein IfcSpace in der Enthalten-Beziehung:
+    WR31 (Raumelemente duerfen nicht ENTHALTEN sein) und WR41 (ein Raumelement
+    muss unter einem anderen ZERLEGT haengen). Jetzt: uebersprungen, mit dem
+    Grund aus derselben Regel, und die Datei ist schemagerecht.
     """
     ziel = tmp_path / "raum.ifc"
     bericht = baue_datei(_paket(_bauteil("cde-probe-raum", "IFCSPACE")), ziel, schluessel="probe")
-    assert bericht["bauteile"] == 1
-    assert _regeln(ziel) == ["IfcRelContainedInSpatialStructure.WR31", "IfcSpatialStructureElement.WR41"]
+    assert bericht["bauteile"] == 0
+    assert [u["cdeId"] for u in bericht["uebersprungen"]] == ["cde-probe-raum"]
+    assert "Raumelement" in bericht["uebersprungen"][0]["grund"]
+    assert _regeln(ziel) == []
+
+
+@pytest.mark.parametrize("klasse", ["IFCFACILITY", "IFCSITE", "IFCBUILDING", "IFCFACILITYPARTCOMMON"])
+def test_kein_raumelement_kommt_durch_den_bauteilweg(tmp_path, klasse):
+    bericht = baue_datei(_paket(_bauteil("cde-probe", klasse)), tmp_path / "x.ifc", schluessel="probe")
+    assert bericht["bauteile"] == 0 and "Raumelement" in bericht["uebersprungen"][0]["grund"]
 
 
 def test_probe_eigene_platte_verfehlt_heute_die_ids(tmp_path):

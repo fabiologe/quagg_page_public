@@ -504,20 +504,51 @@ def typklasse(name, snap=None):
     return gefunden
 
 
-def ist_schreibbar(name, snap=None):
-    """Darf der Eigenbau diese Klasse schreiben? -> kanonischer Name oder None.
+def _schreibbar(name, snap=None) -> tuple:
+    """(kanonischer Name, None), wenn der Eigenbau die Klasse als BAUTEIL schreiben darf — sonst (None, Grund).
 
-    Dieselbe Regel, die `eigenbau.py` bisher gegen ifcopenshell prueft: im
-    Zielschema, nicht abstrakt, ein IfcProduct. Eine Waise aus IFC2X3 ist
-    lesbar, aber nicht schreibbar — die Datei waere schemawidrig.
+    EINE Regel, zwei Antworten: `ist_schreibbar` (ja/nein) und
+    `warum_nicht_schreibbar` (der Satz fuer den Bericht). Der Client prueft
+    dieselbe Regel vorab (`Bauteilrezepte.istSchreibbar`, `warumNichtSchreibbar`).
+
+    RAUMELEMENTE SIND KEINE BAUTEILE (Teil XXVI, Z1). Bis 2026-10-01 galt
+    „konkret und ein IfcProduct" — damit gingen IfcSpace, IfcFacility, sogar
+    IfcSite durch, und der Schreiber hing sie in die Enthalten-Beziehung.
+    Gemessen: eine Probe als IfcSpace verletzte zwei Where-Rules —
+    `IfcRelContainedInSpatialStructure.WR31` (ein Raumelement darf nicht
+    ENTHALTEN sein) und `IfcSpatialStructureElement.WR41` (es muss unter einem
+    anderen ZERLEGT haengen). Raumelemente bekommen in Teil XXVI ihren eigenen
+    Weg (Bauwerk, Raum); im Bauteilweg haben sie nichts zu suchen.
     """
     n = name_von(name, snap)
     if not n:
-        return None
+        return None, f"{name!r} ist keine Klasse in {ZIELSCHEMA}"
     e = _ents(snap)[n]
-    if ZIELSCHEMA not in e["schemata"] or e["abstrakt"] or "IfcProduct" not in vererbung(n, snap):
-        return None
-    return n
+    if ZIELSCHEMA not in e["schemata"]:
+        return None, f"{n} gibt es in {ZIELSCHEMA} nicht (lesbar, aber nicht schreibbar)"
+    if e["abstrakt"]:
+        return None, f"{n} ist abstrakt"
+    kette = vererbung(n, snap)
+    if "IfcProduct" not in kette:
+        return None, f"{n} ist kein IfcProduct"
+    if "IfcSpatialElement" in kette:
+        return None, (f"{n} ist ein Raumelement — es gehoert in die Gliederung (zerlegt, WR41), "
+                      "nicht in den Bauteilweg (enthalten, WR31)")
+    return n, None
+
+
+def ist_schreibbar(name, snap=None):
+    """Darf der Eigenbau diese Klasse als Bauteil schreiben? -> kanonischer Name oder None.
+
+    Im Zielschema, nicht abstrakt, ein IfcProduct, KEIN Raumelement. Eine Waise
+    aus IFC2X3 ist lesbar, aber nicht schreibbar — die Datei waere schemawidrig.
+    """
+    return _schreibbar(name, snap)[0]
+
+
+def warum_nicht_schreibbar(name, snap=None):
+    """Der Grund, warum der Eigenbau diese Klasse nicht als Bauteil schreibt — None, wenn er es tut."""
+    return _schreibbar(name, snap)[1]
 
 
 def waisen(snap=None) -> list:

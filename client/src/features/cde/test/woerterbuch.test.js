@@ -67,7 +67,7 @@ describe('Das Wörterbuch ist das Schema, nicht der bSDD-Export', () => {
     });
 });
 
-describe('Schreibbar heisst: ADD2, konkret, ein Bauteil — wie im Backend', () => {
+describe('Schreibbar heisst: ADD2, konkret, ein Bauteil, kein Raumelement — wie im Backend', () => {
     // Dieselben Fälle prüft backend/app/ifc/tests/test_schema.py (ist_schreibbar).
     it.each([
         ['IFCEARTHWORKSCUT', true],
@@ -76,6 +76,9 @@ describe('Schreibbar heisst: ADD2, konkret, ein Bauteil — wie im Backend', () 
         ['IFCCARTESIANPOINT', false],       // kein Produkt
         ['IFCPROXY', false],                // Waise: lesbar, nicht schreibbar
         ['IFCPIPESEGMENTCULVERT', false],   // bSDD-Abflachung, keine Klasse
+        ['IFCSPACE', false],                // Raumelement: in der Gliederung zerlegt, nie enthalten (Teil XXVI, Z1)
+        ['IFCFACILITY', false],             // dito
+        ['IFCSITE', false],                 // dito
     ])('%s → %s', (typ, soll) => {
         expect(istSchreibbar(typ)).toBe(soll);
     });

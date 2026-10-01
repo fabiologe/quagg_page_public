@@ -164,7 +164,8 @@ def _klasse(name):
     """Kategorie aus dem Journal ('IFCEARTHWORKSCUT') -> kanonischer Klassenname, oder None.
 
     Gross-/Kleinschreibung egal. Eine Klasse, die das Schema nicht kennt, die
-    abstrakt ist oder die kein Bauteil ist, wird nicht geschrieben — der
+    abstrakt ist, die kein Bauteil ist oder ein Raumelement (Teil XXVI, Z1), wird
+    nicht geschrieben — der
     Aufrufer meldet sie. Die Regel steht EINMAL (`schema.ist_schreibbar`); der
     Client prueft dieselbe vorab (`Bauteilrezepte.istSchreibbar`).
     """
@@ -447,8 +448,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             continue
         klasse = _klasse(b.get("klasse"))
         if klasse is None:
-            uebersprungen.append({"cdeId": cde_id,
-                                  "grund": f"Klasse {b.get('klasse')!r} ist kein IfcProduct in {ZIELSCHEMA}"})
+            # Der GRUND kommt aus derselben Regel wie die Entscheidung (schema._schreibbar):
+            # abstrakt, kein Produkt, nicht im Zielschema — oder ein Raumelement, das im
+            # Bauteilweg WR31/WR41 verletzte (Teil XXVI, Z1).
+            uebersprungen.append({"cdeId": cde_id, "grund": f"Klasse {S.warum_nicht_schreibbar(b.get('klasse'))}"})
             continue
         punkte = b.get("punkte") or []
         dreiecke = b.get("dreiecke") or []
