@@ -501,7 +501,7 @@ import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
-import { erdbauStandVon, istAnzeigeform } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform, istBehaelter } from '../services/Bauteilrezepte.js';
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1748,6 +1748,7 @@ function _eigenbauAbschnittNachziehen() {
     verborgen: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
     leer: engine.value?.autor?.leer ?? new Set(),
     vorgangsAugen,
+    istBehaelter,
   });
   const lieferungen = ifc.spatialBaeume.filter(b => !b.eigenbau);
   ifc.setSpatialBaeume(abschnitt ? [...lieferungen, abschnitt] : lieferungen);
@@ -2622,6 +2623,8 @@ async function eigenbauPaket() {
     projektname: cde.auftrag?.name ?? '', schluessel: cde.aktiverSatzId ?? 'cde',
     bearbeiter: cde.bearbeiter ?? '',
     anzeigeformen: gebaut.anzeigeformen ?? [],
+    // Die Bauwerke (Teil XXVI, Z5d) — Behälter, die der Schreiber zur IfcFacility macht.
+    bauwerke: gebaut.bauwerke ?? [],
     journal: { commit: letzter?.id ?? null, sitzungOffen: !!aenderungen.sitzungOffen },
     typVon,
   });

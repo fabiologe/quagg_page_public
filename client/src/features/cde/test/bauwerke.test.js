@@ -12,6 +12,7 @@ import { baueAusBauplan, istSchreibbar, mitKennungen, pruefeBauplan, warumNichtS
 import { nachId } from '../services/Bearbeitungen.js';
 import * as REZEPTE_MODUL from '../services/Bauteilrezepte.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
+import { eigenbauBaum } from '../services/Bauwerksstruktur.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { JA_NEIN } from '../services/katalog/Merkmalsziele.js';
 
@@ -209,5 +210,62 @@ describe('Z4 — das Katalogschema prüft Mengen gegen die Vorlage', () => {
         [{ netVolume: 'gewicht' }, /weder ein Körpermass/],
     ])('%j wird abgewiesen', (menge, grund) => {
         expect(fehlerVon(menge)).toMatch(grund);
+    });
+});
+
+// ── Z5d — das Bauwerk im Journal ────────────────────────────────────────────
+
+describe('Z5d — ein Bauwerk ist ein Behälter ohne Körper (E18)', () => {
+    const { istBehaelter, BAUWERKSARTEN } = REZEPTE_MODUL;
+    const BW = { rezept: 'bauwerk', name: 'Kammer', parameter: { art: 'anlage' } };
+
+    it('das Rezept sagt es selbst — gefragt wird die Eigenschaft, nicht der Name', () => {
+        expect(istBehaelter(BW)).toBe(true);
+        expect(istBehaelter({ rezept: 'platte' })).toBe(false);
+        expect(Object.keys(BAUWERKSARTEN)).toEqual(['anlage', 'baugruppe']);
+    });
+    it('die Bauplanprüfung kennt nur die Art — keine Punkte, keine Bauteilklasse', () => {
+        expect(pruefeBauplan(BW)).toEqual([]);
+        expect(pruefeBauplan({ ...BW, parameter: { art: 'turm' } })[0]).toMatch(/Art „turm" gibt es nicht/);
+    });
+    it('wer trotzdem einen Körper bauen will, bekommt einen Grund statt eines TypeError', () => {
+        const r = baueAusBauplan(BW);
+        expect(r.ok).toBe(false);
+        expect(r.fehler[0]).toMatch(/keinen eigenen Körper/);
+    });
+    it('kein Zeichenwerkzeug für ein Bauwerk — es wird angelegt, nicht gezeichnet', () => {
+        expect(nachId('bauwerk-zeichnen')).toBeFalsy();
+    });
+});
+
+describe('Z5d — der Strukturbaum zeigt das Bauwerk über seinen Teilen', () => {
+    const stand = new Map([
+        ['cde-R', { rezept: 'bauwerk', name: 'RÜB', parameter: { art: 'anlage' } }],
+        ['cde-K', { rezept: 'bauwerk', name: 'Kammer', parameter: { art: 'anlage', teilVon: 'cde-R' } }],
+        ['cde-P', { rezept: 'platte', name: 'Bodenplatte', kategorie: 'IFCSLAB', parameter: { teilVon: 'cde-K' } }],
+        ['cde-W', { rezept: 'wand', name: 'Wand', kategorie: 'IFCWALL', parameter: { teilVon: 'cde-K' } }],
+        ['cde-F', { rezept: 'platte', name: 'frei', kategorie: 'IFCSLAB', parameter: {} }],
+        ['cde-X', { rezept: 'wand', name: 'Waise', kategorie: 'IFCWALL', parameter: { teilVon: 'cde-gibtsnicht' } }],
+    ]);
+    const baum = (s = stand) => eigenbauBaum({ stand: s, modelId: 'cde', istBehaelter: REZEPTE_MODUL.istBehaelter }).wurzel;
+    const namen = (k) => k.children.map(c => c.name.replace(/ \(.*\)$/, ''));
+
+    it('Bauwerk → Teilbauwerk → Teile; Freies und Waisen an der Wurzel', () => {
+        const w = baum();
+        expect(namen(w)).toEqual(['RÜB', 'frei', 'Waise']);
+        const rueb = w.children[0];
+        expect(rueb).toMatchObject({ category: 'BAUWERK', gruppe: true, art: 'anlage' });
+        expect(namen(rueb)).toEqual(['Kammer']);
+        expect(namen(rueb.children[0])).toEqual(['Bodenplatte', 'Wand']);
+    });
+    it('ein Kreis bleibt an der Wurzel — kein Bauwerk verschwindet', () => {
+        const kreis = new Map(stand);
+        kreis.set('cde-R', { rezept: 'bauwerk', name: 'RÜB', parameter: { art: 'anlage', teilVon: 'cde-K' } });
+        const w = baum(kreis);
+        expect(namen(w)).toEqual(expect.arrayContaining(['RÜB', 'Kammer']));
+    });
+    it('ohne die Frage `istBehaelter` bleibt alles, wie es war', () => {
+        const w = eigenbauBaum({ stand, modelId: 'cde' }).wurzel;
+        expect(w.children.every(c => c.category !== 'BAUWERK')).toBe(true);
     });
 });

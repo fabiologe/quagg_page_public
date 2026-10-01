@@ -204,6 +204,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         // OPTIONAL (Teil XXVI, Z3): bSI-Merkmale aus Rezeptfeldern. Nur wenn es welche
         // gibt — ein Paket ohne sie bleibt Byte für Byte, was es war.
         ...(Object.keys(teil.merkmale ?? {}).length ? { merkmale: teil.merkmale } : {}),
+        // OPTIONAL (Teil XXVI, Z5d): das Bauwerk, zu dem dieses Teil gehört (E17: EIN Wert).
+        ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
         // Schreibers ist (Raster, der Erdbau). Ein Erdbau-Paket bleibt so, wie es war.
         ...(teil.mengenMethode && teil.mengenMethode !== 'raster' ? { mengenMethode: teil.mengenMethode } : {}),
@@ -264,7 +266,7 @@ export function kanteFuersPaket(kante, { nachProjekt } = {}) {
  */
 export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), nachProjekt, crs = null, crsHerkunft = null,
                                    projektname = '', schluessel = '', bearbeiter = '', farbsatz = BAUTEILFARBEN,
-                                   anzeigeformen = [], quellDokumente = [], journal = null,
+                                   anzeigeformen = [], quellDokumente = [], journal = null, bauwerke = [],
                                    jetzt = new Date(), historie = null, typVon = typAusVorlage } = {}) {
     if (typeof nachProjekt !== 'function') throw new Error('EigenbauPaket: ohne nachProjekt keine Landeskoordinaten');
     const exportiert = new Set(teile.map(t => t.globalId));
@@ -293,6 +295,21 @@ export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), 
         // OPTIONAL (Paket v2): fehlen sie, schreibt der Server nur die Körper.
         // Ein alter Client ohne Kanten bleibt damit gültig.
         kanten: kanten.map(k => kanteFuersPaket(k, { nachProjekt })).filter(Boolean),
+        // OPTIONAL (Teil XXVI, Z5d): die Behälter. Nur wenn es welche gibt — ein
+        // Paket ohne Bauwerke bleibt Byte für Byte, was es war. Welche IFC-Klasse
+        // und Beziehung daraus wird, entscheidet der Schreiber aus `art`.
+        ...(bauwerke.length ? { bauwerke: bauwerke.map(bauwerkFuersPaket) } : {}),
         uebersprungen,
+    };
+}
+
+/** Ein Bauwerk fürs Paket: Kennung, Art, Name, und wozu es selbst gehört. */
+export function bauwerkFuersPaket({ globalId, wert }) {
+    const p = wert?.parameter ?? {};
+    return {
+        cdeId: globalId,
+        art: p.art ?? null,
+        name: wert?.name ?? p.name ?? '',
+        ...(p.teilVon ? { teilVon: p.teilVon } : {}),
     };
 }

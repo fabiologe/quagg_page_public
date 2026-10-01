@@ -336,6 +336,49 @@ const GELAENDE_REZEPT = Object.freeze({
 });
 
 /**
+ * DAS BAUWERK (Teil XXVI, Z5d — Fabios E18): ein BEHÄLTER ohne eigenen Körper.
+ *
+ * Eine Kammer, ein Becken, ein Schachtbauwerk besteht aus Bauteilen; das Ganze
+ * ist selbst keins. Es trägt, was dem Ganzen gehört — Name und Art —, und jedes
+ * Teil nennt es über `parameter.teilVon` (E17: ein Wert, nie eine Liste — die
+ * Kardinalität `Decomposes`/`ContainedInStructure` = [0:1] des Schemas wird so
+ * zur Bauart). Welche IFC-Klasse und welche Beziehung daraus wird, entscheidet
+ * der SCHREIBER (`eigenbau.BAUWERKSARTEN`): `anlage` → IfcFacility (Teile
+ * enthalten), `baugruppe` → IfcElementAssembly (Teile zerlegt).
+ *
+ * Kein Katalogeintrag: ein Bauwerk ist ein Strukturbegriff, keine Bauteilart —
+ * das Katalogschema eines Bauteils (Geometrie, schreibbare Vorgabeklasse) passt
+ * nicht, und eine Bibliothek soll keine eigenen Behälterarten erfinden. Wer
+ * fragt, fragt die Eigenschaft `behaelter`, nie den Namen (Wächter W3).
+ */
+export const BAUWERKSARTEN = Object.freeze({
+    anlage: Object.freeze({ titel: 'Anlage', text: 'ein Bauwerk, in dem Bauteile stehen (IfcFacility)' }),
+    baugruppe: Object.freeze({ titel: 'Baugruppe', text: 'Bauteile, die als Einheit geliefert oder montiert werden (IfcElementAssembly)' }),
+});
+
+const BAUWERK_REZEPT = Object.freeze({
+    id: 'bauwerk',
+    art: 'code',
+    titel: 'Bauwerk',
+    icon: 'building',
+    bauform: 'netz',
+    behaelter: true,
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [
+        { name: 'name', titel: 'Bezeichnung', typ: 'text' },
+        { name: 'art', titel: 'Art', typ: 'auswahl', vorgabe: 'anlage',
+          optionen: Object.entries(BAUWERKSARTEN).map(([wert, a]) => ({ wert, titel: a.titel })) },
+    ],
+    baue: null,
+});
+
+/** Ist dieser Bauplan ein Behälter (ein Bauwerk ohne eigenen Körper)? */
+export function istBehaelter(bauplan) {
+    return !!rezeptNach(bauplan?.rezept)?.behaelter;
+}
+
+/**
  * Die Quellen des Katalogs in ihrer Reihenfolge — Deklarationen und das eine
  * Code-Rezept. Der Architektur-Wächter (W5) zählt HIER die Funktionen: was
  * im Rezeptbau entsteht, ist einmal geschriebener Code, nicht je Rezept.
@@ -343,7 +386,8 @@ const GELAENDE_REZEPT = Object.freeze({
 export const REZEPT_QUELLEN = Object.freeze([
     ...EINGEBAUTE_REZEPTE.slice(0, 2),          // linie, flaeche
     GELAENDE_REZEPT,
-    ...EINGEBAUTE_REZEPTE.slice(2),             // rohr, schacht, pfosten, platte
+    ...EINGEBAUTE_REZEPTE.slice(2),             // rohr, schacht, pfosten, platte, wand, streifenfundament
+    BAUWERK_REZEPT,                             // Teil XXVI, Z5d: der Behälter
 ]);
 
 export const REZEPTE = Object.freeze(Object.fromEntries(
@@ -712,6 +756,11 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
     // Ein Rezept aus einer BIBLIOTHEK, die hier nicht geladen ist (A5): das
     // Bauteil wird übersprungen und gemeldet, nie gelöscht.
     if (!r) return [`Rezept „${rezept}" gibt es nicht — stammt es aus einer Bibliothek, die hier nicht geladen ist?`];
+    // EIN BEHÄLTER (Z5d) hat weder Punkte noch eine Bauteilklasse — nur seine Art.
+    if (r.behaelter) {
+        return BAUWERKSARTEN[parameter?.art] ? []
+            : [`Bauwerk: Art „${parameter?.art}" gibt es nicht (${Object.keys(BAUWERKSARTEN).join(', ')})`];
+    }
 
     const punkte = punkteAus(parameter);
     if (punkte.length < r.mindestPunkte) {
@@ -732,6 +781,9 @@ export function baueAusBauplan(bauplan) {
     const fehler = pruefeBauplan(bauplan);
     if (fehler.length) return { ok: false, fehler };
     const r = rezeptNach(bauplan.rezept);
+    // Ein Behälter hat keinen Körper (Z5d) — der Autor fragt `istBehaelter` vorher;
+    // wer hier trotzdem landet, bekommt einen Grund statt eines TypeError.
+    if (typeof r.baue !== 'function') return { ok: false, fehler: [`${r.titel}: hat keinen eigenen Körper`] };
     const geometrie = r.baue(bauplan.parameter ?? {});
     if (!geometrie) return { ok: false, fehler: [`${r.titel}: Geometrie liess sich nicht bauen`] };
     return {

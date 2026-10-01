@@ -16,7 +16,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { CDE_MODELL_ID } from '../services/IfcAutor.js';
-import { entfalte, patchAus, setzeSchreibStufeFuerTests, verdichte, wendeAn } from '../services/JournalFormat.js';
+import { JOURNAL_KENNT, entfalte, patchAus, setzeSchreibStufeFuerTests, verdichte, wendeAn } from '../services/JournalFormat.js';
 import { predefinedTypeVon } from '../services/Bauteilrezepte.js';
 
 const SCHLUESSEL = 'ifc-repo:global:aenderungen';
@@ -144,10 +144,10 @@ describe('20 Eckzüge an einem Vorgang mit vier Operationen', () => {
 });
 
 describe('Schutz: lesen, nie überschreiben', () => {
-    // Seit Teil XXIV-4 KENNT diese CDE Stufe 5 (Operationen verweisen
-    // aufeinander) — „neuer als ich" ist deshalb 6.
-    it('ein Journal einer NEUEREN CDE (mindestClient 5) wird gezeigt, aber nicht überschrieben', async () => {
-        const fremd = { version: 2, mindestClient: 6, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
+    // „Neuer als ich" ist immer JOURNAL_KENNT + 1 — bis Teil XXIV-4 stand hier
+    // eine feste Zahl, die jede neue Schreibstufe nachziehen musste (5 → 6 → 7).
+    it('ein Journal einer NEUEREN CDE (mindestClient über JOURNAL_KENNT) wird gezeigt, aber nicht überschrieben', async () => {
+        const fremd = { version: 2, mindestClient: JOURNAL_KENNT + 1, commits: [{ id: 'c1', nachricht: 'x', wer: 'petra', wann: 1,
             schritte: [{ id: 's1', art: 'kg', globalId: 'G1', nachher: '410', vorher: null, wann: 1 }] }], sitzung: null,
             schreibstand: { zaehler: 3, marke: 'FREMD', wer: 'petra', wann: 1 } };
         localStorage.setItem(SCHLUESSEL, JSON.stringify(fremd));

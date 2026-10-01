@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istEigen, mengenMethodeVon, mengenVon, merkmaleVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
+import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istBehaelter, istEigen, mengenMethodeVon, mengenVon, merkmaleVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
@@ -800,6 +800,9 @@ export class IfcAutor {
     async eigenbauGeometrien(schritte, { verdeckt = new Set(), historie = null } = {}) {
         const lauf = this._neuerLauf(schritte, historie);
         const bauteile = [], misserfolge = [], leer = [], verborgen = [], anzeigeformen = [], ueberholt = [];
+        // BAUWERKE (Teil XXVI, Z5d): Behälter ohne Körper — sie gehen als eigener
+        // Paketschlüssel zum Schreiber, nicht als Bauteil ohne Geometrie.
+        const bauwerke = [];
         const titel = vorgangstitelAus(schritte);
         // Ein überholtes Teil (Teil XXII, B1) wäre ein zweiter IfcEarthworksFill
         // desselben Vorgangs mit altem Umriss — nicht ins Paket.
@@ -808,6 +811,7 @@ export class IfcAutor {
             if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
             if (ueberholtVon.has(schritt.globalId)) { ueberholt.push(schritt.globalId); continue; }
             if (istAnzeigeform(schritt.wert)) { anzeigeformen.push(schritt.globalId); continue; }
+            if (istBehaelter(schritt.wert)) { bauwerke.push({ globalId: schritt.globalId, wert: schritt.wert }); continue; }
             const g = await this._baueSchritt(lauf, schritt);
             if (g.leer) { leer.push(schritt.globalId); continue; }
             const ableitung = schritt.wert?.ableitung ?? null;
@@ -865,7 +869,7 @@ export class IfcAutor {
                 kanten.push({ ableitung: id, art: k.art, geschlossen: !!k.geschlossen, punkte: k.punkte });
             }
         }
-        return { bauteile, kanten, misserfolge, leer, verborgen, anzeigeformen, ueberholt };
+        return { bauteile, kanten, misserfolge, leer, verborgen, anzeigeformen, ueberholt, bauwerke };
     }
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
@@ -878,6 +882,7 @@ export class IfcAutor {
         await this.verwirfEigenesModell(modelId);
         if (!schritte?.length) {
             this.ableitungen = new Map(); this.leer = new Set(); this.erdkoerper = new Map(); this.anzeigeKanten = new Map();
+            this.bauwerke = new Map();
             return { karte, misserfolge, ableitungen: new Map(), leer: [], verborgen: [], verdraengt: [], ueberholt: [] };
         }
 
@@ -903,6 +908,8 @@ export class IfcAutor {
         const ueberholtVon = ueberholteTeile(new Map(schritte.map(s => [s.globalId, s.wert])));
         const ueberholt = [];
         const zuErzeugen = [];
+        const bauwerke = new Map();
+        this.bauwerke = bauwerke;
 
         for (const schritt of schritte) {
             if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
@@ -913,6 +920,9 @@ export class IfcAutor {
             // Raum. `geloescht` heisst bei Eigenem also „nicht zeigen", bei
             // Geliefertem „ausblenden" — beides ohne Löschen.
             if (verdeckt.has(schritt.globalId)) { verborgen.push(schritt.globalId); continue; }
+            // EIN BAUWERK (Teil XXVI, Z5d) hat keinen Körper — kein Misserfolg,
+            // sondern ein Knoten im Strukturbaum, über seinen Teilen.
+            if (istBehaelter(schritt.wert)) { bauwerke.set(schritt.globalId, schritt.wert); continue; }
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.

@@ -404,6 +404,10 @@ export function rezeptAusDeklaration(d) {
             if (sohlen) r.sohlen = sohlen;
         }
     }
+    // OHNE PUNKTE NICHTS ZU VERSCHIEBEN (Teil XXVI, Z5d): ein Behälter trägt nur Art,
+    // Name und `teilVon` — der Ladeversatz eines alten Journals ändert daran nichts.
+    // Hier und nicht am Rezept: einmal geschriebener Code, kein Hook je Rezept (W5).
+    if (!d.geometrie && typeof r.verschiebe !== 'function') r.verschiebe = (parameter) => parameter;
     // Die Mengen aus Körpermassen und Feldern (Z4) — nur, wenn die Deklaration sie nennt.
     const mengen = GEOMETRIE_ARTEN[d.geometrie?.art] ? _mengen(d, _vorgabeIn(d.felder)) : undefined;
     if (mengen) r.mengen = mengen;

@@ -209,8 +209,10 @@ describe('Die Datei sagt, was sie verlangt', () => {
     it('ein Journal mit Verweisen nennt mindestClient 5 — ein älterer Tab liest es nur', async () => {
         expect((await fuehre(PLANUM())).grund).toBe(null);
         const datei = JSON.parse(speicher.daten.get([...speicher.daten.keys()].find(k => k.endsWith(':aenderungen'))));
-        expect(datei.mindestClient).toBe(5);
-        expect(JOURNAL_KENNT).toBe(5);
+        // Verweise verlangen MINDESTENS Stufe 5. Seit Teil XXVI (Z5d, Stufe 6) schreibt
+        // jedes Journal 6 — die Zusage dieses Tests ist „nie darunter", nicht „genau 5".
+        expect(datei.mindestClient).toBeGreaterThanOrEqual(5);
+        expect(datei.mindestClient).toBeLessThanOrEqual(JOURNAL_KENNT);
     });
 });
 

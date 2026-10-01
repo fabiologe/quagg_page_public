@@ -34,9 +34,11 @@
 
 /**
  * Was dieser Client LESEN kann. Seit K4a: `achsbezug` im Bauplan einer Kante;
- * seit Teil XXIV-4: eine Operation, die auf die Fläche einer anderen zeigt.
+ * seit Teil XXIV-4: eine Operation, die auf die Fläche einer anderen zeigt;
+ * seit Teil XXVI (Z5d): Bauwerke — ein Behälter ohne Körper (Rezept mit
+ * `behaelter`) und `parameter.teilVon` an seinen Teilen.
  */
-export const JOURNAL_KENNT = 5;
+export const JOURNAL_KENNT = 6;
 
 /**
  * Was dieser Client SCHREIBT. A7a lieferte die Leser mit 2 aus (2026-09-18
@@ -49,8 +51,14 @@ export const JOURNAL_KENNT = 5;
  * und der Server-Wächter (Fahrplan R9) hält noch ältere ab. Der Preis, offen
  * benannt: bis zum Neuladen kann ein solcher Tab im Lesemodus falsche Massen
  * zeigen und ein falsches IFC ausgeben — dieselbe Klasse wie bei Stufe 4.
+ *
+ * Stufe 6 (Teil XXVI, Fabios E23) ebenso in EINER Auslieferung: ein älterer
+ * Tab läse ein Bauwerk als unbekanntes Rezept und gäbe die Teile ohne ihr
+ * Ganzes aus — und nicht jedes Werkzeug trägt ein unbekanntes Feld wie
+ * `teilVon` sicher weiter. Mit Stufe 6 liest er nur. Preis, offen: bis zum
+ * Neuladen zeigt er die Teile ohne ihr Bauwerk.
  */
-export const SCHREIBT_AUSGELIEFERT = 5;
+export const SCHREIBT_AUSGELIEFERT = 6;
 let _schreibt = SCHREIBT_AUSGELIEFERT;
 export function schreibStufe() { return _schreibt; }
 

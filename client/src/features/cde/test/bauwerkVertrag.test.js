@@ -128,3 +128,30 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         expect(form(JSON.parse(readFileSync(FIXTURE, 'utf8')))).toEqual(form(paket));
     });
 });
+
+describe('Z5d — Autor und Paket reichen ein Bauwerk durch', () => {
+    it('ein Behälter wird nicht gebaut, sondern als `bauwerke` verpackt; seine Teile nennen ihn', async () => {
+        const s = kammerStand();
+        s.set('cde-KA', { rezept: 'bauwerk', name: 'Kammer', parameter: { art: 'anlage' } });
+        for (const id of Object.values(KAMMER)) {
+            const w = s.get(id);
+            s.set(id, { ...w, parameter: { ...w.parameter, teilVon: 'cde-KA' } });
+        }
+        const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: () => null,
+                                     kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
+        const schritte = [...s].map(([globalId, wert]) => ({ art: 'erzeugt', globalId, modell: 'cde', wert }));
+        const g = await autor.eigenbauGeometrien(schritte, { verdeckt: new Set() });
+        expect(g.bauteile).toHaveLength(6);                       // das Bauwerk ist KEIN Bauteil …
+        expect(g.misserfolge).toEqual([]);                        // … und auch kein Misserfolg
+        expect(g.bauwerke.map(b => b.globalId)).toEqual(['cde-KA']);
+        const paket = baueEigenbauPaket({ teile: g.bauteile, stand: s, bauwerke: g.bauwerke,
+                                          nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y }) });
+        expect(paket.bauwerke).toEqual([{ cdeId: 'cde-KA', art: 'anlage', name: 'Kammer' }]);
+        expect(paket.bauteile.every(b => b.teilVon === 'cde-KA')).toBe(true);
+    });
+    it('ohne Bauwerke trägt das Paket keinen Schlüssel `bauwerke` und kein `teilVon`', async () => {
+        const paket = await kammerPaket();
+        expect('bauwerke' in paket).toBe(false);
+        expect(paket.bauteile.some(b => 'teilVon' in b)).toBe(false);
+    });
+});

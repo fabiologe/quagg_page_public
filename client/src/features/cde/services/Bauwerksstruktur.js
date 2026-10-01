@@ -222,8 +222,32 @@ export function baueBaeume({ baeume = [], index = [], beziehungen = new Map(), s
  * @returns {{modelId, name, sha256: null, eigenbau: true, wurzel, gruppen: null, knoten}|null}
  */
 export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new Map(), verborgen = new Set(),
-                               leer = new Set(), vorgangsAugen = new Map(), modelId } = {}) {
+                               leer = new Set(), vorgangsAugen = new Map(), modelId,
+                               istBehaelter = () => false } = {}) {
     if (!stand?.size) return null;
+    // DIE BAUWERKE (Teil XXVI, Z5d): ein Behälter ist ein Knoten, kein Teil
+    // „(nicht gebaut)". Seine Teile hängen darunter — gefunden über `teilVon`,
+    // EIN Wert je Teil (E17). Ein Bauwerk in einem Bauwerk hängt in dessen
+    // Knoten; ein Kreis oder eine unbekannte Kennung bleibt an der Wurzel.
+    const bauwerke = new Map();
+    for (const [gid, wert] of stand) {
+        if (!istBehaelter(wert)) continue;
+        bauwerke.set(gid, { localId: null, modelId, category: 'BAUWERK', gruppe: true, bauwerk: gid, globalId: gid,
+                            name: wert?.name || 'Bauwerk', art: wert?.parameter?.art ?? null, children: [] });
+    }
+    const elternVon = (gid) => stand.get(gid)?.parameter?.teilVon ?? null;
+    const imKreis = (gid) => {
+        const gesehen = new Set([gid]);
+        for (let e = elternVon(gid); e && bauwerke.has(e); e = elternVon(e)) {
+            if (gesehen.has(e)) return true;
+            gesehen.add(e);
+        }
+        return false;
+    };
+    const behaelterVon = (gid) => {
+        const e = elternVon(gid);
+        return e && bauwerke.has(e) && !imKreis(gid) ? bauwerke.get(e) : null;
+    };
     const teil = (gid, wert) => {
         const localId = karte?.get?.(gid) ?? null;
         const zusatz = localId != null ? ''
@@ -236,6 +260,9 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
     const vorgaenge = new Map();
     const uebrige = [];
     for (const [gid, wert] of stand) {
+        if (bauwerke.has(gid)) continue;
+        const b = behaelterVon(gid);
+        if (b) { b.children.push(teil(gid, wert)); continue; }
         const a = wert?.ableitung ?? null;
         if (a && titel?.has?.(a)) {
             if (!vorgaenge.has(a)) {
@@ -255,7 +282,13 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
             uebrige.push(teil(gid, wert));
         }
     }
+    const wurzelBauwerke = [];
+    for (const [gid, knoten] of bauwerke) {
+        const b = behaelterVon(gid);
+        if (b) b.children.unshift(knoten);
+        else wurzelBauwerke.push(knoten);
+    }
     const wurzel = { localId: null, modelId, category: 'EIGENBAU', gruppe: true, name: 'Eigenbau',
-                     children: [...vorgaenge.values(), ...uebrige] };
+                     children: [...wurzelBauwerke, ...vorgaenge.values(), ...uebrige] };
     return { modelId, name: 'Eigenbau', sha256: null, eigenbau: true, wurzel, gruppen: null, knoten: stand.size };
 }
