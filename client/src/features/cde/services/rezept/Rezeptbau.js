@@ -19,7 +19,7 @@ import {
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
 import { meshVolume } from '../geometrie/MeshOps.js';
 import { stationiere } from '../geometrie/Stationierung.js';
-import { ringFlaeche } from '../geometrie/hilfen.js';
+import { grundrissAusMesh, ringFlaeche } from '../geometrie/hilfen.js';
 import { bezugOder } from '../Achsbezug.js';
 
 /**
@@ -302,6 +302,15 @@ function _formAus(geo, vorgabe) {
             return umriss.length >= 3 && dicke > 0 ? { umriss, dicke, richtung: geo.richtung ?? 'unten' } : null;
         }
         if (form === 'koerper' || form === 'mesh') return _koerper(geo, parameter, vorgabe);
+        // DER GRUNDRISS EINES EIGENEN KÖRPERS (Fund 12, Teil XXVI): derselbe, den
+        // die Engine einem GELIEFERTEN Bauteil gibt (`engine/Quellformen`) —
+        // Hülle im Lageplan, Unter- und Oberkante, aus dem gebauten Körper.
+        // Ohne ihn liess sich „Baugrube ums Bauwerk" an keinem eigenen Bauteil
+        // ableiten: der Lauf fragt das Rezept, und das kannte nur `platte`.
+        if (form === 'umriss') {
+            const k = _koerper(geo, parameter, vorgabe);
+            return k ? grundrissAusMesh({ mesh: k }).ergebnis : null;
+        }
         return null;
     };
 }

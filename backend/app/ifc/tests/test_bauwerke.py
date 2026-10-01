@@ -695,3 +695,40 @@ def test_abnahme_rueb_im_ifc(rueb):
              for p in r.RelatingPropertyDefinition.HasProperties if p.Name == "SchwellenhoeheNN"]
     assert hoehe == [212.4]
 
+
+# ── Z9.3: der RUEB im Gelaende — Verbund mit der Gelaendelieferung ─────────
+
+RUEB_GELAENDE = DATEN / "paket_rueb_gelaende.json"
+
+
+def test_abnahme_rueb_im_verbund_mit_dem_gelaende(tmp_path):
+    """Das Paket aus `abnahmeVerbund.test.js` (Kommandos + Baugrube um die
+    Bodenplatte) mit einer Gelaendelieferung, deren GlobalId der Vertrag nennt:
+    EINE Site, die Anlage darunter mit ihren acht Bauteilen und zwei Raeumen,
+    der Aushub mit IfcRelVoidsElement am gelieferten Gelaende, Prueftor sauber."""
+    from app.ifc import verbund as V
+    from app.ifc.eigenbau import wirte_herstellen_in
+    from app.ifc.pruefe import offen, pruefe
+    from app.ifc.tests.test_eigenbau import VERTRAG, _gelieferte_datei, _gitter
+    paket = json.loads(RUEB_GELAENDE.read_text(encoding="utf-8"))
+    eigen = tmp_path / "eigenbau.ifc"
+    bericht = baue_datei(paket, eigen, schluessel="rueb-gelaende")
+    assert bericht["uebersprungen"] == []
+    gelaende = tmp_path / "gelaende.ifc"
+    _gelieferte_datei(gelaende, "IfcGeographicElement", VERTRAG["ur"], _gitter(12, 5.0), "Urgelaende", "TERRAIN")
+    ziel = tmp_path / "verbund.ifc"
+    V.fuehre_zusammen([V.Quelle(gelaende, name="Urgelaende.ifc", sha256="d" * 64),
+                       V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+                      ziel, projektname="RUEB im Gelaende", schluessel="rueb-gelaende",
+                      nachbearbeiten=[("wirte", wirte_herstellen_in)])
+    datei = ifcopenshell.open(str(ziel))
+    (site,) = datei.by_type("IfcSite")
+    (anlage,) = datei.by_type("IfcFacility")
+    assert [r.RelatingObject for r in datei.by_type("IfcRelAggregates") if anlage in r.RelatedObjects] == [site]
+    assert len({e.id() for r in anlage.ContainsElements for e in r.RelatedElements}) == 8
+    assert len([e for r in anlage.IsDecomposedBy for e in r.RelatedObjects if e.is_a("IfcSpace")]) == 2
+    (aushub,) = datei.by_type("IfcEarthworksCut")
+    assert [v.RelatingBuildingElement.GlobalId for v in aushub.VoidsElements] == [VERTRAG["ur"]]
+    assert not aushub.ContainedInStructure                    # ein Aushub haengt am Wirt, nie in der Gliederung
+    fehl = [b for b in pruefe(ziel, ids=[IDS])["befunde"] if offen(b)]
+    assert fehl == [], fehl
