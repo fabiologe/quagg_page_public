@@ -36,6 +36,14 @@ Bevor geplant wird, wo etwas fehlt, gemessen, was da ist.
 | **6** | **Das Prüftor zählt eine Zerlegung als Einordnung, prüft aber die Doppelzählung nicht.** V07 nimmt jedes Element in irgendeiner `IfcRelAggregates` als „eingeordnet". Steht ein Teil zusätzlich selbst in der Raumgliederung, zählt die Bodenplatte zweimal — und V07 schweigt | Lücke im Tor | gelesen: `pruefe.py` V07 |
 | **7** | **Der Verbund trägt eine tiefere Gliederung schon.** `_site_aufloesen` hängt *jeden* Verweis auf die aufgelöste Eigenbau-Site an die Verbund-Site um („die Gliederung der Lieferung unterhalb der Site bleibt erhalten"). Eine `IfcFacility` unter der Eigenbau-Site überlebt den Verbund | **trägt** | gelesen, **nicht gemessen** — Z5 macht einen Test daraus |
 
+**Unterwegs gefunden (beim Bauen, nicht in der Vorprüfung):**
+
+| # | Fund | Stufe | Stand |
+|---|---|---|---|
+| **8** | **Gezeichnete Bauteile bekommen keinen PredefinedType.** `predefinedTypeVon` liest ihn nur aus Ableitungsteilen oder aus `bauplan.predefinedType` — und kein Zeichenwerkzeug schreibt das Feld. Eigene Platten, Wände, Fundamente kommen als `NOTDEFINED` ins IFC. Die Kammer-Tabelle (Abschn. 6) nennt `BASESLAB`, `RETAININGWALL`, `ROOF`, `STRIP_FOOTING` — die sind so nicht erreichbar | Z2 | **Befund, nicht gebaut** (Leitplanke 7). Vorschlag: Rezept nennt `predefinedTypeVorgabe`, ein Feld `predefinedType` (setzbar, gegen das Wörterbuch geprüft) überschreibt sie; `predefinedTypeVon` liest beides. ≈ 1 Halbtag, eigene Stufe Z2b — **wartet auf Fabios Ja** |
+| — | Die Wand trägt die Bauform `achse+profil`, nicht `flaeche+dicke` wie im Fahrplan angenommen: das Katalogschema lässt einen Sweep nur `achse+profil` oder `koerper` tragen (`BAUFORMEN_JE_GEOMETRIE`). Gezeichnet IST sie eine Achse mit Profil; eine gelieferte Wand bleibt `flaeche+dicke` | Z2 | gebaut, so begründet |
+| — | Das Typ-Feld ist Freitext, keine Auswahlliste — „die Typauswahl bietet sie nicht mehr an" (Z1) gab es nicht zu bauen; das Tor ist `pruefeBauplan` | Z1 | erledigt |
+
 Und zwei Dinge, die schon richtig bereitliegen: `schema.py` hat
 `ist_untertyp(name, wurzel)` und `vorlagen_fuer(klasse, predefined)` — die beiden
 Schemafragen dieses Teils („ist das ein Raumelement?", „gibt es diesen
@@ -289,13 +297,15 @@ außenbündig. Oberkante Bodenplatte **210,00 m NN**.
 
 | Teil | Klasse | Maße | Volumen, von Hand |
 |---|---|---|---|
-| Bodenplatte | `IfcSlab/BASESLAB` | 4,60 × 3,60 × 0,40, OK 210,00 | 4,60 · 3,60 · 0,40 = **6,624 m³** |
+| Bodenplatte | `IfcSlab/BASESLAB`¹ | 4,60 × 3,60 × 0,40, OK 210,00 | 4,60 · 3,60 · 0,40 = **6,624 m³** |
 | Längswand ×2 | `IfcWall/RETAININGWALL` | 4,60 × 0,30 × 2,50, Fuß 210,00 | je 4,60 · 0,30 · 2,50 = **3,450 m³** |
 | Querwand ×2 | `IfcWall/RETAININGWALL` | 3,00 × 0,30 × 2,50, Fuß 210,00 | je 3,00 · 0,30 · 2,50 = **2,250 m³** |
 | Decke | `IfcSlab/ROOF` | 4,60 × 3,60 × 0,25, UK 212,50 | 4,60 · 3,60 · 0,25 = **4,140 m³** |
 | **Beton gesamt** | | | 6,624 + 2·3,450 + 2·2,250 + 4,140 = **22,164 m³** |
 | Kammerraum | `IfcSpace/INTERNAL` | 4,00 × 3,00 × 2,50, Boden 210,00 | **30,000 m³**, Fläche **12,000 m²** |
 | Kammer | `IfcFacility` | — | Klassifizierung nach Wahl |
+
+¹ Die PredefinedTypes dieser Tabelle setzen Fund 8 (Z2b) voraus; ohne ihn steht `NOTDEFINED` in der Datei, alles andere gilt.
 
 **Gegenprobe der Wände:** Ringfläche außen − innen = 4,60 · 3,60 − 4,00 · 3,00 =
 16,56 − 12,00 = 4,56 m², mal 2,50 m = **11,400 m³** = 2 · 3,450 + 2 · 2,250 ✓.

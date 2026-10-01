@@ -8,7 +8,10 @@
  * Erwartung um und sagt im Commit, warum.
  */
 import { describe, it, expect } from 'vitest';
-import { istSchreibbar, pruefeBauplan, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
+import { baueAusBauplan, istSchreibbar, mitKennungen, pruefeBauplan, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
+import { nachId } from '../services/Bearbeitungen.js';
+import * as REZEPTE_MODUL from '../services/Bauteilrezepte.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
 
 const UMRISS = [[0, 210, 0], [5, 210, 0], [5, 210, 5], [0, 210, 5]];
@@ -43,5 +46,64 @@ describe('Z1 — Fund 1: Raumelemente sind keine Bauteile', () => {
         for (const k of ['IFCSLAB', 'IFCSPACE', 'IFCFEATUREELEMENT', 'IFCCARTESIANPOINT', 'IFCGIBTSNICHT']) {
             expect(istSchreibbar(k)).toBe(warumNichtSchreibbar(k) === null);
         }
+    });
+});
+
+// ── Z2 — Wand und Streifenfundament ─────────────────────────────────────────
+
+/** Ein Bauteil über den ECHTEN Zeichenweg: Werkzeug → Journalschritt → Bauplan → Körper. */
+function gezeichnet(werkzeug, punkte, werte) {
+    const schritte = mitKennungen(() => 'cde-Z2', () => nachId(werkzeug).anwenden({ punkte, hoehenversatz: 0 }, werte, { zug: [] }));
+    const schritt = [].concat(schritte).find(x => x?.art === 'erzeugt');
+    return schritt.nachher;
+}
+
+/** Tiefster und höchster Punkt und das Volumen des gebauten Körpers. */
+function mass(bauplan) {
+    const { ok, geometrie, fehler } = baueAusBauplan(bauplan);
+    expect(ok, String(fehler)).toBe(true);
+    const pos = geometrie.getAttribute('position').array;
+    let unten = Infinity, oben = -Infinity;
+    for (let i = 1; i < pos.length; i += 3) { unten = Math.min(unten, pos[i]); oben = Math.max(oben, pos[i]); }
+    const v = meshVolume(pos, pos.length / 9);
+    return { unten: Math.round(unten * 1000) / 1000, oben: Math.round(oben * 1000) / 1000,
+             volumen: Math.round(v.volume * 1000) / 1000, geschlossen: v.closed };
+}
+
+const FUSS = [{ x: 0, y: 210, z: 0 }, { x: 10, y: 210, z: 0 }];
+
+describe('Z2 — die Wand steht auf ihrer Linie (E20: Fusslinie, Höhe nach oben)', () => {
+    it('Wand 10,00 × 0,30 × 2,50 auf 210,00: Fuss 210,000, Krone 212,500, Volumen 7,500 m³', () => {
+        const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        expect(plan.rezept).toBe('wand');
+        expect(plan.kategorie).toBe('IFCWALL');
+        // Ohne den festen Höhenbezug (Z2, eine Zeile im Kern) lag der Fuss bei 208,750.
+        expect(mass(plan)).toEqual({ unten: 210, oben: 212.5, volumen: 7.5, geschlossen: true });
+    });
+
+    it('die Wandhöhe ändern hebt die Krone — der Fuss bleibt', () => {
+        const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        const hoeher = { ...plan, parameter: { ...plan.parameter, wandhoehe: 3 } };
+        expect(mass(hoeher)).toMatchObject({ unten: 210, oben: 213, volumen: 9 });
+    });
+
+    it('Streifenfundament 10,00 × 1,20 × 0,40 mit Sohle 209,60: oben 210,000, Volumen 4,800 m³', () => {
+        const sohle = FUSS.map(p => ({ ...p, y: 209.6 }));
+        const plan = gezeichnet('streifenfundament-zeichnen', sohle, { name: 'F', kategorie: 'IFCFOOTING', hoehe: '', breite: 1.2, dicke: 0.4 });
+        expect(plan.kategorie).toBe('IFCFOOTING');
+        expect(mass(plan)).toEqual({ unten: 209.6, oben: 210, volumen: 4.8, geschlossen: true });
+    });
+
+    it('ein Bezug im Bauplan geht der Deklaration vor (eine Haltung bleibt, wie sie ist)', () => {
+        const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        const mitte = { ...plan, parameter: { ...plan.parameter, achsbezug: 'mitte' } };
+        expect(mass(mitte)).toMatchObject({ unten: 208.75, oben: 211.25 });
+    });
+
+    it('eine Wand ist kein Netzglied — keine Haltungswerkzeuge', () => {
+        const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+        const { rezeptNach } = REZEPTE_MODUL;
+        expect(rezeptNach(plan.rezept).netzrolle ?? null).toBeNull();
+        expect(rezeptNach(plan.rezept).liefert).not.toContain('netzrolle:kante');
     });
 });

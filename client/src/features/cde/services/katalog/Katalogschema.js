@@ -25,6 +25,7 @@ import { EINGEBAUTE_PROFILE } from '../bauform/Typprofile.js';
 import { EIGENSCHAFTSARTEN } from '../eigenschaften/Eigenschaftsarten.js';
 import { GEOMETRIE_ARTEN, PROFIL_ARTEN, geometrieSchluessel, profilSchluessel } from '../rezept/Rezeptbau.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
+import { ACHSBEZUEGE } from '../Achsbezug.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
 import { AUFLOCKERUNG, GRABENREGELN } from '../gelaende/Grabenregeln.js';
@@ -214,6 +215,9 @@ function _rezept(d, fehler) {
                 }
             }
         }
+    }
+    if (g.art === 'sweep' && g.achsbezug !== undefined && !ACHSBEZUEGE[g.achsbezug]) {
+        fehler.push(`Achsbezug „${g.achsbezug}" gibt es nicht (${Object.keys(ACHSBEZUEGE).join(', ')}).`);
     }
     if (g.art === 'stab' && d.hoechstPunkte !== 1) fehler.push('Ein Stab steht an EINEM Ort: `hoechstPunkte: 1`.');
     if (g.art === 'platte' && g.richtung !== undefined && !['unten', 'oben'].includes(g.richtung)) {

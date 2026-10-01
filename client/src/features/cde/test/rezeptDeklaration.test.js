@@ -88,6 +88,8 @@ describe('2 — es sind Daten', () => {
             schacht: GOLD.FAELLE.schacht[0],
             pfosten: { punkte: [[3, 10, 4]], laenge: 1.2, breite: 0.12, tiefe: 0.04 },
             platte: { punkte: [[0, 5, 0], [6, 5.3, 0], [6, 5.6, 4], [0, 5.3, 4]], dicke: 0.25 },
+            wand: { punkte: [[0, 210, 0], [10, 210, 0]], dicke: 0.3, wandhoehe: 2.5 },
+            streifenfundament: { punkte: [[0, 209.6, 0], [10, 209.6, 0]], breite: 1.2, dicke: 0.4 },
         };
         for (const d of kopie) {
             expect(ausgabe(rezeptAusDeklaration(d), probe[d.id]), d.id).toEqual(ausgabe(REZEPTE[d.id], probe[d.id]));

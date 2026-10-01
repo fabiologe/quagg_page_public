@@ -43,8 +43,10 @@ import { PROBEN_ALLE, VORLAGEN, WELT } from './hilfen/werkzeugProben.js';
  *   2026-09-20, nach V5:   41 / 23 / 0  (64 — „Vorgang entfernen" kam dazu)
  */
 const HEUTE = Object.freeze({
-    werkzeuge: 64,
-    ausgefuehrt: 41,
+    // Teil XXVI, Z2: +6 Werkzeuge (Wand und Streifenfundament: je Zeichnen und
+    // zwei „… ändern"), alle sechs ohne Oberfläche ausführbar — 64/41 → 70/47.
+    werkzeuge: 70,
+    ausgefuehrt: 47,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

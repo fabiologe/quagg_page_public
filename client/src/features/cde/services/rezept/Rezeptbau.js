@@ -29,6 +29,13 @@ import { bezugOder } from '../Achsbezug.js';
  *   stab      Profil senkrecht auf EINEM Punkt (Pfosten, Schild, Poller)
  *   platte    Umriss mit Dicke (Decke, Belag, Fundament)
  *
+ * Ein Sweep darf seinen HÖHENBEZUG fest nennen (`achsbezug: 'sohle' | 'mitte'`,
+ * Teil XXVI, Z2): wo die gezeichnete Linie im Profil liegt. Eine Haltung
+ * schreibt ihren Bezug in den Bauplan (K4); eine Wand hat keinen Bezug zu
+ * wählen — ihre Linie ist der Fuss. Ohne die Angabe legte der Sweep das Profil
+ * UM die Linie, und die Wand stand mit halber Höhe im Boden. Ein Bezug im
+ * Bauplan geht vor; die Deklaration ist die Vorgabe.
+ *
  * Je Art steht hier, WAS sie tragen darf (Teil XXV, V1): `masse` sind
  * Feldnamen, die eine Zahl aus den Parametern holen, `weitere` sind eigene
  * Angaben. Alles andere in einer Deklaration ist ein Tippfehler — bis V1
@@ -38,7 +45,7 @@ import { bezugOder } from '../Achsbezug.js';
 export const GEOMETRIE_ARTEN = Object.freeze({
     band:    { koerper: false, profil: false, masse: [],        weitere: [] },
     flaeche: { koerper: false, profil: false, masse: [],        weitere: [] },
-    sweep:   { koerper: true,  profil: true,  masse: [],        weitere: [] },
+    sweep:   { koerper: true,  profil: true,  masse: [],        weitere: ['achsbezug'] },
     stab:    { koerper: true,  profil: true,  masse: ['laenge'], weitere: [] },
     platte:  { koerper: true,  profil: false, masse: ['dicke'],  weitere: ['richtung'] },
 });
@@ -125,13 +132,14 @@ function _sohlen(geo, vorgabe) {
         const v = p.punkte.map(q => q.v);
         return Math.max(0, Math.max(...v) - Math.min(...v));
     };
-    const bezug = (parameter) => bezugOder(parameter?.achsbezug);
+    // EIN Ort für den Bezug: der Bauplan, sonst die Deklaration (Z2), sonst die Mitte.
+    const bezug = (parameter) => bezugOder(parameter?.achsbezug ?? geo.achsbezug);
     const lies = (parameter) => {
         const d = bezug(parameter) === 'sohle' ? 0 : abstand(parameter);
         return (parameter?.punkte ?? []).map(p => punktXYZ(p).y - d);
     };
     const speichere = (parameter, sohlen, { bezug: neu = 'mitte' } = {}) => {
-        const b = parameter?.achsbezug ? bezug(parameter) : bezugOder(neu);
+        const b = (parameter?.achsbezug ?? geo.achsbezug) ? bezug(parameter) : bezugOder(neu);
         const d = b === 'sohle' ? 0 : abstand(parameter);
         const punkte = (parameter?.punkte ?? []).map((p, i) => {
             const s = Number(sohlen?.[i]);
@@ -166,9 +174,12 @@ function _sohlen(geo, vorgabe) {
 /** Der Körper einer Deklaration mit Körper-Geometrie — null, wenn keiner entsteht. */
 function _koerper(geo, parameter, vorgabe) {
     let punkte = punkteAus(parameter);
-    if (geo.art === 'sweep' && bezugOder(parameter?.achsbezug) === 'sohle') {
-        // Gespeichert ist die SOHLE — der Sweep legt sein Profil um die Mitte.
-        const d = _sohlen(geo, vorgabe).abstand(parameter);
+    const sohlen = geo.art === 'sweep' ? _sohlen(geo, vorgabe) : null;
+    if (sohlen && sohlen.bezug(parameter) === 'sohle') {
+        // Gespeichert ist die SOHLE (der Fuss einer Wand) — der Sweep legt sein
+        // Profil um die Mitte. Der Bezug kommt aus `_sohlen` — derselbe, den die
+        // Form `linie` und die Sohlhöhen lesen, nicht ein zweites Mal nachgeschlagen.
+        const d = sohlen.abstand(parameter);
         punkte = punkte.map(p => [p[0], p[1] + d, p[2]]);
     }
     if (geo.art === 'sweep') return sweepKoerper(punkte, profilAus(geo.profil, parameter, vorgabe));

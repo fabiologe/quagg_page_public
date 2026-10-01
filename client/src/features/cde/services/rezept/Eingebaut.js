@@ -163,4 +163,62 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         ],
         geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
     },
+    {
+        /**
+         * EINE STEHENDE SCHEIBE ENTLANG EINER LINIE (Teil XXVI, Z2): Beckenwand,
+         * Stützwand, Kammerwand. Zwölf Typprofile tragen `flaeche+dicke`, eine
+         * Wand konnte keins erzeugen — `platte` ist waagerecht, `pfosten` ein Stab.
+         *
+         * Die gezeichnete Linie ist der FUSS (Unterkante in m NN, Fabios E20):
+         * im Tiefbau steht die Wand auf der Bodenplatte, deren Oberkante kennt
+         * der Planer. Dafür nennt die Geometrie ihren Höhenbezug fest
+         * (`achsbezug: 'sohle'`) — derselbe Mechanismus wie bei der Haltung.
+         * Ohne ihn stünde die Wand mit halber Höhe im Boden.
+         *
+         * Keine Netzrolle: eine Wand bekommt keine Haltungswerkzeuge.
+         */
+        id: 'wand',
+        titel: 'Wand',
+        icon: 'cat-wall',
+        // Gezeichnet ist sie eine ACHSE MIT PROFIL — bearbeitet wird sie an ihrer
+        // Linie, und das Katalogschema lässt einen Sweep nichts anderes tragen.
+        // Eine GELIEFERTE Wand bleibt `flaeche+dicke` (Typprofil IFCWALL): dort
+        // ist sie eine Scheibe, deren Achse niemand kennt.
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCWALL',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3, setzbar: true },
+            { name: 'wandhoehe', titel: 'Wandhöhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 30, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+        ],
+        hoehenAus: 'gelaende',
+        geometrie: { art: 'sweep', achsbezug: 'sohle',
+                     profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
+    },
+    {
+        /**
+         * DAS STREIFENFUNDAMENT (Teil XXVI, Z2): geometrisch dasselbe wie die
+         * Wand — eine Linie mit Rechteckprofil, nur breiter und flacher. Ein
+         * Muster, zwei Katalogeinträge. Die Linie ist die Sohle des Fundaments.
+         */
+        id: 'streifenfundament',
+        titel: 'Streifenfundament',
+        icon: 'cat-footing',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCFOOTING',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Sohle des Fundaments', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.6, setzbar: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.4, setzbar: true },
+        ],
+        hoehenAus: 'gelaende',
+        geometrie: { art: 'sweep', achsbezug: 'sohle',
+                     profil: { art: 'rechteck', breite: 'breite', tiefe: 'dicke', einheit: 'm' } },
+    },
 ]);

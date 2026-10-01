@@ -55,6 +55,11 @@ function welt() {
             [P(20, 100, 30), P(30, 100, 30), P(30, 100, 40), P(20, 100, 40)]);
     zeichne(erzeugt, 'pfosten-zeichnen', 'cde-PF1', { name: 'PF1', kategorie: 'IFCSIGN', hoehe: '', laenge: 0.12, breite: 0.12, tiefe: 1.1 },
             [P(50, 100, 50)]);
+    // Teil XXVI, Z2: eine Wand und ein Streifenfundament — beides eine Linie mit Rechteckprofil.
+    zeichne(erzeugt, 'wand-zeichnen', 'cde-W1', { name: 'W1', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 },
+            [P(100, 100, 0), P(110, 100, 0)]);
+    zeichne(erzeugt, 'streifenfundament-zeichnen', 'cde-FU1', { name: 'FU1', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 },
+            [P(100, 99.6, 10), P(110, 99.6, 10)]);
     // Ein Erdbau-Vorgang mit zwei Operationen (Grube, Gerinne) — die Punkthöhen stehen in m NN.
     let n = 0;
     const vorgang = mitKennungen((art) => (art === 'operation' ? `op-probe${n++}` : `cde-EB${n++}`), () => ableitungsSchritte({
@@ -130,6 +135,10 @@ const NEU = [
       werte: [{ name: 'P', kategorie: 'IFCSIGN', hoehe: '', laenge: 0.12, breite: 0.12, tiefe: 1.1 }] },
     { id: 'platte-zeichnen', el: zug(P(0, 100, 0), P(5, 100, 0), P(5, 100, 5), P(0, 100, 5)), zug: [P(0, 100, 0), P(5, 100, 0), P(5, 100, 5), P(0, 100, 5)],
       werte: [{ name: 'PL', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25 }] },
+    { id: 'wand-zeichnen', el: zug(P(0, 100, 0), P(10, 100, 0)), zug: [P(0, 100, 0), P(10, 100, 0)],
+      werte: [{ name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 }] },
+    { id: 'streifenfundament-zeichnen', el: zug(P(0, 99.6, 0), P(10, 99.6, 0)), zug: [P(0, 99.6, 0), P(10, 99.6, 0)],
+      werte: [{ name: 'FU', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 }] },
     { id: 'planinhalt-setzen', el: zug(), werte: [{ inhalte: [{ id: 'pi-1', wert: { art: 'text', x: 1, z: 2, text: 'A', groesse: 2.5, winkel: 0 } }, { id: 'pi-2', wert: null }] }] },
     { id: 'rotstift-zeichnen', el: zug(), werte: [{ striche: [{ id: 'rs-1', wert: { rev: 0, tool: 'stift', farbe: '#d32f2f', breiteMm: 0.6, points: [[0, 0, 0.5], [1, 1, 0.5]] } }], titel: 'Radieren' }] },
 
@@ -138,6 +147,10 @@ const NEU = [
     { id: 'schacht-dn-setzen', el: eigen('cde-S1'), werte: [{ dn: 1200 }] },
     { id: 'pfosten-laenge-setzen', el: eigen('cde-PF1'), werte: [{ laenge: 0.2 }] },
     { id: 'platte-dicke-setzen', el: eigen('cde-PL1'), werte: [{ dicke: 0.4 }] },
+    { id: 'wand-dicke-setzen', el: eigen('cde-W1'), werte: [{ dicke: 0.25 }] },
+    { id: 'wand-wandhoehe-setzen', el: eigen('cde-W1'), werte: [{ wandhoehe: 3 }] },
+    { id: 'streifenfundament-breite-setzen', el: eigen('cde-FU1'), werte: [{ breite: 0.8 }] },
+    { id: 'streifenfundament-dicke-setzen', el: eigen('cde-FU1'), werte: [{ dicke: 0.5 }] },
     { id: 'merkmalssatz-setzen', el: eigen('cde-L1'), werte: [{ satz: 'Pset_Test', merkmale: [{ name: 'A', value: 1 }] }] },
     { id: 'bauform-auslegen', el: { ...ROHR_G, stand: {} }, werte: [{ bauform: 'achse+profil' }] },
     { id: 'loeschen', el: eigen('cde-L1'), werte: [{}] },

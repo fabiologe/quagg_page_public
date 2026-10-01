@@ -76,6 +76,8 @@ describe('jeder Bauweg liefert indizierte Geometrie', () => {
         schacht: { punkte: [[0, 0, 0], [0, 3, 0]], dn: 1000 },
         pfosten: { punkte: [[0, 0, 0]], laenge: 1, breite: 0.12, tiefe: 0.12 },
         platte: { punkte: [[0, 0, 0], [10, 0, 0], [10, 0, 10], [0, 0, 10]], dicke: 0.2 },
+        wand: { punkte: [[0, 0, 0], [10, 0, 0]], dicke: 0.3, wandhoehe: 2.5 },
+        streifenfundament: { punkte: [[0, 0, 0], [10, 0, 0]], breite: 0.6, dicke: 0.4 },
     };
 
     // Das Alt-Rezept `gelaende` baut aus einem RASTER, nicht aus Punkten
