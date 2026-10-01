@@ -650,3 +650,48 @@ def test_ein_unbekannter_quagg_satz_wird_genannt_nicht_geschrieben(tmp_path):
     assert any("Quagg_Entlastungg gilt nicht" in w for w in bericht["warnungen"])
     assert not [r for r in ifcopenshell.open(str(ziel)).by_type("IfcPropertySet") if r.Name.startswith("Quagg_Entl")]
 
+
+# ── Z9.2: Abnahme — ein RUEB ohne Ports, nur ueber Kommandos ──────────────
+
+RUEB = DATEN / "paket_rueb.json"
+
+
+@pytest.fixture(scope="module")
+def rueb(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(RUEB.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("rueb") / "rueb.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="rueb")
+    return {"ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def test_abnahme_rueb_im_ifc(rueb):
+    """Das Paket aus `abnahmeRueb.test.js` (nur `fuehreAus`): eine IfcFacility mit
+    Klassifizierung RUEB, acht Bauteile und zwei Raeume darin, Prueftor ohne
+    offenen Befund, IDS 0 von 18 verfehlt. Das Speichervolumen ist ein Messwert:
+    die Summe der NetVolume beider Kammern, 60,000 m³ — von Hand 2 · 4 · 3 · 2,5."""
+    from app.ifc.pruefe import offen
+    assert rueb["bericht"]["bauteile"] == 8 and rueb["bericht"]["uebersprungen"] == []
+    assert [b for b in rueb["pruefung"]["befunde"] if offen(b)] == []
+    assert _verfehlt(rueb["ziel"]) == []
+    datei = ifcopenshell.open(str(rueb["ziel"]))
+    (anlage,) = datei.by_type("IfcFacility")
+    ref = [r.RelatingClassification for r in datei.by_type("IfcRelAssociatesClassification") if anlage in r.RelatedObjects]
+    assert [(c.Identification, c.Name) for c in ref] == [("RUEB", "Regenüberlaufbecken")]
+    enthalten = {e.Name for r in anlage.ContainsElements for e in r.RelatedElements}
+    assert len(enthalten) == 8 and "Beckenüberlauf" in enthalten
+    raeume = [e for r in anlage.IsDecomposedBy for e in r.RelatedObjects if e.is_a("IfcSpace")]
+    netto = [q.VolumeValue for s in raeume for r in s.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+             and r.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+             for q in r.RelatingPropertyDefinition.Quantities if q.Name == "NetVolume"]
+    assert sorted(round(v, 3) for v in netto) == [30.0, 30.0]
+    beton = [q.VolumeValue for e in datei.by_type("IfcBuiltElement") for r in e.IsDefinedBy
+             if r.is_a("IfcRelDefinesByProperties") and r.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+             for q in r.RelatingPropertyDefinition.Quantities if q.Name == "NetVolume"]
+    assert round(sum(beton), 3) == 40.836
+    schwelle = next(e for e in datei.by_type("IfcWall") if e.ObjectType == "Überlaufschwelle")
+    hoehe = [p.NominalValue.wrappedValue for r in schwelle.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+             and r.RelatingPropertyDefinition.Name == "Quagg_Entlastung"
+             for p in r.RelatingPropertyDefinition.HasProperties if p.Name == "SchwellenhoeheNN"]
+    assert hoehe == [212.4]
+
