@@ -249,4 +249,33 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
                      profil: { art: 'rechteck', breite: 'breite', tiefe: 'dicke', einheit: 'm' } },
         menge: { length: 'achslaenge', width: 'breite', height: 'dicke', netVolume: 'volumen' },
     },
+    {
+        /**
+         * DER RAUM (Teil XXVI, Z6): das Speichervolumen eines Beckens ist kein
+         * Bauteil, es ist ein RAUM — der Hohlraum zwischen Wand und Platte. Der
+         * Umriss ist der Fussboden (m NN), die lichte Höhe geht nach oben; das
+         * Volumen kommt aus dem Körper, nicht aus einer Eingabe.
+         *
+         * Die eine Ausnahme vom Tor aus Z1: ein Rezept mit `raum: true` darf eine
+         * IfcSpace schreiben. Der Schreiber zerlegt sie unter ihre Anlage (WR41),
+         * nie enthalten (WR31). Kein Typ-Feld: ein Raum ist immer eine IfcSpace.
+         * Die Bezeichnung ist Pflicht — die IDS verlangt sie („Räume — Name vorhanden").
+         */
+        id: 'raum',
+        titel: 'Raum',
+        icon: 'space',
+        bauform: 'koerper',
+        kategorieVorgabe: 'IFCSPACE',
+        raum: true,
+        mindestPunkte: 3,
+        geschlossen: true,
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text' },
+            { name: 'hoehe', titel: 'Fussboden', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'raumhoehe', titel: 'Lichte Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 100, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+        ],
+        geometrie: { art: 'platte', dicke: 'raumhoehe', richtung: 'oben' },
+        // Qto_SpaceBaseQuantities — die Fläche verlangt die IDS („Räume — Fläche dokumentiert").
+        menge: { netFloorArea: 'grundflaeche', height: 'raumhoehe', netVolume: 'volumen' },
+    },
 ]);

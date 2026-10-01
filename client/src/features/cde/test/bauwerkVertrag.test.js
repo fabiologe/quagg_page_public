@@ -38,6 +38,9 @@ export const KAMMER = Object.freeze({
     wandWest: 'cde-KA-wand-west', wandOst: 'cde-KA-wand-ost',
 });
 
+/** Der Kammerraum (Z6): lichte Masse 4,00 × 3,00, Fussboden 210,00, lichte Höhe 2,50. */
+export const RAUM = 'cde-KA-raum';
+
 const P = (x, y, z) => ({ x, y, z });
 const RECHTECK = (y) => [P(0, y, 0), P(4.6, y, 0), P(4.6, y, 3.6), P(0, y, 3.6)];
 
@@ -71,10 +74,13 @@ export function kammerStand({ mitBauwerk = true } = {}) {
     wand(KAMMER.wandOst, 'Querwand Ost', [4.45, 0.3], [4.45, 3.3]);
     zeichne(s, 'platte-zeichnen', KAMMER.decke, RECHTECK(212.75),
             { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25 });
+    // Der Raum (Z6) — zwischen den Innenseiten der Wände, von der Bodenplatte bis unter die Decke.
+    zeichne(s, 'raum-zeichnen', RAUM, [P(0.3, 210.0, 0.3), P(4.3, 210.0, 0.3), P(4.3, 210.0, 3.3), P(0.3, 210.0, 3.3)],
+            { name: 'Kammerraum', hoehe: '', raumhoehe: 2.5 });
     if (mitBauwerk) {
         const b = mitKennungen(() => BAUWERK, () => nachId('bauwerk-anlegen').anwenden({}, { name: 'Kammer', art: 'anlage' }, {}));
         s.set(b.globalId, b.nachher);
-        for (const id of Object.values(KAMMER)) ordneZu(s, id, BAUWERK);
+        for (const id of [...Object.values(KAMMER), RAUM]) ordneZu(s, id, BAUWERK);
     }
     return s;
 }
@@ -117,7 +123,7 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         const paket = await kammerPaket();
         expect(paket.version).toBe(PAKET_VERSION);
         const nach = Object.fromEntries(paket.bauteile.map(b => [b.cdeId, b]));
-        expect(Object.keys(nach).sort()).toEqual(Object.values(KAMMER).sort());
+        expect(Object.keys(nach).sort()).toEqual([...Object.values(KAMMER), RAUM].sort());
         expect(paket.uebersprungen).toEqual([]);
 
         // Z3: jedes Teil trägt seinen bSI-Satz — aus der Vorgabe der Rezeptfelder.
@@ -137,9 +143,15 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         expect(r3(nach[KAMMER.decke].mengen.netVolume)).toBe(4.14);                  // 4,60 · 3,60 · 0,25
         expect(r3(nach[KAMMER.wandNord].mengen.netVolume)).toBe(3.45);               // 4,60 · 0,30 · 2,50
         expect(r3(nach[KAMMER.wandWest].mengen.netVolume)).toBe(2.25);               // 3,00 · 0,30 · 2,50
-        const beton = paket.bauteile.reduce((a, b) => a + b.mengen.netVolume, 0);
+        // Beton sind die BAUTEILE — nicht der Hohlraum (Z6).
+        const beton = paket.bauteile.filter(b => b.klasse !== 'IFCSPACE').reduce((a, b) => a + b.mengen.netVolume, 0);
         expect(r3(beton)).toBe(22.164);
+        // Z6: der Raum. Das Speichervolumen ist ein Messwert aus dem Körper, keine Eingabe.
+        const raum = nach[RAUM];
+        expect(raum.klasse).toBe('IFCSPACE');
+        expect([r3(raum.mengen.netFloorArea), r3(raum.mengen.height), r3(raum.mengen.netVolume)]).toEqual([12, 2.5, 30]);
         expect(paket.bauteile.every(b => b.mengenMethode === 'koerper')).toBe(true);
+        expect(nach[RAUM].merkmale).toBeUndefined();                 // ein Raum hat keine bSI-Felder
         // Z5e: die Kammer ist ein Bauwerk — angelegt und zugeordnet über die Werkzeuge.
         expect(paket.bauwerke).toEqual([{ cdeId: BAUWERK, art: 'anlage', name: 'Kammer' }]);
         expect(paket.bauteile.every(b => b.teilVon === BAUWERK)).toBe(true);
@@ -157,7 +169,7 @@ describe('Z5d — Autor und Paket reichen ein Bauwerk durch', () => {
                                      kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
         const schritte = [...s].map(([globalId, wert]) => ({ art: 'erzeugt', globalId, modell: 'cde', wert }));
         const g = await autor.eigenbauGeometrien(schritte, { verdeckt: new Set() });
-        expect(g.bauteile).toHaveLength(6);                       // das Bauwerk ist KEIN Bauteil …
+        expect(g.bauteile).toHaveLength(7);                       // 6 Bauteile + der Raum (Z6); das Bauwerk ist KEIN Bauteil …
         expect(g.misserfolge).toEqual([]);                        // … und auch kein Misserfolg
         expect(g.bauwerke.map(b => b.globalId)).toEqual(['cde-KA']);
         const paket = baueEigenbauPaket({ teile: g.bauteile, stand: s, bauwerke: g.bauwerke,

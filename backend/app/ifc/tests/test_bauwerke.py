@@ -106,19 +106,19 @@ def test_probe_platte_ist_schemagerecht(tmp_path):
     assert _regeln(ziel) == []
 
 
-def test_raumelement_im_bauteilweg_wird_uebersprungen_mit_grund(tmp_path):
-    """Fund 1, seit Z1: ein Raumelement im Bauteilweg wird NICHT mehr geschrieben.
-
-    Bis Z1 (Z0 hielt es fest) landete ein IfcSpace in der Enthalten-Beziehung:
-    WR31 (Raumelemente duerfen nicht ENTHALTEN sein) und WR41 (ein Raumelement
-    muss unter einem anderen ZERLEGT haengen). Jetzt: uebersprungen, mit dem
-    Grund aus derselben Regel, und die Datei ist schemagerecht.
-    """
+def test_ein_raum_im_paket_wird_ein_raum_und_kein_bauteil(tmp_path):
+    """Fund 1, die ZWEITE Drehung (Z6). Bis Z1 landete eine IfcSpace in der
+    Enthalten-Beziehung (WR31 + WR41, Z0 hielt es fest); Z1 sperrte sie im
+    Bauteilweg. Seit Z6 hat der Raum seinen EIGENEN Weg: zerlegt unter der Site
+    (oder seiner Anlage), nie enthalten. Ein Raum aus einem alten Paket wird damit
+    schemagerecht geschrieben, statt verworfen. Alle ANDEREN Raumelemente bleiben
+    im Bauteilweg gesperrt (naechster Test)."""
     ziel = tmp_path / "raum.ifc"
     bericht = baue_datei(_paket(_bauteil("cde-probe-raum", "IFCSPACE")), ziel, schluessel="probe")
-    assert bericht["bauteile"] == 0
-    assert [u["cdeId"] for u in bericht["uebersprungen"]] == ["cde-probe-raum"]
-    assert "Raumelement" in bericht["uebersprungen"][0]["grund"]
+    assert (bericht["bauteile"], bericht["raeume"], bericht["uebersprungen"]) == (0, 1, [])
+    datei, enthalten, zerlegt = _beziehungen(ziel)
+    assert "cde-probe-raum" not in enthalten                      # nie enthalten (WR31)
+    assert zerlegt["cde-probe-raum"][0] == "IfcSite"              # zerlegt unter der Site (WR41)
     assert _regeln(ziel) == []
 
 
@@ -278,10 +278,11 @@ def test_vertrag_kammer_traegt_ihre_mengen(kammer):
     assert wand[2] == {"Length": 4.6, "Width": 0.3, "Height": 2.5, "NetVolume": 3.45}
     assert qto[gid("cde-KA-wand-west")][2]["NetVolume"] == 2.25
     assert qto[gid("cde-KA-decke")][2]["NetVolume"] == 4.14
-    assert round(sum(v[2]["NetVolume"] for v in qto.values()), 6) == 22.164
+    # Beton sind die BAUTEILE — der Raum (Z6) traegt seine eigene Qto und zaehlt nicht mit.
+    assert round(sum(v[2]["NetVolume"] for v in qto.values() if v[0] != "Qto_SpaceBaseQuantities"), 6) == 22.164
     # Die Messmethode sagt die Wahrheit: KOERPER, nicht Gelaenderaster.
     assert {v[1] for v in qto.values()} == {MENGEN_METHODEN["koerper"]}
-    assert kammer["bericht"]["mengen"] == 6
+    assert kammer["bericht"]["mengen"] == 7                          # 6 Bauteile + der Raum (Z6)
 
 
 # ── Z5a — Bauwerke als Behaelter ─────────────────────────────────────────────
@@ -454,3 +455,53 @@ def test_vertrag_kammer_ist_ein_bauwerk(kammer):
     site = datei.by_type("IfcSite")[0]
     assert [e for r in (site.ContainsElements or []) for e in r.RelatedElements] == []
     assert not [w for w in kammer["bericht"]["warnungen"] if "Bauwerk" in w]
+
+
+
+# ── Z6 — der Raum ────────────────────────────────────────────────────────────
+
+def test_ein_raum_gehoert_in_seine_anlage(tmp_path):
+    ziel = tmp_path / "anlage.ifc"
+    paket = _georef(_paket(_bauteil("cde-wand", "IFCWALL", teilVon="cde-K"),
+                           _bauteil("cde-raum", "IFCSPACE", masse=(4.0, 3.0, 2.5), teilVon="cde-K",
+                                    mengen={"netFloorArea": 12.0, "netVolume": 30.0}),
+                           bauwerke=[{"cdeId": "cde-K", "art": "anlage", "name": "Kammer"}]))
+    bericht = baue_datei(paket, ziel, schluessel="probe")
+    assert (bericht["bauteile"], bericht["raeume"]) == (1, 1)
+    datei, enthalten, zerlegt = _beziehungen(ziel)
+    assert zerlegt["cde-raum"] == ("IfcFacility", "Kammer")       # unter der Anlage zerlegt
+    assert enthalten["cde-wand"] == ("IfcFacility", "Kammer")     # die Wand bleibt enthalten
+    _sauber(ziel)
+
+
+def test_ein_raum_in_einer_baugruppe_wird_genannt_und_kommt_an_die_site(tmp_path):
+    ziel = tmp_path / "x.ifc"
+    paket = _georef(_paket(_bauteil("cde-raum", "IFCSPACE", teilVon="cde-G"),
+                           _bauteil("cde-p", "IFCSLAB", teilVon="cde-G"),
+                           bauwerke=[{"cdeId": "cde-G", "art": "baugruppe", "name": "Fertigteil"}]))
+    bericht = baue_datei(paket, ziel, schluessel="probe")
+    assert any("ein Raum gehoert in eine Anlage" in w for w in bericht["warnungen"])
+    _datei, _enthalten, zerlegt = _beziehungen(ziel)
+    assert zerlegt["cde-raum"][0] == "IfcSite"
+    _sauber(ziel)
+
+
+
+def test_vertrag_kammer_hat_ihren_raum(kammer):
+    """Z6 an der echten Kette: der Kammerraum, ueber das Werkzeug gezeichnet und der
+    Kammer zugeordnet, steht ZERLEGT unter der IfcFacility — nie enthalten — und
+    traegt das Speichervolumen als Messwert: 4,00 x 3,00 x 2,50 = 30,000 m3."""
+    from app.ifc import guids
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    raum = datei.by_type("IfcSpace")
+    assert [r.Name for r in raum] == ["Kammerraum"]
+    assert kammer["bericht"]["raeume"] == 1
+    ganzes = [r.RelatingObject for r in datei.by_type("IfcRelAggregates") if raum[0] in r.RelatedObjects]
+    assert [(g.is_a(), g.Name) for g in ganzes] == [("IfcFacility", "Kammer")]
+    assert raum[0] not in [e for r in datei.by_type("IfcRelContainedInSpatialStructure") for e in r.RelatedElements]
+    name, _methode, werte = _qto(datei)[guids.guid_aus_cde_id("cde-KA-raum")]
+    assert name == "Qto_SpaceBaseQuantities"
+    assert werte == {"NetFloorArea": 12.0, "Height": 2.5, "NetVolume": 30.0}
+    verfehlt = _verfehlt(kammer["ziel"])
+    assert "Räume — Name vorhanden" not in verfehlt and "Räume — Fläche dokumentiert" not in verfehlt
+    assert _regeln(kammer["ziel"]) == []

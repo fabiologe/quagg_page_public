@@ -86,6 +86,9 @@ export const BAUTEILFARBEN = Object.freeze({
     // Der Sammeltyp des Erdbaus, wo ein Exporteur ihn benutzt — ein
     // gelieferter Erdkörper ist Bestand, kein Eingriff: im Ton des Geländes.
     IFCEARTHWORKSELEMENT: Object.freeze({ ...GELAENDE_FARBE, titel: 'Erdbau' }),
+    // Der Raum (Teil XXVI, Z6) ist der HOHLRAUM zwischen Wand und Platte — man
+    // sieht durch ihn hindurch auf die Bauteile, die ihn begrenzen.
+    IFCSPACE:             Object.freeze({ farbe: 0x5b82a0, deckkraft: 0.18, titel: 'Raum' }),
 });
 
 /** Kategorie normieren — Grossschreibung, ohne Leerraum. */

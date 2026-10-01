@@ -90,6 +90,7 @@ describe('2 — es sind Daten', () => {
             platte: { punkte: [[0, 5, 0], [6, 5.3, 0], [6, 5.6, 4], [0, 5.3, 4]], dicke: 0.25 },
             wand: { punkte: [[0, 210, 0], [10, 210, 0]], dicke: 0.3, wandhoehe: 2.5 },
             streifenfundament: { punkte: [[0, 209.6, 0], [10, 209.6, 0]], breite: 1.2, dicke: 0.4 },
+            raum: { punkte: [[0.3, 210, 0.3], [4.3, 210, 0.3], [4.3, 210, 3.3], [0.3, 210, 3.3]], raumhoehe: 2.5 },
         };
         for (const d of kopie) {
             expect(ausgabe(rezeptAusDeklaration(d), probe[d.id]), d.id).toEqual(ausgabe(REZEPTE[d.id], probe[d.id]));
@@ -110,7 +111,9 @@ describe('2 — es sind Daten', () => {
             // Die Vorgabe muss der Schreiber im Backend annehmen (IFC4X3_ADD2,
             // nicht abstrakt, IfcProduct) — sonst stünde der Eintrag im Journal
             // und fiele erst beim Ausgeben heraus.
-            expect(istSchreibbar(d.kategorieVorgabe), `${d.id}: ${d.kategorieVorgabe}`).toBe(true);
+            // Ein RAUM-Rezept (Teil XXVI, Z6) fragt mit derselben Angabe wie die Bauplanprüfung:
+            // seine IfcSpace nimmt der Schreiber auf dem Raumweg an.
+            expect(istSchreibbar(d.kategorieVorgabe, { raum: d.raum === true }), `${d.id}: ${d.kategorieVorgabe}`).toBe(true);
         }
     });
 

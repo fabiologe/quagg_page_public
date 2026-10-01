@@ -368,7 +368,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcSignal](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSignal.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSite](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSite.htm) | Verbund | nein | IFC4X3_ADD2 |
 | [IfcSlab](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSlab.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
-| [IfcSpace](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpace.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcSpace](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpace.htm) | Bauteilrezepte, Eigenbau, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcSpatialElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialElement.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcSpatialStructureElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSpatialStructureElement.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcSurfaceFeature](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcSurfaceFeature.htm) | Typprofile | nein | IFC4X3_ADD2 |

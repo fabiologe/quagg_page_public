@@ -81,7 +81,7 @@ export function istKategorie(name) {
  * Enthalten-Beziehung — zwei Where-Rules verletzt (WR31, WR41; gemessen).
  * Raumelemente bekommen in Teil XXVI ihren eigenen Weg.
  */
-function _schreibbar(name) {
+function _schreibbar(name, { raum = false } = {}) {
     const n = String(name ?? '').toUpperCase().trim();
     const e = ENTITY_META[n];
     if (!e) return `„${name}" ist kein IFC-Typ (nicht in IFC 4.3)`;
@@ -89,18 +89,21 @@ function _schreibbar(name) {
     if (e.abstract) return `„${name}" ist abstrakt`;
     if (!e.hierarchy.includes('IfcProduct')) return `„${name}" ist kein Bauteil (kein IfcProduct)`;
     if (e.hierarchy.includes('IfcSpatialElement')) {
+        // DIE EINE AUSNAHME (Teil XXVI, Z6): ein Rezept, das sich als RAUM erklärt,
+        // schreibt eine IfcSpace — der Schreiber zerlegt sie unter ihre Anlage (WR41).
+        if (raum && n === 'IFCSPACE') return null;
         return `„${name}" ist ein Raumelement — es gehört in die Gliederung eines Bauwerks, nicht in ein Bauteil`;
     }
     return null;
 }
 
-export function istSchreibbar(name) {
-    return _schreibbar(name) === null;
+export function istSchreibbar(name, opts) {
+    return _schreibbar(name, opts) === null;
 }
 
-/** Warum der Eigenbau diesen Typ nicht als Bauteil schreibt — null, wenn er es tut. */
-export function warumNichtSchreibbar(name) {
-    return _schreibbar(name);
+/** Warum der Eigenbau diesen Typ nicht als Bauteil schreibt — null, wenn er es tut. `{raum}`: das Rezept ist ein Raum. */
+export function warumNichtSchreibbar(name, opts) {
+    return _schreibbar(name, opts);
 }
 
 /** Der Schwerpunkt einer Punktliste in XZ (Welt), oder null. */
@@ -772,7 +775,7 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
         fehler.push(`${r.titel}: mindestens ${r.mindestPunkte} Punkte, ${punkte.length} gesetzt`);
     }
     const typ = kategorie ?? r.kategorieVorgabe;
-    const nicht = warumNichtSchreibbar(typ);
+    const nicht = warumNichtSchreibbar(typ, { raum: !!r.raum });
     if (nicht) fehler.push(`${nicht} — keine Klasse, die der Eigenbau schreiben kann`);
     return fehler;
 }

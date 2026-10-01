@@ -471,6 +471,11 @@ def _quellen_json(b: dict) -> str | None:
 # Client: in einer Anlage (Raumelement) wird ein Teil ENTHALTEN, in einer
 # Baugruppe (Element) wird es ZERLEGT. Beides zugleich zaehlte es doppelt.
 BAUWERKSARTEN = ("anlage", "baugruppe")
+# DER RAUM (Teil XXVI, Z6): das einzige Raumelement, das als Paket-Bauteil kommt —
+# es hat einen Koerper (den Hohlraum) und Mengen (das Speichervolumen). Es wird
+# ZERLEGT unter seiner Anlage oder der Site (WR41), nie enthalten (WR31). Alle
+# anderen Raumelemente bleiben im Bauteilweg gesperrt (Z1).
+RAUMKLASSE = "IfcSpace"
 
 
 def _platz(f, bezug):
@@ -596,6 +601,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
 
     stile = {}
     produkte, uebersprungen, warnungen = [], [], list(behaelter_warnungen)
+    raeume = []                                      # IfcSpace — zerlegt, nie enthalten (Z6)
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
     mengen_n = 0
     merkmale_n = 0                                   # bSI-Saetze aus Rezeptfeldern (Teil XXVI, Z3)
@@ -619,7 +625,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         if not cde_id:
             uebersprungen.append({"grund": "ohne cdeId", "name": b.get("name")})
             continue
-        klasse = _klasse(b.get("klasse"))
+        raum = S.name_von(b.get("klasse")) == RAUMKLASSE
+        klasse = RAUMKLASSE if raum else _klasse(b.get("klasse"))
         if klasse is None:
             # Der GRUND kommt aus derselben Regel wie die Entscheidung (schema._schreibbar):
             # abstrakt, kein Produkt, nicht im Zielschema — oder ein Raumelement, das im
@@ -717,7 +724,9 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             _s if teil == "satz" else f"{_s}|{teil}"))
         for d in docs:
             je_dokument.setdefault(d["sha256"], []).append(el)
-        produkte.append(el)
+        # Ein Raum ist kein Bauteil: er kommt nicht in die Einordnung (WR31), sondern
+        # wird unten unter sein Raumelement zerlegt (WR41).
+        (raeume if raum else produkte).append(el)
         geschrieben.append((el, b))
 
     # DIE TYPEN (Teil XXIII, A9b): je Vorlage EIN Typobjekt, bevor die Kanten
@@ -749,6 +758,24 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     if offen:
         warnungen.append(f"{len(offen)} Aushub/Aushuebe ohne Wirt in dieser Datei — "
                          "konform erst im Verbund (wirte_herstellen)")
+
+    # DIE RAEUME (Teil XXVI, Z6): unter ihrer Anlage zerlegt — oder unter der Site.
+    # Eine Baugruppe ist ein Element; ein Raum darin waere schemawidrig (WR41
+    # verlangt ein RAUMelement als Ganzes). Das wird genannt, und er kommt an die Site.
+    raeume_unter = {}
+    paket_raum = {el.id(): b for el, b in geschrieben if el.is_a(RAUMKLASSE)}
+    for el in raeume:
+        ziel_id = (paket_raum.get(el.id()) or {}).get("teilVon")
+        b_ziel = behaelter.get(ziel_id)
+        if ziel_id and (b_ziel is None or b_ziel["rolle"] == "baugruppe"):
+            warnungen.append(f"{(paket_raum.get(el.id()) or {}).get('cdeId')}: ein Raum gehoert in eine Anlage, "
+                             f"nicht in {ziel_id} — unter der Site zerlegt")
+            b_ziel = None
+        raeume_unter.setdefault(ziel_id if b_ziel else None, []).append(el)
+    for cid, glieder in raeume_unter.items():
+        f.create_entity("IfcRelAggregates", GlobalId=guids.guid_aus_cde_id(f"{satz}|raeume|{cid or 'site'}"),
+                        OwnerHistory=besitz, RelatingObject=behaelter[cid]["inst"] if cid else site,
+                        RelatedObjects=glieder)
 
     if produkte:
         # NICHT in die Raumgliederung: Aushuebe (IfcFeatureElement). Die
@@ -811,6 +838,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         je_fachmodell = {}
         baugruppen = [(x["inst"], {"fachmodell": "cde"}) for x in behaelter.values() if x["rolle"] == "baugruppe"]
         for el, b in [*geschrieben, *baugruppen]:
+            # Ein RAUM ist kein Bauteil (Z6) — V08 zaehlt die Glieder gegen die Bauteile;
+            # seine Herkunft traegt er im eigenen Merkmalssatz.
+            if el.is_a(RAUMKLASSE):
+                continue
             art = b.get("fachmodell") if b.get("fachmodell") in FACHMODELLE else "cde"
             je_fachmodell.setdefault(art, []).append(el)
         gruppe_von = {}                              # Element-Id -> seine Fachmodell-Gruppe
@@ -861,6 +892,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "mengen": mengen_n,
         "merkmalsaetze": merkmale_n,
         "bauwerke": len(behaelter),
+        "raeume": len(raeume),
         "vorgaenge": vorgaenge,
         "typen": typen_n,
         "kanten": len(kanten_neu),

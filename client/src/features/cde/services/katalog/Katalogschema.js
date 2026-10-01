@@ -49,7 +49,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
-    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge',
+    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset']);
 
@@ -153,7 +153,12 @@ function _rezept(d, fehler) {
     else if (REZEPTE[id] || ABLEITUNGEN[id]) fehler.push(`Id „${id}" ist eingebaut — eine Bibliothek überschreibt kein eingebautes Rezept.`);
     if (!String(d.titel ?? '').trim()) fehler.push('Der Titel fehlt.');
     if (!BAUFORMEN[d.bauform]) fehler.push(`Bauform „${d.bauform}" gibt es nicht.`);
-    const nicht = warumNichtSchreibbar(d.kategorieVorgabe);
+    // EIN RAUM (Teil XXVI, Z6) erklärt sich als solcher — und ist dann genau eine IfcSpace.
+    if (d.raum !== undefined && d.raum !== true) fehler.push('`raum` ist entweder `true` oder fehlt.');
+    if (d.raum === true && String(d.kategorieVorgabe ?? '').toUpperCase() !== 'IFCSPACE') {
+        fehler.push('Ein Raum ist eine IfcSpace — `kategorieVorgabe: \'IFCSPACE\'`.');
+    }
+    const nicht = warumNichtSchreibbar(d.kategorieVorgabe, { raum: d.raum === true });
     if (nicht) fehler.push(`${nicht} — keine Klasse, die der Eigenbau schreiben kann.`);
     if (!Number.isInteger(d.mindestPunkte) || d.mindestPunkte < 1) fehler.push('`mindestPunkte` muss eine ganze Zahl ≥ 1 sein.');
     if (d.hoechstPunkte !== undefined && !(Number.isInteger(d.hoechstPunkte) && d.hoechstPunkte >= (d.mindestPunkte ?? 1))) {

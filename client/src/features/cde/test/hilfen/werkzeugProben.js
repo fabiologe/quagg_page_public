@@ -60,6 +60,9 @@ function welt() {
             [P(100, 100, 0), P(110, 100, 0)]);
     zeichne(erzeugt, 'streifenfundament-zeichnen', 'cde-FU1', { name: 'FU1', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 },
             [P(100, 99.6, 10), P(110, 99.6, 10)]);
+    // Teil XXVI, Z6: ein Raum — der Hohlraum, aus einem Umriss nach oben.
+    zeichne(erzeugt, 'raum-zeichnen', 'cde-RA1', { name: 'RA1', hoehe: '', raumhoehe: 2.5 },
+            [P(120, 100, 0), P(124, 100, 0), P(124, 100, 3), P(120, 100, 3)]);
     // Teil XXVI, Z5e: ein Bauwerk (Behälter ohne Körper) — die Wand W1 gehört dazu.
     erzeugt.set('cde-BW1', { rezept: 'bauwerk', kategorie: null, name: 'BW1', bauform: 'netz', parameter: { art: 'anlage' } });
     const w1 = erzeugt.get('cde-W1');
@@ -144,6 +147,9 @@ const NEU = [
     { id: 'streifenfundament-zeichnen', el: zug(P(0, 99.6, 0), P(10, 99.6, 0)), zug: [P(0, 99.6, 0), P(10, 99.6, 0)],
       werte: [{ name: 'FU', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 }] },
     { id: 'bauwerk-anlegen', el: zug(), werte: [{ name: 'Kammer', art: 'anlage' }] },
+    { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
+      zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
+    { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },
     { id: 'planinhalt-setzen', el: zug(), werte: [{ inhalte: [{ id: 'pi-1', wert: { art: 'text', x: 1, z: 2, text: 'A', groesse: 2.5, winkel: 0 } }, { id: 'pi-2', wert: null }] }] },
     { id: 'rotstift-zeichnen', el: zug(), werte: [{ striche: [{ id: 'rs-1', wert: { rev: 0, tool: 'stift', farbe: '#d32f2f', breiteMm: 0.6, points: [[0, 0, 0.5], [1, 1, 0.5]] } }], titel: 'Radieren' }] },
 

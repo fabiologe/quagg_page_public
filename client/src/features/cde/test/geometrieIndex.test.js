@@ -78,6 +78,7 @@ describe('jeder Bauweg liefert indizierte Geometrie', () => {
         platte: { punkte: [[0, 0, 0], [10, 0, 0], [10, 0, 10], [0, 0, 10]], dicke: 0.2 },
         wand: { punkte: [[0, 0, 0], [10, 0, 0]], dicke: 0.3, wandhoehe: 2.5 },
         streifenfundament: { punkte: [[0, 0, 0], [10, 0, 0]], breite: 0.6, dicke: 0.4 },
+        raum: { punkte: [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]], raumhoehe: 2.5 },
     };
 
     // Das Alt-Rezept `gelaende` baut aus einem RASTER, nicht aus Punkten
