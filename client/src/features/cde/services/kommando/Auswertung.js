@@ -30,7 +30,7 @@
  */
 import { felderFuer, nachId, pruefe, werkzeugKatalog } from '../Bearbeitungen.js';
 import { befundeFuerWerte } from '../Befunde.js';
-import { KENNUNGS_PRAEFIX, mitKennungen } from '../Bauteilrezepte.js';
+import { KENNUNGS_PRAEFIX, mitKennungen, pruefeBauplan } from '../Bauteilrezepte.js';
 import { adressenAlsNummern, istErzeugen, punktInWelt, rahmenOhneBezug, schlitzVon, werteFuerWerkzeug } from './Kommando.js';
 
 const KENNUNG_FEHLT = Symbol('kennung-fehlt');
@@ -147,6 +147,18 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
         let grund = null;
         try { grund = b.warumNicht?.(subjekte[0], werte, { zug: punkte, kandidatenVon }) ?? null; } catch { grund = null; }
         return { ...leer(grund || 'Dem Bauteil fehlt der Bezug für diese Bearbeitung.'), uebersprungen };
+    }
+    // UNBAUBAR IST UNMÖGLICH (E5, Fund 11 aus Teil XXVI): ein Bauplan, aus dem
+    // sich kein Bauteil bauen lässt — zu wenige Punkte, keine schreibbare
+    // Klasse —, wird abgelehnt, nicht eingetragen. Vorher stand er im Journal,
+    // und erst der Autor merkte es: das Bauteil fehlte still im Raum und im IFC.
+    // Dieselbe Prüfung wie beim Bauen (`baueAusBauplan`); Ableitungsteile baut
+    // ihr Lauf, nicht `pruefeBauplan`.
+    for (const s of schritte) {
+        const plan = s.art === 'erzeugt' ? s.nachher : null;
+        if (!plan || plan.ableitung) continue;
+        const fehler = pruefeBauplan(plan);
+        if (fehler.length) return leer(`Nicht baubar: ${fehler.join(' · ')}`);
     }
     return { schritte, uebersprungen, neu: verwendet, werkzeug: b, grund: null, hinweise };
 }

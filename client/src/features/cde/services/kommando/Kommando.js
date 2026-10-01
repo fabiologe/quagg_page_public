@@ -291,6 +291,10 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
                     continue;
                 }
                 if (!PUNKT_SCHLITZE.includes(schlitz)) { fehler.push(`eingaben.${schlitz}: diesen Schlitz gibt es nicht (${[...PUNKT_SCHLITZE, ...GESTEN_IN_EINGABEN].join(', ')})`); continue; }
+                // Ein Werkzeug nimmt seine Punkte in GENAU EINEM Schlitz (Fund 11,
+                // Teil XXVI): Punkte im anderen las niemand — die Platte entstand
+                // ohne Umriss.
+                if (b && schlitz !== schlitzVon(b)) { fehler.push(`eingaben.${schlitz}: „${b.id}" nimmt seine Punkte unter eingaben.${schlitzVon(b)}`); continue; }
                 if (!Array.isArray(liste)) { fehler.push(`eingaben.${schlitz} muss eine Punktliste sein`); continue; }
                 const knotenAmRand = !!b && _faengtKnoten(b, schlitz);
                 liste.forEach((q, i) => _pruefePunkt(q, `eingaben.${schlitz}[${i}]`, fehler,
