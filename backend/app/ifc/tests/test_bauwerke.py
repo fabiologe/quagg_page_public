@@ -439,3 +439,18 @@ def test_im_verbund_bleibt_die_anlage_mit_ihren_teilen(tmp_path):
     assert teile == ["cde-a", "cde-b"]
     fehl = [b for b in pruefe(ziel)["befunde"] if offen(b)]
     assert fehl == [], fehl
+
+
+def test_vertrag_kammer_ist_ein_bauwerk(kammer):
+    """Z5 an der echten Kette: angelegt und zugeordnet ueber die WERKZEUGE (Z5e),
+    durch Autor und Paket (Z5d), geschrieben (Z5a). Vorher: alle sechs Teile direkt
+    an der Site, keine Facility."""
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    assert kammer["bericht"]["bauwerke"] == 1
+    anlage = datei.by_type("IfcFacility")
+    assert [a.Name for a in anlage] == ["Kammer"]
+    in_anlage = sorted(e.Name for r in anlage[0].ContainsElements for e in r.RelatedElements)
+    assert in_anlage == ["Bodenplatte", "Decke", "Längswand Nord", "Längswand Süd", "Querwand Ost", "Querwand West"]
+    site = datei.by_type("IfcSite")[0]
+    assert [e for r in (site.ContainsElements or []) for e in r.RelatedElements] == []
+    assert not [w for w in kammer["bericht"]["warnungen"] if "Bauwerk" in w]

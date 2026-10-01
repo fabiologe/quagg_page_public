@@ -422,7 +422,9 @@ const api = useViewerApi();
 
 // Der Katalog lebt: ein Rezept aus der Bibliothek bringt sein Zeichenwerkzeug
 // mit (Teil XXIII, A5). `katalogStand` wandert mit jeder Registrierung.
-const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, ausGruppe('erzeugen')));
+// Dazu die Bauwerke (Teil XXVI, Z5e): angelegt, nicht gezeichnet — `zeichnen` fällt
+// für alles ohne Zug auf das normale Werkzeug zurück.
+const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, [...ausGruppe('erzeugen'), ...ausGruppe('bauwerk')]));
 
 // ── Gelände formen, ohne es anzuklicken (K4) ────────────────────────────────
 //

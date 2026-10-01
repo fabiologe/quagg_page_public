@@ -27,6 +27,7 @@ import { mitKennungen } from '../services/Bauteilrezepte.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { IfcAutor } from '../services/IfcAutor.js';
 import { baueEigenbauPaket, PAKET_VERSION } from '../services/EigenbauPaket.js';
+import { kandidatenAus } from '../services/kommando/Kandidaten.js';
 
 const FIXTURE = resolve(process.cwd(), '../backend/app/ifc/tests/daten/paket_bauwerke.json');
 
@@ -46,8 +47,16 @@ function zeichne(stand, werkzeug, gid, punkte, werte) {
     for (const s of [].concat(schritte ?? []).filter(Boolean)) if (s.art === 'erzeugt') stand.set(s.globalId, s.nachher);
 }
 
-/** Die Kammer als Journalstand: sechs Bauteile. */
-export function kammerStand() {
+/** Ein Teil über das Werkzeug einem Bauwerk zuordnen — mit den Kandidaten aus dem Journal (V3). */
+function ordneZu(stand, gid, bauwerk) {
+    const kandidatenVon = kandidatenAus({ wirksamerStand: (art) => (art === 'erzeugt' ? stand : new Map()) });
+    const el = { globalId: gid, stand: { bauplan: stand.get(gid) } };
+    const s = nachId('bauwerk-zuordnen').anwenden(el, { bauwerk }, { kandidatenVon });
+    stand.set(s.globalId, s.nachher);
+}
+
+/** Die Kammer als Journalstand: ein Bauwerk (Z5e: über das Werkzeug angelegt) und sechs Bauteile darin. */
+export function kammerStand({ mitBauwerk = true } = {}) {
     const s = new Map();
     zeichne(s, 'platte-zeichnen', KAMMER.bodenplatte, RECHTECK(210.0),
             { name: 'Bodenplatte', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4 });
@@ -62,17 +71,24 @@ export function kammerStand() {
     wand(KAMMER.wandOst, 'Querwand Ost', [4.45, 0.3], [4.45, 3.3]);
     zeichne(s, 'platte-zeichnen', KAMMER.decke, RECHTECK(212.75),
             { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25 });
+    if (mitBauwerk) {
+        const b = mitKennungen(() => BAUWERK, () => nachId('bauwerk-anlegen').anwenden({}, { name: 'Kammer', art: 'anlage' }, {}));
+        s.set(b.globalId, b.nachher);
+        for (const id of Object.values(KAMMER)) ordneZu(s, id, BAUWERK);
+    }
     return s;
 }
 
-export async function kammerPaket() {
-    const s = kammerStand();
+export const BAUWERK = 'cde-KA';
+
+export async function kammerPaket({ mitBauwerk = true } = {}) {
+    const s = kammerStand({ mitBauwerk });
     const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: () => null,
                                  kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
     const schritte = [...s].map(([globalId, wert]) => ({ art: 'erzeugt', globalId, modell: 'cde', wert }));
     const g = await autor.eigenbauGeometrien(schritte, { verdeckt: new Set() });
     return baueEigenbauPaket({
-        teile: g.bauteile, kanten: g.kanten, stand: s, anzeigeformen: g.anzeigeformen,
+        teile: g.bauteile, kanten: g.kanten, stand: s, anzeigeformen: g.anzeigeformen, bauwerke: g.bauwerke,
         // UTM32 in der Gegend der BIM26-Lieferungen — das Fenster, das V06b prüft.
         nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y }),
         crs: 'EPSG:25832', projektname: 'Kammer', schluessel: 'kammer',
@@ -90,6 +106,8 @@ function form(p) {
             schluessel: k(b), merkmale: b.merkmale ?? null, mengen: k(b.mengen), mengenMethode: b.mengenMethode ?? null,
             geometrie: b.punkte.length >= 3 && b.dreiecke.length > 0,
         })),
+        bauwerke: p.bauwerke ?? null,
+        teilVon: p.bauteile.map(b => b.teilVon ?? null),
         uebersprungen: p.uebersprungen.map(u => u.grund),
     };
 }
@@ -122,6 +140,9 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         const beton = paket.bauteile.reduce((a, b) => a + b.mengen.netVolume, 0);
         expect(r3(beton)).toBe(22.164);
         expect(paket.bauteile.every(b => b.mengenMethode === 'koerper')).toBe(true);
+        // Z5e: die Kammer ist ein Bauwerk — angelegt und zugeordnet über die Werkzeuge.
+        expect(paket.bauwerke).toEqual([{ cdeId: BAUWERK, art: 'anlage', name: 'Kammer' }]);
+        expect(paket.bauteile.every(b => b.teilVon === BAUWERK)).toBe(true);
 
         if (process.env.BAUWERK_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(paket));
         expect(existsSync(FIXTURE), 'Fixture fehlt: BAUWERK_VERTRAG_SCHREIBEN=1 npx vitest run src/features/cde/test/bauwerkVertrag.test.js').toBe(true);
@@ -131,12 +152,7 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
 
 describe('Z5d — Autor und Paket reichen ein Bauwerk durch', () => {
     it('ein Behälter wird nicht gebaut, sondern als `bauwerke` verpackt; seine Teile nennen ihn', async () => {
-        const s = kammerStand();
-        s.set('cde-KA', { rezept: 'bauwerk', name: 'Kammer', parameter: { art: 'anlage' } });
-        for (const id of Object.values(KAMMER)) {
-            const w = s.get(id);
-            s.set(id, { ...w, parameter: { ...w.parameter, teilVon: 'cde-KA' } });
-        }
+        const s = kammerStand();                       // seit Z5e: mit dem Bauwerk, über die Werkzeuge
         const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: () => null,
                                      kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
         const schritte = [...s].map(([globalId, wert]) => ({ art: 'erzeugt', globalId, modell: 'cde', wert }));
@@ -150,7 +166,7 @@ describe('Z5d — Autor und Paket reichen ein Bauwerk durch', () => {
         expect(paket.bauteile.every(b => b.teilVon === 'cde-KA')).toBe(true);
     });
     it('ohne Bauwerke trägt das Paket keinen Schlüssel `bauwerke` und kein `teilVon`', async () => {
-        const paket = await kammerPaket();
+        const paket = await kammerPaket({ mitBauwerk: false });
         expect('bauwerke' in paket).toBe(false);
         expect(paket.bauteile.some(b => 'teilVon' in b)).toBe(false);
     });

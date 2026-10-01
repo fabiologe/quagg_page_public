@@ -13,6 +13,7 @@ import { nachId } from '../services/Bearbeitungen.js';
 import * as REZEPTE_MODUL from '../services/Bauteilrezepte.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { eigenbauBaum } from '../services/Bauwerksstruktur.js';
+import { kandidatenAus } from '../services/kommando/Kandidaten.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
 import { JA_NEIN } from '../services/katalog/Merkmalsziele.js';
 
@@ -267,5 +268,58 @@ describe('Z5d — der Strukturbaum zeigt das Bauwerk über seinen Teilen', () =>
     it('ohne die Frage `istBehaelter` bleibt alles, wie es war', () => {
         const w = eigenbauBaum({ stand, modelId: 'cde' }).wurzel;
         expect(w.children.every(c => c.category !== 'BAUWERK')).toBe(true);
+    });
+});
+
+// ── Z5e — die Werkzeuge ─────────────────────────────────────────────────────
+
+describe('Z5e — Bauwerk anlegen, zuordnen, lösen', () => {
+    const PLATTE = { rezept: 'platte', kategorie: 'IFCSLAB', name: 'P', bauform: 'flaeche+dicke',
+                     parameter: { punkte: [[0, 0, 0], [1, 0, 0], [1, 0, 1]], dicke: 0.2 } };
+    const welt = () => new Map([
+        ['cde-A', { rezept: 'bauwerk', kategorie: null, name: 'A', parameter: { art: 'anlage' } }],
+        ['cde-B', { rezept: 'bauwerk', kategorie: null, name: 'B', parameter: { art: 'anlage', teilVon: 'cde-A' } }],
+        ['cde-P', PLATTE],
+    ]);
+    const kontext = (stand) => ({ kandidatenVon: kandidatenAus({ wirksamerStand: (a) => (a === 'erzeugt' ? stand : new Map()) }) });
+    const el = (stand, gid) => ({ globalId: gid, stand: { bauplan: stand.get(gid) } });
+
+    it('anlegen: ein Behälter mit Name und Art — ohne Bauteilklasse', () => {
+        const s = mitKennungen(() => 'cde-N', () => nachId('bauwerk-anlegen').anwenden({}, { name: 'Kammer', art: 'baugruppe' }, {}));
+        expect(s).toMatchObject({ art: 'erzeugt', globalId: 'cde-N',
+                                  nachher: { rezept: 'bauwerk', name: 'Kammer', kategorie: null, parameter: { art: 'baugruppe' } } });
+        expect(nachId('bauwerk-anlegen').warumNicht({}, { name: '', art: 'anlage' }, {})).toMatch(/Bezeichnung/);
+    });
+
+    it('zuordnen ERSETZT — ein Teil hat danach genau ein Ganzes (E17)', () => {
+        const s = welt();
+        const zu = nachId('bauwerk-zuordnen');
+        const erst = zu.anwenden(el(s, 'cde-P'), { bauwerk: 'cde-A' }, kontext(s));
+        s.set('cde-P', erst.nachher);
+        const dann = zu.anwenden(el(s, 'cde-P'), { bauwerk: 'cde-B' }, kontext(s));
+        expect(dann.nachher.parameter.teilVon).toBe('cde-B');
+        expect(dann.nachher.parameter.punkte).toEqual(PLATTE.parameter.punkte);       // nur teilVon ändert sich
+        expect(zu.anwenden(el(s, 'cde-P'), { bauwerk: 'cde-gibtsnicht' }, kontext(s))).toBeNull();
+    });
+
+    it('ein Bauwerk kann nicht in sein eigenes Teil wandern (Kreisschutz in den Kandidaten)', () => {
+        const s = welt();
+        const fuerA = kontext(s).kandidatenVon('eigene:bauwerk', el(s, 'cde-A')).map(k => k.id);
+        expect(fuerA).toEqual([]);                    // nicht A selbst, nicht B (B steckt in A)
+        const fuerP = kontext(s).kandidatenVon('eigene:bauwerk', el(s, 'cde-P')).map(k => k.id);
+        expect(fuerP).toEqual(['cde-A', 'cde-B']);
+    });
+
+    it('lösen nimmt `teilVon` heraus — nicht `null`, sondern weg', () => {
+        const s = welt();
+        const l = nachId('bauwerk-loesen').anwenden(el(s, 'cde-B'), {}, {});
+        expect('teilVon' in l.nachher.parameter).toBe(false);
+        expect(l.nachher.parameter.art).toBe('anlage');
+        expect(nachId('bauwerk-loesen').warumNicht(el(s, 'cde-P'), {}, {})).toMatch(/zu keinem Bauwerk/);
+    });
+
+    it('ohne Bauwerk sagt Zuordnen, was zu tun ist', () => {
+        const s = new Map([['cde-P', PLATTE]]);
+        expect(nachId('bauwerk-zuordnen').warumNicht(el(s, 'cde-P'), { bauwerk: '' }, kontext(s))).toMatch(/erst eines anlegen/);
     });
 });

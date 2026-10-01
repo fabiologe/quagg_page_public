@@ -378,6 +378,11 @@ export function istBehaelter(bauplan) {
     return !!rezeptNach(bauplan?.rezept)?.behaelter;
 }
 
+/** Das Rezept, aus dem ein Bauwerk entsteht — gefunden über die Eigenschaft, nicht den Namen (W3). */
+export function behaelterRezept() {
+    return Object.values(REZEPTE).find(r => r.behaelter)?.id ?? null;
+}
+
 /**
  * Die Quellen des Katalogs in ihrer Reihenfolge — Deklarationen und das eine
  * Code-Rezept. Der Architektur-Wächter (W5) zählt HIER die Funktionen: was
@@ -940,7 +945,9 @@ export function erzeugtEintrag({ rezept, kategorie = null, name = '', parameter 
         modell: 'cde',
         nachher: {
             rezept,
-            kategorie: (kategorie ?? r?.kategorieVorgabe ?? 'IFCBUILDINGELEMENTPROXY').toUpperCase(),
+            // Ein BEHÄLTER hat keine Bauteilklasse (Teil XXVI, Z5e): welche IFC-Klasse
+            // aus ihm wird, sagt seine Art beim Schreiber — „PROXY" stünde falsch da.
+            kategorie: r?.behaelter ? null : (kategorie ?? r?.kategorieVorgabe ?? 'IFCBUILDINGELEMENTPROXY').toUpperCase(),
             name,
             bauform: r?.bauform ?? 'netz',
             parameter,

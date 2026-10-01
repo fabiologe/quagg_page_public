@@ -33,7 +33,8 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte } from './Bauteilrezepte.js';
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte,
+         BAUWERKSARTEN, behaelterRezept } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -93,6 +94,9 @@ export const GRUPPEN = Object.freeze({
     // kein Rezept; das Formular ist der Lageplan (`eigeneOberflaeche`).
     blatt:      { titel: 'Blatt',      icon: 'karte',         einstieg: 'werkzeug' },
     gelaende:   { titel: 'Gelände',    icon: 'terrain',       einstieg: 'auswahl' },
+    // BAUWERKE (Teil XXVI, Z5e): ein Bauwerk wird angelegt, nicht gezeichnet —
+    // kein Zug, kein Subjekt. Zuordnen und Lösen stehen bei den Merkmalen des Teils.
+    bauwerk:    { titel: 'Bauwerk',    icon: 'building',      einstieg: 'werkzeug' },
 });
 
 /**
@@ -554,6 +558,44 @@ function bauplanFortschreiben(el, plan, parameter) {
 }
 
 const SETZ_OPERATIONEN = Object.freeze({
+    bauwerk: {
+        // EIN BAUWERK (Teil XXVI, Z5e): anlegen, ein Teil zuordnen, ein Teil lösen.
+        // `teilVon` ist EIN Wert am Teil (E17) — Zuordnen ersetzt, es fügt nie
+        // hinzu; ein Teil hat danach genau ein Ganzes, wie das Schema es will.
+        vorbelege: (s, el, { kandidatenVon = null } = {}) => (
+            s.tut === 'anlegen' ? { name: '', art: 'anlage' }
+            : s.tut === 'zuordnen' ? { bauwerk: kandidatenVon?.('eigene:bauwerk', el)?.[0]?.id ?? '' }
+            : {}),
+        schreibe: (s, el, werte, { kandidatenVon = null } = {}) => {
+            if (s.tut === 'anlegen') {
+                const name = String(werte?.name ?? '').trim();
+                if (!name || !BAUWERKSARTEN[werte?.art]) return null;
+                // Die Kennung vergibt der Aufrufer (E2, `neu`) — `erzeugtEintrag` zieht sie.
+                return erzeugtEintrag({ rezept: behaelterRezept(), name, parameter: { art: werte.art } });
+            }
+            const plan = el?.stand?.bauplan;
+            if (!plan?.rezept) return null;
+            if (s.tut === 'loesen') {
+                if (!plan.parameter?.teilVon) return null;
+                const { teilVon: _weg, ...rest } = plan.parameter;
+                return bauplanFortschreiben(el, plan, rest);
+            }
+            const ziel = (kandidatenVon?.('eigene:bauwerk', el) ?? []).find(b => b.id === werte?.bauwerk);
+            if (!ziel || plan.parameter?.teilVon === ziel.id) return null;
+            return bauplanFortschreiben(el, plan, { ...plan.parameter, teilVon: ziel.id });
+        },
+        warumNicht: (s, el, werte, { kandidatenVon = null } = {}) => {
+            if (s.tut === 'anlegen') {
+                if (!String(werte?.name ?? '').trim()) return 'Nichts einzutragen: das Bauwerk braucht eine Bezeichnung.';
+                return BAUWERKSARTEN[werte?.art] ? null : `Art „${werte?.art}" gibt es nicht (${Object.keys(BAUWERKSARTEN).join(', ')}).`;
+            }
+            if (!el?.stand?.bauplan) return 'Nur Eigenbau gehört zu einem Bauwerk — ein geliefertes Bauteil nicht.';
+            if (s.tut === 'loesen') return el.stand.bauplan.parameter?.teilVon ? null : 'Dieses Bauteil gehört zu keinem Bauwerk.';
+            const k = kandidatenVon?.('eigene:bauwerk', el) ?? [];
+            if (!k.length) return 'Es gibt noch kein Bauwerk, zu dem es gehören kann — erst eines anlegen.';
+            return k.some(b => b.id === werte?.bauwerk) ? null : 'Dieses Bauwerk gibt es nicht (mehr).';
+        },
+    },
     mass: {
         vorbelege: (s, el) => {
             // Am Ort: welche Rolle es wird, sagt erst der Punkt — das Feld bleibt leer.
@@ -700,7 +742,7 @@ function werkzeugAusSetzer(d) {
     if (!op) throw new Error(`Setzer „${d.id}": Operation „${d.setzt?.art}" gibt es nicht`);
     return {
         ...d,
-        vorbelegung: (el) => op.vorbelege(d.setzt, el),
+        vorbelegung: (el, kontext) => op.vorbelege(d.setzt, el, kontext),
         // OHNE KENNUNG KEIN EINTRAG — eine Regel für alle Setzer (vorher gab
         // es zwei: fünf lieferten null, sechs einen Eintrag mit leerer
         // Kennung). Bei Mehrfachauswahl zählt der Store das als übersprungen,
@@ -3544,6 +3586,54 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         felder: [{ name: 'inhalte', titel: 'Inhalte', typ: 'liste' }],
         setzt: { art: 'blatt', journal: 'planinhalt', feld: 'inhalte', praefix: 'pi-', titel: 'Planinhalt' },
         vorgangstitel: (werte) => werte?.titel || null,
+    },
+    {
+        /** Ein Bauwerk anlegen (Teil XXVI, Z5e) — ein Behälter ohne Körper, Fabios E18. */
+        id: 'bauwerk-anlegen',
+        titel: 'Bauwerk anlegen',
+        icon: 'building',
+        gruppe: 'bauwerk',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'erzeugt',
+        ohneBauteil: true,
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text' },
+            { name: 'art', titel: 'Art', typ: 'auswahl',
+              optionen: Object.entries(BAUWERKSARTEN).map(([wert, a]) => ({ wert, titel: `${a.titel} — ${a.text}` })) },
+        ],
+        setzt: { art: 'bauwerk', tut: 'anlegen' },
+        vorgangstitel: (werte) => (werte?.name ? `Bauwerk „${werte.name}" anlegen` : null),
+    },
+    {
+        /** Ein eigenes Bauteil (oder Bauwerk) einem Bauwerk zuordnen — `teilVon` ist EIN Wert (E17). */
+        id: 'bauwerk-zuordnen',
+        titel: 'Zu Bauwerk hinzufügen',
+        icon: 'building',
+        gruppe: 'merkmale',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [
+            { name: 'bauwerk', titel: 'Zu diesem Bauwerk', typ: 'auswahl',
+              aus: { geste: 'auswahl', herkunft: 'cde', liefert: 'globalId' },
+              optionenAus: 'eigene:bauwerk' },
+        ],
+        setzt: { art: 'bauwerk', tut: 'zuordnen' },
+    },
+    {
+        /** Ein Teil aus seinem Bauwerk lösen — es steht danach wieder frei an der Site. */
+        id: 'bauwerk-loesen',
+        titel: 'Aus Bauwerk lösen',
+        icon: 'building',
+        gruppe: 'merkmale',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [],
+        setzt: { art: 'bauwerk', tut: 'loesen' },
     },
     {
         /** Rotstift (Teil XXIV, Fahrplan R2) — Striche zeichnen und radieren, wie „Planinhalt". */

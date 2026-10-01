@@ -32,13 +32,14 @@
  * kommt über `wirksamerStand`; was aus der Bibliothek kommt, reicht der
  * Aufrufer herein.
  */
-import { istAnzeigeform, rezeptNach } from '../Bauteilrezepte.js';
+import { istAnzeigeform, istBehaelter, rezeptNach } from '../Bauteilrezepte.js';
 import { verdeckteAus } from '../CdeAchsen.js';
 
 export const KANDIDATENARTEN = Object.freeze({
     'eigene:flaeche': 'eine andere eigene Fläche',
     'vorlage:gleichesRezept': 'eine Vorlage aus der Bibliothek',
     'vorgang:teile': 'die Bauteile desselben Erdbau-Vorgangs',
+    'eigene:bauwerk': 'ein eigenes Bauwerk, zu dem das Subjekt gehören kann',
 });
 
 /**
@@ -54,6 +55,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
         if (art === 'eigene:flaeche') return _eigeneFlaechen(wirksamerStand, el);
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
+        if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
         return [];
     };
 }
@@ -71,6 +73,34 @@ function _eigeneFlaechen(wirksamerStand, el) {
         if (!Array.isArray(punkte) || punkte.length < 3) continue;
         aus.push({ id: globalId, titel: plan.parameter?.name || plan.name || globalId,
                    rezept: plan.rezept, punkte });
+    }
+    return aus;
+}
+
+/**
+ * Die eigenen Bauwerke, zu denen das Subjekt gehören kann (Teil XXVI, Z5e).
+ *
+ * „Bauwerk" ist keine Namensfrage: der Katalog sagt, ob ein Bauplan ein
+ * Behälter ist. Ausgenommen: das Subjekt selbst, Ausgeblendetes — und jedes
+ * Bauwerk, das schon IN dem Subjekt steckt. Sonst ergäbe „Kammer in RÜB, RÜB in
+ * Kammer" einen Kreis, den erst der Schreiber bemerkte.
+ */
+function _eigeneBauwerke(wirksamerStand, el) {
+    if (typeof wirksamerStand !== 'function') return [];
+    const erzeugt = wirksamerStand('erzeugt');
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const steckt = (gid) => {
+        const gesehen = new Set();
+        for (let e = gid; e && !gesehen.has(e); e = erzeugt.get(e)?.parameter?.teilVon) {
+            if (e === el?.globalId) return true;
+            gesehen.add(e);
+        }
+        return false;
+    };
+    const aus = [];
+    for (const [globalId, plan] of erzeugt) {
+        if (!istBehaelter(plan) || verdeckt.has(globalId) || steckt(globalId)) continue;
+        aus.push({ id: globalId, titel: plan.name || globalId, art: plan.parameter?.art ?? null });
     }
     return aus;
 }

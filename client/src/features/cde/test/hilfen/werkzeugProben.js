@@ -60,6 +60,10 @@ function welt() {
             [P(100, 100, 0), P(110, 100, 0)]);
     zeichne(erzeugt, 'streifenfundament-zeichnen', 'cde-FU1', { name: 'FU1', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 },
             [P(100, 99.6, 10), P(110, 99.6, 10)]);
+    // Teil XXVI, Z5e: ein Bauwerk (Behälter ohne Körper) — die Wand W1 gehört dazu.
+    erzeugt.set('cde-BW1', { rezept: 'bauwerk', kategorie: null, name: 'BW1', bauform: 'netz', parameter: { art: 'anlage' } });
+    const w1 = erzeugt.get('cde-W1');
+    erzeugt.set('cde-W1', { ...w1, parameter: { ...w1.parameter, teilVon: 'cde-BW1' } });
     // Ein Erdbau-Vorgang mit zwei Operationen (Grube, Gerinne) — die Punkthöhen stehen in m NN.
     let n = 0;
     const vorgang = mitKennungen((art) => (art === 'operation' ? `op-probe${n++}` : `cde-EB${n++}`), () => ableitungsSchritte({
@@ -139,6 +143,7 @@ const NEU = [
       werte: [{ name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 }] },
     { id: 'streifenfundament-zeichnen', el: zug(P(0, 99.6, 0), P(10, 99.6, 0)), zug: [P(0, 99.6, 0), P(10, 99.6, 0)],
       werte: [{ name: 'FU', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 }] },
+    { id: 'bauwerk-anlegen', el: zug(), werte: [{ name: 'Kammer', art: 'anlage' }] },
     { id: 'planinhalt-setzen', el: zug(), werte: [{ inhalte: [{ id: 'pi-1', wert: { art: 'text', x: 1, z: 2, text: 'A', groesse: 2.5, winkel: 0 } }, { id: 'pi-2', wert: null }] }] },
     { id: 'rotstift-zeichnen', el: zug(), werte: [{ striche: [{ id: 'rs-1', wert: { rev: 0, tool: 'stift', farbe: '#d32f2f', breiteMm: 0.6, points: [[0, 0, 0.5], [1, 1, 0.5]] } }], titel: 'Radieren' }] },
 
@@ -156,6 +161,8 @@ const NEU = [
     { id: 'wand-tragend-setzen', el: eigen('cde-W1'), werte: [{ tragend: 'nein' }] },
     { id: 'wand-aussen-setzen', el: eigen('cde-W1'), werte: [{ aussen: 'nein' }] },
     { id: 'streifenfundament-tragend-setzen', el: eigen('cde-FU1'), werte: [{ tragend: 'nein' }] },
+    { id: 'bauwerk-zuordnen', el: eigen('cde-PL1'), werte: [{ bauwerk: 'cde-BW1' }], kandidaten: KANDIDATEN },
+    { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
     { id: 'merkmalssatz-setzen', el: eigen('cde-L1'), werte: [{ satz: 'Pset_Test', merkmale: [{ name: 'A', value: 1 }] }] },
     { id: 'bauform-auslegen', el: { ...ROHR_G, stand: {} }, werte: [{ bauform: 'achse+profil' }] },
     { id: 'loeschen', el: eigen('cde-L1'), werte: [{}] },

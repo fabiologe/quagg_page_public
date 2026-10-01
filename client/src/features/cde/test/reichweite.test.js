@@ -46,8 +46,9 @@ const HEUTE = Object.freeze({
     // Teil XXVI, Z2: +6 Werkzeuge (Wand und Streifenfundament: je Zeichnen und
     // zwei „… ändern"), alle sechs ohne Oberfläche ausführbar — 64/41 → 70/47.
     // Z3: +4 Setzer für Felder, die bSI-Merkmale sind (tragend ×3, aussen) — 74/51.
-    werkzeuge: 74,
-    ausgefuehrt: 51,
+    // Z5e: +3 Bauwerk anlegen / zuordnen / lösen, alle ohne Oberfläche — 77/54.
+    werkzeuge: 77,
+    ausgefuehrt: 54,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),
