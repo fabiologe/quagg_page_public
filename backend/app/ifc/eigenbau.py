@@ -466,6 +466,101 @@ def _quellen_json(b: dict) -> str | None:
     return json.dumps(werte, sort_keys=True, separators=(",", ":")) if werte else None
 
 
+# DIE ARTEN EINES BAUWERKS (Teil XXVI, Z5 — Fabios E19). Welche Beziehung ein
+# Teil zu seinem Bauwerk hat, ist SCHEMAWISSEN und steht deshalb hier, nicht im
+# Client: in einer Anlage (Raumelement) wird ein Teil ENTHALTEN, in einer
+# Baugruppe (Element) wird es ZERLEGT. Beides zugleich zaehlte es doppelt.
+BAUWERKSARTEN = ("anlage", "baugruppe")
+
+
+def _platz(f, bezug):
+    """Eine Platzierung ohne Versatz, relativ zu `bezug` — die Lage aendert sich nicht."""
+    return f.create_entity(
+        "IfcLocalPlacement", PlacementRelTo=bezug,
+        RelativePlacement=f.create_entity(
+            "IfcAxis2Placement3D", Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))))
+
+
+def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> dict:
+    """Die Behaelter eines Pakets: Bauwerke, in denen Bauteile stehen (Teil XXVI, Z5a).
+
+    `bauwerke: [{cdeId, art: 'anlage'|'baugruppe', name, teilVon?, predefinedType?}]`
+
+      anlage, ohne Eltern      -> IfcFacility, unter der Site ZERLEGT (WR41)
+      anlage in einer Anlage   -> IfcFacilityPartCommon, unter ihr ZERLEGT;
+                                  UsageType ist Pflicht (NOTDEFINED)
+      baugruppe                -> IfcElementAssembly/USERDEFINED mit ObjectType;
+                                  sie selbst wird spaeter wie ein Bauteil eingeordnet
+
+    Eltern vor Kindern; eine unbekannte Elternkennung, ein Kreis oder eine Anlage
+    in einer Baugruppe werden GENANNT und das Bauwerk an die Site gehaengt — nie
+    still verworfen. Ein Bauwerk ohne Koerper braucht keinen: es ist ein
+    Behaelter, kein Bauteil (deshalb ein eigener Paketschluessel, Fund 4).
+
+    @returns {cdeId: {"inst", "rolle": 'anlage'|'teilanlage'|'baugruppe', "eltern"}}
+    """
+    eintraege = {}
+    for w in bauwerke or []:
+        cid = w.get("cdeId") if isinstance(w, dict) else None
+        if not cid:
+            warnungen.append("Bauwerk ohne cdeId — nicht geschrieben")
+        elif w.get("art") not in BAUWERKSARTEN:
+            warnungen.append(f"{cid}: Bauwerksart {w.get('art')!r} unbekannt ({', '.join(BAUWERKSARTEN)}) — nicht geschrieben")
+        elif cid in eintraege:
+            warnungen.append(f"{cid}: Bauwerk steht doppelt im Paket — das erste gilt")
+        else:
+            eintraege[cid] = w
+    behaelter = {}
+
+    def anlegen(cid, pfad=()):
+        if cid in behaelter:
+            return behaelter[cid]
+        w = eintraege[cid]
+        eltern = None
+        eltern_id = w.get("teilVon")
+        if eltern_id:
+            if eltern_id == cid or eltern_id in pfad:
+                warnungen.append(f"{cid}: Bauwerk liegt im Kreis ueber {eltern_id} — an die Site gehaengt")
+            elif eltern_id not in eintraege:
+                warnungen.append(f"{cid}: Bauwerk {eltern_id} gibt es im Paket nicht — an die Site gehaengt")
+            else:
+                eltern = anlegen(eltern_id, pfad + (cid,))
+        if w["art"] == "anlage" and eltern is not None and eltern["rolle"] == "baugruppe":
+            warnungen.append(f"{cid}: eine Anlage kann nicht Teil einer Baugruppe sein — an die Site gehaengt")
+            eltern = None
+        bezug = (eltern["inst"] if eltern else site).ObjectPlacement
+        attrs = dict(GlobalId=guids.guid_aus_cde_id(cid), OwnerHistory=besitz, Name=w.get("name") or None,
+                     ObjectPlacement=_platz(f, bezug))
+        if w["art"] == "baugruppe":
+            inst = f.create_entity("IfcElementAssembly", **attrs, PredefinedType="USERDEFINED",
+                                   ObjectType=w.get("objectType") or "Baugruppe")
+            rolle = "baugruppe"
+        elif eltern is None:
+            inst = f.create_entity("IfcFacility", **attrs, CompositionType="ELEMENT",
+                                   ObjectType=w.get("objectType") or None)
+            rolle = "anlage"
+        else:
+            pt, warnung = _predefined("IfcFacilityPartCommon", w.get("predefinedType"))
+            if warnung:
+                warnungen.append(f"{cid}: {warnung}")
+            inst = f.create_entity("IfcFacilityPartCommon", **attrs, CompositionType="ELEMENT",
+                                   UsageType="NOTDEFINED", PredefinedType=pt)
+            rolle = "teilanlage"
+        if rolle != "baugruppe":
+            # Raumelemente haengen ZERLEGT unter ihrem Raumelternteil (WR41) — nie enthalten (WR31).
+            f.create_entity("IfcRelAggregates", GlobalId=guids.guid_aus_cde_id(f"{satz}|bauwerk|{cid}"),
+                            OwnerHistory=besitz, RelatingObject=eltern["inst"] if eltern else site,
+                            RelatedObjects=[inst])
+        _merkmale(f, besitz, inst, PSET_CDE, {"CdeId": cid, "Rezept": "bauwerk", "Art": w["art"]},
+                  schluessel=f"{satz}|{cid}")
+        behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None}
+        return behaelter[cid]
+
+    for cid in eintraege:
+        anlegen(cid)
+    return behaelter
+
+
 def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str | None = None,
                bearbeiter: str = "", firma: str = "", ablage: str | None = None) -> dict:
     """Das Paket als eigenstaendige IFC4X3_ADD2-Datei schreiben.
@@ -495,9 +590,12 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     except VerbundUnmoeglich as e:                   # unbekanntes System: nennen, nicht raten
         raise PaketFehler(str(e)) from e
     f, site, besitz, koerper_ctx = g["datei"], g["site"], g["besitz"], g["koerper"]
+    # DIE BAUWERKE zuerst (Teil XXVI, Z5a): ein Teil wird relativ zu seinem Behaelter platziert.
+    behaelter_warnungen = []
+    behaelter = _bauwerke_anlegen(f, besitz, site, paket.get("bauwerke"), satz, behaelter_warnungen)
 
     stile = {}
-    produkte, uebersprungen, warnungen = [], [], []
+    produkte, uebersprungen, warnungen = [], [], list(behaelter_warnungen)
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
     mengen_n = 0
     merkmale_n = 0                                   # bSI-Saetze aus Rezeptfeldern (Teil XXVI, Z3)
@@ -543,8 +641,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             warnungen.append(f"{cde_id}: {warnung}")
 
         ursprung = [float(v) for v in (b.get("ursprung") or [0.0, 0.0, 0.0])]
+        # Relativ zu seinem Behaelter (Teil XXVI) — der liegt ohne Versatz, die Lage bleibt.
+        bezug = behaelter[b["teilVon"]]["inst"].ObjectPlacement if b.get("teilVon") in behaelter else site.ObjectPlacement
         platz = f.create_entity(
-            "IfcLocalPlacement", PlacementRelTo=site.ObjectPlacement,
+            "IfcLocalPlacement", PlacementRelTo=bezug,
             RelativePlacement=f.create_entity(
                 "IfcAxis2Placement3D",
                 Location=f.create_entity("IfcCartesianPoint", Coordinates=tuple(ursprung))))
@@ -657,10 +757,50 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         # WIRT in der Gliederung, nicht selbst. Das Prueftor hat es beim
         # zweiten Lauf gezeigt, nachdem der Wirt geschlossen war.
         eingeordnet = [p for p in produkte if not p.is_a("IfcFeatureElement")]
-        if eingeordnet:
+        # JE BEHAELTER (Teil XXVI, Z5a): ein Teil einer ANLAGE wird dort enthalten,
+        # ein Teil einer BAUGRUPPE zerlegt — und dann NICHT zusaetzlich enthalten.
+        # Die Baugruppe selbst wird eingeordnet wie ein Bauteil. Ohne `teilVon`
+        # bleibt alles bei der Site, mit derselben Beziehung wie vor Teil XXVI.
+        paket_von = {el.id(): b for el, b in geschrieben}
+        in_site, enthalten, zerlegt = [], {}, {}
+        for p in eingeordnet:
+            ziel_id = (paket_von.get(p.id()) or {}).get("teilVon")
+            if ziel_id and ziel_id not in behaelter:
+                warnungen.append(f"{(paket_von.get(p.id()) or {}).get('cdeId')}: Bauwerk {ziel_id} gibt es "
+                                 "im Paket nicht — an der Site eingeordnet")
+            b_ziel = behaelter.get(ziel_id)
+            if b_ziel is None:
+                in_site.append(p)
+            elif b_ziel["rolle"] == "baugruppe":
+                zerlegt.setdefault(ziel_id, []).append(p)
+            else:
+                enthalten.setdefault(ziel_id, []).append(p)
+        for cid, b_ziel in behaelter.items():
+            if b_ziel["rolle"] != "baugruppe":
+                continue
+            e = behaelter.get(b_ziel["eltern"])
+            if e is None:
+                in_site.append(b_ziel["inst"])
+            elif e["rolle"] == "baugruppe":
+                zerlegt.setdefault(b_ziel["eltern"], []).append(b_ziel["inst"])
+            else:
+                enthalten.setdefault(b_ziel["eltern"], []).append(b_ziel["inst"])
+        if in_site:
             f.create_entity("IfcRelContainedInSpatialStructure",
                             GlobalId=guids.guid_aus_cde_id(f"{satz}|enthalten"), OwnerHistory=besitz,
-                            RelatingStructure=site, RelatedElements=eingeordnet)
+                            RelatingStructure=site, RelatedElements=in_site)
+        for cid, glieder in enthalten.items():
+            f.create_entity("IfcRelContainedInSpatialStructure",
+                            GlobalId=guids.guid_aus_cde_id(f"{satz}|enthalten|{cid}"), OwnerHistory=besitz,
+                            RelatingStructure=behaelter[cid]["inst"], RelatedElements=glieder)
+        for cid, glieder in zerlegt.items():
+            f.create_entity("IfcRelAggregates", GlobalId=guids.guid_aus_cde_id(f"{satz}|zerlegt|{cid}"),
+                            OwnerHistory=besitz, RelatingObject=behaelter[cid]["inst"], RelatedObjects=glieder)
+        leer = [cid for cid in behaelter
+                if not enthalten.get(cid) and not zerlegt.get(cid)
+                and not any(x["eltern"] == cid for x in behaelter.values())]
+        for cid in leer:
+            warnungen.append(f"{cid}: Bauwerk ohne Teile")
         # V08 des Prueftors: jedes Bauteil gehoert einer Fachmodell-Gruppe an —
         # Erdbau und Eigenbau getrennt, damit ein Empfaenger den Aushub findet,
         # ohne Rezeptnamen zu kennen.
@@ -669,7 +809,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         ausgelassen = [a for a in paket.get("ausgelassen") or [] if isinstance(a, dict) and a.get("globalId")]
         weg_vorgaenge = "; ".join(sorted({str(a["vorgang"]) for a in ausgelassen if a.get("vorgang")}))[:250]
         je_fachmodell = {}
-        for el, b in geschrieben:
+        baugruppen = [(x["inst"], {"fachmodell": "cde"}) for x in behaelter.values() if x["rolle"] == "baugruppe"]
+        for el, b in [*geschrieben, *baugruppen]:
             art = b.get("fachmodell") if b.get("fachmodell") in FACHMODELLE else "cde"
             je_fachmodell.setdefault(art, []).append(el)
         gruppe_von = {}                              # Element-Id -> seine Fachmodell-Gruppe
@@ -719,6 +860,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "stile": len(stile),
         "mengen": mengen_n,
         "merkmalsaetze": merkmale_n,
+        "bauwerke": len(behaelter),
         "vorgaenge": vorgaenge,
         "typen": typen_n,
         "kanten": len(kanten_neu),

@@ -15,6 +15,7 @@ classDiagram
   IfcElement <|-- IfcCivilElement
   IfcElement <|-- IfcDistributionElement
   IfcElement <|-- IfcElectricalElement
+  IfcElement <|-- IfcElementAssembly
   IfcElement <|-- IfcElementComponent
   IfcElement <|-- IfcEquipmentElement
   IfcElement <|-- IfcFeatureElement
@@ -49,6 +50,7 @@ classDiagram
   style IfcBuiltElement fill:#dcedc8,stroke:#558b2f
   style IfcCivilElement fill:#dcedc8,stroke:#558b2f
   style IfcElectricalElement fill:#dcedc8,stroke:#558b2f
+  style IfcElementAssembly fill:#dcedc8,stroke:#558b2f
   style IfcElementComponent fill:#dcedc8,stroke:#558b2f
   style IfcEquipmentElement fill:#dcedc8,stroke:#558b2f
   style IfcFeatureElement fill:#dcedc8,stroke:#558b2f
@@ -232,16 +234,22 @@ classDiagram
   style IfcReferent fill:#dcedc8,stroke:#558b2f
 ```
 
-### IfcSpatialElement — 4 genutzt
+### IfcSpatialElement — 6 genutzt
 
 ```mermaid
 classDiagram
   direction LR
+  IfcFacilityPart <|-- IfcFacilityPartCommon
   IfcSpatialElement <|-- IfcSpatialStructureElement
+  IfcSpatialStructureElement <|-- IfcFacility
+  IfcSpatialStructureElement <|-- IfcFacilityPart
   IfcSpatialStructureElement <|-- IfcSite
   IfcSpatialStructureElement <|-- IfcSpace
+  <<abstract>> IfcFacilityPart
   <<abstract>> IfcSpatialElement
   <<abstract>> IfcSpatialStructureElement
+  style IfcFacility fill:#dcedc8,stroke:#558b2f
+  style IfcFacilityPartCommon fill:#dcedc8,stroke:#558b2f
   style IfcSite fill:#dcedc8,stroke:#558b2f
   style IfcSpace fill:#dcedc8,stroke:#558b2f
   style IfcSpatialElement fill:#dcedc8,stroke:#558b2f
@@ -307,9 +315,12 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcEarthworksFill](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcEarthworksFill.htm) | Eigenbau-Paket, Gelände, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcElectricDistributionPoint](https://standards.buildingsmart.org/IFC/RELEASE/IFC2x3/TC1/HTML/ifcelectricaldomain/lexical/ifcelectricdistributionpoint.htm) | Typprofile | nein | nur IFC2X3 |
 | [IfcElectricalElement](https://standards.buildingsmart.org/IFC/RELEASE/IFC2x3/TC1/HTML/ifcproductextension/lexical/ifcelectricalelement.htm) | Typprofile | nein | nur IFC2X3 |
+| [IfcElementAssembly](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcElementAssembly.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcElementComponent](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcElementComponent.htm) | Typprofile | ja | IFC4X3_ADD2 |
 | [IfcElementQuantity](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcElementQuantity.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcEquipmentElement](https://standards.buildingsmart.org/IFC/RELEASE/IFC2x3/TC1/HTML/ifcproductextension/lexical/ifcequipmentelement.htm) | Typprofile | nein | nur IFC2X3 |
+| [IfcFacility](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFacility.htm) | Eigenbau | nein | IFC4X3_ADD2 |
+| [IfcFacilityPartCommon](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFacilityPartCommon.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcFeatureElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFeatureElement.htm) | Eigenbau, Typprofile | ja | IFC4X3_ADD2 |
 | [IfcFeatureElementSubtraction](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFeatureElementSubtraction.htm) | Eigenbau | ja | IFC4X3_ADD2 |
 | [IfcFlowFitting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcFlowFitting.htm) | Typprofile | nein | IFC4X3_ADD2 |
@@ -341,7 +352,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcReferent](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcReferent.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcReinforcingBar](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcReinforcingBar.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcReinforcingMesh](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcReinforcingMesh.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcRelAggregates](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAggregates.htm) | Verbund | nein | IFC4X3_ADD2 |
+| [IfcRelAggregates](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAggregates.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelAssignsToGroup](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssignsToGroup.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelAssociatesDocument](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssociatesDocument.htm) | Herkunft | nein | IFC4X3_ADD2 |
 | [IfcRelContainedInSpatialStructure](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelContainedInSpatialStructure.htm) | Eigenbau | nein | IFC4X3_ADD2 |

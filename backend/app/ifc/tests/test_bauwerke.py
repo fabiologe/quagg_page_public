@@ -282,3 +282,89 @@ def test_vertrag_kammer_traegt_ihre_mengen(kammer):
     # Die Messmethode sagt die Wahrheit: KOERPER, nicht Gelaenderaster.
     assert {v[1] for v in qto.values()} == {MENGEN_METHODEN["koerper"]}
     assert kammer["bericht"]["mengen"] == 6
+
+
+# ── Z5a — Bauwerke als Behaelter ─────────────────────────────────────────────
+
+def _georef(paket):
+    """Das Paket ins UTM32-Fenster (V06a/V06b) — wie in test_eigenbau.py."""
+    paket["crs"] = "EPSG:25832"
+    for b in paket["bauteile"]:
+        b["ursprung"] = [410300.0, 5460100.0, 250.0]
+    return paket
+
+
+def _sauber(pfad):
+    """Null offene Befunde im ganzen Prueftor (Schema, Where-Rules, Verbundregeln)."""
+    from app.ifc.pruefe import offen, pruefe
+    fehl = [b for b in pruefe(pfad)["befunde"] if offen(b)]
+    assert fehl == [], fehl
+
+
+def _beziehungen(pfad):
+    """Wer enthaelt / zerlegt wen — per Klasse und Name."""
+    datei = ifcopenshell.open(str(pfad))
+    enthalten = {e.Name: (r.RelatingStructure.is_a(), r.RelatingStructure.Name)
+                 for r in datei.by_type("IfcRelContainedInSpatialStructure") for e in r.RelatedElements}
+    zerlegt = {e.Name: (r.RelatingObject.is_a(), r.RelatingObject.Name)
+               for r in datei.by_type("IfcRelAggregates") for e in r.RelatedObjects}
+    return datei, enthalten, zerlegt
+
+
+def test_eine_anlage_enthaelt_ihre_teile(tmp_path):
+    ziel = tmp_path / "anlage.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-K"), _bauteil("cde-b", "IFCWALL", teilVon="cde-K"),
+                           _bauteil("cde-frei", "IFCSLAB"),
+                           bauwerke=[{"cdeId": "cde-K", "art": "anlage", "name": "Kammer"}]))
+    bericht = baue_datei(paket, ziel, schluessel="probe")
+    assert bericht["bauwerke"] == 1 and bericht["bauteile"] == 3
+    datei, enthalten, zerlegt = _beziehungen(ziel)
+    assert enthalten == {"cde-a": ("IfcFacility", "Kammer"), "cde-b": ("IfcFacility", "Kammer"),
+                         "cde-frei": ("IfcSite", datei.by_type("IfcSite")[0].Name)}
+    assert zerlegt["Kammer"][0] == "IfcSite"               # die Anlage haengt zerlegt unter der Site (WR41)
+    assert _regeln(ziel) == []
+    _sauber(ziel)
+
+
+def test_eine_baugruppe_zerlegt_ihre_teile_und_zaehlt_sie_nicht_doppelt(tmp_path):
+    ziel = tmp_path / "baugruppe.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-G"), _bauteil("cde-b", "IFCSLAB", teilVon="cde-G"),
+                           bauwerke=[{"cdeId": "cde-G", "art": "baugruppe", "name": "Fertigteil"}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    datei, enthalten, zerlegt = _beziehungen(ziel)
+    assert zerlegt["cde-a"] == ("IfcElementAssembly", "Fertigteil") == zerlegt["cde-b"]
+    assert "cde-a" not in enthalten and "cde-b" not in enthalten     # zerlegt, NICHT zusaetzlich enthalten
+    assert enthalten["Fertigteil"][0] == "IfcSite"                   # die Baugruppe selbst ist eingeordnet
+    g = datei.by_type("IfcElementAssembly")[0]
+    assert (g.PredefinedType, g.ObjectType) == ("USERDEFINED", "Baugruppe")
+    _sauber(ziel)
+
+
+def test_eine_anlage_in_einer_anlage_wird_ein_anlagenteil(tmp_path):
+    ziel = tmp_path / "teil.ifc"
+    paket = _georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon="cde-T"),
+                           bauwerke=[{"cdeId": "cde-R", "art": "anlage", "name": "RUEB"},
+                                     {"cdeId": "cde-T", "art": "anlage", "name": "Beckenbauwerk", "teilVon": "cde-R",
+                                      "predefinedType": "BELOWGROUND"}]))
+    baue_datei(paket, ziel, schluessel="probe")
+    datei, enthalten, zerlegt = _beziehungen(ziel)
+    teil = datei.by_type("IfcFacilityPartCommon")[0]
+    assert (teil.PredefinedType, teil.UsageType) == ("BELOWGROUND", "NOTDEFINED")   # UsageType ist Pflicht
+    assert zerlegt["Beckenbauwerk"] == ("IfcFacility", "RUEB")
+    assert enthalten["cde-a"] == ("IfcFacilityPartCommon", "Beckenbauwerk")
+    _sauber(ziel)
+
+
+@pytest.mark.parametrize("bauwerke, teil_von, grund", [
+    ([], "cde-X", "Bauwerk cde-X gibt es im Paket nicht"),
+    ([{"cdeId": "cde-A", "art": "anlage", "teilVon": "cde-B"}, {"cdeId": "cde-B", "art": "anlage", "teilVon": "cde-A"}],
+     "cde-A", "im Kreis"),
+    ([{"cdeId": "cde-A", "art": "turm"}], "cde-A", "Bauwerksart 'turm' unbekannt"),
+])
+def test_was_nicht_stimmt_wird_genannt_und_an_die_site_gehaengt(tmp_path, bauwerke, teil_von, grund):
+    ziel = tmp_path / "x.ifc"
+    bericht = baue_datei(_georef(_paket(_bauteil("cde-a", "IFCSLAB", teilVon=teil_von), bauwerke=bauwerke)),
+                         ziel, schluessel="probe")
+    assert any(grund in w for w in bericht["warnungen"]), bericht["warnungen"]
+    assert _regeln(ziel) == []
+    _sauber(ziel)
