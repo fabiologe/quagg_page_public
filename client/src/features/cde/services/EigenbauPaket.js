@@ -47,7 +47,7 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { objektTypVon } from './Bauteilrezepte.js';
+import { lagemerkmaleVon, objektTypVon } from './Bauteilrezepte.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -172,6 +172,16 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     const { punkte, dreiecke, entartet } = verschweisse(landes, teil.index ?? null);
     if (punkte.length < 3 || !dreiecke.length) return null;
     const { ursprung, punkte: lokal } = mitUrsprung(punkte);
+    // LAGEMERKMALE (Fund 10): eine Höhe, die der Körper schon kennt — die
+    // Oberkante einer Überlaufschwelle —, gemessen an DENSELBEN Landespunkten,
+    // die in die Datei gehen. Getippte Merkmale (aus Feldern) gehen vor nichts:
+    // ein Merkmal hat genau eine Quelle, das Katalogschema hält sie getrennt.
+    let oberkante = -Infinity, unterkante = Infinity;
+    for (const p of punkte) { if (p[2] > oberkante) oberkante = p[2]; if (p[2] < unterkante) unterkante = p[2]; }
+    const merkmale = { ...(teil.merkmale ?? {}) };
+    for (const [satz, werte] of Object.entries(lagemerkmaleVon(plan, { oberkante, unterkante }))) {
+        merkmale[satz] = { ...(merkmale[satz] ?? {}), ...werte };
+    }
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
     const f = farbeFuer(klasse, farbsatz);
     const q = plan?.parameter?.quellen ?? {};
@@ -207,7 +217,7 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         ...(typ ? { typ } : {}),
         // OPTIONAL (Teil XXVI, Z3): bSI-Merkmale aus Rezeptfeldern. Nur wenn es welche
         // gibt — ein Paket ohne sie bleibt Byte für Byte, was es war.
-        ...(Object.keys(teil.merkmale ?? {}).length ? { merkmale: teil.merkmale } : {}),
+        ...(Object.keys(merkmale).length ? { merkmale } : {}),
         // OPTIONAL (Teil XXVI, Z5d): das Bauwerk, zu dem dieses Teil gehört (E17: EIN Wert).
         ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des

@@ -9,7 +9,7 @@
 
 import { ENTITY_META } from './entity-schema.js';
 
-/** 760 Vorlagen von buildingSMART für IFC4X3_ADD2. */
+/** 760 Vorlagen von buildingSMART für IFC4X3_ADD2, dazu 4 hauseigene (`herkunft`, daten/quagg-merkmale.json). */
 export const PSET_TEMPLATES = {
   "Pset_ActionRequest": {
     label: "Property Set: Action Request",
@@ -10077,6 +10077,55 @@ export const PSET_TEMPLATES = {
       {"name": "Height", "type": "IfcLengthMeasure", "description": "Characteristic height Total outer height of the window lining."},
       {"name": "Perimeter", "type": "IfcLengthMeasure", "description": "Perimeter of the object."},
       {"name": "Area", "type": "IfcAreaMeasure", "description": "Calculated area for the object. Total area of the outer lining of the window."},
+    ],
+  },
+  "Quagg_Drossel": {
+    label: "Merkmalssatz (Quagg): Drossel",
+    description: "Der Drosselabfluss bei gegebener Stauhöhe — die Zahl, die Pset_ValveTypeCommon nicht vorsieht. Drosselorgan nach DWA-A 166.",
+    herkunft: "Quagg",
+    art: "PSET_OCCURRENCEDRIVEN",
+    applicableTo: ["IFCVALVE", "IFCPIPESEGMENT"],
+    props: [
+      {"name": "Drosselabfluss", "type": "IfcVolumetricFlowRateMeasure", "description": "Drosselabfluss Q_Dr in m³/s."},
+      {"name": "Stauhoehe", "type": "IfcLengthMeasure", "description": "Stauhöhe in m, für die Q_Dr gilt."},
+      {"name": "Kennlinie", "type": "IfcText", "description": "Q-h-Kennlinie oder ihr Verweis (Hersteller, Messung)."},
+    ],
+  },
+  "Quagg_Entlastung": {
+    label: "Merkmalssatz (Quagg): Entlastung",
+    description: "Die Zahlen einer Überlaufschwelle, an denen die Entlastungsrechnung hängt. Bemessung nach DWA-A 128, Leistungsnachweis nach DWA-A 111 (dort die Schwelle als Messwehr).",
+    herkunft: "Quagg",
+    art: "PSET_OCCURRENCEDRIVEN",
+    applicableTo: ["IFCWALL"],
+    props: [
+      {"name": "Art", "type": "IfcLabel", "description": "Beckenüberlauf, Klärüberlauf oder Notüberlauf."},
+      {"name": "SchwellenhoeheNN", "type": "IfcLengthMeasure", "description": "Oberkante der Schwelle in m über NN — die maßgebende Zahl. Gemessen am Körper, nicht getippt."},
+      {"name": "Schwellenlaenge", "type": "IfcLengthMeasure", "description": "Wirksame Überfalllänge in m."},
+      {"name": "Ueberfallbeiwert", "type": "IfcReal", "description": "Überfallbeiwert µ bzw. C_d; die Quelle steht in Herleitung."},
+      {"name": "Herleitung", "type": "IfcText", "description": "Woher der Beiwert stammt: Regelwerk mit Tabelle oder Messung mit Datum."},
+    ],
+  },
+  "Quagg_Rechen": {
+    label: "Merkmalssatz (Quagg): Rechen",
+    description: "Was einen Rechen kennzeichnet und Pset_FilterTypeCommon nicht kennt.",
+    herkunft: "Quagg",
+    art: "PSET_OCCURRENCEDRIVEN",
+    applicableTo: ["IFCFILTER/STRAINER"],
+    props: [
+      {"name": "Stababstand", "type": "IfcPositiveLengthMeasure", "description": "Lichter Stababstand in m."},
+      {"name": "Anstroemwinkel", "type": "IfcPlaneAngleMeasure", "description": "Neigung des Rechens gegen die Sohle, in der Winkeleinheit der Datei."},
+      {"name": "Reinigungsart", "type": "IfcLabel", "description": "Hand, maschinell, …"},
+    ],
+  },
+  "Quagg_Speicherraum": {
+    label: "Merkmalssatz (Quagg): Speicherraum",
+    description: "Die Betriebshöhen eines Speicherraums. Die Beckenart steht als Klassifizierung an der Anlage, das Volumen als Qto_SpaceBaseQuantities.NetVolume — beides nicht hier.",
+    herkunft: "Quagg",
+    art: "PSET_OCCURRENCEDRIVEN",
+    applicableTo: ["IFCSPACE"],
+    props: [
+      {"name": "SohlhoeheNN", "type": "IfcLengthMeasure", "description": "Sohle des Raums in m über NN. Gemessen am Körper, nicht getippt."},
+      {"name": "BetriebswasserNN", "type": "IfcLengthMeasure", "description": "Wasserspiegel in m über NN, bei dem die Schwelle anspringt."},
     ],
   },
 };

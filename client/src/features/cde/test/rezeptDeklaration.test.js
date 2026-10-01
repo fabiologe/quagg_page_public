@@ -90,6 +90,7 @@ describe('2 — es sind Daten', () => {
             platte: { punkte: [[0, 5, 0], [6, 5.3, 0], [6, 5.6, 4], [0, 5.3, 4]], dicke: 0.25 },
             wand: { punkte: [[0, 210, 0], [10, 210, 0]], dicke: 0.3, wandhoehe: 2.5 },
             streifenfundament: { punkte: [[0, 209.6, 0], [10, 209.6, 0]], breite: 1.2, dicke: 0.4 },
+            ueberlaufschwelle: { punkte: [[0, 211.9, 0], [4, 211.9, 0]], dicke: 0.3, wandhoehe: 0.5 },
             raum: { punkte: [[0.3, 210, 0.3], [4.3, 210, 0.3], [4.3, 210, 3.3], [0.3, 210, 3.3]], raumhoehe: 2.5 },
         };
         for (const d of kopie) {

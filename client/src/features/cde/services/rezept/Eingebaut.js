@@ -45,10 +45,11 @@ const TYP = Object.freeze({ name: 'kategorie', titel: 'IFC-Typ', typ: 'text' });
  * (`pruefeBauplan`); `USERDEFINED` verlangt den Objekttyp — den deutschen
  * Fachbegriff, etwa „Überlaufschwelle". Leer heisst: die Vorgabe des Rezepts.
  */
-const ausfuehrung = (vorgabe = undefined) => [
+const ausfuehrung = (vorgabe = undefined, objektTyp = undefined) => [
     { name: 'predefinedType', titel: 'Ausführung (IFC-PredefinedType)', typ: 'text', leerErlaubt: true, setzbar: true,
       ...(vorgabe ? { vorgabe } : {}) },
-    { name: 'objektTyp', titel: 'Objekttyp (Pflicht bei USERDEFINED)', typ: 'text', leerErlaubt: true, setzbar: true },
+    { name: 'objektTyp', titel: 'Objekttyp (Pflicht bei USERDEFINED)', typ: 'text', leerErlaubt: true, setzbar: true,
+      ...(objektTyp ? { vorgabe: objektTyp } : {}) },
 ];
 
 /**
@@ -269,6 +270,53 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         /**
+         * DIE ÜBERLAUFSCHWELLE (Teil XXVI, Z8): geometrisch eine niedrige Wand —
+         * dieselbe Linie mit Rechteckprofil, gezeichnet am Fuss. Was sie zur
+         * Schwelle macht, sind drei Zahlen, die keine bSI-Vorlage kennt
+         * (`Quagg_Entlastung`, Katalog `backend/app/ifc/daten/quagg-merkmale.json`):
+         * Schwellenhöhe, Überfalllänge, Überfallbeiwert.
+         *
+         * Die SCHWELLENHÖHE ist die Oberkante des Körpers — gemessen
+         * (`lagemerkmale`), nie getippt: Fuss + Höhe ist schon die Zahl.
+         * Im IFC: `IfcWall/USERDEFINED`, ObjectType „Überlaufschwelle" (Fund 8).
+         * Nicht tragend und innen — sie steht im Becken, nicht im Erdreich.
+         */
+        id: 'ueberlaufschwelle',
+        titel: 'Überlaufschwelle',
+        icon: 'cat-wall',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCWALL',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3 },
+            { name: 'wandhoehe', titel: 'Höhe über dem Fuss', einheit: 'm', typ: 'zahl', min: 0.05, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.5, setzbar: true },
+            { name: 'tragend', titel: 'Tragend (leer = nein)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'nein',
+              leerErlaubt: true, pset: 'Pset_WallCommon.LoadBearing' },
+            { name: 'aussen', titel: 'Aussenwand (leer = nein)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'nein',
+              leerErlaubt: true, pset: 'Pset_WallCommon.IsExternal' },
+            { name: 'ueberlaufart', titel: 'Art des Überlaufs', typ: 'auswahl', leerErlaubt: true, setzbar: true,
+              optionen: [{ wert: 'Beckenüberlauf', titel: 'Beckenüberlauf' }, { wert: 'Klärüberlauf', titel: 'Klärüberlauf' },
+                         { wert: 'Notüberlauf', titel: 'Notüberlauf' }],
+              pset: 'Quagg_Entlastung.Art' },
+            { name: 'schwellenlaenge', titel: 'Wirksame Überfalllänge (leer = nicht angegeben)', einheit: 'm', typ: 'zahl',
+              min: 0, gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true, pset: 'Quagg_Entlastung.Schwellenlaenge' },
+            { name: 'ueberfallbeiwert', titel: 'Überfallbeiwert µ', typ: 'zahl', min: 0.3, max: 1, gueltig: { ueber: 0 },
+              leerErlaubt: true, setzbar: true, pset: 'Quagg_Entlastung.Ueberfallbeiwert' },
+            { name: 'herleitung', titel: 'Herleitung des Beiwerts', typ: 'text', leerErlaubt: true, setzbar: true,
+              pset: 'Quagg_Entlastung.Herleitung' },
+            ...ausfuehrung('USERDEFINED', 'Überlaufschwelle'),
+        ],
+        lagemerkmale: { 'Quagg_Entlastung.SchwellenhoeheNN': 'oberkante' },
+        hoehenAus: 'gelaende',
+        geometrie: { art: 'sweep', achsbezug: 'sohle',
+                     profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
+    },
+    {
+        /**
          * DER RAUM (Teil XXVI, Z6): das Speichervolumen eines Beckens ist kein
          * Bauteil, es ist ein RAUM — der Hohlraum zwischen Wand und Platte. Der
          * Umriss ist der Fussboden (m NN), die lichte Höhe geht nach oben; das
@@ -293,7 +341,12 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'raumhoehe', titel: 'Lichte Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 100, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
             // Innen, solange niemand „offen" sagt (Fund 8) — ein offenes Becken ist EXTERNAL.
             ...ausfuehrung('INTERNAL'),
+            // Quagg_Speicherraum (Z8): die Höhe, bei der die Schwelle anspringt — eine Eingabe.
+            { name: 'betriebswasser', titel: 'Betriebswasserspiegel', einheit: 'm NN', typ: 'zahl', leerErlaubt: true,
+              setzbar: true, pset: 'Quagg_Speicherraum.BetriebswasserNN' },
         ],
+        // Die Sohle des Raums ist sein Boden — gemessen, nicht getippt.
+        lagemerkmale: { 'Quagg_Speicherraum.SohlhoeheNN': 'unterkante' },
         geometrie: { art: 'platte', dicke: 'raumhoehe', richtung: 'oben' },
         // Qto_SpaceBaseQuantities — die Fläche verlangt die IDS („Räume — Fläche dokumentiert").
         menge: { netFloorArea: 'grundflaeche', height: 'raumhoehe', netVolume: 'volumen' },

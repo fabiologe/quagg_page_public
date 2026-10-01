@@ -55,6 +55,18 @@ ZIELFAMILIE = "IFC4X3"
 ALTSCHEMATA = ("IFC4", "IFC2X3")
 
 SNAPSHOT = Path(__file__).parent / "daten" / f"schema_{ZIELSCHEMA}.json"
+# Hauseigene Merkmalssaetze (Teil XXVI, Z8): Werte, die keine bSI-Vorlage kennt
+# (Schwellenhoehe, Drosselabfluss …). EINE Quelle fuer Schreiber und Client —
+# `generiere_client` legt sie neben die bSI-Vorlagen in data/pset-templates.js.
+HAUSEIGENE = Path(__file__).parent / "daten" / "quagg-merkmale.json"
+# Saetze, die der Schreiber SELBST fuehrt — kein Katalog darf sie erklaeren.
+RESERVIERT = frozenset({"Quagg_CDE", "Quagg_Herkunft", "Quagg_Vorgang", "Quagg_Fachmodell", "Quagg_Georeferenz"})
+# Was ein hauseigenes Merkmal sein darf: Einzelwerte, deren Typ der Schreiber
+# typisieren kann (`eigenbau._nach_vorlage`).
+HAUSEIGENE_TYPEN = frozenset({
+    "IfcLabel", "IfcText", "IfcIdentifier", "IfcBoolean", "IfcLogical", "IfcInteger", "IfcReal",
+    "IfcLengthMeasure", "IfcPositiveLengthMeasure", "IfcAreaMeasure", "IfcVolumeMeasure",
+    "IfcVolumetricFlowRateMeasure", "IfcPlaneAngleMeasure", "IfcRatioMeasure"})
 FORMAT = 1
 
 # ── Was ifcopenshell NICHT weiss: wie alte Namen heute heissen ──────────────
@@ -360,6 +372,49 @@ def snapshot() -> dict:
     return json.loads(SNAPSHOT.read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=None)
+def hauseigene_vorlagen() -> dict:
+    """Die hauseigenen Merkmalssaetze, in der Form der bSI-Vorlagen des Schnappschusses.
+
+    Geprueft beim Laden, LAUT: ein Satz, der nicht `Quagg_` heisst, einen Namen
+    des Schreibers belegt, eine bSI-Vorlage verdeckt, fuer eine Klasse gilt, die
+    es nicht gibt, oder ein Merkmal fuehrt, das der Schreiber nicht typisieren
+    kann, ist ein Fehler im Repo — still verworfen waere er eine Luecke im IFC.
+    """
+    roh = json.loads(HAUSEIGENE.read_text(encoding="utf-8"))
+    bsi = snapshot()["vorlagen"]
+    out, fehler = {}, []
+    for name, v in (roh.get("saetze") or {}).items():
+        if not re.fullmatch(r"Quagg_[A-Za-z0-9]+", name):
+            fehler.append(f"{name}: ein hauseigener Satz heisst Quagg_…")
+        if name in RESERVIERT:
+            fehler.append(f"{name}: fuehrt der Schreiber selbst")
+        if any(n.upper() == name.upper() for n in bsi):
+            fehler.append(f"{name}: verdeckt eine bSI-Vorlage")
+        for g in v.get("gilt_fuer") or []:
+            klasse, _, pt = g.partition("/")
+            if not name_von(klasse):
+                fehler.append(f"{name}: Klasse {klasse} gibt es nicht")
+            elif pt and pt not in (predefined(klasse) or []):
+                fehler.append(f"{name}: {klasse} kennt den PredefinedType {pt} nicht")
+        if not v.get("gilt_fuer"):
+            fehler.append(f"{name}: gilt fuer keine Klasse")
+        for m in v.get("merkmale") or []:
+            if len(m) != 5 or m[1] != "P_SINGLEVALUE" or m[2] not in HAUSEIGENE_TYPEN:
+                fehler.append(f"{name}.{m[0] if m else '?'}: nur Einzelwerte eines typisierbaren Typs")
+        out[name] = {"art": "PSET_OCCURRENCEDRIVEN", "gilt_fuer": list(v["gilt_fuer"]),
+                     "beschreibung": v.get("beschreibung") or "", "merkmale": [list(m) for m in v.get("merkmale") or []],
+                     "herkunft": roh.get("herausgeber") or "Quagg"}
+    if fehler:
+        raise RuntimeError("quagg-merkmale.json: " + "; ".join(fehler))
+    return out
+
+
+def _alle_vorlagen(snap=None) -> dict:
+    """bSI-Vorlagen des Schnappschusses und die hauseigenen — ein Namensraum (Quagg_ gegen Pset_/Qto_)."""
+    return {**(snap or snapshot())["vorlagen"], **hauseigene_vorlagen()}
+
+
 def _ents(snap=None) -> dict:
     return (snap or snapshot())["entitaeten"]
 
@@ -448,10 +503,10 @@ def where_rules(name, geerbt: bool = True, snap=None) -> list:
 
 
 def vorlage(name, snap=None):
-    """Eine Pset-/Qto-Vorlage beim Namen (Gross-/Kleinschreibung egal), mit `name` — oder None."""
-    s = snap or snapshot()
+    """Eine Pset-/Qto-Vorlage beim Namen (Gross-/Kleinschreibung egal), mit `name` — oder None.
+    Auch ein hauseigener Satz (`Quagg_…`, Teil XXVI Z8)."""
     ziel = str(name or "").strip().upper()
-    for n, v in s["vorlagen"].items():
+    for n, v in _alle_vorlagen(snap).items():
         if n.upper() == ziel:
             return {"name": n, **v}
     return None
@@ -468,7 +523,7 @@ def vorlagen_fuer(name, predefined_type=None, snap=None) -> list:
     kette = {n.upper() for n in vererbung(name, s)}
     pt = str(predefined_type).upper() if predefined_type else None
     out = []
-    for n, v in s["vorlagen"].items():
+    for n, v in _alle_vorlagen(snap).items():
         for eintrag_ in v["gilt_fuer"]:
             klasse, _, typ = eintrag_.partition("/")
             if klasse.upper() in kette and (not typ or typ.upper() == pt):

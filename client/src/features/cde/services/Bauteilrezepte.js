@@ -38,7 +38,7 @@
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
-import { merkmaleAusFeldern } from './katalog/Merkmalsziele.js';
+import { lagemerkmaleAus, merkmaleAusFeldern } from './katalog/Merkmalsziele.js';
 import { BAUWERKSTYP_OPTIONEN } from './katalog/Bauwerkstypen.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
@@ -477,9 +477,19 @@ export function predefinedTypeVon(bauplan) {
     return bauplan?.predefinedType ?? null;
 }
 
-/** Der Objekttyp (IFC `ObjectType`) eines gezeichneten Bauteils — der Fachbegriff, oder null. */
+/** Der Objekttyp (IFC `ObjectType`) eines gezeichneten Bauteils — der Fachbegriff (leer = Vorgabe des Rezepts), oder null. */
 export function objektTypVon(bauplan) {
-    return String(bauplan?.parameter?.objektTyp ?? '').trim() || null;
+    return String(bauplan?.parameter?.objektTyp ?? '').trim()
+        || String(REZEPTE_FELD(bauplan, 'objektTyp')?.vorgabe ?? '').trim() || null;
+}
+
+/**
+ * Die LAGEMERKMALE eines Bauplans (Fund 10): Merkmale, die eine Höhe des
+ * gebauten Körpers sind — gemessen vom Paketbauer, nie getippt.
+ * @param hoehen  { oberkante, unterkante } in m NN
+ */
+export function lagemerkmaleVon(bauplan, hoehen) {
+    return lagemerkmaleAus(rezeptNach(bauplan?.rezept)?.lagemerkmale, hoehen);
 }
 
 function REZEPTE_FELD(bauplan, name) {
@@ -813,7 +823,7 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
         const erlaubt = _predefinedErlaubt(typ);
         if (!erlaubt.includes(pt)) {
             fehler.push(`Ausführung „${pt}" gibt es für ${String(typ).toUpperCase()} nicht (${erlaubt.join(', ') || 'keine'})`);
-        } else if (pt === 'USERDEFINED' && !objektTypVon({ parameter })) {
+        } else if (pt === 'USERDEFINED' && !objektTypVon({ rezept, parameter })) {
             fehler.push('Ausführung USERDEFINED braucht einen Objekttyp — den Fachbegriff, etwa „Überlaufschwelle"');
         }
     }

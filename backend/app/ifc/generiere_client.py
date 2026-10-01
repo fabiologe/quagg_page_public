@@ -156,18 +156,24 @@ export function getAllPsets() {
 
 
 def pset_templates_js(snap: dict) -> str:
-    vorl = snap["vorlagen"]
+    # Die hauseigenen Saetze (Teil XXVI, Z8) aus daten/quagg-merkmale.json —
+    # derselbe Katalog, den der Schreiber ueber schema.vorlage liest.
+    eigene = S.hauseigene_vorlagen()
+    vorl = {**snap["vorlagen"], **eigene}
     zeilen = [_kopf("IFC-Woerterbuch der CDE (Merkmals- und Mengenvorlagen)", snap).rstrip("\n"), "",
               "import { ENTITY_META } from './entity-schema.js';", "",
-              f"/** {len(vorl)} Vorlagen von buildingSMART für {snap['zielschema']}. */",
+              f"/** {len(snap['vorlagen'])} Vorlagen von buildingSMART für {snap['zielschema']}, "
+              f"dazu {len(eigene)} hauseigene (`herkunft`, daten/quagg-merkmale.json). */",
               "export const PSET_TEMPLATES = {"]
     for name in sorted(vorl):
         v = vorl[name]
-        praefix = "Qto_" if name.startswith("Qto_") else "Pset_"
-        art = "Quantity Set" if praefix == "Qto_" else "Property Set"
+        praefix = "Qto_" if name.startswith("Qto_") else ("Quagg_" if name in eigene else "Pset_")
+        art = {"Qto_": "Quantity Set", "Quagg_": "Merkmalssatz (Quagg)"}.get(praefix, "Property Set")
         zeilen.append(f"  {_js(name)}: {{")
         zeilen.append(f"    label: {_js(f'{art}: ' + label(name, praefix))},")
         zeilen.append(f"    description: {_js(S.kurz(v['beschreibung'], BESCHREIBUNG_ZEICHEN))},")
+        if name in eigene:
+            zeilen.append(f"    herkunft: {_js(v['herkunft'])},")
         zeilen.append(f"    art: {_js(v['art'])},")
         zeilen.append(f"    applicableTo: {_js([x.upper() for x in v['gilt_fuer']])},")
         zeilen.append("    props: [")

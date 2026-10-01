@@ -202,3 +202,38 @@ def test_die_typklasse_steht_in_der_regel_nicht_im_namen():
     for k in ("IfcSign", "IfcDistributionChamberElement", "IfcSlab", "IfcGeographicElement"):
         t = S.typklasse(k)
         assert S.ist_untertyp(t, "IfcTypeObject") and "NOTDEFINED" in S.predefined(t), t
+
+
+# ── Teil XXVI, Z8: hauseigene Merkmalssaetze ───────────────────────────────
+
+def test_hauseigene_saetze_stehen_neben_den_bsi_vorlagen():
+    """Ein Katalog (daten/quagg-merkmale.json), dieselbe Auskunft wie fuer bSI-Vorlagen."""
+    eigene = S.hauseigene_vorlagen()
+    assert sorted(eigene) == ["Quagg_Drossel", "Quagg_Entlastung", "Quagg_Rechen", "Quagg_Speicherraum"]
+    assert "Quagg_Entlastung" in S.vorlagen_fuer("IfcWall")
+    assert "Quagg_Entlastung" not in S.vorlagen_fuer("IfcSlab")
+    assert "Quagg_Rechen" not in S.vorlagen_fuer("IfcFilter") and "Quagg_Rechen" in S.vorlagen_fuer("IfcFilter", "STRAINER")
+    assert S.vorlage("quagg_speicherraum")["merkmale"][0][:3] == ["SohlhoeheNN", "P_SINGLEVALUE", "IfcLengthMeasure"]
+    assert all(v["herkunft"] == "Quagg" for v in eigene.values())
+
+
+@pytest.mark.parametrize("satz, grund", [
+    ({"Quagg_CDE": {"gilt_fuer": ["IfcWall"], "merkmale": []}}, "fuehrt der Schreiber selbst"),
+    ({"Pset_Probe": {"gilt_fuer": ["IfcWall"], "merkmale": []}}, "heisst Quagg_"),
+    ({"Quagg_X": {"gilt_fuer": ["IfcWand"], "merkmale": []}}, "Klasse IfcWand gibt es nicht"),
+    ({"Quagg_X": {"gilt_fuer": ["IfcFilter/RECHEN"], "merkmale": []}}, "kennt den PredefinedType RECHEN nicht"),
+    ({"Quagg_X": {"gilt_fuer": ["IfcWall"], "merkmale": [["A", "P_ENUMERATEDVALUE", "IfcLabel", "", []]]}}, "nur Einzelwerte"),
+    ({"Quagg_X": {"gilt_fuer": ["IfcWall"], "merkmale": [["A", "P_SINGLEVALUE", "IfcPerson", "", []]]}}, "nur Einzelwerte"),
+])
+def test_ein_falscher_katalog_bricht_laut(tmp_path, monkeypatch, satz, grund):
+    """Ein Fehler im Katalog ist ein Fehler im Repo — laut, nie still verworfen."""
+    datei = tmp_path / "quagg-merkmale.json"
+    datei.write_text(json.dumps({"herausgeber": "Quagg", "saetze": satz}), encoding="utf-8")
+    monkeypatch.setattr(S, "HAUSEIGENE", datei)
+    S.hauseigene_vorlagen.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match=grund):
+            S.hauseigene_vorlagen()
+    finally:
+        monkeypatch.undo()
+        S.hauseigene_vorlagen.cache_clear()

@@ -1,0 +1,44 @@
+{
+  "_kopf": "Hauseigene Merkmalssaetze der Quagg-CDE (Teil XXVI, Z8). EINE Quelle: der Schreiber liest sie ueber schema.vorlage, der Client ueber das erzeugte data/pset-templates.js (python3 -m app.ifc.generiere_client). Nur Werte, die keine bSI-Vorlage kennt. Belegt in docs/cde/ifc-sonderbauwerk.md; die Normverweise sind dort gelesen, der Normtext ist NICHT geprueft.",
+  "herausgeber": "Quagg",
+  "version": 1,
+  "saetze": {
+    "Quagg_Entlastung": {
+      "beschreibung": "Die Zahlen einer Überlaufschwelle, an denen die Entlastungsrechnung hängt. Bemessung nach DWA-A 128, Leistungsnachweis nach DWA-A 111 (dort die Schwelle als Messwehr).",
+      "gilt_fuer": ["IfcWall"],
+      "merkmale": [
+        ["Art", "P_SINGLEVALUE", "IfcLabel", "Beckenüberlauf, Klärüberlauf oder Notüberlauf.", []],
+        ["SchwellenhoeheNN", "P_SINGLEVALUE", "IfcLengthMeasure", "Oberkante der Schwelle in m über NN — die maßgebende Zahl. Gemessen am Körper, nicht getippt.", []],
+        ["Schwellenlaenge", "P_SINGLEVALUE", "IfcLengthMeasure", "Wirksame Überfalllänge in m.", []],
+        ["Ueberfallbeiwert", "P_SINGLEVALUE", "IfcReal", "Überfallbeiwert µ bzw. C_d; die Quelle steht in Herleitung.", []],
+        ["Herleitung", "P_SINGLEVALUE", "IfcText", "Woher der Beiwert stammt: Regelwerk mit Tabelle oder Messung mit Datum.", []]
+      ]
+    },
+    "Quagg_Speicherraum": {
+      "beschreibung": "Die Betriebshöhen eines Speicherraums. Die Beckenart steht als Klassifizierung an der Anlage, das Volumen als Qto_SpaceBaseQuantities.NetVolume — beides nicht hier.",
+      "gilt_fuer": ["IfcSpace"],
+      "merkmale": [
+        ["SohlhoeheNN", "P_SINGLEVALUE", "IfcLengthMeasure", "Sohle des Raums in m über NN. Gemessen am Körper, nicht getippt.", []],
+        ["BetriebswasserNN", "P_SINGLEVALUE", "IfcLengthMeasure", "Wasserspiegel in m über NN, bei dem die Schwelle anspringt.", []]
+      ]
+    },
+    "Quagg_Drossel": {
+      "beschreibung": "Der Drosselabfluss bei gegebener Stauhöhe — die Zahl, die Pset_ValveTypeCommon nicht vorsieht. Drosselorgan nach DWA-A 166.",
+      "gilt_fuer": ["IfcValve", "IfcPipeSegment"],
+      "merkmale": [
+        ["Drosselabfluss", "P_SINGLEVALUE", "IfcVolumetricFlowRateMeasure", "Drosselabfluss Q_Dr in m³/s.", []],
+        ["Stauhoehe", "P_SINGLEVALUE", "IfcLengthMeasure", "Stauhöhe in m, für die Q_Dr gilt.", []],
+        ["Kennlinie", "P_SINGLEVALUE", "IfcText", "Q-h-Kennlinie oder ihr Verweis (Hersteller, Messung).", []]
+      ]
+    },
+    "Quagg_Rechen": {
+      "beschreibung": "Was einen Rechen kennzeichnet und Pset_FilterTypeCommon nicht kennt.",
+      "gilt_fuer": ["IfcFilter/STRAINER"],
+      "merkmale": [
+        ["Stababstand", "P_SINGLEVALUE", "IfcPositiveLengthMeasure", "Lichter Stababstand in m.", []],
+        ["Anstroemwinkel", "P_SINGLEVALUE", "IfcPlaneAngleMeasure", "Neigung des Rechens gegen die Sohle, in der Winkeleinheit der Datei.", []],
+        ["Reinigungsart", "P_SINGLEVALUE", "IfcLabel", "Hand, maschinell, …", []]
+      ]
+    }
+  }
+}

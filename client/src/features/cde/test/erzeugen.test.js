@@ -76,7 +76,9 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // Teil XXVI, Z2: eine Linie mit Rechteckprofil — zwei Katalogeinträge.
                       'streifenfundament-zeichnen', 'wand-zeichnen',
                       // Z6: der Raum — ein Umriss, nach oben extrudiert.
-                      'raum-zeichnen'].sort());
+                      'raum-zeichnen',
+                      // Z8: die Überlaufschwelle — eine niedrige Wand mit Quagg_Entlastung.
+                      'ueberlaufschwelle-zeichnen'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).

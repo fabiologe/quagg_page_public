@@ -242,7 +242,8 @@ def test_vertrag_kammer_traegt_die_bsi_merkmale_der_ids(kammer):
     Vergleichsmodell 2 -> 2 anwendbar, an der Kammer 4 -> 0). Eine
     Feuerwiderstandsklasse fuer die Beckenwand wird nicht erfunden.
     """
-    assert kammer["bericht"]["merkmalsaetze"] == 6
+    # 6 bSI-Saetze an den Bauteilen, seit Z8 dazu Quagg_Speicherraum am Raum (die gemessene Sohle).
+    assert kammer["bericht"]["merkmalsaetze"] == 7
     verfehlt = _verfehlt(kammer["ziel"])
     for regel in ("Decken — Tragend markiert", "Wände — IsExternal markiert", "Wände — Tragend/nichttragend markiert"):
         assert regel not in verfehlt
@@ -600,3 +601,52 @@ def test_userdefined_nur_mit_objekttyp(tmp_path, objekt_typ, pt, ot, warnung):
     assert (wand.PredefinedType, wand.ObjectType) == (pt, ot)
     assert any("USERDEFINED ohne Objekttyp" in w for w in bericht["warnungen"]) is warnung
     assert _regeln(ziel) == []
+
+
+# ── Z8: Fachmerkmale als Katalog (Fund 10) ─────────────────────────────────
+
+SCHWELLE = DATEN / "paket_schwelle.json"
+
+
+@pytest.fixture(scope="module")
+def schwelle(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(SCHWELLE.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("schwelle") / "schwelle.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="schwelle")
+    return {"ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def test_vertrag_schwelle_traegt_quagg_entlastung(schwelle):
+    """Die Probe aus Z8 an der echten Kette: die Ueberlaufschwelle (Fuss 211,90,
+    Hoehe 0,50) traegt Quagg_Entlastung.SchwellenhoeheNN = 212,40 — gemessen am
+    Koerper im Client, getypt nach dem hauseigenen Katalog. Dazu USERDEFINED mit
+    ObjectType (Fund 8) und der Speicherraum mit seinen Betriebshoehen."""
+    from app.ifc.pruefe import offen
+    assert [w for w in schwelle["bericht"]["warnungen"] if "Merkmalssatz" in w or "nicht geschrieben" in w] == []
+    datei = ifcopenshell.open(str(schwelle["ziel"]))
+    wand = datei.by_type("IfcWall")[0]
+    assert (wand.PredefinedType, wand.ObjectType) == ("USERDEFINED", "Überlaufschwelle")
+    satz = {p.Name: (p.NominalValue.is_a(), p.NominalValue.wrappedValue)
+            for r in wand.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+            for p in getattr(r.RelatingPropertyDefinition, "HasProperties", None) or ()
+            if r.RelatingPropertyDefinition.Name == "Quagg_Entlastung"}
+    assert satz == {"Art": ("IfcLabel", "Beckenüberlauf"), "SchwellenhoeheNN": ("IfcLengthMeasure", 212.4),
+                    "Schwellenlaenge": ("IfcLengthMeasure", 4.0), "Ueberfallbeiwert": ("IfcReal", 0.6),
+                    "Herleitung": ("IfcText", "Probe Teil XXVI, Z8")}
+    raum = datei.by_type("IfcSpace")[0]
+    speicher = {p.Name: p.NominalValue.wrappedValue for r in raum.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+                for p in getattr(r.RelatingPropertyDefinition, "HasProperties", None) or ()
+                if r.RelatingPropertyDefinition.Name == "Quagg_Speicherraum"}
+    assert speicher == {"SohlhoeheNN": 210.0, "BetriebswasserNN": 212.4}
+    assert [b for b in schwelle["pruefung"]["befunde"] if offen(b)] == []
+
+
+def test_ein_unbekannter_quagg_satz_wird_genannt_nicht_geschrieben(tmp_path):
+    """Nur, was der Katalog erklaert: ein vertippter Satz ist kein neuer Satz."""
+    ziel = tmp_path / "tippfehler.ifc"
+    bericht = baue_datei(_paket(_bauteil("cde-x", "IFCWALL", merkmale={"Quagg_Entlastungg": {"Art": "x"}})),
+                         ziel, schluessel="probe")
+    assert any("Quagg_Entlastungg gilt nicht" in w for w in bericht["warnungen"])
+    assert not [r for r in ifcopenshell.open(str(ziel)).by_type("IfcPropertySet") if r.Name.startswith("Quagg_Entl")]
+

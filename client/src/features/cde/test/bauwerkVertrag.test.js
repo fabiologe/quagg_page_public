@@ -152,7 +152,8 @@ describe('Die Kammer — der Vertrag mit dem Schreiber (Teil XXVI)', () => {
         expect(raum.klasse).toBe('IFCSPACE');
         expect([r3(raum.mengen.netFloorArea), r3(raum.mengen.height), r3(raum.mengen.netVolume)]).toEqual([12, 2.5, 30]);
         expect(paket.bauteile.every(b => b.mengenMethode === 'koerper')).toBe(true);
-        expect(nach[RAUM].merkmale).toBeUndefined();                 // ein Raum hat keine bSI-Felder
+        // Ein Raum hat keine bSI-Felder; seit Z8 trägt er die gemessene Sohle (Quagg_Speicherraum).
+        expect(nach[RAUM].merkmale).toEqual({ Quagg_Speicherraum: { SohlhoeheNN: 210 } });
         // Z5e: die Kammer ist ein Bauwerk — angelegt und zugeordnet über die Werkzeuge.
         expect(paket.bauwerke).toEqual([{ cdeId: BAUWERK, art: 'anlage', name: 'Kammer',
             // Z7: der Bauwerkstyp als Klassifizierung — aus dem Katalog, mit Quelle.

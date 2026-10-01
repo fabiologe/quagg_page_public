@@ -60,6 +60,9 @@ function welt() {
             [P(100, 100, 0), P(110, 100, 0)]);
     zeichne(erzeugt, 'streifenfundament-zeichnen', 'cde-FU1', { name: 'FU1', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 },
             [P(100, 99.6, 10), P(110, 99.6, 10)]);
+    // Teil XXVI, Z8: eine Überlaufschwelle — eine niedrige Wand mit Quagg_Entlastung.
+    zeichne(erzeugt, 'ueberlaufschwelle-zeichnen', 'cde-SW1', { name: 'SW1', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 0.5 },
+            [P(130, 100, 0), P(134, 100, 0)]);
     // Teil XXVI, Z6: ein Raum — der Hohlraum, aus einem Umriss nach oben.
     zeichne(erzeugt, 'raum-zeichnen', 'cde-RA1', { name: 'RA1', hoehe: '', raumhoehe: 2.5 },
             [P(120, 100, 0), P(124, 100, 0), P(124, 100, 3), P(120, 100, 3)]);
@@ -146,6 +149,8 @@ const NEU = [
       werte: [{ name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 }] },
     { id: 'streifenfundament-zeichnen', el: zug(P(0, 99.6, 0), P(10, 99.6, 0)), zug: [P(0, 99.6, 0), P(10, 99.6, 0)],
       werte: [{ name: 'FU', kategorie: 'IFCFOOTING', hoehe: '', breite: 0.6, dicke: 0.4 }] },
+    { id: 'ueberlaufschwelle-zeichnen', el: zug(P(0, 101.9, 0), P(4, 101.9, 0)), zug: [P(0, 101.9, 0), P(4, 101.9, 0)],
+      werte: [{ name: 'SW', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 0.5, ueberfallbeiwert: 0.6 }] },
     { id: 'bauwerk-anlegen', el: zug(), werte: [{ name: 'Kammer', art: 'anlage' }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
@@ -176,6 +181,15 @@ const NEU = [
     { id: 'streifenfundament-objektTyp-setzen', el: eigen('cde-FU1'), werte: [{ objektTyp: 'Wandfundament' }] },
     { id: 'raum-predefinedType-setzen', el: eigen('cde-RA1'), werte: [{ predefinedType: 'EXTERNAL' }] },
     { id: 'raum-objektTyp-setzen', el: eigen('cde-RA1'), werte: [{ objektTyp: 'Speicherraum' }] },
+    // Z8: die Überlaufschwelle und der Speicherraum (Quagg_Entlastung, Quagg_Speicherraum).
+    { id: 'ueberlaufschwelle-wandhoehe-setzen', el: eigen('cde-SW1'), werte: [{ wandhoehe: 0.7 }] },
+    { id: 'ueberlaufschwelle-ueberlaufart-setzen', el: eigen('cde-SW1'), werte: [{ ueberlaufart: 'Notüberlauf' }] },
+    { id: 'ueberlaufschwelle-schwellenlaenge-setzen', el: eigen('cde-SW1'), werte: [{ schwellenlaenge: 3.5 }] },
+    { id: 'ueberlaufschwelle-ueberfallbeiwert-setzen', el: eigen('cde-SW1'), werte: [{ ueberfallbeiwert: 0.58 }] },
+    { id: 'ueberlaufschwelle-herleitung-setzen', el: eigen('cde-SW1'), werte: [{ herleitung: 'Messung 2026-10-01' }] },
+    { id: 'ueberlaufschwelle-predefinedType-setzen', el: eigen('cde-SW1'), werte: [{ predefinedType: 'SOLIDWALL' }] },
+    { id: 'ueberlaufschwelle-objektTyp-setzen', el: eigen('cde-SW1'), werte: [{ objektTyp: 'Trennschwelle' }] },
+    { id: 'raum-betriebswasser-setzen', el: eigen('cde-RA1'), werte: [{ betriebswasser: 102 }] },
     { id: 'bauwerk-zuordnen', el: eigen('cde-PL1'), werte: [{ bauwerk: 'cde-BW1' }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
     { id: 'bauwerk-bauwerkstyp-setzen', el: eigen('cde-BW1'), werte: [{ bauwerkstyp: 'RRB' }] },
