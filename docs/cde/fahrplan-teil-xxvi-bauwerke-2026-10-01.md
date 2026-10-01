@@ -1,9 +1,10 @@
 # Teil XXVI — Bauwerke aus Bauteilen
 
-**Fahrplan, Stand 2026-10-01 abends: Z0–Z7 gebaut, Z9 Teil 1 gebaut; Halt vor Z8.**
-E17–E23 nach Empfehlung freigegeben („lets go"). Je Stufe ein Commit
-(`873e268` … `cd9de37`, Abnahme `bc4b12b`), nichts gebaut (`npm run build`), nichts
-gepusht, kein pm2 nötig. Offen sind vier Entscheidungen: Funde 8, 9, 10, 11 (unten).
+**Fahrplan, Stand 2026-10-01 nachts: Z0–Z9.3 gebaut, Funde 8–12 behoben; offen nur Z9.4 (Browserprobe).**
+E17–E23 nach Empfehlung freigegeben („lets go"), die Vorschläge zu den Funden 8–11
+ebenso („deine ideen sind top lets go"). Je Stufe ein Commit (`873e268` … `959af03`),
+nichts gebaut (`npm run build`), nichts gepusht. `backend/app/ifc/*` wirkt sofort
+(Katalog, Schreiber, Starter-IDS); kein pm2 nötig.
 
 Grundlage: [planungsszenarien.md](planungsszenarien.md) (P5–P8) und
 [ifc-sonderbauwerk.md](ifc-sonderbauwerk.md) (Fähigkeiten S1–S8). Pfade relativ
@@ -42,10 +43,11 @@ Bevor geplant wird, wo etwas fehlt, gemessen, was da ist.
 
 | # | Fund | Stufe | Stand |
 |---|---|---|---|
-| **8** | **Gezeichnete Bauteile bekommen keinen PredefinedType.** `predefinedTypeVon` liest ihn nur aus Ableitungsteilen oder aus `bauplan.predefinedType` — und kein Zeichenwerkzeug schreibt das Feld. Eigene Platten, Wände, Fundamente kommen als `NOTDEFINED` ins IFC. Die Kammer-Tabelle (Abschn. 6) nennt `BASESLAB`, `RETAININGWALL`, `ROOF`, `STRIP_FOOTING` — die sind so nicht erreichbar | Z2 | **Befund, nicht gebaut** (Leitplanke 7). Vorschlag: Rezept nennt `predefinedTypeVorgabe`, ein Feld `predefinedType` (setzbar, gegen das Wörterbuch geprüft) überschreibt sie; `predefinedTypeVon` liest beides. ≈ 1 Halbtag, eigene Stufe Z2b — **wartet auf Fabios Ja** |
-| **9** | **Die hauseigene IDS kennt nur den Hochbau.** Sobald eine Wand `IsExternal = TRUE` trägt (Vorgabe der Wand, Z3 — sie steht im Erdreich), greift „Außenwände — Brandschutz-Klasse" (Schwere Warnung, „im Brandschutz-Konzept erwartet", KG 330/340) und verlangt `FireRating`. Für eine Beckenwand ist das sinnlos; die Kammer verfehlt damit gemessen **1 von 18** Regeln, nicht 0 | Z3 | **Befund, nicht gebaut** — Fabios Entscheidung: (a) die Starter-IDS grenzt die Regel auf Wände in einem `IfcBuilding` ein (IDS-Facette `partOf`) — *Empfehlung*; (b) die Wand bekommt ein Feld Feuerwiderstand; (c) als Warnung stehen lassen |
-| **10** | **Z8 ist keine reine Datenarbeit.** Ein Merkmalsziel muss heute `Pset_…` heissen und in den bSI-Vorlagen stehen — auf BEIDEN Seiten: `katalog/Merkmalsziele.js` (Regex `^(Pset_…)\.…$`, dann `PSET_TEMPLATES[satz]`) und `eigenbau._bsi_merkmale` (`S.vorlagen_fuer(klasse, pt)`, sonst „gilt nicht … — nicht geschrieben"). Ein Feld `pset: 'Quagg_Entlastung.SchwellenhoeheNN'` wird im Client abgewiesen und im Schreiber übergangen | Z8 | **Befund, nicht gebaut** (Leitplanke 7, Z8 sagt es selbst: „wird hier Code nötig, ist das ein Befund"). Nötig: EIN Katalog der `Quagg_`-Sätze als Datenquelle (Name, Merkmale mit Typ, Einheit, Quelle), den beide Seiten lesen — wie das Wörterbuch über `generiere_client` —, und `Merkmalsziele`/`_bsi_merkmale` fragen „bSI-Vorlage ODER Katalogsatz". ≈ 2 Halbtage statt 1. Die Probe-Schwelle braucht zusätzlich Fund 8 (`USERDEFINED` + `ObjectType`) |
-| **11** | **Der Kommandoweg nimmt unbaubare Baupläne an.** Gemessen (Abnahme Z9, `fuehreAus`): `platte-zeichnen` mit falschem Schlitz (`zug` statt `umriss`) → ausgeführt, Bauplan mit **0 Punkten** im Journal; ohne Schlitz → 0 Punkte; Umriss mit 2 Punkten → 2 Punkte; `rohr-zeichnen` mit 1 Punkt → 1 Punkt. Alle vier `ausgefuehrt: true`, kein Grund. Erst der Autor meldet „Platte: mindestens 3 Punkte, 0 gesetzt" — das Bauteil fehlt still im Raum und im IFC. Nach E5 („ablehnen darf nur das technisch Unmögliche") hätte genau das abgelehnt werden müssen: `pruefeBauplan` kennt `mindestPunkte`, der Kommandoweg ruft es nicht (die Oberfläche fällt nicht auf, weil `useEingabe` vor dem Übernehmen zählt) | Z9 | **Befund aus Teil XXIV, nicht gebaut.** Vorschlag: `fuehreAus` prüft jeden `erzeugt`-Schritt mit `pruefeBauplan` und lehnt ab wie bei einem Wurf (E8: bei der Eingabe ablehnen); unbekannte Schlüssel unter `eingaben` sind ein Grund. ≈ 1 Halbtag, Test = die vier Fälle oben |
+| **8** | **Gezeichnete Bauteile bekommen keinen PredefinedType.** `predefinedTypeVon` liest ihn nur aus Ableitungsteilen oder aus `bauplan.predefinedType` — und kein Zeichenwerkzeug schreibt das Feld. Eigene Platten, Wände, Fundamente kommen als `NOTDEFINED` ins IFC. Die Kammer-Tabelle (Abschn. 6) nennt `BASESLAB`, `RETAININGWALL`, `ROOF`, `STRIP_FOOTING` — die sind so nicht erreichbar | Z2 | **Gebaut `7537de0`** (Z2b): Felder „Ausführung“/„Objekttyp“ an Platte, Wand, Fundament, Raum; Vorgabe als Feldvorgabe (STRIP_FOOTING, INTERNAL). Ursprünglicher Vorschlag: Rezept nennt `predefinedTypeVorgabe`, ein Feld `predefinedType` (setzbar, gegen das Wörterbuch geprüft) überschreibt sie; `predefinedTypeVon` liest beides. ≈ 1 Halbtag, eigene Stufe Z2b — **wartet auf Fabios Ja** |
+| **9** | **Die hauseigene IDS kennt nur den Hochbau.** Sobald eine Wand `IsExternal = TRUE` trägt (Vorgabe der Wand, Z3 — sie steht im Erdreich), greift „Außenwände — Brandschutz-Klasse" (Schwere Warnung, „im Brandschutz-Konzept erwartet", KG 330/340) und verlangt `FireRating`. Für eine Beckenwand ist das sinnlos; die Kammer verfehlt damit gemessen **1 von 18** Regeln, nicht 0 | Z3 | **Gebaut `bf5c3e7`** nach (a): `partOf IFCBUILDING`, gemessen Vergleichsmodell 2 → 2, Kammer 4 → 0, Kammer verfehlt 0 von 18. Die Client-Vorschau kennt `partOf` nicht — die Regel steht dort unter „nicht in der Vorschau“ (15 statt 16). Optionen waren: (a) die Starter-IDS grenzt die Regel auf Wände in einem `IfcBuilding` ein (IDS-Facette `partOf`) — *Empfehlung*; (b) die Wand bekommt ein Feld Feuerwiderstand; (c) als Warnung stehen lassen |
+| **10** | **Z8 ist keine reine Datenarbeit.** Ein Merkmalsziel muss heute `Pset_…` heissen und in den bSI-Vorlagen stehen — auf BEIDEN Seiten: `katalog/Merkmalsziele.js` (Regex `^(Pset_…)\.…$`, dann `PSET_TEMPLATES[satz]`) und `eigenbau._bsi_merkmale` (`S.vorlagen_fuer(klasse, pt)`, sonst „gilt nicht … — nicht geschrieben"). Ein Feld `pset: 'Quagg_Entlastung.SchwellenhoeheNN'` wird im Client abgewiesen und im Schreiber übergangen | Z8 | **Gebaut `4c978d7`**: Katalog `backend/app/ifc/daten/quagg-merkmale.json`, gelesen von `schema.vorlage` und über `pset-templates.js`. Dazu `lagemerkmale` (Höhen gemessen statt getippt) und das Rezept „Überlaufschwelle“. Befund war (Leitplanke 7, Z8 sagt es selbst: „wird hier Code nötig, ist das ein Befund"). Nötig: EIN Katalog der `Quagg_`-Sätze als Datenquelle (Name, Merkmale mit Typ, Einheit, Quelle), den beide Seiten lesen — wie das Wörterbuch über `generiere_client` —, und `Merkmalsziele`/`_bsi_merkmale` fragen „bSI-Vorlage ODER Katalogsatz". ≈ 2 Halbtage statt 1. Die Probe-Schwelle braucht zusätzlich Fund 8 (`USERDEFINED` + `ObjectType`) |
+| **11** | **Der Kommandoweg nimmt unbaubare Baupläne an.** Gemessen (Abnahme Z9, `fuehreAus`): `platte-zeichnen` mit falschem Schlitz (`zug` statt `umriss`) → ausgeführt, Bauplan mit **0 Punkten** im Journal; ohne Schlitz → 0 Punkte; Umriss mit 2 Punkten → 2 Punkte; `rohr-zeichnen` mit 1 Punkt → 1 Punkt. Alle vier `ausgefuehrt: true`, kein Grund. Erst der Autor meldet „Platte: mindestens 3 Punkte, 0 gesetzt" — das Bauteil fehlt still im Raum und im IFC. Nach E5 („ablehnen darf nur das technisch Unmögliche") hätte genau das abgelehnt werden müssen: `pruefeBauplan` kennt `mindestPunkte`, der Kommandoweg ruft es nicht (die Oberfläche fällt nicht auf, weil `useEingabe` vor dem Übernehmen zählt) | Z9 | **Gebaut `de08a68`**: `werteAus` prüft jeden erzeugten Bauplan mit `pruefeBauplan`, `pruefeKommando` lehnt Punkte im falschen Schlitz ab; die vier Fälle sind Test `kommandoBaubar`. Vorschlag war: `fuehreAus` prüft jeden `erzeugt`-Schritt mit `pruefeBauplan` und lehnt ab wie bei einem Wurf (E8: bei der Eingabe ablehnen); unbekannte Schlüssel unter `eingaben` sind ein Grund. ≈ 1 Halbtag, Test = die vier Fälle oben |
+| **12** | **„Baugrube ums Bauwerk“ ging an keinem eigenen Bauteil.** Gemessen in Z9.3: der Ableitungslauf fragt bei einem eigenen Bauteil das Rezept nach der Form `umriss` — keine Deklaration lieferte sie („Rezept „platte“ liefert keine Form „umriss““). Ein Bauwerk (Behälter) hat ohnehin keinen Umriss | Z9.3 | **Gebaut `959af03`**: `Rezeptbau._formAus` liefert für jeden eigenen Körper den Grundriss aus dem gebauten Körper — dieselbe Funktion wie für Geliefertes. Die Grube eines Bauwerks geht um seine Bodenplatte; ein Umriss für den Behälter selbst (Vereinigung der Teile) ist NICHT gebaut |
 | — | Die Wand trägt die Bauform `achse+profil`, nicht `flaeche+dicke` wie im Fahrplan angenommen: das Katalogschema lässt einen Sweep nur `achse+profil` oder `koerper` tragen (`BAUFORMEN_JE_GEOMETRIE`). Gezeichnet IST sie eine Achse mit Profil; eine gelieferte Wand bleibt `flaeche+dicke` | Z2 | gebaut, so begründet |
 | — | Das Typ-Feld ist Freitext, keine Auswahlliste — „die Typauswahl bietet sie nicht mehr an" (Z1) gab es nicht zu bauen; das Tor ist `pruefeBauplan` | Z1 | erledigt |
 
@@ -380,4 +382,30 @@ Abweichung von Z9.1: Umgebung `jsdom` statt `node` (die Stores brauchen sie); di
 IFC-Seite prüft `test_bauwerke.py` am Vertragspaket derselben Kammer.
 
 **Nicht gebaut:** Z8 (Fund 10), Z9.2 RÜB (braucht Z8 und Fund 8), Z9.3 Verbund mit
-Testgelände und Baugrube, Z9.4 Browserprobe.
+Testgelände und Baugrube, Z9.4 Browserprobe. *(Stand abends; siehe nachts.)*
+
+### Stand 2026-10-01 nachts — gemessen
+
+| Schritt | Commit | Zahl |
+|---|---|---|
+| Fund 11 | `de08a68` | 4 unbaubare Kommandos: vorher alle `ausgefuehrt: true`, jetzt alle abgelehnt mit Grund |
+| Fund 8 (Z2b) | `7537de0` | Kammer: NOTDEFINED → BASESLAB / RETAININGWALL / ROOF / INTERNAL; USERDEFINED nur mit ObjectType |
+| Fund 9 | `bf5c3e7` | Kammer IDS 1 → 0 von 18 verfehlt |
+| Z8 (Fund 10) | `4c978d7` | Schwelle: `Quagg_Entlastung.SchwellenhoeheNN` = 212,40 (gemessen), nach Zug 212,60 |
+| Z9.2 | `77f04fe` | RÜB: Beton 40,836 m³ = von Hand, Speicherraum 2 × 30,000 m³, Prüftor 0, IDS 0/18 |
+| Z9.3 + Fund 12 | `959af03` | Baugrube 363,637 m³ gegen 363,614 von Hand (0,01 %), Verbund: eine Site, Aushub am gelieferten Gelände |
+
+Tests: CDE 308 / 3 490 → 313 / 3 508, IFC 211 → 225 (alle grün). Reichweite
+80/57 → 97/74. Jede Kur per Gegenprobe rot.
+
+**Bewusst nicht gebaut:** `Quagg_Versickerung` (nirgends belegt, was der Satz
+trägt); `Quagg_Speicherraum.Beckenart` und `.Speichervolumen` (stehen schon als
+Klassifizierung bzw. `NetVolume` — Wissen an einem Ort); Ausführung/Objekttyp an
+Rohr, Schacht, Linie, Fläche, Pfosten (Fund 8 nannte Platte, Wand, Fundament); ein
+Umriss für das Bauwerk selbst (Fund 12). Die Normverweise im Katalog (DWA-A 111,
+128, 166) sind aus `ifc-sonderbauwerk.md` übernommen, der Normtext ist **nicht**
+geprüft.
+
+**Offen: Z9.4 Browserprobe** — blockiert: `/cde` verlangt eine Anmeldung, die
+Zugangsdatei des Probe-Unterbaus (`zugang.env`, Scratchpad vom 18.09.) gibt es
+nicht mehr. Probe-Server :3001 läuft.
