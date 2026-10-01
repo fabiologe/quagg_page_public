@@ -62,10 +62,10 @@ function ordneZu(stand, gid, bauwerk) {
 export function kammerStand({ mitBauwerk = true } = {}) {
     const s = new Map();
     zeichne(s, 'platte-zeichnen', KAMMER.bodenplatte, RECHTECK(210.0),
-            { name: 'Bodenplatte', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4 });
+            { name: 'Bodenplatte', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4, predefinedType: 'BASESLAB' });
     const wand = (gid, name, a, b) =>
         zeichne(s, 'wand-zeichnen', gid, [P(a[0], 210.0, a[1]), P(b[0], 210.0, b[1])],
-                { name, kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
+                { name, kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5, predefinedType: 'RETAININGWALL' });
     // Längswände aussen durchlaufend (4,60 m), Achse 0,15 m innen von der Aussenkante.
     wand(KAMMER.wandNord, 'Längswand Nord', [0, 0.15], [4.6, 0.15]);
     wand(KAMMER.wandSued, 'Längswand Süd', [0, 3.45], [4.6, 3.45]);
@@ -73,7 +73,7 @@ export function kammerStand({ mitBauwerk = true } = {}) {
     wand(KAMMER.wandWest, 'Querwand West', [0.15, 0.3], [0.15, 3.3]);
     wand(KAMMER.wandOst, 'Querwand Ost', [4.45, 0.3], [4.45, 3.3]);
     zeichne(s, 'platte-zeichnen', KAMMER.decke, RECHTECK(212.75),
-            { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25 });
+            { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25, predefinedType: 'ROOF' });
     // Der Raum (Z6) — zwischen den Innenseiten der Wände, von der Bodenplatte bis unter die Decke.
     zeichne(s, 'raum-zeichnen', RAUM, [P(0.3, 210.0, 0.3), P(4.3, 210.0, 0.3), P(4.3, 210.0, 3.3), P(0.3, 210.0, 3.3)],
             { name: 'Kammerraum', hoehe: '', raumhoehe: 2.5 });

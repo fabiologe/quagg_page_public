@@ -181,12 +181,13 @@ def _klasse(name):
     return S.ist_schreibbar(name)
 
 
-def _predefined(klasse, wert):
+def _predefined(klasse, wert, objekt_typ=None):
     """PredefinedType gegen die Aufzaehlung der Klasse pruefen.
 
     Rueckgabe (wert, warnung). Ein Wert, den das Schema nicht kennt, wird
-    NOTDEFINED — nie USERDEFINED: das verlangte ObjectType, und das haetten wir
-    erfinden muessen. Eine Klasse ohne PredefinedType bekommt keinen.
+    NOTDEFINED. USERDEFINED nur MIT ObjectType (`objekt_typ`, der Fachbegriff aus
+    dem Bauplan, Fund 8 aus Teil XXVI) — erfinden wir ihn nicht, ist es
+    NOTDEFINED. Eine Klasse ohne PredefinedType bekommt keinen.
     """
     erlaubt = S.predefined(klasse)
     if not erlaubt:
@@ -194,7 +195,11 @@ def _predefined(klasse, wert):
     if wert is None or wert == "":
         return "NOTDEFINED", None
     w = str(wert).upper()
-    if w in erlaubt and w != "USERDEFINED":
+    if w == "USERDEFINED" and w in erlaubt:
+        if objekt_typ:
+            return w, None
+        return "NOTDEFINED", "PredefinedType USERDEFINED ohne Objekttyp — NOTDEFINED geschrieben"
+    if w in erlaubt:
         return w, None
     return "NOTDEFINED", f"PredefinedType {wert!r} ist fuer {klasse} nicht erlaubt — NOTDEFINED geschrieben"
 
@@ -678,7 +683,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             uebersprungen.append({"cdeId": cde_id, "grund": "Dreiecksindex ausserhalb der Punktliste"})
             continue
 
-        pt, warnung = _predefined(klasse, b.get("predefinedType"))
+        objekt_typ = (str(b.get("objektTyp") or "").strip() or None)
+        pt, warnung = _predefined(klasse, b.get("predefinedType"), objekt_typ)
         if warnung:
             warnungen.append(f"{cde_id}: {warnung}")
 
@@ -710,6 +716,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                      Name=b.get("name") or None, ObjectPlacement=platz, Representation=form)
         if pt is not None:
             attrs["PredefinedType"] = pt
+        # Der Fachbegriff (Fund 8): Pflicht bei USERDEFINED, sonst Verfeinerung —
+        # ObjectType hat jedes IfcObject.
+        if objekt_typ:
+            attrs["ObjectType"] = objekt_typ
         el = f.create_entity(klasse, **attrs)
 
         vorgang = b.get("vorgang") or {}

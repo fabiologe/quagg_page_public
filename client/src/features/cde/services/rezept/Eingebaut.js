@@ -38,6 +38,20 @@ const NAME = Object.freeze({ name: 'name', titel: 'Bezeichnung', typ: 'text', le
 const TYP = Object.freeze({ name: 'kategorie', titel: 'IFC-Typ', typ: 'text' });
 
 /**
+ * DIE AUSFÜHRUNG (Fund 8, Teil XXVI): der PredefinedType der IFC-Klasse —
+ * Bodenplatte `BASESLAB`, Decke `ROOF`, Stützwand `RETAININGWALL`. Bis hierher
+ * schrieb kein Zeichenwerkzeug ihn, jede eigene Platte kam als `NOTDEFINED`
+ * ins IFC. Geprüft wird gegen das Wörterbuch der GEWÄHLTEN Klasse
+ * (`pruefeBauplan`); `USERDEFINED` verlangt den Objekttyp — den deutschen
+ * Fachbegriff, etwa „Überlaufschwelle". Leer heisst: die Vorgabe des Rezepts.
+ */
+const ausfuehrung = (vorgabe = undefined) => [
+    { name: 'predefinedType', titel: 'Ausführung (IFC-PredefinedType)', typ: 'text', leerErlaubt: true, setzbar: true,
+      ...(vorgabe ? { vorgabe } : {}) },
+    { name: 'objektTyp', titel: 'Objekttyp (Pflicht bei USERDEFINED)', typ: 'text', leerErlaubt: true, setzbar: true },
+];
+
+/**
  * Tragend — ein Feld, das zugleich ein bSI-Merkmal ist (Teil XXVI, Z3, Fabios E22).
  * Vorgabe „ja": eine Platte, eine Wand, ein Fundament trägt, wenn niemand etwas
  * anderes sagt. Ein Belag ist ein anderer Typ (IfcCovering) — für den gilt der
@@ -178,6 +192,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.2, setzbar: true },
             tragend('Pset_SlabCommon'),
+            ...ausfuehrung(),
         ],
         geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
         // Mengen (Teil XXVI, Z4) nach Qto_SlabBaseQuantities: Fläche und Umfang in der Draufsicht.
@@ -217,6 +232,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             // Aussen: im Tiefbau steht die Wand meist im Erdreich (IDS „Wände — IsExternal").
             { name: 'aussen', titel: 'Aussenwand (leer = ja)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'ja',
               leerErlaubt: true, setzbar: true, pset: 'Pset_WallCommon.IsExternal' },
+            ...ausfuehrung(),
         ],
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
@@ -243,6 +259,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.6, setzbar: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.4, setzbar: true },
             tragend('Pset_FootingCommon'),
+            // Das Rezept HEISST so — die Vorgabe ist kein Raten.
+            ...ausfuehrung('STRIP_FOOTING'),
         ],
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
@@ -273,6 +291,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'name', titel: 'Bezeichnung', typ: 'text' },
             { name: 'hoehe', titel: 'Fussboden', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'raumhoehe', titel: 'Lichte Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 100, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+            // Innen, solange niemand „offen" sagt (Fund 8) — ein offenes Becken ist EXTERNAL.
+            ...ausfuehrung('INTERNAL'),
         ],
         geometrie: { art: 'platte', dicke: 'raumhoehe', richtung: 'oben' },
         // Qto_SpaceBaseQuantities — die Fläche verlangt die IDS („Räume — Fläche dokumentiert").

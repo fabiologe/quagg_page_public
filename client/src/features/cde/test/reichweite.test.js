@@ -49,8 +49,9 @@ const HEUTE = Object.freeze({
     // Z5e: +3 Bauwerk anlegen / zuordnen / lösen, alle ohne Oberfläche — 77/54.
     // Z6: +2 Raum zeichnen, lichte Höhe ändern — 79/56.
     // Z7: +1 Bauwerkstyp ändern (Klassifizierung) — 80/57.
-    werkzeuge: 80,
-    ausgefuehrt: 57,
+    // Fund 8: +8 Ausführung / Objekttyp ändern (Platte, Wand, Fundament, Raum) — 88/65.
+    werkzeuge: 88,
+    ausgefuehrt: 65,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

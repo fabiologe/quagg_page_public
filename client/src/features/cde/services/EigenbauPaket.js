@@ -47,6 +47,7 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
+import { objektTypVon } from './Bauteilrezepte.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -181,6 +182,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         cdeId: teil.globalId,
         klasse,
         predefinedType: teil.predefinedType ?? plan.predefinedType ?? null,
+        // Der Fachbegriff (Fund 8) — nur mit USERDEFINED Pflicht, sonst eine Verfeinerung.
+        ...(objektTypVon(plan) ? { objektTyp: objektTypVon(plan) } : {}),
         name: teil.name ?? plan.name ?? '',
         rezept: plan.rezept ?? null,
         rolle: plan.rolle ?? null,

@@ -767,7 +767,8 @@ export class IfcAutor {
         if (!gebaut.ok) return gebaut;
         return {
             ...gebaut,
-            predefinedType: gebaut.predefinedType ?? schritt.wert?.predefinedType ?? null,
+            // Aus dem Bauplan (Fund 8): das Feld „Ausführung“ oder die Vorgabe des Rezepts.
+            predefinedType: predefinedTypeVon(schritt.wert ?? {}),
             // Rohr und Schacht sind Sweeps MIT Kappen, Linie und Fläche sind
             // flach, ein Höhenfeld ist offen.
             geschlossen: ({ koerper: true, 'achse+profil': true, linie: false, flaeche: false, hoehenfeld: false })[

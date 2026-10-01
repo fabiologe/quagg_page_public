@@ -567,3 +567,36 @@ def test_vertrag_kammer_ist_klassifiziert(kammer):
     assert (ref.Identification, ref.Name) == ("RRB", "Regenrückhaltebecken")
     assert (ref.ReferencedSource.Name, ref.ReferencedSource.Edition) == ("Arbeitshilfen Abwasser", "2015-12")
     assert "Anhang A-1" in ref.ReferencedSource.Source
+
+
+# ── Fund 8: die Ausfuehrung (PredefinedType) und der Objekttyp ─────────────
+
+def test_vertrag_kammer_traegt_ihre_ausfuehrungen(kammer):
+    """Fund 8 an der echten Kette: die PredefinedTypes aus Abschnitt 6 des
+    Fahrplans stehen in der Datei — vorher kam jedes gezeichnete Bauteil als
+    NOTDEFINED an. Der Raum ohne Angabe: die Vorgabe des Rezepts, INTERNAL."""
+    datei = ifcopenshell.open(str(kammer["ziel"]))
+    ist = sorted((e.is_a(), e.Name, e.PredefinedType)
+                 for e in datei.by_type("IfcSlab") + datei.by_type("IfcWall") + datei.by_type("IfcSpace"))
+    assert ist == sorted([
+        ("IfcSlab", "Bodenplatte", "BASESLAB"), ("IfcSlab", "Decke", "ROOF"),
+        ("IfcWall", "Längswand Nord", "RETAININGWALL"), ("IfcWall", "Längswand Süd", "RETAININGWALL"),
+        ("IfcWall", "Querwand West", "RETAININGWALL"), ("IfcWall", "Querwand Ost", "RETAININGWALL"),
+        ("IfcSpace", "Kammerraum", "INTERNAL")])
+
+
+@pytest.mark.parametrize("objekt_typ, pt, ot, warnung", [
+    ("Überlaufschwelle", "USERDEFINED", "Überlaufschwelle", False),
+    (None, "NOTDEFINED", None, True),
+])
+def test_userdefined_nur_mit_objekttyp(tmp_path, objekt_typ, pt, ot, warnung):
+    """USERDEFINED ohne ObjectType ist ein leeres Wort — der Schreiber erfindet
+    keinen und schreibt NOTDEFINED, mit Warnung. Mit Fachbegriff: beides steht da."""
+    ziel = tmp_path / "schwelle.ifc"
+    bericht = baue_datei(_paket(_bauteil("cde-schwelle", "IFCWALL", predefinedType="USERDEFINED",
+                                         **({"objektTyp": objekt_typ} if objekt_typ else {}))),
+                         ziel, schluessel="probe")
+    wand = ifcopenshell.open(str(ziel)).by_type("IfcWall")[0]
+    assert (wand.PredefinedType, wand.ObjectType) == (pt, ot)
+    assert any("USERDEFINED ohne Objekttyp" in w for w in bericht["warnungen"]) is warnung
+    assert _regeln(ziel) == []

@@ -44,12 +44,12 @@ const kommando = (werkzeug, rest) => ({ schema: KOMMANDO_SCHEMA, id: `ko-${++n}`
                                         wann: '2026-10-01T12:00:00Z', ...rest });
 const ecke = (ost, nord, hoehe) => ({ ost, nord, hoehe });
 const RECHTECK = (h) => [ecke(0, 0, h), ecke(4.6, 0, h), ecke(4.6, -3.6, h), ecke(0, -3.6, h)];
-const WAND = { kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 };
+const WAND = { kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5, predefinedType: 'RETAININGWALL' };
 const TEILE = ['cde-BP', 'cde-WN', 'cde-WS', 'cde-WW', 'cde-WO', 'cde-DE', 'cde-RA'];
 
 /** Die Kammer aus Abschnitt 6 des Fahrplans — als Kommandofolge. */
 const KAMMER = () => [
-    kommando('platte-zeichnen', { neu: ['cde-BP'], werte: { name: 'Bodenplatte', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4 },
+    kommando('platte-zeichnen', { neu: ['cde-BP'], werte: { name: 'Bodenplatte', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4, predefinedType: 'BASESLAB' },
                                   eingaben: { umriss: RECHTECK(210.0) } }),
     kommando('wand-zeichnen', { neu: ['cde-WN'], werte: { name: 'Längswand Nord', ...WAND },
                                 eingaben: { zug: [ecke(0, -0.15, 210), ecke(4.6, -0.15, 210)] } }),
@@ -59,7 +59,7 @@ const KAMMER = () => [
                                 eingaben: { zug: [ecke(0.15, -0.3, 210), ecke(0.15, -3.3, 210)] } }),
     kommando('wand-zeichnen', { neu: ['cde-WO'], werte: { name: 'Querwand Ost', ...WAND },
                                 eingaben: { zug: [ecke(4.45, -0.3, 210), ecke(4.45, -3.3, 210)] } }),
-    kommando('platte-zeichnen', { neu: ['cde-DE'], werte: { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25 },
+    kommando('platte-zeichnen', { neu: ['cde-DE'], werte: { name: 'Decke', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.25, predefinedType: 'ROOF' },
                                   eingaben: { umriss: RECHTECK(212.75) } }),
     kommando('raum-zeichnen', { neu: ['cde-RA'], werte: { name: 'Kammerraum', hoehe: '', raumhoehe: 2.5 },
                                 eingaben: { umriss: [ecke(0.3, -0.3, 210), ecke(4.3, -0.3, 210), ecke(4.3, -3.3, 210), ecke(0.3, -3.3, 210)] } }),
@@ -102,6 +102,10 @@ describe('Abnahme Teil XXVI — die Kammer, nur über Kommandos', () => {
         expect(r3(beton)).toBe(22.164);
         expect([r3(nach['cde-RA'].mengen.netVolume), r3(nach['cde-RA'].mengen.netFloorArea)]).toEqual([30, 12]);
         expect(nach['cde-WN'].merkmale).toEqual({ Pset_WallCommon: { LoadBearing: true, IsExternal: true } });
+        // Fund 8: die Ausführungen aus Abschnitt 6 — der Raum ohne Angabe nach Vorgabe innen.
+        expect(Object.fromEntries(TEILE.map(g => [g, nach[g].predefinedType]))).toEqual({
+            'cde-BP': 'BASESLAB', 'cde-WN': 'RETAININGWALL', 'cde-WS': 'RETAININGWALL', 'cde-WW': 'RETAININGWALL',
+            'cde-WO': 'RETAININGWALL', 'cde-DE': 'ROOF', 'cde-RA': 'INTERNAL' });
     });
 
     it('E17 über Kommandos: ein zweites Zuordnen ersetzt — und Rückgängig holt das erste zurück', async () => {

@@ -464,7 +464,31 @@ export function predefinedTypeVon(bauplan) {
         return typeof teil.predefinedType === 'function'
             ? (teil.predefinedType(bauplan.parameter ?? {}) ?? null) : (teil.predefinedType ?? null);
     }
+    // EIN GEZEICHNETES BAUTEIL (Fund 8): sein Feld „Ausführung", leer = die
+    // Vorgabe des Rezepts — die nur, wenn die gewählte Klasse sie kennt (ein
+    // Streifenfundament als Proxy hat keinen STRIP_FOOTING).
+    const feld = REZEPTE_FELD(bauplan, 'predefinedType');
+    if (feld) {
+        const w = String(bauplan.parameter?.predefinedType ?? '').trim().toUpperCase();
+        if (w) return w;
+        return feld.vorgabe && _predefinedErlaubt(bauplan.kategorie ?? rezeptNach(bauplan.rezept)?.kategorieVorgabe).includes(feld.vorgabe)
+            ? feld.vorgabe : null;
+    }
     return bauplan?.predefinedType ?? null;
+}
+
+/** Der Objekttyp (IFC `ObjectType`) eines gezeichneten Bauteils — der Fachbegriff, oder null. */
+export function objektTypVon(bauplan) {
+    return String(bauplan?.parameter?.objektTyp ?? '').trim() || null;
+}
+
+function REZEPTE_FELD(bauplan, name) {
+    return rezeptNach(bauplan?.rezept)?.felder?.find(f => f?.name === name) ?? null;
+}
+
+/** Die PredefinedTypes einer Klasse laut Wörterbuch (IFC 4.3), sonst []. */
+function _predefinedErlaubt(klasse) {
+    return ENTITY_META[String(klasse ?? '').toUpperCase().trim()]?.predefined ?? [];
 }
 
 /** Eine Ableitung rechnet aus anderen Objekten (`leite`); ein Rezept baut aus Parametern (`baue`). */
@@ -781,6 +805,18 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
     const typ = kategorie ?? r.kategorieVorgabe;
     const nicht = warumNichtSchreibbar(typ, { raum: !!r.raum });
     if (nicht) fehler.push(`${nicht} — keine Klasse, die der Eigenbau schreiben kann`);
+    // DIE AUSFÜHRUNG (Fund 8) ist ein Wert aus dem Schema der Klasse — eine
+    // andere schriebe der Schreiber still als NOTDEFINED. USERDEFINED ohne
+    // Objekttyp ist im Schema erlaubt, aber leer: das Feld sagt dann nichts.
+    const pt = !nicht ? predefinedTypeVon({ rezept, kategorie: typ, parameter }) : null;
+    if (pt && REZEPTE_FELD({ rezept }, 'predefinedType')) {
+        const erlaubt = _predefinedErlaubt(typ);
+        if (!erlaubt.includes(pt)) {
+            fehler.push(`Ausführung „${pt}" gibt es für ${String(typ).toUpperCase()} nicht (${erlaubt.join(', ') || 'keine'})`);
+        } else if (pt === 'USERDEFINED' && !objektTypVon({ parameter })) {
+            fehler.push('Ausführung USERDEFINED braucht einen Objekttyp — den Fachbegriff, etwa „Überlaufschwelle"');
+        }
+    }
     return fehler;
 }
 
