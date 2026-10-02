@@ -84,7 +84,8 @@ import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { BAUWERKSVORLAGEN, gesteuerterStand, vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
+import { BAUWERKSVORLAGEN, abweichungVon, gesteuerterStand, rahmenAus, rahmenNach, vorlageNach, vorlageTeile,
+         vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -1490,19 +1491,21 @@ function _bauwerkLageSchritte(art, el, werte, kandidatenVon) {
     const d = BAUWERK_LAGE[art];
     const kopie = d.kopie(werte ?? {});
     const zahl = (n) => Number(werte?.[n]);
-    let rechne;
+    let rechne, rahmenArt;
     if (art === 'verschieben' || art === 'kopieren') {
         const [ost, nord, hoehe] = ['ost', 'nord', 'hoehe'].map(zahl);
         if (![ost, nord, hoehe].every(Number.isFinite)) return null;
         if ([ost, nord, hoehe].every(v => Math.abs(v) < 1e-4)) return null;
         const delta = { x: ost, y: hoehe, z: -nord };          // Nord = −z, Höhe = +y
         rechne = (t) => rezeptNach(t.bauplan.rezept).verschiebe(t.bauplan.parameter, delta);
+        rahmenArt = ['verschieben', { delta }];
     } else {
         const w = zahl(art === 'drehen' ? 'winkel' : 'achse');
         if (!Number.isFinite(w) || (art === 'drehen' && Math.abs(w % 360) < 1e-6)) return null;
         const zentrum = schwerpunktXZ(teile.filter(t => !t.behaelter).flatMap(t => t.bauplan.parameter.punkte));
         if (!zentrum) return null;
         rechne = (t) => (art === 'drehen' ? drehePunktliste : spiegelePunktliste)(t.bauplan.parameter, w, zentrum);
+        rahmenArt = [art, { grad: w, zentrum }];
     }
     // KENNUNGEN: an Ort und Stelle dieselben; als Kopie neue — Bauwerk zuerst,
     // dann die Teile in Stand-Reihenfolge (das Kommando nennt sie in `neu`).
@@ -1522,10 +1525,27 @@ function _bauwerkLageSchritte(art, el, werte, kandidatenVon) {
         if (p.hoeheVon?.bauteil && neu.has(p.hoeheVon.bauteil)) p = { ...p, hoeheVon: { ...p.hoeheVon, bauteil: neu.get(p.hoeheVon.bauteil) } };
         return p;
     };
+    // EIN BAUWERK AUS EINER VORLAGE (Teil XXVIII, V3) geht mit seinem Rahmen: Ort,
+    // Winkel, Spiegelung — und die letzte Auswertung je Rolle wandert mit den
+    // Teilen, sonst stünde nach dem Verschieben jedes Teil als „abweichend" da.
+    // Eine Kopie zeigt mit ihren Rollen auf die Kopien der Teile.
+    let bauwerkParameter = plan.parameter;
+    const bv = plan.parameter?.bauwerksvorlage;
+    if (bv?.rahmen) {
+        const rezeptJe = new Map(teile.map(t => [t.id, t.bauplan?.rezept]));
+        const stand = Object.fromEntries(Object.entries(bv.stand ?? {}).map(([rolle, st]) => {
+            const rz = rezeptJe.get(bv.rollen?.[rolle]);
+            return [rolle, rz ? gesteuerterStand(rz, rechne({ bauplan: { rezept: rz, parameter: st } })) : st];
+        }));
+        const rollen = Object.fromEntries(Object.entries(bv.rollen ?? {}).map(([rolle, gid]) => [rolle, kennung(gid) ?? gid]));
+        bauwerkParameter = { ...plan.parameter, bauwerksvorlage: { ...bv, rahmen: rahmenNach(bv.rahmen, ...rahmenArt), stand, rollen } };
+    }
     const schritte = [];
     if (kopie) {
         schritte.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ? `${plan.name} Kopie` : '',
-                                       parameter: plan.parameter, globalId: kennung(el.globalId) }));
+                                       parameter: bauwerkParameter, globalId: kennung(el.globalId) }));
+    } else if (bauwerkParameter !== plan.parameter) {
+        schritte.push(bauplanFortschreiben(el, plan, bauwerkParameter));
     }
     for (const t of teile) {
         const p = t.bauplan;
@@ -1606,14 +1626,15 @@ function vorlageWerkzeug(vorlage) {
             const name = String(werte?.name ?? '').trim();
             const w = vorlagenWerte(vorlage, werte);
             if (!name || !Number.isFinite(y) || !vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return null;
-            const teile = vorlage.rollen(w, { x: p[0], y, z: p[2] });
+            const rahmen = rahmenAus({ x: p[0], y, z: p[2] });
+            const teile = vorlageTeile(vorlage, w, rahmen);
             // Kennungen: Bauwerk zuerst, dann die Rollen in Reihenfolge der Vorlage.
             const bauwerk = neueGlobalId();
             const rollen = Object.fromEntries(teile.map(t => [t.rolle, neueGlobalId()]));
             const { name: _n, ...art } = vorlage.bauwerk;
             const schritte = [erzeugtEintrag({ rezept: behaelterRezept(), name, globalId: bauwerk, parameter: {
                 ...art,
-                bauwerksvorlage: { id: vorlage.id, werte: w, rollen,
+                bauwerksvorlage: { id: vorlage.id, werte: w, rahmen, rollen,
                                    stand: Object.fromEntries(teile.map(t => [t.rolle, gesteuerterStand(t.rezept, t.parameter)])) },
             } })];
             for (const t of teile) {
@@ -1631,6 +1652,95 @@ function vorlageWerkzeug(vorlage) {
         vorgangstitel: (werte) => (werte?.name ? `${vorlage.titel} „${werte.name}" aus Vorlage` : null),
     };
 }
+
+/**
+ * NEU AUSWERTEN (Teil XXVIII, V3 — Fabios E33/E34). Die Vorlage eines Bauwerks
+ * rechnet mit neuen Werten (oder denselben, beim Angleichen) neu; jede Rolle
+ * schreibt auf IHRE Kennung — nur die Felder, die die Vorlage steuert
+ * (`GESTEUERT`), und nur, wenn sich etwas ändert. Merkmale, Ausführung,
+ * Objekttyp, `teilVon`, `hoeheVon` und Öffnungen (die an der Kennung der Wand
+ * hängen, B3) bleiben.
+ *
+ * Ein Teil, das jemand von Hand geändert hat (seine gesteuerten Werte weichen
+ * von der letzten Auswertung ab), wird beim Wertesetzen ÜBERSPRUNGEN — seine
+ * letzte Auswertung bleibt stehen, der Befund `vorlage_abweichung` nennt es.
+ * „An Vorlage angleichen" holt es zurück (`angleichen`: eine Rolle oder alle).
+ */
+function _vorlageSchritte(el, werteNeu, { kandidatenVon = null, angleichen = null } = {}) {
+    const plan = el?.stand?.bauplan;
+    const bv = plan?.parameter?.bauwerksvorlage;
+    const vorlage = vorlageNach(bv?.id);
+    if (!el?.globalId || !vorlage || !bv?.rahmen) return { grund: 'Dieses Bauwerk stammt aus keiner Vorlage.' };
+    const w = vorlagenWerte(vorlage, { ...bv.werte, ...werteNeu });
+    if (!vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return { grund: 'Ein Wert der Vorlage fehlt oder ist nicht grösser als 0.' };
+    const teile = new Map((kandidatenVon?.('bauwerk:teile', el) ?? []).map(t => [t.id, t.bauplan]));
+    const stand = { ...bv.stand };
+    const schritte = [], uebersprungen = [];
+    for (const t of vorlageTeile(vorlage, w, bv.rahmen)) {
+        const gid = bv.rollen?.[t.rolle];
+        const ist = teile.get(gid);
+        if (!ist) { uebersprungen.push(`${t.rolle} (fehlt)`); continue; }
+        const abweichend = abweichungVon(bv.stand?.[t.rolle], ist.rezept, ist.parameter).length > 0;
+        const darf = angleichen ? (angleichen === '*' || angleichen === t.rolle) : !abweichend;
+        if (!darf) { if (abweichend) uebersprungen.push(t.rolle); continue; }
+        const soll = gesteuerterStand(ist.rezept, t.parameter);
+        stand[t.rolle] = soll;
+        if (!abweichungVon(soll, ist.rezept, ist.parameter).length) continue;
+        schritte.push(bauplanFortschreiben({ globalId: gid }, ist, { ...ist.parameter, ...soll }));
+    }
+    const werteGleich = vorlage.felder.every(f => Math.abs(w[f.name] - bv.werte?.[f.name]) <= 1e-9);
+    if (!schritte.length && werteGleich) {
+        return { grund: uebersprungen.length && !angleichen
+            ? `Nichts zu tun — abweichend und übersprungen: ${uebersprungen.join(', ')}.`
+            : 'Nichts zu tun — das Bauwerk entspricht schon der Vorlage.' };
+    }
+    schritte.unshift(bauplanFortschreiben(el, plan, { ...plan.parameter, bauwerksvorlage: { ...bv, werte: w, stand } }));
+    return { schritte };
+}
+
+const VORLAGE_ROLLEN = [...new Set(Object.values(BAUWERKSVORLAGEN)
+    .flatMap(v => v.rollen(vorlagenWerte(v), { x: 0, y: 0, z: 0 }).map(t => t.rolle)))];
+
+const _ausVorlageDiesesBauwerks = (v) => (el) => el?.stand?.bauplan?.parameter?.bauwerksvorlage?.id === v.id;
+
+const VORLAGE_WERKZEUGE = [
+    {
+        id: 'vorlage-werte-setzen',
+        titel: 'Werte der Vorlage ändern',
+        icon: 'measure',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
+        giltGrund: 'Nur an einem Bauwerk aus einer Vorlage.',
+        art: 'erzeugt',
+        // Je Vorlage ihre Felder — es zeigt sich nur, was zur Vorlage DIESES Bauwerks gehört.
+        felder: Object.values(BAUWERKSVORLAGEN).flatMap(v => v.felder.map(f => ({ ...f, nurWenn: _ausVorlageDiesesBauwerks(v) }))),
+        vorbelegung: (el) => ({ ...(el?.stand?.bauplan?.parameter?.bauwerksvorlage?.werte ?? {}) }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) => _vorlageSchritte(el, werte, { kandidatenVon }).schritte ?? null,
+        warumNicht: (el, werte, { kandidatenVon = null } = {}) => _vorlageSchritte(el, werte, { kandidatenVon }).grund ?? null,
+    },
+    {
+        id: 'an-vorlage-angleichen',
+        titel: 'An Vorlage angleichen',
+        icon: 'measure',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
+        giltGrund: 'Nur an einem Bauwerk aus einer Vorlage.',
+        art: 'erzeugt',
+        felder: [{ name: 'rolle', titel: 'Teil (leer = alle)', typ: 'auswahl', leerErlaubt: true,
+                   optionen: VORLAGE_ROLLEN.map(r => ({ wert: r, titel: r })) }],
+        vorbelegung: () => ({ rolle: '' }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) =>
+            _vorlageSchritte(el, {}, { kandidatenVon, angleichen: werte?.rolle || '*' }).schritte ?? null,
+        warumNicht: (el, werte, { kandidatenVon = null } = {}) =>
+            _vorlageSchritte(el, {}, { kandidatenVon, angleichen: werte?.rolle || '*' }).grund ?? null,
+    },
+];
 
 /** Die Parameter einer Öffnung aus dem Formular — oder null, wenn ein Mass fehlt (Teil XXVII, B3). */
 function _oeffnungParameter(werte) {
@@ -1660,6 +1770,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
     // Teil XXVIII, V1: je eingebauter Vorlage ein Werkzeug — ein Bauwerk, ein Kommando.
     ...Object.values(BAUWERKSVORLAGEN).map(vorlageWerkzeug),
+    // V3: am Bauwerk neu auswerten — mit neuen Werten, oder angleichen.
+    ...VORLAGE_WERKZEUGE,
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',

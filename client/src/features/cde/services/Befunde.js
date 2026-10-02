@@ -79,6 +79,8 @@ export const SCHWEREN = Object.freeze(['hinweis', 'warnung']);
 export const KUREN = Object.freeze({
     gefaelle_gegen:      { bearbeitung: 'fliessrichtung-setzen', werte: { richtung: 'umgekehrt' } },
     gefaelle_zu_flach:   { bearbeitung: 'sohlhoehen-setzen' },
+    // Teil XXVIII, V3: ein Teil weicht von seiner Vorlage ab — der Befund steht am Bauwerk.
+    vorlage_abweichung:  { bearbeitung: 'an-vorlage-angleichen' },
     gefaelle_zu_steil:   { bearbeitung: 'sohlhoehen-setzen' },
     hoehensprung:        { bearbeitung: 'sohlhoehen-setzen' },
     zulauf_unter_ablauf: { bearbeitung: 'sohlhoehen-setzen' },

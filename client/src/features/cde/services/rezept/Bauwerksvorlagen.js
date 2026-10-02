@@ -90,8 +90,96 @@ export function vorlagenWerte(vorlage, roh = {}) {
     return aus;
 }
 
-/** Die gesteuerten Werte eines Bauplans (für die Abweichung, E34) — als vergleichbarer Text. */
+/**
+ * DER RAHMEN eines Bauwerks aus einer Vorlage: der Ort der Aussenecke Nordwest
+ * (Welt), der Winkel (Grad, gezählt wie `drehePunktliste`) und ob gespiegelt.
+ * Die Vorlage rechnet in ihrem eigenen Grundriss; der Rahmen setzt ihn in die
+ * Welt. Bewegt jemand das ganze Bauwerk (Teil XXVII, B2), zieht das
+ * Lagewerkzeug den Rahmen nach (`rahmenNach`) — sonst spränge die Kammer beim
+ * nächsten Wertesetzen an den alten Ort zurück.
+ */
+export function rahmenAus(ort) {
+    return { x: ort.x, y: ort.y, z: ort.z, winkel: 0, spiegel: false };
+}
+
+/** Ein Punkt der Vorlage (Grundriss um den Nullpunkt) in die Welt. */
+function _inWelt(p, r) {
+    if (!Array.isArray(p)) return p;
+    const lz = r.spiegel ? -p[2] : p[2];
+    if (!r.winkel) return [r.x + p[0], p[1], r.z + lz];
+    const w = (r.winkel * Math.PI) / 180, cos = Math.cos(w), sin = Math.sin(w);
+    return [r.x + p[0] * cos - lz * sin, p[1], r.z + p[0] * sin + lz * cos];
+}
+
+/** Die Teile der Vorlage für diese Werte, in die Welt gesetzt. */
+export function vorlageTeile(vorlage, werte, rahmen) {
+    return vorlage.rollen(werte, { x: 0, y: rahmen.y, z: 0 }).map(t => ({
+        ...t,
+        parameter: Array.isArray(t.parameter?.punkte)
+            ? { ...t.parameter, punkte: t.parameter.punkte.map(p => _inWelt(p, rahmen)) } : t.parameter,
+    }));
+}
+
+/**
+ * Der Rahmen nach einer Lageänderung des ganzen Bauwerks — dieselbe Rechnung
+ * wie für die Punkte: verschieben `{delta}`, drehen `{grad, zentrum}`,
+ * spiegeln an der Achse `{grad, zentrum}` (Ref·Dreh(θ)·M = Dreh(2a − θ)·Ref₀·M).
+ */
+export function rahmenNach(r, art, { delta = null, grad = 0, zentrum = null } = {}) {
+    if (art === 'verschieben') return { ...r, x: r.x + delta.x, y: r.y + delta.y, z: r.z + delta.z };
+    const w = (Number(grad) * Math.PI) / 180, dx = r.x - zentrum.x, dz = r.z - zentrum.z;
+    if (art === 'drehen') {
+        const cos = Math.cos(w), sin = Math.sin(w);
+        return { ...r, x: zentrum.x + dx * cos - dz * sin, z: zentrum.z + dx * sin + dz * cos, winkel: r.winkel + Number(grad) };
+    }
+    if (art === 'spiegeln') {
+        const c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+        return { ...r, x: zentrum.x + dx * c2 + dz * s2, z: zentrum.z + dx * s2 - dz * c2,
+                 winkel: 2 * Number(grad) - r.winkel, spiegel: !r.spiegel };
+    }
+    return r;
+}
+
+/** Die gesteuerten Werte eines Bauplans (für die Abweichung, E34) — nur diese Felder. */
 export function gesteuerterStand(rezept, parameter) {
     const felder = GESTEUERT[rezept] ?? ['punkte'];
-    return JSON.stringify(felder.map(f => [f, parameter?.[f] ?? null]));
+    return Object.fromEntries(felder.map(f => [f, parameter?.[f] ?? null]));
+}
+
+const _gleich = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1e-6
+    : Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => _gleich(x, b[i]))
+    : a === b);
+
+/** Welche gesteuerten Felder eines Teils von der letzten Auswertung abweichen — [] heisst: unberührt. */
+export function abweichungVon(stand, rezept, parameter) {
+    const ist = gesteuerterStand(rezept, parameter);
+    return Object.keys(ist).filter(f => !_gleich(ist[f], stand?.[f] ?? null));
+}
+
+/**
+ * DIE ABWEICHUNG ALS BEFUND (E34): ein Teil, das jemand von Hand geändert hat,
+ * überschreibt die Vorlage nicht — es wird übersprungen und hier genannt, am
+ * Bauwerk, mit Rolle und Feld. Ein gelöschtes Teil ebenso.
+ *
+ * @param {object} plan       Bauplan des Bauwerks (mit `parameter.bauwerksvorlage`)
+ * @param {Map} bauplaene     alle eigenen Baupläne je Kennung
+ * @param {Set} [verdeckt]    gelöschte (verborgene) Kennungen — sie fehlen
+ */
+export function befundeFuerVorlage(plan, bauplaene, verdeckt = new Set()) {
+    const bv = plan?.parameter?.bauwerksvorlage;
+    const vorlage = vorlageNach(bv?.id);
+    if (!bv || !vorlage) return [];
+    const out = [];
+    for (const [rolle, gid] of Object.entries(bv.rollen ?? {})) {
+        const teil = verdeckt.has(gid) ? null : bauplaene?.get(gid);
+        const felder = teil ? abweichungVon(bv.stand?.[rolle], teil.rezept, teil.parameter) : [];
+        if (teil && !felder.length) continue;
+        out.push({
+            regel: 'vorlage_abweichung', schwere: 'hinweis', rolle, feld: felder[0] ?? null,
+            text: teil ? `${teil.name || rolle} weicht von der Vorlage „${vorlage.titel}" ab (${felder.join(', ')}) — beim Wertesetzen übersprungen.`
+                       : `Die Rolle „${rolle}" der Vorlage „${vorlage.titel}" fehlt — das Teil ist gelöscht.`,
+            wert: felder.join(', ') || 'fehlt', grenze: 'wie die Vorlage', quelle: `Vorlage „${vorlage.titel}"`, kur: null,
+        });
+    }
+    return out;
 }

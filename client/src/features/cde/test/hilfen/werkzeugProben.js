@@ -70,6 +70,17 @@ function welt() {
     erzeugt.set('cde-BW1', { rezept: 'bauwerk', kategorie: null, name: 'BW1', bauform: 'netz', parameter: { art: 'anlage' } });
     const w1 = erzeugt.get('cde-W1');
     erzeugt.set('cde-W1', { ...w1, parameter: { ...w1.parameter, teilVon: 'cde-BW1' } });
+    // Teil XXVIII, V1/V3: eine Kammer aus der Vorlage (Bauwerk cde-VK0, Teile cde-VK1 … VK7);
+    // die Längswand Nord (VK2) von Hand dicker — die Abweichung, die „Angleichen" zurückholt.
+    {
+        let i = 0;
+        const schritte = mitKennungen(() => `cde-VK${i++}`, () => nachId('bauwerk-aus-vorlage-rechteckkammer').anwenden(
+            { punkte: [P(200, 100, 0)], hoehenversatz: HV },
+            { name: 'VK', hoehe: '', laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }, { zug: [] }));
+        for (const s of schritte) erzeugt.set(s.globalId, s.nachher);
+        const wn = erzeugt.get('cde-VK2');
+        erzeugt.set('cde-VK2', { ...wn, parameter: { ...wn.parameter, dicke: 0.5 } });
+    }
     // Ein Erdbau-Vorgang mit zwei Operationen (Grube, Gerinne) — die Punkthöhen stehen in m NN.
     let n = 0;
     const vorgang = mitKennungen((art) => (art === 'operation' ? `op-probe${n++}` : `cde-EB${n++}`), () => ableitungsSchritte({
@@ -203,6 +214,9 @@ const NEU = [
     { id: 'durchfuehrung-setzen', el: eigen('cde-H1'), werte: [{ wirt: 'cde-W1', ringspalt: 0.05 }], kandidaten: KANDIDATEN },
     // Teil XXVII, B3: eine Kernbohrung in der Wand W1.
     { id: 'oeffnung-setzen', el: eigen('cde-W1'), werte: [{ form: 'rund', station: 5, unterkante: 1, durchmesser: 0.3, breite: '', hoehe: '' }] },
+    { id: 'vorlage-werte-setzen', el: eigen('cde-VK0'),
+      werte: [{ laenge: 5, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }], kandidaten: KANDIDATEN },
+    { id: 'an-vorlage-angleichen', el: eigen('cde-VK0'), werte: [{ rolle: '' }, { rolle: 'laengswandNord' }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-verschieben', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-kopieren', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-drehen', el: eigen('cde-BW1'), werte: [{ winkel: 90 }], kandidaten: KANDIDATEN },

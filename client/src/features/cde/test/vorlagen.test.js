@@ -159,3 +159,128 @@ describe('Teil XXVIII, V1/V2 — die Rechteckkammer aus EINER Vorlage', () => {
         }
     });
 });
+
+describe('Teil XXVIII, V3 — neu auswerten, Abweichung, angleichen', () => {
+    const W = { laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 };
+    const setze = (werte) => k('vorlage-werte-setzen', { ziel: ['cde-KA'], werte: { ...W, ...werte } });
+    const plan = (g) => ae.wirksamerStand('erzeugt').get(g);
+    const fuehre = async (kom) => { const erg = await b.fuehreAus(kom); expect(erg.ausgefuehrt, `${kom.werkzeug}: ${erg.grund}`).toBe(true); return erg; };
+    const befundeAmBauwerk = () => b.befundeVon('cde-KA').filter(x => x.regel === 'vorlage_abweichung');
+
+    it('Fund 2 gedreht: 4,00 → 5,00 m lichte Länge = 1 Kommando — Beton 26,004 m³, Raum 37,5 m³, die Öffnung bleibt', async () => {
+        await fuehre(KAMMER_AUS_VORLAGE());
+        await fuehre(k('oeffnung-setzen', { ziel: ['cde-WN'], neu: ['cde-OE', 'op-OE'],
+            werte: { form: 'rund', station: 2.3, unterkante: 1, durchmesser: 0.3, breite: '', hoehe: '' } }));
+        const oe = JSON.stringify(plan('cde-OE'));
+        const erg = await fuehre(setze({ laenge: 5 }));
+        // Bauwerk + was sich ändert: Platte, beide Längswände, Querwand Ost, Decke, Raum — nicht die Querwand West.
+        expect(erg.eintraege.map(x => x.globalId).sort()).toEqual(['cde-BP', 'cde-DE', 'cde-KA', 'cde-RA', 'cde-WN', 'cde-WO', 'cde-WS']);
+        expect(new Set(ae.eintraege.map(x => x.vorgang)).size).toBe(3);
+        const p = await paketAus(ae);
+        expect(r6(p.bauteile.filter(t => t.klasse !== 'IFCSPACE' && t.klasse !== 'IFCOPENINGELEMENT')
+            .reduce((a, t) => a + (t.mengen.grossVolume ?? t.mengen.netVolume), 0))).toBe(26.004);
+        expect(r6(p.bauteile.find(t => t.klasse === 'IFCSPACE').mengen.netVolume)).toBe(37.5);
+        // Die Öffnung: dieselbe Kennung, derselbe Bauplan, dieselbe Wand — und sie schneidet weiter.
+        expect(JSON.stringify(plan('cde-OE'))).toBe(oe);
+        expect(r6(p.bauteile.find(t => t.cdeId === 'cde-WN').mengen.netVolume)).toBe(r6(5.6 * 0.3 * 2.5 - Math.PI * 0.15 ** 2 * 0.3));
+        // Was die Vorlage nicht steuert, bleibt: Ausführung, Zugehörigkeit, Stand.
+        expect(plan('cde-WN').parameter).toMatchObject({ predefinedType: 'RETAININGWALL', teilVon: 'cde-KA', hoeheVon: { bauteil: 'cde-BP' } });
+        expect(befundeAmBauwerk()).toEqual([]);
+        // EIN Rückgängig: die Kammer ist wieder 4 m lang.
+        await ae.zurueck();
+        const zurueck = (await paketAus(ae)).bauteile.filter(t => !['IFCSPACE', 'IFCOPENINGELEMENT'].includes(t.klasse));
+        expect(r6(zurueck.reduce((a, t) => a + t.mengen.netVolume, 0))).toBe(r6(22.164 - Math.PI * 0.15 ** 2 * 0.3));
+    });
+
+    it('lichte Höhe 3 m: Wände wachsen, die Decke steht oben auf der Längswand', async () => {
+        await fuehre(KAMMER_AUS_VORLAGE());
+        await fuehre(setze({ lichteHoehe: 3 }));
+        const uk = rezeptNach('platte').stand.lies(plan('cde-DE').parameter);
+        expect(uk).toBeCloseTo(213, 9);
+        expect(rezeptNach('wand').stand.oberkante(plan('cde-WN').parameter)).toBeCloseTo(213, 9);
+        expect(plan('cde-DE').parameter.hoeheVon).toEqual({ bauteil: 'cde-WN', mass: 'oberkante', versatz: 0 });
+    });
+
+    it('E34: ein von Hand geändertes Teil wird übersprungen und genannt — „An Vorlage angleichen" holt es zurück', async () => {
+        await fuehre(KAMMER_AUS_VORLAGE());
+        await fuehre(k('wand-dicke-setzen', { ziel: ['cde-WS'], werte: { dicke: 0.4 } }));
+        expect(befundeAmBauwerk().map(x => [x.rolle, x.feld])).toEqual([['laengswandSued', 'dicke']]);
+        const erg = await fuehre(setze({ laenge: 5 }));
+        expect(erg.eintraege.map(x => x.globalId)).not.toContain('cde-WS');
+        expect(plan('cde-WS').parameter.dicke).toBe(0.4);
+        expect(plan('cde-WS').parameter.punkte[1][0]).toBeCloseTo(4.6, 9);          // nicht verlängert
+        expect(befundeAmBauwerk().map(x => x.rolle)).toEqual(['laengswandSued']);
+        // Angleichen: die Wand bekommt, was die Vorlage JETZT sagt (5 m, 0,30 m).
+        await fuehre(k('an-vorlage-angleichen', { ziel: ['cde-KA'], werte: { rolle: 'laengswandSued' } }));
+        expect(plan('cde-WS').parameter.dicke).toBe(0.3);
+        expect(plan('cde-WS').parameter.punkte[1][0]).toBeCloseTo(5.6, 9);
+        expect(befundeAmBauwerk()).toEqual([]);
+        // Nichts mehr zu tun — kein leerer Vorgang.
+        expect((await b.fuehreAus(k('an-vorlage-angleichen', { ziel: ['cde-KA'], werte: { rolle: '' } }))).ausgefuehrt).toBe(false);
+    });
+
+    it('ein gelöschtes Teil: genannt, übersprungen; die übrigen folgen', async () => {
+        await fuehre(KAMMER_AUS_VORLAGE());
+        await fuehre(k('loeschen', { ziel: ['cde-DE'], werte: {} }));
+        expect(befundeAmBauwerk().map(x => [x.rolle, x.wert])).toEqual([['decke', 'fehlt']]);
+        const erg = await fuehre(setze({ laenge: 5 }));
+        // Gelöscht heisst verborgen (der Bauplan bleibt im Journal) — die Vorlage holt es nicht still zurück.
+        expect(erg.eintraege.map(x => x.globalId)).not.toContain('cde-DE');
+        expect(plan('cde-BP').parameter.punkte[1][0]).toBeCloseTo(5.6, 9);
+    });
+
+    it('der Rahmen geht mit: verschieben, drehen, spiegeln — danach rechnet die Vorlage am neuen Ort', async () => {
+        const reihen = [
+            k('bauwerk-verschieben', { ziel: ['cde-KA'], werte: { ost: 10, nord: 5, hoehe: 1 } }),
+            k('bauwerk-drehen', { ziel: ['cde-KA'], werte: { winkel: 30 } }),
+            k('bauwerk-spiegeln', { ziel: ['cde-KA'], werte: { achse: 60, kopie: 'nein' } }),
+        ];
+        const punkte = () => TEILE.map(g => plan(g).parameter.punkte);
+        // Reihenfolge 1: bewegen, dann Werte.
+        await fuehre(KAMMER_AUS_VORLAGE());
+        for (const kom of reihen) await fuehre({ ...kom, id: `${kom.id}-a` });
+        expect(befundeAmBauwerk(), 'nach dem Bewegen weicht nichts ab').toEqual([]);
+        await fuehre(setze({ laenge: 5, breite: 4 }));
+        const a = punkte();
+        // Weg 2: dieselben Bewegungen, eine Wand von Hand geändert (beim Wertesetzen
+        // übersprungen), dann angeglichen — muss genau Weg 1 treffen: der mitbewegte
+        // Stand und der mitbewegte Rahmen sagen dasselbe.
+        setActivePinia(createPinia()); repo.setBackend(new Speicher()); b = useBearbeitung(); ae = useAenderungen();
+        await fuehre(KAMMER_AUS_VORLAGE());
+        for (const kom of reihen) await fuehre({ ...kom, id: `${kom.id}-b` });
+        await fuehre(k('wand-dicke-setzen', { ziel: ['cde-WN'], werte: { dicke: 0.5 } }));     // eine Abweichung
+        await fuehre(setze({ laenge: 5, breite: 4 }));
+        await fuehre(k('an-vorlage-angleichen', { ziel: ['cde-KA'], werte: { rolle: '' } }));
+        const b2 = punkte();
+        for (let i = 0; i < a.length; i++) {
+            for (let j = 0; j < a[i].length; j++) for (let c = 0; c < 3; c++) expect(b2[i][j][c]).toBeCloseTo(a[i][j][c], 9);
+        }
+        // Und die Kammer ist wirklich gedreht und gespiegelt: 0° → 30° → 2·60° − 30° = 90°,
+        // die Längswand Nord läuft jetzt Nord–Süd.
+        const [p0, p1] = plan('cde-WN').parameter.punkte;
+        expect(Math.abs(p1[2] - p0[2])).toBeCloseTo(5.6, 9);
+        expect(Math.hypot(p1[0] - p0[0], p1[2] - p0[2])).toBeCloseTo(5.6, 9);
+    });
+
+    it('eine Kopie: ihre Rollen zeigen auf ihre Teile; Werte an der Kopie ändern nur die Kopie', async () => {
+        await fuehre(KAMMER_AUS_VORLAGE());
+        const neu = ['cde-KK', ...TEILE.map((_, i) => `cde-KK${i}`)];
+        await fuehre(k('bauwerk-kopieren', { ziel: ['cde-KA'], neu, werte: { ost: 20, nord: 0, hoehe: 0 } }));
+        expect(Object.values(plan('cde-KK').parameter.bauwerksvorlage.rollen)).toEqual(neu.slice(1));
+        await fuehre(k('vorlage-werte-setzen', { ziel: ['cde-KK'], werte: { ...W, laenge: 5 } }));
+        expect(plan('cde-KK0').parameter.punkte[1][0]).toBeCloseTo(25.6, 9);
+        expect(plan('cde-BP').parameter.punkte[1][0]).toBeCloseTo(4.6, 9);
+        expect(b.befundeVon('cde-KK').filter(x => x.regel === 'vorlage_abweichung')).toEqual([]);
+    });
+
+    it('nur an einem Bauwerk aus einer Vorlage', async () => {
+        await fuehre(k('bauwerk-anlegen', { neu: ['cde-B2'], werte: { name: 'Frei', art: 'anlage' } }));
+        const erg = await b.fuehreAus(k('vorlage-werte-setzen', { ziel: ['cde-B2'], werte: W }));
+        expect(erg.ausgefuehrt).toBe(false);
+        await fuehre(KAMMER_AUS_VORLAGE());
+        const ohne = await b.fuehreAus(setze({}));
+        expect(ohne.ausgefuehrt).toBe(false);
+        expect(ohne.grund).toMatch(/Nichts zu tun/);
+        expect((await b.fuehreAus(k('vorlage-werte-setzen', { ziel: ['cde-WN'], werte: W }))).ausgefuehrt).toBe(false);
+    });
+});

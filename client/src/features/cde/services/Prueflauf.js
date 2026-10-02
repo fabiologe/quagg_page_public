@@ -29,6 +29,7 @@ import { befundeFuer, befundeFuerForderung, befundeFuerNetz, befundeFuerWerte } 
 import { rezeptNach } from './Bauteilrezepte.js';
 import { achseAusKante, cdeAchsenAus, netzauskunftAus, verdeckteAus } from './CdeAchsen.js';
 import { aufgeloestesRegelwerk } from './regeln/Regelwerk.js';
+import { befundeFuerVorlage } from './rezept/Bauwerksvorlagen.js';
 
 /**
  * Die Befunde der eigenen Kanten und Knoten.
@@ -79,7 +80,9 @@ export function pruefeStand({ kanten = [], knoten = [], verdeckt = new Set(), ne
     const zeile = new Map(out.map(z => [z.globalId, z]));
     for (const [globalId, plan] of bauplaene ?? []) {
         if (!globalId || verdeckt.has(globalId)) continue;
-        const befunde = befundeFuerWerte(rezeptNach(plan?.rezept)?.felder, plan?.parameter);
+        const befunde = befundeFuerWerte(rezeptNach(plan?.rezept)?.felder, plan?.parameter)
+            // Ein Bauwerk aus einer Vorlage (Teil XXVIII, V3): welches Teil von Hand abweicht.
+            .concat(befundeFuerVorlage(plan, bauplaene, verdeckt));
         if (!befunde.length) continue;
         const z = zeile.get(globalId);
         // EIN FELD, EIN BEFUND: beurteilt schon eine Regel diesen Wert (die
