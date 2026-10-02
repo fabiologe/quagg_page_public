@@ -887,3 +887,34 @@ def test_rigole_traegt_quagg_versickerung_getypt(tmp_path):
         "NutzbaresVolumen": (14.4, "IfcVolumeMeasure"), "Herleitung": ("Annahme der Abnahme, nicht bemessen", "IfcText")}
     # Ein Paket ohne Bezugssystem — geprueft werden die Regeln des Schemas, nicht die Georeferenz.
     assert _regeln(ziel) == []
+
+
+# ── Teil XXVIII, V8: Abnahme P7 aus der Vorlage ─────────────────────────────
+
+P7 = DATEN / "paket_p7.json"
+
+
+def test_abnahme_p7_im_ifc(tmp_path):
+    """Das Paket aus `abnahmeP7.test.js` (nur `fuehreAus`, 20 Kommandos): der RUEB
+    aus der Vorlage, auf 250 m³ gebracht, mit Einbauten, Zulauf und Ablauf. Das
+    Speichervolumen ist ein Messwert — Σ NetVolume der Raeume, 2 · 16,67 · 3 · 2,5
+    = 250,05 m³, Soll 250 ± 1 %. Prueftor ohne offenen Befund, IDS 0 von 18."""
+    from app.ifc.pruefe import offen, pruefe
+    paket = json.loads(P7.read_text(encoding="utf-8"))
+    ziel = tmp_path / "p7.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="p7")
+    assert bericht["uebersprungen"] == []
+    assert [w for w in bericht["warnungen"] if "Merkmalssatz" in w or "nicht geschrieben" in w] == []
+    assert [b for b in pruefe(ziel, ids=[IDS])["befunde"] if offen(b)] == []
+    assert _verfehlt(ziel) == []
+    datei = ifcopenshell.open(str(ziel))
+    (anlage,) = datei.by_type("IfcFacility")
+    raeume = [e for r in anlage.IsDecomposedBy for e in r.RelatedObjects if e.is_a("IfcSpace")]
+    netto = [q.VolumeValue for s in raeume for r in s.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+             and r.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+             for q in r.RelatingPropertyDefinition.Quantities if q.Name == "NetVolume"]
+    assert len(netto) == 2 and round(sum(netto), 3) == 250.05 and abs(sum(netto) - 250) / 250 < 0.01
+    # Zwei Durchfuehrungen, je in ihrer Stirnwand.
+    wirte = sorted(r.RelatingBuildingElement.Name for r in datei.by_type("IfcRelVoidsElement"))
+    assert wirte == ["Stirnwand Ost", "Stirnwand West"]
+    assert {e.is_a() for e in datei.by_type("IfcElement")} >= {"IfcFilter", "IfcValve", "IfcPipeSegment", "IfcSlab", "IfcWall"}
