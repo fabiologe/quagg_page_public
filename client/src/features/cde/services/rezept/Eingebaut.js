@@ -268,7 +268,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         geometrie: { art: 'sweep', achsbezug: 'sohle',
                      profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
         // Qto_WallBaseQuantities: „Length — along center line" = die gezeichnete Achse.
-        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', grossSideArea: 'seitenflaeche', netVolume: 'volumen' },
     },
     {
         /**
@@ -345,7 +345,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         hoehenAus: 'gelaende',
         geometrie: { art: 'sweep', achsbezug: 'sohle',
                      profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
-        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', grossSideArea: 'seitenflaeche', netVolume: 'volumen' },
     },
     {
         /**
@@ -473,7 +473,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         ],
         geometrie: { art: 'sweep', achsbezug: 'sohle',
                      profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
-        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', grossSideArea: 'seitenflaeche', netVolume: 'volumen' },
     },
     schicht('sauberkeitsschicht', 'Sauberkeitsschicht', 'Sauberkeitsschicht', 0.1),
     schicht('bettung', 'Bettung', 'Bettung', 0.2),

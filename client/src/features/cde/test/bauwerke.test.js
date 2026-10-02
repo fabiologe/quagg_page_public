@@ -181,7 +181,7 @@ describe('Z4 — ein eigenes Bauteil trägt seine Mengen (Fund 5)', () => {
 
     it('Wand aus Z2 → Länge 10,000, Breite 0,300, Höhe 2,500, Volumen 7,500 m³', () => {
         const plan = gezeichnet('wand-zeichnen', FUSS, { name: 'W', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 });
-        expect(runde(mengenVon(plan))).toEqual({ length: 10, width: 0.3, height: 2.5, netVolume: 7.5 });
+        expect(runde(mengenVon(plan))).toEqual({ length: 10, width: 0.3, height: 2.5, grossSideArea: 25, netVolume: 7.5 });
     });
 
     it('Streifenfundament → Länge 10,000, Breite 1,200, Höhe 0,400, Volumen 4,800 m³', () => {

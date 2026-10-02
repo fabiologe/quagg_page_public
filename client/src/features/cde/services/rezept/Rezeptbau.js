@@ -112,6 +112,12 @@ export const KOERPERMASSE = Object.freeze({
     achslaenge:   Object.freeze({ typ: 'IfcLengthMeasure', text: 'waagerechte Länge der gezeichneten Linie' }),
     grundflaeche: Object.freeze({ typ: 'IfcAreaMeasure', text: 'Fläche des Umrisses in der Draufsicht' }),
     umfang:       Object.freeze({ typ: 'IfcLengthMeasure', text: 'Umfang des Umrisses in der Draufsicht' }),
+    // Teil XXVIII, V7: die Ansicht der Mittelebene eines Profilkörpers — Achslänge ×
+    // Profilhöhe, EINE Seite, so wie bSI `GrossSideArea` definiert („as viewed by an
+    // elevation view of the middle plane"). Die Schalung beider Seiten ist das Doppelte;
+    // Stirnflächen gehören nicht dazu.
+    seitenflaeche: Object.freeze({ typ: 'IfcAreaMeasure', text: 'Ansicht der Mittelebene: Achslänge × Profilhöhe (eine Seite)',
+                                   nurFuer: 'sweep mit Rechteckprofil' }),
 });
 
 function _koerpermass(name, geo, parameter, vorgabe) {
@@ -119,6 +125,11 @@ function _koerpermass(name, geo, parameter, vorgabe) {
     if (name === 'achslaenge') return punkte.length >= 2 ? stationiere(punkte).laenge : undefined;
     if (name === 'umfang') return punkte.length >= 3 ? stationiere([...punkte, punkte[0]]).laenge : undefined;
     if (name === 'grundflaeche') return punkte.length >= 3 ? ringFlaeche(punkte) : undefined;
+    if (name === 'seitenflaeche') {
+        if (geo?.art !== 'sweep' || geo.profil?.art !== 'rechteck' || punkte.length < 2) return undefined;
+        const v = (profilAus(geo.profil, parameter, vorgabe)?.punkte ?? []).map(q => q.v);
+        return v.length ? stationiere(punkte).laenge * (Math.max(...v) - Math.min(...v)) : undefined;
+    }
     if (name === 'volumen') {
         const k = _koerper(geo, parameter, vorgabe);
         if (!k?.positions?.length) return undefined;

@@ -51,10 +51,14 @@ describe('Teil XXVIII, V0 — die Funde der Vorprüfung, wie sie HEUTE sind', ()
             .toEqual(['Hohlraumanteil', 'DurchlaessigkeitKf', 'Versickerungsflaeche', 'NutzbaresVolumen', 'Herleitung']);
     });
 
-    it('Fund 8: eine Wand trägt keine Schalungsfläche (GrossSideArea)', () => {
+    it('Fund 8 gedreht (V7): eine Wand trägt GrossSideArea — die Ansicht der Mittelebene, EINE Seite', () => {
         const m = rezeptNach('wand').mengen({ punkte: [[0, 210, 0], [4.6, 210, 0]], dicke: 0.3, wandhoehe: 2.5 });
-        expect(m.grossSideArea).toBeUndefined();
+        expect(m.grossSideArea).toBeCloseTo(11.5, 9);
         expect(m.netVolume).toBeCloseTo(3.45, 9);
+        // Geknickt: entlang der Achse gemessen (waagerecht), nicht die Sehne.
+        expect(rezeptNach('wand').mengen({ punkte: [[0, 0, 0], [3, 0, 0], [3, 0, 4]], dicke: 0.3, wandhoehe: 2 }).grossSideArea).toBeCloseTo(14, 9);
+        // Nur ein Profilkörper mit Rechteckprofil hat eine Seitenfläche.
+        expect(rezeptNach('platte').mengen({ punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4]], dicke: 0.2 }).grossSideArea).toBeUndefined();
     });
 });
 
@@ -93,6 +97,27 @@ describe('Teil XXVIII, V1/V2 — die Rechteckkammer aus EINER Vorlage', () => {
             : Array.isArray(v) ? v.map(rund) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([a, c]) => [a, rund(c)])) : v);
         const nach = (p) => rund([...p.bauteile].sort((a, c) => a.cdeId.localeCompare(c.cdeId)));
         expect(nach(nachher)).toEqual(nach(vorher));
+    });
+
+    it('V7: die Schalung der Kammer — GrossSideArea 38,00 m² (Längswände 2 · 11,50, Querwände 2 · 7,50), beidseitig 76,00', async () => {
+        expect((await b.fuehreAus(KAMMER_AUS_VORLAGE())).ausgefuehrt).toBe(true);
+        const p = await paketAus(ae);
+        const waende = p.bauteile.filter(t => t.klasse === 'IFCWALL');
+        expect(waende.map(t => [t.cdeId, r6(t.mengen.grossSideArea)]).sort())
+            .toEqual([['cde-WN', 11.5], ['cde-WO', 7.5], ['cde-WS', 11.5], ['cde-WW', 7.5]]);
+        expect(r6(2 * waende.reduce((a, t) => a + t.mengen.grossSideArea, 0))).toBe(76);
+    });
+
+    it('V7: die Katalogprüfung lässt „seitenflaeche" nur an einem Profilkörper mit Rechteckprofil zu', async () => {
+        const { EINGEBAUTE_REZEPTE } = await import('../services/rezept/Eingebaut.js');
+        const wand = EINGEBAUTE_REZEPTE.find(x => x.id === 'wand');
+        expect(pruefeEintrag('rezept', { ...wand, id: 'kopie' }).fehler).toEqual([]);
+        const rund = { ...wand, id: 'kopie', geometrie: { ...wand.geometrie, profil: { art: 'kreis', durchmesser: 'dicke', einheit: 'm', ecken: 12 } } };
+        expect(pruefeEintrag('rezept', rund).fehler.join(' ')).toMatch(/„seitenflaeche" gibt es nur für sweep mit Rechteckprofil/);
+        // Und an der Prüfung vorbei gebaut: keine Seitenfläche statt einer falschen Zahl.
+        const { rezeptAusDeklaration } = await import('../services/rezept/Rezeptbau.js');
+        const m = rezeptAusDeklaration(rund).mengen({ punkte: [[0, 0, 0], [4, 0, 0]], dicke: 0.3, wandhoehe: 2.5 });
+        expect(m.grossSideArea).toBeUndefined();
     });
 
     it('Werte der Vorlage wirken: lichte Länge 5 m → Beton 26,004 m³, Raum 37,5 m³', async () => {

@@ -276,7 +276,8 @@ def test_vertrag_kammer_traegt_ihre_mengen(kammer):
     assert platte[2] == {"Depth": 0.4, "NetArea": 16.56, "Perimeter": 16.4, "NetVolume": 6.624}
     wand = qto[gid("cde-KA-wand-nord")]
     assert wand[0] == "Qto_WallBaseQuantities"
-    assert wand[2] == {"Length": 4.6, "Width": 0.3, "Height": 2.5, "NetVolume": 3.45}
+    # Teil XXVIII, V7: GrossSideArea = Ansicht der Mittelebene, EINE Seite: 4,60 · 2,50.
+    assert wand[2] == {"Length": 4.6, "Width": 0.3, "Height": 2.5, "GrossSideArea": 11.5, "NetVolume": 3.45}
     assert qto[gid("cde-KA-wand-west")][2]["NetVolume"] == 2.25
     assert qto[gid("cde-KA-decke")][2]["NetVolume"] == 4.14
     # Beton sind die BAUTEILE — der Raum (Z6) traegt seine eigene Qto und zaehlt nicht mit.

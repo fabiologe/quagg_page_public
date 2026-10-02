@@ -292,6 +292,10 @@ function _menge(d, felder, fehler) {
         if (MENGENFAMILIE[prop.type] !== MENGENFAMILIE[typ]) {
             fehler.push(`Menge „${menge}" ist ${prop.type}, „${quelle}" liefert ${typ}.`);
         }
+        // Ein Körpermass, das nur eine Geometrieart hat (V7: die Seitenfläche eines Profilkörpers).
+        if (quelle === 'seitenflaeche' && (d.geometrie?.art !== 'sweep' || d.geometrie?.profil?.art !== 'rechteck')) {
+            fehler.push(`Menge „${menge}": „seitenflaeche" gibt es nur für ${KOERPERMASSE.seitenflaeche.nurFuer}.`);
+        }
     }
 }
 
