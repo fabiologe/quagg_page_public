@@ -477,4 +477,41 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     schicht('sauberkeitsschicht', 'Sauberkeitsschicht', 'Sauberkeitsschicht', 0.1),
     schicht('bettung', 'Bettung', 'Bettung', 0.2),
+    {
+        /**
+         * DIE RIGOLE (Teil XXVIII, V6 — Szenario P8, Fabios E37): ein Kieskörper,
+         * `IfcCourse/FILTER`. Umriss = Oberkante, die Höhe geht nach unten — wie die
+         * Platte. Was ihn von einem Haufen Kies unterscheidet, ist der HOHLRAUMANTEIL
+         * (`Quagg_Versickerung`); das nutzbare Volumen ist Körpervolumen × Anteil —
+         * gerechnet beim Paket, nicht getippt (`rechenmerkmale`). Kein Vorgabewert für
+         * den Anteil: er ist die eine Zahl, die der Planer nennen muss.
+         * Bemessung nach DWA-A 138 — der Normtext ist hier nicht geprüft.
+         */
+        id: 'rigole',
+        titel: 'Rigole',
+        icon: 'cat-slab',
+        bauform: 'flaeche+dicke',
+        kategorieVorgabe: 'IFCCOURSE',
+        mindestPunkte: 3,
+        geschlossen: true,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dicke', titel: 'Höhe der Rigole', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 1.2,
+              setzbar: true, griff: { richtung: 'y', von: 'oberkante' } },
+            { name: 'hohlraumanteil', titel: 'Hohlraumanteil', einheit: '%', typ: 'zahl', min: 1, max: 99, gueltig: { ueber: 0, unter: 100 },
+              setzbar: true, pset: 'Quagg_Versickerung.Hohlraumanteil' },
+            { name: 'kf', titel: 'Durchlässigkeit k_f des Bodens (leer = nicht angegeben)', einheit: 'm/s', typ: 'zahl', gueltig: { ueber: 0 },
+              leerErlaubt: true, setzbar: true, pset: 'Quagg_Versickerung.DurchlaessigkeitKf' },
+            { name: 'versickerungsflaeche', titel: 'Versickerungsfläche der Bemessung (leer = nicht angegeben)', einheit: 'm²', typ: 'zahl',
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true, pset: 'Quagg_Versickerung.Versickerungsflaeche' },
+            { name: 'herleitung', titel: 'Herleitung der Kennwerte', typ: 'text', leerErlaubt: true, setzbar: true,
+              pset: 'Quagg_Versickerung.Herleitung' },
+            ...ausfuehrung('FILTER'),
+        ],
+        geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
+        // Qto_CourseBaseQuantities: Dicke und Volumen.
+        menge: { thickness: 'dicke', volume: 'volumen' },
+        rechenmerkmale: { 'Quagg_Versickerung.NutzbaresVolumen': { menge: 'volume', mal: 'hohlraumanteil' } },
+    },
 ]);

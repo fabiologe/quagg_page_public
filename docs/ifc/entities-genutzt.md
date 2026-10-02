@@ -308,7 +308,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcCableCarrierSegment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCableCarrierSegment.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcCivilElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCivilElement.htm) | Gelände, Typprofile | nein | IFC4X3_ADD2 (abgekündigt) |
 | [IfcColumn](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcColumn.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcCourse](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCourse.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcCourse](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCourse.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcCovering](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCovering.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcCurtainWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCurtainWall.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcDistributionChamberElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionChamberElement.htm) | Bauteilrezepte, Kategorien, Typprofile | nein | IFC4X3_ADD2 |

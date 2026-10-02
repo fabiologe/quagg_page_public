@@ -209,7 +209,10 @@ def test_die_typklasse_steht_in_der_regel_nicht_im_namen():
 def test_hauseigene_saetze_stehen_neben_den_bsi_vorlagen():
     """Ein Katalog (daten/quagg-merkmale.json), dieselbe Auskunft wie fuer bSI-Vorlagen."""
     eigene = S.hauseigene_vorlagen()
-    assert sorted(eigene) == ["Quagg_Drossel", "Quagg_Entlastung", "Quagg_Rechen", "Quagg_Speicherraum"]
+    assert sorted(eigene) == ["Quagg_Drossel", "Quagg_Entlastung", "Quagg_Rechen", "Quagg_Speicherraum", "Quagg_Versickerung"]
+    # Teil XXVIII, V6: die Rigole — ein Kieskoerper, k_f als Geschwindigkeit.
+    assert "Quagg_Versickerung" in S.vorlagen_fuer("IfcCourse", "FILTER")
+    assert S.vorlage("Quagg_Versickerung")["merkmale"][1][:3] == ["DurchlaessigkeitKf", "P_SINGLEVALUE", "IfcLinearVelocityMeasure"]
     assert "Quagg_Entlastung" in S.vorlagen_fuer("IfcWall")
     assert "Quagg_Entlastung" not in S.vorlagen_fuer("IfcSlab")
     assert "Quagg_Rechen" not in S.vorlagen_fuer("IfcFilter") and "Quagg_Rechen" in S.vorlagen_fuer("IfcFilter", "STRAINER")

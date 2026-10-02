@@ -56,4 +56,5 @@ Eigene Merkmalsätze der CDE — kein bSI-Standard. Wo sie geschrieben oder gele
 | `Quagg_Herkunft` | `backend/app/ifc/__init__.py`, `backend/app/ifc/eigenbau.py`, `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `backend/app/ifc/verbund.py` |
 | `Quagg_Rechen` | `client/src/features/cde/services/katalog/Merkmalsziele.js`, `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Speicherraum` | `client/src/features/cde/services/rezept/Eingebaut.js` |
+| `Quagg_Versickerung` | `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Vorgang` | `backend/app/ifc/eigenbau.py`, `backend/app/ifc/schema.py` |

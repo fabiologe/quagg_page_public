@@ -103,3 +103,45 @@ describe('Teil XXVIII, V5 — die Einbauten im RÜB', () => {
         expect(zielfehler({ ...q, einheit: 'm³/h' }, 'IFCVALVE')).toMatch(/m³\/s oder l\/s/);
     });
 });
+
+describe('Teil XXVIII, V6 — die Rigole (P8)', () => {
+    it('20 × 2,0 × 1,2 m, Hohlraumanteil 30 %: Volume 48 m³, nutzbar 14,4 m³ — gerechnet, nicht getippt', async () => {
+        const b = useBearbeitung(), ae = useAenderungen();
+        const erg = await b.fuehreAus(k('rigole-zeichnen', { neu: ['cde-RG'], eingaben: { umriss: rechteck(0, 0, 20, 2, 99.5) },
+            werte: { name: 'Rigole', kategorie: 'IFCCOURSE', hoehe: '', dicke: 1.2, hohlraumanteil: 30, kf: 0.0001,
+                     herleitung: 'Annahme der Abnahme, nicht bemessen' } }));
+        expect(erg.ausgefuehrt, erg.grund).toBe(true);
+        const t = (await paketAus(ae)).bauteile.find(x => x.cdeId === 'cde-RG');
+        expect([t.klasse, t.predefinedType]).toEqual(['IFCCOURSE', 'FILTER']);
+        expect(t.mengen).toMatchObject({ thickness: 1.2 });
+        expect(Math.round(t.mengen.volume * 1e6) / 1e6).toBe(48);
+        expect(t.merkmale.Quagg_Versickerung).toEqual({ Hohlraumanteil: 0.3, DurchlaessigkeitKf: 0.0001,
+            Herleitung: 'Annahme der Abnahme, nicht bemessen', NutzbaresVolumen: 14.4 });
+        // Der Anteil folgt dem Feld, das Volumen dem Körper: 35 % und 1,50 m → 60 · 0,35 = 21,0.
+        for (const kom of [k('rigole-hohlraumanteil-setzen', { ziel: ['cde-RG'], werte: { hohlraumanteil: 35 } }),
+                           k('rigole-dicke-setzen', { ziel: ['cde-RG'], werte: { dicke: 1.5 } })]) {
+            expect((await b.fuehreAus(kom)).ausgefuehrt).toBe(true);
+        }
+        const neu = (await paketAus(ae)).bauteile.find(x => x.cdeId === 'cde-RG');
+        expect(neu.merkmale.Quagg_Versickerung.NutzbaresVolumen).toBe(21);
+    });
+
+    it('ohne Hohlraumanteil keine Rigole — er ist die eine Zahl, die der Planer nennen muss', async () => {
+        const b = useBearbeitung();
+        const erg = await b.fuehreAus(k('rigole-zeichnen', { neu: ['cde-RG'], eingaben: { umriss: rechteck(0, 0, 20, 2, 99.5) },
+            werte: { name: 'Rigole', kategorie: 'IFCCOURSE', hoehe: '', dicke: 1.2 } }));
+        expect(erg.ausgefuehrt).toBe(false);
+        expect(erg.grund).toMatch(/hohlraumanteil: fehlt/);
+    });
+
+    it('die Katalogprüfung: ein Rechenmerkmal braucht eine Menge und ein Zahlfeld mit Merkmal', async () => {
+        const { pruefeEintrag } = await import('../services/katalog/Katalogschema.js');
+        const { EINGEBAUTE_REZEPTE } = await import('../services/rezept/Eingebaut.js');
+        const r = EINGEBAUTE_REZEPTE.find(x => x.id === 'rigole');
+        expect(pruefeEintrag('rezept', { ...r, id: 'kopie' }).fehler).toEqual([]);
+        const falsch = { ...r, id: 'kopie', rechenmerkmale: { 'Quagg_Versickerung.NutzbaresVolumen': { menge: 'netVolume', mal: 'name' } } };
+        expect(pruefeEintrag('rezept', falsch).fehler.join(' ')).toMatch(/„netVolume" ist keine Menge.*„name" ist kein Zahlfeld/);
+        const prozent = { ...r, id: 'kopie', felder: r.felder.map(f => (f.name === 'hohlraumanteil' ? { ...f, einheit: '‰' } : f)) };
+        expect(pruefeEintrag('rezept', prozent).fehler.join(' ')).toMatch(/IfcRatioMeasure braucht ein Feld in % oder -/);
+    });
+});

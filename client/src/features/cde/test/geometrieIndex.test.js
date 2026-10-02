@@ -86,6 +86,7 @@ describe('jeder Bauweg liefert indizierte Geometrie', () => {
         tauchwand: { punkte: [[0, 1, 0], [3, 1, 0]], dicke: 0.2, wandhoehe: 1 },
         sauberkeitsschicht: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.1 },
         bettung: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.2 },
+        rigole: { punkte: [[0, 0, 0], [20, 0, 0], [20, 0, 2], [0, 0, 2]], dicke: 1.2, hohlraumanteil: 30 },
     };
 
     // Das Alt-Rezept `gelaende` baut aus einem RASTER, nicht aus Punkten

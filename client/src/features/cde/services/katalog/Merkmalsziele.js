@@ -58,7 +58,20 @@ export const LAGEMASSE = Object.freeze({
     unterkante: 'tiefster Punkt des Körpers, m NN',
 });
 const LAENGEN = new Set(['IfcLengthMeasure', 'IfcPositiveLengthMeasure', 'IfcNonNegativeLengthMeasure']);
-const DURCHFLUSS = 'IfcVolumetricFlowRateMeasure';
+/**
+ * DIE EINHEIT EINES FELDES, das ein Merkmal füllt (Teil XXVIII, V5/V6): je Messtyp,
+ * welche Einheiten ein Feld nennen darf, und der Faktor in die Einheit im IFC.
+ * Längen stehen oben (mm wird gerundet); was hier fehlt, prüft niemand.
+ * `-` heisst: das Feld nennt keine Einheit (ein Verhältnis 0 … 1).
+ */
+const UMRECHNUNG = Object.freeze({
+    IfcVolumetricFlowRateMeasure: Object.freeze({ 'm³/s': 1, 'l/s': 1e-3 }),
+    IfcRatioMeasure: Object.freeze({ '%': 1e-2, '-': 1 }),
+    IfcLinearVelocityMeasure: Object.freeze({ 'm/s': 1 }),
+    IfcAreaMeasure: Object.freeze({ 'm²': 1 }),
+    IfcVolumeMeasure: Object.freeze({ 'm³': 1 }),
+});
+const _einheit = (feld) => feld?.einheit ?? '-';
 
 /** Was an einer Deklaration `lagemerkmale: { 'Satz.Merkmal': 'oberkante' }` nicht stimmt — Liste. */
 export function lagezielfehler(lagemerkmale, kategorie) {
@@ -71,9 +84,7 @@ export function lagezielfehler(lagemerkmale, kategorie) {
         if (!ziel) { fehler.push(`Lagemerkmal „${text}": heisst „Satz.Merkmal".`); continue; }
         if (!LAGEMASSE[mass]) { fehler.push(`Lagemerkmal „${text}": „${mass}" ist kein Lagemass (${Object.keys(LAGEMASSE).join(', ')}).`); continue; }
         if (!PSET_TEMPLATES[ziel.satz]) { fehler.push(`Lagemerkmal „${text}": den Merkmalssatz „${ziel.satz}" kennt das Wörterbuch nicht.`); continue; }
-        // Ein Satz kann nur für eine Ausführung gelten (`Quagg_Rechen`: IfcFilter/STRAINER) —
-    // dann zählt die Ausführung, die das Rezept vorgibt.
-    if (!getPsetsForType(kategorie).some(([n]) => n === ziel.satz)) { fehler.push(`Lagemerkmal „${text}": „${ziel.satz}" gilt nicht für ${kategorie}.`); continue; }
+        if (!getPsetsForType(kategorie).some(([n]) => n === ziel.satz)) { fehler.push(`Lagemerkmal „${text}": „${ziel.satz}" gilt nicht für ${kategorie}.`); continue; }
         const m = _merkmalDerVorlage(ziel.satz, ziel.merkmal);
         if (!m) fehler.push(`Lagemerkmal „${text}": „${ziel.merkmal}" steht nicht in ${ziel.satz}.`);
         else if (!LAENGEN.has(m.typ)) fehler.push(`Lagemerkmal „${text}": ${m.typ} ist keine Länge — ein Lagemass ist eine Höhe in m.`);
@@ -89,6 +100,47 @@ export function lagemerkmaleAus(lagemerkmale, hoehen) {
         const wert = hoehen?.[mass];
         if (!ziel || !Number.isFinite(wert)) continue;
         (aus[ziel.satz] ??= {})[ziel.merkmal] = Math.round(wert * 1000) / 1000;
+    }
+    return aus;
+}
+
+/**
+ * RECHENMERKMALE (Teil XXVIII, V6 — Fabios E37): ein Merkmal, das der Körper und
+ * ein Feld zusammen ergeben — das nutzbare Volumen einer Rigole ist ihr Volumen
+ * mal ihrem Hohlraumanteil. Gerechnet beim Bauen des Pakets, nie getippt; das
+ * Feld geht in der Einheit des IFC ein (30 % → 0,30).
+ *
+ * Deklaration am Rezept: `rechenmerkmale: { 'Satz.Merkmal': { menge, mal } }` —
+ * `menge` ein Schlüssel der Mengen des Rezepts (`menge`), `mal` ein Feld mit Merkmal.
+ */
+export function rechenzielfehler(rechenmerkmale, { kategorie, predefinedType = null, menge = {}, felder = new Map() } = {}) {
+    if (!rechenmerkmale || typeof rechenmerkmale !== 'object' || Array.isArray(rechenmerkmale)) {
+        return ['`rechenmerkmale` ist ein Objekt { "Satz.Merkmal": { menge, mal } }.'];
+    }
+    const fehler = [];
+    for (const [text, r] of Object.entries(rechenmerkmale)) {
+        const ziel = merkmalsziel(text);
+        if (!ziel) { fehler.push(`Rechenmerkmal „${text}": heisst „Satz.Merkmal".`); continue; }
+        if (!getPsetsForType(kategorie, predefinedType).some(([n]) => n === ziel.satz)) { fehler.push(`Rechenmerkmal „${text}": „${ziel.satz}" gilt nicht für ${kategorie}.`); continue; }
+        if (!_merkmalDerVorlage(ziel.satz, ziel.merkmal)) { fehler.push(`Rechenmerkmal „${text}": „${ziel.merkmal}" steht nicht in ${ziel.satz}.`); continue; }
+        if (!(r?.menge in (menge ?? {}))) fehler.push(`Rechenmerkmal „${text}": „${r?.menge}" ist keine Menge des Rezepts.`);
+        const f = felder.get(r?.mal);
+        if (!f || f.typ !== 'zahl' || !merkmalsziel(f.pset)) fehler.push(`Rechenmerkmal „${text}": „${r?.mal}" ist kein Zahlfeld mit Merkmal.`);
+    }
+    return fehler;
+}
+
+/** Die Rechenmerkmale eines Bauteils aus seinen Mengen und Feldern: { Satz: { Merkmal: Zahl } }. */
+export function rechenmerkmaleAus(rechenmerkmale, { felder = [], parameter = {}, mengen = {} } = {}) {
+    const aus = {};
+    for (const [text, r] of Object.entries(rechenmerkmale ?? {})) {
+        const ziel = merkmalsziel(text);
+        const f = felder.find(x => x?.name === r?.mal);
+        const fz = merkmalsziel(f?.pset);
+        const faktor = fz ? merkmaleAusFeldern([f], parameter)[fz.satz]?.[fz.merkmal] : undefined;
+        const menge = mengen?.[r?.menge];
+        if (!ziel || !Number.isFinite(faktor) || !Number.isFinite(menge)) continue;
+        (aus[ziel.satz] ??= {})[ziel.merkmal] = Math.round(menge * faktor * 1e6) / 1e6;
     }
     return aus;
 }
@@ -131,9 +183,11 @@ export function zielfehler(feld, kategorie, predefinedType = null) {
     if (LAENGEN.has(m.typ) && !['m', 'm NN', 'mm', undefined].includes(feld.einheit)) {
         return `Feld „${feld.name}": ${m.typ} braucht ein Feld in m (auch m NN) oder mm, nicht „${feld.einheit}".`;
     }
-    // EIN DURCHFLUSS (Teil XXVIII, V5) steht im IFC in m³/s; getippt wird er meist in l/s.
-    if (m.typ === DURCHFLUSS && !['m³/s', 'l/s'].includes(feld.einheit)) {
-        return `Feld „${feld.name}": ${m.typ} braucht ein Feld in m³/s oder l/s, nicht „${feld.einheit}".`;
+    // EIN DURCHFLUSS steht im IFC in m³/s (getippt meist in l/s), ein Anteil als 0 … 1
+    // (getippt in %), k_f in m/s (Teil XXVIII, V5/V6).
+    const erlaubt = UMRECHNUNG[m.typ];
+    if (erlaubt && !(_einheit(feld) in erlaubt)) {
+        return `Feld „${feld.name}": ${m.typ} braucht ein Feld in ${Object.keys(erlaubt).join(' oder ')}, nicht „${_einheit(feld)}".`;
     }
     return null;
 }
@@ -167,8 +221,9 @@ export function merkmaleAusFeldern(felder, parameter = {}) {
         if (wert === undefined) continue;
         // Millimeter → Meter: DN 300 ist NominalDiameter 0,3 (Fund 14).
         if (LAENGEN.has(m.typ) && f.einheit === 'mm') wert = Math.round(wert) / 1000;
-        // Liter je Sekunde → m³/s: Q_Dr 25 l/s ist 0,025.
-        if (m.typ === DURCHFLUSS && f.einheit === 'l/s') wert /= 1000;
+        // Liter je Sekunde → m³/s (Q_Dr 25 l/s ist 0,025), Prozent → Anteil.
+        const faktor = UMRECHNUNG[m.typ]?.[_einheit(f)];
+        if (faktor !== undefined && faktor !== 1) wert *= faktor;
         (aus[ziel.satz] ??= {})[ziel.merkmal] = wert;
     }
     return aus;

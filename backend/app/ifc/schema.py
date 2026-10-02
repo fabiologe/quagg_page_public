@@ -66,7 +66,9 @@ RESERVIERT = frozenset({"Quagg_CDE", "Quagg_Herkunft", "Quagg_Vorgang", "Quagg_F
 HAUSEIGENE_TYPEN = frozenset({
     "IfcLabel", "IfcText", "IfcIdentifier", "IfcBoolean", "IfcLogical", "IfcInteger", "IfcReal",
     "IfcLengthMeasure", "IfcPositiveLengthMeasure", "IfcAreaMeasure", "IfcVolumeMeasure",
-    "IfcVolumetricFlowRateMeasure", "IfcPlaneAngleMeasure", "IfcRatioMeasure"})
+    "IfcVolumetricFlowRateMeasure", "IfcPlaneAngleMeasure", "IfcRatioMeasure",
+    # Teil XXVIII, V6: k_f einer Versickerungsanlage in m/s.
+    "IfcLinearVelocityMeasure"})
 FORMAT = 1
 
 # ── Was ifcopenshell NICHT weiss: wie alte Namen heute heissen ──────────────

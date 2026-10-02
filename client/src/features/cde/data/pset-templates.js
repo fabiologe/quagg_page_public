@@ -9,7 +9,7 @@
 
 import { ENTITY_META } from './entity-schema.js';
 
-/** 760 Vorlagen von buildingSMART für IFC4X3_ADD2, dazu 4 hauseigene (`herkunft`, daten/quagg-merkmale.json). */
+/** 760 Vorlagen von buildingSMART für IFC4X3_ADD2, dazu 5 hauseigene (`herkunft`, daten/quagg-merkmale.json). */
 export const PSET_TEMPLATES = {
   "Pset_ActionRequest": {
     label: "Property Set: Action Request",
@@ -10126,6 +10126,20 @@ export const PSET_TEMPLATES = {
     props: [
       {"name": "SohlhoeheNN", "type": "IfcLengthMeasure", "description": "Sohle des Raums in m über NN. Gemessen am Körper, nicht getippt."},
       {"name": "BetriebswasserNN", "type": "IfcLengthMeasure", "description": "Wasserspiegel in m über NN, bei dem die Schwelle anspringt."},
+    ],
+  },
+  "Quagg_Versickerung": {
+    label: "Merkmalssatz (Quagg): Versickerung",
+    description: "Die Kennwerte einer Versickerungsanlage (Rigole; Teil XXVIII V6, Szenario P8). Der Hohlraumanteil unterscheidet die Anlage von einem Haufen Kies; das nutzbare Volumen ist Körpervolumen × …",
+    herkunft: "Quagg",
+    art: "PSET_OCCURRENCEDRIVEN",
+    applicableTo: ["IFCCOURSE"],
+    props: [
+      {"name": "Hohlraumanteil", "type": "IfcRatioMeasure", "description": "Nutzbarer Porenanteil des Füllmaterials, 0 bis 1."},
+      {"name": "DurchlaessigkeitKf", "type": "IfcLinearVelocityMeasure", "description": "Durchlässigkeitsbeiwert k_f des anstehenden Bodens in m/s."},
+      {"name": "Versickerungsflaeche", "type": "IfcAreaMeasure", "description": "Wirksame Versickerungsfläche in m², wie die Bemessung sie ansetzt."},
+      {"name": "NutzbaresVolumen", "type": "IfcVolumeMeasure", "description": "Speichervolumen in m³: Körpervolumen × Hohlraumanteil. Gerechnet, nicht getippt."},
+      {"name": "Herleitung", "type": "IfcText", "description": "Woher k_f, Hohlraumanteil und Fläche stammen: Versuch mit Datum, Herstellerangabe oder Regelwerk."},
     ],
   },
 };

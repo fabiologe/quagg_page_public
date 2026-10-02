@@ -864,3 +864,25 @@ def test_abnahme_einbauten_im_ifc(einbauten):
     (anlage,) = datei.by_type("IfcFacility")
     enthalten = {e.GlobalId for r in anlage.ContainsElements for e in r.RelatedElements}
     assert {rechen.GlobalId, drossel.GlobalId, tauch.GlobalId} <= enthalten
+
+
+# ── Teil XXVIII, V6: die Rigole (Szenario P8) ───────────────────────────────
+
+def test_rigole_traegt_quagg_versickerung_getypt(tmp_path):
+    """Ein Kieskoerper IfcCourse/FILTER, 20 × 2 × 1,2 m: der Hohlraumanteil 0,30 als
+    IfcRatioMeasure, k_f als IfcLinearVelocityMeasure (Teil XXVIII neu in den
+    typisierbaren Typen), das nutzbare Volumen 14,4 m³ — vom Client gerechnet."""
+    ziel = tmp_path / "rigole.ifc"
+    merkmale = {"Quagg_Versickerung": {"Hohlraumanteil": 0.3, "DurchlaessigkeitKf": 0.0001, "NutzbaresVolumen": 14.4,
+                                       "Herleitung": "Annahme der Abnahme, nicht bemessen"}}
+    bericht = baue_datei(_paket(_bauteil("cde-rigole", "IFCCOURSE", masse=(20.0, 2.0, 1.2), predefinedType="FILTER",
+                                         rezept="rigole", merkmale=merkmale)), ziel, schluessel="rigole")
+    assert [w for w in bericht["warnungen"] if "Merkmalssatz" in w or "nicht geschrieben" in w] == []
+    datei = ifcopenshell.open(str(ziel))
+    (kies,) = datei.by_type("IfcCourse")
+    assert kies.PredefinedType == "FILTER"
+    assert _saetze(kies)["Quagg_Versickerung"] == {
+        "Hohlraumanteil": (0.3, "IfcRatioMeasure"), "DurchlaessigkeitKf": (0.0001, "IfcLinearVelocityMeasure"),
+        "NutzbaresVolumen": (14.4, "IfcVolumeMeasure"), "Herleitung": ("Annahme der Abnahme, nicht bemessen", "IfcText")}
+    # Ein Paket ohne Bezugssystem — geprueft werden die Regeln des Schemas, nicht die Georeferenz.
+    assert _regeln(ziel) == []

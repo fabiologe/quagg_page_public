@@ -45,8 +45,10 @@ describe('Teil XXVIII, V0 — die Funde der Vorprüfung, wie sie HEUTE sind', ()
         expect(nochmal.grund).toMatch(/„neu" heisst neu/);
     });
 
-    it('Fund 7: Quagg_Versickerung steht noch nicht im Katalog', () => {
-        expect(PSET_TEMPLATES.Quagg_Versickerung).toBeUndefined();
+    it('Fund 7 gedreht (V6): Quagg_Versickerung steht im Katalog — für IfcCourse', () => {
+        expect(PSET_TEMPLATES.Quagg_Versickerung.applicableTo).toEqual(['IFCCOURSE']);
+        expect(PSET_TEMPLATES.Quagg_Versickerung.props.map(p => p.name))
+            .toEqual(['Hohlraumanteil', 'DurchlaessigkeitKf', 'Versickerungsflaeche', 'NutzbaresVolumen', 'Herleitung']);
     });
 
     it('Fund 8: eine Wand trägt keine Schalungsfläche (GrossSideArea)', () => {

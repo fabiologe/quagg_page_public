@@ -27,7 +27,7 @@ import { GEOMETRIE_ARTEN, KOERPERMASSE, PROFIL_ARTEN, geometrieSchluessel, profi
 import { getPsetsForType } from '../../data/pset-templates.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { ACHSBEZUEGE } from '../Achsbezug.js';
-import { zielfehler, lagezielfehler } from './Merkmalsziele.js';
+import { zielfehler, lagezielfehler, rechenzielfehler } from './Merkmalsziele.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
 import { AUFLOCKERUNG, GRABENREGELN } from '../gelaende/Grabenregeln.js';
@@ -49,7 +49,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
-    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale',
+    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset', 'griff']);
 
@@ -189,6 +189,11 @@ function _rezept(d, fehler) {
     }
     // HÖHEN, DIE DER KÖRPER SCHON KENNT (Fund 10): sie werden gemessen, nicht getippt.
     if (d.lagemerkmale !== undefined) fehler.push(...lagezielfehler(d.lagemerkmale, String(d.kategorieVorgabe ?? '').toUpperCase()));
+    // EIN MERKMAL AUS KÖRPER × FELD (Teil XXVIII, V6): gerechnet, nicht getippt.
+    if (d.rechenmerkmale !== undefined) {
+        fehler.push(...rechenzielfehler(d.rechenmerkmale, { kategorie: String(d.kategorieVorgabe ?? '').toUpperCase(),
+            predefinedType: felder.get('predefinedType')?.vorgabe ?? null, menge: d.menge, felder }));
+    }
 
     const g = d.geometrie;
     if (!_istObjekt(g) || !GEOMETRIE_ARTEN[g.art]) {

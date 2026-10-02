@@ -97,6 +97,7 @@ describe('2 — es sind Daten', () => {
             tauchwand: { punkte: [[0, 1, 0], [3, 1, 0]], dicke: 0.2, wandhoehe: 1 },
             sauberkeitsschicht: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.1 },
             bettung: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.2 },
+            rigole: { punkte: [[0, 0, 0], [20, 0, 0], [20, 0, 2], [0, 0, 2]], dicke: 1.2, hohlraumanteil: 30 },
         };
         for (const d of kopie) {
             expect(ausgabe(rezeptAusDeklaration(d), probe[d.id]), d.id).toEqual(ausgabe(REZEPTE[d.id], probe[d.id]));

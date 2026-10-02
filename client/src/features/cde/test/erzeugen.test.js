@@ -82,7 +82,9 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // Teil XXVIII, V1: ein Bauwerk aus einer Vorlage — ein Punkt, viele Rezepte.
                       'bauwerk-aus-vorlage-rechteckkammer', 'bauwerk-aus-vorlage-zweikammer-rueb',
                       // V5: die Einbauten — aus den vorhandenen Bausteinen.
-                      'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen'].sort());
+                      'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen',
+                      // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.
+                      'rigole-zeichnen'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).

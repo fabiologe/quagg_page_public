@@ -72,6 +72,8 @@ function welt() {
             [P(150, 101, 0), P(153, 101, 0)]);
     zeichne(erzeugt, 'sauberkeitsschicht-zeichnen', 'cde-SK1', { name: 'SK1', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.1 },
             [P(160, 99.5, 0), P(165, 99.5, 0), P(165, 99.5, 4), P(160, 99.5, 4)]);
+    zeichne(erzeugt, 'rigole-zeichnen', 'cde-RG1', { name: 'RG1', kategorie: 'IFCCOURSE', hoehe: '', dicke: 1.2, hohlraumanteil: 30 },
+            [P(180, 99.5, 0), P(200, 99.5, 0), P(200, 99.5, 2), P(180, 99.5, 2)]);
     zeichne(erzeugt, 'bettung-zeichnen', 'cde-BT1', { name: 'BT1', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.2 },
             [P(170, 99.4, 0), P(175, 99.4, 0), P(175, 99.4, 4), P(170, 99.4, 4)]);
     // Teil XXVI, Z6: ein Raum — der Hohlraum, aus einem Umriss nach oben.
@@ -193,6 +195,9 @@ const NEU = [
       werte: [{ name: 'TW', kategorie: 'IFCWALL', hoehe: '', dicke: 0.2, wandhoehe: 1 }] },
     { id: 'sauberkeitsschicht-zeichnen', el: zug(P(0, 99.5, 0), P(5, 99.5, 0), P(5, 99.5, 4), P(0, 99.5, 4)),
       zug: [P(0, 99.5, 0), P(5, 99.5, 0), P(5, 99.5, 4), P(0, 99.5, 4)], werte: [{ name: 'SK', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.1 }] },
+    { id: 'rigole-zeichnen', el: zug(P(0, 99.5, 0), P(20, 99.5, 0), P(20, 99.5, 2), P(0, 99.5, 2)),
+      zug: [P(0, 99.5, 0), P(20, 99.5, 0), P(20, 99.5, 2), P(0, 99.5, 2)],
+      werte: [{ name: 'RG', kategorie: 'IFCCOURSE', hoehe: '', dicke: 1.2, hohlraumanteil: 30, kf: 0.0001 }] },
     { id: 'bettung-zeichnen', el: zug(P(0, 99.4, 0), P(5, 99.4, 0), P(5, 99.4, 4), P(0, 99.4, 4)),
       zug: [P(0, 99.4, 0), P(5, 99.4, 0), P(5, 99.4, 4), P(0, 99.4, 4)], werte: [{ name: 'BT', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.2 }] },
     ...Object.entries({
@@ -201,6 +206,8 @@ const NEU = [
         'cde-TW1': ['tauchwand', { dicke: 0.25, wandhoehe: 1.2, tragend: 'ja', aussen: 'ja', predefinedType: 'SOLIDWALL', objektTyp: 'Prallwand' }],
         'cde-SK1': ['sauberkeitsschicht', { dicke: 0.08, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Blinding' }],
         'cde-BT1': ['bettung', { dicke: 0.25, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Kiesbett' }],
+        'cde-RG1': ['rigole', { dicke: 1.5, hohlraumanteil: 35, kf: 0.0002, versickerungsflaeche: 44, herleitung: 'Versuch 2026-10-02',
+                                predefinedType: 'CORE', objektTyp: 'Kiesrigole' }],
     }).flatMap(([gid, [rezept, werte]]) => Object.entries(werte).map(([feld, wert]) =>
         ({ id: `${rezept}-${feld}-setzen`, el: eigen(gid), werte: [{ [feld]: wert }] }))),
     { id: 'planinhalt-setzen', el: zug(), werte: [{ inhalte: [{ id: 'pi-1', wert: { art: 'text', x: 1, z: 2, text: 'A', groesse: 2.5, winkel: 0 } }, { id: 'pi-2', wert: null }] }] },

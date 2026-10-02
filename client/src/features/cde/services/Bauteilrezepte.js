@@ -38,7 +38,7 @@
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
-import { lagemerkmaleAus, merkmaleAusFeldern } from './katalog/Merkmalsziele.js';
+import { lagemerkmaleAus, merkmaleAusFeldern, rechenmerkmaleAus } from './katalog/Merkmalsziele.js';
 import { BAUWERKSTYP_OPTIONEN } from './katalog/Bauwerkstypen.js';
 import { ABLEITUNGEN } from './ableitung/Ableitungen.js';
 import { EINGEBAUTE_REZEPTE } from './rezept/Eingebaut.js';
@@ -490,6 +490,12 @@ export function objektTypVon(bauplan) {
  */
 export function lagemerkmaleVon(bauplan, hoehen) {
     return lagemerkmaleAus(rezeptNach(bauplan?.rezept)?.lagemerkmale, hoehen);
+}
+
+/** Die Rechenmerkmale eines Bauplans aus seinen Mengen (Teil XXVIII, V6): Körper × Feld. */
+export function rechenmerkmaleVon(bauplan, mengen) {
+    const r = rezeptNach(bauplan?.rezept);
+    return rechenmerkmaleAus(r?.rechenmerkmale, { felder: r?.felder ?? [], parameter: bauplan?.parameter ?? {}, mengen });
 }
 
 function REZEPTE_FELD(bauplan, name) {

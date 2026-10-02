@@ -47,7 +47,7 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { lagemerkmaleVon, objektTypVon } from './Bauteilrezepte.js';
+import { lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -180,6 +180,10 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     for (const p of punkte) { if (p[2] > oberkante) oberkante = p[2]; if (p[2] < unterkante) unterkante = p[2]; }
     const merkmale = { ...(teil.merkmale ?? {}) };
     for (const [satz, werte] of Object.entries(lagemerkmaleVon(plan, { oberkante, unterkante }))) {
+        merkmale[satz] = { ...(merkmale[satz] ?? {}), ...werte };
+    }
+    // RECHENMERKMALE (Teil XXVIII, V6): Körper × Feld — aus DENSELBEN Mengen, die ins Paket gehen.
+    for (const [satz, werte] of Object.entries(rechenmerkmaleVon(plan, teil.mengen ?? {}))) {
         merkmale[satz] = { ...(merkmale[satz] ?? {}), ...werte };
     }
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
