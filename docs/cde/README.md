@@ -17,7 +17,7 @@ sich nicht mit einer gekauften CDE vergleichen lässt.
 
 | Datei | was |
 |---|---|
-| **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** | **Teil XXVII — Bauwerke bearbeiten:** Vorprüfung mit sechs gemessenen Funden (zwei Fehler, die heute bestehen: Kanalgraben an einer Wand, Aussparung wirft die Wand aus dem Bauwerk), Entscheidungen E24–E30, Stufen B0–B7 (≈ 20 Halbtage). **Geplant, nicht gebaut** |
+| **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** | **Teil XXVII — Bauwerke bearbeiten:** Vorprüfung mit sechs gemessenen Funden (ein Fehler, der heute besteht: die Aussparung wirft die Wand aus dem Bauwerk), Entscheidungen E24–E30, Stufen B0–B7 (≈ 20 Halbtage). **Geplant, nicht gebaut** |
 | **[fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md)** | **Teil XXVI — Bauwerke aus Bauteilen:** Vorprüfung mit sieben Funden (zwei Fehler, die heute bestehen), Entscheidungen E17–E23, Stufen Z0–Z9, Abnahmefall Kammer. **komplett: Z0–Z9.4 gebaut und abgenommen**, Funde 8–12 behoben |
 | [kommando/](kommando/) | **Teil XXIV, Kommandodefinition** — Aufträge, zwei Audits, Abgleich, Entscheidungen E1–E9, das angenommene Schema, die Durchstiche K1–K10 und die beiden Wiederholungsproben. Eigene README |
 | [tragfaehig-2026-09-24.md](tragfaehig-2026-09-24.md) | Etappe „Tragfähig" — stille Rückfälle, CI, ProVI-Achsen, Gelände zweiseitig |

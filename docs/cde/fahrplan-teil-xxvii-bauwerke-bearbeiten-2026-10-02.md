@@ -42,7 +42,7 @@ Dazu an jedem Bauteil die Werte aus seinem Rezept („… ändern") und die Able
 | # | Fund | Art | Beleg |
 |---|---|---|---|
 | **1** | **Werkzeugleiste und Griff sind sich an der Platte uneinig.** Die Eckgriffe der Platte rufen `stuetzpunkt-verschieben`; die Werkzeugleiste bietet es nicht an (Bauformliste ohne `flaeche+dicke`). Der Griff umgeht `passende` (`useBearbeitung.starte`: „wer ein Subjekt hereinreicht, bürgt dafür") — und das Kommando läuft durch | Unstimmigkeit | gemessen: Ecke 0 der Bodenplatte über `fuehreAus` gezogen, (0 \| 210 \| 0) → (−0,5 \| 210 \| −0,5) |
-| **2** | **Ein Kanalgraben an einer Wand wird angenommen.** `kanalgraben-ableiten` braucht nur `achse+profil` — eine Wand hat das. Abgelehnt wurde das Kommando allein an der Zahl der Kennungen („neu nennt 6 mehr, als entstehen") — mit der richtigen Zahl entstünde ein Graben entlang der Wandachse, eine Wand als Rohr | **Fehler, heute** | gemessen |
+| **2** | **„Kanalgraben ableiten" wird an einer Wand angeboten** (braucht nur `achse+profil`). Ausgeführt wird er nicht — abgelehnt aber erst nach dem Auswerten, von der Bezugsprüfung: „Bezug unzulässig: Quelle „schaechte" fehlt". Der fachliche Grund (eine Wand ist keine Haltung) fällt nirgends | Unstimmigkeit | gemessen (B0). *Berichtigt: die Vorprüfung nannte das einen Fehler („entstünde ein Graben") — geschlossen aus der Kennungszahl, nicht gemessen* |
 | **3** | **Ein Erdbau-Werkzeug am Raum** (`erdbau-stuetzpunkt-verschieben`, Bauform `koerper`) wird angeboten und lehnt dann mit einer Adress-Meldung ab („ein Punkt wird über seine Lage angesprochen") statt mit dem Grund („nur an einem Erdbau-Vorgang") | Unstimmigkeit | gemessen |
 | **4** | **Ein Bauwerk lässt sich nicht verschieben**, obwohl das Werkzeug angeboten wird: Vorbelegung (0 \| 0 \| 0), Ablehnung „Dem Bauteil fehlt der Bezug für diese Bearbeitung". Kopieren, drehen, spiegeln gibt es am Bauwerk gar nicht | Lücke | gemessen |
 | **5** | **Die Aussparung zerstört den Bauplan der Wand.** Sie verdeckt die Wand (`geloescht`) und setzt ein abgeleitetes Teil `IFCWALL` „(mit Aussparung)" an ihre Stelle — **ohne** `teilVon`, ohne Merkmalsfelder, ohne Ausführung, ohne deklarierte Mengen. Die Wand fällt aus ihrem Bauwerk. Im IFC ist das Ergebnis ein Netz aus der Server-Differenz, kein `IfcOpeningElement` | **Fehler, heute** | gemessen (Journal); IFC gelesen (`Ableitungen.js`, `aussparung.leite` → `booleDifferenz`) |
@@ -116,8 +116,8 @@ Je Fund ein Test mit dem Ergebnis von heute (`test/bauwerkeBearbeiten.test.js`),
 - Der Griff (`starte` mit Subjekt) fragt dieselbe Regel; Fund 1 wird entschieden, indem
   `stuetzpunkt-verschieben`, `stuetzpunkt-einfuegen/-entfernen`, `kante-verschieben`
   die Bauform `flaeche+dicke` bekommen — der Griff kann es, also darf die Leiste es zeigen.
-- `kanalgraben-ableiten` verlangt `netzrolle:kante` (Fund 2). Eine Wand hat eine Achse,
-  aber keine Netzrolle.
+- `kanalgraben-ableiten` verlangt `netzrolle:kante` (Fund 2): die Leiste bietet ihn an einer
+  Wand nicht mehr an, und das Kommando nennt den fachlichen Grund statt der Bezugsprüfung.
 - **Zahl:** Werkzeuge, die die Leiste anbietet und das Kommando ablehnt, je Bauteil der
   Kammer → 0 (heute mindestens 3: Kanalgraben an der Wand, Erdbau-Stützpunkt am Raum,
   Verschieben am Bauwerk). Gemessen über alle Kandidaten von `passende` mit Vorbelegung.
