@@ -119,7 +119,13 @@ export function zielfehler(feld, kategorie) {
     if (TEXTTYPEN.has(m.typ)) {
         return ['text', 'auswahl'].includes(feld.typ) ? null : `Feld „${feld.name}": ${m.typ} braucht ein Text- oder Auswahlfeld.`;
     }
-    return feld.typ === 'zahl' ? null : `Feld „${feld.name}": ${m.typ} braucht ein Zahlenfeld.`;
+    if (feld.typ !== 'zahl') return `Feld „${feld.name}": ${m.typ} braucht ein Zahlenfeld.`;
+    // EINE LÄNGE (Teil XXVII, Fund 14) steht im IFC in Metern; ein Feld in mm wird
+    // umgerechnet — eine andere Einheit kann hier niemand erraten.
+    if (LAENGEN.has(m.typ) && !['m', 'm NN', 'mm', undefined].includes(feld.einheit)) {
+        return `Feld „${feld.name}": ${m.typ} braucht ein Feld in m (auch m NN) oder mm, nicht „${feld.einheit}".`;
+    }
+    return null;
 }
 
 /** Ein Feldwert im Typ der Vorlage — oder undefined, wenn er nicht passt (dann schweigt das Merkmal). */
@@ -147,8 +153,10 @@ export function merkmaleAusFeldern(felder, parameter = {}) {
         if (!ziel) continue;
         const m = _merkmalDerVorlage(ziel.satz, ziel.merkmal);
         if (!m) continue;
-        const wert = _wertFuer(m.typ, parameter?.[f.name] ?? f.vorgabe);
+        let wert = _wertFuer(m.typ, parameter?.[f.name] ?? f.vorgabe);
         if (wert === undefined) continue;
+        // Millimeter → Meter: DN 300 ist NominalDiameter 0,3 (Fund 14).
+        if (LAENGEN.has(m.typ) && f.einheit === 'mm') wert = Math.round(wert) / 1000;
         (aus[ziel.satz] ??= {})[ziel.merkmal] = wert;
     }
     return aus;

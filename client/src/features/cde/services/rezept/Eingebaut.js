@@ -113,7 +113,10 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             // Die SOHLE (Teil XXIV, K4 — E7): eine neue Haltung liegt mit ihrer
             // Sohle auf den gezeichneten Punkten, nicht mit ihrer Mitte.
             { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, vorgabe: 300, setzbar: true },
+            // Die Nennweite ist zugleich das bSI-Merkmal (Teil XXVII, Fund 14: die IDS-Regel
+            // „Rohrleitungen — Nennweite" verfehlte jedes eigene Rohr).
+            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, vorgabe: 300, setzbar: true,
+              pset: 'Pset_PipeSegmentTypeCommon.NominalDiameter' },
         ],
         // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
         // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".

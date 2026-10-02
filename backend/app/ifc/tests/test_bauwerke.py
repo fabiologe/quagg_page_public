@@ -767,3 +767,45 @@ def test_eine_oeffnung_ist_ein_ifcopeningelement_am_wirt(tmp_path):
     p = pruefe(ziel, ids=[IDS])
     assert [b for b in p["befunde"] if offen(b)] == []
     assert _verfehlt(ziel) == []
+
+
+# ── Teil XXVII, B7: die Kammer bearbeitet ──────────────────────────────────
+
+KAMMER_BEARBEITET = DATEN / "paket_kammer_bearbeitet.json"
+
+
+def test_abnahme_die_bearbeitete_kammer_im_ifc(tmp_path):
+    """Endstand von `abnahmeBearbeiten.test.js` (nur Kommandos: Bauwerk verschoben
+    und kopiert, Bodenplatte +0,20, Oeffnung Ø 0,30, Rohr mit Durchfuehrung Ø 0,40):
+    ZWEI Anlagen (Original und Kopie) mit je ihren sieben Teilen, zwei
+    IfcOpeningElement an den richtigen Waenden, das Rohr ausserhalb der Anlagen.
+    Mengen: Laengswand Nord 3,428 794, Sued 3,412 301 m³ netto.
+    Prueftor ohne offenen Befund, IDS 0 von 18."""
+    from app.ifc.pruefe import offen, pruefe
+    paket = json.loads(KAMMER_BEARBEITET.read_text(encoding="utf-8"))
+    ziel = tmp_path / "kammer_bearbeitet.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="kammer-bearbeitet")
+    assert bericht["uebersprungen"] == [] and bericht.get("wirte_offen", 0) == 0
+    datei = ifcopenshell.open(str(ziel))
+    anlagen = sorted(datei.by_type("IfcFacility"), key=lambda a: a.Name)
+    assert [a.Name for a in anlagen] == ["Kammer", "Kammer Kopie"]
+    for a in anlagen:
+        assert len({e.id() for r in a.ContainsElements for e in r.RelatedElements}) == 6
+        assert len([e for r in a.IsDecomposedBy for e in r.RelatedObjects if e.is_a("IfcSpace")]) == 1
+    wirte = sorted(o.VoidsElements[0].RelatingBuildingElement for o in datei.by_type("IfcOpeningElement"))
+    assert sorted(w.Name for w in wirte) == ["Längswand Nord", "Längswand Süd"]
+    assert all(any(r.RelatingStructure == anlagen[0] for r in w.ContainedInStructure) for w in wirte)
+    netto = {e.Name: round(q.VolumeValue, 6) for e in datei.by_type("IfcWall") for r in e.IsDefinedBy
+             if r.is_a("IfcRelDefinesByProperties") and r.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+             for q in r.RelatingPropertyDefinition.Quantities if q.Name == "NetVolume"
+             and any(r2.RelatingStructure == anlagen[0] for r2 in e.ContainedInStructure)}
+    assert netto["Längswand Nord"] == 3.428794 and netto["Längswand Süd"] == 3.412301
+    (rohr,) = datei.by_type("IfcPipeSegment")
+    assert not any(r.RelatingStructure.is_a("IfcFacility") for r in rohr.ContainedInStructure)
+    # Fund 14: DN 300 als NominalDiameter in Metern — 0,3, nicht 300.
+    dn = [p.NominalValue for r in rohr.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+          and r.RelatingPropertyDefinition.Name == "Pset_PipeSegmentTypeCommon"
+          for p in r.RelatingPropertyDefinition.HasProperties if p.Name == "NominalDiameter"]
+    assert [(v.is_a(), v.wrappedValue) for v in dn] == [("IfcPositiveLengthMeasure", 0.3)]
+    assert [b for b in pruefe(ziel, ids=[IDS])["befunde"] if offen(b)] == []
+    assert _verfehlt(ziel) == []

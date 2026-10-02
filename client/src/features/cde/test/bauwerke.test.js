@@ -156,8 +156,14 @@ describe('Z3 — die Merkmale eines Bauplans', () => {
         expect(merkmaleVon({ rezept: 'wand', parameter: { tragend: 'nein', aussen: 'nein' } }))
             .toEqual({ Pset_WallCommon: { LoadBearing: false, IsExternal: false } });
     });
-    it('ein Rezept ohne Merkmalsfelder liefert nichts — ein Rohr bleibt, was es war', () => {
-        expect(merkmaleVon({ rezept: 'rohr', parameter: { dn: 300 } })).toEqual({});
+    it('ein Rezept ohne Merkmalsfelder liefert nichts — ein Pfosten bleibt, was er war', () => {
+        expect(merkmaleVon({ rezept: 'pfosten', parameter: { laenge: 1, breite: 0.12, tiefe: 0.12 } })).toEqual({});
+    });
+
+    it('Teil XXVII, Fund 14: das Rohr nennt seine Nennweite — DN in mm, das Merkmal in m', () => {
+        // Bis hierher stand hier „ein Rohr liefert nichts", und die IDS-Regel
+        // „Rohrleitungen — Nennweite" verfehlte jedes eigene Rohr.
+        expect(merkmaleVon({ rezept: 'rohr', parameter: { dn: 300 } })).toEqual({ Pset_PipeSegmentTypeCommon: { NominalDiameter: 0.3 } });
     });
 });
 
