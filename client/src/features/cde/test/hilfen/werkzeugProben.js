@@ -152,6 +152,9 @@ const NEU = [
     { id: 'ueberlaufschwelle-zeichnen', el: zug(P(0, 101.9, 0), P(4, 101.9, 0)), zug: [P(0, 101.9, 0), P(4, 101.9, 0)],
       werte: [{ name: 'SW', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 0.5, ueberfallbeiwert: 0.6 }] },
     { id: 'bauwerk-anlegen', el: zug(), werte: [{ name: 'Kammer', art: 'anlage' }] },
+    // Teil XXVIII, V1: ein Bauwerk aus einer Vorlage — ein Punkt, die Werte der Vorlage.
+    { id: 'bauwerk-aus-vorlage-rechteckkammer', el: zug(P(0, 100, 0)), zug: [P(0, 100, 0)],
+      werte: [{ name: 'Kammer', hoehe: '', laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },

@@ -78,11 +78,13 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // Z6: der Raum — ein Umriss, nach oben extrudiert.
                       'raum-zeichnen',
                       // Z8: die Überlaufschwelle — eine niedrige Wand mit Quagg_Entlastung.
-                      'ueberlaufschwelle-zeichnen'].sort());
+                      'ueberlaufschwelle-zeichnen',
+                      // Teil XXVIII, V1: ein Bauwerk aus einer Vorlage — ein Punkt, viele Rezepte.
+                      'bauwerk-aus-vorlage-rechteckkammer'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).
-        for (const b of erzeugen) {
+        for (const b of erzeugen.filter(x => !x.ausVorlage)) {
             const r = rezeptNach(b.rezept);
             expect(typeof r?.baue, b.id).toBe('function');
             expect(b.mindestPunkte, b.id).toBeGreaterThanOrEqual(1);

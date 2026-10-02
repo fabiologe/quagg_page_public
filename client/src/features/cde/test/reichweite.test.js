@@ -55,8 +55,9 @@ const HEUTE = Object.freeze({
     // B3: +1 Öffnung setzen — 102/79.
     // B4: +1 Rohrdurchführung setzen — 103/80.
     // B5: +1 Auf Bauteil stellen — 104/81.
-    werkzeuge: 104,
-    ausgefuehrt: 81,
+    // Teil XXVIII, V1: +1 Rechteckkammer aus Vorlage — 105/82.
+    werkzeuge: 105,
+    ausgefuehrt: 82,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

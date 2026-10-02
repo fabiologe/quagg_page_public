@@ -84,6 +84,7 @@ import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
+import { BAUWERKSVORLAGEN, gesteuerterStand, vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
 
@@ -1562,6 +1563,75 @@ function bauwerkWerkzeug(art) {
     };
 }
 
+/**
+ * EIN BAUWERK AUS EINER VORLAGE (Teil XXVIII, V1 — Fabios E31/E32).
+ *
+ * Ein Werkzeug je eingebauter Vorlage, aus EINER Fabrik — wie `${rezept}-zeichnen`
+ * aus dem Rezept: die Felder sind je Vorlage andere, und ein Formularfeld kann
+ * nicht von einem anderen Wert abhängen. Ein Tipp setzt die Aussenecke Nordwest,
+ * die Höhe ist die Oberkante der Bodenplatte (leer = die Höhe des Punkts).
+ *
+ * EIN Kommando, EIN Vorgang: das Bauwerk und je Rolle ein Teil, Kennungen in
+ * dieser Reihenfolge aus `neu` (Bauwerk zuerst). Jedes Teil gehört zum Bauwerk
+ * (`teilVon`) und steht, wo die Vorlage es sagt (`hoeheVon`, B5). Das Bauwerk
+ * merkt sich, woraus es entstand: `bauwerksvorlage {id, werte, rollen, stand}` —
+ * NICHT `vorlage`, das ist schon die Bibliotheks-Vorlage eines Bauteils (A1)
+ * und wird von Paket (Typobjekt) und Eigenschaftsfenster als Id gelesen.
+ */
+function vorlageWerkzeug(vorlage) {
+    return {
+        id: `bauwerk-aus-vorlage-${vorlage.id}`,
+        titel: `${vorlage.titel} aus Vorlage`,
+        ausVorlage: vorlage.id,
+        icon: 'building',
+        gruppe: 'erzeugen',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        art: 'erzeugt',
+        eingabe: 'zug',
+        mindestPunkte: 1,
+        eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 } }],
+        felder: [
+            { name: 'name', titel: 'Bezeichnung', typ: 'text' },
+            { name: 'hoehe', titel: 'Oberkante Bodenplatte (leer = Höhe des Punkts)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+            ...vorlage.felder,
+        ],
+        vorbelegung: () => ({ name: vorlage.bauwerk.name, hoehe: '',
+                              ...Object.fromEntries(vorlage.felder.map(f => [f.name, f.vorgabe])) }),
+        anwenden: (el, werte) => {
+            const [p] = alsRaumpunkte(el?.punkte ?? [], NaN);
+            if (!p || (el.punkte.length !== 1)) return null;
+            const leer = werte?.hoehe === '' || werte?.hoehe === null || werte?.hoehe === undefined;
+            const y = leer ? p[1] : weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0);
+            const name = String(werte?.name ?? '').trim();
+            const w = vorlagenWerte(vorlage, werte);
+            if (!name || !Number.isFinite(y) || !vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return null;
+            const teile = vorlage.rollen(w, { x: p[0], y, z: p[2] });
+            // Kennungen: Bauwerk zuerst, dann die Rollen in Reihenfolge der Vorlage.
+            const bauwerk = neueGlobalId();
+            const rollen = Object.fromEntries(teile.map(t => [t.rolle, neueGlobalId()]));
+            const { name: _n, ...art } = vorlage.bauwerk;
+            const schritte = [erzeugtEintrag({ rezept: behaelterRezept(), name, globalId: bauwerk, parameter: {
+                ...art,
+                bauwerksvorlage: { id: vorlage.id, werte: w, rollen,
+                                   stand: Object.fromEntries(teile.map(t => [t.rolle, gesteuerterStand(t.rezept, t.parameter)])) },
+            } })];
+            for (const t of teile) {
+                schritte.push(erzeugtEintrag({ rezept: t.rezept, kategorie: t.kategorie, name: t.name, globalId: rollen[t.rolle],
+                    parameter: { ...t.parameter, teilVon: bauwerk,
+                                 ...(t.stehtAuf ? { hoeheVon: { bauteil: rollen[t.stehtAuf], mass: 'oberkante', versatz: 0 } } : {}) } }));
+            }
+            return schritte;
+        },
+        warumNicht: (el, werte) => {
+            if ((el?.punkte ?? []).length !== 1) return 'Ein Punkt: die Aussenecke Nordwest.';
+            if (!String(werte?.name ?? '').trim()) return 'Das Bauwerk braucht eine Bezeichnung.';
+            return null;
+        },
+        vorgangstitel: (werte) => (werte?.name ? `${vorlage.titel} „${werte.name}" aus Vorlage` : null),
+    };
+}
+
 /** Die Parameter einer Öffnung aus dem Formular — oder null, wenn ein Mass fehlt (Teil XXVII, B3). */
 function _oeffnungParameter(werte) {
     const zahl = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -1588,6 +1658,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function').map(zeichenBearbeitung),
     // Teil XXVII, B2: das Bauwerk als Ganzes — vier Werkzeuge aus EINER Fabrik.
     ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
+    // Teil XXVIII, V1: je eingebauter Vorlage ein Werkzeug — ein Bauwerk, ein Kommando.
+    ...Object.values(BAUWERKSVORLAGEN).map(vorlageWerkzeug),
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',

@@ -166,7 +166,7 @@ const FACHWOERTER_ERLAUBT = {};
  * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
  * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
  */
-const HOOKS_MAX = { anwenden: 38, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung
+const HOOKS_MAX = { anwenden: 39, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung, + XXVIII V1 (eine Fabrik je Vorlage)
 // V5 (Teil XXV) bringt einen Hook DAZU — und nimmt dafür Store-Code weg:
 // „Vorgang entfernen“ war `useBearbeitung.entferneVorgang` mit Systembeleg und
 // ist jetzt ein Katalogwerkzeug. Die Rechnung selbst blieb, wo sie war
@@ -189,6 +189,9 @@ const RUECKFUEHRUNG = {
         'oeffnung-setzen',
         // B4: die Rohrdurchführung — Ableitung aus Rohr und Wand.
         'durchfuehrung-setzen',
+        // Teil XXVIII, V1 (Fabios E31): eine Bauwerk-Vorlage ist Code wie eine Ableitung —
+        // `rollen(werte, ort)` je Vorlage; eine Fabrik, ein Werkzeug je Vorlage.
+        'bauwerk-aus-vorlage-rechteckkammer',
     ],
     /** Muster + Operation + Katalogeintrag gäbe es — trotzdem von Hand geschrieben (A6). */
     handgeschrieben: [
@@ -226,7 +229,7 @@ const RUECKFUEHRUNG = {
         'auf-bauteil-stellen',
     ],
 };
-const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 5, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung
+const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 6, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1 Vorlage
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [
