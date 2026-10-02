@@ -40,6 +40,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'vorlage:gleichesRezept': 'eine Vorlage aus der Bibliothek',
     'vorgang:teile': 'die Bauteile desselben Erdbau-Vorgangs',
     'eigene:bauwerk': 'ein eigenes Bauwerk, zu dem das Subjekt gehören kann',
+    'bauwerk:teile': 'die Teile eines Bauwerks — auch die seiner Anlagenteile und Baugruppen',
 });
 
 /**
@@ -56,6 +57,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
         if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
+        if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
         return [];
     };
 }
@@ -101,6 +103,33 @@ function _eigeneBauwerke(wirksamerStand, el) {
     for (const [globalId, plan] of erzeugt) {
         if (!istBehaelter(plan) || verdeckt.has(globalId) || steckt(globalId)) continue;
         aus.push({ id: globalId, titel: plan.name || globalId, art: plan.parameter?.art ?? null });
+    }
+    return aus;
+}
+
+/**
+ * Die Teile eines Bauwerks (Teil XXVII, B2) — alles, dessen `teilVon`-Kette zum
+ * Subjekt führt: Bauteile, Räume, untergeordnete Bauwerke und deren Teile.
+ * In Stand-Reihenfolge; Ausgeblendetes fehlt. Daran fächern die Lage-Werkzeuge
+ * des Bauwerks auf: ein Kommando, alle Teile.
+ */
+function _bauwerksteile(wirksamerStand, el) {
+    const wurzel = el?.globalId ?? null;
+    if (!wurzel || typeof wirksamerStand !== 'function') return [];
+    const erzeugt = wirksamerStand('erzeugt');
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const gehoert = (gid) => {
+        const gesehen = new Set();
+        for (let e = erzeugt.get(gid)?.parameter?.teilVon; e && !gesehen.has(e); e = erzeugt.get(e)?.parameter?.teilVon) {
+            if (e === wurzel) return true;
+            gesehen.add(e);
+        }
+        return false;
+    };
+    const aus = [];
+    for (const [globalId, plan] of erzeugt) {
+        if (globalId === wurzel || verdeckt.has(globalId) || !gehoert(globalId)) continue;
+        aus.push({ id: globalId, titel: plan.name || globalId, bauplan: plan, behaelter: istBehaelter(plan) });
     }
     return aus;
 }

@@ -51,8 +51,9 @@ const HEUTE = Object.freeze({
     // Z7: +1 Bauwerkstyp ändern (Klassifizierung) — 80/57.
     // Fund 8: +8 Ausführung / Objekttyp ändern (Platte, Wand, Fundament, Raum) — 88/65.
     // Z8: +9 Überlaufschwelle zeichnen und sieben „… ändern", Betriebswasser des Raums — 97/74.
-    werkzeuge: 97,
-    ausgefuehrt: 74,
+    // Teil XXVII, B2: +4 Bauwerk verschieben / kopieren / drehen / spiegeln — 101/78.
+    werkzeuge: 101,
+    ausgefuehrt: 78,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

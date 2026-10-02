@@ -193,6 +193,11 @@ const NEU = [
     { id: 'bauwerk-zuordnen', el: eigen('cde-PL1'), werte: [{ bauwerk: 'cde-BW1' }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
     { id: 'bauwerk-bauwerkstyp-setzen', el: eigen('cde-BW1'), werte: [{ bauwerkstyp: 'RRB' }] },
+    // Teil XXVII, B2: das Bauwerk als Ganzes — die Teile kommen aus dem Kandidaten-Auflöser.
+    { id: 'bauwerk-verschieben', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
+    { id: 'bauwerk-kopieren', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
+    { id: 'bauwerk-drehen', el: eigen('cde-BW1'), werte: [{ winkel: 90 }], kandidaten: KANDIDATEN },
+    { id: 'bauwerk-spiegeln', el: eigen('cde-BW1'), werte: [{ achse: 0, kopie: 'nein' }], kandidaten: KANDIDATEN },
     { id: 'merkmalssatz-setzen', el: eigen('cde-L1'), werte: [{ satz: 'Pset_Test', merkmale: [{ name: 'A', value: 1 }] }] },
     { id: 'bauform-auslegen', el: { ...ROHR_G, stand: {} }, werte: [{ bauform: 'achse+profil' }] },
     { id: 'loeschen', el: eigen('cde-L1'), werte: [{}] },

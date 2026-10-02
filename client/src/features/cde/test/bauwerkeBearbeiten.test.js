@@ -15,7 +15,10 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
 import { nachId, passende } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
-import { kommando, RUEB } from './hilfen/ruebKommandos.js';
+import { kommando, RUEB, TEILE } from './hilfen/ruebKommandos.js';
+import { erzeugeKernel } from '../services/geometrie/Kernel.js';
+import { IfcAutor } from '../services/IfcAutor.js';
+import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
 
 class Speicher {
     constructor() { this.daten = new Map(); }
@@ -83,14 +86,78 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(erg.grund).toBe('„Knickpunkt verschieben" passt nicht zu Kammer 1: Nur an einem eigenen Erdbau-Vorgang.');
     });
 
-    it('Fund 4: „Verschieben" am Bauwerk wird angeboten, ist mit (0 | 0 | 0) vorbelegt und lehnt ab', async () => {
-        expect(angeboten('cde-RUEB')).toContain('verschieben');
-        const v = vorbelegt('verschieben', 'cde-RUEB');
-        expect([v.ost, v.nord, v.hoehe]).toEqual([0, 0, 0]);
-        const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-RUEB'], werte: { ...v, ost: 1 } }));
+    // B2 — DAS BAUWERK ALS GANZES (E24): aufgefächert auf alle Teile, ein Kommando, ein Rückgängig.
+    it('Fund 4 (B2): am Bauwerk stehen die vier Lagewerkzeuge des Bauwerks — das einfache „Verschieben" nicht mehr, mit Grund', async () => {
+        const da = angeboten('cde-RUEB');
+        for (const w of ['bauwerk-verschieben', 'bauwerk-kopieren', 'bauwerk-drehen', 'bauwerk-spiegeln']) expect(da, w).toContain(w);
+        expect(da).not.toContain('verschieben');
+        const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-RUEB'], werte: { ost: 1, nord: 0, hoehe: 0 } }));
         expect(erg.ausgefuehrt).toBe(false);
-        expect(erg.grund).toMatch(/fehlt der Bezug/);
-        for (const w of ['kopieren', 'drehen', 'spiegeln']) expect(angeboten('cde-RUEB')).not.toContain(w);
+        expect(erg.grund).toMatch(/Bauwerk verschieben" — mit allen seinen Teilen/);
+        // … und an einem einzelnen Bauteil gibt es die Bauwerkswerkzeuge nicht.
+        expect(angeboten('cde-LN')).not.toContain('bauwerk-verschieben');
+    });
+
+    it('B2: „Bauwerk verschieben" +10 m Ost — alle 10 Teile um genau 10,000 m, ein Vorgang, ein Rückgängig stellt alle her', async () => {
+        const vorher = Object.fromEntries(TEILE.map(g => [g, plan(g).parameter.punkte]));
+        const n0 = ae.eintraege.length;
+        const erg = await b.fuehreAus(kommando('bauwerk-verschieben', { ziel: ['cde-RUEB'], werte: { ost: 10, nord: 0, hoehe: 0 } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(erg.eintraege).toHaveLength(10);
+        expect(new Set(ae.eintraege.slice(n0).map(e => e.vorgang)).size).toBe(1);
+        for (const g of TEILE) {
+            plan(g).parameter.punkte.forEach((p, k) => {
+                expect(p[0] - vorher[g][k][0]).toBeCloseTo(10, 9);
+                expect([p[1], p[2]]).toEqual([vorher[g][k][1], vorher[g][k][2]]);
+            });
+            expect(plan(g).parameter.teilVon).toBe('cde-RUEB');
+        }
+        await ae.zurueck();
+        for (const g of TEILE) expect(plan(g).parameter.punkte).toEqual(vorher[g]);
+    });
+
+    it('B2: „Bauwerk kopieren" — ein zweites Bauwerk mit 10 neuen Teilen, die auf die KOPIE zeigen; das Original bleibt', async () => {
+        const vorher = JSON.stringify(TEILE.map(g => plan(g)));
+        const neu = ['cde-K', ...TEILE.map((_, k) => `cde-K${k}`)];
+        const erg = await b.fuehreAus(kommando('bauwerk-kopieren', { ziel: ['cde-RUEB'], neu, werte: { ost: 20, nord: 0, hoehe: 0 } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(plan('cde-K')).toMatchObject({ rezept: 'bauwerk', name: 'RÜB Kopie' });
+        expect(plan('cde-K').parameter.bauwerkstyp).toBe('RUEB');
+        TEILE.forEach((g, k) => {
+            expect(plan(`cde-K${k}`).parameter.teilVon).toBe('cde-K');
+            expect(plan(`cde-K${k}`).parameter.punkte[0][0] - plan(g).parameter.punkte[0][0]).toBeCloseTo(20, 9);
+        });
+        expect(JSON.stringify(TEILE.map(g => plan(g)))).toBe(vorher);
+        // Über die Grenze: das Paket trägt ZWEI Bauwerke, jedes mit seinen zehn Teilen.
+        const stand = ae.wirksamerStand('erzeugt');
+        const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: () => null, kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
+        const g = await autor.eigenbauGeometrien([...stand].map(([globalId, wert]) => ({ globalId, wert })), { verdeckt: new Set() });
+        const paket = baueEigenbauPaket({ teile: g.bauteile, stand, bauwerke: g.bauwerke, crs: 'EPSG:25832',
+                                          nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y }) });
+        expect(paket.bauwerke.map(w => w.cdeId).sort()).toEqual(['cde-K', 'cde-RUEB']);
+        const je = (id) => paket.bauteile.filter(t => t.teilVon === id).length;
+        expect([je('cde-RUEB'), je('cde-K')]).toEqual([10, 10]);
+    });
+
+    it('B2: „Bauwerk drehen" 90° — um EINEN Drehpunkt: die Abstände zwischen den Teilen bleiben', async () => {
+        const abstand = (a, c) => { const p = plan(a).parameter.punkte[0], q = plan(c).parameter.punkte[0]; return Math.hypot(p[0] - q[0], p[2] - q[2]); };
+        const d0 = [abstand('cde-LN', 'cde-LS'), abstand('cde-SW', 'cde-SO'), abstand('cde-BP', 'cde-R2')];
+        const erg = await b.fuehreAus(kommando('bauwerk-drehen', { ziel: ['cde-RUEB'], werte: { winkel: 90 } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        const d1 = [abstand('cde-LN', 'cde-LS'), abstand('cde-SW', 'cde-SO'), abstand('cde-BP', 'cde-R2')];
+        d1.forEach((d, k) => expect(d).toBeCloseTo(d0[k], 9));
+        // Die Längswand lief Ost–West; gedreht läuft sie Nord–Süd.
+        const [a, e] = plan('cde-LN').parameter.punkte;
+        expect(Math.abs(a[0] - e[0])).toBeCloseTo(0, 9);
+        expect(Math.abs(a[2] - e[2])).toBeCloseTo(8.9, 9);
+    });
+
+    it('B2: „Bauwerk spiegeln" als Kopie — Original bleibt, die Kopie ist ein eigenes Bauwerk', async () => {
+        const neu = ['cde-S', ...TEILE.map((_, k) => `cde-S${k}`)];
+        const erg = await b.fuehreAus(kommando('bauwerk-spiegeln', { ziel: ['cde-RUEB'], neu, werte: { achse: 0, kopie: 'ja' } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(TEILE.every((_, k) => plan(`cde-S${k}`).parameter.teilVon === 'cde-S')).toBe(true);
+        expect(plan('cde-LN').parameter.teilVon).toBe('cde-RUEB');
     });
 
     it('Fund 5: die Aussparung verdeckt die Wand und setzt ein Teil OHNE Bauwerk, Merkmale und Ausführung an ihre Stelle', async () => {

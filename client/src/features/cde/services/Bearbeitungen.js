@@ -34,7 +34,7 @@ import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
          modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte,
-         BAUWERKSARTEN, behaelterRezept } from './Bauteilrezepte.js';
+         BAUWERKSARTEN, behaelterRezept, neueGlobalId } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
@@ -1418,6 +1418,141 @@ function _aussparungSchritte(el, werte) {
     ];
 }
 
+/**
+ * DAS BAUWERK ALS GANZES (Teil XXVII, B2 — Fabios E24): verschieben, kopieren,
+ * drehen, spiegeln — AUFGEFÄCHERT auf jedes Teil, dessen `teilVon`-Kette zum
+ * Bauwerk führt. Ein Kommando, ein Vorgang, ein Rückgängig.
+ *
+ * Gerechnet wird mit denselben Rezeptfunktionen wie am einzelnen Teil
+ * (`verschiebe`, `drehePunktliste`, `spiegelePunktliste`) — nur mit EINEM
+ * Bezug für alle: demselben Versatz, demselben Drehpunkt (Schwerpunkt aller
+ * Stützpunkte). Sonst drehte sich jede Wand um ihre eigene Mitte, und die
+ * Kammer fiele auseinander.
+ *
+ * VERSCHOBEN WIRD UM EINEN VERSATZ, nicht auf einen Punkt (Abweichung vom
+ * Fahrplan): ein Bauwerk hat keinen Anker, und „Schwerpunkt nach X" ist eine
+ * Zahl, die niemand kennt. Kopieren gibt dem Bauwerk UND allen Teilen neue
+ * Kennungen; `teilVon` zeigt auf die Kopie, nicht aufs Original.
+ *
+ * Ganz oder gar nicht: kann ein Teil nicht folgen (kein Bauplan mit Punkten),
+ * entsteht nichts, und `warumNicht` nennt das Teil.
+ */
+const BAUWERK_LAGE = Object.freeze({
+    verschieben: { titel: 'Bauwerk verschieben', icon: 'pointer', kopie: () => false,
+        felder: [
+            { name: 'ost', titel: 'Versatz Ost', einheit: 'm', typ: 'zahl' },
+            { name: 'nord', titel: 'Versatz Nord', einheit: 'm', typ: 'zahl' },
+            { name: 'hoehe', titel: 'Versatz Höhe', einheit: 'm', typ: 'zahl' },
+        ],
+        vorbelegung: { ost: 0, nord: 0, hoehe: 0 } },
+    kopieren: { titel: 'Bauwerk kopieren', icon: 'add', kopie: () => true,
+        felder: [
+            { name: 'ost', titel: 'Versatz Ost', einheit: 'm', typ: 'zahl', vorgabe: 10 },
+            { name: 'nord', titel: 'Versatz Nord', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+            { name: 'hoehe', titel: 'Versatz Höhe', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+        ],
+        vorbelegung: { ost: 10, nord: 0, hoehe: 0 } },
+    drehen: { titel: 'Bauwerk drehen', icon: 'route', kopie: () => false,
+        felder: [{ name: 'winkel', titel: 'Winkel', einheit: '°', typ: 'zahl', min: -360, max: 360, vorgabe: 90 }],
+        vorbelegung: { winkel: 90 } },
+    spiegeln: { titel: 'Bauwerk spiegeln', icon: 'route', kopie: (w) => w.kopie === 'ja',
+        felder: [
+            { name: 'achse', titel: 'Spiegelachse (0° = Ost–West)', einheit: '°', typ: 'zahl', min: -360, max: 360, vorgabe: 0 },
+            { name: 'kopie', titel: 'Ergebnis', typ: 'auswahl', optionen: [
+                { wert: 'nein', titel: 'Bauwerk spiegeln' },
+                { wert: 'ja', titel: 'gespiegelte Kopie, Original bleibt' },
+            ] },
+        ],
+        vorbelegung: { achse: 0, kopie: 'nein' } },
+});
+
+/** Die Teile, die einer Lageänderung folgen müssen — oder der Grund, warum es nicht geht. */
+function _bauwerkTeile(el, kandidatenVon) {
+    const teile = kandidatenVon?.('bauwerk:teile', el) ?? [];
+    if (!teile.length) return { grund: 'Das Bauwerk hat keine Teile — es gibt nichts zu bewegen.' };
+    for (const t of teile) {
+        if (t.behaelter) continue;
+        const rz = rezeptNach(t.bauplan?.rezept);
+        if (typeof rz?.verschiebe !== 'function' || !Array.isArray(t.bauplan?.parameter?.punkte)) {
+            return { grund: `„${t.titel}" kann nicht mitgehen — es hat keinen Bauplan aus Punkten.` };
+        }
+    }
+    return { teile };
+}
+
+function _bauwerkLageSchritte(art, el, werte, kandidatenVon) {
+    const plan = el?.stand?.bauplan;
+    if (!el?.globalId || !plan) return null;
+    const { teile, grund } = _bauwerkTeile(el, kandidatenVon);
+    if (grund) return null;
+    const d = BAUWERK_LAGE[art];
+    const kopie = d.kopie(werte ?? {});
+    const zahl = (n) => Number(werte?.[n]);
+    let rechne;
+    if (art === 'verschieben' || art === 'kopieren') {
+        const [ost, nord, hoehe] = ['ost', 'nord', 'hoehe'].map(zahl);
+        if (![ost, nord, hoehe].every(Number.isFinite)) return null;
+        if ([ost, nord, hoehe].every(v => Math.abs(v) < 1e-4)) return null;
+        const delta = { x: ost, y: hoehe, z: -nord };          // Nord = −z, Höhe = +y
+        rechne = (t) => rezeptNach(t.bauplan.rezept).verschiebe(t.bauplan.parameter, delta);
+    } else {
+        const w = zahl(art === 'drehen' ? 'winkel' : 'achse');
+        if (!Number.isFinite(w) || (art === 'drehen' && Math.abs(w % 360) < 1e-6)) return null;
+        const zentrum = schwerpunktXZ(teile.filter(t => !t.behaelter).flatMap(t => t.bauplan.parameter.punkte));
+        if (!zentrum) return null;
+        rechne = (t) => (art === 'drehen' ? drehePunktliste : spiegelePunktliste)(t.bauplan.parameter, w, zentrum);
+    }
+    // KENNUNGEN: an Ort und Stelle dieselben; als Kopie neue — Bauwerk zuerst,
+    // dann die Teile in Stand-Reihenfolge (das Kommando nennt sie in `neu`).
+    const neu = new Map();
+    if (kopie) {
+        neu.set(el.globalId, neueGlobalId());
+        for (const t of teile) neu.set(t.id, neueGlobalId());
+    }
+    const kennung = (gid) => (kopie ? neu.get(gid) : gid);
+    const umgehaengt = (parameter) => (kopie && parameter?.teilVon && neu.has(parameter.teilVon)
+        ? { ...parameter, teilVon: neu.get(parameter.teilVon) } : parameter);
+    const schritte = [];
+    if (kopie) {
+        schritte.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ? `${plan.name} Kopie` : '',
+                                       parameter: plan.parameter, globalId: kennung(el.globalId) }));
+    }
+    for (const t of teile) {
+        const p = t.bauplan;
+        if (t.behaelter) {
+            if (kopie) schritte.push(erzeugtEintrag({ rezept: p.rezept, kategorie: p.kategorie, name: p.name ?? '',
+                                                       parameter: umgehaengt(p.parameter), globalId: kennung(t.id) }));
+            continue;
+        }
+        const parameter = umgehaengt(rechne(t));
+        schritte.push(erzeugtEintrag({ rezept: p.rezept, kategorie: p.kategorie, name: p.name ?? '',
+            // Eine Kopie liegt nicht an den Schächten des Originals (K8).
+            parameter: kopie ? _ohneAnschluss(parameter) : parameter, globalId: kennung(t.id) }));
+    }
+    return schritte;
+}
+
+function bauwerkWerkzeug(art) {
+    const d = BAUWERK_LAGE[art];
+    return {
+        id: `bauwerk-${art}`,
+        titel: d.titel,
+        icon: d.icon,
+        gruppe: 'lage',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        // Nur an einem Behälter — was einer ist, sagt der Katalog.
+        gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
+        giltGrund: 'Nur an einem Bauwerk — ein einzelnes Bauteil hat sein eigenes Werkzeug.',
+        art: 'erzeugt',
+        felder: d.felder,
+        vorbelegung: () => ({ ...d.vorbelegung }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) => _bauwerkLageSchritte(art, el, werte, kandidatenVon),
+        warumNicht: (el, _werte, { kandidatenVon = null } = {}) => _bauwerkTeile(el, kandidatenVon).grund ?? null,
+    };
+}
+
 export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // NUR REZEPTE, DIE AUS EINEM ZUG BAUEN (2026-09-17). „Gelände zeichnen"
     // stand hier, weil es sich aus dem Rezept-Register von selbst ergab — und
@@ -1427,6 +1562,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // einen Bauplan an, den sein eigenes Rezept nicht bauen kann. Ein Gelände
     // entsteht über die Erdbau-Werkzeuge, nie über einen gezeichneten Zug.
     ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function').map(zeichenBearbeitung),
+    // Teil XXVII, B2: das Bauwerk als Ganzes — vier Werkzeuge aus EINER Fabrik.
+    ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',
@@ -2264,6 +2401,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         gruppe: 'lage',
         bauform: ['punkt', 'linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper', 'netz'],
         mindestGuete: 'unbekannt',
+        // Teil XXVII, B2: ein Bauwerk (Behälter) hat keinen Anker — es bewegt
+        // „Bauwerk verschieben", mit allen Teilen (Fund 4).
+        gilt: (_e, ctx) => !ctx?.rezept?.behaelter,
+        giltGrund: 'Ein Bauwerk bewegt „Bauwerk verschieben" — mit allen seinen Teilen.',
         art: 'lage',
         felder: [
             { name: 'ost', titel: 'Rechtswert', einheit: 'm', typ: 'zahl' },
