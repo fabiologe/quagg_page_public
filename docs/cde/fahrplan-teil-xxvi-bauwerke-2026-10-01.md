@@ -1,6 +1,6 @@
 # Teil XXVI — Bauwerke aus Bauteilen
 
-**Fahrplan, Stand 2026-10-01 nachts: Z0–Z9.3 gebaut, Funde 8–12 behoben; offen nur Z9.4 (Browserprobe).**
+**Fahrplan, Stand 2026-10-02: Teil XXVI komplett — Z0–Z9.4 gebaut und abgenommen, Funde 8–12 behoben.**
 E17–E23 nach Empfehlung freigegeben („lets go"), die Vorschläge zu den Funden 8–11
 ebenso („deine ideen sind top lets go"). Je Stufe ein Commit (`873e268` … `959af03`),
 nichts gebaut (`npm run build`), nichts gepusht. `backend/app/ifc/*` wirkt sofort
@@ -406,6 +406,16 @@ Umriss für das Bauwerk selbst (Fund 12). Die Normverweise im Katalog (DWA-A 111
 128, 166) sind aus `ifc-sonderbauwerk.md` übernommen, der Normtext ist **nicht**
 geprüft.
 
-**Offen: Z9.4 Browserprobe** — blockiert: `/cde` verlangt eine Anmeldung, die
-Zugangsdatei des Probe-Unterbaus (`zugang.env`, Scratchpad vom 18.09.) gibt es
-nicht mehr. Probe-Server :3001 läuft.
+**Z9.4 Browserprobe — bestanden 2026-10-02** (Vite :3001, Konto `claude-bearb2`, ohne
+`?projekt=` — nichts abgelegt, nur IndexedDB des Wegwerfprofils). Ablauf wie Fabio ihn
+hätte: `erdbau_vergleich.ifc` laden (ohne Modell gibt es keinen Koordinatenbezug, und
+„Ausgeben" verweigert sich mit genau diesem Grund), die Kammer relativ zum Modell über
+die Kommandokonsole setzen. **16 von 16 Prüfungen:** 15/15 Kommandos ausgeführt; Paket
+7 Bauteile + 1 Bauwerk, Beton 22,164 m³, PredefinedTypes wie Abschnitt 6; Strukturbaum
+Eigenbau › Kammer › Längswand Nord; „lösen" → Paket ohne Bauwerk UND Baum ohne Kammer,
+„zuordnen" → beides zurück; keine Seitenfehler (eine 404 auf eine Ressource, nicht
+untersucht). Das Paket AUS DEM BROWSER durch Schreiber und Prüftor: Anlage „Kammer"
+(RRB) mit 6 Bauteilen und dem Raum, Prüftor 0 offen, IDS 0 von 18 verfehlt.
+Nicht gefahren: der Server-Lauf von „Ausgeben" — er schreibt ins Register eines
+Projekts; projektlos gibt es ihn nicht (Kette Paket → Datei → Prüftor: Python-Verträge).
+Skript: Scratchpad der Sitzung `z94/probe.cjs`.

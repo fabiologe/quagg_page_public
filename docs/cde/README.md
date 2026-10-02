@@ -17,7 +17,7 @@ sich nicht mit einer gekauften CDE vergleichen lässt.
 
 | Datei | was |
 |---|---|
-| **[fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md)** | **Teil XXVI — Bauwerke aus Bauteilen:** Vorprüfung mit sieben Funden (zwei Fehler, die heute bestehen), Entscheidungen E17–E23, Stufen Z0–Z9, Abnahmefall Kammer. **Z0–Z9.3 gebaut, Funde 8–12 behoben**; offen nur die Browserprobe Z9.4 |
+| **[fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md)** | **Teil XXVI — Bauwerke aus Bauteilen:** Vorprüfung mit sieben Funden (zwei Fehler, die heute bestehen), Entscheidungen E17–E23, Stufen Z0–Z9, Abnahmefall Kammer. **komplett: Z0–Z9.4 gebaut und abgenommen**, Funde 8–12 behoben |
 | [kommando/](kommando/) | **Teil XXIV, Kommandodefinition** — Aufträge, zwei Audits, Abgleich, Entscheidungen E1–E9, das angenommene Schema, die Durchstiche K1–K10 und die beiden Wiederholungsproben. Eigene README |
 | [tragfaehig-2026-09-24.md](tragfaehig-2026-09-24.md) | Etappe „Tragfähig" — stille Rückfälle, CI, ProVI-Achsen, Gelände zweiseitig |
 | [viewer/](viewer/) | Viewer-Kur — Bestandsaufnahme und Kur (Kamera, Gelände, Griffe, Gizmo) |
@@ -49,4 +49,4 @@ diesen Dokumenten bestimmen:
 Stufen Z0–Z9, ≈ 19–20 Halbtage, Entscheidungen E17–E23. Der Abnahmefall ist eine
 **Kammer** (Bodenplatte, vier Wände, Decke, ein Raum; 22,164 m³ Beton, 30,000 m³
 Raum), nicht das Becken und nicht der Schacht. Gebaut bis Z9.3: Kammer und RÜB nur über
-Kommandos, Fachmerkmale als Katalog, Baugrube im Verbund; offen nur die Browserprobe (Z9.4).
+Kommandos, Fachmerkmale als Katalog, Baugrube im Verbund, Browserprobe bestanden (Z9.4).
