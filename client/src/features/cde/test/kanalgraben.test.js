@@ -8,6 +8,7 @@
  * eigenen Rohrs (formAus) oder aus der Quelle (holeQuellForm), Verfüllung
  * als Kennzahl, Überdeckung als Befund.
  */
+import { profilFuer } from '../services/bauform/Typprofile.js';
 import { describe, expect, it } from 'vitest';
 import { nachId, passende, felderFuer } from '../services/Bearbeitungen.js';
 import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
@@ -49,8 +50,12 @@ const ROHR = {
 
 describe('Der Katalog', () => {
     it('„Kanalgraben ableiten" hängt am Rohr (achse+profil), nicht am Gelände', () => {
-        const amRohr = passende({ bauform: 'achse+profil', guete: 'geschaetzt' }).map(b => b.id);
+        // Mit dem Typprofil, das der Store mitgibt. Seit Teil XXVII B1 braucht der Graben
+        // eine KANTE im Netz — eine Wand hat auch eine Achse, aber keine.
+        const amRohr = passende({ bauform: 'achse+profil', guete: 'geschaetzt' }, { typprofil: profilFuer('IFCPIPESEGMENT') }).map(b => b.id);
         expect(amRohr).toContain('kanalgraben-ableiten');
+        expect(passende({ bauform: 'achse+profil', guete: 'gemessen' }, { typprofil: profilFuer('IFCWALL') }).map(b => b.id))
+            .not.toContain('kanalgraben-ableiten');
         expect(passende({ bauform: 'hoehenfeld', guete: 'gemessen' }).map(b => b.id)).not.toContain('kanalgraben-ableiten');
     });
 

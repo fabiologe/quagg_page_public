@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { griffZuWerten, griffeFuer } from '../services/Griffe.js';
 import { nachId, passende } from '../services/Bearbeitungen.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { weltAusNn } from '../services/Hoehenbezug.js';
 
 const VERSATZ = 300;
@@ -92,8 +93,12 @@ describe('Das Werkzeug schreibt die VOLLE Operationsliste zurück', () => {
         expect(w().bauform).toEqual(['koerper']);
         // Ein Cut ist ein gemessener geschlossener Körper — genau so kommt er
         // aus der Einordnung. Ohne diesen Weg fände der Griff kein Werkzeug.
-        const am = (o) => passende(o, { eigenes: true }).map(x => x.id);
+        // Mit dem Kontext, den der Store mitgibt (`passendeKontext`: das Rezept des Bauplans).
+        // Seit Teil XXVII B1 fragt das Werkzeug, ob es ein ERDBAU-Vorgang ist — ein Raum
+        // hat auch die Bauform `koerper`.
+        const am = (o, rezept = rezeptNach('erdbau')) => passende(o, { eigenes: true, rezept }).map(x => x.id);
         expect(am({ bauform: 'koerper', guete: 'gemessen' })).toContain('erdbau-stuetzpunkt-verschieben');
+        expect(am({ bauform: 'koerper', guete: 'gemessen' }, rezeptNach('raum'))).not.toContain('erdbau-stuetzpunkt-verschieben');
         expect(am({ bauform: 'achse+profil', guete: 'gemessen' })).not.toContain('erdbau-stuetzpunkt-verschieben');
         expect(passende({ bauform: 'koerper', guete: 'gemessen' }).map(x => x.id))
             .not.toContain('erdbau-stuetzpunkt-verschieben');   // an einer Lieferung nicht

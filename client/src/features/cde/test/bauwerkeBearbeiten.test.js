@@ -52,33 +52,35 @@ let zaehler = 0;
 const geber = (art) => `${art === 'operation' ? 'op' : 'cde'}-g${++zaehler}`;
 
 describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () => {
-    it('Fund 1: die Leiste bietet „Stützpunkt verschieben" an der Platte nicht an — das Kommando (der Griff) läuft trotzdem', async () => {
-        expect(angeboten('cde-BP')).not.toContain('stuetzpunkt-verschieben');
+    // B1 — ANGEBOT = AUSFÜHRUNG: Leiste, Griff und Kommando fragen dieselbe Regel (`eignungVon`).
+    it('Fund 1 (B1): die Leiste bietet „Stützpunkt verschieben" an der Platte an — wie ihr Eckgriff es schon tat', async () => {
+        for (const w of ['stuetzpunkt-verschieben', 'stuetzpunkt-einfuegen', 'stuetzpunkt-entfernen', 'kante-verschieben']) {
+            expect(angeboten('cde-BP'), w).toContain(w);
+        }
         const erg = await b.fuehreAus(kommando('stuetzpunkt-verschieben', { ziel: ['cde-BP'],
             werte: { index: { ost: 0, nord: 0, hoehe: 210 }, ost: -0.5, nord: 0.5, hoehe: 210 } }));
         expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
         expect(plan('cde-BP').parameter.punkte[0]).toEqual([-0.5, 210, -0.5]);
     });
 
-    it('Fund 2: „Kanalgraben ableiten" an einer WAND wird angeboten — und erst spät, mit technischem Grund, abgelehnt', async () => {
-        expect(angeboten('cde-LN')).toContain('kanalgraben-ableiten');
+    it('Fund 2 (B1): „Kanalgraben ableiten" an einer Wand wird nicht angeboten — und abgelehnt mit dem Grund: keine Kante im Netz', async () => {
+        expect(angeboten('cde-LN')).not.toContain('kanalgraben-ableiten');
         const gelaende = [{ globalId: 'cde-BP', name: 'Gelände', cell: 0.5 }];
         const erg = await b.fuehreAus(kommando('kanalgraben-ableiten', { ziel: ['cde-LN'],
             werte: vorbelegt('kanalgraben-ableiten', 'cde-LN', { gelaendeQuellen: gelaende }),
             eingaben: { auswahl: { gelaende: 'cde-BP' } } }),
             { subjektVon: (g) => subj(g, { gelaendeQuellen: gelaende }), kennungsgeber: geber });
-        // Gemessen (B0): nicht die Fachfrage („eine Wand ist keine Haltung") lehnt ab,
-        // sondern die Bezugsprüfung nach dem Auswerten.
         expect(erg.ausgefuehrt).toBe(false);
-        expect(erg.grund).toMatch(/Bezug unzulässig: Quelle „schaechte" fehlt/);
+        expect(erg.grund).toMatch(/^„Kanalgraben ableiten" passt nicht zu Längswand Nord: Dem Bauteil fehlt/);
+        expect(erg.grund).not.toMatch(/Bezug unzulässig/);
     });
 
-    it('Fund 3: ein Erdbau-Werkzeug am Raum wird angeboten und lehnt mit einer Adressmeldung ab', async () => {
-        expect(angeboten('cde-R1')).toContain('erdbau-stuetzpunkt-verschieben');
-        const erg = await b.fuehreAus(kommando('erdbau-stuetzpunkt-verschieben', { ziel: ['cde-R1'],
-            werte: vorbelegt('erdbau-stuetzpunkt-verschieben', 'cde-R1') }));
+    it('Fund 3 (B1): ein Erdbau-Werkzeug am Raum wird nicht angeboten — und abgelehnt mit dem fachlichen Grund', async () => {
+        expect(angeboten('cde-R1')).not.toContain('erdbau-stuetzpunkt-verschieben');
+        // Formgerecht (E3: keine Nummern) — dann spricht die Eignung, nicht die Adresse.
+        const erg = await b.fuehreAus(kommando('erdbau-stuetzpunkt-verschieben', { ziel: ['cde-R1'], werte: { hoehe: 211 } }));
         expect(erg.ausgefuehrt).toBe(false);
-        expect(erg.grund).toMatch(/nie über ihre Nummer \(E3\)/);
+        expect(erg.grund).toBe('„Knickpunkt verschieben" passt nicht zu Kammer 1: Nur an einem eigenen Erdbau-Vorgang.');
     });
 
     it('Fund 4: „Verschieben" am Bauwerk wird angeboten, ist mit (0 | 0 | 0) vorbelegt und lehnt ab', async () => {

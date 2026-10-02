@@ -37,8 +37,8 @@
 
 import { BAUFORMEN } from './bauform/Bauformen.js';
 import { imWoerterbuch, profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
-import { GRUPPEN, felderFuer, passende, werkzeugKatalog } from './Bearbeitungen.js';
-import { eigenschaftText, eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
+import { GRUPPEN, eignungVon, felderFuer, passende, werkzeugKatalog } from './Bearbeitungen.js';
+import { verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 
 /** Warum eine Bearbeitung angeboten wird — der Text neben der Gruppe. */
 export const HERKUNFT_TEXT = Object.freeze({
@@ -54,39 +54,17 @@ export const HERKUNFT_TEXT = Object.freeze({
  * schlechteste Rückmeldung ist: der Nutzer weiß nicht, ob das Werkzeug fehlt,
  * ob sein Modell zu schlecht ist oder ob er etwas falsch macht.
  */
-export function warumNicht(bearbeitung, { bauform, guete, typprofil, rezept = null, regel = null }) {
-    // WAS FEHLT (AE): dieselbe Prüfung wie in `passende`. Vorher stand hier
-    // nur die EINZELNE Rolle — bei einer Liste (`['sohlhoeheAnfang',
-    // 'sohlhoeheEnde']`) wurde nach dem Schlüssel „sohlhoeheAnfang,sohlhoeheEnde"
-    // gesucht und immer der falsche Grund genannt.
-    const fehlt = fehlendeEigenschaften(eigenschaftenVon({ bauform, typprofil, rezept, regel }), verlangtVon(bearbeitung));
-    if (fehlt.length) {
-        const nurMasse = fehlt.every(a => a.startsWith('mass:'));
-        return `Dem Bauteil fehlt ${fehlt.map(eigenschaftText).join(' und ')}`
-            + (nurMasse ? ' — ein Typprofil würde sie ergänzen' : ' — ein Typprofil oder eine Bauformregel sagt es');
-    }
-    if (bearbeitung.nurRezept && rezept?.id !== bearbeitung.nurRezept) {
-        return `Nur für Eigenbau aus dem Rezept „${bearbeitung.nurRezept}"`;
-    }
-    const erlaubt = bearbeitung.bauform === '*' ? null
-        : (Array.isArray(bearbeitung.bauform) ? bearbeitung.bauform : [bearbeitung.bauform]);
-    if (erlaubt && !erlaubt.includes(bauform)) {
-        return `Nur für ${erlaubt.join(' oder ')} — hier ist es ${bauform ?? 'nichts Bestimmtes'}`;
-    }
-    if (!_guetegenuegt(guete, bearbeitung.mindestGuete)) {
-        return `Braucht mindestens Güte „${bearbeitung.mindestGuete}", vorhanden ist „${guete}"`;
-    }
+export function warumNicht(bearbeitung, { bauform, guete, typprofil, rezept = null, regel = null, eigenes = true }) {
+    // DIESELBE Regel wie Werkzeugleiste und Kommandoweg (Teil XXVII, B1) — die
+    // Begründung stand hier als zweite Kopie und lief auseinander.
+    const grund = eignungVon(bearbeitung, { bauform, guete }, { typprofil, rezept, regel, eigenes });
+    if (grund) return grund;
     if (GRUPPEN[bearbeitung.gruppe]?.einstieg === 'werkzeug') {
         return 'Erzeugen hat kein Subjekt — steht in der Werkzeugleiste';
     }
     return 'Passt hier nicht';
 }
 
-/** Rangfolge der Güte — dieselbe wie in Bauformen.js, hier nur lesend. */
-const RANG = { unbekannt: 0, geschaetzt: 1, gemessen: 2 };
-function _guetegenuegt(ist, mindestens) {
-    return (RANG[ist] ?? 0) >= (RANG[mindestens ?? 'unbekannt'] ?? 0);
-}
 
 /** Woraus wird diese Bearbeitung angeboten? */
 function _herkunft(b) {

@@ -28,9 +28,10 @@
  *                         für Zugpunkte `{knoten}` (K8); `anschlusshoehe` nennt
  *                         ein gelieferter Knoten: die Sohle seiner Abläufe (R7)
  */
-import { felderFuer, nachId, pruefe, werkzeugKatalog } from '../Bearbeitungen.js';
+import { eignungVon, felderFuer, nachId, pruefe, werkzeugKatalog } from '../Bearbeitungen.js';
 import { befundeFuerWerte } from '../Befunde.js';
-import { KENNUNGS_PRAEFIX, mitKennungen, pruefeBauplan } from '../Bauteilrezepte.js';
+import { KENNUNGS_PRAEFIX, mitKennungen, pruefeBauplan, rezeptNach } from '../Bauteilrezepte.js';
+import { profilFuer } from '../bauform/Typprofile.js';
 import { adressenAlsNummern, istErzeugen, punktInWelt, rahmenOhneBezug, schlitzVon, werteFuerWerkzeug } from './Kommando.js';
 
 const KENNUNG_FEHLT = Symbol('kennung-fehlt');
@@ -86,6 +87,25 @@ export function werteAus(kommando, { katalog = werkzeugKatalog(), subjektVon = n
     const fehlt = erzeugt ? [] : k.ziel.filter((gid, i) => !subjekte[i]);
     // E8: ein fehlendes oder gelöschtes Ziel ist technisch unmöglich — ablehnen.
     if (fehlt.length) return leer(`Das Bauteil ${fehlt.join(', ')} gibt es nicht (mehr) — ein Kommando wirkt nur auf vorhandene Bauteile.`);
+
+    // ANGEBOT = AUSFÜHRUNG (Teil XXVII, B1): was die Werkzeugleiste an einem
+    // EIGENEN Bauteil nicht anbietet, führt auch ein Kommando oder ein Griff
+    // nicht aus — mit demselben Grund. Ein geliefertes Bauteil ordnet der Viewer
+    // ein (Typprofil, Bauformregel, Geometrie); das kann ein Kommando nicht.
+    if (!erzeugt) {
+        for (const el of subjekte) {
+            const plan = el?.stand?.bauplan;
+            if (!plan?.rezept) continue;
+            const rz = rezeptNach(plan.rezept);
+            // Ein Ableitungsteil hat die Bauform SEINER ROLLE (Aushub: Körper), nicht die
+            // des Rezepts (Erdbau: Höhenfeld) — wenn der Bauplan sie nicht selbst nennt.
+            const bauform = plan.bauform ?? rz?.teile?.find(t => t.rolle === plan.rolle)?.bauform ?? rz?.bauform ?? null;
+            const grund = eignungVon(b, { bauform, guete: 'gemessen' },
+                                     // Ohne Satz des Aufrufers: die eingebauten Profile — wie der Store, bevor er lädt.
+                                     { eigenes: true, rezept: rz, typprofil: typprofilFuer?.(el) ?? profilFuer(el.category ?? plan.kategorie) });
+            if (grund) return leer(`„${b.titel}" passt nicht zu ${el.name || el.globalId}: ${grund}`);
+        }
+    }
 
     // DIE FORMULARPRÜFUNG — dieselbe wie `bereit` in der Oberfläche, gegen das
     // ERSTE Subjekt. Eine zweite Regel für Kommandos gibt es nicht. Seit K10

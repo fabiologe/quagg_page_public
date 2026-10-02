@@ -78,7 +78,7 @@ import { achsmassAus } from './geometrie/hilfen.js';
 import { ACHSBEZUEGE, sohleAnAchse } from './Achsbezug.js';
 import { gefaelle, ortBei, punkteDerAchse, stationiere } from './geometrie/Stationierung.js';
 import { kantenbezugNeu } from './JournalFormat.js';
-import { eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
+import { eigenschaftText, eigenschaftenVon, fehlendeEigenschaften, verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
@@ -1500,6 +1500,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         icon: 'gerinne',
         gruppe: 'gelaende',
         bauform: ['achse+profil'],
+        // Teil XXVII B1 (Fund 2): eine Achse allein ist keine Haltung — eine Wand
+        // hat auch eine. Gebraucht wird die KANTE im Netz.
+        braucht: ['achse', 'netzrolle:kante'],
         // KEINE Güteschranke — gebraucht wird die Achse, und die liegt an
         // Fabios Netzen seit 14.1 exakt vor (Extrusion), nie als Skelett.
         mindestGuete: 'unbekannt',
@@ -2333,6 +2336,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: ['koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        // Teil XXVII B1 (Fund 3): nur an einem Erdbau-Vorgang — ein Raum hat auch
+        // die Bauform `koerper`, aber keine Operationen.
+        gilt: (_e, ctx) => !!ctx?.rezept?.erdbau,
+        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang.',
         art: 'erzeugt',
         felder: [
             // `adresse` (Teil XXIV, E3): im KOMMANDO steht nicht die Nummer, sondern
@@ -2378,6 +2385,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: ['koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        // Teil XXVII B1 (Fund 3): nur an einem Erdbau-Vorgang — ein Raum hat auch
+        // die Bauform `koerper`, aber keine Operationen.
+        gilt: (_e, ctx) => !!ctx?.rezept?.erdbau,
+        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang.',
         eigeneOberflaeche: 'griffe',
         art: 'erzeugt',
         felder: [
@@ -2405,7 +2416,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Stützpunkt verschieben',
         icon: 'pointer',
         gruppe: 'lage',
-        bauform: ['linie', 'achse+profil', 'flaeche', 'koerper'],
+        // Teil XXVII B1 (Fund 1): auch `flaeche+dicke` — der Eckgriff der Platte ruft es.
+        bauform: ['linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
         art: 'erzeugt',
@@ -2572,7 +2584,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Reihe',
         icon: 'add',
         gruppe: 'lage',
-        bauform: ['punkt', 'koerper', 'linie', 'flaeche'],
+        // Teil XXVII B1: dieselben Formen wie „Kopieren“ — eine Reihe ist ein wiederholtes Kopieren;
+        // am eigenen Rohr lief sie über den Kommandoweg längst (verknuepfung.test.js), die Leiste bot sie nicht an.
+        bauform: ['punkt', 'linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
         art: 'erzeugt',
@@ -2695,7 +2709,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Stützpunkt einfügen',
         icon: 'add',
         gruppe: 'lage',
-        bauform: ['linie', 'achse+profil', 'flaeche'],
+        bauform: ['linie', 'achse+profil', 'flaeche', 'flaeche+dicke'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
         art: 'erzeugt',
@@ -2728,7 +2742,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Stützpunkt entfernen',
         icon: 'delete',
         gruppe: 'lage',
-        bauform: ['linie', 'achse+profil', 'flaeche'],
+        bauform: ['linie', 'achse+profil', 'flaeche', 'flaeche+dicke'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
         art: 'erzeugt',
@@ -3081,7 +3095,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Kante verschieben',
         icon: 'pointer',
         gruppe: 'lage',
-        bauform: ['linie', 'achse+profil', 'flaeche'],
+        bauform: ['linie', 'achse+profil', 'flaeche', 'flaeche+dicke'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
         art: 'erzeugt',
@@ -3765,65 +3779,63 @@ export function werkzeugRollen(katalog = werkzeugKatalog()) {
  * @param {string} [opts.gruppe]   nur diese Gruppe
  * @param {Array}  [opts.katalog]  für Tests
  */
-export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(), typprofil = null, eigenes = false,
-                                      rezept = null, regel = null } = {}) {
+/**
+ * DIE EIGNUNG (Teil XXVII, B1): passt dieses Werkzeug zu diesem Bauteil?
+ * `null` heisst ja, sonst steht da der GRUND.
+ *
+ * EINE Regel für drei Leser: die Werkzeugleiste (`passende`), die Begründung
+ * (`Herleitung.warumNicht`) und den Kommandoweg (`werteAus`). Bis B1 fragte nur
+ * die Leiste — ein Griff und ein Kommando liefen an ihr vorbei. Gemessen: die
+ * Leiste bot „Stützpunkt verschieben" an der Platte nicht an, der Eckgriff tat
+ * es; am Raum stand ein Erdbau-Werkzeug, das dann mit einer Adressmeldung
+ * ablehnte; an einer Wand „Kanalgraben ableiten", abgelehnt erst von der
+ * Bezugsprüfung (Fahrplan Teil XXVII, Funde 1–3).
+ *
+ * Nicht hier: OB ein Werkzeug in der LEISTE erscheint (eigene Oberfläche,
+ * Gruppe, Erzeugen ohne Subjekt) — das ist Darstellung, nicht Eignung.
+ */
+export function eignungVon(b, einordnung, { typprofil = null, eigenes = false, rezept = null, regel = null } = {}) {
     const bauform = einordnung?.bauform ?? null;
     const guete = einordnung?.guete ?? 'unbekannt';
-    // WAS DAS BAUTEIL HAT (Teil XXIII, AE) — einmal je Aufruf, aus dem Katalog:
-    // Rezept (eigen), Bauformregel (Proxy), Typprofil (Familie).
-    const eigenschaften = eigenschaftenVon({ bauform, typprofil, rezept, regel });
+    // Teil XVI: manche Werkzeuge gibt es nur an EIGENEN Bauteilen (Bauplan).
+    if (b.nurEigene && !eigenes) return 'Nur an Eigenbau — ein geliefertes Bauteil ändert sein eigenes Modell';
+    // WAS DAS BAUTEIL HAT (Teil XXIII, AE): Rezept (eigen), Bauformregel (Proxy),
+    // Typprofil (Familie). `brauchtRolle` ist die Kurzform für `mass:…`.
+    const fehlt = fehlendeEigenschaften(eigenschaftenVon({ bauform, typprofil, rezept, regel }), verlangtVon(b));
+    if (fehlt.length) {
+        const nurMasse = fehlt.every(a => a.startsWith('mass:'));
+        return `Dem Bauteil fehlt ${fehlt.map(eigenschaftText).join(' und ')}`
+            + (nurMasse ? ' — ein Typprofil würde sie ergänzen' : ' — ein Typprofil oder eine Bauformregel sagt es');
+    }
+    // Der Setzer eines Rezeptfelds (A6) gilt nur für Bauteile DIESES Rezepts.
+    if (b.nurRezept && rezept?.id !== b.nurRezept) return `Nur für Eigenbau aus dem Rezept „${b.nurRezept}"`;
+    // Eine Liste ist erlaubt: „Bezugshöhe setzen" gilt für die Achse (Rohrsohle)
+    // UND für den Körper (Schachtsohle) — die Operation hängt an der FORM.
+    if (b.bauform !== '*') {
+        const erlaubt = Array.isArray(b.bauform) ? b.bauform : [b.bauform];
+        if (!bauform || !erlaubt.includes(bauform)) return `Nur für ${erlaubt.join(' oder ')} — hier ist es ${bauform ?? 'nichts Bestimmtes'}`;
+    }
+    if (!guetegenuegt(guete, b.mindestGuete ?? 'unbekannt')) {
+        return `Braucht mindestens Güte „${b.mindestGuete}", vorhanden ist „${guete}"`;
+    }
+    // `gilt` sieht den Kontext (S9): eigen oder geliefert, Typprofil, Rezept —
+    // und sagt, warum nicht (`giltGrund`), statt dass ein Folgefehler es tut.
+    if (typeof b.gilt === 'function' && !b.gilt(einordnung, { eigenes, typprofil, rezept })) return b.giltGrund ?? 'Passt hier nicht';
+    return null;
+}
+
+export function passende(einordnung, { gruppe = null, katalog = werkzeugKatalog(), typprofil = null, eigenes = false,
+                                      rezept = null, regel = null } = {}) {
     return katalog.filter((b) => {
         // Ein Werkzeug mit EIGENER Oberfläche (O6: das Merkmalsfenster) bietet
         // die Werkzeugleiste nicht an — es läuft als Kommando aus seinem Fenster.
         if (b.eigeneOberflaeche) return false;
-        // Teil XVI: manche Werkzeuge gibt es nur an EIGENEN Bauteilen (Bauplan).
-        if (b.nurEigene && !eigenes) return false;
-        // Der Setzer eines Rezeptfelds (A6) gilt nur für Bauteile DIESES Rezepts.
-        if (b.nurRezept && rezept?.id !== b.nurRezept) return false;
-        // DIE ROLLE IST DER ZWEITE FILTER — und der eigentlich skalierbare.
-        //
-        // `bauform` fragt: welche FORM hat das Bauteil? Davon gibt es acht.
-        // `brauchtRolle` fragt: kennt dieser TYP diese Größe überhaupt? Davon
-        // gibt es beliebig viele, und die Antwort steht als DATEN im Typprofil,
-        // nicht als Verzweigung hier.
-        //
-        // Beispiel: „Bezugshöhe setzen" braucht die Rolle `sohlhoehe`. Am Rohr
-        // heißt sie „Sohlhöhe", am Bordstein „Oberkante" — dieselbe Operation,
-        // derselbe Programmcode, zwei Beschriftungen. Und ein IFC-Typ, den
-        // niemand vorhergesehen hat, bekommt sie, sobald irgendein Typprofil
-        // über ihm im Vererbungsbaum die Rolle nennt. Ohne Auslieferung.
-        // `brauchtRolle` darf MEHRERE Rollen nennen — dann müssen alle da
-        // sein. „Sohlhöhen festlegen" braucht Anfang UND Ende; eine davon
-        // allein ergibt kein Gefälle.
-        //
-        // SEIT AE (Teil XXIII) ist die Rolle EINE Eigenschaftsart unter
-        // mehreren: `braucht: ['netzrolle:kante', 'achse']` fragt genauso, was
-        // das Bauteil HAT — und `brauchtRolle` ist die Kurzform für `mass:…`.
-        // Ein Weg, eine Prüfung (`verlangtVon`, `fehlendeEigenschaften`).
-        if (fehlendeEigenschaften(eigenschaften, verlangtVon(b)).length) return false;
         if (gruppe && b.gruppe !== gruppe) return false;
         // ERZEUGEN HAT KEIN SUBJEKT. Die Trennlinie ist nicht der Elementtyp,
         // sondern die Frage „woran hängt die Operation?" — Bearbeiten immer an
-        // einem Bauteil (Klick), Erzeugen an nichts (Werkzeugleiste). Ohne
-        // diese Zeile böte das Kontextmenü am Rohr „Linie zeichnen" an, und
-        // das gezeichnete Ergebnis hätte mit dem angeklickten Rohr nichts zu
-        // tun. `einstieg` steht seit 9.0 in GRUPPEN und wird hier endlich
-        // benutzt, statt ein zweites Mal beschrieben zu werden.
+        // einem Bauteil (Klick), Erzeugen an nichts (Werkzeugleiste).
         if (!gruppe && GRUPPEN[b.gruppe]?.einstieg === 'werkzeug') return false;
-        if (b.bauform !== '*') {
-            // Eine Liste ist erlaubt: „Bezugshöhe setzen" gilt für die Achse
-            // (Rohrsohle) UND für den Körper (Schachtsohle). Das ist keine
-            // Aufweichung der Bauform-Idee — die Operation hängt weiter an der
-            // FORM, nur eben an zweien.
-            const erlaubt = Array.isArray(b.bauform) ? b.bauform : [b.bauform];
-            if (!bauform || !erlaubt.includes(bauform)) return false;
-        }
-        if (!guetegenuegt(guete, b.mindestGuete ?? 'unbekannt')) return false;
-        // `gilt` sieht zusätzlich den Kontext (S9): ob das Bauteil EIGEN ist,
-        // steht nicht in der Einordnung, entscheidet aber, ob „Haltung teilen"
-        // (macht Rohre) oder „Linie teilen" (hält den Bauplan) das Werkzeug ist.
-        if (typeof b.gilt === 'function' && !b.gilt(einordnung, { eigenes, typprofil })) return false;
-        return true;
+        return eignungVon(b, einordnung, { typprofil, eigenes, rezept, regel }) === null;
     });
 }
 
