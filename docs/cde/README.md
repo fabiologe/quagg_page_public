@@ -17,7 +17,7 @@ sich nicht mit einer gekauften CDE vergleichen lässt.
 
 | Datei | was |
 |---|---|
-| **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** | **Teil XXVII — Bauwerke bearbeiten:** Vorprüfung mit sechs gemessenen Funden (ein Fehler, der heute besteht: die Aussparung wirft die Wand aus dem Bauwerk), Entscheidungen E24–E30, Stufen B0–B7 (≈ 20 Halbtage). **Geplant, nicht gebaut** |
+| **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** | **Teil XXVII — Bauwerke bearbeiten:** Bauwerk als Ganzes, Öffnungen und Durchführungen als `IfcOpeningElement`, Höhen folgen, Griffe aus Feldern. **B0–B7 gebaut und abgenommen**, Funde 13–15 |
 | **[fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md)** | **Teil XXVI — Bauwerke aus Bauteilen:** Vorprüfung mit sieben Funden (zwei Fehler, die heute bestehen), Entscheidungen E17–E23, Stufen Z0–Z9, Abnahmefall Kammer. **komplett: Z0–Z9.4 gebaut und abgenommen**, Funde 8–12 behoben |
 | [kommando/](kommando/) | **Teil XXIV, Kommandodefinition** — Aufträge, zwei Audits, Abgleich, Entscheidungen E1–E9, das angenommene Schema, die Durchstiche K1–K10 und die beiden Wiederholungsproben. Eigene README |
 | [tragfaehig-2026-09-24.md](tragfaehig-2026-09-24.md) | Etappe „Tragfähig" — stille Rückfälle, CI, ProVI-Achsen, Gelände zweiseitig |
@@ -48,4 +48,5 @@ diesen Dokumenten bestimmen:
 
 **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** — Teil XXVII, Bauwerke bearbeiten:
 Bauwerk als Ganzes bewegen, Öffnungen als `IfcOpeningElement`, Höhen, die einander folgen,
-Griffe aus dem Katalog. Entscheidungen E24–E30 offen; geplant, nicht gebaut.
+Griffe aus dem Katalog — gebaut und abgenommen. Als Nächstes laut Abschnitt 7: Lage-Verweise,
+dann Bauwerk-Vorlagen (Rechteckkammer, Zweikammer-RÜB).

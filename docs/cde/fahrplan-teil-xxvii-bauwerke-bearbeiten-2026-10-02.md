@@ -1,7 +1,8 @@
 # Teil XXVII — Bauwerke bearbeiten
 
-**Fahrplan, Stand 2026-10-02. Geplant, nicht gebaut.** Halt nach diesem Dokument;
-gebaut wird erst nach Freigabe der Entscheidungen E24–E30.
+**Fahrplan, Stand 2026-10-02 abends: B0–B7 gebaut und abgenommen.** E24–E30 nach Empfehlung
+freigegeben („oki lets go"); drei Abweichungen und drei neue Funde stehen in Abschnitt 8.
+Nichts gebaut (`npm run build`), nichts gepusht, kein pm2 nötig.
 
 Grundlage: Teil XXVI ([fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md))
 hat Bauwerke **erzeugbar** gemacht — Kammer und RÜB stehen nur über Kommandos im IFC.
@@ -220,3 +221,44 @@ Wanddicke), gespeichert am Bauwerk (`vorlage: { id, werte }`). „Lichte Länge 
 wertet die Vorlage neu aus; die Teile behalten ihre Kennungen (Zuordnung über ihre Rolle
 in der Vorlage), Handänderungen an Teilen werden als Abweichung gezeigt, nicht still
 überschrieben. Vorbild ist der Vorlagenbezug aus Teil XXIII (A1).
+
+---
+
+## 8 · Stand 2026-10-02 abends — gemessen
+
+| Stufe | Commit | Zahl |
+|---|---|---|
+| B0 | `89dc348` | sechs Funde als Tests eingefroren; **Berichtigung Fund 2**: der Kanalgraben an der Wand wurde nie ausgeführt (die Bezugsprüfung lehnte spät ab) — die Vorprüfung hatte „angenommen" nur aus der Kennungszahl geschlossen |
+| B1 | `468b13d` | `eignungVon` — eine Regel für Leiste, Herleitung und Kommandoweg; Funde 1–3 gekippt (Platte bekommt die Punktwerkzeuge, Kanalgraben braucht `netzrolle:kante`, Erdbau-Werkzeuge nur am Erdbau-Vorgang); unterwegs: Reihe wie Kopieren, ein Ableitungsteil hat die Bauform seiner Rolle |
+| B2 | `63750fa` | Bauwerk verschieben / kopieren / drehen / spiegeln aus einer Fabrik; RÜB +10 m → 10 Teile um 10,000 m, ein Rückgängig; Kopie = zweites Bauwerk im Paket |
+| B3 | `7ab1ad0` | Öffnung als `IfcOpeningElement` am Wirt (Schreiber unverändert); RÜB-Längswand netto 6,653 794 m³; Aussparung an Eigenbau nicht mehr angeboten (Fund 5) |
+| B4 | `c295aa3` | Rohrdurchführung Ø DN + 2 · Ringspalt am Schnittpunkt, Mitte auf 1 mm, folgt dem Rohr |
+| B5 | `411b7cf` | `hoeheVon` + „Auf Bauteil stellen"; Platte +0,20 → 7 Teile, Schwelle, Decke in einem Vorgang |
+| B6 | `df0ba2d` | Griffe aus Feldern (Wand 7 → 9), Bauwerksgriff am Schwerpunkt, Rezept nur aus JSON bekommt seinen Griff |
+| B2 × B5 | `51df1e0` | Bauwerkskopie stand auf der Platte des Originals — `hoeheVon` wird jetzt mit umgehängt |
+| B7 | `a44e407` | Abnahme Kammer: A–E nur über Kommandos, Rückgängig bis zum leeren Stand; IFC: zwei Anlagen, zwei Öffnungen, Prüftor sauber, IDS 0 von 18; Browserprobe grün |
+
+Tests: CDE 308 / 3 490 → 315 / 3 535, IFC 225 → 227 (B3, B7). Reichweite
+97/74 → 104/81. Jede Kur per Gegenprobe rot. `vorlagenBezeichner.test.js` überschreitet unter
+Last seine Zeitgrenze (einzeln grün) — bekannt, nicht geändert.
+
+**Abweichungen vom Plan (begründet):**
+1. **B2:** Bauwerk verschieben nimmt einen **Versatz**, keinen Zielpunkt — ein Bauwerk hat keinen Anker.
+2. **B5 (E25):** der Verweis wirkt beim **Schreiben** (`kommando/Folgen.js`), nicht beim Lesen.
+   Im Journal stehen weiter absolute, stimmige Höhen; kein Leser löst auf, **keine Schreibstufe 7**.
+   Ein Teil, das jemand selbst woanders hinstellt, verliert seinen Verweis.
+3. **B6:** der Griff am Bauwerk (in B2 geplant) kam hierher — er braucht die Teilpunkte im Subjekt.
+   Der Fang beim Zeichnen (E26) ist nicht gebaut; der Verweis entsteht über „Auf Bauteil stellen".
+
+**Neue Funde (gemessen):**
+
+| # | Fund | Stand |
+|---|---|---|
+| **13** | „Verschieben" eines eigenen Bauteils schrieb **Float32-Rauschen** in den Bauplan: der Anker kam aus der Grafikgeometrie (210,199 997 statt 210,2; x = 1,9·10⁻⁷) | behoben in B5: die Hülle eines eigenen Bauteils kommt aus dem Körper des Rezepts (Float64). Eine Browser-Fixture (vor der Kur aufgenommen) vergleicht die Hülle auf eine Float32-Stelle |
+| **14** | Ein eigenes Rohr schrieb **keine Nennweite** — die IDS-Regel „Rohrleitungen — Nennweite" verfehlte jedes | behoben in B7: DN-Feld → `Pset_PipeSegmentTypeCommon.NominalDiameter`, mm → m (0,3, nicht 300) |
+| **15** | Im **Strukturbaum** steht eine Öffnung als eigener Eintrag unter „Eigenbau", nicht unter ihrer Wand (im IFC hängt sie richtig am Wirt) | gelesen im Browser, **nicht gebaut** — Oberfläche |
+
+**Nicht gefahren / offen:** der Zug an einem Griff im Browser (die Griffe sind über `griffeFuer`/`griffZuWerten`
+und den Kommandoweg getestet, nicht mit der Maus); der Server-Lauf von „Ausgeben" (schreibt ins Register eines
+Projekts — die Kette Paket → Datei → Prüftor tragen die Python-Verträge); im Bild ist die 0,30-m-Öffnung aus der
+Kamera der Probe nicht zu erkennen (belegt über Paket und IFC). Lage-Verweise und Bauwerk-Vorlagen: Abschnitt 6/7.
