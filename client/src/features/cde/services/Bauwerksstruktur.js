@@ -259,10 +259,22 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
     };
     const vorgaenge = new Map();
     const uebrige = [];
+    // AN EINEM WIRT (Teil XXVII, Fund 15): eine Öffnung, eine Durchführung hängt im
+    // IFC an ihrem Bauteil (`IfcRelVoidsElement`) — im Baum steht sie darunter, nicht
+    // daneben. Erst alle Knoten, dann einhängen: der Wirt kann später im Stand stehen.
+    const knotenVon = new Map();
+    const anWirt = [];
     for (const [gid, wert] of stand) {
         if (bauwerke.has(gid)) continue;
+        const wirt = wert?.parameter?.quellen?.wirt ?? null;
+        if (wirt && wirt !== gid && stand.has(wirt) && !bauwerke.has(wirt)) {
+            const k = teil(gid, wert);
+            knotenVon.set(gid, k);
+            anWirt.push([wirt, k]);
+            continue;
+        }
         const b = behaelterVon(gid);
-        if (b) { b.children.push(teil(gid, wert)); continue; }
+        if (b) { const k = teil(gid, wert); knotenVon.set(gid, k); b.children.push(k); continue; }
         const a = wert?.ableitung ?? null;
         if (a && titel?.has?.(a)) {
             if (!vorgaenge.has(a)) {
@@ -277,10 +289,18 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
                                    sichtbar: auge ? !!auge.sichtbar : true,
                                    ...(verdecktVon.length ? { verdecktVon } : {}) });
             }
-            vorgaenge.get(a).children.push(teil(gid, wert));
+            const k = teil(gid, wert);
+            knotenVon.set(gid, k);
+            vorgaenge.get(a).children.push(k);
         } else {
-            uebrige.push(teil(gid, wert));
+            const k = teil(gid, wert);
+            knotenVon.set(gid, k);
+            uebrige.push(k);
         }
+    }
+    for (const [wirt, k] of anWirt) {
+        const w = knotenVon.get(wirt);
+        if (w) w.children.push(k); else uebrige.push(k);       // ohne Knoten des Wirts: an der Wurzel
     }
     const wurzelBauwerke = [];
     for (const [gid, knoten] of bauwerke) {

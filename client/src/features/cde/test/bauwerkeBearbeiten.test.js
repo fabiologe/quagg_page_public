@@ -19,6 +19,8 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 import { nachId, passende } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { hoeheAus } from '../services/kommando/Folgen.js';
+import { eigenbauBaum } from '../services/Bauwerksstruktur.js';
+import { istBehaelter } from '../services/Bauteilrezepte.js';
 import { griffeFuer, griffeFrei, griffZuWerten } from '../services/Griffe.js';
 import { registriereRezepte } from '../services/katalog/Katalog.js';
 import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
@@ -219,6 +221,17 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(existsSync(FIXTURE_OEFFNUNG), 'Fixture fehlt: OEFFNUNG_VERTRAG_SCHREIBEN=1 …').toBe(true);
         const alt = JSON.parse(readFileSync(FIXTURE_OEFFNUNG, 'utf8'));
         expect(alt.bauteile.map(t => [t.cdeId, t.klasse, t.wirt ?? null, t.mengen])).toEqual(p.bauteile.map(t => [t.cdeId, t.klasse, t.wirt ?? null, t.mengen]));
+    });
+
+    it('Fund 15: im Strukturbaum steht die Öffnung UNTER ihrer Wand — wie im IFC (IfcRelVoidsElement), nicht daneben', async () => {
+        await setze();
+        const wurzel = eigenbauBaum({ stand: ae.wirksamerStand('erzeugt'), modelId: 'cde', istBehaelter }).wurzel;
+        const finde = (k, gid) => (k.globalId === gid ? k : k.children?.map(c => finde(c, gid)).find(Boolean) ?? null);
+        const wand = finde(wurzel, 'cde-LN');
+        expect(wand.children.map(c => c.globalId)).toEqual(['cde-OE']);
+        expect(wurzel.children.some(c => c.globalId === 'cde-OE')).toBe(false);
+        // … und die Wand bleibt unter ihrem Bauwerk.
+        expect(finde(wurzel, 'cde-RUEB').children.some(c => c.globalId === 'cde-LN')).toBe(true);
     });
 
     it('B3: die Öffnung folgt ihrer Wand — Wand +1 m Ost, die Öffnung mit; ihre Kennung bleibt', async () => {
