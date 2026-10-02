@@ -184,7 +184,7 @@ function _rezept(d, fehler) {
     // für die Vorgabeklasse gelten, der Feldtyp zum Merkmal passen.
     for (const f of felder.values()) {
         if (f.pset === undefined) continue;
-        const zf = zielfehler(f, String(d.kategorieVorgabe ?? '').toUpperCase());
+        const zf = zielfehler(f, String(d.kategorieVorgabe ?? '').toUpperCase(), felder.get('predefinedType')?.vorgabe ?? null);
         if (zf) fehler.push(zf);
     }
     // HÖHEN, DIE DER KÖRPER SCHON KENNT (Fund 10): sie werden gemessen, nicht getippt.

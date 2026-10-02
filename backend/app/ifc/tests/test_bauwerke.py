@@ -809,3 +809,58 @@ def test_abnahme_die_bearbeitete_kammer_im_ifc(tmp_path):
     assert [(v.is_a(), v.wrappedValue) for v in dn] == [("IfcPositiveLengthMeasure", 0.3)]
     assert [b for b in pruefe(ziel, ids=[IDS])["befunde"] if offen(b)] == []
     assert _verfehlt(ziel) == []
+
+
+# ── Teil XXVIII, V5: die Einbauten eines Beckens ─────────────────────────────
+
+EINBAUTEN = DATEN / "paket_einbauten.json"
+
+
+@pytest.fixture(scope="module")
+def einbauten(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(EINBAUTEN.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("einbauten") / "einbauten.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="einbauten")
+    return {"ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def _saetze(el) -> dict:
+    """Die Merkmale eines Bauteils: {Satz: {Merkmal: (Wert, IFC-Typ)}}."""
+    aus = {}
+    for r in el.IsDefinedBy:
+        d = r.RelatingPropertyDefinition if r.is_a("IfcRelDefinesByProperties") else None
+        if d is not None and d.is_a("IfcPropertySet"):
+            aus[d.Name] = {p.Name: (p.NominalValue.wrappedValue, p.NominalValue.is_a()) for p in d.HasProperties}
+    return aus
+
+
+def test_abnahme_einbauten_im_ifc(einbauten):
+    """Das Paket aus `einbauten.test.js` (nur `fuehreAus`): der RUEB aus der Vorlage
+    mit Rechen, Drossel, Tauchwand, Sauberkeitsschicht und Bettung. Klassen und
+    Ausfuehrungen aus dem Schema, die hauseigenen Saetze getypt — Q_Dr 25 l/s steht
+    als 0,025 IfcVolumetricFlowRateMeasure. Prueftor ohne offenen Befund, IDS 0."""
+    from app.ifc.pruefe import offen
+    b = einbauten["bericht"]
+    assert b["bauteile"] == 13 and b["uebersprungen"] == []
+    assert [w for w in b["warnungen"] if "Merkmalssatz" in w or "nicht geschrieben" in w] == []
+    assert [x for x in einbauten["pruefung"]["befunde"] if offen(x)] == []
+    assert _verfehlt(einbauten["ziel"]) == []
+    datei = ifcopenshell.open(str(einbauten["ziel"]))
+    (rechen,) = datei.by_type("IfcFilter")
+    assert rechen.PredefinedType == "STRAINER"
+    assert _saetze(rechen)["Quagg_Rechen"] == {"Stababstand": (0.02, "IfcPositiveLengthMeasure"),
+                                                "Reinigungsart": ("maschinell", "IfcLabel")}
+    (drossel,) = datei.by_type("IfcValve")
+    assert drossel.PredefinedType == "REGULATING"
+    q = _saetze(drossel)["Quagg_Drossel"]
+    assert q["Drosselabfluss"] == (0.025, "IfcVolumetricFlowRateMeasure")
+    assert q["Stauhoehe"] == (2.4, "IfcLengthMeasure")
+    (tauch,) = [w for w in datei.by_type("IfcWall") if w.ObjectType == "Tauchwand"]
+    assert tauch.PredefinedType == "USERDEFINED"
+    schichten = sorted((s.ObjectType, s.PredefinedType) for s in datei.by_type("IfcSlab") if s.PredefinedType == "USERDEFINED")
+    assert schichten == [("Bettung", "USERDEFINED"), ("Sauberkeitsschicht", "USERDEFINED")]
+    # Alle in der Anlage.
+    (anlage,) = datei.by_type("IfcFacility")
+    enthalten = {e.GlobalId for r in anlage.ContainsElements for e in r.RelatedElements}
+    assert {rechen.GlobalId, drossel.GlobalId, tauch.GlobalId} <= enthalten

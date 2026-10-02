@@ -105,9 +105,11 @@ describe('Z8 — der Katalog lässt nur erklärte Sätze zu', () => {
     const probe = (mehr) => pruefeEintrag('rezept', { ...wand, id: 'probe-schwelle', ...mehr });
 
     it('die eingebauten Rezepte bestehen ihr eigenes Schema', () => {
-        for (const id of ['ueberlaufschwelle', 'raum']) {
-            const r = EINGEBAUTE_REZEPTE.find(x => x.id === id);
-            expect(pruefeEintrag('rezept', { ...r, id: `kopie-${id}` }).fehler).toEqual([]);
+        // ALLE (Teil XXVIII, V5): ein Rezept, das seine eigene Prüfung nicht besteht, wäre aus
+        // der Bibliothek nicht ladbar — der Rechen fiel durch, solange die Prüfung seine
+        // Ausführung (STRAINER) nicht kannte und `Quagg_Rechen` nur für sie gilt.
+        for (const r of EINGEBAUTE_REZEPTE) {
+            expect(pruefeEintrag('rezept', { ...r, id: `kopie-${r.id}` }).fehler, r.id).toEqual([]);
         }
     });
 

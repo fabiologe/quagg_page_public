@@ -80,6 +80,12 @@ describe('jeder Bauweg liefert indizierte Geometrie', () => {
         streifenfundament: { punkte: [[0, 0, 0], [10, 0, 0]], breite: 0.6, dicke: 0.4 },
         ueberlaufschwelle: { punkte: [[0, 0, 0], [4, 0, 0]], dicke: 0.3, wandhoehe: 0.5 },
         raum: { punkte: [[0, 0, 0], [4, 0, 0], [4, 0, 3], [0, 0, 3]], raumhoehe: 2.5 },
+        // Teil XXVIII, V5: die Einbauten.
+        rechen: { punkte: [[0, 0, 0], [3, 0, 0]], stabtiefe: 0.08, rechenhoehe: 1.5 },
+        drossel: { punkte: [[0, 0, 0], [1, 0, 0]], dn: 200 },
+        tauchwand: { punkte: [[0, 1, 0], [3, 1, 0]], dicke: 0.2, wandhoehe: 1 },
+        sauberkeitsschicht: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.1 },
+        bettung: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.2 },
     };
 
     // Das Alt-Rezept `gelaende` baut aus einem RASTER, nicht aus Punkten

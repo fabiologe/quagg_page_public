@@ -49,9 +49,11 @@ Eigene Merkmalsätze der CDE — kein bSI-Standard. Wo sie geschrieben oder gele
 | Merkmalsatz | Fundstellen |
 |---|---|
 | `Quagg_CDE` | `backend/app/ifc/eigenbau.py`, `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `client/src/features/cde/services/IdsXml.js` |
+| `Quagg_Drossel` | `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Entlastung` | `client/src/features/cde/services/katalog/Merkmalsziele.js`, `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Fachmodell` | `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `backend/app/ifc/verbund.py` |
 | `Quagg_Georeferenz` | `backend/app/ifc/schema.py`, `backend/app/ifc/verbund.py` |
 | `Quagg_Herkunft` | `backend/app/ifc/__init__.py`, `backend/app/ifc/eigenbau.py`, `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `backend/app/ifc/verbund.py` |
+| `Quagg_Rechen` | `client/src/features/cde/services/katalog/Merkmalsziele.js`, `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Speicherraum` | `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Vorgang` | `backend/app/ifc/eigenbau.py`, `backend/app/ifc/schema.py` |

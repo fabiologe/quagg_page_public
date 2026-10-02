@@ -58,6 +58,7 @@ export const LAGEMASSE = Object.freeze({
     unterkante: 'tiefster Punkt des Körpers, m NN',
 });
 const LAENGEN = new Set(['IfcLengthMeasure', 'IfcPositiveLengthMeasure', 'IfcNonNegativeLengthMeasure']);
+const DURCHFLUSS = 'IfcVolumetricFlowRateMeasure';
 
 /** Was an einer Deklaration `lagemerkmale: { 'Satz.Merkmal': 'oberkante' }` nicht stimmt — Liste. */
 export function lagezielfehler(lagemerkmale, kategorie) {
@@ -70,7 +71,9 @@ export function lagezielfehler(lagemerkmale, kategorie) {
         if (!ziel) { fehler.push(`Lagemerkmal „${text}": heisst „Satz.Merkmal".`); continue; }
         if (!LAGEMASSE[mass]) { fehler.push(`Lagemerkmal „${text}": „${mass}" ist kein Lagemass (${Object.keys(LAGEMASSE).join(', ')}).`); continue; }
         if (!PSET_TEMPLATES[ziel.satz]) { fehler.push(`Lagemerkmal „${text}": den Merkmalssatz „${ziel.satz}" kennt das Wörterbuch nicht.`); continue; }
-        if (!getPsetsForType(kategorie).some(([n]) => n === ziel.satz)) { fehler.push(`Lagemerkmal „${text}": „${ziel.satz}" gilt nicht für ${kategorie}.`); continue; }
+        // Ein Satz kann nur für eine Ausführung gelten (`Quagg_Rechen`: IfcFilter/STRAINER) —
+    // dann zählt die Ausführung, die das Rezept vorgibt.
+    if (!getPsetsForType(kategorie).some(([n]) => n === ziel.satz)) { fehler.push(`Lagemerkmal „${text}": „${ziel.satz}" gilt nicht für ${kategorie}.`); continue; }
         const m = _merkmalDerVorlage(ziel.satz, ziel.merkmal);
         if (!m) fehler.push(`Lagemerkmal „${text}": „${ziel.merkmal}" steht nicht in ${ziel.satz}.`);
         else if (!LAENGEN.has(m.typ)) fehler.push(`Lagemerkmal „${text}": ${m.typ} ist keine Länge — ein Lagemass ist eine Höhe in m.`);
@@ -100,13 +103,16 @@ function _merkmalDerVorlage(satz, merkmal) {
  * Was an einem Feld mit `pset` nicht stimmt — oder null.
  * @param feld       das Rezeptfeld
  * @param kategorie  die Vorgabeklasse des Rezepts (`kategorieVorgabe`)
+ * @param predefinedType  die Ausführung, die das Rezept vorgibt — oder null
  */
-export function zielfehler(feld, kategorie) {
+export function zielfehler(feld, kategorie, predefinedType = null) {
     const ziel = merkmalsziel(feld?.pset);
     if (!ziel) return `Feld „${feld?.name}": \`pset\` heisst „Pset_Satz.Merkmal" (hauseigen: „Quagg_…"), nicht „${feld?.pset}".`;
     if (!PSET_TEMPLATES[ziel.satz]) return `Feld „${feld.name}": den Merkmalssatz „${ziel.satz}" kennt das Wörterbuch nicht.`;
-    if (!getPsetsForType(kategorie).some(([n]) => n === ziel.satz)) {
-        return `Feld „${feld.name}": „${ziel.satz}" gilt nicht für ${kategorie}.`;
+    // Ein Satz kann nur für eine Ausführung gelten (`Quagg_Rechen`: IfcFilter/STRAINER) —
+    // dann zählt die Ausführung, die das Rezept vorgibt.
+    if (!getPsetsForType(kategorie, predefinedType).some(([n]) => n === ziel.satz)) {
+        return `Feld „${feld.name}": „${ziel.satz}" gilt nicht für ${kategorie}${predefinedType ? `/${predefinedType}` : ''}.`;
     }
     const m = _merkmalDerVorlage(ziel.satz, ziel.merkmal);
     if (!m) return `Feld „${feld.name}": „${ziel.merkmal}" steht nicht in ${ziel.satz}.`;
@@ -124,6 +130,10 @@ export function zielfehler(feld, kategorie) {
     // umgerechnet — eine andere Einheit kann hier niemand erraten.
     if (LAENGEN.has(m.typ) && !['m', 'm NN', 'mm', undefined].includes(feld.einheit)) {
         return `Feld „${feld.name}": ${m.typ} braucht ein Feld in m (auch m NN) oder mm, nicht „${feld.einheit}".`;
+    }
+    // EIN DURCHFLUSS (Teil XXVIII, V5) steht im IFC in m³/s; getippt wird er meist in l/s.
+    if (m.typ === DURCHFLUSS && !['m³/s', 'l/s'].includes(feld.einheit)) {
+        return `Feld „${feld.name}": ${m.typ} braucht ein Feld in m³/s oder l/s, nicht „${feld.einheit}".`;
     }
     return null;
 }
@@ -157,6 +167,8 @@ export function merkmaleAusFeldern(felder, parameter = {}) {
         if (wert === undefined) continue;
         // Millimeter → Meter: DN 300 ist NominalDiameter 0,3 (Fund 14).
         if (LAENGEN.has(m.typ) && f.einheit === 'mm') wert = Math.round(wert) / 1000;
+        // Liter je Sekunde → m³/s: Q_Dr 25 l/s ist 0,025.
+        if (m.typ === DURCHFLUSS && f.einheit === 'l/s') wert /= 1000;
         (aus[ziel.satz] ??= {})[ziel.merkmal] = wert;
     }
     return aus;

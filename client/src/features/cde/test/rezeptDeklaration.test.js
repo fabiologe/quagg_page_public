@@ -92,6 +92,11 @@ describe('2 — es sind Daten', () => {
             streifenfundament: { punkte: [[0, 209.6, 0], [10, 209.6, 0]], breite: 1.2, dicke: 0.4 },
             ueberlaufschwelle: { punkte: [[0, 211.9, 0], [4, 211.9, 0]], dicke: 0.3, wandhoehe: 0.5 },
             raum: { punkte: [[0.3, 210, 0.3], [4.3, 210, 0.3], [4.3, 210, 3.3], [0.3, 210, 3.3]], raumhoehe: 2.5 },
+            rechen: { punkte: [[0, 0, 0], [3, 0, 0]], stabtiefe: 0.08, rechenhoehe: 1.5 },
+            drossel: { punkte: [[0, 0, 0], [1, 0, 0]], dn: 200 },
+            tauchwand: { punkte: [[0, 1, 0], [3, 1, 0]], dicke: 0.2, wandhoehe: 1 },
+            sauberkeitsschicht: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.1 },
+            bettung: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.2 },
         };
         for (const d of kopie) {
             expect(ausgabe(rezeptAusDeklaration(d), probe[d.id]), d.id).toEqual(ausgabe(REZEPTE[d.id], probe[d.id]));

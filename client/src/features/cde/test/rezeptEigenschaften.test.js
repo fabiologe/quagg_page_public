@@ -16,7 +16,8 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 describe('Die Eigenschaften, nach denen gefragt wird', () => {
     it('wer seine Ecken in `parameter.punkte` trägt, sagt es', () => {
         const mit = Object.values(REZEPTE).filter(r => r.punkteIn === 'parameter').map(r => r.id).sort();
-        expect(mit).toEqual(['flaeche', 'linie', 'pfosten', 'platte', 'raum', 'rohr', 'schacht', 'streifenfundament', 'ueberlaufschwelle', 'wand']);
+        expect(mit).toEqual(['bettung', 'drossel', 'flaeche', 'linie', 'pfosten', 'platte', 'raum', 'rechen', 'rohr',
+                             'sauberkeitsschicht', 'schacht', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);
         // Der Erdbau trägt sie in den Operationen — und sagt das über `punktlisten`.
         expect(typeof ABLEITUNGEN.erdbau.punktlisten).toBe('function');
     });
@@ -28,7 +29,7 @@ describe('Die Eigenschaften, nach denen gefragt wird', () => {
     });
 
     it('ein Ring ist, was `geschlossen` sagt', () => {
-        expect(Object.values(REZEPTE).filter(r => r.geschlossen).map(r => r.id)).toEqual(['flaeche', 'platte', 'raum']);
+        expect(Object.values(REZEPTE).filter(r => r.geschlossen).map(r => r.id)).toEqual(['flaeche', 'platte', 'raum', 'sauberkeitsschicht', 'bettung']);
     });
 
     it('Gelände im Mengen-Reiter: das alte geformte Gelände und die Anzeige', () => {

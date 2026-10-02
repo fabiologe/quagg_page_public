@@ -66,6 +66,29 @@ const ausfuehrung = (vorgabe = undefined, objektTyp = undefined) => [
  */
 const tragend = (satz) => Object.freeze({ name: 'tragend', titel: 'Tragend (leer = ja)', typ: 'auswahl', optionen: JA_NEIN,
                                          vorgabe: 'ja', leerErlaubt: true, setzbar: true, pset: `${satz}.LoadBearing` });
+/** Dasselbe Merkmal, Vorgabe „nein" — für Einbauten, die nichts tragen (Teil XXVIII, V5). */
+const nichtTragend = (satz) => Object.freeze({ ...tragend(satz), titel: 'Tragend (leer = nein)', vorgabe: 'nein' });
+
+/**
+ * EINBAUTEN (Teil XXVIII, V5 — Fabios E36): aus den vorhandenen Bausteinen, ohne
+ * neue Geometrieart. Eine Tauchwand ist eine Wand, eine Sauberkeitsschicht eine
+ * Platte — was sie unterscheidet, sagen Ausführung und Objekttyp (Fund 6: für
+ * Bettung und Sauberkeitsschicht passt keine Ausführung, also USERDEFINED).
+ * Die Dicken sind Formularvorgaben, keine Normwerte.
+ */
+const schicht = (id, titel, objektTyp, dicke) => ({
+    id, titel, icon: 'cat-slab', bauform: 'flaeche+dicke', kategorieVorgabe: 'IFCSLAB', mindestPunkte: 3, geschlossen: true,
+    felder: [
+        NAME, TYP,
+        { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+        { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 2, gueltig: { ueber: 0 }, vorgabe: dicke, setzbar: true,
+          griff: { richtung: 'y', von: 'oberkante' } },
+        nichtTragend('Pset_SlabCommon'),
+        ...ausfuehrung('USERDEFINED', objektTyp),
+    ],
+    geometrie: { art: 'platte', dicke: 'dicke', richtung: 'unten' },
+    menge: { depth: 'dicke', netArea: 'grundflaeche', perimeter: 'umfang', netVolume: 'volumen' },
+});
 
 export const EINGEBAUTE_REZEPTE = Object.freeze([
     {
@@ -361,4 +384,97 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         // Qto_SpaceBaseQuantities — die Fläche verlangt die IDS („Räume — Fläche dokumentiert").
         menge: { netFloorArea: 'grundflaeche', height: 'raumhoehe', netVolume: 'volumen' },
     },
+    {
+        /**
+         * DER RECHEN (Teil XXVIII, V5): `IfcFilter/STRAINER` mit `Quagg_Rechen`.
+         * Gebaut wird das RECHENFELD als ein Körper entlang einer Linie (Stabtiefe ×
+         * Höhe), gezeichnet am Fuss — die einzelnen Stäbe nicht: dafür gäbe es keine
+         * Geometrieart, und der Stababstand ist ein Merkmal, kein Körper. Der
+         * Anströmwinkel fehlt: er steht „in der Winkeleinheit der Datei", und die
+         * schreibt hier niemand fest.
+         */
+        id: 'rechen',
+        titel: 'Rechen',
+        icon: 'cat-railing',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCFILTER',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'stabtiefe', titel: 'Stabtiefe', einheit: 'm', typ: 'zahl', min: 0.01, max: 1, gueltig: { ueber: 0 }, vorgabe: 0.08, setzbar: true,
+              griff: { richtung: 'quer' } },
+            { name: 'rechenhoehe', titel: 'Höhe des Rechenfelds', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 1.5,
+              setzbar: true, griff: { richtung: 'y', von: 'unterkante' } },
+            { name: 'stababstand', titel: 'Lichter Stababstand (leer = nicht angegeben)', einheit: 'm', typ: 'zahl', min: 0.002, max: 0.5,
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true, pset: 'Quagg_Rechen.Stababstand' },
+            { name: 'reinigungsart', titel: 'Reinigung (leer = nicht angegeben)', typ: 'auswahl', leerErlaubt: true, setzbar: true,
+              optionen: [{ wert: 'Hand', titel: 'von Hand' }, { wert: 'maschinell', titel: 'maschinell' }],
+              pset: 'Quagg_Rechen.Reinigungsart' },
+            ...ausfuehrung('STRAINER'),
+        ],
+        geometrie: { art: 'sweep', achsbezug: 'sohle',
+                     profil: { art: 'rechteck', breite: 'stabtiefe', tiefe: 'rechenhoehe', einheit: 'm' } },
+    },
+    {
+        /**
+         * DIE DROSSEL (Teil XXVIII, V5): `IfcValve/REGULATING` mit `Quagg_Drossel` —
+         * die Drosselstrecke als Kreisprofil entlang einer Linie, die Linie ist die
+         * Sohle (so steht sie auf einer Platte, B5). Der Drosselabfluss wird in l/s
+         * getippt und in m³/s geschrieben (`IfcVolumetricFlowRateMeasure`).
+         * Keine Netzrolle: sie bekommt keine Haltungswerkzeuge.
+         */
+        id: 'drossel',
+        titel: 'Drossel',
+        icon: 'cat-flow',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCVALVE',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dn', titel: 'Nennweite', einheit: 'mm', typ: 'zahl', min: 50, max: 2000, gueltig: { ueber: 0 }, vorgabe: 200, setzbar: true },
+            { name: 'drosselabfluss', titel: 'Drosselabfluss Q_Dr (leer = nicht angegeben)', einheit: 'l/s', typ: 'zahl', min: 0, max: 100000,
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true, pset: 'Quagg_Drossel.Drosselabfluss' },
+            { name: 'stauhoehe', titel: 'Stauhöhe für Q_Dr (leer = nicht angegeben)', einheit: 'm', typ: 'zahl', min: 0, max: 50,
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true, pset: 'Quagg_Drossel.Stauhoehe' },
+            { name: 'kennlinie', titel: 'Kennlinie oder ihr Verweis', typ: 'text', leerErlaubt: true, setzbar: true,
+              pset: 'Quagg_Drossel.Kennlinie' },
+            ...ausfuehrung('REGULATING'),
+        ],
+        geometrie: { art: 'sweep', achsbezug: 'sohle', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 12 } },
+    },
+    {
+        /**
+         * DIE TAUCHWAND (Teil XXVIII, V5): eine Wand, die von oben ins Becken hängt —
+         * gezeichnet an ihrer UNTERKANTE, über der Sohle. `IfcWall/USERDEFINED`,
+         * Objekttyp „Tauchwand"; innen, nicht tragend.
+         */
+        id: 'tauchwand',
+        titel: 'Tauchwand',
+        icon: 'cat-wall',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCWALL',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Unterkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.2, setzbar: true,
+              griff: { richtung: 'quer' } },
+            { name: 'wandhoehe', titel: 'Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 30, gueltig: { ueber: 0 }, vorgabe: 1, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
+            nichtTragend('Pset_WallCommon'),
+            { name: 'aussen', titel: 'Aussenwand (leer = nein)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'nein',
+              leerErlaubt: true, setzbar: true, pset: 'Pset_WallCommon.IsExternal' },
+            ...ausfuehrung('USERDEFINED', 'Tauchwand'),
+        ],
+        geometrie: { art: 'sweep', achsbezug: 'sohle',
+                     profil: { art: 'rechteck', breite: 'dicke', tiefe: 'wandhoehe', einheit: 'm' } },
+        menge: { length: 'achslaenge', width: 'dicke', height: 'wandhoehe', netVolume: 'volumen' },
+    },
+    schicht('sauberkeitsschicht', 'Sauberkeitsschicht', 'Sauberkeitsschicht', 0.1),
+    schicht('bettung', 'Bettung', 'Bettung', 0.2),
 ]);

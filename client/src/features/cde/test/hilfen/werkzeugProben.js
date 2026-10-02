@@ -63,6 +63,17 @@ function welt() {
     // Teil XXVI, Z8: eine Überlaufschwelle — eine niedrige Wand mit Quagg_Entlastung.
     zeichne(erzeugt, 'ueberlaufschwelle-zeichnen', 'cde-SW1', { name: 'SW1', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 0.5 },
             [P(130, 100, 0), P(134, 100, 0)]);
+    // Teil XXVIII, V5: die Einbauten — Rechen, Drossel, Tauchwand, Sauberkeitsschicht, Bettung.
+    zeichne(erzeugt, 'rechen-zeichnen', 'cde-RE1', { name: 'RE1', kategorie: 'IFCFILTER', hoehe: '', stabtiefe: 0.08, rechenhoehe: 1.5 },
+            [P(140, 100, 0), P(143, 100, 0)]);
+    zeichne(erzeugt, 'drossel-zeichnen', 'cde-DR1', { name: 'DR1', kategorie: 'IFCVALVE', hoehe: '', dn: 200 },
+            [P(145, 100, 0), P(146, 100, 0)]);
+    zeichne(erzeugt, 'tauchwand-zeichnen', 'cde-TW1', { name: 'TW1', kategorie: 'IFCWALL', hoehe: '', dicke: 0.2, wandhoehe: 1 },
+            [P(150, 101, 0), P(153, 101, 0)]);
+    zeichne(erzeugt, 'sauberkeitsschicht-zeichnen', 'cde-SK1', { name: 'SK1', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.1 },
+            [P(160, 99.5, 0), P(165, 99.5, 0), P(165, 99.5, 4), P(160, 99.5, 4)]);
+    zeichne(erzeugt, 'bettung-zeichnen', 'cde-BT1', { name: 'BT1', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.2 },
+            [P(170, 99.4, 0), P(175, 99.4, 0), P(175, 99.4, 4), P(170, 99.4, 4)]);
     // Teil XXVI, Z6: ein Raum — der Hohlraum, aus einem Umriss nach oben.
     zeichne(erzeugt, 'raum-zeichnen', 'cde-RA1', { name: 'RA1', hoehe: '', raumhoehe: 2.5 },
             [P(120, 100, 0), P(124, 100, 0), P(124, 100, 3), P(120, 100, 3)]);
@@ -173,6 +184,25 @@ const NEU = [
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },
+    // Teil XXVIII, V5: die Einbauten — je eines zeichnen, je Feld ein Setzer.
+    { id: 'rechen-zeichnen', el: zug(P(0, 100, 0), P(3, 100, 0)), zug: [P(0, 100, 0), P(3, 100, 0)],
+      werte: [{ name: 'RE', kategorie: 'IFCFILTER', hoehe: '', stabtiefe: 0.08, rechenhoehe: 1.5, stababstand: 0.02, reinigungsart: 'maschinell' }] },
+    { id: 'drossel-zeichnen', el: zug(P(0, 100, 0), P(1, 100, 0)), zug: [P(0, 100, 0), P(1, 100, 0)],
+      werte: [{ name: 'DR', kategorie: 'IFCVALVE', hoehe: '', dn: 200, drosselabfluss: 25, stauhoehe: 2.4, kennlinie: 'Hersteller' }] },
+    { id: 'tauchwand-zeichnen', el: zug(P(0, 101, 0), P(3, 101, 0)), zug: [P(0, 101, 0), P(3, 101, 0)],
+      werte: [{ name: 'TW', kategorie: 'IFCWALL', hoehe: '', dicke: 0.2, wandhoehe: 1 }] },
+    { id: 'sauberkeitsschicht-zeichnen', el: zug(P(0, 99.5, 0), P(5, 99.5, 0), P(5, 99.5, 4), P(0, 99.5, 4)),
+      zug: [P(0, 99.5, 0), P(5, 99.5, 0), P(5, 99.5, 4), P(0, 99.5, 4)], werte: [{ name: 'SK', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.1 }] },
+    { id: 'bettung-zeichnen', el: zug(P(0, 99.4, 0), P(5, 99.4, 0), P(5, 99.4, 4), P(0, 99.4, 4)),
+      zug: [P(0, 99.4, 0), P(5, 99.4, 0), P(5, 99.4, 4), P(0, 99.4, 4)], werte: [{ name: 'BT', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.2 }] },
+    ...Object.entries({
+        'cde-RE1': ['rechen', { stabtiefe: 0.1, rechenhoehe: 1.8, stababstand: 0.02, reinigungsart: 'Hand', predefinedType: 'WATERFILTER', objektTyp: 'Feinrechen' }],
+        'cde-DR1': ['drossel', { dn: 250, drosselabfluss: 30, stauhoehe: 2.2, kennlinie: 'Messung 2026-10-02', predefinedType: 'ISOLATING', objektTyp: 'Wirbeldrossel' }],
+        'cde-TW1': ['tauchwand', { dicke: 0.25, wandhoehe: 1.2, tragend: 'ja', aussen: 'ja', predefinedType: 'SOLIDWALL', objektTyp: 'Prallwand' }],
+        'cde-SK1': ['sauberkeitsschicht', { dicke: 0.08, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Blinding' }],
+        'cde-BT1': ['bettung', { dicke: 0.25, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Kiesbett' }],
+    }).flatMap(([gid, [rezept, werte]]) => Object.entries(werte).map(([feld, wert]) =>
+        ({ id: `${rezept}-${feld}-setzen`, el: eigen(gid), werte: [{ [feld]: wert }] }))),
     { id: 'planinhalt-setzen', el: zug(), werte: [{ inhalte: [{ id: 'pi-1', wert: { art: 'text', x: 1, z: 2, text: 'A', groesse: 2.5, winkel: 0 } }, { id: 'pi-2', wert: null }] }] },
     { id: 'rotstift-zeichnen', el: zug(), werte: [{ striche: [{ id: 'rs-1', wert: { rev: 0, tool: 'stift', farbe: '#d32f2f', breiteMm: 0.6, points: [[0, 0, 0.5], [1, 1, 0.5]] } }], titel: 'Radieren' }] },
 
