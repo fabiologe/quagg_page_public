@@ -18,6 +18,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { subjektAusStand } from '../services/kommando/Subjekt.js';
 import { nachId, passende } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { hoeheAus } from '../services/kommando/Folgen.js';
 import { kommando, RUEB, TEILE } from './hilfen/ruebKommandos.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { IfcAutor } from '../services/IfcAutor.js';
@@ -287,11 +288,68 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(r.fehler.join(' ')).toMatch(/kreuzt die Wand nicht/);
     });
 
-    it('Fund 6: die Bodenplatte wird verschoben — die Wände bleiben stehen', async () => {
+    it('Fund 6 (B5, E25): waagerecht folgt nichts — Lage-Verweise sind nicht gebaut, nur Höhen', async () => {
         const v = vorbelegt('verschieben', 'cde-BP');
         const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-BP'], werte: { ...v, ost: v.ost + 1 } }));
         expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
         expect(plan('cde-BP').parameter.punkte[0][0]).toBeCloseTo(1, 6);
         expect(plan('cde-LS').parameter.punkte[0]).toEqual([0, 210, 3.45]);
+    });
+
+    // B5 — HÖHEN FOLGEN: der Verweis wirkt beim Schreiben, im selben Vorgang.
+    const stelle = (gid, bauteil, mass = 'oberkante') => b.fuehreAus(kommando('auf-bauteil-stellen', { ziel: [gid], werte: { bauteil, mass, versatz: 0 } }));
+    const unterkante = (gid) => rezeptNach(plan(gid).rezept).stand.lies(plan(gid).parameter);
+    const AUF_PLATTE = ['cde-LN', 'cde-LS', 'cde-SW', 'cde-SO', 'cde-TW', 'cde-R1', 'cde-R2'];
+    async function aufstellen() {
+        for (const g of AUF_PLATTE) expect((await stelle(g, 'cde-BP')).ausgefuehrt, g).toBe(true);
+        expect((await stelle('cde-UE', 'cde-TW')).ausgefuehrt).toBe(true);
+        expect((await stelle('cde-DE', 'cde-LN')).ausgefuehrt).toBe(true);
+    }
+
+    it('B5: „Auf Bauteil stellen" setzt die Höhe und merkt sich den Träger — an der Platte, nicht am Rohr', async () => {
+        expect(angeboten('cde-LN')).toContain('auf-bauteil-stellen');
+        await aufstellen();
+        expect(plan('cde-LN').parameter.hoeheVon).toEqual({ bauteil: 'cde-BP', mass: 'oberkante', versatz: 0 });
+        expect(unterkante('cde-LN')).toBeCloseTo(210, 9);
+        expect(unterkante('cde-DE')).toBeCloseTo(212.5, 9);           // auf der Längswand: 210 + 2,50
+        // Ein Kreis wird nicht angeboten: die Platte steht nicht auf der Wand, die auf ihr steht.
+        const erg = await stelle('cde-BP', 'cde-LN');
+        expect(erg.ausgefuehrt).toBe(false);
+        expect(erg.grund).toMatch(/es steht selbst darauf/);
+    });
+
+    it('B5: Bodenplatte +0,20 m — Wände und Räume auf 210,20, Schwelle auf 212,10, Decke Unterkante 212,70; ein Vorgang, ein Rückgängig', async () => {
+        await aufstellen();
+        const vorher = Object.fromEntries([...AUF_PLATTE, 'cde-UE', 'cde-DE', 'cde-BP'].map(g => [g, plan(g).parameter.punkte]));
+        const v = vorbelegt('verschieben', 'cde-BP');
+        const n0 = ae.eintraege.length;
+        const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-BP'], werte: { ...v, hoehe: v.hoehe + 0.2 } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(erg.eintraege).toHaveLength(1 + AUF_PLATTE.length + 2);                     // Platte + 7 + Schwelle + Decke
+        expect(new Set(ae.eintraege.slice(n0).map(e => e.vorgang)).size).toBe(1);
+        // Fund 13: die Platte selbst ohne Float32-Rauschen (vorher 210,199 997 und x = 1,9·10⁻⁷).
+        expect(plan('cde-BP').parameter.punkte[0][0]).toBe(0);
+        expect(plan('cde-BP').parameter.punkte[0][1]).toBeCloseTo(210.2, 12);
+        for (const g of AUF_PLATTE) expect(unterkante(g), g).toBeCloseTo(210.2, 9);
+        expect(unterkante('cde-UE')).toBeCloseTo(212.1, 9);                                 // Trennwand 210,20 + 1,90
+        expect(unterkante('cde-DE')).toBeCloseTo(212.7, 9);                                 // Längswand 210,20 + 2,50
+        expect(plan('cde-DE').parameter.punkte[0][1]).toBeCloseTo(212.95, 9);              // Oberkante = UK + 0,25
+        await ae.zurueck();
+        for (const [g, p] of Object.entries(vorher)) expect(plan(g).parameter.punkte, g).toEqual(p);
+    });
+
+    it('B5: wer die Wand selbst auf eine andere Höhe zieht, löst ihren Verweis — sie folgt der Platte dann nicht mehr', async () => {
+        await aufstellen();
+        // Die GANZE Wand woanders hingestellt (Unterkante 210,50) — ein einzelner gezogener
+        // Fusspunkt liesse die Unterkante (den tiefsten Punkt) auf der Platte.
+        const w = vorbelegt('verschieben', 'cde-LS');
+        const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-LS'], werte: { ...w, hoehe: w.hoehe + 0.5 } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(plan('cde-LS').parameter.hoeheVon).toBeUndefined();
+        const v = vorbelegt('verschieben', 'cde-BP');
+        await b.fuehreAus(kommando('verschieben', { ziel: ['cde-BP'], werte: { ...v, hoehe: v.hoehe + 0.2 } }));
+        expect(unterkante('cde-LN')).toBeCloseTo(210.2, 9);
+        expect(unterkante('cde-LS')).toBeCloseTo(210.5, 9);        // bleibt, wo man sie hingestellt hat
+        expect(hoeheAus(plan('cde-LN').parameter.hoeheVon, ae.wirksamerStand('erzeugt'), rezeptNach)).toBeCloseTo(210.2, 9);
     });
 });

@@ -86,11 +86,14 @@ describe('1 — das Subjekt aus dem Stand', () => {
         expect(s.knotenImNetz.map(k => k.globalId).sort()).toEqual(['cde-A', 'cde-B']);
         expect(s.stand.bauplan.rezept).toBe('rohr');
 
-        // Die Hülle ist die des gebauten Rohrs (Kreis DN 300 um die Punkte).
+        // Die Hülle ist die des gebauten Rohrs (Kreis DN 300 um die Punkte) — seit
+        // Teil XXVII (Fund 13) EXAKT aus dem Körper des Rezepts, nicht aus der
+        // Grafikgeometrie (Float32). Die Grafik liegt höchstens eine Float32-Stelle daneben.
+        expect(s.anker).toEqual({ x: 15, y: 100.075, z: 0 });
         const g = rezeptNach('rohr').baue(s.stand.bauplan.parameter);
         g.computeBoundingBox();
         const bb = g.boundingBox;
-        expect(s.anker).toEqual({ x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2 });
+        expect(Math.abs(s.anker.x - (bb.min.x + bb.max.x) / 2)).toBeLessThan(1e-5);
         expect(s.bezugshoehe).toBeCloseTo(99.85, 4);          // die Sohle am tiefen Ende
         expect(s.oberkante).toBeCloseTo(100 + 0.3, 4);        // der Scheitel am hohen
         // Ohne Bezug: Ost = x, Nord = −z, Versatz null.
@@ -215,9 +218,20 @@ describe('Das Subjekt aus dem Stand ist das Subjekt des Viewers (Fixture aus dem
     const rahmen = rahmenAusBezug(bestimmeBezug({ georeferenz: F.bezug.georeferenz, versatz: F.bezug.versatz }));
     const netz = netzauskunftAus(cdeAchsenAus(wirksamerStand('erzeugt')).kanten, F.netzKnoten);
 
-    /** Feld für Feld, Zahlen auf 1e-9 — die Pfade, die abweichen. */
+    // DIE HÜLLE kam bei der Aufnahme (2026-09-19) aus der Grafikgeometrie (Float32);
+    // seit Teil XXVII (Fund 13) kommt sie exakt aus dem Körper des Rezepts — im
+    // Browser wie hier, es ist dieselbe Funktion. Ihre Felder gelten deshalb als
+    // gleich bis auf EINE Float32-Stelle (bei 3 742 m: 2,4·10⁻⁴ m); alle anderen
+    // weiter auf 1e-9.
+    const HUELLE = /^(anker|lage|box|bezugshoehe|oberkante)\b/;
+    const float32Stelle = (x) => 2 ** (Math.floor(Math.log2(Math.max(1, Math.abs(x)))) - 23);
+
+    /** Feld für Feld, Zahlen auf 1e-9 (Hülle: eine Float32-Stelle) — die Pfade, die abweichen. */
     function abweichungen(a, b, pfad = '') {
-        if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a)) ? [] : [`${pfad}: ${a} ≠ ${b}`];
+        if (typeof a === 'number' && typeof b === 'number') {
+            const tol = HUELLE.test(pfad) ? float32Stelle(b) : 1e-9 * Math.max(1, Math.abs(a));
+            return Math.abs(a - b) <= tol ? [] : [`${pfad}: ${a} ≠ ${b}`];
+        }
         if (Array.isArray(a) || Array.isArray(b)) {
             if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return [`${pfad}: Länge ${a?.length} ≠ ${b?.length}`];
             return a.flatMap((x, i) => abweichungen(x, b[i], `${pfad}[${i}]`));

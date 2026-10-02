@@ -400,6 +400,57 @@ function _fachmodell(d) {
  * ohne (`gelaende`, Code nach E1) behält, was sie selbst mitbringt, und
  * bekommt nur das Ableitbare dazu (Fachmodell, `liefert`).
  */
+/**
+ * DIE STANDHÖHE (Teil XXVII, B5): die UNTERKANTE eines Körpers, wie sie aus
+ * seinen Punkten folgt — und wie man sie setzt, ohne Form und Gefälle zu
+ * ändern (alle Punkte um dasselbe Δ). Nur, wo die Punkte die Unterkante
+ * eindeutig tragen:
+ *   platte, richtung 'oben'  (Raum)        Punkte = Unterkante
+ *   platte, richtung 'unten' (Platte)      Punkte = Oberkante, Unterkante = − Dicke
+ *   sweep mit achsbezug 'sohle' (Wand …)   Punkte = Fuss
+ * Ein Rohr (Sohle oder Mitte, je Bauplan) steht nicht AUF etwas — es liegt im Netz.
+ */
+function _stand(geo, vorgabe) {
+    const tief = (parameter) => {
+        const ys = punkteAus(parameter).map(p => (Array.isArray(p) ? p[1] : p?.y)).filter(Number.isFinite);
+        return ys.length ? Math.min(...ys) : null;
+    };
+    const hoch = (parameter) => {
+        const ys = punkteAus(parameter).map(p => (Array.isArray(p) ? p[1] : p?.y)).filter(Number.isFinite);
+        return ys.length ? Math.max(...ys) : null;
+    };
+    const dicke = (parameter) => massAus(parameter, geo.dicke, { rueckfall: vorgabe(geo.dicke) });
+    // Die Höhe des Profils (Sohle bis Scheitel) — für die Oberkante einer Wand.
+    const profilhoehe = (parameter) => {
+        const p = profilAus(geo.profil, parameter, vorgabe);
+        const v = (p?.punkte ?? []).map(q => q.v);
+        return v.length ? Math.max(...v) - Math.min(...v) : null;
+    };
+    let lies = null, oberkante = null;
+    if (geo?.art === 'platte' && (geo.richtung ?? 'unten') === 'unten') {
+        lies = (parameter) => { const t = tief(parameter); return t === null ? null : t - dicke(parameter); };
+        oberkante = hoch;
+    } else if (geo?.art === 'platte' && geo.richtung === 'oben') {
+        lies = tief;
+        oberkante = (parameter) => { const h = hoch(parameter); return h === null ? null : h + dicke(parameter); };
+    } else if (geo?.art === 'sweep' && geo.achsbezug === 'sohle') {
+        lies = tief;
+        oberkante = (parameter) => { const h = hoch(parameter), d = profilhoehe(parameter); return h === null || d === null ? null : h + d; };
+    }
+    if (!lies) return undefined;
+    return {
+        lies,
+        // EXAKT aus dem Bauplan — nicht aus dem gebauten Netz (Float32: 210,2 käme als
+        // 210,199 997 zurück und stünde so als „absolute" Höhe im Journal).
+        oberkante,
+        stelle: (parameter, unterkante) => {
+            const ist = lies(parameter);
+            if (ist === null || !Number.isFinite(unterkante)) return parameter;
+            return verschiebePunktliste(parameter, { x: 0, y: unterkante - ist, z: 0 });
+        },
+    };
+}
+
 export function rezeptAusDeklaration(d) {
     const r = { ...d };
     if (d.geometrie) {
@@ -417,6 +468,10 @@ export function rezeptAusDeklaration(d) {
             const sohlen = _sohlen(d.geometrie, vorgabe);
             if (sohlen) r.sohlen = sohlen;
         }
+        // WORAUF ES STEHT (Teil XXVII, B5): wer eine Unterkante hat, die sich
+        // aus seinen Punkten lesen und durch Schieben setzen lässt.
+        const stand = _stand(d.geometrie, vorgabe);
+        if (stand) r.stand = stand;
     }
     // OHNE PUNKTE NICHTS ZU VERSCHIEBEN (Teil XXVI, Z5d): ein Behälter trägt nur Art,
     // Name und `teilVon` — der Ladeversatz eines alten Journals ändert daran nichts.

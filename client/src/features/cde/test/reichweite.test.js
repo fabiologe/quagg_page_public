@@ -54,8 +54,9 @@ const HEUTE = Object.freeze({
     // Teil XXVII, B2: +4 Bauwerk verschieben / kopieren / drehen / spiegeln — 101/78.
     // B3: +1 Öffnung setzen — 102/79.
     // B4: +1 Rohrdurchführung setzen — 103/80.
-    werkzeuge: 103,
-    ausgefuehrt: 80,
+    // B5: +1 Auf Bauteil stellen — 104/81.
+    werkzeuge: 104,
+    ausgefuehrt: 81,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

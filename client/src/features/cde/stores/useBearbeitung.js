@@ -13,6 +13,7 @@
  * gibt keinen zweiten Weg, ein Bauteil zu ändern.
  */
 
+import { mitFolgen } from '../services/kommando/Folgen.js';
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 
@@ -827,6 +828,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             ...(felderVorgabe ? { felder: felderVorgabe } : {}),
         });
         if (aus.grund) return abgelehnt(aus.grund);
+        // HÖHEN FOLGEN (Teil XXVII, B5): was auf einem geänderten Teil steht, wird im
+        // SELBEN Vorgang nachgezogen — ein Kommando, ein Rückgängig.
+        {
+            const { schritte, folgen } = mitFolgen(aus.schritte, { wirksamerStand: ae0.wirksamerStand, rezeptNach });
+            aus.schritte = [...schritte, ...folgen];
+        }
         // FACHGRENZEN (K10, E5): ausgeführt wird trotzdem — markiert am Eintrag
         // (die Momentaufnahme der Befunde) und im Ergebnis.
         const hinweise = aus.hinweise ?? [];

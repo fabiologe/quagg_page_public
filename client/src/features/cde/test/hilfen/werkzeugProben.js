@@ -194,6 +194,8 @@ const NEU = [
     { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
     { id: 'bauwerk-bauwerkstyp-setzen', el: eigen('cde-BW1'), werte: [{ bauwerkstyp: 'RRB' }] },
     // Teil XXVII, B2: das Bauwerk als Ganzes — die Teile kommen aus dem Kandidaten-Auflöser.
+    // Teil XXVII, B5: die Wand W1 auf die Platte PL1 stellen.
+    { id: 'auf-bauteil-stellen', el: eigen('cde-W1'), werte: [{ bauteil: 'cde-PL1', mass: 'oberkante', versatz: 0 }], kandidaten: KANDIDATEN },
     // Teil XXVII, B4: eine Rohrdurchführung — das eigene Rohr durch die Wand W1.
     { id: 'durchfuehrung-setzen', el: eigen('cde-H1'), werte: [{ wirt: 'cde-W1', ringspalt: 0.05 }], kandidaten: KANDIDATEN },
     // Teil XXVII, B3: eine Kernbohrung in der Wand W1.

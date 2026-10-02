@@ -78,6 +78,23 @@ export function standVon(globalId, wirksamerStand) {
 function _huelleAusRezept(plan) {
     const r = rezeptNach(plan?.rezept);
     if (typeof r?.baue !== 'function' || r.braucht || istAbleitung(r)) return null;
+    // EXAKT, WO ES GEHT (Teil XXVII, Fund 13): die Punkte des Körpers aus dem
+    // Rezept (Float64) — nicht die Grafikgeometrie (Float32). Sonst stand der
+    // Anker einer Platte auf 209,800 003, und „Verschieben" schrieb dieses Rauschen
+    // in jeden Punkt des Bauplans (210,199 997 statt 210,2).
+    try {
+        const k = r.formAus?.(plan.parameter ?? {}, 'koerper');
+        const pos = k?.positions;
+        if (pos?.length >= 3) {
+            const min = { x: Infinity, y: Infinity, z: Infinity }, max = { x: -Infinity, y: -Infinity, z: -Infinity };
+            for (let i = 0; i + 2 < pos.length; i += 3) {
+                const [x, y, z] = [pos[i], pos[i + 1], pos[i + 2]];
+                if (x < min.x) min.x = x; if (y < min.y) min.y = y; if (z < min.z) min.z = z;
+                if (x > max.x) max.x = x; if (y > max.y) max.y = y; if (z > max.z) max.z = z;
+            }
+            if ([min.x, min.y, min.z, max.x, max.y, max.z].every(Number.isFinite)) return huelleAusGrenzen(min, max);
+        }
+    } catch { /* weiter mit der Grafikgeometrie */ }
     let g = null;
     try {
         g = r.baue(plan.parameter ?? {});

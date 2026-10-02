@@ -42,6 +42,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'eigene:bauwerk': 'ein eigenes Bauwerk, zu dem das Subjekt gehören kann',
     'bauwerk:teile': 'die Teile eines Bauwerks — auch die seiner Anlagenteile und Baugruppen',
     'eigene:wirt': 'ein eigenes Bauteil mit Rechteckprofil, das eine Öffnung tragen kann (Wand, Fundament, Schwelle)',
+    'eigene:traeger': 'ein eigenes Bauteil mit Körper, auf dem das Subjekt stehen kann',
 });
 
 /**
@@ -60,6 +61,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
         if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
         if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
         if (art === 'eigene:wirt') return _eigeneWirte(wirksamerStand, el);
+        if (art === 'eigene:traeger') return _eigeneTraeger(wirksamerStand, el);
         return [];
     };
 }
@@ -150,6 +152,34 @@ function _eigeneWirte(wirksamerStand, el) {
         const g = rezeptNach(plan?.rezept)?.geometrie;
         if (g?.art !== 'sweep' || g.profil?.art !== 'rechteck') continue;
         aus.push({ id: globalId, titel: plan.name || globalId, rezept: plan.rezept });
+    }
+    return aus;
+}
+
+/**
+ * Eigene Bauteile, auf denen das Subjekt stehen kann (Teil XXVII, B5): alles mit
+ * einem Körper (Form `umriss` liefert Ober- und Unterkante). Ausgenommen: was
+ * — über `hoeheVon` — schon auf dem Subjekt steht; sonst stünde die Wand auf der
+ * Decke, die auf der Wand steht.
+ */
+function _eigeneTraeger(wirksamerStand, el) {
+    if (typeof wirksamerStand !== 'function') return [];
+    const erzeugt = wirksamerStand('erzeugt');
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const stehtAufSubjekt = (gid) => {
+        const gesehen = new Set();
+        for (let e = gid; e && !gesehen.has(e); e = erzeugt.get(e)?.parameter?.hoeheVon?.bauteil) {
+            if (e === el?.globalId) return true;
+            gesehen.add(e);
+        }
+        return false;
+    };
+    const aus = [];
+    for (const [globalId, plan] of erzeugt) {
+        if (globalId === el?.globalId || verdeckt.has(globalId) || stehtAufSubjekt(globalId)) continue;
+        const r = rezeptNach(plan?.rezept);
+        if (!r?.geometrie || typeof r.formAus !== 'function') continue;
+        aus.push({ id: globalId, titel: plan.name || globalId, rezept: plan.rezept, bauplan: plan });
     }
     return aus;
 }

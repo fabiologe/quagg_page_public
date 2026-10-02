@@ -36,6 +36,7 @@ import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktlist
          modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte,
          BAUWERKSARTEN, behaelterRezept, neueGlobalId } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
+import { hoeheAus } from './kommando/Folgen.js';
 import { MASSNAHMEN } from './Sanierung.js';
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { feldAusProfil } from './bauform/Typprofile.js';
@@ -2800,6 +2801,56 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 name: plan.name ? `${plan.name} Kopie` : '',
                 parameter: _ohneAnschluss(rezept.verschiebe(plan.parameter, delta)),
             });
+        },
+    },
+    {
+        /**
+         * AUF BAUTEIL STELLEN (Teil XXVII, B5 — Fabios E25/E26): die Unterkante
+         * folgt der Ober- (oder Unter-)kante eines anderen eigenen Bauteils — die
+         * Wand der Bodenplatte, die Decke den Wänden. Gesetzt wird die Höhe
+         * sofort, und der Verweis bleibt im Bauplan (`hoeheVon`): ändert sich
+         * der Träger, zieht der Kommandoweg nach (`kommando/Folgen.js`).
+         */
+        id: 'auf-bauteil-stellen',
+        titel: 'Auf Bauteil stellen',
+        icon: 'pointer',
+        gruppe: 'lage',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => !!ctx?.rezept?.stand,
+        giltGrund: 'Nur, was eine Unterkante hat — Platte, Raum, Wand, Fundament, Schwelle.',
+        art: 'erzeugt',
+        felder: [
+            { name: 'bauteil', titel: 'Steht auf', typ: 'auswahl',
+              aus: { geste: 'auswahl', herkunft: 'cde', liefert: 'globalId' },
+              optionenAus: 'eigene:traeger' },
+            { name: 'mass', titel: 'Bezug', typ: 'auswahl', optionen: [
+                { wert: 'oberkante', titel: 'auf seine Oberkante' }, { wert: 'unterkante', titel: 'auf seine Unterkante' }] },
+            { name: 'versatz', titel: 'Abstand darüber', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+        ],
+        vorbelegung: (el, { kandidatenVon = null } = {}) => ({
+            bauteil: kandidatenVon?.('eigene:traeger', el)?.[0]?.id ?? '', mass: 'oberkante', versatz: 0 }),
+        anwenden: (el, werte, { kandidatenVon = null } = {}) => {
+            const plan = el?.stand?.bauplan;
+            const r = rezeptNach(plan?.rezept);
+            if (!el?.globalId || !plan || !r?.stand || !werte?.bauteil || werte.bauteil === el.globalId) return null;
+            // Der Träger kommt aus dem Kandidaten-Auflöser — er schliesst Kreise aus.
+            const traeger = (kandidatenVon?.('eigene:traeger', el) ?? []).find(k => k.id === werte.bauteil)?.bauplan;
+            if (!traeger) return null;
+            const hoeheVon = { bauteil: werte.bauteil, mass: werte.mass === 'unterkante' ? 'unterkante' : 'oberkante',
+                               versatz: Number(werte.versatz) || 0 };
+            const h = hoeheAus(hoeheVon, new Map([[werte.bauteil, traeger]]), rezeptNach);
+            if (h === null) return null;
+            return erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: el.globalId,
+                                    parameter: { ...r.stand.stelle(plan.parameter, h), hoeheVon } });
+        },
+        warumNicht: (el, werte, { kandidatenVon = null } = {}) => {
+            if (!werte?.bauteil) return 'Es fehlt das Bauteil, auf dem es stehen soll.';
+            if (kandidatenVon && !(kandidatenVon('eigene:traeger', el) ?? []).some(k => k.id === werte.bauteil)) {
+                return 'Darauf kann es nicht stehen — es steht selbst darauf, oder es hat keinen Körper.';
+            }
+            return null;
         },
     },
     {
