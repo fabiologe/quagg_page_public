@@ -49,3 +49,6 @@ export function istUnter(kategorie, wurzeln) {
 export const istLinear = kategorie => istUnter(kategorie, LINEARE_WURZELN);
 export const istSchacht = kategorie => istUnter(kategorie, SCHACHT_WURZELN);
 export const istAushub = kategorie => istUnter(kategorie, AUSHUB_WURZELN);
+/** Ein ABZUG — etwas, das ein anderes Bauteil aushöhlt und an ihm hängt (Aushub, Öffnung). */
+export const ABZUG_WURZELN = Object.freeze(['IFCFEATUREELEMENTSUBTRACTION']);
+export const istAbzug = kategorie => istUnter(kategorie, ABZUG_WURZELN);

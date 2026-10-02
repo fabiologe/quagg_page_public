@@ -1553,6 +1553,21 @@ function bauwerkWerkzeug(art) {
     };
 }
 
+/** Die Parameter einer Öffnung aus dem Formular — oder null, wenn ein Mass fehlt (Teil XXVII, B3). */
+function _oeffnungParameter(werte) {
+    const zahl = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
+    const form = werte?.form === 'rund' ? 'rund' : 'rechteck';
+    const station = zahl(werte?.station);
+    if (station === null) return null;
+    const p = { form, station, unterkante: zahl(werte?.unterkante) ?? 0 };
+    if (form === 'rund') {
+        const d = zahl(werte?.durchmesser);
+        return d > 0 ? { ...p, durchmesser: d } : null;
+    }
+    const b = zahl(werte?.breite), h = zahl(werte?.hoehe);
+    return b > 0 && h > 0 ? { ...p, breite: b, hoehe: h } : null;
+}
+
 export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // NUR REZEPTE, DIE AUS EINEM ZUG BAUEN (2026-09-17). „Gelände zeichnen"
     // stand hier, weil es sich aus dem Rezept-Register von selbst ergab — und
@@ -1576,6 +1591,10 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         // Wand-Bauteil erschien das Werkzeug deshalb nie. Gelesen wird die
         // Deklaration des Rezepts (`braucht.bauwerk`), nicht eine Kopie davon.
         bauform: rezeptNach('aussparung').braucht.bauwerk,
+        // Teil XXVII B3 (Fund 5): an EIGENEN Bauteilen nicht mehr — dort ist es
+        // „Öffnung setzen“, und die Wand bleibt, was sie ist.
+        gilt: (_e, ctx) => !ctx?.eigenes,
+        giltGrund: 'An Eigenbau setzt man eine Öffnung („Öffnung setzen“) — die Aussparung bliebe nur für gelieferte Körper.',
         mindestGuete: 'unbekannt',
         art: 'erzeugt',
         felder: [
@@ -1587,6 +1606,46 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         ],
         vorbelegung: (el) => ({ werkzeug: (el?.koerperQuellen ?? []).find(k => k.globalId !== el?.globalId)?.globalId ?? '' }),
         anwenden: (el, werte) => _aussparungSchritte(el, werte),
+    },
+    {
+        /**
+         * ÖFFNUNG SETZEN (Teil XXVII, B3 — Fabios E27): ein Loch in einer eigenen
+         * Wand (oder einem Fundament, einer Schwelle — was ein Rechteckprofil hat),
+         * als eigenes `IfcOpeningElement` am Wirt. Die Wand bleibt im Bauplan,
+         * im Bauwerk, mit ihren Merkmalen; ihre Nettomenge mindert der Paketbauer.
+         * Die Lage ist RELATIV: Station entlang der Achse, Unterkante über dem Fuss.
+         */
+        id: 'oeffnung-setzen',
+        titel: 'Öffnung setzen',
+        icon: 'schnitt',
+        gruppe: 'gelaende',
+        bauform: ['achse+profil'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => ctx?.rezept?.geometrie?.art === 'sweep' && ctx.rezept.geometrie.profil?.art === 'rechteck',
+        giltGrund: 'Nur in einem Bauteil mit Rechteckprofil (Wand, Fundament, Schwelle) — die Dicke ist die Tiefe der Öffnung.',
+        art: 'erzeugt',
+        felder: [
+            { name: 'form', titel: 'Form', typ: 'auswahl', optionen: [
+                { wert: 'rechteck', titel: 'rechteckig' }, { wert: 'rund', titel: 'rund (Kernbohrung)' }] },
+            { name: 'station', titel: 'Mitte bei', einheit: 'm ab Anfang', typ: 'zahl', min: 0, gueltig: { min: 0 },
+              aus: { geste: 'punkt', auf: 'achse', liefert: 'station' } },
+            { name: 'unterkante', titel: 'Unterkante über dem Fuss', einheit: 'm', typ: 'zahl', vorgabe: 0.5 },
+            { name: 'breite', titel: 'Breite (rechteckig)', einheit: 'm', typ: 'zahl', min: 0.01, max: 20, gueltig: { ueber: 0 }, leerErlaubt: true },
+            { name: 'hoehe', titel: 'Höhe (rechteckig)', einheit: 'm', typ: 'zahl', min: 0.01, max: 20, gueltig: { ueber: 0 }, leerErlaubt: true },
+            { name: 'durchmesser', titel: 'Durchmesser (rund)', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, gueltig: { ueber: 0 }, leerErlaubt: true },
+        ],
+        vorbelegung: (el) => ({ form: 'rechteck', station: _rundeM(_bauplanLaenge(el) / 2), unterkante: 0.5,
+                                breite: 1, hoehe: 1, durchmesser: 0.3 }),
+        anwenden: (el, werte) => {
+            if (!el?.globalId) return null;
+            const p = _oeffnungParameter(werte);
+            if (!p) return null;
+            return ableitungsSchritte({ rezept: 'oeffnung', quellen: { wirt: el.globalId }, quellBasis: { wirt: null },
+                                        raster: {}, operationen: [{ art: 'oeffnung', parameter: p }], name: el.name || 'Bauteil' });
+        },
+        warumNicht: (el, werte) => (_oeffnungParameter(werte) ? null
+            : (werte?.form === 'rund' ? 'Der Durchmesser fehlt.' : 'Breite und Höhe fehlen.')),
     },
     {
         /**

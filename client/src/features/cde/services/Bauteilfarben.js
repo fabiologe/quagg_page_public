@@ -89,6 +89,8 @@ export const BAUTEILFARBEN = Object.freeze({
     // Der Raum (Teil XXVI, Z6) ist der HOHLRAUM zwischen Wand und Platte — man
     // sieht durch ihn hindurch auf die Bauteile, die ihn begrenzen.
     IFCSPACE:             Object.freeze({ farbe: 0x5b82a0, deckkraft: 0.18, titel: 'Raum' }),
+    // Teil XXVII, B3 (E28): eine Öffnung durchscheinend — fragments schneidet nicht.
+    IFCOPENINGELEMENT:    Object.freeze({ farbe: 0x9a6a3c, deckkraft: 0.4, titel: 'Öffnung' }),
 });
 
 /** Kategorie normieren — Grossschreibung, ohne Leerraum. */

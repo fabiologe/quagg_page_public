@@ -281,7 +281,12 @@ function _formAus(geo, vorgabe) {
                 const s = _sohlen(geo, vorgabe);
                 return { punkte: punkte.map(punktXYZ), dn: (feld && Number(parameter?.[feld])) || null,
                          achsbezug: s.bezug(parameter), sohlabstand: s.abstand(parameter),
-                         profilhoehe: s.hoehe(parameter), quelle: 'bauplan' };
+                         profilhoehe: s.hoehe(parameter),
+                         // Die BREITE eines Rechteckprofils (Teil XXVII, B3): die Dicke einer
+                         // Wand — eine Öffnung geht genau so tief.
+                         ...(geo.profil?.art === 'rechteck'
+                             ? { profilbreite: massAus(parameter, geo.profil.breite, { rueckfall: vorgabe(geo.profil.breite) }) } : {}),
+                         quelle: 'bauplan' };
             }
             // EIN EIGENER SCHACHT ALS KNOTEN (Teil XXI, P2c): sein tiefster
             // Punkt IST seine Sohle — und die Form SAGT es (A9), statt dass

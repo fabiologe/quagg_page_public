@@ -33,10 +33,10 @@ import { weltAusNn } from '../Hoehenbezug.js';
 import { regelquelle, regeltabelle, regelwert } from '../regeln/Regelwerk.js';
 // Aus dem Kern nur das Hilfen-Fass (Teil XXIII, A8) — Formen laufen über `kernel.op`.
 import {
-    rasterAbtasten, PROFIL_QUER, PROFIL_SCHRITT, kreisProfil, trapezProfil, sweep, extrudiere,
+    rasterAbtasten, PROFIL_QUER, PROFIL_SCHRITT, kreisProfil, rechteckProfil, trapezProfil, sweep, extrudiere,
     versetztePunkte, ringFlaeche, umrissFlaeche,
 } from '../geometrie/hilfen.js';
-import { stationenEntlang } from '../geometrie/Stationierung.js';
+import { ortBei, stationenEntlang, stationiere } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, knotensohle, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
 import { boeschungskanten, kantenUebersicht } from '../gelaende/Boeschungskanten.js';
 import { aussenkanten, aussenrichtung, querrichtung, strahlTreffer } from '../gelaende/Eckmasse.js';
@@ -1733,6 +1733,97 @@ ABLEITUNGEN_ERWEITERT.aussparung = {
     verschiebe: (parameter) => parameter,
     fachmodell: (globalId) => ({ koerper: [globalId] }),
     beschreibe: (nachher) => `Aussparung · ${String(nachher?.kategorie ?? '').replace(/^IFC/, '') || 'Körper'} minus eigener Körper`,
+};
+
+/**
+ * DIE ÖFFNUNG (Teil XXVII, B3 — Fabios E27): ein Loch IN einem Bauteil, das ein
+ * eigenes Objekt ist — `IfcOpeningElement`, am Wirt per `IfcRelVoidsElement`
+ * (der Schreiber kennt die Beziehung vom Aushub). Die Wand BLEIBT, was sie ist:
+ * ihr Bauplan, ihr Bauwerk, ihre Merkmale. Die Aussparung (oben) ersetzte die
+ * Wand durch ein Netz ohne all das (Fund 5).
+ *
+ * Wo sie sitzt, sagt sie RELATIV zum Wirt: Station entlang seiner Achse, Höhe
+ * der Unterkante über seinem Fuss. Ihre Geometrie entsteht bei jedem Aufbau aus
+ * der Achse des Wirts — verschiebt man die Wand, geht die Öffnung mit.
+ *
+ * Mengen nach `Qto_OpeningElementBaseQuantities`. `imWirt` ist das Volumen, das
+ * die Öffnung dem Wirt nimmt (Querschnitt × Dicke des Wirts) — daran mindert der
+ * Paketbauer die Nettomenge der Wand. Der Körper selbst steht 1 cm je Seite über,
+ * damit kein Betrachter eine Haut stehen lässt.
+ */
+const OEFFNUNG_UEBERSTAND = 0.01;
+/** Rein: Parameter + Form des Wirts → Teil, Kennzahlen, Befunde (Teil XXVII, B3). */
+function _oeffnungBauen(parameter, quellen) {
+    const wirt = quellen?.wirt;
+    if (!wirt?.punkte?.length) throw new Error('oeffnung: der Wirt hat keine Achse');
+    const o = (parameter?.operationen ?? []).find(x => x?.art === 'oeffnung')?.parameter ?? {};
+    const rund = o.form === 'rund';
+    const breite = rund ? Number(o.durchmesser) : Number(o.breite);
+    const hoehe = rund ? Number(o.durchmesser) : Number(o.hoehe);
+    const tiefe = Number(wirt.profilbreite);
+    if (!(breite > 0 && hoehe > 0)) throw new Error('oeffnung: Breite und Höhe (oder Durchmesser) müssen grösser 0 sein');
+    if (!(tiefe > 0)) throw new Error('oeffnung: der Wirt nennt keine Dicke (Profil ohne Breite)');
+    const befunde = [];
+    const st = stationiere(wirt.punkte);
+    const station = Number(o.station);
+    const unterkante = Number(o.unterkante ?? 0);
+    if (!Number.isFinite(station) || !Number.isFinite(unterkante)) throw new Error('oeffnung: Station oder Unterkante fehlt');
+    const ort = ortBei(st, station);
+    // Der FUSS des Wirts: seine Punkte, wenn sie die Sohle sind (Wand: E20),
+    // sonst die Achse minus Sohlabstand.
+    const fuss = ort.y - (wirt.achsbezug === 'sohle' ? 0 : Number(wirt.sohlabstand ?? 0));
+    const mitte = fuss + unterkante + hoehe / 2;
+    const n = { x: -ort.richtung.z, z: ort.richtung.x };     // waagerecht, quer zur Achse
+    const halb = tiefe / 2 + OEFFNUNG_UEBERSTAND;
+    const achse = { punkte: [{ x: ort.x - n.x * halb, y: mitte, z: ort.z - n.z * halb },
+                             { x: ort.x + n.x * halb, y: mitte, z: ort.z + n.z * halb }] };
+    const profil = rund ? kreisProfil(breite / 2, 24) : rechteckProfil(breite, hoehe);
+    const { ergebnis, warnungen } = sweep({ profil, achse });
+    if (!ergebnis) throw new Error(`oeffnung: ${warnungen.join('; ') || 'kein Körper'}`);
+    // AUSSERHALB DES WIRTS: gebaut wird trotzdem (E5), markiert wird es.
+    const hoeheWirt = Number(wirt.profilhoehe);
+    if (station - breite / 2 < -1e-6 || station + breite / 2 > st.laenge + 1e-6
+        || unterkante < -1e-6 || (Number.isFinite(hoeheWirt) && unterkante + hoehe > hoeheWirt + 1e-6)) {
+        befunde.push({ regel: 'oeffnung_ausserhalb', schwere: 'warnung',
+                       text: 'Die Öffnung reicht über den Rand ihres Wirts hinaus — die Mengen rechnen mit dem vollen Querschnitt' });
+    }
+    const flaeche = rund ? Math.PI * (breite / 2) ** 2 : breite * hoehe;
+    return {
+        teile: { oeffnung: { form: 'koerper', daten: ergebnis } },
+        kennzahlen: { breite, hoehe, tiefe, flaeche, imWirt: flaeche * tiefe },
+        befunde, warnungen,
+    };
+}
+
+ABLEITUNGEN_ERWEITERT.oeffnung = {
+    id: 'oeffnung',
+    titel: 'Öffnung',
+    icon: 'schnitt',
+    bauform: 'koerper',
+    kategorieVorgabe: 'IFCOPENINGELEMENT',
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [],
+    braucht: { wirt: ['achse+profil'] },
+    formen:  { wirt: 'linie' },
+    teile: [
+        { rolle: 'oeffnung', kategorie: 'IFCOPENINGELEMENT', bauform: 'koerper', form: 'koerper',
+          predefinedType: 'OPENING', name: (q) => `${q} · Öffnung`,
+          menge: { width: 'breite', height: 'hoehe', depth: 'tiefe', area: 'flaeche', volume: 'imWirt' } },
+    ],
+
+    // Gelöst wird OHNE Kernel: die Achse des Wirts kommt als Form `linie`
+    // (Rezeptbau), der Körper ist ein Sweep — synchron, wie beim Rezept.
+    async leite(parameter, quellen) {
+        return { bild: [], ..._oeffnungBauen(parameter, quellen) };
+    },
+
+    vorschau() {
+        return { primitive: [], faerbungen: [], chips: [{ art: 'vorschau', text: 'Öffnung: ein Loch im Wirt — der Wirt bleibt' }], hinweise: [] };
+    },
+    verschiebe: (parameter) => parameter,
+    fachmodell: (globalId) => ({ koerper: [globalId] }),
+    beschreibe: () => 'Öffnung im Bauteil',
 };
 
 export const ABLEITUNGEN = Object.freeze(ABLEITUNGEN_ERWEITERT);

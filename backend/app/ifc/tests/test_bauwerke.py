@@ -732,3 +732,38 @@ def test_abnahme_rueb_im_verbund_mit_dem_gelaende(tmp_path):
     assert not aushub.ContainedInStructure                    # ein Aushub haengt am Wirt, nie in der Gliederung
     fehl = [b for b in pruefe(ziel, ids=[IDS])["befunde"] if offen(b)]
     assert fehl == [], fehl
+
+
+# ── Teil XXVII, B3: Oeffnungen ─────────────────────────────────────────────
+
+OEFFNUNG = DATEN / "paket_oeffnung.json"
+
+
+def test_eine_oeffnung_ist_ein_ifcopeningelement_am_wirt(tmp_path):
+    """Das Paket aus `bauwerkeBearbeiten.test.js` (RUEB + Kernbohrung Ø 0,30 in der
+    Laengswand Nord, nur ueber Kommandos): EIN IfcOpeningElement, per
+    IfcRelVoidsElement an DER Wand, nicht in der Gliederung; die Wand bleibt in
+    ihrer Anlage. Mengen: Wand NetVolume 6,653 794 = 6,675 − π · 0,15² · 0,30,
+    GrossVolume 6,675; Oeffnung Volume 0,021 206. Prueftor sauber, IDS 0 von 18."""
+    from app.ifc.pruefe import offen, pruefe
+    paket = json.loads(OEFFNUNG.read_text(encoding="utf-8"))
+    ziel = tmp_path / "oeffnung.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="oeffnung")
+    assert bericht["uebersprungen"] == [] and bericht.get("wirte_offen", 0) == 0
+    datei = ifcopenshell.open(str(ziel))
+    (loch,) = datei.by_type("IfcOpeningElement")
+    assert loch.PredefinedType == "OPENING"
+    wand = loch.VoidsElements[0].RelatingBuildingElement
+    assert (wand.is_a(), wand.Name) == ("IfcWall", "Längswand Nord")
+    assert not loch.ContainedInStructure and not loch.Decomposes
+    (anlage,) = datei.by_type("IfcFacility")
+    assert wand in [e for r in anlage.ContainsElements for e in r.RelatedElements]
+    qto = {(e.Name, q.Name): round(q.VolumeValue, 6) for e in (wand, loch) for r in e.IsDefinedBy
+           if r.is_a("IfcRelDefinesByProperties") and r.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+           for q in r.RelatingPropertyDefinition.Quantities if q.is_a("IfcQuantityVolume")}
+    assert qto[("Längswand Nord", "NetVolume")] == 6.653794
+    assert qto[("Längswand Nord", "GrossVolume")] == 6.675
+    assert qto[(loch.Name, "Volume")] == 0.021206
+    p = pruefe(ziel, ids=[IDS])
+    assert [b for b in p["befunde"] if offen(b)] == []
+    assert _verfehlt(ziel) == []

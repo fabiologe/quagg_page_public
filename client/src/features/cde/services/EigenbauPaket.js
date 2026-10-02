@@ -45,7 +45,7 @@
  * Positions-/Indexfelder herein (aus `IfcAutor.eigenbauGeometrien`).
  */
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
-import { istAushub } from './Kategorien.js';
+import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
 import { lagemerkmaleVon, objektTypVon } from './Bauteilrezepte.js';
 
@@ -204,7 +204,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         ursprung,
         punkte: lokal,
         dreiecke,
-        wirt: aushub ? ur : null,
+        // Ein Aushub am Ur-Gelände; eine ÖFFNUNG (Teil XXVII, B3) an dem Bauteil, das sie nennt.
+        wirt: aushub ? ur : (istAbzug(klasse) ? (q.wirt ?? null) : null),
         fachmodell: teil.fachmodell ?? 'cde',
         vorgang: teil.vorgang ?? null,
         mengen: teil.mengen ?? {},
@@ -292,6 +293,15 @@ export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), 
         else uebersprungen.push({ cdeId: t.globalId, grund: 'nach dem Verschweissen keine Fläche übrig' });
     }
     // Nicht still weglassen: die Anzeigeform steht im Raum, aber nicht im IFC.
+    // DIE NETTOMENGE DES WIRTS (Teil XXVII, B3): eine Öffnung nimmt ihm, was in ihm
+    // liegt (`volume` der Öffnung = Querschnitt × Dicke). Brutto bleibt der Körper.
+    for (const o of bauteile) {
+        if (!istAbzug(o.klasse) || istAushub(o.klasse) || !o.wirt) continue;
+        const w = bauteile.find(t => t.cdeId === o.wirt);
+        const v = o.mengen?.volume;
+        if (!w || !Number.isFinite(w.mengen?.netVolume) || !Number.isFinite(v)) continue;
+        w.mengen = { ...w.mengen, grossVolume: w.mengen.grossVolume ?? w.mengen.netVolume, netVolume: w.mengen.netVolume - v };
+    }
     for (const gid of anzeigeformen) {
         uebersprungen.push({ cdeId: gid, grund: 'Anzeigeform — kein Bauteil: der Aushub ist ein IfcEarthworksCut am Ur-Gelände' });
     }

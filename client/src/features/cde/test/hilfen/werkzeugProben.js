@@ -194,6 +194,8 @@ const NEU = [
     { id: 'bauwerk-loesen', el: eigen('cde-W1'), werte: [{}] },
     { id: 'bauwerk-bauwerkstyp-setzen', el: eigen('cde-BW1'), werte: [{ bauwerkstyp: 'RRB' }] },
     // Teil XXVII, B2: das Bauwerk als Ganzes — die Teile kommen aus dem Kandidaten-Auflöser.
+    // Teil XXVII, B3: eine Kernbohrung in der Wand W1.
+    { id: 'oeffnung-setzen', el: eigen('cde-W1'), werte: [{ form: 'rund', station: 5, unterkante: 1, durchmesser: 0.3, breite: '', hoehe: '' }] },
     { id: 'bauwerk-verschieben', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-kopieren', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-drehen', el: eigen('cde-BW1'), werte: [{ winkel: 90 }], kandidaten: KANDIDATEN },

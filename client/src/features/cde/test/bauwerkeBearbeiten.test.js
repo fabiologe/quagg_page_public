@@ -8,6 +8,9 @@
  * sagt im Commit, warum.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createPinia, setActivePinia } from 'pinia';
 import { repo } from '../services/RepoFacade.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
@@ -19,6 +22,7 @@ import { kommando, RUEB, TEILE } from './hilfen/ruebKommandos.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { IfcAutor } from '../services/IfcAutor.js';
 import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
+import { neuerAbleitungslauf } from '../services/ableitung/Ableitungslauf.js';
 
 class Speicher {
     constructor() { this.daten = new Map(); }
@@ -51,6 +55,17 @@ const angeboten = (gid) => {
     const p = plan(gid);
     return passende({ bauform: p.bauform, guete: 'gemessen' }, { eigenes: true, rezept: rezeptNach(p.rezept) }).map(w => w.id);
 };
+async function paketAus() {
+    const stand = ae.wirksamerStand('erzeugt');
+    const autor = new IfcAutor({ getFragments: () => null, holeQuellForm: () => null, kernel: erzeugeKernel(), getHoehenversatz: () => 0 });
+    const g = await autor.eigenbauGeometrien([...stand].map(([globalId, wert]) => ({ globalId, wert })), { verdeckt: new Set() });
+    if (g.misserfolge?.length) throw new Error(JSON.stringify(g.misserfolge));
+    return baueEigenbauPaket({ teile: g.bauteile, stand, bauwerke: g.bauwerke, crs: 'EPSG:25832', projektname: 'RÜB', schluessel: 'rueb-oeffnung',
+                               journal: { commit: 'c-oeffnung', sitzungOffen: false }, jetzt: new Date('2026-10-02T00:00:00Z'),
+                               nachProjekt: (p) => ({ ost: 410300 + p.x, nord: 5460100 - p.z, hoehe: p.y }) });
+}
+// Vertrag mit dem Schreiber (B3): OEFFNUNG_VERTRAG_SCHREIBEN=1 npx vitest run src/features/cde/test/bauwerkeBearbeiten.test.js
+const FIXTURE_OEFFNUNG = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../backend/app/ifc/tests/daten/paket_oeffnung.json');
 let zaehler = 0;
 const geber = (art) => `${art === 'operation' ? 'op' : 'cde'}-g${++zaehler}`;
 
@@ -160,16 +175,69 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(plan('cde-LN').parameter.teilVon).toBe('cde-RUEB');
     });
 
-    it('Fund 5: die Aussparung verdeckt die Wand und setzt ein Teil OHNE Bauwerk, Merkmale und Ausführung an ihre Stelle', async () => {
-        expect(angeboten('cde-LN')).toContain('aussparung-ableiten');
+    // B3 — ÖFFNUNGEN (E27): ein eigenes IfcOpeningElement am Wirt; die Wand bleibt, was sie ist.
+    it('Fund 5 (B3): an der eigenen Wand steht „Öffnung setzen" — die Aussparung nicht mehr, mit Grund', async () => {
+        expect(angeboten('cde-LN')).toContain('oeffnung-setzen');
+        expect(angeboten('cde-LN')).not.toContain('aussparung-ableiten');
         const erg = await b.fuehreAus(kommando('aussparung-ableiten', { ziel: ['cde-LN'], neu: ['cde-AU', 'op-AU'], werte: { werkzeug: 'cde-UE' } }),
             { subjektVon: (g) => subj(g, { koerperQuellen: [{ globalId: 'cde-UE', name: 'Schwelle' }] }) });
+        expect(erg.ausgefuehrt).toBe(false);
+        expect(erg.grund).toMatch(/An Eigenbau setzt man eine Öffnung/);
+        expect(ae.wirksamerStand('geloescht').has('cde-LN')).toBe(false);
+        // Eine Platte hat kein Rechteckprofil — dort gibt es keine Öffnung (der Grund sagt, warum).
+        expect(angeboten('cde-BP')).not.toContain('oeffnung-setzen');
+    });
+
+    const BOHRUNG = { form: 'rund', station: 2, unterkante: 1, durchmesser: 0.3, breite: '', hoehe: '' };
+    const setze = (werte = BOHRUNG) => b.fuehreAus(kommando('oeffnung-setzen', { ziel: ['cde-LN'], neu: ['cde-OE', 'op-OE'], werte }));
+
+    it('B3: Kernbohrung Ø 0,30 in der Längswand — IfcOpeningElement am Wirt, Wand bleibt im Bauwerk, Nettomenge 6,653 794 m³', async () => {
+        const erg = await setze();
         expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
-        expect(ae.wirksamerStand('geloescht').has('cde-LN')).toBe(true);
-        const au = plan('cde-AU');
-        expect(au).toMatchObject({ rezept: 'aussparung', kategorie: 'IFCWALL' });
-        expect(au.parameter.teilVon ?? null).toBe(null);
-        expect(Object.keys(au.parameter)).not.toContain('tragend');
+        expect(ae.wirksamerStand('geloescht').has('cde-LN')).toBe(false);
+        expect(plan('cde-LN').parameter.teilVon).toBe('cde-RUEB');
+        const p = await paketAus();
+        const oe = p.bauteile.find(t => t.klasse === 'IFCOPENINGELEMENT');
+        expect(oe).toMatchObject({ wirt: 'cde-LN', predefinedType: 'OPENING' });
+        expect(oe.teilVon ?? null).toBe(null);
+        expect(oe.mengen.depth).toBeCloseTo(0.3, 9);
+        expect(oe.mengen.volume).toBeCloseTo(Math.PI * 0.15 ** 2 * 0.3, 9);
+        const ln = p.bauteile.find(t => t.cdeId === 'cde-LN');
+        expect(ln.mengen.grossVolume).toBeCloseTo(6.675, 9);
+        expect(ln.mengen.netVolume).toBeCloseTo(6.675 - Math.PI * 0.15 ** 2 * 0.3, 9);
+        expect(Math.round(ln.mengen.netVolume * 1e6) / 1e6).toBe(6.653794);
+        // Die Bohrung sitzt bei Station 2 auf der Wandachse, Mitte 1,15 über dem Fuss (210).
+        const xs = oe.punkte.map(q => q[0] + oe.ursprung[0] - 410300), ys = oe.punkte.map(q => q[2] + oe.ursprung[2]);
+        expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(2, 6);
+        expect((Math.min(...ys) + Math.max(...ys)) / 2).toBeCloseTo(211.15, 6);
+        if (process.env.OEFFNUNG_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE_OEFFNUNG, JSON.stringify(p));
+        expect(existsSync(FIXTURE_OEFFNUNG), 'Fixture fehlt: OEFFNUNG_VERTRAG_SCHREIBEN=1 …').toBe(true);
+        const alt = JSON.parse(readFileSync(FIXTURE_OEFFNUNG, 'utf8'));
+        expect(alt.bauteile.map(t => [t.cdeId, t.klasse, t.wirt ?? null, t.mengen])).toEqual(p.bauteile.map(t => [t.cdeId, t.klasse, t.wirt ?? null, t.mengen]));
+    });
+
+    it('B3: die Öffnung folgt ihrer Wand — Wand +1 m Ost, die Öffnung mit; ihre Kennung bleibt', async () => {
+        await setze();
+        const mitte = (p) => { const o = p.bauteile.find(t => t.klasse === 'IFCOPENINGELEMENT');
+                                const xs = o.punkte.map(q => q[0] + o.ursprung[0]); return [(Math.min(...xs) + Math.max(...xs)) / 2, o.cdeId]; };
+        const [x0, id0] = mitte(await paketAus());
+        const v = vorbelegt('verschieben', 'cde-LN');
+        expect((await b.fuehreAus(kommando('verschieben', { ziel: ['cde-LN'], werte: { ...v, ost: v.ost + 1 } }))).ausgefuehrt).toBe(true);
+        const [x1, id1] = mitte(await paketAus());
+        expect(x1 - x0).toBeCloseTo(1, 6);
+        expect(id1).toBe(id0);
+    });
+
+    it('B3: eine Öffnung über den Rand hinaus wird gebaut und markiert (E5)', async () => {
+        await setze({ ...BOHRUNG, unterkante: 2.4 });
+        const p = await paketAus();
+        expect(p.bauteile.some(t => t.klasse === 'IFCOPENINGELEMENT')).toBe(true);
+        // Der Befund gehört zum Lauf (der Raum zeigt ihn über `autor.ableitungen`).
+        const stand = ae.wirksamerStand('erzeugt');
+        const lauf = neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm: async () => null, kernel: erzeugeKernel(), hoehenversatz: 0 });
+        const r = await lauf.baue('cde-OE');
+        expect(r.ok, JSON.stringify(r.fehler ?? null)).toBe(true);
+        expect(lauf.ableitungen.get(plan('cde-OE').ableitung).befunde.map(f => f.regel)).toEqual(['oeffnung_ausserhalb']);
     });
 
     it('Fund 6: die Bodenplatte wird verschoben — die Wände bleiben stehen', async () => {
