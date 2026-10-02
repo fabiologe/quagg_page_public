@@ -25,7 +25,7 @@
  *
  * Rein: kein Vue, kein Store, keine Engine.
  */
-import { erdbauStandVon, istAbleitung, rezeptNach, teileVon } from '../Bauteilrezepte.js';
+import { erdbauStandVon, istAbleitung, istBehaelter, rezeptNach, teileVon } from '../Bauteilrezepte.js';
 import { eigeneNetzauskunft, verdeckteAus } from '../CdeAchsen.js';
 import { anschluesseMitAchsen, strangMitAchsen } from '../Netztopologie.js';
 import { huelleAusGrenzen } from '../geometrie/Huelle.js';
@@ -139,6 +139,22 @@ export function subjektAusStand(globalId, { wirksamerStand, rahmen = rahmenOhneB
         hoehenversatz: Number.isFinite(rahmen?.hoehenversatz) ? rahmen.hoehenversatz : 0,
         stand: standVon(globalId, wirksamerStand),
     };
+
+    // EIN BAUWERK (Teil XXVII, B6): keine eigenen Punkte — die seiner Teile, damit
+    // Versatz- und Drehgriff am gemeinsamen Schwerpunkt sitzen.
+    if (istBehaelter(plan)) {
+        const erzeugt = wirksamerStand('erzeugt');
+        const gehoert = (gid) => {
+            const gesehen = new Set();
+            for (let e = erzeugt.get(gid)?.parameter?.teilVon; e && !gesehen.has(e); e = erzeugt.get(e)?.parameter?.teilVon) {
+                if (e === globalId) return true;
+                gesehen.add(e);
+            }
+            return false;
+        };
+        s.teilpunkte = [...erzeugt].filter(([gid, p]) => gid !== globalId && !istBehaelter(p) && gehoert(gid))
+            .flatMap(([, p]) => (Array.isArray(p?.parameter?.punkte) ? p.parameter.punkte : []));
+    }
 
     // HÜLLE UND LAGE. Der Versatz ist die Umkehrung des Rahmens am Ursprung —
     // die Werkzeuge rechnen `welt = ost − versatz.x`, `welt.z = −nord − versatz.z`.

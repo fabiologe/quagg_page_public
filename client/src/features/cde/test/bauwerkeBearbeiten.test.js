@@ -19,6 +19,10 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 import { nachId, passende } from '../services/Bearbeitungen.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { hoeheAus } from '../services/kommando/Folgen.js';
+import { griffeFuer, griffeFrei, griffZuWerten } from '../services/Griffe.js';
+import { registriereRezepte } from '../services/katalog/Katalog.js';
+import { pruefeEintrag } from '../services/katalog/Katalogschema.js';
+import { EINGEBAUTE_REZEPTE } from '../services/rezept/Eingebaut.js';
 import { kommando, RUEB, TEILE } from './hilfen/ruebKommandos.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { IfcAutor } from '../services/IfcAutor.js';
@@ -46,7 +50,7 @@ beforeEach(async () => {
         if (!erg.ausgefuehrt) throw new Error(`${k.werkzeug}: ${erg.grund}`);
     }
 });
-afterEach(() => repo.setBackend(null));
+afterEach(() => { repo.setBackend(null); registriereRezepte([]); });
 
 const plan = (gid) => ae.wirksamerStand('erzeugt').get(gid);
 const subj = (gid, mehr = {}) => ({ ...subjektAusStand(gid, { wirksamerStand: ae.wirksamerStand }), ...mehr });
@@ -351,5 +355,79 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(unterkante('cde-LN')).toBeCloseTo(210.2, 9);
         expect(unterkante('cde-LS')).toBeCloseTo(210.5, 9);        // bleibt, wo man sie hingestellt hat
         expect(hoeheAus(plan('cde-LN').parameter.hoeheVon, ae.wirksamerStand('erzeugt'), rezeptNach)).toBeCloseTo(210.2, 9);
+    });
+});
+
+describe('Teil XXVII, B6 — Griffe aus Feldern', () => {
+    const griffe = (gid) => griffeFuer({ subjekt: subj(gid), subjektHerkunft: 'cde' });
+    const arten = (gs) => gs.reduce((a, g) => ({ ...a, [g.art]: (a[g.art] ?? 0) + 1 }), {});
+    const zieh = async (g, pos) => {
+        const werte = griffZuWerten(g, pos);
+        return b.fuehreAus(kommando(g.werkzeug, { ziel: [g.globalId], werte }));
+    };
+
+    it('die Wand hat 9 Griffe statt 7 — Höhe (von der Unterkante) und Dicke (quer), aus ihren Feldern', () => {
+        const gs = griffe('cde-LN');
+        expect(gs).toHaveLength(9);
+        expect(arten(gs)).toEqual({ stuetzpunkt: 4, kante: 1, 'kante-plus': 1, drehung: 1, feldmass: 2 });
+        const hoehe = gs.find(g => g.feld?.name === 'wandhoehe');
+        expect(hoehe).toMatchObject({ werkzeug: 'wand-wandhoehe-setzen', achsen: 'Y' });
+        expect(hoehe.pos.y).toBeCloseTo(212.5, 9);                 // Fuss 210 + 2,50
+        // Sichtbar nur mit SEINEM Werkzeug scharf (K5) — eine eigene Familie je Feldsetzer.
+        expect(griffeFrei({ modusAn: true, scharfId: 'wand-wandhoehe-setzen' }, hoehe, { subjektGid: 'cde-LN' })).toBe(true);
+        expect(griffeFrei({ modusAn: true, scharfId: 'wand-dicke-setzen' }, hoehe, { subjektGid: 'cde-LN' })).toBe(false);
+    });
+
+    it('Wandhöhe am Griff auf 3,00 gezogen — und die Decke, die auf der Wand steht, folgt (B5)', async () => {
+        expect((await b.fuehreAus(kommando('auf-bauteil-stellen', { ziel: ['cde-DE'], werte: { bauteil: 'cde-LN', mass: 'oberkante', versatz: 0 } }))).ausgefuehrt).toBe(true);
+        const g = griffe('cde-LN').find(x => x.feld?.name === 'wandhoehe');
+        const erg = await zieh(g, { ...g.pos, y: 213 });
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(plan('cde-LN').parameter.wandhoehe).toBe(3);
+        expect(rezeptNach('platte').stand.lies(plan('cde-DE').parameter)).toBeCloseTo(213, 9);
+    });
+
+    it('Plattendicke von oben, Wanddicke quer — der Zug ergibt das Mass', async () => {
+        const dicke = griffe('cde-BP').find(x => x.feld?.name === 'dicke');
+        expect(dicke.pos.y).toBeCloseTo(209.6, 9);                 // Oberkante 210 − 0,40
+        expect((await zieh(dicke, { ...dicke.pos, y: 209.5 })).ausgefuehrt).toBe(true);
+        expect(plan('cde-BP').parameter.dicke).toBe(0.5);
+        const quer = griffe('cde-LN').find(x => x.feld?.name === 'dicke');
+        expect(quer.achsen).toBe('XZ');
+        const p = { x: quer.pos.x + quer.feld.normal.x * 0.1, y: quer.pos.y, z: quer.pos.z + quer.feld.normal.z * 0.1 };
+        expect((await zieh(quer, p)).ausgefuehrt).toBe(true);
+        expect(plan('cde-LN').parameter.dicke).toBe(0.5);           // 2 × (0,15 + 0,10)
+    });
+
+    it('das Bauwerk hat Versatz- und Drehgriff am gemeinsamen Schwerpunkt — der Versatzgriff verschiebt alle Teile', async () => {
+        const gs = griffe('cde-RUEB');
+        expect(arten(gs)).toEqual({ 'bauwerk-versatz': 1, drehung: 1 });
+        const g = gs.find(x => x.art === 'bauwerk-versatz');
+        const vorher = plan('cde-SO').parameter.punkte[0];
+        expect((await zieh(g, { x: g.pos.x + 2, y: g.pos.y, z: g.pos.z + 1 })).ausgefuehrt).toBe(true);
+        const nachher = plan('cde-SO').parameter.punkte[0];
+        expect([nachher[0] - vorher[0], nachher[2] - vorher[2]]).toEqual([2, 1]);
+        const dreh = gs.find(x => x.art === 'drehung');
+        expect(dreh.werkzeug).toBe('bauwerk-drehen');
+    });
+
+    it('ein Rezept nur aus JSON bekommt seinen Griff ohne Codezeile — und das Schema prüft die Erklärung', async () => {
+        const wand = EINGEBAUTE_REZEPTE.find(r => r.id === 'wand');
+        const mauer = JSON.parse(JSON.stringify({ ...wand, id: 'gartenmauer', titel: 'Gartenmauer' }));
+        expect(pruefeEintrag('rezept', mauer).fehler).toEqual([]);
+        registriereRezepte([mauer]);
+        const erg = await b.fuehreAus(kommando('gartenmauer-zeichnen', { neu: ['cde-GM'],
+            werte: { name: 'GM', kategorie: 'IFCWALL', hoehe: '', dicke: 0.24, wandhoehe: 1.2 },
+            eingaben: { zug: [{ ost: 20, nord: 0, hoehe: 210 }, { ost: 25, nord: 0, hoehe: 210 }] } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        const g = griffe('cde-GM').find(x => x.feld?.name === 'wandhoehe');
+        expect(g?.werkzeug).toBe('gartenmauer-wandhoehe-setzen');
+        expect((await zieh(g, { ...g.pos, y: 211.5 })).ausgefuehrt).toBe(true);
+        expect(plan('cde-GM').parameter.wandhoehe).toBe(1.5);
+        // Ein Griff an einem nicht setzbaren Feld ist ein Fehler im Katalog.
+        const falsch = JSON.parse(JSON.stringify(mauer));
+        falsch.id = 'falschmauer';
+        falsch.felder.find(f => f.name === 'wandhoehe').setzbar = false;
+        expect(pruefeEintrag('rezept', falsch).fehler.join(' ')).toMatch(/einen Griff hat nur ein setzbares Zahlenfeld/);
     });
 });

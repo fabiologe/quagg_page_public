@@ -71,6 +71,8 @@ export const GRIFF_FAMILIEN = Object.freeze({
     bezug:         ['bezugshoehe-setzen'],
     ecken:         ['erdbau-stuetzpunkt-verschieben', 'erdbau-mass-setzen'],
     laengsschnitt: ['sohle-ziehen'],
+    // Teil XXVII (B2/B6): das Bauwerk als Ganzes — Versatz und Drehung am gemeinsamen Schwerpunkt.
+    bauwerk:       ['bauwerk-verschieben', 'bauwerk-drehen'],
 });
 
 /** Jedes Werkzeug, das im Bild einen Griff hat — die Tafel markiert sie (K5). */
@@ -80,6 +82,9 @@ export const GRIFF_WERKZEUGE = Object.freeze([...new Set(Object.values(GRIFF_FAM
 export function griffFamilie(werkzeug) {
     if (!werkzeug) return null;
     for (const [name, liste] of Object.entries(GRIFF_FAMILIEN)) if (liste.includes(werkzeug)) return name;
+    // EIN FELDSETZER IST SEINE EIGENE FAMILIE (Teil XXVII, B6): „Wandhöhe ändern"
+    // scharf → der Höhengriff der Wand. Ohne Liste: das Feld erklärt seinen Griff.
+    if (typeof werkzeug === 'string' && werkzeug.endsWith('-setzen')) return `feld:${werkzeug}`;
     return null;
 }
 
@@ -322,6 +327,31 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                 werkzeug: 'drehen', felder: ['winkel'],
             });
         }
+        aus.push(...feldgriffeFuer(subjekt, bauplan, rezept, punkte.filter(Boolean)));
+        return aus;
+    }
+
+    // ── DAS BAUWERK ALS GANZES (Teil XXVII, B2/B6) ──
+    // Ein Behälter hat keine eigenen Punkte; das Subjekt bringt die seiner Teile
+    // mit (`teilpunkte`). Versatz- und Drehgriff sitzen am gemeinsamen Schwerpunkt
+    // — demselben, um den „Bauwerk drehen" dreht.
+    if (eigen && bauplan && rezept?.behaelter && Array.isArray(subjekt.teilpunkte) && subjekt.teilpunkte.length) {
+        const tp = subjekt.teilpunkte.filter(p => Array.isArray(p) && p.length >= 3 && p.every(Number.isFinite));
+        const dreh = drehgriffFuer(tp);
+        if (dreh) {
+            const gid = subjekt.globalId;
+            const tief = Math.min(...tp.map(p => p[1]));
+            aus.push({
+                key: `bauwerk:${gid}`, globalId: gid, name: subjekt.name ?? '',
+                herkunft: 'cde', art: 'bauwerk-versatz', pos: { x: dreh.zentrum.x, y: tief, z: dreh.zentrum.z },
+                achsen: 'XZ', alternativ: 'Y', werkzeug: 'bauwerk-verschieben', felder: ['ost', 'nord', 'hoehe'],
+            });
+            aus.push({
+                key: `bauwerk-drehung:${gid}`, globalId: gid, name: subjekt.name ?? '',
+                herkunft: 'cde', art: 'drehung', pos: { ...dreh.pos, y: tief }, zentrum: dreh.zentrum, achsen: 'W',
+                werkzeug: 'bauwerk-drehen', felder: ['winkel'],
+            });
+        }
         return aus;
     }
 
@@ -447,6 +477,52 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
 }
 
 /**
+ * GRIFFE AUS FELDERN (Teil XXVII, B6 — Fabios E29): ein setzbares Mass, dessen
+ * Feld seinen Griff erklärt (`griff: { richtung, von }`), bekommt ihn hier — ohne
+ * eine Zeile je Rezept. Gezogen wird der vorhandene Setzer des Feldes
+ * (`<rezept>-<feld>-setzen`); ein Rezept aus der Bibliothek bekommt seine Griffe
+ * mit seinen Daten.
+ *   y, von unterkante   Höhe über der Unterkante (Wandhöhe, lichte Höhe)
+ *   y, von oberkante    Tiefe unter der Oberkante (Plattendicke)
+ *   quer                Breite quer zur ersten Kante (Wanddicke)
+ */
+export function feldgriffeFuer(subjekt, bauplan, rezept, punkte) {
+    const aus = [];
+    const stand = rezept?.stand;
+    if (!stand || !punkte?.length) return aus;
+    const parameter = bauplan.parameter ?? {};
+    const uk = stand.lies(parameter), ok = stand.oberkante?.(parameter);
+    if (!Number.isFinite(uk)) return aus;
+    let cx = 0, cz = 0;
+    for (const p of punkte) { cx += p[0]; cz += p[2]; }
+    cx /= punkte.length; cz /= punkte.length;
+    for (const f of rezept.felder ?? []) {
+        if (!f?.griff || !f.setzbar || f.typ !== 'zahl') continue;
+        const wert = Number(parameter[f.name] ?? f.vorgabe);
+        if (!(wert > 0)) continue;
+        const kopf = { key: `feld:${subjekt.globalId}:${f.name}`, globalId: subjekt.globalId, name: subjekt.name ?? '',
+                       herkunft: 'cde', art: 'feldmass', werkzeug: `${rezept.id}-${f.name}-setzen`, felder: [f.name] };
+        if (f.griff.richtung === 'y') {
+            const vonOben = f.griff.von === 'oberkante';
+            const basisY = vonOben ? ok : uk;
+            if (!Number.isFinite(basisY)) continue;
+            aus.push({ ...kopf, pos: { x: cx, y: vonOben ? basisY - wert : basisY + wert, z: cz }, achsen: 'Y',
+                       feld: { name: f.name, richtung: 'y', von: vonOben ? 'oberkante' : 'unterkante', basisY } });
+        } else if (f.griff.richtung === 'quer' && punkte.length >= 2) {
+            const [a, b] = punkte;
+            const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+            if (!(l > 1e-9)) continue;
+            const n = { x: -(b[2] - a[2]) / l, z: (b[0] - a[0]) / l };
+            const m = { x: (a[0] + b[0]) / 2, z: (a[2] + b[2]) / 2 };
+            const y = Number.isFinite(ok) ? (uk + ok) / 2 : uk;
+            aus.push({ ...kopf, pos: { x: m.x + n.x * wert / 2, y, z: m.z + n.z * wert / 2 }, achsen: 'XZ',
+                       feld: { name: f.name, richtung: 'quer', mitte: m, normal: n } });
+        }
+    }
+    return aus;
+}
+
+/**
  * Aus der neuen Griff-Lage die FORMULARWERTE des Werkzeugs — derselbe Weg,
  * den auch das getippte Formular geht.
  *
@@ -496,6 +572,18 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
             const w = winkelGrad(c, griff.pos, pos);
             return Number.isFinite(w) ? { winkel: Math.round(w * 10) / 10 } : {};
         }
+        case 'feldmass': {
+            // DAS MASS EINES FELDES (Teil XXVII, B6): Abstand zur Bezugskante (y) oder
+            // doppelter Abstand zur Achse (quer) — absolut, wie das Formular.
+            const f = griff.feld ?? {};
+            let wert = NaN;
+            if (f.richtung === 'y') wert = f.von === 'oberkante' ? f.basisY - pos.y : pos.y - f.basisY;
+            else if (f.richtung === 'quer') wert = 2 * Math.abs((pos.x - f.mitte.x) * f.normal.x + (pos.z - f.mitte.z) * f.normal.z);
+            return Number.isFinite(wert) && wert > 0 ? { [f.name]: r3(wert) } : {};
+        }
+        case 'bauwerk-versatz':
+            // Ein VERSATZ (Teil XXVII, B2): um so viel, wie der Griff gewandert ist.
+            return { ost: r3(pos.x - griff.pos.x), nord: r3(-(pos.z - griff.pos.z)), hoehe: r3(pos.y - griff.pos.y) };
         case 'bauteil': {
             // Der Griff sitzt am Auswahlpunkt, das Werkzeug will den ANKER:
             // beide wandern um dasselbe Delta.

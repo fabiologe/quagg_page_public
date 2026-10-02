@@ -191,7 +191,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.2, setzbar: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.01, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.2, setzbar: true,
+              griff: { richtung: 'y', von: 'oberkante' } },
             tragend('Pset_SlabCommon'),
             ...ausfuehrung(),
         ],
@@ -227,8 +228,10 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3, setzbar: true },
-            { name: 'wandhoehe', titel: 'Wandhöhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 30, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3, setzbar: true,
+              griff: { richtung: 'quer' } },
+            { name: 'wandhoehe', titel: 'Wandhöhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 30, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
             tragend('Pset_WallCommon'),
             // Aussen: im Tiefbau steht die Wand meist im Erdreich (IDS „Wände — IsExternal").
             { name: 'aussen', titel: 'Aussenwand (leer = ja)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'ja',
@@ -257,8 +260,10 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Sohle des Fundaments', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.6, setzbar: true },
-            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.4, setzbar: true },
+            { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.1, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.6, setzbar: true,
+              griff: { richtung: 'quer' } },
+            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.4, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
             tragend('Pset_FootingCommon'),
             // Das Rezept HEISST so — die Vorgabe ist kein Raten.
             ...ausfuehrung('STRIP_FOOTING'),
@@ -292,7 +297,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             NAME, TYP,
             { name: 'hoehe', titel: 'Fusshöhe (Unterkante)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.05, max: 3, gueltig: { ueber: 0 }, vorgabe: 0.3 },
-            { name: 'wandhoehe', titel: 'Höhe über dem Fuss', einheit: 'm', typ: 'zahl', min: 0.05, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.5, setzbar: true },
+            { name: 'wandhoehe', titel: 'Höhe über dem Fuss', einheit: 'm', typ: 'zahl', min: 0.05, max: 10, gueltig: { ueber: 0 }, vorgabe: 0.5, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
             { name: 'tragend', titel: 'Tragend (leer = nein)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'nein',
               leerErlaubt: true, pset: 'Pset_WallCommon.LoadBearing' },
             { name: 'aussen', titel: 'Aussenwand (leer = nein)', typ: 'auswahl', optionen: JA_NEIN, vorgabe: 'nein',
@@ -338,7 +344,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             { name: 'name', titel: 'Bezeichnung', typ: 'text' },
             { name: 'hoehe', titel: 'Fussboden', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'raumhoehe', titel: 'Lichte Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 100, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true },
+            { name: 'raumhoehe', titel: 'Lichte Höhe', einheit: 'm', typ: 'zahl', min: 0.1, max: 100, gueltig: { ueber: 0 }, vorgabe: 2.5, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
             // Innen, solange niemand „offen" sagt (Fund 8) — ein offenes Becken ist EXTERNAL.
             ...ausfuehrung('INTERNAL'),
             // Quagg_Speicherraum (Z8): die Höhe, bei der die Schwelle anspringt — eine Eingabe.
