@@ -117,3 +117,52 @@ eingegeben). IFC: Prüftor sauber, IDS 0 von 18. Browserprobe wie Z9.4/B7.
 - **Nach V5 (≈ 6 Tage):** P7 ist modellierbar.
 
 **Heute realistisch:** V0 und V1.
+
+---
+
+## 7 · Stand 2026-10-02 abends — V0–V8 gebaut und abgenommen
+
+Auf Fabios „lets go" (E31–E38 wie empfohlen). Ein Commit je Stufe, jede mit Test und Gegenprobe (zusammen 31 Mutationen, alle rot).
+Nicht gebaut (`npm run build`), nicht gepusht, kein pm2. **`backend/app/ifc/*` wirkt sofort:** `schema.py` (ein Typ mehr) und
+`daten/quagg-merkmale.json` (`Quagg_Versickerung`) sind seit V6 in Produktion.
+
+| Stufe | Commit | Zahl vorher → nachher |
+|---|---|---|
+| V0 | `064980d` | Funde 1–8 eingefroren |
+| V1/V2 | `9b9e792` | Kammer 21 Kommandos / 21 Vorgänge → **1 / 1**; Paket Teil für Teil gleich (1e-9), Beton 22,164 m³ |
+| V3 | `b07deec` | Kammer 1 m länger 9 Kommandos → **1**; Beton 26,004 m³, Raum 37,5 m³, die Öffnung bleibt |
+| V4 | `4cdd115` | RÜB 21 Kommandos → **3**; Paket gleich Z9.2 (40,836 / 60,000 m³) |
+| V5 | `e8d3ad3` | Einbauten 0 → 5 Rezepte (Rechen, Drossel, Tauchwand, Sauberkeitsschicht, Bettung) |
+| V6 | `c51cbc4` | Rigole P8: 48 m³ × 30 % → NutzbaresVolumen **14,4 m³** gerechnet |
+| V7 | `0ca7795` | GrossSideArea 0 → Kammer **38,00 m²** (Schalung beidseitig 76,00) |
+| V8 | `eb4650b` | P7 in 20 Kommandos: **250,05 m³** gemessen (± 1 %), Beton 138,1416 m³; IFC: Prüftor sauber, IDS 0/18; Browser 14/14 |
+
+CDE 315 → 318 Dateien, 3535 → 3574 Tests; IFC 227 → 229 (+ `test_bauwerke` 48). Werkzeuge 104 → 147, ohne Oberfläche 81 → 124.
+
+**Abweichungen vom Plan, mit Grund:**
+- **Ein Werkzeug je Vorlage** (`bauwerk-aus-vorlage-<id>`) statt eines mit Vorlagenwahl — die Felder sind je Vorlage andere,
+  ein Formularfeld kann nicht von einem anderen Wert abhängen. Datei `services/rezept/Bauwerksvorlagen.js` (Katalogschicht) statt `services/vorlage/`.
+- **`bauwerksvorlage`** statt `vorlage` am Bauwerk: `parameter.vorlage` ist die Bibliotheks-Vorlage eines Bauteils (A1),
+  Paket (Typobjekt) und Eigenschaftsfenster lesen es als Id.
+- Feld **`lichteHoehe`** (nicht `hoehe` — das ist die Höhe des Einsetzpunkts).
+- **`DurchlaessigkeitKf`** statt `Durchlaessigkeit_kf` (P8): Namensregel der übrigen Merkmale; `IfcLinearVelocityMeasure`
+  neu in den typisierbaren Typen des Schreibers.
+- **E38 korrigiert:** `GrossSideArea` ist laut bSI-Vorlage die Ansicht der Mittelebene, EINE Seite. Ins IFC geht L × H;
+  die Schalung beidseitig (2 ×) steht in keiner Vorlage und wird nicht geschrieben.
+- **Rechen:** das Rechenfeld als Körper, nicht die Stäbe; ohne Anströmwinkel (Winkeleinheit der Datei offen).
+
+**Funde unterwegs:**
+- **16** (V3): Die Vorlage braucht ihren Ort — nach „Bauwerk verschieben/drehen/spiegeln" spränge die Kammer beim Wertesetzen
+  zurück. Das Bauwerk trägt einen **Rahmen** (Ort, Winkel, Spiegelung, Höhenversatz); die vier Lagewerkzeuge führen Rahmen und
+  letzte Auswertung mit, eine Kopie hängt ihre Rollen um. Getestet: Bewegen → Werte setzen trifft auf 1e-9 dasselbe wie Bewegen
+  → Handänderung → Werte setzen → Angleichen.
+- **17** (V4, nicht behoben, Kern): `werteAus` meldet bei null Schritten MIT `neu` zuerst „neu nennt n Kennungen mehr" statt
+  des Grunds des Werkzeugs. Ohne `neu` (die Oberfläche) kommt der Grund.
+- **18** (V5): Die Katalogprüfung kannte die Ausführung nicht — `Quagg_Rechen` gilt nur für IfcFilter/STRAINER, ein Rechen
+  wäre als Bibliotheksrezept abgelehnt worden. Der Selbsttest prüfte nur 2 eingebaute Rezepte; jetzt alle.
+- **Einheiten** der Merkmalsfelder als EINE Tabelle (l/s → m³/s, % → Anteil, m/s, m², m³).
+- **Vorfall (V6):** ein erster JSON-Neusatz des Katalogs war < 1 min ungültig in Produktion (20:04 UTC, sofort zurückgesetzt,
+  im pm2-Log nichts); danach nur noch Kopie → Prüfung → Tausch.
+
+**Offen:** Griff-Zug mit der Maus an einer Vorlage nicht im Browser gefahren; Ausgeben über den Server nicht gefahren (schreibt
+ins Register); Bibliotheks-Vorlagen mit Formeln (E31) und Lage-Verweise (E35) wie geplant nicht gebaut; Fund 17.
