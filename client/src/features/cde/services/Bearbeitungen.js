@@ -1649,6 +1649,36 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     },
     {
         /**
+         * ROHRDURCHFÜHRUNG SETZEN (Teil XXVII, B4): am ROHR (eigen oder geliefert),
+         * die Wand aus der Auswahl. Eine Öffnung Ø DN + 2 · Ringspalt dort, wo die
+         * Achse die Wand kreuzt — sie folgt Rohr und Wand.
+         */
+        id: 'durchfuehrung-setzen',
+        titel: 'Rohrdurchführung setzen',
+        icon: 'schnitt',
+        gruppe: 'gelaende',
+        bauform: ['achse+profil'],
+        braucht: ['achse', 'netzrolle:kante'],
+        mindestGuete: 'unbekannt',
+        art: 'erzeugt',
+        felder: [
+            { name: 'wirt', titel: 'Wand', typ: 'auswahl',
+              aus: { geste: 'auswahl', herkunft: 'cde', liefert: 'globalId' },
+              optionenAus: 'eigene:wirt' },
+            { name: 'ringspalt', titel: 'Ringspalt', einheit: 'm', typ: 'zahl', min: 0, max: 0.5, gueltig: { min: 0 }, vorgabe: 0.05 },
+        ],
+        vorbelegung: (el, { kandidatenVon = null } = {}) => ({ wirt: kandidatenVon?.('eigene:wirt', el)?.[0]?.id ?? '', ringspalt: 0.05 }),
+        anwenden: (el, werte) => {
+            const ringspalt = Number(werte?.ringspalt);
+            if (!el?.globalId || !werte?.wirt || werte.wirt === el.globalId || !(ringspalt >= 0)) return null;
+            return ableitungsSchritte({ rezept: 'durchfuehrung', quellen: { rohr: el.globalId, wirt: werte.wirt },
+                                        quellBasis: { rohr: el.quellmass?.pruefmass ?? null, wirt: null }, raster: {},
+                                        operationen: [{ art: 'durchfuehrung', parameter: { ringspalt } }], name: el.name || 'Rohr' });
+        },
+        warumNicht: (el, werte) => (!werte?.wirt ? 'Es fehlt die Wand, durch die das Rohr geht.' : null),
+    },
+    {
+        /**
          * BAUGRUBE UMS BAUWERK (Teil XIX) — das Gelände passt sich an ein
          * vorhandenes Bauteil an, statt an einen gezeichneten Umriss.
          *

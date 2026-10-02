@@ -53,8 +53,9 @@ const HEUTE = Object.freeze({
     // Z8: +9 Überlaufschwelle zeichnen und sieben „… ändern", Betriebswasser des Raums — 97/74.
     // Teil XXVII, B2: +4 Bauwerk verschieben / kopieren / drehen / spiegeln — 101/78.
     // B3: +1 Öffnung setzen — 102/79.
-    werkzeuge: 102,
-    ausgefuehrt: 79,
+    // B4: +1 Rohrdurchführung setzen — 103/80.
+    werkzeuge: 103,
+    ausgefuehrt: 80,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

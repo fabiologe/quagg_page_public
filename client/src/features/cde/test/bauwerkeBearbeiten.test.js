@@ -240,6 +240,53 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         expect(lauf.ableitungen.get(plan('cde-OE').ableitung).befunde.map(f => f.regel)).toEqual(['oeffnung_ausserhalb']);
     });
 
+    // B4 — ROHRDURCHFÜHRUNG: eine runde Öffnung, wo die Rohrachse die Wand kreuzt.
+    const ROHR = () => kommando('rohr-zeichnen', { neu: ['cde-RO'],
+        werte: { name: 'Zulauf', kategorie: 'IFCPIPESEGMENT', hoehe: 211, dn: 300 },
+        eingaben: { zug: [{ ost: 2, nord: 2, hoehe: 211 }, { ost: 2, nord: -2, hoehe: 211 }] } });
+    const DURCH = (mehr = {}) => kommando('durchfuehrung-setzen', { ziel: ['cde-RO'], neu: ['cde-DF', 'op-DF'],
+        werte: { wirt: 'cde-LN', ringspalt: 0.05, ...mehr } });
+    const durchfuehrung = (p) => p.bauteile.find(t => t.klasse === 'IFCOPENINGELEMENT');
+    const mitteVon = (o) => ['x', 'y', 'z'].map((_, k) => { const v = o.punkte.map(q => q[k] + o.ursprung[k]); return (Math.min(...v) + Math.max(...v)) / 2; });
+
+    it('B4: Rohr DN 300 durch die Längswand — Öffnung Ø 0,40 auf der Rohrachse (± 1 mm), an der Wand', async () => {
+        expect((await b.fuehreAus(ROHR())).ausgefuehrt).toBe(true);
+        expect(angeboten('cde-RO')).toContain('durchfuehrung-setzen');
+        expect(angeboten('cde-LN')).not.toContain('durchfuehrung-setzen');
+        const erg = await b.fuehreAus(DURCH());
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        const o = durchfuehrung(await paketAus());
+        expect(o).toMatchObject({ wirt: 'cde-LN', predefinedType: 'OPENING' });
+        expect(o.mengen.width).toBeCloseTo(0.4, 9);
+        expect(o.mengen.volume).toBeCloseTo(Math.PI * 0.2 ** 2 * 0.3, 9);
+        // Achse bei Ost 2, Nord −0,15 (Wandachse); Mitte des Rohrs = Sohle 211,00 + DN/2.
+        const [ost, nord, hoehe] = mitteVon(o);
+        expect(ost - 410300).toBeCloseTo(2, 3);
+        expect(nord - 5460100).toBeCloseTo(-0.15, 3);
+        expect(hoehe).toBeCloseTo(211.15, 3);
+    });
+
+    it('B4: das Rohr wandert 1 m nach Ost — die Durchführung geht mit, ihre Kennung bleibt', async () => {
+        await b.fuehreAus(ROHR());
+        await b.fuehreAus(DURCH());
+        const vor = durchfuehrung(await paketAus());
+        const v = vorbelegt('verschieben', 'cde-RO');
+        expect((await b.fuehreAus(kommando('verschieben', { ziel: ['cde-RO'], werte: { ...v, ost: v.ost + 1 } }))).ausgefuehrt).toBe(true);
+        const nach = durchfuehrung(await paketAus());
+        expect(nach.cdeId).toBe(vor.cdeId);
+        expect(mitteVon(nach)[0] - mitteVon(vor)[0]).toBeCloseTo(1, 6);
+    });
+
+    it('B4: kreuzt das Rohr die Wand nicht, entsteht nichts — mit Grund', async () => {
+        await b.fuehreAus(ROHR());
+        await b.fuehreAus(DURCH({ wirt: 'cde-SO' }));        // Stirnwand Ost bei Ost 8,75 — das Rohr liegt bei Ost 2
+        const stand = ae.wirksamerStand('erzeugt');
+        const lauf = neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm: async () => null, kernel: erzeugeKernel(), hoehenversatz: 0 });
+        const r = await lauf.baue('cde-DF');
+        expect(r.ok).toBe(false);
+        expect(r.fehler.join(' ')).toMatch(/kreuzt die Wand nicht/);
+    });
+
     it('Fund 6: die Bodenplatte wird verschoben — die Wände bleiben stehen', async () => {
         const v = vorbelegt('verschieben', 'cde-BP');
         const erg = await b.fuehreAus(kommando('verschieben', { ziel: ['cde-BP'], werte: { ...v, ost: v.ost + 1 } }));

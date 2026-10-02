@@ -41,6 +41,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'vorgang:teile': 'die Bauteile desselben Erdbau-Vorgangs',
     'eigene:bauwerk': 'ein eigenes Bauwerk, zu dem das Subjekt gehören kann',
     'bauwerk:teile': 'die Teile eines Bauwerks — auch die seiner Anlagenteile und Baugruppen',
+    'eigene:wirt': 'ein eigenes Bauteil mit Rechteckprofil, das eine Öffnung tragen kann (Wand, Fundament, Schwelle)',
 });
 
 /**
@@ -58,6 +59,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
         if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
         if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
+        if (art === 'eigene:wirt') return _eigeneWirte(wirksamerStand, el);
         return [];
     };
 }
@@ -130,6 +132,24 @@ function _bauwerksteile(wirksamerStand, el) {
     for (const [globalId, plan] of erzeugt) {
         if (globalId === wurzel || verdeckt.has(globalId) || !gehoert(globalId)) continue;
         aus.push({ id: globalId, titel: plan.name || globalId, bauplan: plan, behaelter: istBehaelter(plan) });
+    }
+    return aus;
+}
+
+/**
+ * Eigene Bauteile, die eine Öffnung tragen können (Teil XXVII, B4): ein Sweep mit
+ * RECHTECKprofil — seine Breite ist die Tiefe der Öffnung. Keine Namensfrage:
+ * das sagt die Deklaration des Rezepts.
+ */
+function _eigeneWirte(wirksamerStand, el) {
+    if (typeof wirksamerStand !== 'function') return [];
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const aus = [];
+    for (const [globalId, plan] of wirksamerStand('erzeugt')) {
+        if (globalId === el?.globalId || verdeckt.has(globalId)) continue;
+        const g = rezeptNach(plan?.rezept)?.geometrie;
+        if (g?.art !== 'sweep' || g.profil?.art !== 'rechteck') continue;
+        aus.push({ id: globalId, titel: plan.name || globalId, rezept: plan.rezept });
     }
     return aus;
 }

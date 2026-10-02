@@ -1826,6 +1826,94 @@ ABLEITUNGEN_ERWEITERT.oeffnung = {
     beschreibe: () => 'Öffnung im Bauteil',
 };
 
+/**
+ * DIE ROHRDURCHFÜHRUNG (Teil XXVII, B4): eine runde Öffnung dort, wo eine
+ * Rohrachse eine Wand kreuzt — Durchmesser DN + 2 · Ringspalt, entlang der
+ * Rohrachse durch die ganze Dicke. Dieselbe Klasse wie die Öffnung (B3), am
+ * selben Wirt; Paket, Nettomenge und Schreiber kennen sie schon. Bewegt sich
+ * das Rohr oder die Wand, rechnet der nächste Aufbau den Schnittpunkt neu.
+ */
+function _schnittXZ(a, b, c, d) {
+    const r = { x: b.x - a.x, z: b.z - a.z }, q = { x: d.x - c.x, z: d.z - c.z };
+    const nenner = r.x * q.z - r.z * q.x;
+    if (Math.abs(nenner) < 1e-12) return null;                  // parallel
+    const t = ((c.x - a.x) * q.z - (c.z - a.z) * q.x) / nenner;
+    const u = ((c.x - a.x) * r.z - (c.z - a.z) * r.x) / nenner;
+    return (t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) ? { t, u } : null;
+}
+
+function _durchfuehrungBauen(parameter, quellen) {
+    const rohr = quellen?.rohr, wirt = quellen?.wirt;
+    if (!rohr?.punkte?.length || !wirt?.punkte?.length) throw new Error('durchfuehrung: Rohr oder Wand ohne Achse');
+    const o = (parameter?.operationen ?? []).find(x => x?.art === 'durchfuehrung')?.parameter ?? {};
+    const dn = Number(rohr.dn);
+    const ringspalt = Number(o.ringspalt ?? 0.05);
+    const tiefe = Number(wirt.profilbreite);
+    if (!(dn > 0)) throw new Error('durchfuehrung: das Rohr nennt keinen DN');
+    if (!(tiefe > 0)) throw new Error('durchfuehrung: die Wand nennt keine Dicke');
+    if (!(ringspalt >= 0)) throw new Error('durchfuehrung: der Ringspalt ist negativ');
+    const st = stationiere(wirt.punkte);
+    let treffer = null;
+    for (let i = 0; i + 1 < rohr.punkte.length && !treffer; i++) {
+        for (let j = 0; j + 1 < wirt.punkte.length && !treffer; j++) {
+            const s = _schnittXZ(rohr.punkte[i], rohr.punkte[i + 1], wirt.punkte[j], wirt.punkte[j + 1]);
+            if (s) treffer = { i, j, ...s };
+        }
+    }
+    if (!treffer) throw new Error('durchfuehrung: das Rohr kreuzt die Wand nicht');
+    const a = rohr.punkte[treffer.i], b = rohr.punkte[treffer.i + 1];
+    const c = wirt.punkte[treffer.j], d = wirt.punkte[treffer.j + 1];
+    const yAchse = a.y + (b.y - a.y) * treffer.t;
+    const mitte = { x: a.x + (b.x - a.x) * treffer.t, y: rohrmitte(yAchse, rohr), z: a.z + (b.z - a.z) * treffer.t };
+    // Entlang der ROHRACHSE durch die Wand: schräg ist der Weg länger (1 / cos).
+    const len3 = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const dir = { x: (b.x - a.x) / len3, y: (b.y - a.y) / len3, z: (b.z - a.z) / len3 };
+    const wl = Math.hypot(d.x - c.x, d.z - c.z);
+    const nrm = { x: -(d.z - c.z) / wl, z: (d.x - c.x) / wl };
+    const cos = Math.abs(dir.x * nrm.x + dir.z * nrm.z);
+    if (cos < 0.1) throw new Error('durchfuehrung: das Rohr läuft fast parallel zur Wand');
+    const halb = (tiefe / cos) / 2 + OEFFNUNG_UEBERSTAND;
+    const durchmesser = dn / 1000 + 2 * ringspalt;
+    const achse = { punkte: [{ x: mitte.x - dir.x * halb, y: mitte.y - dir.y * halb, z: mitte.z - dir.z * halb },
+                             { x: mitte.x + dir.x * halb, y: mitte.y + dir.y * halb, z: mitte.z + dir.z * halb }] };
+    const { ergebnis, warnungen } = sweep({ profil: kreisProfil(durchmesser / 2, 24), achse });
+    if (!ergebnis) throw new Error(`durchfuehrung: ${warnungen.join('; ') || 'kein Körper'}`);
+    const flaeche = Math.PI * (durchmesser / 2) ** 2;
+    return {
+        teile: { oeffnung: { form: 'koerper', daten: ergebnis } },
+        kennzahlen: { breite: durchmesser, hoehe: durchmesser, tiefe, flaeche, imWirt: flaeche * tiefe / cos,
+                      station: (st.kum[treffer.j] ?? 0) + treffer.u * wl, mitteY: mitte.y },
+        befunde: [], warnungen,
+    };
+}
+
+ABLEITUNGEN_ERWEITERT.durchfuehrung = {
+    id: 'durchfuehrung',
+    titel: 'Rohrdurchführung',
+    icon: 'schnitt',
+    bauform: 'koerper',
+    kategorieVorgabe: 'IFCOPENINGELEMENT',
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [],
+    braucht: { rohr: ['achse+profil'], wirt: ['achse+profil'] },
+    formen:  { rohr: 'linie', wirt: 'linie' },
+    teile: [
+        { rolle: 'oeffnung', kategorie: 'IFCOPENINGELEMENT', bauform: 'koerper', form: 'koerper',
+          predefinedType: 'OPENING', name: (q) => `${q} · Durchführung`,
+          menge: { width: 'breite', height: 'hoehe', depth: 'tiefe', area: 'flaeche', volume: 'imWirt' } },
+    ],
+    async leite(parameter, quellen) {
+        return { bild: [], ..._durchfuehrungBauen(parameter, quellen) };
+    },
+    vorschau() {
+        return { primitive: [], faerbungen: [], chips: [{ art: 'vorschau', text: 'Durchführung: wo das Rohr die Wand kreuzt' }], hinweise: [] };
+    },
+    verschiebe: (parameter) => parameter,
+    fachmodell: (globalId) => ({ koerper: [globalId] }),
+    beschreibe: () => 'Rohrdurchführung',
+};
+
 export const ABLEITUNGEN = Object.freeze(ABLEITUNGEN_ERWEITERT);
 
 /** Ein Rezept aus dem Register, oder null. */
