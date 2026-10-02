@@ -57,8 +57,9 @@ const HEUTE = Object.freeze({
     // B5: +1 Auf Bauteil stellen — 104/81.
     // Teil XXVIII, V1: +1 Rechteckkammer aus Vorlage — 105/82.
     // V3: +2 Werte der Vorlage ändern, An Vorlage angleichen — 107/84.
-    werkzeuge: 107,
-    ausgefuehrt: 84,
+    // V4: +1 Zweikammer-RÜB aus Vorlage — 108/85.
+    werkzeuge: 108,
+    ausgefuehrt: 85,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

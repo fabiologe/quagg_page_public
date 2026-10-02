@@ -166,6 +166,10 @@ const NEU = [
     // Teil XXVIII, V1: ein Bauwerk aus einer Vorlage — ein Punkt, die Werte der Vorlage.
     { id: 'bauwerk-aus-vorlage-rechteckkammer', el: zug(P(0, 100, 0)), zug: [P(0, 100, 0)],
       werte: [{ name: 'Kammer', hoehe: '', laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }] },
+    // V4: der Zweikammer-RÜB.
+    { id: 'bauwerk-aus-vorlage-zweikammer-rueb', el: zug(P(300, 100, 0)), zug: [P(300, 100, 0)],
+      werte: [{ name: 'RÜB', hoehe: '', laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25,
+                ueberlaufhoehe: 2.4, schwelle: 0.5 }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },

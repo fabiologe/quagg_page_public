@@ -84,7 +84,7 @@ import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { BAUWERKSVORLAGEN, abweichungVon, gesteuerterStand, rahmenAus, rahmenNach, vorlageNach, vorlageTeile,
+import { BAUWERKSVORLAGEN, abweichungVon, gesteuerterStand, rahmenAus, rahmenNach, vorlageGrund, vorlageNach, vorlageTeile,
          vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
 
 /** Die Gruppen ordnen die Einstiege — nicht die Bauteile. */
@@ -1625,8 +1625,8 @@ function vorlageWerkzeug(vorlage) {
             const y = leer ? p[1] : weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0);
             const name = String(werte?.name ?? '').trim();
             const w = vorlagenWerte(vorlage, werte);
-            if (!name || !Number.isFinite(y) || !vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return null;
-            const rahmen = rahmenAus({ x: p[0], y, z: p[2] });
+            if (!name || !Number.isFinite(y) || vorlageGrund(vorlage, w)) return null;
+            const rahmen = rahmenAus({ x: p[0], y, z: p[2] }, el?.hoehenversatz ?? 0);
             const teile = vorlageTeile(vorlage, w, rahmen);
             // Kennungen: Bauwerk zuerst, dann die Rollen in Reihenfolge der Vorlage.
             const bauwerk = neueGlobalId();
@@ -1647,7 +1647,7 @@ function vorlageWerkzeug(vorlage) {
         warumNicht: (el, werte) => {
             if ((el?.punkte ?? []).length !== 1) return 'Ein Punkt: die Aussenecke Nordwest.';
             if (!String(werte?.name ?? '').trim()) return 'Das Bauwerk braucht eine Bezeichnung.';
-            return null;
+            return vorlageGrund(vorlage, vorlagenWerte(vorlage, werte));
         },
         vorgangstitel: (werte) => (werte?.name ? `${vorlage.titel} „${werte.name}" aus Vorlage` : null),
     };
@@ -1672,7 +1672,8 @@ function _vorlageSchritte(el, werteNeu, { kandidatenVon = null, angleichen = nul
     const vorlage = vorlageNach(bv?.id);
     if (!el?.globalId || !vorlage || !bv?.rahmen) return { grund: 'Dieses Bauwerk stammt aus keiner Vorlage.' };
     const w = vorlagenWerte(vorlage, { ...bv.werte, ...werteNeu });
-    if (!vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return { grund: 'Ein Wert der Vorlage fehlt oder ist nicht grösser als 0.' };
+    const nichtBaubar = vorlageGrund(vorlage, w);
+    if (nichtBaubar) return { grund: nichtBaubar };
     const teile = new Map((kandidatenVon?.('bauwerk:teile', el) ?? []).map(t => [t.id, t.bauplan]));
     const stand = { ...bv.stand };
     const schritte = [], uebersprungen = [];

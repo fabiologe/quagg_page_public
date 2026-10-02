@@ -21,9 +21,11 @@
 export const GESTEUERT = Object.freeze({
     platte: Object.freeze(['punkte', 'dicke']),
     wand: Object.freeze(['punkte', 'dicke', 'wandhoehe']),
-    raum: Object.freeze(['punkte', 'raumhoehe']),
-    ueberlaufschwelle: Object.freeze(['punkte', 'dicke', 'wandhoehe']),
+    raum: Object.freeze(['punkte', 'raumhoehe', 'betriebswasser']),
+    ueberlaufschwelle: Object.freeze(['punkte', 'dicke', 'wandhoehe', 'schwellenlaenge']),
 });
+// Gesteuert ist ein Feld nur, wenn die Vorlage es SETZT: die Rechteckkammer nennt
+// kein Betriebswasser — ein Planer darf es setzen, und es bleibt.
 
 const zahl = (name, titel, vorgabe, { min = 0.01, max = 100 } = {}) =>
     Object.freeze({ name, titel, einheit: 'm', typ: 'zahl', min, max, gueltig: { ueber: 0 }, vorgabe });
@@ -73,7 +75,68 @@ const RECHTECKKAMMER = Object.freeze({
     },
 });
 
-export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER });
+/**
+ * DER ZWEIKAMMER-RÜB — das Becken aus Teil XXVI, Z9.2: zwei Kammern gleicher
+ * lichter Länge hintereinander (West → Ost), dazwischen die Trennwand, auf ihr
+ * die Überlaufschwelle. Die Krone der Schwelle ist der Betriebswasserspiegel
+ * beider Kammern. Stirn- und Trennwand stehen zwischen den Längswänden.
+ */
+const ZWEIKAMMER_RUEB = Object.freeze({
+    id: 'zweikammer-rueb',
+    titel: 'Zweikammer-RÜB',
+    felder: Object.freeze([
+        zahl('laenge', 'Lichte Länge je Kammer (Ost–West)', 4),
+        zahl('breite', 'Lichte Breite (Nord–Süd)', 3),
+        zahl('lichteHoehe', 'Lichte Höhe', 2.5),
+        zahl('wand', 'Wanddicke', 0.3, { max: 3 }),
+        zahl('boden', 'Dicke der Bodenplatte', 0.4, { max: 5 }),
+        zahl('decke', 'Dicke der Decke', 0.25, { max: 5 }),
+        zahl('ueberlaufhoehe', 'Schwellenkrone über der Sohle', 2.4),
+        zahl('schwelle', 'Höhe der Schwelle auf der Trennwand', 0.5),
+    ]),
+    bauwerk: { name: 'RÜB', art: 'anlage', bauwerkstyp: 'RUEB' },
+    pruefe(w) {
+        if (!(w.schwelle < w.ueberlaufhoehe)) return 'Die Schwelle ist höher als ihre Krone — die Trennwand hätte keine Höhe.';
+        if (w.ueberlaufhoehe > w.lichteHoehe) return 'Die Schwellenkrone liegt über der Decke.';
+        return null;
+    },
+    rollen(w, ort) {
+        const { laenge: L, breite: B, lichteHoehe: H, wand: t, boden, decke, ueberlaufhoehe: U, schwelle: S } = w;
+        const { x: x0, y: y0, z: z0 } = ort;
+        const aussenL = 2 * L + 3 * t, aussenB = B + 2 * t;
+        const nn = y0 + U + (ort.hoehenversatz ?? 0);                     // Betriebswasser in m NN
+        const xT = x0 + t + L + t / 2;                                    // Achse der Trennwand
+        const quer = (a) => [[a, z0 + t], [a, z0 + t + B]];
+        const wand = (rolle, name, [a, b], mehr = {}) => ({ rolle, rezept: 'wand', kategorie: 'IFCWALL', name, stehtAuf: 'bodenplatte',
+            parameter: { punkte: achse(a, b, y0), dicke: t, wandhoehe: H, predefinedType: 'RETAININGWALL', ...mehr } });
+        const kammer = (rolle, name, xa) => ({ rolle, rezept: 'raum', kategorie: 'IFCSPACE', name, stehtAuf: 'bodenplatte',
+            parameter: { punkte: rechteck(xa, z0 + t, L, B, y0), raumhoehe: H, betriebswasser: nn } });
+        return [
+            { rolle: 'bodenplatte', rezept: 'platte', kategorie: 'IFCSLAB', name: 'Bodenplatte',
+              parameter: { punkte: rechteck(x0, z0, aussenL, aussenB, y0), dicke: boden, predefinedType: 'BASESLAB' } },
+            wand('laengswandNord', 'Längswand Nord', [[x0, z0 + t / 2], [x0 + aussenL, z0 + t / 2]]),
+            wand('laengswandSued', 'Längswand Süd', [[x0, z0 + t + B + t / 2], [x0 + aussenL, z0 + t + B + t / 2]]),
+            wand('stirnwandWest', 'Stirnwand West', quer(x0 + t / 2)),
+            wand('stirnwandOst', 'Stirnwand Ost', quer(x0 + aussenL - t / 2)),
+            // Die Trennwand steht innen und trägt die Schwelle: nicht aussen.
+            wand('trennwand', 'Trennwand', quer(xT), { wandhoehe: U - S, aussen: 'nein', predefinedType: 'SOLIDWALL' }),
+            { rolle: 'schwelle', rezept: 'ueberlaufschwelle', kategorie: 'IFCWALL', name: 'Beckenüberlauf', stehtAuf: 'trennwand',
+              parameter: { punkte: achse(...quer(xT), y0 + U - S), dicke: t, wandhoehe: S, ueberlaufart: 'Beckenüberlauf', schwellenlaenge: B } },
+            { rolle: 'decke', rezept: 'platte', kategorie: 'IFCSLAB', name: 'Decke', stehtAuf: 'laengswandNord',
+              parameter: { punkte: rechteck(x0, z0, aussenL, aussenB, y0 + H + decke), dicke: decke, predefinedType: 'ROOF' } },
+            kammer('kammer1', 'Kammer 1', x0 + t),
+            kammer('kammer2', 'Kammer 2', x0 + 2 * t + L),
+        ];
+    },
+});
+
+export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB });
+
+/** Was an diesen Werten nicht baubar ist — oder null. Jede Vorlage darf es sagen (`pruefe`). */
+export function vorlageGrund(vorlage, w) {
+    if (!vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return 'Ein Wert der Vorlage fehlt oder ist nicht grösser als 0.';
+    return vorlage.pruefe?.(w) ?? null;
+}
 
 /** Eine Vorlage beim Namen, oder null. */
 export function vorlageNach(id) {
@@ -98,8 +161,8 @@ export function vorlagenWerte(vorlage, roh = {}) {
  * Lagewerkzeug den Rahmen nach (`rahmenNach`) — sonst spränge die Kammer beim
  * nächsten Wertesetzen an den alten Ort zurück.
  */
-export function rahmenAus(ort) {
-    return { x: ort.x, y: ort.y, z: ort.z, winkel: 0, spiegel: false };
+export function rahmenAus(ort, hoehenversatz = 0) {
+    return { x: ort.x, y: ort.y, z: ort.z, winkel: 0, spiegel: false, hoehenversatz };
 }
 
 /** Ein Punkt der Vorlage (Grundriss um den Nullpunkt) in die Welt. */
@@ -113,7 +176,7 @@ function _inWelt(p, r) {
 
 /** Die Teile der Vorlage für diese Werte, in die Welt gesetzt. */
 export function vorlageTeile(vorlage, werte, rahmen) {
-    return vorlage.rollen(werte, { x: 0, y: rahmen.y, z: 0 }).map(t => ({
+    return vorlage.rollen(werte, { x: 0, y: rahmen.y, z: 0, hoehenversatz: rahmen.hoehenversatz ?? 0 }).map(t => ({
         ...t,
         parameter: Array.isArray(t.parameter?.punkte)
             ? { ...t.parameter, punkte: t.parameter.punkte.map(p => _inWelt(p, rahmen)) } : t.parameter,
@@ -143,7 +206,7 @@ export function rahmenNach(r, art, { delta = null, grad = 0, zentrum = null } = 
 /** Die gesteuerten Werte eines Bauplans (für die Abweichung, E34) — nur diese Felder. */
 export function gesteuerterStand(rezept, parameter) {
     const felder = GESTEUERT[rezept] ?? ['punkte'];
-    return Object.fromEntries(felder.map(f => [f, parameter?.[f] ?? null]));
+    return Object.fromEntries(felder.filter(f => parameter?.[f] !== undefined).map(f => [f, parameter[f]]));
 }
 
 const _gleich = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math.abs(a - b) <= 1e-6
@@ -153,7 +216,7 @@ const _gleich = (a, b) => (typeof a === 'number' && typeof b === 'number' ? Math
 /** Welche gesteuerten Felder eines Teils von der letzten Auswertung abweichen — [] heisst: unberührt. */
 export function abweichungVon(stand, rezept, parameter) {
     const ist = gesteuerterStand(rezept, parameter);
-    return Object.keys(ist).filter(f => !_gleich(ist[f], stand?.[f] ?? null));
+    return Object.keys(stand ?? {}).filter(f => !_gleich(ist[f] ?? null, stand[f]));
 }
 
 /**

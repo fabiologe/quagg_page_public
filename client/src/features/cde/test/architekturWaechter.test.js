@@ -191,7 +191,7 @@ const RUECKFUEHRUNG = {
         'durchfuehrung-setzen',
         // Teil XXVIII, V1 (Fabios E31): eine Bauwerk-Vorlage ist Code wie eine Ableitung —
         // `rollen(werte, ort)` je Vorlage; eine Fabrik, ein Werkzeug je Vorlage.
-        'bauwerk-aus-vorlage-rechteckkammer',
+        'bauwerk-aus-vorlage-rechteckkammer', 'bauwerk-aus-vorlage-zweikammer-rueb',
     ],
     /** Muster + Operation + Katalogeintrag gäbe es — trotzdem von Hand geschrieben (A6). */
     handgeschrieben: [
@@ -232,7 +232,7 @@ const RUECKFUEHRUNG = {
         'vorlage-werte-setzen', 'an-vorlage-angleichen',
     ],
 };
-const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 6, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1 Vorlage
+const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 7, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1/V4 je Vorlage eines
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [

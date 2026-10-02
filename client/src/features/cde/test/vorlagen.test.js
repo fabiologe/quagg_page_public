@@ -20,6 +20,7 @@ import { IfcAutor } from '../services/IfcAutor.js';
 import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
 import { BAUWERKSVORLAGEN } from '../services/rezept/Bauwerksvorlagen.js';
 import { e, k, KAMMER, TEILE } from './hilfen/kammerKommandos.js';
+import { RUEB, TEILE as RUEB_TEILE } from './hilfen/ruebKommandos.js';
 
 export class Speicher {
     constructor() { this.daten = new Map(); }
@@ -183,6 +184,8 @@ describe('Teil XXVIII, V3 — neu auswerten, Abweichung, angleichen', () => {
         // Die Öffnung: dieselbe Kennung, derselbe Bauplan, dieselbe Wand — und sie schneidet weiter.
         expect(JSON.stringify(plan('cde-OE'))).toBe(oe);
         expect(r6(p.bauteile.find(t => t.cdeId === 'cde-WN').mengen.netVolume)).toBe(r6(5.6 * 0.3 * 2.5 - Math.PI * 0.15 ** 2 * 0.3));
+        // Gesteuert ist nur, was die Vorlage setzt: die Rechteckkammer nennt kein Betriebswasser.
+        expect('betriebswasser' in plan('cde-RA').parameter).toBe(false);
         // Was die Vorlage nicht steuert, bleibt: Ausführung, Zugehörigkeit, Stand.
         expect(plan('cde-WN').parameter).toMatchObject({ predefinedType: 'RETAININGWALL', teilVon: 'cde-KA', hoeheVon: { bauteil: 'cde-BP' } });
         expect(befundeAmBauwerk()).toEqual([]);
@@ -282,5 +285,84 @@ describe('Teil XXVIII, V3 — neu auswerten, Abweichung, angleichen', () => {
         expect(ohne.ausgefuehrt).toBe(false);
         expect(ohne.grund).toMatch(/Nichts zu tun/);
         expect((await b.fuehreAus(k('vorlage-werte-setzen', { ziel: ['cde-WN'], werte: W }))).ausgefuehrt).toBe(false);
+    });
+});
+
+/** DER RÜB AUS DER VORLAGE — Kennungen wie in der Kommandofolge aus Z9.2 (Bauwerk zuerst). */
+export const RUEB_W = Object.freeze({ laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25, ueberlaufhoehe: 2.4, schwelle: 0.5 });
+export const RUEB_AUS_VORLAGE = (werte = {}) => k('bauwerk-aus-vorlage-zweikammer-rueb', {
+    neu: ['cde-RUEB', ...RUEB_TEILE], werte: { name: 'RÜB', hoehe: '', ...RUEB_W, ...werte }, eingaben: { zug: [e(0, 0, 210)] } });
+/** Was der Planer an der Schwelle selbst sagt — die Vorlage steuert es nicht. */
+export const RUEB_BEIWERT = () => [
+    k('ueberlaufschwelle-ueberfallbeiwert-setzen', { ziel: ['cde-UE'], werte: { ueberfallbeiwert: 0.6 } }),
+    k('ueberlaufschwelle-herleitung-setzen', { ziel: ['cde-UE'], werte: { herleitung: 'Annahme der Abnahme, nicht bemessen' } }),
+];
+
+describe('Teil XXVIII, V4 — der Zweikammer-RÜB aus der Vorlage', () => {
+    const plan = (g) => ae.wirksamerStand('erzeugt').get(g);
+    const fuehre = async (kom) => { const erg = await b.fuehreAus(kom); expect(erg.ausgefuehrt, `${kom.werkzeug}: ${erg.grund}`).toBe(true); return erg; };
+    const rund = (v) => (typeof v === 'number' ? Math.round(v * 1e9) / 1e9 + 0
+        : Array.isArray(v) ? v.map(rund) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([a, c]) => [a, rund(c)])) : v);
+    const teileVon = (p) => rund([...p.bauteile].sort((a, c) => a.cdeId.localeCompare(c.cdeId)));
+
+    it('3 Kommandos statt 21 — das Paket ist das aus Z9.2: Beton 40,836 m³, Speicherraum 60,000 m³', async () => {
+        const z92 = RUEB();
+        expect(z92).toHaveLength(21);
+        for (const kom of z92) await fuehre(kom);
+        const vorher = await paketAus(ae);
+        setActivePinia(createPinia()); repo.setBackend(new Speicher()); b = useBearbeitung(); ae = useAenderungen();
+        await fuehre(RUEB_AUS_VORLAGE());
+        for (const kom of RUEB_BEIWERT()) await fuehre(kom);
+        expect(new Set(ae.eintraege.map(x => x.vorgang)).size).toBe(3);
+        const nachher = await paketAus(ae);
+        expect(beton(nachher)).toBe(40.836);
+        expect(r6(nachher.bauteile.filter(t => t.klasse === 'IFCSPACE').reduce((a, t) => a + t.mengen.netVolume, 0))).toBe(60);
+        expect(teileVon(nachher)).toEqual(teileVon(vorher));
+        expect(nachher.bauwerke.map(w => [w.cdeId, w.bauwerkstyp ?? null])).toEqual(vorher.bauwerke.map(w => [w.cdeId, w.bauwerkstyp ?? null]));
+    });
+
+    it('die Schwellenkrone 2,40 → 2,20 m: Trennwand 1,70, Schwelle folgt, Betriebswasser 212,20 — der Beiwert bleibt', async () => {
+        await fuehre(RUEB_AUS_VORLAGE());
+        for (const kom of RUEB_BEIWERT()) await fuehre(kom);
+        await fuehre(k('vorlage-werte-setzen', { ziel: ['cde-RUEB'], werte: { ...RUEB_W, ueberlaufhoehe: 2.2 } }));
+        expect(plan('cde-TW').parameter.wandhoehe).toBeCloseTo(1.7, 9);
+        expect(rezeptNach('ueberlaufschwelle').stand.lies(plan('cde-UE').parameter)).toBeCloseTo(211.7, 9);
+        expect(rezeptNach('ueberlaufschwelle').stand.oberkante(plan('cde-UE').parameter)).toBeCloseTo(212.2, 9);
+        for (const g of ['cde-R1', 'cde-R2']) expect(plan(g).parameter.betriebswasser).toBeCloseTo(212.2, 9);
+        expect(plan('cde-UE').parameter).toMatchObject({ ueberfallbeiwert: 0.6, herleitung: 'Annahme der Abnahme, nicht bemessen' });
+        // Die wirksame Überfalllänge ist die lichte Breite — sie folgt ihr.
+        await fuehre(k('vorlage-werte-setzen', { ziel: ['cde-RUEB'], werte: { ...RUEB_W, ueberlaufhoehe: 2.2, breite: 3.5 } }));
+        expect(plan('cde-UE').parameter.schwellenlaenge).toBe(3.5);
+        expect(b.befundeVon('cde-RUEB').filter(x => x.regel === 'vorlage_abweichung')).toEqual([]);
+    });
+
+    it('Betriebswasser in m NN — auch mit Höhenversatz', async () => {
+        const erg = await b.fuehreAus(RUEB_AUS_VORLAGE(), { rahmen: { ...(await import('../services/kommando/Kommando.js')).rahmenOhneBezug({ hoehenversatz: 200 }) } });
+        expect(erg.ausgefuehrt, erg.grund).toBe(true);
+        expect(plan('cde-R1').parameter.betriebswasser).toBeCloseTo(212.4, 9);
+        expect(plan('cde-BP').parameter.punkte[0][1]).toBeCloseTo(10, 9);                // Welt = NN − Versatz
+    });
+
+    it('nicht baubar wird abgelehnt: Schwelle höher als ihre Krone, Krone über der Decke', async () => {
+        // Ohne `neu`, wie die Oberfläche es schickt: MIT `neu` meldet die Auswertung bei null
+        // Schritten zuerst die übrigen Kennungen, nicht den Grund des Werkzeugs (Nebenbefund 17).
+        const ohneNeu = (w) => { const { neu: _n, ...rest } = RUEB_AUS_VORLAGE(w); return rest; };
+        const a = await b.fuehreAus(ohneNeu({ schwelle: 2.5 }));
+        expect(a.ausgefuehrt).toBe(false);
+        expect(a.grund).toMatch(/Trennwand hätte keine Höhe/);
+        const c = await b.fuehreAus(ohneNeu({ ueberlaufhoehe: 3 }));
+        expect(c.grund).toMatch(/über der Decke/);
+        await fuehre(RUEB_AUS_VORLAGE());
+        const d = await b.fuehreAus(k('vorlage-werte-setzen', { ziel: ['cde-RUEB'], werte: { ...RUEB_W, schwelle: 2.4 } }));
+        expect(d.ausgefuehrt).toBe(false);
+        expect(d.grund).toMatch(/Trennwand hätte keine Höhe/);
+    });
+
+    it('die Felder des Wertesetzens sind die der Vorlage DIESES Bauwerks', async () => {
+        await fuehre(RUEB_AUS_VORLAGE());
+        const { felderFuer } = await import('../services/Bearbeitungen.js');
+        const { subjektAusStand } = await import('../services/kommando/Subjekt.js');
+        const el = subjektAusStand('cde-RUEB', { wirksamerStand: ae.wirksamerStand });
+        expect(felderFuer(nachId('vorlage-werte-setzen'), null, el).map(f => f.name)).toEqual(Object.keys(RUEB_W));
     });
 });
