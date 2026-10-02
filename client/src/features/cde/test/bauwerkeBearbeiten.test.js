@@ -342,6 +342,20 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         for (const [g, p] of Object.entries(vorher)) expect(plan(g).parameter.punkte, g).toEqual(p);
     });
 
+    it('B5 × B2: eine Bauwerkskopie steht auf IHRER Platte — die Verweise zeigen in die Kopie, nicht ins Original', async () => {
+        await aufstellen();
+        const neu = ['cde-K', ...TEILE.map((_, k) => `cde-K${k}`)];
+        expect((await b.fuehreAus(kommando('bauwerk-kopieren', { ziel: ['cde-RUEB'], neu, werte: { ost: 20, nord: 0, hoehe: 0 } }))).ausgefuehrt).toBe(true);
+        const kopie = (g) => `cde-K${TEILE.indexOf(g)}`;
+        expect(plan(kopie('cde-LN')).parameter.hoeheVon.bauteil).toBe(kopie('cde-BP'));
+        expect(plan(kopie('cde-DE')).parameter.hoeheVon.bauteil).toBe(kopie('cde-LN'));
+        // Das Original anheben — die Kopie bleibt, wo sie ist.
+        const v = vorbelegt('verschieben', 'cde-BP');
+        await b.fuehreAus(kommando('verschieben', { ziel: ['cde-BP'], werte: { ...v, hoehe: v.hoehe + 0.2 } }));
+        expect(unterkante('cde-LN')).toBeCloseTo(210.2, 9);
+        expect(unterkante(kopie('cde-LN'))).toBeCloseTo(210, 9);
+    });
+
     it('B5: wer die Wand selbst auf eine andere Höhe zieht, löst ihren Verweis — sie folgt der Platte dann nicht mehr', async () => {
         await aufstellen();
         // Die GANZE Wand woanders hingestellt (Unterkante 210,50) — ein einzelner gezogener

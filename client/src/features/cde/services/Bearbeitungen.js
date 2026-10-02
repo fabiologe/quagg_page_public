@@ -1511,8 +1511,16 @@ function _bauwerkLageSchritte(art, el, werte, kandidatenVon) {
         for (const t of teile) neu.set(t.id, neueGlobalId());
     }
     const kennung = (gid) => (kopie ? neu.get(gid) : gid);
-    const umgehaengt = (parameter) => (kopie && parameter?.teilVon && neu.has(parameter.teilVon)
-        ? { ...parameter, teilVon: neu.get(parameter.teilVon) } : parameter);
+    // UMHÄNGEN: was auf ein mitkopiertes Teil zeigt, zeigt in der Kopie auf dessen
+    // Kopie — die Zugehörigkeit (`teilVon`) und der Stand (`hoeheVon`, B5). Sonst
+    // stünden die Wände der Kopie auf der Platte des Originals.
+    const umgehaengt = (parameter) => {
+        if (!kopie || !parameter) return parameter;
+        let p = parameter;
+        if (p.teilVon && neu.has(p.teilVon)) p = { ...p, teilVon: neu.get(p.teilVon) };
+        if (p.hoeheVon?.bauteil && neu.has(p.hoeheVon.bauteil)) p = { ...p, hoeheVon: { ...p.hoeheVon, bauteil: neu.get(p.hoeheVon.bauteil) } };
+        return p;
+    };
     const schritte = [];
     if (kopie) {
         schritte.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ? `${plan.name} Kopie` : '',
