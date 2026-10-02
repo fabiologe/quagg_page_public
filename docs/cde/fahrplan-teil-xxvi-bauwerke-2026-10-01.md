@@ -398,8 +398,9 @@ Testgelände und Baugrube, Z9.4 Browserprobe. *(Stand abends; siehe nachts.)*
 Tests: CDE 308 / 3 490 → 313 / 3 508, IFC 211 → 225 (alle grün). Reichweite
 80/57 → 97/74. Jede Kur per Gegenprobe rot.
 
-**Bewusst nicht gebaut:** `Quagg_Versickerung` (nirgends belegt, was der Satz
-trägt); `Quagg_Speicherraum.Beckenart` und `.Speichervolumen` (stehen schon als
+**Bewusst nicht gebaut:** `Quagg_Versickerung` (*berichtigt 2026-10-02:* der Satz IST belegt —
+`planungsszenarien.md` P8 nennt Hohlraumanteil, kf, Versickerungsfläche, Herleitung; er folgt in
+Teil XXVIII, V6); `Quagg_Speicherraum.Beckenart` und `.Speichervolumen` (stehen schon als
 Klassifizierung bzw. `NetVolume` — Wissen an einem Ort); Ausführung/Objekttyp an
 Rohr, Schacht, Linie, Fläche, Pfosten (Fund 8 nannte Platte, Wand, Fundament); ein
 Umriss für das Bauwerk selbst (Fund 12). Die Normverweise im Katalog (DWA-A 111,

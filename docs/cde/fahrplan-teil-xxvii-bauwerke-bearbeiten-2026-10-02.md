@@ -256,7 +256,7 @@ Last seine Zeitgrenze (einzeln grün) — bekannt, nicht geändert.
 |---|---|---|
 | **13** | „Verschieben" eines eigenen Bauteils schrieb **Float32-Rauschen** in den Bauplan: der Anker kam aus der Grafikgeometrie (210,199 997 statt 210,2; x = 1,9·10⁻⁷) | behoben in B5: die Hülle eines eigenen Bauteils kommt aus dem Körper des Rezepts (Float64). Eine Browser-Fixture (vor der Kur aufgenommen) vergleicht die Hülle auf eine Float32-Stelle |
 | **14** | Ein eigenes Rohr schrieb **keine Nennweite** — die IDS-Regel „Rohrleitungen — Nennweite" verfehlte jedes | behoben in B7: DN-Feld → `Pset_PipeSegmentTypeCommon.NominalDiameter`, mm → m (0,3, nicht 300) |
-| **15** | Im **Strukturbaum** steht eine Öffnung als eigener Eintrag unter „Eigenbau", nicht unter ihrer Wand (im IFC hängt sie richtig am Wirt) | gelesen im Browser, **nicht gebaut** — Oberfläche |
+| **15** | Im **Strukturbaum** stand eine Öffnung als eigener Eintrag unter „Eigenbau", nicht unter ihrer Wand (im IFC hängt sie richtig am Wirt) | behoben (Nachtrag): ein Teil mit `quellen.wirt` hängt unter seinem Wirt |
 
 **Nicht gefahren / offen:** der Zug an einem Griff im Browser (die Griffe sind über `griffeFuer`/`griffZuWerten`
 und den Kommandoweg getestet, nicht mit der Maus); der Server-Lauf von „Ausgeben" (schreibt ins Register eines

@@ -17,6 +17,7 @@ sich nicht mit einer gekauften CDE vergleichen lässt.
 
 | Datei | was |
 |---|---|
+| **[fahrplan-teil-xxviii-vorlagen-und-einbauten-2026-10-02.md](fahrplan-teil-xxviii-vorlagen-und-einbauten-2026-10-02.md)** | **Teil XXVIII — Bauwerke aus Vorlagen, Einbauten, Rigole:** Kammer und RÜB aus einer Vorlage, über ihre Masse geändert; Rechen, Drossel, Tauchwand, Bettung; Rigole mit Hohlraumanteil; Schalungsfläche. Entscheidungen E31–E38, Stufen V0–V8 (≈ 16 Halbtage). **Geplant, nicht gebaut** |
 | **[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** | **Teil XXVII — Bauwerke bearbeiten:** Bauwerk als Ganzes, Öffnungen und Durchführungen als `IfcOpeningElement`, Höhen folgen, Griffe aus Feldern. **B0–B7 gebaut und abgenommen**, Funde 13–15 |
 | **[fahrplan-teil-xxvi-bauwerke-2026-10-01.md](fahrplan-teil-xxvi-bauwerke-2026-10-01.md)** | **Teil XXVI — Bauwerke aus Bauteilen:** Vorprüfung mit sieben Funden (zwei Fehler, die heute bestehen), Entscheidungen E17–E23, Stufen Z0–Z9, Abnahmefall Kammer. **komplett: Z0–Z9.4 gebaut und abgenommen**, Funde 8–12 behoben |
 | [kommando/](kommando/) | **Teil XXIV, Kommandodefinition** — Aufträge, zwei Audits, Abgleich, Entscheidungen E1–E9, das angenommene Schema, die Durchstiche K1–K10 und die beiden Wiederholungsproben. Eigene README |
@@ -46,7 +47,6 @@ diesen Dokumenten bestimmen:
 
 ## Wo der nächste Schritt steht
 
-**[fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md](fahrplan-teil-xxvii-bauwerke-bearbeiten-2026-10-02.md)** — Teil XXVII, Bauwerke bearbeiten:
-Bauwerk als Ganzes bewegen, Öffnungen als `IfcOpeningElement`, Höhen, die einander folgen,
-Griffe aus dem Katalog — gebaut und abgenommen. Als Nächstes laut Abschnitt 7: Lage-Verweise,
-dann Bauwerk-Vorlagen (Rechteckkammer, Zweikammer-RÜB).
+**[fahrplan-teil-xxviii-vorlagen-und-einbauten-2026-10-02.md](fahrplan-teil-xxviii-vorlagen-und-einbauten-2026-10-02.md)** — Teil XXVIII:
+eine Kammer in einem Kommando, über ihre Masse geändert; die Einbauten für P7, die Rigole (P8),
+die Schalungsfläche (P5). Entscheidungen E31–E38 offen; geplant, nicht gebaut.
