@@ -972,3 +972,32 @@ def test_gt1_schichten_auf_dem_gelaende_kommen_an(tmp_path):
     assert guids.guid_aus_cde_id("cde-T10") not in qto
     klassen = sorted(e.is_a() + "/" + (e.PredefinedType or "") for e in datei.by_type("IfcElement"))
     assert klassen == ["IfcCourse/ARMOUR"] * 3 + ["IfcEarthworksFill/USERDEFINED"] + ["IfcGeographicElement/VEGETATION"] * 2
+
+
+MULDE_GT2 = DATEN / "paket_mulde_gt2.json"
+
+
+def test_gt2_raeume_in_der_mulde_kommen_an(tmp_path):
+    """Teil XXIX G-T2: der Raum in der Erdmulde (`muldenraum`) — Dauerstau bis 99,50 und Rueckhalteraum
+    99,50 -> 100,00 eines kleinen Teichs (Rand 16 x 12, Tiefe 1, Boeschung 1 : 2) als IfcSpace/EXTERNAL.
+    Der Koerper fuellt die Mulde (kein Prisma), die Mengen stehen in Qto_SpaceBaseQuantities: von Hand
+    58,667 und 82,667 m3, gerechnet je 1/12 m3 weniger (die Eckgrate des Rasters; dazu < 1e-3 m3, weil ein
+    Gelaendeknoten genau auf dem Spiegel als 10 um darueber gilt). Die Wasserflaeche ohne die vier
+    Eckdreiecke genau auf dem Spiegel: 140 - 0,5 und 192 - 0,5 m2."""
+    paket = _georef(json.loads(MULDE_GT2.read_text(encoding="utf-8")))
+    ziel = tmp_path / "mulde_gt2.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="mulde-gt2")
+    # Raeume zaehlt der Schreiber getrennt; ein Paket NUR mit Raeumen nennt er "nur das Geruest" — gesagt, kein Fehler.
+    assert (bericht["raeume"], bericht["bauteile"], bericht["uebersprungen"]) == (2, 0, [])
+    assert bericht["warnungen"] == ["keine Bauteile geschrieben — die Datei traegt nur das Geruest"]
+    assert _regeln(ziel) == []
+    from app.ifc import guids
+    datei = ifcopenshell.open(str(ziel))
+    qto = _qto(datei)
+    for cde, volumen, flaeche in (("cde-DS", 58.6667 - 1 / 12, 139.5), ("cde-RH", 82.6667 - 1 / 12, 191.5)):
+        satz, _, werte = qto[guids.guid_aus_cde_id(cde)]
+        assert satz == "Qto_SpaceBaseQuantities"
+        assert sorted(werte) == ["GrossVolume", "Height", "NetFloorArea", "NetVolume"]
+        assert abs(werte["NetVolume"] - volumen) < 1e-3 and werte["GrossVolume"] == werte["NetVolume"]
+        assert abs(werte["NetFloorArea"] - flaeche) < 0.01 and round(werte["Height"], 6) == 0.5
+    assert sorted(s.PredefinedType for s in datei.by_type("IfcSpace")) == ["EXTERNAL", "EXTERNAL"]

@@ -311,7 +311,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G3** | Werkzeugleiste: Allgemein + Gewerk-Reiter + Suche; Zeichnen aus einem Reiter setzt das Gewerk | Erzeugen 18 flach → ≤ 8 je Ansicht | Oberfläche |
 | **G3b** | Mengen folgen der Klasse (L-F): Körpermaß → Qto der gewählten Klasse; Merkmalsfelder nur, wo ihr Satz gilt | Teich: Elemente ohne Mengen 16 → 0, Warnungen 67 → 0 | Kern klein |
 | **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) — **gebaut 2026-10-04**, § 11.4 | Teich: 9 Elemente in Form — **gemessen 0 → 9** (8 in der Mulde, der Rasen eben oberhalb) | Kern |
-| **G-T2** | Raum in einer Erdmulde (L-B) | Dauerstau 992 m³, Rückhalteraum 1 424 m³ gemessen | Kern |
+| **G-T2** | Raum in einer Erdmulde (L-B) — **gebaut 2026-10-04**, § 11.5 | Dauerstau 992 m³, Rückhalteraum 1 424 m³ — **gemessen 991,83 / 1 423,83** (0,5-m-Raster; die Eckgrate) | Kern |
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) | — | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung | Schacht mit Gerinne 1 Kommando | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart | Systeme im IFC 0 → je Gewerk eines; Prüftor sauber, IDS 0 | Schreiber (wirkt sofort) |
@@ -460,16 +460,49 @@ oder senkrecht zur Fläche. Die acht Schicht-Vorlagen aus G3 zeigen jetzt darauf
 | Weg als Band 50 × 2,5 × 0,15 | 18,75 m³, Gewerk Verkehrsfläche (Klassenregel IfcCourse/PAVEMENT) |
 | Teich § 11.1: die neun Schicht-Elemente aus den Vorlagen auf der Mulde | 9 geschlossen, 8 folgen der Mulde, Rasen eben auf 100,00 |
 | Zufall: 4 000 Umrisse mit Ecken auf halben Millimetern | 0 offene Körper (auf 1 mm gerundet: 2 044, auf 1 mm zusammengelegt: 6) |
-| eine muldenweite Schicht 52 × 32 m auf 0,5-m-Raster | 28 544 Dreiecke, 0,64 s |
+| eine muldenweite Schicht 52 × 32 m auf 0,5-m-Raster | 30 048 Dreiecke, 0,5 s (nach G-T2: entartete Stücke vom Schwerpunkt aus zerlegt) |
 | Browser :3001 ohne Projekt (`erdbau_vergleich.ifc`) | 12/12: Gelände aus der Engine, Vorlage belegt Formular samt Gelände vor, 32 m³ / 11,25 m³, Unterkante folgt (Spanne 1,12 m) |
 
 **Mengen nach Klasse:** IfcCourse → `Thickness`, `Volume`; eine Oberbodenandeckung (IfcEarthworksFill) → `CompactedVolume`,
 `Depth` (neu auch für die Platte mit dieser Klasse); IfcGeographicElement hat keine Qto-Vorlage → keine Mengen. Im IFC
 geprüft (Prüftor 0 Regelverstöße).
 
-**Grenzen, benannt:** (1) Dreieckszahl: eine Schicht über die ganze Mulde trägt 28 544 Dreiecke, auch dort, wo das
+**Grenzen, benannt:** (1) Dreieckszahl: eine Schicht über die ganze Mulde trägt 30 048 Dreiecke, auch dort, wo das
 Gelände eben ist — ebene Stücke zusammenzulegen spart das (nicht gebaut). (2) Wo die Anzeige das gelieferte Netz zeigt
 (fern jeder Formung), liegt die Unterkante auf dem 0,5-m-Raster dieses Netzes, nicht auf dem Netz selbst — eine dünne
 Schicht (Vlies 1 cm) kann dort stellenweise im Gelände verschwinden. (3) Eine Schicht hat noch keine Griffe (Umriss
 ziehen) — sie wird über Kommandos und Neuzeichnen geändert.
+
+### 11.5 G-T2 gebaut (2026-10-04, `test/raumInMulde.test.js`, `test_bauwerke.py::test_gt2…`)
+
+**Was es ist.** Eine Ableitung `muldenraum` (Quelle: das Gelände, wie die Schicht nach ALLEN Erdbau-Vorgängen) mit dem
+Werkzeug „Raum in der Mulde": Umriss (wo der Raum sein darf, meist der Muldenrand), Spiegel und untere Grenze in m NN
+(leer = bis aufs Gelände). Ein `IfcSpace`, dessen Körper die Mulde ausfüllt: Boden = max(Gelände, untere Grenze),
+Decke = Spiegel, nur wo das Gelände tiefer liegt. Kernel-Operation `raumInMulde` auf denselben Stücken wie die Schicht
+(Umriss ∩ Geländedreiecke), je Stück an der Linie Gelände = Spiegel (und = untere Grenze) geschnitten — exakt je Ebene.
+
+| gemessen | Wert |
+|---|---|
+| Teich § 11, Dauerstau Gelände → 99,00 | 991,83 m³ (von Hand 992,0; −1/6 m³ in den vier Eckgraten, quadratisch mit der Zelle: 0,25 m → −1/24) |
+| Rückhalteraum 99,00 → 100,00 | 1 423,83 m³ (von Hand 1 424,0); ein Prisma über der Wasserfläche hätte 1 196 |
+| Mengen | Qto_SpaceBaseQuantities: NetVolume, GrossVolume, NetFloorArea (Wasserfläche), Height (Tiefe) |
+| über den echten Weg (Ausheben, dann zwei Räume) | dieselben Zahlen wie das Raster von Hand, Gewerk Entwässerung |
+| Höhenversatz 300 | dasselbe Wasser (Spiegel in m NN) |
+| kleiner Teich durch Schreiber + Prüftor | 0 Regelverstöße, Mengen wie oben |
+| Zufall: 600 Gelände × 3 Räume, Additivität (bis a) + (a … b) = (bis b) | 0 offen, additiv auf 4·10⁻¹² |
+| Float32-Höhen, Spiegel GENAU auf Knoten, waagerechte Flecken auf Spiegelhöhe | 0 offen von 1 800 (vorher bis 111) |
+| Browser :3001 ohne Projekt, natürliche Senke im Testgelände | 10/10, Summe = Dauerstau + Rückhalteraum auf 10⁻⁶ |
+
+**Was die Probe gefunden hat** (Browser, dann Zufallstest): ein Spiegel 1,8·10⁻⁸ m über Geländeknoten aus Float32 machte
+den Körper offen. Drei Ursachen, drei Kuren, je mit roter Gegenprobe: (1) Knoten näher als 10 µm am Spiegel gelten der
+Rechnung als 10 µm darüber (`KNOTEN_ABSTAND`) — sonst berühren sich zwei Wasserflächen in einem Punkt; kostet am Teich
+< 10⁻³ m³, und die vier Eckdreiecke genau auf dem Spiegel (je cell²/2) zählen nicht zur Wasserfläche. (2) An der
+Wasserlinie trägt das Wasser einen Film von 1,5 µm statt Boden und Decke zusammenzulegen. (3) Ein Stück, dessen
+Fächer vom ersten Eckpunkt ein Dreieck ohne Fläche ergäbe, wird vom Schwerpunkt aus zerlegt (gilt auch für die Schicht).
+
+**Grenzen, benannt:** (1) Ein Aushub am GELIEFERTEN Gelände geht über die Kommandokonsole nicht (Kommandos ohne
+Oberfläche kennen nur eigene Bauteile) — im Browser wurde der Raum deshalb in der natürlichen Senke geprüft, der Teich
+über den echten Weg im Test. (2) Liegt der Spiegel am Umriss über dem Gelände, ist der Raum dort senkrecht abgeschnitten
+(Hinweis `raum_am_umriss`). (3) Der Reiter Entwässerung trägt jetzt neun Bauteile (Grenze aus § 5: acht) — der
+Regenrückhalteraum gehört fachlich dorthin.
 

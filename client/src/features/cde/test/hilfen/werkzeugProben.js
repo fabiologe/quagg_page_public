@@ -305,6 +305,10 @@ const NEU = [
     { id: 'gelaendeschicht-band-zeichnen', el: zug(P(80, 100, 60), P(100, 100, 60)), zug: [P(80, 100, 60), P(100, 100, 60)],
       werte: [{ name: 'Weg', kategorie: 'IFCCOURSE', predefinedType: 'PAVEMENT', objektTyp: '', dicke: 0.15, breite: 2.5, abstand: '',
                 richtung: 'lot', gelaende: '1Ur0Gelaende0Vertrag00' }] },
+    // G-T2: ein Raum zwischen Gelände und Spiegel.
+    { id: 'muldenraum-zeichnen', el: zug(P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)),
+      zug: [P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)],
+      werte: [{ name: 'Dauerstau', predefinedType: 'EXTERNAL', objektTyp: '', oben: 99.5, unten: '', gelaende: '1Ur0Gelaende0Vertrag00' }] },
     { id: 'flaeche-vereinigen', el: eigen('cde-F1'), werte: [{ andere: 'cde-F2' }], kandidaten: KANDIDATEN },
     { id: 'koerper-tauschen', el: eigen('cde-S1'), werte: [{ vorlage: 'vl-dn1200' }], kandidaten: KANDIDATEN },
 

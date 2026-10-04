@@ -1796,6 +1796,89 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
     },
 };
 
+/**
+ * EIN RAUM IN DER ERDMULDE (Teil XXIX, G-T2 — Konzept § 11.3, Lücke L-B).
+ *
+ * Der Dauerstau ist das Wasser zwischen Gelände und Spiegel, der Rückhalteraum das zwischen zwei Spiegeln — ein
+ * `IfcSpace`, dessen Körper die Mulde ausfüllt, nicht ein senkrechtes Prisma über der Wasserfläche. Dieselbe Quelle
+ * und dieselbe Faltung wie die Schicht: das Gelände nach ALLEN Erdbau-Vorgängen. Gespeichert: der Umriss (wo der Raum
+ * sein darf — meist der Muldenrand), der Spiegel und die untere Grenze in m NN.
+ */
+const _muldenOp = (parameter) => (parameter?.operationen ?? []).find(o => o?.art === 'muldenraum')?.parameter ?? {};
+
+ABLEITUNGEN_ERWEITERT.muldenraum = {
+    id: 'muldenraum',
+    gewerk: 'entwaesserung',
+    titel: 'Raum in der Mulde',
+    icon: 'space',
+    bauform: 'koerper',
+    kategorieVorgabe: 'IFCSPACE',
+    mindestPunkte: 3,
+    geschlossen: true,
+    felder: [],
+    gelaendeFolgt: true,
+    braucht: { gelaende: ['hoehenfeld'] },
+    formen:  { gelaende: 'raster' },
+    hoehenFelder: { muldenraum: ['oben', 'unten'] },
+    teile: [
+        { rolle: 'raum', kategorie: 'IFCSPACE', bauform: 'koerper', form: 'koerper',
+          predefinedType: (parameter) => (parameter?.predefinedType ? String(parameter.predefinedType).toUpperCase() : null),
+          name: (q) => q,
+          // Wasser misst man netto: Volumen, Wasserfläche, Tiefe — gleich unter den Namen von Qto_SpaceBaseQuantities.
+          menge: { netVolume: 'volumen', grossVolume: 'volumen', netFloorArea: 'wasserflaeche', height: 'tiefe' } },
+    ],
+
+    zusatzQuellen(parameter, quellen, genannt) {
+        return ABLEITUNGEN_ERWEITERT.gelaendeschicht.zusatzQuellen(
+            { operationen: [{ art: 'gelaendeschicht', parameter: { umriss: _muldenOp(parameter).umriss } }] }, quellen, genannt);
+    },
+
+    async leite(parameter, quellen, { kernel, stapel = null, hoehenversatz = 0 } = {}) {
+        const grob = quellen?.gelaende;
+        if (!grob) throw new Error('muldenraum: Gelände fehlt');
+        if (!kernel) throw new Error('muldenraum: kein Kernel');
+        const op = _muldenOp(parameter);
+        const umriss = (op.umriss ?? []).map(p => ({ x: Number(p.x), z: Number(p.z) }));
+        if (umriss.length < 3) throw new Error('muldenraum: kein Umriss');
+        const oben = Number(op.oben);
+        if (!Number.isFinite(oben)) throw new Error('muldenraum: kein Spiegel');
+        const unten = op.unten === null || op.unten === undefined || op.unten === '' ? null : Number(op.unten);
+        const fein = quellen.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
+        const raster = fein ?? grob;
+        const r = await kernel.op('raumInMulde', { raster }, {
+            umriss, oben: weltAusNn(oben, hoehenversatz), unten: unten === null ? null : weltAusNn(unten, hoehenversatz) });
+        if (!r.ergebnis) throw new Error(`muldenraum: ${r.warnungen.join('; ') || 'kein Körper'}`);
+        const e = r.ergebnis;
+        return {
+            teile: { raum: { form: 'koerper', daten: e } },
+            kennzahlen: { volumen: e.volumen, wasserflaeche: e.wasserflaeche, tiefe: weltAusNn(oben, hoehenversatz) - e.tiefster,
+                          spiegel: oben, unten, ausserhalb: e.ausserhalb, zellweite: raster.cell,
+                          gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle' },
+            befunde: r.warnungen.some(w => w.startsWith('raum_am_umriss')) ? [{ regel: 'raum_am_umriss', schwere: 'hinweis',
+                text: 'Am Umriss liegt das Gelände unter dem Spiegel — der Raum ist dort senkrecht abgeschnitten (Umriss grösser ziehen?)' }] : [],
+            warnungen: r.warnungen, bild: [],
+        };
+    },
+
+    vorschau(parameter, { farben = {} } = {}) {
+        const op = _muldenOp(parameter);
+        const ring = (op.umriss ?? []).map(p => ({ x: p.x, y: NaN, z: p.z }));
+        return { primitive: ring.length >= 3 ? [{ art: 'umriss', ring, farbe: farben.ziel ?? '#4fc3f7' }] : [],
+                 chips: [{ art: 'vorschau', text: `Raum bis ${op.oben ?? '?'} m NN${op.unten != null && op.unten !== '' ? ` ab ${op.unten} m NN` : ' über dem Gelände'} — Körper nach Übernehmen` }],
+                 hinweise: [] };
+    },
+    verschiebe: (parameter, delta) => ({
+        ...parameter,
+        operationen: (parameter?.operationen ?? []).map(o => (o?.art !== 'muldenraum' ? o : { ...o, parameter: {
+            ...o.parameter, umriss: (o.parameter?.umriss ?? []).map(p => ({ ...p, x: p.x + (delta?.x ?? 0), z: p.z + (delta?.z ?? 0) })) } })),
+    }),
+    fachmodell: (globalId) => ({ koerper: [globalId] }),
+    beschreibe: (nachher) => {
+        const op = _muldenOp(nachher?.parameter);
+        return `Raum in der Mulde · bis ${op.oben ?? '?'} m NN${op.unten != null && op.unten !== '' ? ` ab ${op.unten}` : ''}`;
+    },
+};
+
 ABLEITUNGEN_ERWEITERT.aussparung = {
     id: 'aussparung',
     gewerk: 'konstruktiv',

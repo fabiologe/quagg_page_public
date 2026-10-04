@@ -258,9 +258,9 @@ describe('Teil XXIX, G-T1 — die Schicht, die dem Gelände folgt', () => {
         expect(g.misserfolge).toEqual([]);
         const schichten = g.bauteile.filter(t => t.wert?.rezept === 'gelaendeschicht');
         expect(schichten).toHaveLength(9);
-        // Die drei muldenweiten Schichten (5–7) tragen je 28 544 Dreiecke — für den Vertrag genügen die übrigen
+        // Die drei muldenweiten Schichten (5–7) tragen je 30 048 Dreiecke — für den Vertrag genügen die übrigen
         // sechs: alle drei Klassen (IfcCourse, IfcEarthworksFill, IfcGeographicElement), 0,25 MB statt 2,4 MB.
-        expect(schichten.find(t => t.wert.name === 'T5').positionen.length / 9).toBe(28544);
+        expect(schichten.find(t => t.wert.name === 'T5').positionen.length / 9).toBe(30048);
         const teile = schichten.filter(t => !['T5', 'T6', 'T7'].includes(t.wert.name))
             .map(t => ({ ...t, globalId: `cde-${t.wert.name}` }));
         const p = baueEigenbauPaket({ teile, stand, bauwerke: [], crs: 'EPSG:25832', projektname: 'Teich', schluessel: 'teich-gt1',

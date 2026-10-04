@@ -75,7 +75,8 @@ describe('Vorlagen benutzen keine Bezeichner, die es nicht gibt', () => {
             }
         }
         expect(befunde).toEqual([]);
-    });
+    // Liest jede .vue-Datei der CDE: allein 4 s — unter der vollen Suite riss es die 5-s-Grenze (2026-10-04).
+    }, 30000);
 
     it('erkennt einen erfundenen Bezeichner — sonst prüft er ins Leere', () => {
         // Gegenprobe zur Erkennung selbst, an einer echten Datei mit einer

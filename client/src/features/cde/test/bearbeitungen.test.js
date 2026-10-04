@@ -112,8 +112,8 @@ describe('ausGruppe — der Einstieg über die Werkzeugleiste', () => {
         // Punkten — als Zeichenwerkzeug war es ein toter Knopf (2026-09-17).
         const ausZug = Object.entries(REZEPTE).filter(([, r]) => typeof r.baue === 'function').map(([id]) => id);
         // Teil XXVIII: dazu je Bauwerk-Vorlage eines — es nennt die Vorlage, kein Rezept.
-        // Teil XXIX, G-T1: dahinter die Schicht auf dem Gelände — eine Ableitung, als Fläche und als Band.
-        expect(ausGruppe('erzeugen').filter(b => !b.ausVorlage).map(b => b.rezept)).toEqual([...ausZug, 'gelaendeschicht', 'gelaendeschicht']);
+        // Teil XXIX, G-T1/G-T2: dahinter, was dem Gelände folgt — Schicht (Fläche, Band) und Raum in der Mulde.
+        expect(ausGruppe('erzeugen').filter(b => !b.ausVorlage).map(b => b.rezept)).toEqual([...ausZug, 'gelaendeschicht', 'gelaendeschicht', 'muldenraum']);
         expect(ausZug).not.toContain('gelaende');
     });
 

@@ -31,7 +31,69 @@ export const SCHICHT_MIN_DICKE = 0.002;
  * noch 6 — echte Stücke unter 1 mm Breite (eine Umrissecke 0,5 mm neben einer Rasterlinie) zerfallen dabei.
  * Mit 1 µm: 0. Das Attest rechnet mit DERSELBEN Toleranz.
  */
-const QUANT = 1e-6;
+export const QUANT = 1e-6;
+
+/**
+ * Ein Sammler für Ecken im Grundriss: legt zusammen, was in x UND z höchstens `QUANT` auseinander liegt.
+ * Zahlenschlüssel in zwei Stufen (x-Zelle → z-Zelle → Indizes) — Textschlüssel kosteten die Hälfte der Rechenzeit.
+ * @returns {{ecke(p, y): number, ex: number[], ez: number[], ey: number[]}}
+ */
+export function eckenSammler() {
+    const zellen = new Map();
+    const ex = [], ez = [], ey = [];
+    function ecke(p, y) {
+        const kx = Math.floor(p.x / QUANT), kz = Math.floor(p.z / QUANT);
+        for (let a = kx - 1; a <= kx + 1; a++) {
+            const spalte = zellen.get(a);
+            if (!spalte) continue;
+            for (let b = kz - 1; b <= kz + 1; b++) {
+                const liste = spalte.get(b);
+                if (!liste) continue;
+                for (const i of liste) if (Math.abs(ex[i] - p.x) <= QUANT && Math.abs(ez[i] - p.z) <= QUANT) return i;
+            }
+        }
+        const i = ex.length;
+        ex.push(p.x); ez.push(p.z); ey.push(typeof y === 'function' ? y(p) : y);
+        let spalte = zellen.get(kx);
+        if (!spalte) { spalte = new Map(); zellen.set(kx, spalte); }
+        const liste = spalte.get(kz);
+        if (liste) liste.push(i); else spalte.set(kz, [i]);
+        return i;
+    }
+    return { ecke, ex, ez, ey };
+}
+
+/** Die Randkanten einer Dreiecksliste: gerichtete Kanten ohne Gegenkante (Zahlenschlüssel). */
+export function randkanten(tris, n) {
+    const gerichtet = new Set();
+    for (const [a, b, c] of tris) { gerichtet.add(a * n + b); gerichtet.add(b * n + c); gerichtet.add(c * n + a); }
+    const rand = [];
+    for (const [a, b, c] of tris) for (const [u, w] of [[a, b], [b, c], [c, a]]) if (!gerichtet.has(w * n + u)) rand.push([u, w]);
+    return rand;
+}
+
+/**
+ * Ein konvexes Stück in Dreiecke — vom ersten Eckpunkt aus aufgefächert, ausser ein Fächerdreieck hätte keine Fläche:
+ * dann vom Schwerpunkt aus. Ein Stück, dessen Ecke wenige µm neben einer Rasterecke auf der Diagonale liegt, gab vom
+ * ersten Eckpunkt aus ein Dreieck ohne Fläche, das die lange Diagonale ein drittes Mal benutzte — der Körper war offen
+ * (gemessen 2026-10-04: Raum in der Mulde, Spiegel auf Float32-Knotenhöhe, 33 von 1 800). Der Schwerpunkt liegt im
+ * Inneren und bringt keinen neuen Randpunkt — die Nachbarn merken nichts.
+ * @returns {Array<[p, q, r]>} Dreiecke aus Punkten {x, z}
+ */
+export function zerlegeKonvex(poly) {
+    if (poly.length < 3) return [];
+    const f = (a, b, c) => _kreuz(a, b, c);
+    const faecher = [];
+    let entartet = false;
+    for (let j = 1; j + 1 < poly.length; j++) {
+        if (!(f(poly[0], poly[j], poly[j + 1]) > 1e-12)) entartet = true;
+        faecher.push([poly[0], poly[j], poly[j + 1]]);
+    }
+    if (!entartet) return faecher;
+    const s = { x: poly.reduce((a, p) => a + p.x, 0) / poly.length, z: poly.reduce((a, p) => a + p.z, 0) / poly.length };
+    // Ein Dreieck ohne Fläche fällt weg — ein Stück, dessen Punkte alle auf einer Linie liegen, ist keine Fläche.
+    return poly.map((a, j) => [s, a, poly[(j + 1) % poly.length]]).filter(([p, a, b]) => f(p, a, b) > 1e-12);
+}
 
 /** Fläche eines Rings im Grundriss (x/z), mit Vorzeichen. */
 function _flaeche2(ring) {
@@ -91,7 +153,7 @@ export function ohrenschnitt(ring) {
 }
 
 /** Konvexes Polygon gegen konvexes Dreieck (gegen den Uhrzeiger in x/z) — Sutherland–Hodgman. */
-function _schneide(poly, tri) {
+export function schneideKonvex(poly, tri) {
     let aus = poly;
     for (let e = 0; e < 3 && aus.length; e++) {
         const a = tri[e], b = tri[(e + 1) % 3];
@@ -113,7 +175,7 @@ function _schneide(poly, tri) {
 }
 
 /** Die zwei Dreiecke einer Zelle mit ihren Ebenen — oder [] im Loch (eine Ecke nicht endlich). */
-function _zellEbenen(raster, ix, iz) {
+export function zellEbenen(raster, ix, iz) {
     const { nz, heights } = raster;
     const k = (i, j) => { const n = rasterKnoten(raster, i, j); return { x: n.x, z: n.z, y: heights[i * nz + j] }; };
     const p00 = k(ix, iz), p10 = k(ix + 1, iz), p01 = k(ix, iz + 1), p11 = k(ix + 1, iz + 1);
@@ -145,25 +207,10 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
     if (!(nx >= 2 && nz >= 2 && cell > 0)) return { ergebnis: null, warnungen: ['schicht_leer: kein Gelände'] };
 
     // ── Stücke: Umriss-Dreieck ∩ Gelände-Dreieck, je eine Ebene ───────────────
-    // ECKEN ZUSAMMENLEGEN (siehe QUANT): in x UND z höchstens 1 µm auseinander — dann trennt auch das
-    // Attest sie nicht, und was übrig bleibt, liegt weiter auseinander als seine Rundung.
-    const ecken = new Map();        // Gitterzelle (QUANT) → Indizes
-    const ex = [], ez = [], ey = [], fw = [], fs = [];   // Lage, Geländehöhe, Gewicht, Σ Gewicht·Neigung
-    const ecke = (p, ebene) => {
-        const kx = Math.floor(p.x / QUANT), kz = Math.floor(p.z / QUANT);
-        for (let a = -1; a <= 1; a++) {
-            for (let b = -1; b <= 1; b++) {
-                for (const i of ecken.get(`${kx + a}_${kz + b}`) ?? []) {
-                    if (Math.abs(ex[i] - p.x) <= QUANT && Math.abs(ez[i] - p.z) <= QUANT) return i;
-                }
-            }
-        }
-        const i = ex.length;
-        const key = `${kx}_${kz}`;
-        ecken.set(key, [...(ecken.get(key) ?? []), i]);
-        ex.push(p.x); ez.push(p.z); ey.push(ebene.y(p.x, p.z)); fw.push(0); fs.push(0);
-        return i;
-    };
+    // ECKEN ZUSAMMENLEGEN (siehe QUANT): was übrig bleibt, liegt weiter auseinander als die Rundung des Attests.
+    const { ecke: eckeRoh, ex, ez, ey } = eckenSammler();
+    const fw = [], fs = [];   // je Ecke: Gewicht, Σ Gewicht·Neigung
+    const ecke = (p, ebene) => { const i = eckeRoh(p, (q) => ebene.y(q.x, q.z)); while (fw.length <= i) { fw.push(0); fs.push(0); } return i; };
     const oben = [];   // Dreiecke (Indextripel, gegen den Uhrzeiger in x/z)
     let grund = 0, ober = 0, umrissFl = 0;
     for (const [ia, ib, ic] of dreiecke) {
@@ -175,16 +222,12 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
         const iz0 = Math.max(0, Math.floor((minZ - z0) / cell)), iz1 = Math.min(nz - 2, Math.floor((maxZ - z0) / cell));
         for (let ix = ix0; ix <= ix1; ix++) {
             for (let iz = iz0; iz <= iz1; iz++) {
-                for (const ebene of _zellEbenen(raster, ix, iz)) {
-                    const stueck = _schneide(t, ebene.tri);
+                for (const ebene of zellEbenen(raster, ix, iz)) {
+                    const stueck = schneideKonvex(t, ebene.tri);
                     if (stueck.length < 3) continue;
-                    const idx = stueck.map(p => ecke(p, ebene));
-                    for (let j = 1; j + 1 < idx.length; j++) {
-                        const a = idx[0], b = idx[j], c = idx[j + 1];
+                    for (const [pa, pb, pc] of zerlegeKonvex(stueck)) {
+                        const a = ecke(pa, ebene), b = ecke(pb, ebene), c = ecke(pc, ebene);
                         if (a === b || b === c || a === c) continue;
-                        // Ein Dreieck ohne Fläche wird nicht eigens verworfen: es zählt nur nicht mit. Ob es
-                        // fehlen dürfte, machte gemessen keinen Unterschied (540 Kanten durch Rasterknoten,
-                        // 4 000 Umrisse auf halben Millimetern) — entscheidend war das Zusammenlegen (QUANT).
                         oben.push([a, b, c]);
                         const f = ((ex[b] - ex[a]) * (ez[c] - ez[a]) - (ez[b] - ez[a]) * (ex[c] - ex[a])) / 2;
                         if (!(f > 0)) continue;
@@ -209,10 +252,7 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
     }
 
     // ── Randkanten: gerichtete Kante ohne Gegenkante ──────────────────────────
-    const gerichtet = new Set();
-    for (const [a, b, c] of oben) for (const [u, w] of [[a, b], [b, c], [c, a]]) gerichtet.add(`${u}>${w}`);
-    const rand = [];
-    for (const [a, b, c] of oben) for (const [u, w] of [[a, b], [b, c], [c, a]]) if (!gerichtet.has(`${w}>${u}`)) rand.push([u, w]);
+    const rand = randkanten(oben, n);
 
     // ── Körper (nicht indiziert). three: Gegen den Uhrzeiger in x/z zeigt die Normale nach −Y; der
     //    Deckel wird deshalb gespiegelt, der Boden nicht. Wände je Randkante nach aussen. ────────────

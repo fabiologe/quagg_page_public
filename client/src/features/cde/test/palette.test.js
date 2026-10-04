@@ -29,17 +29,19 @@ describe('Teil XXIX, G3 — die Palette', () => {
         expect(titel(P().allgemein)).toEqual(['Linie', 'Fläche', 'Pfosten', 'Platte', 'Wand', 'Raum', 'Bauwerk anlegen']);
     });
 
-    it('jedes Zeichenwerkzeug steht im Reiter seines Gewerks; kein Abschnitt hat mehr als acht Einträge', () => {
+    it('jedes Zeichenwerkzeug steht im Reiter seines Gewerks; kein Abschnitt hat mehr als neun Einträge', () => {
         const p = P();
         const zeichnen = werkzeugKatalog().filter(b => b.gruppe === 'erzeugen');
         for (const b of zeichnen) {
             const in_ = p.gewerke.filter(g => [...g.bauteile, ...g.vorlagen].some(x => x.id === b.id && !x.gewerk)).map(g => g.id);
             expect(in_, b.id).toHaveLength(1);
         }
-        expect(Math.max(...p.gewerke.flatMap(g => [g.bauteile.length, g.vorlagen.length]))).toBeLessThanOrEqual(8);
+        // G-T2: die Entwässerung trägt neun — der Raum in der Mulde (Regenrückhaltung, DWA-M 176) gehört dorthin,
+        // nicht in einen fachfremden Reiter, nur damit die Liste kurz bleibt.
+        expect(Math.max(...p.gewerke.flatMap(g => [g.bauteile.length, g.vorlagen.length]))).toBeLessThanOrEqual(9);
         expect(Object.fromEntries(p.gewerke.map(g => [g.id, [g.bauteile.length, g.vorlagen.length]]))).toEqual({
             // G-T1: Schicht und Band auf dem Gelände im Wasserbau, dazu (mit Gewerk-Vorgabe) in Verkehr und Landschaft.
-            erdbau: [0, 0], entwaesserung: [8, 5], wasserbau: [2, 4], konstruktiv: [5, 2], verkehr: [2, 2], ausstattung: [1, 4],
+            erdbau: [0, 0], entwaesserung: [9, 5], wasserbau: [2, 4], konstruktiv: [5, 2], verkehr: [2, 2], ausstattung: [1, 4],
             leitungen: [1, 0], ta: [0, 1], landschaft: [2, 3], vermessung: [2, 1],
         });
     });

@@ -1762,79 +1762,94 @@ const ZEICHEN_GEWERK_FELD = Object.freeze({ name: 'gewerk', titel: 'Gewerk (leer
     optionen: Object.entries(GEWERKE).map(([wert, g]) => ({ wert, titel: g.titel })) });
 
 /**
- * EINE SCHICHT AUF DEM GELÄNDE ZEICHNEN (Teil XXIX, G-T1) — als Fläche (Umriss) oder als Band entlang einer
- * Achse mit Breite (Weg, Zufahrt; Lücke L-C). Beide schreiben DIESELBE Ableitung `gelaendeschicht`: das
- * Gelände ist Quelle, die Schicht wird bei jedem Aufbau auf das Gelände nach allen Erdbau-Vorgängen gelegt.
- * Klasse, Ausführung, Objekttyp stehen oben im Bauplan (wo `gewerkVon`, `objektTypVon` sie lesen); das
- * Gewerk nur, wo es von der Regel abweicht — wie beim Zeichnen eines Rezepts.
+ * WAS AUF DEM GELÄNDE LIEGT ODER IN IHM STEHT (Teil XXIX, G-T1/G-T2) — eine Fabrik für drei Werkzeuge:
+ *   schicht  eine Schicht als Fläche (Umriss) — Dichtung, Steinschüttung, Schilf …        → `gelaendeschicht`
+ *   band     dieselbe als Band entlang einer Achse mit Breite — Weg, Zufahrt (L-C)        → `gelaendeschicht`
+ *   raum     ein Raum zwischen Gelände und Spiegel — Dauerstau, Rückhalteraum (L-B)      → `muldenraum`
+ * Alle drei schreiben eine Ableitung mit dem Gelände als Quelle; der Lauf legt sie auf das Gelände nach allen
+ * Erdbau-Vorgängen. Klasse, Ausführung, Objekttyp stehen oben im Bauplan (wo `gewerkVon`, `objektTypVon` lesen);
+ * das Gewerk nur, wo es von der Regel abweicht — wie beim Zeichnen eines Rezepts.
  */
-function schichtWerkzeug({ band = false } = {}) {
-    const rz = rezeptNach('gelaendeschicht');
+const GELAENDE_ZEICHNEN = Object.freeze({
+    schicht: { id: 'gelaendeschicht-zeichnen', titel: 'Schicht auf dem Gelände zeichnen', rezept: 'gelaendeschicht', eingabe: 'umriss', mindestPunkte: 3 },
+    band:    { id: 'gelaendeschicht-band-zeichnen', titel: 'Band auf dem Gelände zeichnen', rezept: 'gelaendeschicht', eingabe: 'zug', mindestPunkte: 2, icon: 'route' },
+    raum:    { id: 'muldenraum-zeichnen', titel: 'Raum in der Mulde zeichnen', rezept: 'muldenraum', eingabe: 'umriss', mindestPunkte: 3 },
+});
+function gelaendeWerkzeug(art) {
+    const d = GELAENDE_ZEICHNEN[art];
+    const rz = rezeptNach(d.rezept);
+    const raum = art === 'raum';
     const zahl = (v, rueckfall) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? rueckfall : Number(v));
     return {
-        id: band ? 'gelaendeschicht-band-zeichnen' : 'gelaendeschicht-zeichnen',
-        titel: band ? 'Band auf dem Gelände zeichnen' : 'Schicht auf dem Gelände zeichnen',
+        id: d.id,
+        titel: d.titel,
         // Muster (Umriss bzw. Zug) + Katalogeintrag (die Ableitung) — W7 ordnet es darüber ein.
-        ausRezept: 'gelaendeschicht',
-        icon: band ? 'route' : rz.icon,
+        ausRezept: d.rezept,
+        icon: d.icon ?? rz.icon,
         gruppe: 'erzeugen',
         bauform: '*',
         mindestGuete: 'unbekannt',
         art: 'erzeugt',
-        eingabe: band ? 'zug' : 'umriss',
-        rezept: 'gelaendeschicht',
-        mindestPunkte: band ? 2 : 3,
-        geschlossen: !band,
+        eingabe: d.eingabe,
+        rezept: d.rezept,
+        mindestPunkte: d.mindestPunkte,
+        geschlossen: d.eingabe === 'umriss',
         // Die Punkte liegen AUF dem Gelände — gespeichert wird nur ihre Lage; die Höhe kommt bei jedem Aufbau neu.
         hoehenAus: 'gelaende',
         felder: [
             { name: 'name', titel: 'Name', typ: 'text', leerErlaubt: true },
-            { name: 'kategorie', titel: 'IFC-Typ', typ: 'text' },
+            ...(raum ? [] : [{ name: 'kategorie', titel: 'IFC-Typ', typ: 'text' }]),
             { name: 'predefinedType', titel: 'Ausführung (IFC-PredefinedType)', typ: 'text', leerErlaubt: true },
             { name: 'objektTyp', titel: 'Objekttyp (Pflicht bei USERDEFINED)', typ: 'text', leerErlaubt: true },
-            { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.005, max: 3, gueltig: { min: rz.minDicke } },
-            ...(band ? [{ name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.5, max: 50, gueltig: { ueber: 0 } }] : []),
-            { name: 'abstand', titel: 'Abstand über Gelände (leer = 0)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'richtung', titel: 'Dicke messen', typ: 'auswahl', leerErlaubt: true,
-              optionen: Object.entries(rz.richtungen).map(([wert, titel]) => ({ wert, titel })) },
+            ...(raum ? [
+                { name: 'oben', titel: 'Spiegel', einheit: 'm NN', typ: 'zahl' },
+                { name: 'unten', titel: 'Untere Grenze (leer = Gelände)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+            ] : [
+                { name: 'dicke', titel: 'Dicke', einheit: 'm', typ: 'zahl', min: 0.005, max: 3, gueltig: { min: rz.minDicke } },
+                ...(art === 'band' ? [{ name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.5, max: 50, gueltig: { ueber: 0 } }] : []),
+                { name: 'abstand', titel: 'Abstand über Gelände (leer = 0)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+                { name: 'richtung', titel: 'Dicke messen', typ: 'auswahl', leerErlaubt: true,
+                  optionen: Object.entries(rz.richtungen).map(([wert, titel]) => ({ wert, titel })) },
+            ]),
             { name: 'gelaende', titel: 'Gelände (leer = das erste)', typ: 'auswahl', leerErlaubt: true, optionenAus: 'gelaende' },
             ZEICHEN_GEWERK_FELD,
         ],
         vorbelegung: (el, { kandidatenVon = null } = {}) => ({
-            name: '', kategorie: rz.kategorieVorgabe, predefinedType: '', objektTyp: '', dicke: 0.3,
-            ...(band ? { breite: 3 } : {}), abstand: '', richtung: 'lot',
+            name: '', predefinedType: raum ? 'EXTERNAL' : '', objektTyp: '',
+            ...(raum ? { oben: '', unten: '' } : { kategorie: rz.kategorieVorgabe, dicke: 0.3, abstand: '', richtung: 'lot' }),
+            ...(art === 'band' ? { breite: 3 } : {}),
             gelaende: kandidatenVon?.('gelaende', el)?.[0]?.id ?? '',
         }),
         anwenden: (el, werte, { kandidatenVon = null } = {}) => {
             const punkte = (el?.punkte ?? [])
                 .map(p => (Array.isArray(p) ? { x: Number(p[0]), z: Number(p[2]) } : { x: Number(p?.x), z: Number(p?.z) }))
                 .filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
-            if (punkte.length < (band ? 2 : 3)) return null;
+            if (punkte.length < d.mindestPunkte) return null;
             const kandidaten = kandidatenVon?.('gelaende', el) ?? [];
             const gelaende = String(werte?.gelaende || kandidaten[0]?.id || '');
             if (!gelaende) return null;
             const k = kandidaten.find(x => x.id === gelaende) ?? null;
-            const kategorie = String(werte?.kategorie || rz.kategorieVorgabe).toUpperCase();
+            const kategorie = raum ? rz.kategorieVorgabe : String(werte?.kategorie || rz.kategorieVorgabe).toUpperCase();
             const oben = {
                 kategorie,
                 predefinedType: werte?.predefinedType ? String(werte.predefinedType).toUpperCase() : null,
                 objektTyp: String(werte?.objektTyp ?? '').trim() || null,
                 ...(werte?.vorlage ? { vorlage: String(werte.vorlage) } : {}),
             };
-            if (istGewerk(werte?.gewerk) && werte.gewerk !== gewerkVon({ rezept: 'gelaendeschicht', kategorie, parameter: oben }).gewerk) {
+            if (istGewerk(werte?.gewerk) && werte.gewerk !== gewerkVon({ rezept: d.rezept, kategorie, parameter: oben }).gewerk) {
                 oben.gewerk = werte.gewerk;
             }
-            const op = {
-                ...(band ? { achse: punkte, breite: Number(werte?.breite) } : { umriss: punkte }),
-                dicke: Number(werte?.dicke),
-                abstand: zahl(werte?.abstand, 0),
-                richtung: rz.richtungen[werte?.richtung] ? werte.richtung : 'lot',
-            };
+            // Die Höhen eines Raums stehen in m NN — wie jede Höhe, die der Planer tippt; der Lauf rechnet um.
+            const op = raum
+                ? { umriss: punkte, oben: Number(werte?.oben), unten: zahl(werte?.unten, null) }
+                : { ...(art === 'band' ? { achse: punkte, breite: Number(werte?.breite) } : { umriss: punkte }),
+                    dicke: Number(werte?.dicke), abstand: zahl(werte?.abstand, 0),
+                    richtung: rz.richtungen[werte?.richtung] ? werte.richtung : 'lot' };
             return _anModell(ableitungsSchritte({
-                rezept: 'gelaendeschicht',
+                rezept: d.rezept,
                 quellen: { gelaende }, quellBasis: { gelaende: k?.pruefmass ?? null }, raster: { cell: k?.cell ?? null },
-                operationen: [{ art: 'gelaendeschicht', parameter: op }],
-                name: String(werte?.name ?? '').trim() || oben.objektTyp || (band ? 'Band' : 'Schicht'),
+                operationen: [{ art: d.rezept, parameter: op }],
+                name: String(werte?.name ?? '').trim() || oben.objektTyp || rz.titel,
                 oben,
             }), el?.modellSha);
         },
@@ -1993,8 +2008,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // einen Bauplan an, den sein eigenes Rezept nicht bauen kann. Ein Gelände
     // entsteht über die Erdbau-Werkzeuge, nie über einen gezeichneten Zug.
     ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function').map(zeichenBearbeitung),
-    // Teil XXIX, G-T1: eine Schicht, die dem Gelände folgt — als Fläche und als Band entlang einer Achse.
-    schichtWerkzeug(), schichtWerkzeug({ band: true }),
+    // Teil XXIX, G-T1/G-T2: was dem Gelände folgt — eine Schicht (Fläche, Band) und ein Raum in der Mulde.
+    ...Object.keys(GELAENDE_ZEICHNEN).map(gelaendeWerkzeug),
     // Teil XXVII, B2: das Bauwerk als Ganzes — vier Werkzeuge aus EINER Fabrik.
     ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
     // Teil XXVIII, V1: je eingebauter Vorlage ein Werkzeug — ein Bauwerk, ein Kommando.
