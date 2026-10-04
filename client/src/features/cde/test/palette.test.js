@@ -31,7 +31,8 @@ describe('Teil XXIX, G3 — die Palette', () => {
 
     it('jedes Zeichenwerkzeug steht im Reiter seines Gewerks; kein Abschnitt hat mehr als neun Einträge', () => {
         const p = P();
-        const zeichnen = werkzeugKatalog().filter(b => b.gruppe === 'erzeugen');
+        // „Baugruppe setzen" (G5) steht nicht selbst in der Palette, sondern über seine Baugruppen (Vorlagen).
+        const zeichnen = werkzeugKatalog().filter(b => b.gruppe === 'erzeugen' && !b.ausBibliothek);
         for (const b of zeichnen) {
             const in_ = p.gewerke.filter(g => [...g.bauteile, ...g.vorlagen].some(x => x.id === b.id && !x.gewerk)).map(g => g.id);
             expect(in_, b.id).toHaveLength(1);

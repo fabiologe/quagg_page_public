@@ -65,8 +65,9 @@ const HEUTE = Object.freeze({
     // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände) — 154/131.
     // G-T2: +1 Raum in der Mulde — 155/132.
     // G4: +1 Von der Vorlage lösen — 156/133.
-    werkzeuge: 156,
-    ausgefuehrt: 133,
+    // G5: +1 Baugruppe setzen — 157/134.
+    werkzeuge: 157,
+    ausgefuehrt: 134,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

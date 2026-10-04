@@ -27,6 +27,7 @@ import { GEOMETRIE_ARTEN, KOERPERMASSE, PROFIL_ARTEN, geometrieSchluessel, profi
 import { getPsetsForType } from '../../data/pset-templates.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { ACHSBEZUEGE } from '../Achsbezug.js';
+import { pruefeBaugruppe } from '../rezept/Baugruppe.js';
 import { zielfehler, lagezielfehler, rechenzielfehler } from './Merkmalsziele.js';
 import { GEWERKE, istGewerk } from './Gewerke.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
@@ -110,8 +111,17 @@ function _vorlage(v, fehler) {
     if (!String(v.name ?? '').trim()) fehler.push('Der Name fehlt.');
     if (!rezeptNach(v.rezept)) fehler.push(`Unbekanntes Rezept „${v.rezept}".`);
     if (v.gewerk !== undefined && !istGewerk(v.gewerk)) fehler.push(`Gewerk „${v.gewerk}" gibt es nicht.`);
+    // EINE BAUGRUPPE (G5): ein Bauwerk mit Teilen — nur Daten, nur bekannte Rezepte, Verweise nur auf eigene Rollen.
+    if (v.art !== undefined && v.art !== 'baugruppe') fehler.push(`Vorlagenart „${v.art}" gibt es nicht.`);
+    if (v.art === 'baugruppe') {
+        if (!rezeptNach(v.rezept)?.behaelter) fehler.push('Eine Baugruppe legt ein Bauwerk an — Rezept muss das Bauwerk sein.');
+        pruefeBaugruppe(v, fehler);
+    }
     // Das Werkzeug, mit dem gezeichnet wird (G-T1) — sonst `${rezept}-zeichnen`.
-    if (v.werkzeug !== undefined && !/^[a-z0-9-]+-zeichnen$/.test(String(v.werkzeug))) fehler.push(`Werkzeug „${v.werkzeug}" ist kein Zeichenwerkzeug.`);
+    // Ein Zeichenwerkzeug — oder „Baugruppe setzen" (G5); kein beliebiges Werkzeug.
+    if (v.werkzeug !== undefined && !/^[a-z0-9-]+-zeichnen$/.test(String(v.werkzeug)) && v.werkzeug !== 'baugruppe-setzen') {
+        fehler.push(`Werkzeug „${v.werkzeug}" ist kein Zeichenwerkzeug.`);
+    }
     const vorgaben = v.vorgaben ?? {};
     if (!_istObjekt(vorgaben)) { fehler.push('Vorgaben müssen ein Objekt sein.'); return; }
     for (const [feld, wert] of Object.entries(vorgaben)) {

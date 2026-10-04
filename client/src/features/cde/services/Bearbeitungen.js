@@ -85,6 +85,7 @@ import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
 import { GEWERKE, istGewerk } from './katalog/Gewerke.js';
+import { alsVorlage, verweiseAufloesen } from './rezept/Baugruppe.js';
 import { BAUWERKSVORLAGEN, abweichungVon, gesteuerterStand, rahmenAus, rahmenNach, vorlageGrund, vorlageNach, vorlageTeile,
          vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
 
@@ -1788,6 +1789,62 @@ const VORLAGE_WERKZEUGE = [
     },
 ];
 
+/**
+ * EINE BAUGRUPPE SETZEN (Teil XXIX, G5 — Konzept § 6): ein fertiges Bauwerk aus der Bibliothek, gesetzt mit EINEM Punkt
+ * („Mitte unten" der Gruppe) und einer Drehung. Ein Kommando legt das Bauwerk und alle Teile an — Kennungen: das
+ * Bauwerk zuerst, dann die Teile in der Reihenfolge der Baugruppe. Dieselbe Rechnung wie eine Bauwerk-Vorlage
+ * (`vorlageTeile`: Rahmen mit Ort und Winkel); Verweise unter den Teilen (Anschluss, steht auf) zeigen danach auf die
+ * neuen Kennungen. Das Bauwerk nennt seine Herkunft (`parameter.vorlage`), wie ein Bauteil aus der Bibliothek.
+ */
+const BAUGRUPPE_WERKZEUG = {
+    id: 'baugruppe-setzen',
+    titel: 'Baugruppe setzen',
+    icon: 'building',
+    gruppe: 'erzeugen',
+    // Die Palette zeigt die BAUGRUPPEN (Vorlagen im Reiter ihres Gewerks), nicht dieses Werkzeug als eigenen Knopf.
+    ausBibliothek: 'baugruppe',
+    bauform: '*',
+    mindestGuete: 'unbekannt',
+    art: 'erzeugt',
+    eingabe: 'zug',
+    mindestPunkte: 1,
+    eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 } }],
+    felder: [
+        { name: 'vorlage', titel: 'Baugruppe', typ: 'auswahl', optionenAus: 'vorlage:baugruppe' },
+        { name: 'name', titel: 'Bezeichnung (leer = wie die Baugruppe)', typ: 'text', leerErlaubt: true },
+        { name: 'hoehe', titel: 'Unterkante (leer = Höhe des Punkts)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+        { name: 'drehung', titel: 'Drehung (leer = 0)', einheit: '°', typ: 'zahl', leerErlaubt: true },
+    ],
+    vorbelegung: (el, { kandidatenVon = null } = {}) => ({
+        vorlage: kandidatenVon?.('vorlage:baugruppe', el)?.[0]?.id ?? '', name: '', hoehe: '', drehung: '' }),
+    anwenden: (el, werte, { kandidatenVon = null } = {}) => {
+        const bg = (kandidatenVon?.('vorlage:baugruppe', el) ?? []).find(k => k.id === werte?.vorlage)?.baugruppe;
+        const [p] = alsRaumpunkte(el?.punkte ?? [], NaN);
+        if (!bg || !p || el.punkte.length !== 1) return null;
+        const leer = (v) => v === '' || v === null || v === undefined || !Number.isFinite(Number(v));
+        const y = leer(werte?.hoehe) ? p[1] : weltAusNn(Number(werte.hoehe), el?.hoehenversatz ?? 0);
+        if (!Number.isFinite(y)) return null;
+        const rahmen = { ...rahmenAus({ x: p[0], y, z: p[2] }, el?.hoehenversatz ?? 0), winkel: leer(werte?.drehung) ? 0 : Number(werte.drehung) };
+        const teile = vorlageTeile(alsVorlage(bg), {}, rahmen);
+        const bauwerk = neueGlobalId();
+        const gid = Object.fromEntries(teile.map(t => [t.rolle, neueGlobalId()]));
+        const name = String(werte?.name ?? '').trim() || bg.name;
+        const schritte = [erzeugtEintrag({ rezept: behaelterRezept(), name, globalId: bauwerk,
+                                           parameter: { ...(bg.bauwerk ?? {}), vorlage: bg.id } })];
+        for (const t of teile) {
+            schritte.push(erzeugtEintrag({ rezept: t.rezept, kategorie: t.kategorie, name: t.name, globalId: gid[t.rolle],
+                parameter: { ...verweiseAufloesen(t.parameter, (r) => gid[r] ?? null), teilVon: bauwerk } }));
+        }
+        return schritte;
+    },
+    warumNicht: (el, werte, { kandidatenVon = null } = {}) => {
+        if (!(kandidatenVon?.('vorlage:baugruppe', el) ?? []).some(k => k.id === werte?.vorlage)) return 'Keine Baugruppe gewählt — erst eine am Bauwerk sichern.';
+        if ((el?.punkte ?? []).length !== 1) return 'Ein Punkt: die Mitte unten der Baugruppe.';
+        return null;
+    },
+    vorgangstitel: (werte) => (werte?.vorlage ? 'Baugruppe gesetzt' : null),
+};
+
 /** Das Gewerk am Zeichenwerkzeug (Teil XXIX, G3) — aus dem Reiter vorbelegt, leer heisst „nach Regel". */
 const ZEICHEN_GEWERK_FELD = Object.freeze({ name: 'gewerk', titel: 'Gewerk (leer = nach Regel)', typ: 'auswahl', leerErlaubt: true,
     optionen: Object.entries(GEWERKE).map(([wert, g]) => ({ wert, titel: g.titel })) });
@@ -2046,6 +2103,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
     // Teil XXVIII, V1: je eingebauter Vorlage ein Werkzeug — ein Bauwerk, ein Kommando.
     ...Object.values(BAUWERKSVORLAGEN).map(vorlageWerkzeug),
+    // Teil XXIX, G5: eine Baugruppe aus der Bibliothek — ein Bauwerk, ein Kommando.
+    BAUGRUPPE_WERKZEUG,
     // V3: am Bauwerk neu auswerten — mit neuen Werten, oder angleichen.
     ...VORLAGE_WERKZEUGE,
     // Teil XXIX, G2: alle setzbaren Eigenschaften in EINEM Formular.

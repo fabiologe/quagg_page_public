@@ -313,7 +313,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) — **gebaut 2026-10-04**, § 11.4 | Teich: 9 Elemente in Form — **gemessen 0 → 9** (8 in der Mulde, der Rasen eben oberhalb) | Kern |
 | **G-T2** | Raum in einer Erdmulde (L-B) — **gebaut 2026-10-04**, § 11.5 | Dauerstau 992 m³, Rückhalteraum 1 424 m³ — **gemessen 991,83 / 1 423,83** (0,5-m-Raster; die Eckgrate) | Kern |
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) — **gebaut 2026-10-04**, § 11.6 | am Bauwerk sichtbar 11 → 9 (Vorlagen-Werkzeuge im Abschnitt) | Oberfläche |
-| **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung | Schacht mit Gerinne 1 Kommando | Katalog |
+| **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung — **gebaut 2026-10-04**, § 11.7 | Ablaufbauwerk des Teichs **11 Kommandos → 1** | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart | Systeme im IFC 0 → je Gewerk eines; Prüftor sauber, IDS 0 | Schreiber (wirkt sofort) |
 | **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 | Stauraum 1 424 m³, Dauerstau 992 m³ gemessen; Facetten tragen ohne Sonderfall | Test + Browser |
 | **G8** | Abnahme + Browserprobe; Pipette (W4) wenn Zeit | — | Test + Browser |
@@ -524,4 +524,29 @@ Vorlage lösen". Diese drei Werkzeuge stehen am einzelnen Bauwerk nicht mehr als
 **Gefunden in der Browserprobe:** nach „Übernehmen" am Bauwerk sprang die Auswahl auf die zuletzt geklickte Wand — das
 Nachwählen suchte das Subjekt über seinen Ort im Modell, ein Bauwerk hat keinen. Kur: ein Bauwerk wird nach dem Anwenden
 aus dem Stand neu eingeordnet, und beim Wählen eines Bauwerks wird die Modellauswahl geleert.
+
+### 11.7 G5 gebaut (2026-10-04, `test/baugruppe.test.js`, Browserprobe 10/10)
+
+**Was es ist.** Die **Baugruppe** — die dritte Sorte Vorlage (§ 6): ein Bauwerk als Schnappschuss in der Bibliothek,
+`{art: 'baugruppe', rezept: 'bauwerk', werkzeug: 'baugruppe-setzen', gewerk, bauwerk: {art, bauwerkstyp}, teile: [{rolle,
+rezept, kategorie, name, parameter}]}` — Punkte relativ zu „Mitte unten" (Grundrissmitte, tiefste Höhe), Verweise unter den
+Teilen (`anschluss`, `hoeheVon`) als Rollen, keine Formeln. Das Katalogschema nimmt nur Daten: bekannte Rezepte, keine
+Ableitungen, keine Bauwerke als Teile, Verweise nur auf eigene Rollen. `services/rezept/Baugruppe.js` (rein).
+
+**Sichern:** am Bauwerk „Als Baugruppe sichern …" (Name, Projekt oder Büro); was nicht mitkommt, sagt die Rückmeldung
+(Ableitungen wie eine Öffnung — sie hängen an ihrer Quelle; Bauwerke im Bauwerk; ein Verweis nach draussen).
+**Setzen:** die Baugruppe steht in der Palette im Reiter ihres Gewerks (Mehrheit ihrer Teile); der Klick startet „Baugruppe
+setzen" — ein Punkt, Drehung, optional Unterkante; EIN Kommando legt Bauwerk und Teile an (dieselbe Rechnung wie eine
+Bauwerk-Vorlage, `vorlageTeile`), die Verweise zeigen auf die neuen Kennungen, das Bauwerk nennt seine Herkunft
+(Kopfzeile „aus Baugruppe …"). An einem Bauwerk erscheint eine Baugruppe nicht als Vorlage zum „Tauschen".
+
+| gemessen | Wert |
+|---|---|
+| Ablaufbauwerk des Teichs (Schacht DN 1500, Drossel, Tauchwand, Wehrschwelle, Ablaufhaltung am Schacht, Bauwerk, 5 Zuordnungen) | 11 Kommandos → **1** (6 Einträge, 1 Vorgang) |
+| gesetzt um 90° | Längen gleich, Richtung +90°, Anschluss auf den neuen Schacht |
+| Browser :3001 | sichern über die Tafel, Palette Entwässerung zeigt sie, Klick belegt das Werkzeug vor, gesetzt: 5 Teile mit den Klassen des Originals |
+
+**Grenzen:** eine Öffnung (Ableitung am Wirt) kommt nicht mit; eine Baugruppe ist ein Schnappschuss — sie wächst nicht mit
+Maßen (das bleibt der Bauwerk-Vorlage, Code); kein Bearbeiten einer gesicherten Baugruppe (neu sichern ersetzt sie nicht,
+es legt eine zweite an).
 

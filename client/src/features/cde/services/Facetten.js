@@ -34,7 +34,7 @@ export function bauwerkPfad(bauplan, bauplanVon) {
 }
 
 /** Woher ein Bauteil stammt — ein Bauwerk aus einer Vorlage, eine Rolle darin, eine Bibliotheks-Vorlage, oder nichts. */
-export function vorlageVon(globalId, bauplan, bauplanVon) {
+export function vorlageVon(globalId, bauplan, bauplanVon, vorlagen = []) {
     const bv = bauplan?.parameter?.bauwerksvorlage;
     if (bv?.id) return { art: 'bauwerk', id: bv.id, titel: vorlageNach(bv.id)?.titel ?? bv.id, werte: bv.werte ?? {} };
     for (const b of bauwerkPfad(bauplan, bauplanVon)) {
@@ -49,7 +49,10 @@ export function vorlageVon(globalId, bauplan, bauplanVon) {
         }
     }
     const v = bauplan?.parameter?.vorlage;
-    return v ? { art: 'bibliothek', id: String(v) } : null;
+    if (!v) return null;
+    // Aus der Bibliothek: eine Bauteil-Vorlage oder eine Baugruppe (G5) — mit Namen, wenn die Bibliothek geladen ist.
+    const eintrag = (vorlagen ?? []).find(x => x?.id === String(v)) ?? null;
+    return { art: eintrag?.art === 'baugruppe' ? 'baugruppe' : 'bibliothek', id: String(v), titel: eintrag?.name ?? String(v), fehlt: !eintrag && !!vorlagen?.length };
 }
 
 /**
@@ -57,7 +60,7 @@ export function vorlageVon(globalId, bauplan, bauplanVon) {
  * @param {object} el  das eingeordnete Subjekt (`globalId`, `category`, `stand.bauplan`)
  * @param {{bauplanVon?: (gid) => object|null, bauform?: string|null}} opts
  */
-export function facettenVon(el, { bauplanVon = null, bauform = null } = {}) {
+export function facettenVon(el, { bauplanVon = null, bauform = null, vorlagen = [] } = {}) {
     const plan = el?.stand?.bauplan ?? null;
     const kategorie = String(plan?.kategorie ?? el?.category ?? el?.type ?? '').toUpperCase() || null;
     const g = plan ? gewerkVon(plan) : { gewerk: null, quelle: null };
@@ -68,7 +71,7 @@ export function facettenVon(el, { bauplanVon = null, bauform = null } = {}) {
         klasse: kategorie ? { kategorie, predefinedType: plan ? predefinedTypeVon(plan) : null, objektTyp: plan ? objektTypVon(plan) : null } : null,
         gewerk: g.gewerk ? { id: g.gewerk, titel: GEWERKE[g.gewerk]?.titel ?? g.gewerk, quelle: g.quelle } : null,
         bauwerk: plan ? bauwerkPfad(plan, bauplanVon) : [],
-        vorlage: plan ? vorlageVon(el?.globalId, plan, bauplanVon) : null,
+        vorlage: plan ? vorlageVon(el?.globalId, plan, bauplanVon, vorlagen) : null,
         behaelter: plan ? istBehaelter(plan) : false,
         eigen: !!plan,
     };

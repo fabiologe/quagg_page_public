@@ -88,11 +88,13 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // Teil XXIX, G-T1: eine Schicht auf dem Gelände — als Fläche und als Band entlang einer Achse.
                       'gelaendeschicht-zeichnen', 'gelaendeschicht-band-zeichnen',
                       // G-T2: ein Raum zwischen Gelände und Spiegel.
-                      'muldenraum-zeichnen'].sort());
+                      'muldenraum-zeichnen',
+                      // G5: eine Baugruppe aus der Bibliothek setzen — ein Punkt, ein Bauwerk.
+                      'baugruppe-setzen'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).
-        for (const b of erzeugen.filter(x => !x.ausVorlage)) {
+        for (const b of erzeugen.filter(x => !x.ausVorlage && !x.ausBibliothek)) {
             const r = rezeptNach(b.rezept);
             // … oder eine Ableitung, die aus den Punkten UND ihrer Quelle baut (G-T1: die Schicht auf dem Gelände).
             expect(typeof (r?.baue ?? r?.leite), b.id).toBe('function');

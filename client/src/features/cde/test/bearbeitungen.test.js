@@ -113,7 +113,8 @@ describe('ausGruppe — der Einstieg über die Werkzeugleiste', () => {
         const ausZug = Object.entries(REZEPTE).filter(([, r]) => typeof r.baue === 'function').map(([id]) => id);
         // Teil XXVIII: dazu je Bauwerk-Vorlage eines — es nennt die Vorlage, kein Rezept.
         // Teil XXIX, G-T1/G-T2: dahinter, was dem Gelände folgt — Schicht (Fläche, Band) und Raum in der Mulde.
-        expect(ausGruppe('erzeugen').filter(b => !b.ausVorlage).map(b => b.rezept)).toEqual([...ausZug, 'gelaendeschicht', 'gelaendeschicht', 'muldenraum']);
+        // G5: „Baugruppe setzen" nennt kein Rezept — es setzt eine Baugruppe der Bibliothek (`ausBibliothek`).
+        expect(ausGruppe('erzeugen').filter(b => !b.ausVorlage && !b.ausBibliothek).map(b => b.rezept)).toEqual([...ausZug, 'gelaendeschicht', 'gelaendeschicht', 'muldenraum']);
         expect(ausZug).not.toContain('gelaende');
     });
 

@@ -51,10 +51,11 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
     it('G0 147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste — G2: +1 Formular', () => {
         const kat = werkzeugKatalog();
         // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung");
-        // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen).
-        expect(kat).toHaveLength(156);
+        // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen);
+        // G5: +1 (Baugruppe setzen — in der Palette über ihre Baugruppen, nicht als eigener Knopf).
+        expect(kat).toHaveLength(157);
         expect(kat.filter(b => b.setzt)).toHaveLength(88);
-        expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(21);
+        expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(22);
     });
 
     it('angeboten (Eignung) am gewählten Bauteil: G0 Wand 30, Rohr 36, Platte 24, Raum 21, Bauwerk 16 — G2 je +1 Formular', () => {

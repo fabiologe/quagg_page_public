@@ -165,7 +165,10 @@
           Rolle {{ facetten.vorlage.rolle }} der Vorlage „{{ facetten.vorlage.titel }}"
         </span>
         <span v-else-if="facetten.vorlage?.art === 'bibliothek'" class="tb-chip tb-chip--vorlage" title="Aus der Bibliothek gezeichnet">
-          Vorlage {{ facetten.vorlage.id }}
+          Vorlage „{{ facetten.vorlage.titel }}"
+        </span>
+        <span v-else-if="facetten.vorlage?.art === 'baugruppe'" class="tb-chip tb-chip--vorlage" title="Aus einer Baugruppe der Bibliothek gesetzt">
+          aus Baugruppe „{{ facetten.vorlage.titel }}"
         </span>
       </div>
       <p v-if="facetten.vorlage?.art === 'rolle' && facetten.vorlage.abweichend.length" class="tb-hinweis">
@@ -246,6 +249,17 @@
             <button class="tb-btn" :disabled="!!sperrgrund" :title="sperrgrund || 'Danach ein gewöhnliches Bauwerk — die Teile bleiben, nur ohne Steuerung'"
                     @click="werkzeug('von-vorlage-loesen')">
               <CdeIcon name="close" :size="13" /> <span>Von der Vorlage lösen</span>
+            </button>
+          </div>
+        </section>
+        <!-- DIE BAUGRUPPE (Teil XXIX, G5): ein fertiges Bauwerk in die Bibliothek — gesetzt wird es danach aus dem
+             Reiter seines Gewerks mit einem Punkt und einer Drehung, ein Kommando. -->
+        <section v-if="facetten.behaelter" class="tb-gruppe">
+          <h4 class="tb-kopf" title="Das Bauwerk mit seinen Teilen als Baugruppe in die Bibliothek">Bauwerk</h4>
+          <div class="tb-liste">
+            <button class="tb-btn" type="button" :title="'Teile, Maße und Verweise — ohne Formeln; Ableitungen bleiben draussen'"
+                    @click="baugruppeSichern">
+              <CdeIcon name="save" :size="13" /> <span>Als Baugruppe sichern …</span>
             </button>
           </div>
         </section>
@@ -491,6 +505,7 @@ import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog } f
 import { palette, suchePalette } from '../services/Palette.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { facettenVon, rollenTabelle } from '../services/Facetten.js';
+import { baugruppeAus } from '../services/rezept/Baugruppe.js';
 import { verdeckteAus } from '../services/CdeAchsen.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
@@ -510,7 +525,8 @@ const aenderungen = useAenderungen();
 const GEWERK_QUELLE = Object.freeze({ bauplan: 'am Bauteil gesetzt', rezept: 'aus dem Rezept', klasse: 'nach der Klasse' });
 const ROLLEN_STATUS = Object.freeze({ gesteuert: 'gesteuert', abweichend: 'abweichend', fehlt: 'fehlt' });
 const bauplanVon = (gid) => aenderungen.wirksamerStand('erzeugt').get(gid) ?? null;
-const facetten = computed(() => (void aenderungen.anzahl, facettenVon(bearbeitung.bauteil, { bauplanVon, bauform: herleitung.value?.bauform ?? null })));
+const facetten = computed(() => (void aenderungen.anzahl, facettenVon(bearbeitung.bauteil,
+  { bauplanVon, bauform: herleitung.value?.bauform ?? null, vorlagen: vorlagen.value ?? [] })));
 const bauwerkPfad = computed(() => [...facetten.value.bauwerk].reverse());
 const rollen = computed(() => (void aenderungen.anzahl, facetten.value.vorlage?.art === 'bauwerk'
   ? rollenTabelle(bearbeitung.bauteil?.stand?.bauplan, bauplanVon, verdeckteAus(aenderungen.wirksamerStand('geloescht'))) : []));
@@ -816,6 +832,26 @@ async function vorlageSichern() {
   // „Tauschen" seine Auswahl. Ohne dies böte es die neue Vorlage erst nach
   // dem nächsten Laden an.
   await bearbeitung.ladeProfile();
+}
+
+/** „Als Baugruppe sichern" (G5): das gewählte Bauwerk mit seinen Teilen in die Bibliothek. */
+async function baugruppeSichern() {
+  const gid = bearbeitung.bauteil?.globalId;
+  if (!gid) return;
+  const vorschlag = bearbeitung.bauteil?.name || 'Baugruppe';
+  const name = prompt('Name der Baugruppe:', vorschlag);
+  if (!name?.trim()) return;
+  const { baugruppe, ausgelassen, grund } = baugruppeAus(gid, {
+    bauplaene: aenderungen.wirksamerStand('erzeugt'), verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')), name });
+  if (!baugruppe) { rueckmeldung.value = grund; return; }
+  const ebene = repo.buero && confirm('Für ALLE Projekte sichern (Büro-Ebene)?\n„Abbrechen" sichert nur in diesem Projekt.')
+    ? 'buero' : 'projekt';
+  const r = await speichereVorlage(repo, baugruppe, { ebene });
+  if (!r.ok) { rueckmeldung.value = `Nicht gesichert: ${r.grund}`; return; }
+  await vorlagenLaden();
+  await bearbeitung.ladeProfile();
+  rueckmeldung.value = `Baugruppe „${baugruppe.name}" gesichert — ${baugruppe.teile.length} Teile`
+    + (ausgelassen.length ? `; nicht mitgenommen: ${ausgelassen.map(a => `${a.name} (${a.grund})`).join(', ')}` : '') + '.';
 }
 
 async function vorlageEntfernen(v) {

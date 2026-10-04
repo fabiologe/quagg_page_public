@@ -44,6 +44,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'eigene:wirt': 'ein eigenes Bauteil mit Rechteckprofil, das eine Öffnung tragen kann (Wand, Fundament, Schwelle)',
     'eigene:traeger': 'ein eigenes Bauteil mit Körper, auf dem das Subjekt stehen kann',
     'gelaende': 'ein Gelände, auf dem etwas liegen kann — ein Ur-Gelände aus dem Journal oder ein geliefertes',
+    'vorlage:baugruppe': 'eine Baugruppe der Bibliothek — ein fertiges Bauwerk zum Setzen',
 });
 
 /**
@@ -59,6 +60,8 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende =
         if (art === 'gelaende') return _gelaende(wirksamerStand, gelaende);
         if (art === 'eigene:flaeche') return _eigeneFlaechen(wirksamerStand, el);
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
+        if (art === 'vorlage:baugruppe') return (vorlagen ?? []).filter(v => v?.art === 'baugruppe' && v.id)
+            .map(v => ({ id: v.id, titel: v.name || v.id, baugruppe: v }));
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
         if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
         if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
@@ -216,7 +219,8 @@ function _vorlagen(vorlagen, el) {
     const rezept = el?.stand?.bauplan?.rezept ?? null;
     if (!rezept) return [];
     return (vorlagen ?? [])
-        .filter(v => v?.rezept === rezept)
+        // Eine Baugruppe (G5) ist keine Vorlage zum Tauschen — sie legt ein ganzes Bauwerk an.
+        .filter(v => v?.rezept === rezept && v?.art !== 'baugruppe')
         .map(v => ({ id: v.id, titel: v.name || v.id, rezept: v.rezept, vorgaben: v.vorgaben ?? {} }));
 }
 

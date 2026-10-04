@@ -149,6 +149,12 @@ const UR = { globalId: '1Ur0Gelaende0Vertrag00', category: 'IFCGEOGRAPHICELEMENT
  */
 export const VORLAGEN = Object.freeze([
     { id: 'vl-dn1200', name: 'Schacht DN 1200', rezept: 'schacht', vorgaben: { dn: 1200 } },
+    // Teil XXIX, G5: eine Baugruppe — ein Schacht mit angeschlossener Haltung.
+    { id: 'bg-test', name: 'Schacht mit Haltung', art: 'baugruppe', rezept: 'bauwerk', werkzeug: 'baugruppe-setzen', bauwerk: { art: 'anlage' },
+      vorgaben: {}, teile: [
+        { rolle: 'schacht', rezept: 'schacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', name: 'S', parameter: { punkte: [[0, 0, 0], [0, 2.5, 0]], dn: 1000 } },
+        { rolle: 'haltung', rezept: 'rohr', kategorie: 'IFCPIPESEGMENT', name: 'H', parameter: { punkte: [[0, 0, 0], [10, -0.05, 0]], dn: 300, anschluss: { anfang: { rolle: 'schacht' } } } },
+      ] },
 ]);
 const KANDIDATEN = kandidatenAus({ wirksamerStand, vorlagen: VORLAGEN });
 
@@ -307,6 +313,9 @@ const NEU = [
     { id: 'gelaendeschicht-band-zeichnen', el: zug(P(80, 100, 60), P(100, 100, 60)), zug: [P(80, 100, 60), P(100, 100, 60)],
       werte: [{ name: 'Weg', kategorie: 'IFCCOURSE', predefinedType: 'PAVEMENT', objektTyp: '', dicke: 0.15, breite: 2.5, abstand: '',
                 richtung: 'lot', gelaende: '1Ur0Gelaende0Vertrag00' }] },
+    // G5: eine Baugruppe setzen — ein Punkt, gedreht.
+    { id: 'baugruppe-setzen', el: zug(P(120, 100, 40)), zug: [P(120, 100, 40)], werte: [{ vorlage: 'bg-test', name: 'BG', hoehe: '', drehung: 30 }],
+      kandidaten: KANDIDATEN },
     // G-T2: ein Raum zwischen Gelände und Spiegel.
     { id: 'muldenraum-zeichnen', el: zug(P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)),
       zug: [P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)],

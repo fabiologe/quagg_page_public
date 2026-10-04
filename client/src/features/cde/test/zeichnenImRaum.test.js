@@ -73,7 +73,8 @@ describe('Erzeugen in der Tafel „Bauteil“', () => {
             await r.trigger('click');
             for (const k of w.findAll('.tb-liste .tb-btn')) gesehen.add(k.text());
         }
-        for (const b of erzeugen) expect([...gesehen], b.id).toContain(b.titel.replace(/ zeichnen$/, ''));
+        // „Baugruppe setzen" (G5) erreicht man über seine Baugruppen im Reiter — ohne eine gibt es nichts zu setzen.
+        for (const b of erzeugen.filter(x => !x.ausBibliothek)) expect([...gesehen], b.id).toContain(b.titel.replace(/ zeichnen$/, ''));
 
         // Ein Grundform-Werkzeug unter „Allgemein": ohne Vorgaben gestartet.
         await w.findAll('.tb-reiter-btn')[0].trigger('click');
