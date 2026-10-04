@@ -174,10 +174,17 @@ describe('ein Bauteil fürs Paket', () => {
         expect(f.wirt).toBeNull();
     });
 
-    it('ein Rohr ohne Katalogfarbe bekommt keine erfundene', () => {
-        const b = bauteilFuersPaket({ ...teil('IFCPIPESEGMENT'), wert: { rezept: 'rohr' } }, opts);
+    // Bis Teil XXIX (nach G8) hatte das Rohr keine Katalogfarbe; seitdem hat es eine — unbekannt bleibt z. B. ein Möbel.
+    it('ein Bauteil ohne Katalogfarbe bekommt keine erfundene', () => {
+        const b = bauteilFuersPaket({ ...teil('IFCFURNITURE'), wert: { rezept: 'platte' } }, opts);
         expect(b.farbe).toBeNull();
         expect(b.wirt).toBeNull();
+    });
+
+    it('die Farbe folgt Klasse UND Ausführung — dieselbe wie im Raum, sie geht als IfcSurfaceStyle ins IFC', () => {
+        const stein = bauteilFuersPaket({ ...teil('IFCCOURSE', { pt: 'ARMOUR' }), wert: { rezept: 'gelaendeschicht' } }, opts);
+        const rohr = bauteilFuersPaket({ ...teil('IFCPIPESEGMENT'), wert: { rezept: 'rohr' } }, opts);
+        expect([stein.farbe, rohr.farbe]).toEqual([0x6b7179, 0x6a7f99]);
     });
 });
 

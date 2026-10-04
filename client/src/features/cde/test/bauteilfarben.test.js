@@ -42,10 +42,21 @@ describe('der Katalog', () => {
         expect(spanne('IFCEARTHWORKSCUT')).toBeGreaterThan(0.2);             // der Aushub bleibt braun
     });
 
+    // Bis Teil XXIX (nach G8) stand hier IFCPIPESEGMENT — seitdem hat ein Rohr eine Farbe; unbekannt bleibt z. B. ein Möbel.
     it('erfindet für Unbekanntes nichts', () => {
-        expect(farbeFuer('IFCPIPESEGMENT')).toBeNull();
+        expect(farbeFuer('IFCFURNITURE')).toBeNull();
         expect(farbeFuer(null)).toBeNull();
         expect(materialWerte(null)).toBeNull();
+    });
+
+    it('die Ausführung geht vor der Klasse (Teil XXIX nach G8: fünf Schichten, alle IfcCourse)', () => {
+        expect(farbeFuer('IFCCOURSE', BAUTEILFARBEN, 'ARMOUR').titel).toBe('Steinschüttung, Deckwerk');
+        expect(farbeFuer('IFCCOURSE', BAUTEILFARBEN, 'CORE').titel).toBe('Dichtung (Ton)');
+        expect(farbeFuer('IfcCourse', BAUTEILFARBEN, 'notdefined').titel).toBe('Schicht');      // unbekannte Ausführung → Klasse
+        expect(farbeFuer('IFCEARTHWORKSCUT', BAUTEILFARBEN, 'TRENCH').titel).toBe('Aushub');
+        // Die fünf Schichten des Teichs und Bewuchs/Wasser haben paarweise verschiedene Töne.
+        const toene = ['CORE', 'FILTER', 'PROTECTION', 'ARMOUR', 'PAVEMENT'].map(pt => farbeFuer('IFCCOURSE', BAUTEILFARBEN, pt).farbe);
+        expect(new Set(toene).size).toBe(5);
     });
 
     it('ein Bürodatensatz schlägt den eingebauten', () => {
@@ -189,13 +200,25 @@ describe('die Verdrahtung', () => {
 
     it('jeder Auftrag an den Editor geht durch diese Umrechnung', () => {
         const quelle = readFileSync(new URL('../services/IfcAutor.js', import.meta.url), 'utf8');
-        expect(quelle).toContain('material: this._fuerEditor(bauteil.material ?? this._materialFuer(bauteil.kategorie))');
+        // Seit Teil XXIX (nach G8) mit der Ausführung — die fünf Schichten des Teichs sind alle IfcCourse.
+        expect(quelle).toContain('material: this._fuerEditor(bauteil.material ?? this._materialFuer(bauteil.kategorie, bauteil.predefinedType))');
     });
 
+    // Bis Teil XXIX (nach G8) war hier das Rohr der unbekannte Typ — seitdem hat es eine Farbe.
     it('ein unbekannter Typ behält den Standard der Bibliothek', () => {
-        const m = autor._materialFuer('IFCPIPESEGMENT');
+        const m = autor._materialFuer('IFCFURNITURE');
         expect(m.transparent).toBe(false);
         expect(m.color.getHex()).toBe(0xffffff);
+    });
+
+    it('die Ausführung geht vor der Klasse (Teil XXIX nach G8: fünf Schichten, alle IfcCourse)', () => {
+        expect(farbeFuer('IFCCOURSE', BAUTEILFARBEN, 'ARMOUR').titel).toBe('Steinschüttung, Deckwerk');
+        expect(farbeFuer('IFCCOURSE', BAUTEILFARBEN, 'CORE').titel).toBe('Dichtung (Ton)');
+        expect(farbeFuer('IfcCourse', BAUTEILFARBEN, 'notdefined').titel).toBe('Schicht');      // unbekannte Ausführung → Klasse
+        expect(farbeFuer('IFCEARTHWORKSCUT', BAUTEILFARBEN, 'TRENCH').titel).toBe('Aushub');
+        // Die fünf Schichten des Teichs und Bewuchs/Wasser haben paarweise verschiedene Töne.
+        const toene = ['CORE', 'FILTER', 'PROTECTION', 'ARMOUR', 'PAVEMENT'].map(pt => farbeFuer('IFCCOURSE', BAUTEILFARBEN, pt).farbe);
+        expect(new Set(toene).size).toBe(5);
     });
 
     it('ein Bürodatensatz schlägt den eingebauten', () => {

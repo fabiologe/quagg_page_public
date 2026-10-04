@@ -463,8 +463,8 @@ export class IfcAutor {
      * Volumen und genau der Fall, für den er gebaut ist. Die Regel steht
      * seit 2026-09-17 in `materialWerte` (ein Ort, zwei Leser).
      */
-    _materialFuer(kategorie) {
-        const werte = materialWerte(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN));
+    _materialFuer(kategorie, predefinedType = null) {
+        const werte = materialWerte(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN, predefinedType));
         if (!werte) return new THREE.MeshLambertMaterial();
         return new THREE.MeshLambertMaterial({
             color: werte.color,
@@ -612,7 +612,7 @@ export class IfcAutor {
                 // Export braun und durchscheinend, und niemand muss eine
                 // Einfärbung nachziehen. Ein Aufrufer, der ein eigenes
                 // Material mitbringt, behält es (`bauteil.material`).
-                material: this._fuerEditor(bauteil.material ?? this._materialFuer(bauteil.kategorie)),
+                material: this._fuerEditor(bauteil.material ?? this._materialFuer(bauteil.kategorie, bauteil.predefinedType)),
             }],
         };
     }

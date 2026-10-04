@@ -91,6 +91,37 @@ export const BAUTEILFARBEN = Object.freeze({
     IFCSPACE:             Object.freeze({ farbe: 0x5b82a0, deckkraft: 0.18, titel: 'Raum' }),
     // Teil XXVII, B3 (E28): eine Öffnung durchscheinend — fragments schneidet nicht.
     IFCOPENINGELEMENT:    Object.freeze({ farbe: 0x9a6a3c, deckkraft: 0.4, titel: 'Öffnung' }),
+
+    // ── DIE BAUTEILE (Teil XXIX, nach G8 — Fabio: „die Render-Sachen sind noch messed up, musst mal Farben anwenden").
+    // Bis hier trug alles ausser Erdbau, Gelände, Raum und Öffnung das Standardgrau: fünf Schichten der Teichdichtung,
+    // Wände, Rohre, Pfähle und Geländer waren im Bild nicht auseinanderzuhalten. Ein Schlüssel `KLASSE.AUSFÜHRUNG`
+    // geht vor `KLASSE` — die fünf Schichten sind alle IfcCourse und unterscheiden sich nur in der Ausführung.
+    // Alle Töne unter der Clipping-Grenze (Kanal ≤ 0xa4); deckend, wo das Bauteil Material IST.
+    IFCCOURSE:            Object.freeze({ farbe: 0x8c8578, deckkraft: 1, titel: 'Schicht' }),
+    'IFCCOURSE.CORE':     Object.freeze({ farbe: 0x7b5e4a, deckkraft: 1, titel: 'Dichtung (Ton)' }),
+    'IFCCOURSE.FILTER':   Object.freeze({ farbe: 0xa0a4a4, deckkraft: 1, titel: 'Vlies, Filter' }),
+    'IFCCOURSE.PROTECTION': Object.freeze({ farbe: 0xa08f68, deckkraft: 1, titel: 'Schutzschicht' }),
+    'IFCCOURSE.ARMOUR':   Object.freeze({ farbe: 0x6b7179, deckkraft: 1, titel: 'Steinschüttung, Deckwerk' }),
+    'IFCCOURSE.PAVEMENT': Object.freeze({ farbe: 0x98907f, deckkraft: 1, titel: 'Deckschicht, Weg' }),
+    // Eine Auffüllung, die keine Erdbau-Ausführung trägt, ist eine Andeckung (Oberboden) — Material, deckend.
+    'IFCEARTHWORKSFILL.USERDEFINED': Object.freeze({ farbe: 0x5e4a36, deckkraft: 1, titel: 'Oberboden' }),
+    'IFCGEOGRAPHICELEMENT.VEGETATION': Object.freeze({ farbe: 0x5d8a46, deckkraft: 1, titel: 'Bewuchs' }),
+    // Ein Raum im Freien (Dauerstau, Rückhalteraum): Wasser, etwas dichter als ein Raum im Gebäude.
+    'IFCSPACE.EXTERNAL':  Object.freeze({ farbe: 0x3a77a2, deckkraft: 0.3, titel: 'Raum im Freien (Wasser)' }),
+    IFCWALL:              Object.freeze({ farbe: 0x8f9497, deckkraft: 1, titel: 'Wand (Beton)' }),
+    IFCSLAB:              Object.freeze({ farbe: 0x8f9497, deckkraft: 1, titel: 'Platte (Beton)' }),
+    IFCFOOTING:           Object.freeze({ farbe: 0x8f9497, deckkraft: 1, titel: 'Fundament (Beton)' }),
+    IFCPIPESEGMENT:       Object.freeze({ farbe: 0x6a7f99, deckkraft: 1, titel: 'Rohr' }),
+    IFCDISTRIBUTIONCHAMBERELEMENT: Object.freeze({ farbe: 0x7f8a94, deckkraft: 1, titel: 'Schacht' }),
+    IFCVALVE:             Object.freeze({ farbe: 0x55616d, deckkraft: 1, titel: 'Armatur' }),
+    IFCFILTER:            Object.freeze({ farbe: 0x55616d, deckkraft: 1, titel: 'Rechen, Filter' }),
+    IFCPILE:              Object.freeze({ farbe: 0x7d5c3c, deckkraft: 1, titel: 'Pfahl' }),
+    IFCBEAM:              Object.freeze({ farbe: 0x7d5c3c, deckkraft: 1, titel: 'Träger' }),
+    IFCRAILING:           Object.freeze({ farbe: 0x5c6670, deckkraft: 1, titel: 'Geländer, Zaun' }),
+    IFCDOOR:              Object.freeze({ farbe: 0x5c6670, deckkraft: 1, titel: 'Tor, Tür' }),
+    IFCKERB:              Object.freeze({ farbe: 0x8a8984, deckkraft: 1, titel: 'Einfassung' }),
+    IFCSIGN:              Object.freeze({ farbe: 0xa3473a, deckkraft: 1, titel: 'Schild' }),
+    IFCSENSOR:            Object.freeze({ farbe: 0x3f739f, deckkraft: 1, titel: 'Messgerät' }),
 });
 
 /** Kategorie normieren — Grossschreibung, ohne Leerraum. */
@@ -99,12 +130,15 @@ function norm(kategorie) {
 }
 
 /**
- * Die Farbe für einen IFC-Typ, oder null.
- * @param {string} kategorie  z. B. 'IFCEARTHWORKSCUT'
- * @param {object} [satz]     Überschreibung (Bürodatensatz)
+ * Die Farbe für einen IFC-Typ, oder null. Mit Ausführung gilt zuerst `KLASSE.AUSFÜHRUNG`, dann die Klasse.
+ * @param {string} kategorie         z. B. 'IFCEARTHWORKSCUT'
+ * @param {object} [satz]            Überschreibung (Bürodatensatz)
+ * @param {string} [predefinedType]  z. B. 'ARMOUR'
  */
-export function farbeFuer(kategorie, satz = BAUTEILFARBEN) {
-    return satz?.[norm(kategorie)] ?? null;
+export function farbeFuer(kategorie, satz = BAUTEILFARBEN, predefinedType = null) {
+    const k = norm(kategorie);
+    const pt = norm(predefinedType);
+    return (pt ? satz?.[`${k}.${pt}`] : null) ?? satz?.[k] ?? null;
 }
 
 /** Der Katalogeintrag, dessen Ton ein Gelände trägt — gleich, welchen Typ die Lieferung nennt. */

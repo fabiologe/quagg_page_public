@@ -195,7 +195,7 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         merkmale[satz] = { ...(merkmale[satz] ?? {}), ...werte };
     }
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
-    const f = farbeFuer(klasse, farbsatz);
+    const f = farbeFuer(klasse, farbsatz, teil.predefinedType ?? plan.predefinedType ?? null);
     const q = plan?.parameter?.quellen ?? {};
     const ur = q.gelaende ? wirtVon(plan, stand, exportiert, historie) : null;
     const aushub = istAushub(klasse);          // Wurzel im Baum (Kategorien.js): Wirt = Ur-Gelände
