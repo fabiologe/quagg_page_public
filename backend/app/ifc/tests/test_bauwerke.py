@@ -1075,3 +1075,54 @@ def test_g6_im_verbund_bleiben_die_systeme_an_ihrem_ort(tmp_path):
     assert systeme["Leitungen"][0] == site
     fehl = [b for b in pruefe(ziel)["befunde"] if offen(b)]
     assert fehl == [], fehl
+
+
+P11_TEICH = DATEN / "paket_p11_teich.json"
+
+
+def test_p11_retentionsteich_kommt_an(tmp_path):
+    """Teil XXIX G7 — die Probe P11 (Konzept § 11): der Retentionsteich aus 70 Kommandos, durch den Schreiber. Zwei
+    Bauwerke (Retentionsteich als IfcFacility mit Klassifizierung RRB, der Steg als eigene IfcFacility), die Teile
+    enthalten, je Bauwerk und Gewerk EIN System, Wege ohne Bauwerk an der Site. Das ganze Prueftor bleibt sauber.
+    (Dauerstau, Rueckhalteraum, Aushub und die muldenweiten Schichten tragen eigene Vertraege: G-T1, G-T2, Erdbau.)"""
+    paket = _georef(json.loads(P11_TEICH.read_text(encoding="utf-8")))
+    ziel = tmp_path / "p11.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="p11")
+    assert bericht["uebersprungen"] == []
+    # Der Oberboden kommt aus einer Vorlage, aber IfcEarthworksFill hat im Schema keine Typklasse — gesagt, nicht geraten.
+    assert bericht["warnungen"] == ["IfcEarthworksFill kennt im Schema keinen Typ — die Vorlage steht nur am Merkmal Quagg_CDE.Vorlage"]
+    assert (bericht["bauteile"], bericht["bauwerke"], bericht["systeme"]) == (28, 2, 8)
+    _sauber(ziel)
+    datei = ifcopenshell.open(str(ziel))
+    anlagen = sorted(a.Name for a in datei.by_type("IfcFacility"))
+    assert anlagen == ["Retentionsteich", "Steg"]
+    systeme = {}
+    for s in datei.by_type("IfcSystem"):
+        if s.is_a("IfcBuiltSystem") and s.PredefinedType == "LOADBEARING":
+            continue
+        ort = [r.RelatingStructure.Name for r in s.ReferencedInStructures]
+        systeme[s.Name] = (s.is_a(), s.PredefinedType, sum(len(r.RelatedObjects) for r in s.IsGroupedBy), ort)
+    site = datei.by_type("IfcSite")[0].Name
+    assert systeme == {
+        "Entwässerung – Retentionsteich": ("IfcDistributionSystem", "DRAINAGE", 7, ["Retentionsteich"]),
+        "Wasserbau – Retentionsteich": ("IfcBuiltSystem", "EROSIONPREVENTION", 4, ["Retentionsteich"]),
+        "Landschaft – Retentionsteich": ("IfcBuiltSystem", "USERDEFINED", 2, ["Retentionsteich"]),
+        "Ausstattung & Verkehrstechnik – Retentionsteich": ("IfcBuiltSystem", "USERDEFINED", 3, ["Retentionsteich"]),
+        "Technische Ausrüstung – Retentionsteich": ("IfcDistributionSystem", "USERDEFINED", 1, ["Retentionsteich"]),
+        "Konstruktiver Ingenieurbau – Steg": ("IfcBuiltSystem", "USERDEFINED", 7, ["Steg"]),
+        "Ausstattung & Verkehrstechnik – Steg": ("IfcBuiltSystem", "USERDEFINED", 2, ["Steg"]),
+        "Verkehrsfläche": ("IfcBuiltSystem", "USERDEFINED", 2, [site]),
+    }
+
+
+def test_g7_ein_tor_aus_der_vorlage_bekommt_einen_gueltigen_typ(tmp_path):
+    """Gefunden an P11 (G7): ein Tor aus der Bibliotheks-Vorlage gab einen IfcDoorType ohne OperationType — Pflicht im
+    Schema, das Prueftor meldete einen Schemaverstoss. Jetzt: Pflichtattribute einer Aufzaehlung mit NOTDEFINED bekommen
+    NOTDEFINED; der Typ entsteht, die Datei ist sauber."""
+    paket = _georef(_paket(_bauteil("cde-tor", "IFCDOOR", predefinedType="GATE", typ={"id": "tor", "name": "Tor"})))
+    ziel = tmp_path / "tor.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="tor")
+    assert bericht["typen"] == 1 and bericht["warnungen"] == []
+    _sauber(ziel)
+    typ = ifcopenshell.open(str(ziel)).by_type("IfcDoorType")
+    assert [(t.Name, t.PredefinedType, t.OperationType) for t in typ] == [("Tor", "GATE", "NOTDEFINED")]

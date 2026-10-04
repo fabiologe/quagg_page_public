@@ -1028,6 +1028,25 @@ def _gewerk_systeme(f, besitz, site, behaelter: dict, geschrieben: list, satz: s
     return n
 
 
+def _pflicht_auffuellen(inst, klasse: str) -> list:
+    """Pflichtattribute ohne Wert: eine Aufzaehlung mit NOTDEFINED bekommt NOTDEFINED. Rueckgabe: was offen bleibt."""
+    schema = ifcopenshell.ifcopenshell_wrapper.schema_by_name(ZIELSCHEMA)
+    offen = []
+    for a in S.attribute(klasse) or []:
+        if a.get("optional") or getattr(inst, a["name"], None) is not None:
+            continue
+        try:
+            decl = schema.declaration_by_name(a["typ"])
+            werte = decl.enumeration_items() if hasattr(decl, "enumeration_items") else ()
+        except Exception:                            # kein benannter Typ (Liste, Auswahl) — kein Wert zu vertreten
+            werte = ()
+        if "NOTDEFINED" in werte:
+            setattr(inst, a["name"], "NOTDEFINED")
+        else:
+            offen.append(a["name"])
+    return offen
+
+
 def _typen_schreiben(f, besitz, projekt, geschrieben: list, satz: str, warnungen: list) -> int:
     """Je Vorlage EIN `Ifc<Klasse>Type` mit `IfcRelDefinesByType` (Teil XXIII, A9b — Befund B21).
 
@@ -1060,6 +1079,15 @@ def _typen_schreiben(f, besitz, projekt, geschrieben: list, satz: str, warnungen
         schluessel = f"{satz}|typ|{tk}|{vid}"
         typ = f.create_entity(tk, GlobalId=guids.guid_aus_cde_id(schluessel), OwnerHistory=besitz,
                               Name=S.kurz(e["name"], 250), Tag=S.kurz(vid, 250), PredefinedType=pt)
+        # PFLICHTATTRIBUTE DES TYPS (Teil XXIX, G7 — gefunden an P11: ein Tor aus der Vorlage gab einen IfcDoorType ohne
+        # OperationType, Pflicht im Schema). Eine Aufzaehlung mit NOTDEFINED bekommt NOTDEFINED; fuer alles andere
+        # gibt es keinen Wert, den wir vertreten koennten — dann KEIN Typ, die Vorlage bleibt am Merkmal, und es steht da.
+        offen = _pflicht_auffuellen(typ, tk)
+        if offen:
+            warnungen.append(f"{tk}: Pflichtattribut {', '.join(offen)} ohne vertretbaren Wert — kein Typ geschrieben, "
+                             f"die Vorlage steht nur am Merkmal {PSET_CDE}.Vorlage")
+            f.remove(typ)
+            continue
         f.create_entity("IfcRelDefinesByType", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|rel"),
                         OwnerHistory=besitz, RelatedObjects=e["glieder"], RelatingType=typ)
         typen.append(typ)

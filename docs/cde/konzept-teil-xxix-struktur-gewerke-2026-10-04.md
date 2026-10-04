@@ -315,7 +315,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) — **gebaut 2026-10-04**, § 11.6 | am Bauwerk sichtbar 11 → 9 (Vorlagen-Werkzeuge im Abschnitt) | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung — **gebaut 2026-10-04**, § 11.7 | Ablaufbauwerk des Teichs **11 Kommandos → 1** | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart — **Systeme gebaut 2026-10-04**, § 11.8; Brücke nicht (E43: später) | Systeme im IFC 0 → je Bauwerk und Gewerk eines; Prüftor sauber, auch im Verbund | Schreiber (wirkt sofort) |
-| **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 | Stauraum 1 424 m³, Dauerstau 992 m³ gemessen; Facetten tragen ohne Sonderfall | Test + Browser |
+| **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 — **gebaut 2026-10-04**, § 11.9 | Stauraum 1 424 m³, Dauerstau 992 m³ — **gemessen 1 423,83 / 991,83**, im Test und im Projekt; Gewerk ausdrücklich nur an 2 von 30 Elementen | Test + Browser |
 | **G8** | Abnahme + Browserprobe; Pipette (W4) wenn Zeit | — | Test + Browser |
 
 Grob 14–18 Halbtage (eingeschätzt). **Nicht in diesem Teil:** Regelquerschnitt × Achse (W7), Tabelle am Bauwerk (W5),
@@ -578,4 +578,46 @@ IfcFacility, Leitungen und Ausstattung an der Site), Prüftor 0 offene Befunde, 
 **Wirkung:** `eigenbau.py` wirkt sofort — ein Paket ohne `gewerk` (jeder heute ausgelieferte Client) schreibt keine Systeme,
 die Ausgabe bleibt wie bisher (Gold „alte Pakete ergeben dieselbe Datei" unverändert grün). Systeme entstehen erst mit dem
 neuen Client. **Nicht gebaut:** Bauwerkstyp Brücke → IfcBridge/IfcBridgePart (E43, für später).
+
+### 11.9 G7 gebaut — P11 über Kommandos (2026-10-04, `test/p11Teich.test.js`, `test_bauwerke.py::test_p11…`, Projekt 10001)
+
+**Was es ist.** Der Teich aus § 11 als Kommandofolge (`test/hilfen/p11Kommandos.js`): **70 Kommandos** — zwei Bauwerke
+(Retentionsteich, Bauwerkstyp RRB; Steg), Aushub mit Böschung 1 : 3, neun Schichten aus den Bibliotheks-Vorlagen, Dauerstau
+und Rückhalteraum als Raum in der Mulde, Zulauf, Ablaufbauwerk, Notüberlauf, Steg (Pfähle, Jochträger, Belag, Geländer),
+Weg zum Steg mit Einfassung, Zufahrt, Zaun, Tor, Pegellatte, Warnschild, dann die Zuordnungen zu den Bauwerken. Kein
+Werkzeug kennt den Teich: alles sind Vorlagen und allgemeine Formen aus G1–G6. Derselbe Helfer läuft im Test (Gelände eben
+auf 100,00) und im Projekt 10001 (Beispielgelände `10001_Gelaende_Wiese.ifc`, EPSG:25832, eben auf 200,00 im Teichbereich).
+
+| gemessen | Test | Projekt 10001 (Browser :3001) |
+|---|---|---|
+| Kommandos ausgeführt | 70 / 70 | 70 / 70 (in zwei Läufen, 37 + 33), ein Commit mit 73 Schritten |
+| Dauerstau (von Hand 992 m³) | 991,83 m³ | 991,83 m³ |
+| Rückhalteraum (von Hand 1 424 m³) | 1 423,83 m³ | 1 423,83 m³ |
+| Klasse, Ausführung, Gewerk je Element wie § 11.1 | 30 / 30 | — (dieselben Baupläne) |
+| Gewerk **ausdrücklich** gesetzt | 2 (Oberboden: Landschaft statt Wasserbau, Stirnwand: Wasserbau statt Konstruktiv) | — |
+| Bauwerk-Pfad in der Kopfzeile | Tondichtung, Dauerstau › Retentionsteich; Belag › Steg; Weg: keins | im Paket: Retentionsteich 23 Teile, Steg 9, ohne Bauwerk 4 |
+| Paket | — | 36 Bauteile, 2 Bauwerke, 7 Gewerke |
+| durch den Schreiber (Vertragspaket ohne die muldenweiten Körper) | 28 Bauteile, 2 IfcFacility, **8 Systeme**, Prüftor 0 offene Befunde | — |
+
+Die 1/6 m³ zu wenig sind die Eckgrate der Böschung auf dem 0,5-m-Raster (§ 11.5), nicht eine Abweichung der Rechnung.
+
+**Die Facetten tragen — zwei Kuren und ein Hinweis, alle an P11 gefunden:**
+1. **Eine Schicht ließ sich keinem Bauwerk zuordnen.** Die Zuordnung prüfte den Bauplan wie ein gezeichnetes Bauteil
+   („mindestens 3 Punkte, 0 gesetzt") — eine Ableitung trägt ihre Geometrie in den Operationen. Kur in `pruefeBauplan`.
+   Und das Fortschreiben einer Ableitung hätte ihren Bauplan ohne Rolle neu geschrieben: eine Ableitung mit EINEM Teil
+   (Schicht, Raum in der Mulde) wird jetzt als ganzer Bauplan fortgeschrieben; eine mit mehreren (ein Erdbau-Vorgang)
+   bekommt den Grund „Ein Erdbau-Vorgang gehört ins Fachmodell Erdbau, nicht in ein Bauwerk."
+2. **Ein Tor aus der Vorlage gab einen ungültigen IfcDoorType** (OperationType ist im Schema Pflicht). Der Schreiber füllt
+   Pflichtattribute einer Aufzählung mit NOTDEFINED; gibt es keinen vertretbaren Wert, entsteht kein Typ, die Vorlage
+   bleibt am Merkmal, und die Warnung sagt es (`eigenbau.py`, wirkt sofort; Pakete ohne `typ` unberührt).
+3. **IfcEarthworksFill kennt keinen Typ** (Oberboden aus der Vorlage) — kein Fehler, als Warnung gemeldet.
+
+**Gefunden im Browser, nicht gekurt:** jedes Kommando über die Oberfläche baut die Szene neu. Die erste Probe (Kommando und
+Neuaufbau je Schritt) kam in 600 s nur bis Kommando 37 — eingeschätzt rund 15 s je Kommando (600 s abzüglich Anmeldung und Laden, durch 37) bei 30 Teilen auf dem Gelände;
+die zweite schrieb das Journal ohne Neuaufbau und baute einmal. Für eine Kommandofolge (Skript, Baugruppe) braucht es
+„erst alle schreiben, dann einmal bauen" — gehört zur Bibliothek, nicht zu G7.
+
+**Grenzen, benannt:** die muldenweiten Schichten und die beiden Räume sind im Vertragspaket draußen (je 20 000–30 000
+Dreiecke, G-T1/G-T2 tragen eigene Verträge); im Projekt stehen sie im Paket. Das Beispielgelände ist im Teichbereich eben —
+ein Teich am Hang ist nicht geprobt.
 

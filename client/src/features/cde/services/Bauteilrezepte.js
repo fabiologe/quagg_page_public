@@ -900,8 +900,10 @@ export function pruefeBauplan({ rezept, kategorie, parameter } = {}) {
             : [`Bauwerk: Art „${parameter?.art}" gibt es nicht (${Object.keys(BAUWERKSARTEN).join(', ')})`];
     }
 
+    // Eine ABLEITUNG trägt ihre Geometrie in ihren Operationen, nicht in `punkte` (Teil XXIX, G7: eine Schicht dem
+    // Bauwerk zuordnen hiess sonst „mindestens 3 Punkte, 0 gesetzt").
     const punkte = punkteAus(parameter);
-    if (punkte.length < r.mindestPunkte) {
+    if (typeof r.leite !== 'function' && punkte.length < r.mindestPunkte) {
         fehler.push(`${r.titel}: mindestens ${r.mindestPunkte} Punkte, ${punkte.length} gesetzt`);
     }
     const typ = kategorie ?? r.kategorieVorgabe;

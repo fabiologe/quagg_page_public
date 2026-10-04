@@ -557,10 +557,23 @@ function _vorbelegtMass(w, el, echt = null) {
  */
 function bauplanFortschreiben(el, plan, parameter) {
     if (!plan?.rezept || !el?.globalId || !parameter) return null;
+    // EIN ABLEITUNGSTEIL (Teil XXIX, G7 — die Schicht, der Raum in der Mulde): Rolle, Klammer, Bauform und Klasse
+    // bleiben, nur die Parameter sind neu. `erzeugtEintrag` kennt beides nicht — der Lauf fände das Teil sonst nicht
+    // mehr. Eine MEHRTEILIGE Ableitung (Erdbau: Aushub + Auftrag) teilt EINEN Parametersatz; ein Teil allein umzu-
+    // schreiben, hiesse „uneinheitlich" — das tut hier niemand (`_einTeilDerAbleitung`).
+    if (plan.ableitung) {
+        if (!_einTeilDerAbleitung(plan)) return null;
+        return { art: 'erzeugt', globalId: el.globalId, modell: 'cde', nachher: { ...plan, parameter } };
+    }
     return erzeugtEintrag({
         rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
         globalId: el.globalId, parameter,
     });
+}
+
+/** Hat die Ableitung dieses Teils genau EIN Teil? (Nur dann darf sein Bauplan allein fortgeschrieben werden.) */
+function _einTeilDerAbleitung(plan) {
+    return (rezeptNach(plan?.rezept)?.teile?.length ?? 0) === 1;
 }
 
 const SETZ_OPERATIONEN = Object.freeze({
@@ -597,6 +610,10 @@ const SETZ_OPERATIONEN = Object.freeze({
                 return BAUWERKSARTEN[werte?.art] ? null : `Art „${werte?.art}" gibt es nicht (${Object.keys(BAUWERKSARTEN).join(', ')}).`;
             }
             if (!el?.stand?.bauplan) return 'Nur Eigenbau gehört zu einem Bauwerk — ein geliefertes Bauteil nicht.';
+            // Ein Erdbau-Vorgang (Aushub und Auftrag teilen einen Parametersatz) gehört ins Fachmodell Erdbau (Teil XXIX, G7).
+            if (el.stand.bauplan.ableitung && !_einTeilDerAbleitung(el.stand.bauplan)) {
+                return 'Ein Erdbau-Vorgang gehört ins Fachmodell Erdbau, nicht in ein Bauwerk.';
+            }
             if (s.tut === 'loesen') return el.stand.bauplan.parameter?.teilVon ? null : 'Dieses Bauteil gehört zu keinem Bauwerk.';
             const k = kandidatenVon?.('eigene:bauwerk', el) ?? [];
             if (!k.length) return 'Es gibt noch kein Bauwerk, zu dem es gehören kann — erst eines anlegen.';
