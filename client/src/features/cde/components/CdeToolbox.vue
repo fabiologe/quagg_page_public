@@ -11,12 +11,17 @@
         <p class="tb-scharf-titel">
           <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
         </p>
-        <p class="tb-warum">Punkte ins Gelände setzen — Enter schliesst ab, Esc bricht ab. Die Felder stehen unten in der Leiste.</p>
+        <!-- DAS FORMULAR STEHT HIER (Teil XXX, B1 — Fabios E-B1); unter dem Bild bleibt eine Zeile. Ohne Viewer
+             (Tests, Einzelmontage) bleibt es bei der Leiste. -->
+        <p class="tb-warum">Punkte ins Gelände setzen — Enter schliesst ab, Esc bricht ab.<template v-if="!werkzeugKarte"> Die Felder stehen unten in der Leiste.</template></p>
+        <CdeWerkzeugKarte v-if="werkzeugKarte" :motor="werkzeugKarte.motor" :chips="werkzeugKarte.chips.value"
+                          :profile="werkzeugKarte.profile.value" @uebernehmen="werkzeugKarte.uebernehmen()"
+                          @geste="werkzeugKarte.geste" @geste-ab="werkzeugKarte.gesteAb()" />
         <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
         <button v-if="bearbeitung.scharf.rezept" class="tb-btn" type="button" @click="vorlageSichern">
           <CdeIcon name="save" :size="13" /> <span>Als Vorlage sichern …</span>
         </button>
-        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
+        <button v-if="!werkzeugKarte" class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
       </div>
       <template v-else>
         <p class="tb-leer">
@@ -199,13 +204,17 @@
           <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
           <span v-if="bearbeitung.bauteil?.name" class="tb-scharf-subjekt">{{ bearbeitung.bauteil.name }}</span>
         </p>
-        <p v-if="festlegungsHinweis" class="tb-hinweis">{{ festlegungsHinweis }}</p>
-        <p class="tb-warum">Eingabe unten in der Leiste — Griffe im Bild ziehen dieselben Felder.</p>
+        <!-- Das Formular steht hier (Teil XXX, B1). -->
+        <CdeWerkzeugKarte v-if="werkzeugKarte" :motor="werkzeugKarte.motor" :chips="werkzeugKarte.chips.value"
+                          :profile="werkzeugKarte.profile.value" @uebernehmen="werkzeugKarte.uebernehmen()"
+                          @geste="werkzeugKarte.geste" @geste-ab="werkzeugKarte.gesteAb()" />
+        <p v-else-if="festlegungsHinweis" class="tb-hinweis">{{ festlegungsHinweis }}</p>
+        <p v-if="!werkzeugKarte" class="tb-warum">Eingabe unten in der Leiste — Griffe im Bild ziehen dieselben Felder.</p>
         <p v-if="rueckmeldung" class="tb-rueckmeldung">{{ rueckmeldung }}</p>
         <button v-if="bearbeitung.scharf.rezept" class="tb-btn" type="button" @click="vorlageSichern">
           <CdeIcon name="save" :size="13" /> <span>Als Vorlage sichern …</span>
         </button>
-        <button class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
+        <button v-if="!werkzeugKarte" class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.abbrechen()">Abbrechen</button>
       </div>
 
       <!-- DIE WERKZEUGE ZUERST. Ein Werkzeug wählen heißt bearbeiten (E4):
@@ -522,7 +531,7 @@
  * Programm das" darf nicht in einer Vorlage stehen, sonst lässt sie sich nicht
  * prüfen.
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
@@ -539,6 +548,7 @@ import { facettenVon, rollenTabelle } from '../services/Facetten.js';
 import { baugruppeAus } from '../services/rezept/Baugruppe.js';
 import { verdeckteAus } from '../services/CdeAchsen.js';
 import { bauwerkImIfc } from '../services/EigenbauPaket.js';
+import CdeWerkzeugKarte from './CdeWerkzeugKarte.vue';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
@@ -551,6 +561,11 @@ import { schnittachseVon } from '../services/QuerschnittSicht.js';
 const bearbeitung = useBearbeitung();
 const ifc = useIfcStore();
 const api = useViewerApi();
+/** Formular, Gesten, Chips der scharfen Bearbeitung — vom Viewer (Teil XXX, B1); ohne ihn bleibt es bei der Leiste. */
+const werkzeugKarte = (typeof api.werkzeugKarte === 'object' && api.werkzeugKarte?.inTafel) ? api.werkzeugKarte : null;
+// Die Tafel meldet sich an: erst dann wird die Leiste unter dem Bild schmal (das Formular steht dann HIER).
+onMounted(() => { if (werkzeugKarte?.inTafel) werkzeugKarte.inTafel.value++; });
+onBeforeUnmount(() => { if (werkzeugKarte?.inTafel) werkzeugKarte.inTafel.value--; });
 const aenderungen = useAenderungen();
 
 // DIE FACETTEN (Teil XXIX, G4) — `services/Facetten.js`, rein; die Tafel zeigt nur.

@@ -1,5 +1,5 @@
 <template>
-  <div class="modus-leiste" :class="{ 'modus-leiste--werkzeug': !!bearbeitung.scharf && !tipp }">
+  <div class="modus-leiste" :class="{ 'modus-leiste--werkzeug': !!bearbeitung.scharf && !tipp && !kompakt }">
     <!-- Ein Tipp-Werkzeug (Messen, Notiz): was der nächste Tipp tut + Fertig -->
     <template v-if="tipp">
       <CdeIcon :name="tipp.icon" :size="14" />
@@ -23,39 +23,21 @@
           <CdeIcon name="check" :size="12" /> {{ serienmeldung }}
         </span>
       </div>
-      <!-- Eine laufende GESTE (S3): der nächste Tipp füllt ein Feld -->
-      <div v-if="geste" class="kl-geste-hinweis">
-        <CdeIcon name="pointer" :size="13" />
-        <span>{{ gesteText }}</span>
-        <button class="kl-zu" title="Geste abbrechen" aria-label="Geste abbrechen" @click="$emit('geste-ab')">
+      <!-- DAS BILD GEHÖRT DEM ZEICHNEN (Teil XXX, B1 — Fabios E-B1): ist die Tafel „Bauteil" offen, steht das Formular
+           DORT; hier bleibt eine Zeile — nächster Schritt, Übernehmen, Abbrechen. Vorher stand die Karte mit elf
+           Feldern mitten über dem Gelände (Messlauf B0: 85,7 % des mittleren Bilddrittels verdeckt). -->
+      <div v-if="kompakt" class="kl-zeile">
+        <span class="kl-schritt" :class="{ 'kl-schritt--fehler': karte.fehler.value.length }"
+              :title="karte.fehler.value[0] || karte.hinweis.value">{{ karte.fehler.value[0] || karte.geste.value && karte.gesteText.value || karte.hinweis.value || 'Formular in der Tafel rechts' }}</span>
+        <button class="modus-fertig" :disabled="!karte.bereit.value" @click="$emit('uebernehmen')">
+          <CdeIcon name="check" :size="12" /> {{ karte.okText.value }}
+        </button>
+        <button class="kl-zu" title="Abbrechen (Esc)" aria-label="Abbrechen" @click="bearbeitung.abbrechen()">
           <CdeIcon name="close" :size="11" />
         </button>
       </div>
-      <CdeBearbeitungForm
-        v-else
-        :felder="bearbeitung.felder"
-        :werte="bearbeitung.werte"
-        :fehler="fehler"
-        :hinweis="hinweis"
-        :bereit="bereit"
-        :ok-text="okText"
-        @setze-wert="bearbeitung.setzeWert"
-        @uebernehmen="$emit('uebernehmen')"
-        @abbrechen="bearbeitung.abbrechen()"
-      />
-      <!-- Felder, die sich ZEIGEN lassen (S3): Station auf der Achse, Gelände im Raum -->
-      <div v-if="!geste && gesten.length" class="kl-gesten">
-        <button v-for="g in gesten" :key="g.name" class="kl-geste" :title="g.titel" @click="$emit('geste', g.name)">
-          <CdeIcon name="pointer" :size="12" /> {{ g.text }}
-        </button>
-      </div>
-      <!-- Das Querprofil als Skizze (Teil XX, Stufe D): Gerinne, Graben. -->
-      <div v-if="profile.length" class="kl-profile">
-        <CdeQuerprofilSkizze v-for="(p, i) in profile" :key="i" :profil="p" />
-      </div>
-      <div v-if="chips.length" class="kl-chips">
-        <span v-for="(c, i) in chips" :key="i" class="kl-chip" :class="`kl-chip--${c.art}`">{{ c.text }}</span>
-      </div>
+      <CdeWerkzeugKarte v-else :motor="motor" :chips="chips" :profile="profile"
+                        @uebernehmen="$emit('uebernehmen')" @geste="(f) => $emit('geste', f)" @geste-ab="$emit('geste-ab')" />
     </template>
 
     <!-- Nach dem Übernehmen: was passiert ist, und „Nochmal" -->
@@ -94,11 +76,9 @@
  */
 import { computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
-import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
-import CdeQuerprofilSkizze from './CdeQuerprofilSkizze.vue';
+import CdeWerkzeugKarte from './CdeWerkzeugKarte.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { eingabeArt, schreibtAmBauplan } from '../services/Bearbeitungen.js';
-import { hatHoehenbezug } from '../services/Hoehenbezug.js';
+import { useWerkzeugKarte } from '../composables/useWerkzeugKarte.js';
 
 const props = defineProps({
   /** { icon, hinweis, titel } eines Tipp-Werkzeugs (Messen/Notiz), oder null */
@@ -111,6 +91,8 @@ const props = defineProps({
   rueckmeldung: { type: Object, default: null },
   /** Der Eingabe-Motor des Raums (useEingabe) — Zug, Gesten, Enter-Regel (S3) */
   motor:        { type: Object, default: null },
+  /** Steht die Werkzeugkarte in der Tafel? Dann hier nur eine Zeile (Teil XXX, B1). */
+  kompakt:      { type: Boolean, default: false },
 });
 defineEmits(['fertig', 'uebernehmen', 'nochmal', 'rueckmeldung-zu', 'geste', 'geste-ab']);
 
@@ -120,39 +102,8 @@ const bearbeitung = useBearbeitung();
 const serienmeldung = computed(() => (props.rueckmeldung?.werkzeugId
   && props.rueckmeldung.werkzeugId === bearbeitung.scharfId) ? props.rueckmeldung.text : null);
 
-/** Läuft ein Zug im Motor? Dann führt er Hinweis, Fehler und Knopf. */
-const zugLaeuft = computed(() => !!props.motor?.aktiv?.value && !!props.motor?.zug?.value);
-const geste = computed(() => props.motor?.geste?.value ?? null);
-const gesteText = computed(() => {
-  const g = geste.value;
-  if (!g) return '';
-  return g.art === 'auswahl' ? 'Bauteil im Raum antippen — Esc bricht die Geste ab'
-    : g.auf === 'achse' ? 'Ort auf der Achse antippen — Esc bricht die Geste ab'
-    : 'Ort auf dem Bauteil antippen — Esc bricht die Geste ab';
-});
-/** Felder mit Geste — als Knöpfe „Zeigen". */
-// Aus `gestenFelder` (scharfe Bearbeitung, auch ohne laufenden Zug) — `eingaben`
-// kennt das Werkzeug erst, wenn der Motor sammelt, und der Knopf ist es, der
-// das Sammeln beginnt.
-const gesten = computed(() => (props.motor?.gestenFelder?.value ?? props.motor?.eingaben?.value?.felderMitGeste ?? []).map(g => ({
-  name: g.name,
-  text: g.geste === 'auswahl' ? `${feldTitel(g.name)}: im Raum antippen` : `${feldTitel(g.name)}: auf der Achse zeigen`,
-  titel: `Das Feld „${feldTitel(g.name)}" per Tipp füllen`,
-})));
-function feldTitel(name) {
-  const f = (bearbeitung.felder ?? []).find(x => x.name === name);
-  return f?.label || f?.titel || name;
-}
-const bereit = computed(() => (zugLaeuft.value ? bearbeitung.bereit && !!props.motor.genug.value : bearbeitung.bereit));
-const okText = computed(() => {
-  if (!zugLaeuft.value) return 'Übernehmen';
-  const m = props.motor;
-  if (m.genug.value) return 'Übernehmen';
-  const fehlt = m.mindestPunkte.value - m.punkte.value.length;
-  return `Noch ${fehlt} ${fehlt === 1 ? 'Punkt' : 'Punkte'}`;
-});
-const fehler = computed(() => (zugLaeuft.value && props.motor.grund?.value
-  ? [props.motor.grund.value, ...bearbeitung.fehler] : bearbeitung.fehler));
+/** Was die Werkzeugkarte sagt — EIN Ort für Leiste und Tafel (Teil XXX, B1). */
+const karte = useWerkzeugKarte(() => props.motor);
 
 const subjektName = computed(() => {
   const b = bearbeitung.bauteil;
@@ -160,38 +111,6 @@ const subjektName = computed(() => {
   return b.name || String(b.category ?? b.type ?? '').replace(/^IFC/, '') || '';
 });
 
-/**
- * Was der nächste Schritt ist — oder was das Werkzeug NICHT tut. Derselbe
- * Wortlaut wie in der Toolbox (`festlegungsHinweis`): Zug/Umriss kommen
- * aus dem Raum (E8); Forderungen bleiben beim Planer; ohne
- * Höhenbezug zählt der Wert ab Modellursprung.
- */
-const hinweis = computed(() => {
-  // Eine überschrittene FACHGRENZE (K10, Fabios E5) sperrt nicht mehr — sie
-  // wird hier gesagt, vor dem nächsten Schritt, und am Eintrag markiert.
-  const grenze = bearbeitung.grenzhinweise?.[0]?.text ?? '';
-  const weiter = naechsterSchritt();
-  return grenze && weiter ? `${grenze} · ${weiter}` : (grenze || weiter);
-});
-function naechsterSchritt() {
-  const s = bearbeitung.scharf;
-  if (!s) return '';
-  const art = eingabeArt(s);
-  if (art === 'zug' || art === 'umriss') {
-    // Der Motor sagt, was fehlt — gesetzt wird im Raum (E8: der Lageplan ist das Blatt).
-    if (props.motor?.hinweis?.value) return props.motor.hinweis.value;
-    return `${art === 'zug' ? 'Zug' : 'Umriss'} im Bild setzen — Punkte anklicken, Enter schliesst ab.`;
-  }
-  // Am EIGENEN Bauteil wird der Bauplan fortgeschrieben (Teil XXIV, K4) — dort
-  // ist es keine Forderung, und der Hinweis wäre falsch.
-  if (s.nurFestlegung && !schreibtAmBauplan(s, bearbeitung.bauteil)) return 'Wird als Forderung an den Planer geführt — die Geometrie bleibt bei ihm.';
-  if (s.brauchtRolle === 'sohlhoehe' && !hatHoehenbezug(bearbeitung.bauteil?.hoehenversatz)) {
-    return 'Kein Höhenbezug im Modell — der Wert zählt ab Modellursprung, nicht ab NN.';
-  }
-  const e = bearbeitung.einordnung;
-  if (e && e.guete !== 'gemessen') return `Form nur ${e.guete} — Wert prüfen.`;
-  return '';
-}
 </script>
 
 <style scoped>
@@ -216,6 +135,11 @@ function naechsterSchritt() {
   white-space: normal;
 }
 .kl-kopf { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+/* Die schmale Zeile (B1): Schritt, Übernehmen, Abbrechen — das Formular steht in der Tafel. */
+.kl-zeile { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.kl-schritt { color: var(--cde-text-dim); font-size: var(--cde-font-xs); overflow: hidden; text-overflow: ellipsis; max-width: 28rem; }
+.kl-schritt--fehler { color: var(--cde-warn-soft); }
+.modus-fertig:disabled { opacity: 0.5; cursor: default; }
 .kl-kopf strong { font-weight: 600; }
 .kl-serie {
   margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem;

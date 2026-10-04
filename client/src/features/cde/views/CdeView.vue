@@ -41,7 +41,13 @@
          Ohne `?projekt=` gibt es keinen Auftrag. Vorher stand hier eine
          Client-Projektliste, in der man sich Projekte ausdenken konnte, die es
          gar nicht gibt. Jetzt kommen sie aus dem Projektbestand. -->
-    <div v-if="!cde.auftrag" class="cde-klapptafel cde-auftragswahl">
+    <!-- Mit einem geladenen Modell ohne Projekt nur EINE Zeile (Teil XXX, B1): die Auswahl schob die ganze
+         Arbeitsfläche um ~230 px nach unten, auch während man im Modell arbeitete. -->
+    <div v-if="!cde.auftrag && (ifc.modelList?.length ?? 0) > 0 && !auftragswahlAuf" class="cde-auftragszeile">
+      <span>Ohne Projekt — nur ansehen, nichts wird abgelegt.</span>
+      <button class="cde-auftrag-knopf cde-auftrag-knopf--klein" type="button" @click="auftragswahlAuf = true">Projekt wählen</button>
+    </div>
+    <div v-else-if="!cde.auftrag" class="cde-klapptafel cde-auftragswahl">
       <h2>Projekt wählen</h2>
       <p class="cde-hint">
         Die CDE arbeitet im Ordner eines Projekts: dort liegen die Modelle, das
@@ -623,6 +629,8 @@ const migrationsBericht = ref('');
 const panels = usePanels();
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
+/** Die Projektauswahl über einem geladenen Modell — zugeklappt, bis man sie öffnet (Teil XXX, B1). */
+const auftragswahlAuf = ref(false);
 const bearbeitung = useBearbeitung();
 const plan = usePlan();
 const planInhalt = usePlanInhalt();
@@ -1753,6 +1761,12 @@ function fmtDate(ts) {
 
 /* ── Auftragswahl und Auftragsanzeige (Stufe 11.3) ──────────────────────── */
 .cde-auftragswahl { max-width: 46rem; }
+.cde-auftragszeile {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--cde-line); color: var(--cde-text-dim); font-size: var(--cde-font-xs);
+}
+.cde-auftrag-knopf--klein { width: auto; padding: 0.15rem 0.6rem; min-height: 0; }
+@media (pointer: coarse) { .cde-auftrag-knopf--klein { min-height: 40px; } }
 .cde-auftragswahl h2 {
   margin: 0 0 0.3rem; font-size: var(--cde-font-md); color: var(--cde-text-bright);
 }

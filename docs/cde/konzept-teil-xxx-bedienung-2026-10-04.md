@@ -198,3 +198,31 @@ wenn Mehrfach trägt); kein Zusammenführen mehrerer Bearbeiter; keine Änderung
 - Tragfähig: `tragfaehig-2026-09-24.md` Z. 83–90 (ProVI-Griffe, Firefox).
 - Mussleistungen: `mussleistungen.md` § 2, § 4 — offen M5 (Benennung), M14 (Frist/Zuständigkeit), M22 (Kommentar am
   Container); teilweise M4, M20. (Stand 2026-10-01, nicht nachgeführt.)
+
+---
+
+## 8 · Gebaut
+
+### B1 — Platz im Bild (2026-10-04)
+
+Die Werkzeugkarte (Formular, Gesten, Querprofil, Vorschau-Chips) ist ein eigenes Stück (`CdeWerkzeugKarte`, Rechnung in
+`composables/useWerkzeugKarte`). Sie steht in der Tafel „Bauteil", wenn die Tafel sie zeigt; die Leiste unter dem Bild wird
+dann eine Zeile (Werkzeug · nächster Schritt · Übernehmen · Abbrechen). Ein Werkzeug, das scharf wird, öffnet die Tafel. Die
+Tafel ist kein Kind des Viewers — sie bekommt die Karte über die Viewer-Schnittstelle (`api.werkzeugKarte`) und meldet sich
+an (`inTafel`); erst dann wird die Leiste schmal, sonst steht das Formular wie bisher unten (Tablet, Tafel zu). Ohne Projekt
+klappt „Projekt wählen" über einem geladenen Modell auf eine Zeile zu; der Hinweis „Nur im Browser gespeichert" rückt unter
+die Bearbeitungsmarke.
+
+| Messlauf | B0 | B1 |
+|---|---|---|
+| Höhe der Zeichenfläche | 764 px | **924 px** (+21 %) |
+| verdeckt beim Zeichnen — gesamt / mittleres Drittel | 23,9 % / 85,7 % | **6,1 % / 0 %** |
+| zwei Klicks in die Bildmitte ergeben eine Wand | nein | **ja** |
+
+Das Ziel „≤ 5 %" ist knapp verfehlt: 4,3 % liegen schon ohne Werkzeug über dem Bild (Werkzeugleiste links, Hinweis oben),
+dazu die schmale Zeile.
+
+**Gefunden beim Bauen:** der erste Versuch reichte die Karte per `provide` aus dem Viewer — der Test (Tafel als Kind
+montiert) war grün, im Browser änderte sich nichts (23,9 % wie vorher): in der App ist die Tafel ein GESCHWISTER des
+Viewers. Der Test montiert jetzt beide als Geschwister wie die Seite. Gegenprobe (Tafel meldet sich nicht an) rot.
+

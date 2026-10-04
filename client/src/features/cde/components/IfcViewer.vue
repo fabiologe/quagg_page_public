@@ -39,7 +39,7 @@
              gleichen Namens). Das darf nicht in einem console.warn verschwinden
              — sonst steht das Modell im Viewer, aber nicht im Projekt. -->
         <Transition name="fade">
-          <div v-if="ablageHinweis" class="ablage-hinweis">
+          <div v-if="ablageHinweis" class="ablage-hinweis" :class="{ 'unter-marke': bearbeitung.modusAn }">
             <CdeIcon name="warn" :size="14" />
             <span>{{ ablageHinweis }}</span>
             <button class="ablage-hinweis-zu" @click="ablageHinweis = null" title="Ausblenden" aria-label="Ausblenden">
@@ -371,6 +371,7 @@
             :profile="vorschau.stand.value?.profile ?? []"
             :rueckmeldung="rueckmeldung"
             :motor="eingabe"
+            :kompakt="panels.isOpen('bauteil') && karteInTafel > 0"
             @fertig="messen.aktiv.value ? messen.beenden() : annotationActive ? annotationen.umschalten() : bearbeitung.eckenBeenden()"
             @uebernehmen="uebernehmen"
             @geste="(feld) => eingabe.starteGeste(feld)"
@@ -988,6 +989,24 @@ function uebernehmen() {
   if (eingabe.aktiv.value && eingabe.zug.value) eingabe.enter();
   else uebernehmeScharf();
 }
+
+// DIE WERKZEUGKARTE IN DER TAFEL (Teil XXX, B1 — Fabios E-B1): die Tafel „Bauteil" zeigt Formular, Gesten und
+// Vorschau-Chips der scharfen Bearbeitung; dafür braucht sie den Motor und die Vorschau des Raums. Die Tafel ist kein
+// Kind des Viewers (die Seite baut die Panels) — sie bekommt die Karte über die Viewer-Schnittstelle. Ein Werkzeug,
+// das scharf wird, öffnet die Tafel — dort steht sein Formular, das Bild bleibt frei.
+// Wie viele Tafeln die Karte gerade zeigen — die Leiste wird nur schmal, wenn eine es WIRKLICH tut (ein offenes
+// Panel allein heisst nicht, dass die Tafel montiert ist; sonst stünde das Formular nirgends).
+const karteInTafel = ref(0);
+const werkzeugKarte = Object.freeze({
+  inTafel: karteInTafel,
+  motor: eingabe,
+  chips: computed(() => vorschau.stand.value?.chips ?? []),
+  profile: computed(() => vorschau.stand.value?.profile ?? []),
+  uebernehmen,
+  geste: (feld) => eingabe.starteGeste(feld),
+  gesteAb: () => eingabe.brichGesteAb(),
+});
+watch(() => bearbeitung.scharfId, (id) => { if (id && !panels.isOpen('bauteil')) panels.open('bauteil'); });
 
 /** Was der nächste Tipp tut — für die Kontextleiste, wenn ein Tipp-Werkzeug läuft. */
 const tippWerkzeug = computed(() => {
@@ -1766,6 +1785,8 @@ function _eigenbauAbschnittNachziehen() {
 watch(() => [ifc.geometrieStand, ifc.sichtbarkeitStand], () => _eigenbauAbschnittNachziehen());
 
 provideViewerApi({
+  /** Die Werkzeugkarte für die Tafel (Teil XXX, B1). */
+  werkzeugKarte,
   // Snapshots & Ansichten
   saveRenderState:      () => engine.value?.saveRenderState(),
   restoreRenderState:   (s) => engine.value?.restoreRenderState(s),
@@ -3528,6 +3549,8 @@ function onToggleNotes() { panels.toggle('issues'); }
   z-index: var(--cde-z-hud);
 }
 .ablage-hinweis .cde-icon { color: var(--cde-warn); }
+/* Unter der Bearbeitungsmarke, nicht unter ihr verdeckt (Teil XXX, B1 — Messlauf: beide lagen übereinander). */
+.ablage-hinweis.unter-marke { top: 2.6rem; }
 .ablage-hinweis-zu {
   display: inline-flex; align-items: center; justify-content: center;
   margin-left: auto; padding: 0.15rem;

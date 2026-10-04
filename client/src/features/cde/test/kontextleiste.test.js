@@ -19,9 +19,13 @@ describe('Verklebung (Textwächter)', () => {
 
     it('die Kontextleiste zeigt Tipp-Werkzeuge UND die scharfe Bearbeitung — ein Ort', () => {
         expect(viewer).toMatch(/<CdeKontextleiste[\s\S]*?v-if="messen\.aktiv\.value \|\| annotationActive \|\| bearbeitung\.scharf \|\| rueckmeldung \|\| bearbeitung\.eckenFuer"/);
-        expect(leiste).toContain('<CdeBearbeitungForm');
+        // Seit Teil XXX (B1) lebt das Formular in der Werkzeugkarte — die Leiste zeigt sie, wenn die Tafel sie nicht
+        // zeigt, und sonst eine Zeile mit Übernehmen.
+        const karte = lies('components/CdeWerkzeugKarte.vue');
+        expect(leiste).toContain('<CdeWerkzeugKarte');
+        expect(karte).toContain('<CdeBearbeitungForm');
         expect(leiste).toContain("$emit('uebernehmen')");
-        expect(leiste).toContain('kl-chip');
+        expect(karte).toContain('kl-chip');
     });
 
     it('✓ in der Leiste geht denselben Weg wie Toolbox und HUD: ausfuehren → wendeEintragAn', () => {

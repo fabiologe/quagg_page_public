@@ -184,7 +184,9 @@ describe('Verklebung im Raum (Textwächter)', () => {
     it('der Treffer geht mit Fang und GlobalId zum Motor; die Leiste kennt ihn', () => {
         expect(viewer).toMatch(/probeTreffer\?\.\(tipp\.x, tipp\.y, \{ fang: true \}\)/);
         expect(viewer).toMatch(/:motor="eingabe"/);
-        expect(lies('components/CdeKontextleiste.vue')).toMatch(/\$emit\('geste', g\.name\)/);
+        // Seit Teil XXX (B1) zeigt die Werkzeugkarte die Gesten — in der Tafel oder in der Leiste.
+        expect(lies('components/CdeWerkzeugKarte.vue')).toMatch(/\$emit\('geste', g\.name\)/);
+        expect(lies('components/CdeKontextleiste.vue')).toMatch(/@geste="\(f\) => \$emit\('geste', f\)"/);
     });
     it('useZeichnen ist nur noch die Hülle des Motors — kein zweiter Eingabepfad', () => {
         const z = lies('composables/useZeichnen.js');

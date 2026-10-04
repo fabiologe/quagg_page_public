@@ -28,7 +28,9 @@ const VERTRAG = {
     // H3: das × am Modell sitzt in der Tafel „Modelle“ (vorher `.tag-close` an der Pille).
     'components/IfcSpatialWindow.vue': ['.sw-auge', '.sw-weg'],
     // Teil XVI: die Modus-Leiste ist die Kontextleiste geworden.
-    'components/CdeKontextleiste.vue': ['.modus-fertig', '.kl-zu', '.kl-geste'],
+    'components/CdeKontextleiste.vue': ['.modus-fertig', '.kl-zu'],
+    // Teil XXX, B1: die Werkzeugkarte (Formular, Gesten) steht in der Tafel oder in der Leiste.
+    'components/CdeWerkzeugKarte.vue': ['.kl-zu', '.kl-geste'],
     'components/IfcPlanCanvas.vue': ['.hud-btn'],
     'components/CdeToolbox.vue':    ['.tb-btn', '.tb-kur'],
     'components/CdeHudLayer.vue':   ['.hud-menu-btn', '.hud-bearb-btn', '.hud-pill-x', '.hud-pille'],

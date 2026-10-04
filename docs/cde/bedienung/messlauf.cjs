@@ -87,6 +87,7 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         await warte(8000);
         await foto(page, 'start');
         zahlen.startVerdeckt = await verdeckt(page);
+        zahlen.leinwandHoehe = Math.round((await leinwand(page)).h);
 
         // M1 · Klicks, bis die Palette („Wand") zu sehen ist.
         let klicks = 0;
