@@ -455,7 +455,8 @@ function eintragIcon(e) {
 }
 /** Ein Eintrag der Palette: ein Werkzeug (aus einem Reiter mit dessen Gewerk, wo es abweicht) oder eine Vorlage. */
 function starteEintrag(e) {
-  if (e.art === 'vorlage') return zeichnen(`${e.rezept}-zeichnen`, { vorlage: e.vorlage });
+  // Eine Vorlage darf ihr Werkzeug nennen (G-T1: ein Weg wird als Band gezeichnet, nicht als Umriss).
+  if (e.art === 'vorlage') return zeichnen(e.vorlage?.werkzeug ?? `${e.rezept}-zeichnen`, { vorlage: e.vorlage });
   return zeichnen(e.id, { gewerk: e.gewerk });
 }
 

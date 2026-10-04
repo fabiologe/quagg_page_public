@@ -261,7 +261,10 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             // Anzeigeform oder ein Alt-DGM als Gelände, wird die Wurzel aufgelöst.
             // Das Rezept sieht dann das gelieferte Gelände — nach allen
             // Vorgängern gefaltet (unten), nie die Kopie eines anderen Vorgangs.
-            const erdbauArtig = _istErdbau(rezept) || rezept.id === 'anzeige';
+            // … und eine Ableitung, die dem Gelände FOLGT (Teil XXIX, G-T1: die Schicht auf dem Gelände)
+            // — sie liegt auf dem Gelände nach ALLEN Vorgängen, wie die Anzeige es zeigt.
+            const nachAllen = rezept.id === 'anzeige' || !!rezept.gelaendeFolgt;
+            const erdbauArtig = _istErdbau(rezept) || nachAllen;
             const urGid = erdbauArtig && genanntRoh.gelaende ? urGidVon(genanntRoh.gelaende) : null;
             const genannt = urGid ? { ...genanntRoh, gelaende: urGid } : genanntRoh;
             for (const [schlitz, roh] of Object.entries(genannt)) {
@@ -298,7 +301,7 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
             let stapel = null;
             if (urGid && quellen.gelaende) {
                 const { vorgaenge } = _stapel(urGid);
-                const bis = rezept.id === 'anzeige' ? vorgaenge.length : vorgaenge.findIndex(v => v.ableitung === id);
+                const bis = nachAllen ? vorgaenge.length : vorgaenge.findIndex(v => v.ableitung === id);
                 const listen = await _opsListen(urGid, Math.max(0, bis));
                 const vor = listen.flat();
                 const urRaster = quellen.gelaende;
@@ -308,13 +311,13 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                 // diesem Vorgang ist oder — für die Anzeige — nach allen. Eine
                 // flache Kopie: die Präfix-Caches hängen am Original.
                 quellen.gelaende = mitStand(_gefaltet(urRaster, urGid, listen, listen.length),
-                                            rezept.id === 'anzeige' ? 'anzeige' : 'vorher');
+                                            rezept.id === 'anzeige' ? 'anzeige' : (nachAllen ? 'nachher' : 'vorher'));
                 stapel = {
                     ur: urGid, urRaster: mitStand(urRaster, 'ur'), ableitung: id, opsVor: vor,
                     reihe: Math.max(0, stapelVon(urGid).indexOf(id)),
                     // Dieselbe Faltung für ein anderes Raster derselben Quelle —
                     // der feine Korridor braucht die Vorgänger genauso (eigener Präfix-Cache).
-                    vorherVon: (r) => (r ? mitStand(_gefaltet(r, urGid, listen, listen.length), 'vorher') : r),
+                    vorherVon: (r) => (r ? mitStand(_gefaltet(r, urGid, listen, listen.length), nachAllen ? 'nachher' : 'vorher') : r),
                     /**
                      * DAS UR-GELÄNDE FEIN, AUS DERSELBEN QUELLE (Teil XXI).
                      *

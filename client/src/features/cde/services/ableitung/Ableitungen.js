@@ -34,7 +34,7 @@ import { regelquelle, regeltabelle, regelwert } from '../regeln/Regelwerk.js';
 // Aus dem Kern nur das Hilfen-Fass (Teil XXIII, A8) — Formen laufen über `kernel.op`.
 import {
     rasterAbtasten, PROFIL_QUER, PROFIL_SCHRITT, kreisProfil, rechteckProfil, trapezProfil, sweep, extrudiere,
-    versetztePunkte, ringFlaeche, umrissFlaeche,
+    versetztePunkte, ringFlaeche, umrissFlaeche, SCHICHT_MIN_DICKE,
 } from '../geometrie/hilfen.js';
 import { ortBei, stationenEntlang, stationiere } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, knotensohle, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
@@ -1662,6 +1662,137 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
     beschreibe: (nachher) => {
         const n = (nachher?.parameter?.vorgaenge ?? []).length;
         return `Gelände-Anzeige · ${n} ${n === 1 ? 'Vorgang' : 'Vorgänge'}`;
+    },
+};
+
+/**
+ * EINE SCHICHT AUF DEM GELÄNDE (Teil XXIX, G-T1 — Konzept § 11.3, Lücken L-A und L-C).
+ *
+ * Tondichtung, Schutzvlies, Dichtungsschutz, Oberboden, Steinschüttung, Schilf, Rasen — und ein Weg als
+ * Band entlang einer Achse: Bauteile, die AUF dem Gelände liegen und ihm folgen. Bis G0 standen sie als
+ * Platten im Teich, eben über vier Ecken.
+ *
+ * Eine ABLEITUNG, kein einfaches Rezept: das Gelände, auf dem die Schicht liegt, ist das Gelände NACH
+ * ALLEN Erdbau-Vorgängen (der Lauf faltet den Stapel, `gelaendeFolgt`). Wird die Teichmulde tiefer,
+ * folgt die Dichtung beim nächsten Aufbau — gespeichert ist nur Umriss, Dicke, Abstand, Richtung.
+ *
+ * Klasse, Ausführung, Objekttyp, Gewerk und Vorlage stehen OBEN im Bauplan, wo jeder Leser sie sucht
+ * (`gewerkVon`, `objektTypVon`, `typAusVorlage`); die Geometrie in der einen Operation.
+ * Die Mengen nennt der Körper (Volumen, Dicke, Fläche) — auf die Qto der GEWÄHLTEN Klasse gelegt.
+ */
+export const SCHICHT_ZELLE = ERDBAU_ZELLE;
+export const SCHICHT_RICHTUNGEN = Object.freeze({ lot: 'lotrecht', normal: 'senkrecht zur Fläche' });
+const _schichtOp = (parameter) => (parameter?.operationen ?? []).find(o => o?.art === 'gelaendeschicht')?.parameter ?? {};
+
+/** Der Umriss der Schicht in Welt: gezeichnet, oder das Band um die Achse (halbe Breite je Seite). */
+export function schichtUmriss(op) {
+    if (Array.isArray(op?.umriss) && op.umriss.length >= 3) return op.umriss.map(p => ({ x: Number(p.x), z: Number(p.z) }));
+    const achse = (op?.achse ?? []).map(p => ({ x: Number(p.x), z: Number(p.z) }));
+    const b = Number(op?.breite);
+    if (achse.length < 2 || !(b > 0)) return [];
+    return [...versetztePunkte(achse, b / 2), ...versetztePunkte(achse, -b / 2).reverse()];
+}
+
+function _schichtBox(ring, rand) {
+    if (!ring.length) return null;
+    const xs = ring.map(p => p.x), zs = ring.map(p => p.z);
+    return { minX: Math.min(...xs) - rand, maxX: Math.max(...xs) + rand, minZ: Math.min(...zs) - rand, maxZ: Math.max(...zs) + rand };
+}
+
+ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
+    id: 'gelaendeschicht',
+    // Wo die Palette sie zeigt; das Gewerk eines Bauteils sagt die Regelkette nach seiner Klasse.
+    gewerk: 'wasserbau',
+    auchIn: ['landschaft', 'verkehr'],
+    titel: 'Schicht auf dem Gelände',
+    icon: 'terrain',
+    bauform: 'flaeche+dicke',
+    kategorieVorgabe: 'IFCCOURSE',
+    // Die Klasse ist frei (IfcCourse, IfcEarthworksFill, IfcGeographicElement …) — das Gewerk sagt die
+    // Klassenregel, nicht das Rezept: ein Weg (IfcCourse/PAVEMENT) ist Verkehrsfläche, keine Uferschicht.
+    gewerkNachKlasse: true,
+    richtungen: SCHICHT_RICHTUNGEN,
+    minDicke: SCHICHT_MIN_DICKE,
+    mindestPunkte: 3,
+    geschlossen: true,
+    felder: [],
+    // Das Gelände, das sie sieht: nach ALLEN Erdbau-Vorgängen auf ihrem Ur-Gelände (Ableitungslauf).
+    gelaendeFolgt: true,
+    braucht: { gelaende: ['hoehenfeld'] },
+    formen:  { gelaende: 'raster' },
+    teile: [
+        { rolle: 'schicht', bauform: 'flaeche+dicke', form: 'koerper',
+          kategorie: (parameter) => String(parameter?.kategorie || 'IFCCOURSE').toUpperCase(),
+          predefinedType: (parameter) => (parameter?.predefinedType ? String(parameter.predefinedType).toUpperCase() : null),
+          name: (q) => q,
+          // Körpermasse — `mengenVon` legt sie auf die Qto-Vorlage der gewählten Klasse (G3b).
+          menge: { volume: 'volumen', grossArea: 'flaeche', thickness: 'dicke' }, mengeNachKlasse: true },
+    ],
+
+    /** Das Gelände ein zweites Mal, FEIN, nur unter dem Umriss — auf dem Gitter des groben (wie der Erdbau). */
+    zusatzQuellen(parameter, quellen, genannt) {
+        const gid = genannt?.gelaende;
+        const ur = quellen?.gelaende;
+        const ring = schichtUmriss(_schichtOp(parameter));
+        if (!gid || !ur?.cell || ring.length < 3) return {};
+        const bereich = _schichtBox(ring, 2 * ur.cell);
+        // So fein wie die Anzeige (ein ganzzahliger Teil der groben Zelle), so grob wie das Budget will.
+        const flaeche = (bereich.maxX - bereich.minX) * (bereich.maxZ - bereich.minZ);
+        let k = Math.max(1, Math.round(ur.cell / SCHICHT_ZELLE));
+        while (k > 1 && flaeche / ((ur.cell / k) ** 2) > ERDBAU_ZELLBUDGET) k--;
+        if (k < 2) return {};
+        return { gelaendeFein: { gid, form: 'raster',
+            opts: { cell: ur.cell / k, bereich, gitter: { x0: ur.x0, z0: ur.z0, cell: ur.cell } } } };
+    },
+
+    async leite(parameter, quellen, { kernel, stapel = null } = {}) {
+        const grob = quellen?.gelaende;
+        if (!grob) throw new Error('gelaendeschicht: Gelände fehlt');
+        if (!kernel) throw new Error('gelaendeschicht: kein Kernel');
+        const op = _schichtOp(parameter);
+        const umriss = schichtUmriss(op);
+        if (umriss.length < 3) throw new Error('gelaendeschicht: kein Umriss (Fläche ≥ 3 Punkte oder Achse + Breite)');
+        const dicke = Number(op.dicke);
+        // Das feine Gelände nach denselben Vorgängen wie das grobe — sonst läge die Schicht auf dem Ur.
+        const fein = quellen.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
+        const raster = fein ?? grob;
+        const r = await kernel.op('schicht', { raster },
+            { umriss, dicke, abstand: Number(op.abstand) || 0, richtung: SCHICHT_RICHTUNGEN[op.richtung] ? op.richtung : 'lot' });
+        if (!r.ergebnis) throw new Error(`gelaendeschicht: ${r.warnungen.join('; ') || 'kein Körper'}`);
+        const e = r.ergebnis;
+        return {
+            teile: { schicht: { form: 'koerper', daten: e } },
+            kennzahlen: { volumen: e.volumen, flaeche: e.flaeche, grundflaeche: e.grundflaeche, umfang: e.umfang,
+                          dicke, ausserhalb: e.ausserhalb, zellweite: raster.cell,
+                          gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle' },
+            befunde: e.ausserhalb > 0.001 ? [{ regel: 'schicht_ausserhalb', schwere: 'warnung',
+                text: `${(e.ausserhalb * 100).toFixed(1)} % des Umrisses liegen nicht auf dem Gelände — dort fehlt die Schicht` }] : [],
+            warnungen: r.warnungen, bild: [],
+        };
+    },
+
+    vorschau(parameter, { farben = {} } = {}) {
+        const op = _schichtOp(parameter);
+        const ring = schichtUmriss(op);
+        const primitive = ring.length >= 3 ? [{ art: 'umriss', ring: ring.map(p => ({ x: p.x, y: NaN, z: p.z })), farbe: farben.ziel ?? '#4fc3f7' }] : [];
+        const chips = [{ art: 'vorschau', text: `Schicht ${Number(op.dicke) || '?'} m ${SCHICHT_RICHTUNGEN[op.richtung] ?? 'lotrecht'} auf dem Gelände — Körper nach Übernehmen` }];
+        return { primitive, chips, hinweise: [] };
+    },
+
+    verschiebe: (parameter, delta) => ({
+        ...parameter,
+        operationen: (parameter?.operationen ?? []).map(o => (o?.art !== 'gelaendeschicht' ? o : { ...o, parameter: {
+            ...o.parameter,
+            ...['umriss', 'achse'].reduce((a, f) => (Array.isArray(o.parameter?.[f])
+                ? { ...a, [f]: o.parameter[f].map(p => ({ ...p, x: p.x + (delta?.x ?? 0), z: p.z + (delta?.z ?? 0) })) } : a), {}),
+        } })),
+    }),
+    fachmodell: (globalId) => ({ koerper: [globalId] }),
+    beschreibe: (nachher) => {
+        const op = _schichtOp(nachher?.parameter);
+        return `Schicht auf dem Gelände · ${String(nachher?.kategorie ?? '').replace(/^IFC/, '')}`
+            + `${nachher?.parameter?.predefinedType ? `/${nachher.parameter.predefinedType}` : ''} · ${op.dicke ?? '?'} m`
+            + (Array.isArray(op.achse) ? ` · Band ${op.breite ?? '?'} m` : '');
     },
 };
 

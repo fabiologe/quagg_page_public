@@ -38,8 +38,9 @@ describe('Teil XXIX, G3 — die Palette', () => {
         }
         expect(Math.max(...p.gewerke.flatMap(g => [g.bauteile.length, g.vorlagen.length]))).toBeLessThanOrEqual(8);
         expect(Object.fromEntries(p.gewerke.map(g => [g.id, [g.bauteile.length, g.vorlagen.length]]))).toEqual({
-            erdbau: [0, 0], entwaesserung: [8, 5], wasserbau: [0, 4], konstruktiv: [5, 2], verkehr: [0, 2], ausstattung: [1, 4],
-            leitungen: [1, 0], ta: [0, 1], landschaft: [0, 3], vermessung: [2, 1],
+            // G-T1: Schicht und Band auf dem Gelände im Wasserbau, dazu (mit Gewerk-Vorgabe) in Verkehr und Landschaft.
+            erdbau: [0, 0], entwaesserung: [8, 5], wasserbau: [2, 4], konstruktiv: [5, 2], verkehr: [2, 2], ausstattung: [1, 4],
+            leitungen: [1, 0], ta: [0, 1], landschaft: [2, 3], vermessung: [2, 1],
         });
     });
 

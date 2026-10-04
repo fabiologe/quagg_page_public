@@ -174,8 +174,12 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * und der geladenen Bibliothek — kein Viewer, kein Modell.
      */
     function kandidatenVon(art, el) {
-        return kandidatenAus({ wirksamerStand: useAenderungen().wirksamerStand, vorlagen: vorlagen.value })(art, el);
+        return kandidatenAus({ wirksamerStand: useAenderungen().wirksamerStand, vorlagen: vorlagen.value,
+                               gelaende: gelaendeListe.value })(art, el);
     }
+    /** Die gelieferten Gelände, die die Engine kennt (Teil XXIX, G-T1) — der Viewer reicht sie herein. */
+    const gelaendeListe = ref([]);
+    function setzeGelaende(liste) { gelaendeListe.value = Array.isArray(liste) ? liste : []; }
 
     const felder = computed(() => (void katalogStand.value,
         scharf.value ? felderFuer(scharf.value, typprofil.value, bauteil.value, { kandidatenVon }) : []));
@@ -992,7 +996,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         ladeProfile, vorlagen, kandidatenVon, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
         // Teil XXIV, K1: der Kommandoweg — auch ohne Oberfläche.
-        fuehreAus, rahmen, setzeRahmen,
+        fuehreAus, rahmen, setzeRahmen, setzeGelaende,
         // Teil XXIV, K6: die Markierung ohne Oberfläche.
         pruefeEigenes, befundeVon,
     };

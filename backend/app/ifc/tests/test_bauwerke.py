@@ -943,3 +943,32 @@ def test_g0_teich_klassen_kommen_an_mengen_und_merkmale_nicht(tmp_path):
     stein = qto[guids.guid_aus_cde_id("cde-T9")]
     assert stein[0] == "Qto_CourseBaseQuantities"
     assert {k: round(v, 6) for k, v in stein[2].items()} == {"Thickness": 0.3, "Volume": 5.4}
+
+
+SCHICHT_GT1 = DATEN / "paket_schicht_gt1.json"
+
+
+def test_gt1_schichten_auf_dem_gelaende_kommen_an(tmp_path):
+    """Teil XXIX G-T1: Schichten, die dem Gelaende folgen (`gelaendeschicht`) — sechs aus dem Teich, auf
+    der geformten Mulde gebaut: Steinschuettung (Wasserwechselzone, Kolkschutz, Dammscharte), Oberboden als
+    IfcEarthworksFill, Schilf und Rasen als IfcGeographicElement. Der Koerper folgt dem Gelaende, die
+    Mengen der Qto-Vorlage der KLASSE: Kolkschutz 4 x 4 m x 0,4 lotrecht = 6,4 m3, Oberboden 36 x 3 x 0,2
+    = 21,6 m3 verdichtet; IfcGeographicElement hat keine Vorlage."""
+    paket = _georef(json.loads(SCHICHT_GT1.read_text(encoding="utf-8")))
+    ziel = tmp_path / "schicht_gt1.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="schicht-gt1")
+    assert bericht["bauteile"] == 6 and bericht["uebersprungen"] == []
+    assert bericht["warnungen"] == []
+    assert _regeln(ziel) == []
+    from app.ifc import guids
+    datei = ifcopenshell.open(str(ziel))
+    qto = _qto(datei)
+    kolk = qto[guids.guid_aus_cde_id("cde-T16")]
+    assert kolk[0] == "Qto_CourseBaseQuantities"
+    assert {k: round(v, 6) for k, v in kolk[2].items()} == {"Thickness": 0.4, "Volume": 6.4}
+    ober = qto[guids.guid_aus_cde_id("cde-T8")]
+    assert ober[0] == "Qto_EarthworksFillBaseQuantities"
+    assert {k: round(v, 6) for k, v in ober[2].items()} == {"CompactedVolume": 21.6, "Depth": 0.2}
+    assert guids.guid_aus_cde_id("cde-T10") not in qto
+    klassen = sorted(e.is_a() + "/" + (e.PredefinedType or "") for e in datei.by_type("IfcElement"))
+    assert klassen == ["IfcCourse/ARMOUR"] * 3 + ["IfcEarthworksFill/USERDEFINED"] + ["IfcGeographicElement/VEGETATION"] * 2

@@ -50,10 +50,11 @@ async function miss([, , [klasse, pdt, objektTyp], kom]) {
 describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
     it('G0 147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste — G2: +1 Formular', () => {
         const kat = werkzeugKatalog();
-        // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung").
-        expect(kat).toHaveLength(152);
+        // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung");
+        // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände).
+        expect(kat).toHaveLength(154);
         expect(kat.filter(b => b.setzt)).toHaveLength(88);
-        expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(18);
+        expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(20);
     });
 
     it('angeboten (Eignung) am gewählten Bauteil: G0 Wand 30, Rohr 36, Platte 24, Raum 21, Bauwerk 16 — G2 je +1 Formular', () => {
@@ -145,8 +146,9 @@ describe('Teil XXIX, G0 — der Retentionsteich mit den Kommandos von heute', ()
             .toEqual(p.bauteile.map(t => [t.cdeId, t.klasse, t.predefinedType ?? null]));
     });
 
-    it('die zwei Kern-Lücken: keine Ableitung baut einen Raum aus dem Gelände oder eine Schicht darauf', () => {
-        expect(Object.keys(ABLEITUNGEN).sort()).toEqual(['anzeige', 'aussparung', 'bauwerksgrube', 'durchfuehrung', 'erdbau', 'kanalgraben', 'oeffnung']);
+    it('die zwei Kern-Lücken: keine Ableitung baut einen Raum aus dem Gelände — die Schicht darauf baut seit G-T1 eine', () => {
+        // G-T1 gedreht: `gelaendeschicht` (Abnahme `schichtGelaende.test.js`). Der Raum in der Mulde bleibt offen (G-T2).
+        expect(Object.keys(ABLEITUNGEN).sort()).toEqual(['anzeige', 'aussparung', 'bauwerksgrube', 'durchfuehrung', 'erdbau', 'gelaendeschicht', 'kanalgraben', 'oeffnung']);
         // Ein Raum ist ein senkrechtes Prisma: Grundfläche × Höhe — die Mulde 1 : 3 hätte 1 424 m³ zwischen 99 und 100,
         // ein Prisma über der Wasserfläche bei 99 (46 × 26) hat 1 196 m³.
         const prisma = rezeptNach('raum').mengen({ punkte: [[0, 99, 0], [46, 99, 0], [46, 99, 26], [0, 99, 26]], raumhoehe: 1 });

@@ -43,6 +43,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'bauwerk:teile': 'die Teile eines Bauwerks — auch die seiner Anlagenteile und Baugruppen',
     'eigene:wirt': 'ein eigenes Bauteil mit Rechteckprofil, das eine Öffnung tragen kann (Wand, Fundament, Schwelle)',
     'eigene:traeger': 'ein eigenes Bauteil mit Körper, auf dem das Subjekt stehen kann',
+    'gelaende': 'ein Gelände, auf dem etwas liegen kann — ein Ur-Gelände aus dem Journal oder ein geliefertes',
 });
 
 /**
@@ -53,8 +54,9 @@ export const KANDIDATENARTEN = Object.freeze({
  * @param {Array} [quellen.vorlagen]  die geladene Bibliothek
  * @returns {function(string, object): Array<{id: string, titel: string}>}
  */
-export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
+export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende = [] } = {}) {
     return (art, el) => {
+        if (art === 'gelaende') return _gelaende(wirksamerStand, gelaende);
         if (art === 'eigene:flaeche') return _eigeneFlaechen(wirksamerStand, el);
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
@@ -64,6 +66,31 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [] } = {}) {
         if (art === 'eigene:traeger') return _eigeneTraeger(wirksamerStand, el);
         return [];
     };
+}
+
+/**
+ * DIE GELÄNDE (Teil XXIX, G-T1): worauf eine Schicht liegen kann. Zuerst jedes Ur-Gelände, das im Journal
+ * eine Anzeige trägt (es wurde schon geformt — Zellweite und Prüfmass sind die des Erdbaus, damit die
+ * Schicht auf DERSELBEN Fläche liegt, die man sieht); dann die gelieferten, die der Aufrufer kennt
+ * (`gelaende`: die Kandidaten der Engine). Eine Anzeige der CDE steht für ihr Ur und wird nicht doppelt genannt.
+ */
+function _gelaende(wirksamerStand, gelaende) {
+    const aus = new Map();
+    if (typeof wirksamerStand === 'function') {
+        for (const [, plan] of wirksamerStand('erzeugt')) {
+            if (!istAnzeigeform(plan)) continue;
+            const ur = plan.parameter?.quellen?.gelaende;
+            if (!ur || aus.has(ur)) continue;
+            aus.set(ur, { id: ur, titel: rezeptNach(plan.rezept)?.quellnameAus?.(plan) || ur, herkunft: 'journal',
+                          cell: plan.parameter?.raster?.cell ?? null, pruefmass: plan.parameter?.quellBasis?.gelaende ?? null });
+        }
+    }
+    for (const g of gelaende ?? []) {
+        if (!g?.globalId || g.herkunft === 'cde' || aus.has(g.globalId)) continue;
+        aus.set(g.globalId, { id: g.globalId, titel: g.name || g.globalId, herkunft: 'geliefert',
+                              cell: g.cell ?? null, pruefmass: g.pruefmass ?? null });
+    }
+    return [...aus.values()];
 }
 
 /** Die eigenen Flächen aus dem Journal — ohne das Subjekt und ohne Ausgeblendetes. */

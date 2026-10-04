@@ -24,6 +24,7 @@ import { pruefeForm } from './Formen.js';
 import { rasterAusMesh, rasterResample, rasterDifferenz } from './ops/Raster.js';
 import { koerperZwischenRastern } from './ops/Koerper.js';
 import { profilkoerper } from './ops/Profilkoerper.js';
+import { schicht } from './ops/Schicht.js';
 import { isolinie } from './ops/Linien.js';
 import { sweep, extrudiere } from './ops/Sweep.js';
 
@@ -33,6 +34,8 @@ export const OPS = Object.freeze({
     rasterDifferenz:        { eingaben: { a: 'raster', b: 'raster' },         ausgabe: 'raster',  ort: 'client', kosten: 'klein' },
     koerperZwischenRastern: { eingaben: { oben: 'raster', unten: 'raster' },  ausgabe: 'koerper', ort: 'client', kosten: 'mittel' },
     profilkoerper:          { eingaben: { raster: 'raster' },                 ausgabe: 'koerper', ort: 'client', kosten: 'mittel', pflicht: ['bahn'] },
+    // Eine Schicht, die dem Gelände folgt (Teil XXIX, G-T1): Umriss + Dicke auf der Fläche des Rasters.
+    schicht:                { eingaben: { raster: 'raster' },                 ausgabe: 'koerper', ort: 'client', kosten: 'mittel', pflicht: ['umriss', 'dicke'] },
     isolinie:               { eingaben: { raster: 'raster' },                 ausgabe: 'linien',  ort: 'client', kosten: 'mittel' },
     // `drape` und `offset` sind gebaut (`ops/Linien.js`), aber ohne Aufrufer —
     // sie kommen zurück in diese Liste, sobald einer sie braucht (Teil XXIII, A8).
@@ -48,7 +51,7 @@ export const OPS = Object.freeze({
 
 /** Was im Client heute WIRKLICH rechnet. Neue Ops hier anmelden — sonst nirgends. */
 const CLIENT_OPS = Object.freeze({
-    rasterAusMesh, rasterResample, rasterDifferenz, koerperZwischenRastern, profilkoerper,
+    rasterAusMesh, rasterResample, rasterDifferenz, koerperZwischenRastern, profilkoerper, schicht,
     isolinie,
     sweep, extrudiere,
 });

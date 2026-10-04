@@ -110,6 +110,8 @@ function _vorlage(v, fehler) {
     if (!String(v.name ?? '').trim()) fehler.push('Der Name fehlt.');
     if (!rezeptNach(v.rezept)) fehler.push(`Unbekanntes Rezept „${v.rezept}".`);
     if (v.gewerk !== undefined && !istGewerk(v.gewerk)) fehler.push(`Gewerk „${v.gewerk}" gibt es nicht.`);
+    // Das Werkzeug, mit dem gezeichnet wird (G-T1) — sonst `${rezept}-zeichnen`.
+    if (v.werkzeug !== undefined && !/^[a-z0-9-]+-zeichnen$/.test(String(v.werkzeug))) fehler.push(`Werkzeug „${v.werkzeug}" ist kein Zeichenwerkzeug.`);
     const vorgaben = v.vorgaben ?? {};
     if (!_istObjekt(vorgaben)) { fehler.push('Vorgaben müssen ein Objekt sein.'); return; }
     for (const [feld, wert] of Object.entries(vorgaben)) {

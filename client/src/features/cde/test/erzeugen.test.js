@@ -84,13 +84,16 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // V5: die Einbauten — aus den vorhandenen Bausteinen.
                       'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen',
                       // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.
-                      'rigole-zeichnen'].sort());
+                      'rigole-zeichnen',
+                      // Teil XXIX, G-T1: eine Schicht auf dem Gelände — als Fläche und als Band entlang einer Achse.
+                      'gelaendeschicht-zeichnen', 'gelaendeschicht-band-zeichnen'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).
         for (const b of erzeugen.filter(x => !x.ausVorlage)) {
             const r = rezeptNach(b.rezept);
-            expect(typeof r?.baue, b.id).toBe('function');
+            // … oder eine Ableitung, die aus den Punkten UND ihrer Quelle baut (G-T1: die Schicht auf dem Gelände).
+            expect(typeof (r?.baue ?? r?.leite), b.id).toBe('function');
             expect(b.mindestPunkte, b.id).toBeGreaterThanOrEqual(1);
         }
         // Das Gelände-Rezept bleibt — es baut mit Quellraster (Alt-Journale, Erdbau).

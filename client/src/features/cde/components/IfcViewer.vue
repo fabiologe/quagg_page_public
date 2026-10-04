@@ -975,6 +975,13 @@ const griffe = useGriffe({
 });
 // Nach jeder Anwendung und jedem Neuaufbau stehen die Griffe neu (Journalstand, Geometrie).
 watch(() => ifc.geometrieStand, () => griffe.neuBauen());
+// DIE GELÄNDE FÜR EIN WERKZEUG, DAS AUF DEM GELÄNDE LIEGT (Teil XXIX, G-T1): ein Feld mit
+// `optionenAus: 'gelaende'` fragt den Kandidaten-Auflöser — die gelieferten kennt nur die Engine. Nachgezogen,
+// wann immer sich die Geometrie rührt — auch ein Kommando ohne Formular (Konsole) braucht die Liste.
+watch(() => ifc.geometrieStand, async () => {
+  try { bearbeitung.setzeGelaende(await engine.value?.gelaendeKandidaten?.() ?? []); }
+  catch (fehler) { console.warn('cde: gelaende-kandidaten', fehler?.message ?? fehler); }
+});
 
 /** Übernehmen aus der Kontextleiste: der Motor, wenn ein Zug läuft — sonst das Formular. */
 function uebernehmen() {

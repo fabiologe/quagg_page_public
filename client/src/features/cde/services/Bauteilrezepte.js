@@ -472,7 +472,8 @@ export function gewerkVon(bauplan) {
     const vomRezept = istGewerk(rz?.gewerk) ? rz.gewerk : null;
     const kategorie = String(bauplan?.kategorie ?? rz?.kategorieVorgabe ?? '').toUpperCase();
     const eigeneKlasse = !bauplan?.kategorie || kategorie === String(rz?.kategorieVorgabe ?? '').toUpperCase();
-    if (vomRezept && eigeneKlasse) return { gewerk: vomRezept, quelle: 'rezept' };
+    // Ein Rezept mit freier Klasse (die Schicht auf dem Gelände, G-T1) überlässt der Klasse das Wort.
+    if (vomRezept && eigeneKlasse && !rz?.gewerkNachKlasse) return { gewerk: vomRezept, quelle: 'rezept' };
     const nachKlasse = kategorie ? gewerkNachKlasse(kategorie, predefinedTypeVon(bauplan)) : null;
     if (nachKlasse) return { gewerk: nachKlasse, quelle: 'klasse' };
     return vomRezept ? { gewerk: vomRezept, quelle: 'rezept' } : { gewerk: null, quelle: null };
@@ -487,7 +488,8 @@ export function gewerkVon(bauplan) {
  */
 export function predefinedTypeVon(bauplan) {
     const r = ABLEITUNGEN[bauplan?.rezept];
-    const teil = r?.teile?.find(t => t.rolle === bauplan?.rolle);
+    // Ohne Rolle (eine VORLAGE der Schicht auf dem Gelände, G-T1): hat die Ableitung genau EIN Teil, ist es dieses.
+    const teil = r?.teile?.find(t => t.rolle === bauplan?.rolle) ?? (!bauplan?.rolle && r?.teile?.length === 1 ? r.teile[0] : null);
     if (teil && teil.predefinedType !== undefined) {
         return typeof teil.predefinedType === 'function'
             ? (teil.predefinedType(bauplan.parameter ?? {}) ?? null) : (teil.predefinedType ?? null);
@@ -703,7 +705,8 @@ const MENGEN_SINN = Object.freeze({
     width: 'breite', depth: 'dicke', thickness: 'dicke', height: 'hoehe',
 });
 const ZIEL_JE_SINN = Object.freeze({
-    volumen: ['NetVolume', 'Volume', 'GrossVolume'], flaeche: ['NetArea', 'GrossArea', 'Area', 'NetFloorArea'],
+    // Eine eingebaute Auffüllung (Oberbodenandeckung als IfcEarthworksFill) misst verdichtet — ihr Raum IST das CompactedVolume.
+    volumen: ['NetVolume', 'Volume', 'GrossVolume', 'CompactedVolume'], flaeche: ['NetArea', 'GrossArea', 'Area', 'NetFloorArea'],
     seitenflaeche: ['GrossSideArea'], umfang: ['Perimeter'], laenge: ['Length'], breite: ['Width'],
     dicke: ['Depth', 'Thickness'], hoehe: ['Height'],
 });
@@ -740,6 +743,9 @@ export function mengenVon(bauplan, kennzahlen) {
     if (!teil && typeof r?.mengen === 'function') Object.assign(out, r.mengen(bauplan?.parameter ?? {}));
     const kategorie = String(bauplan?.kategorie ?? '').toUpperCase();
     if (!teil && kategorie && kategorie !== String(r?.kategorieVorgabe ?? '').toUpperCase()) return _mengenFuerKlasse(out, kategorie);
+    // EIN ABLEITUNGSTEIL MIT WÄHLBARER KLASSE (Teil XXIX, G-T1: die Schicht auf dem Gelände) nennt seine
+    // Körpermasse — sie gehen immer über die Vorlage der Klasse, auch wenn es die Vorgabeklasse ist.
+    if (teil?.mengeNachKlasse && kategorie) return _mengenFuerKlasse(out, kategorie);
     return out;
 }
 
@@ -750,7 +756,9 @@ export function mengenVon(bauplan, kennzahlen) {
  */
 export function mengenMethodeVon(bauplan) {
     const r = rezeptNach(bauplan?.rezept);
-    if (r?.teile?.find?.(t => t.rolle === bauplan?.rolle)?.menge) return 'raster';
+    const teil = r?.teile?.find?.(t => t.rolle === bauplan?.rolle);
+    // Die Schicht auf dem Gelände (G-T1) misst ihren KÖRPER, nicht eine Rasterdifferenz.
+    if (teil?.menge) return teil.mengeNachKlasse ? 'koerper' : 'raster';
     return typeof r?.mengen === 'function' ? 'koerper' : null;
 }
 
@@ -765,7 +773,7 @@ export function mengenMethodeVon(bauplan) {
  */
 export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, raster = {},
                                      operationen = [], name = '', bestehend = null, vorgaenge = null,
-                                     auflockerung = null } = {}) {
+                                     auflockerung = null, oben = null } = {}) {
     const r = ABLEITUNGEN[rezept];
     if (!r) throw new Error(`Ableitung „${rezept}" gibt es nicht`);
     const ableitung = bestehend?.ableitung ?? neueAbleitungsId();
@@ -792,7 +800,10 @@ export function ableitungsSchritte({ rezept, quellen = {}, quellBasis = {}, rast
     // Erdbau-Vorgänge — eine Entscheidung, nichts Gerechnetes.
     // `auflockerung` gehört dem VORGANG, nicht einer Operation: sie ändert
     // keine Geometrie, nur die Menge, die abgefahren wird (Teil XXI, P4).
-    const parameter = { quellen, quellBasis, raster, operationen,
+    // `oben` (Teil XXIX, G-T1): Felder, die jeder Leser OBEN im Bauplan sucht — Klasse, Ausführung,
+    // Objekttyp, Gewerk, Vorlage einer Schicht auf dem Gelände. Leere Werte bleiben draussen.
+    const obenFelder = Object.fromEntries(Object.entries(oben ?? {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+    const parameter = { ...obenFelder, quellen, quellBasis, raster, operationen,
                         ...(vorgaenge ? { vorgaenge } : {}),
                         ...(Number.isFinite(Number(auflockerung)) ? { auflockerung: Number(auflockerung) } : {}) };
     const vorhandene = vorhanden;

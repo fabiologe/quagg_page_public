@@ -166,7 +166,7 @@ const FACHWOERTER_ERLAUBT = {};
  * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
  * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
  */
-const HOOKS_MAX = { anwenden: 42, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung, + XXVIII V1 (eine Fabrik je Vorlage), + V3 (Werte setzen, Angleichen), + XXIX G2 (Formular)
+const HOOKS_MAX = { anwenden: 43, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung, + XXVIII V1 (eine Fabrik je Vorlage), + V3 (Werte setzen, Angleichen), + XXIX G2 (Formular), + G-T1 (eine Fabrik: Schicht und Band auf dem Gelände)
 // V5 (Teil XXV) bringt einen Hook DAZU — und nimmt dafür Store-Code weg:
 // „Vorgang entfernen“ war `useBearbeitung.entferneVorgang` mit Systembeleg und
 // ist jetzt ein Katalogwerkzeug. Die Rechnung selbst blieb, wo sie war

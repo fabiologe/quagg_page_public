@@ -297,6 +297,14 @@ const NEU = [
     { id: 'flaeche-teilen', el: eigen('cde-F1'), zug: [P(5, 100, 28), P(5, 100, 42)], werte: [{}] },
     // Seit Teil XXV (V3) tragen diese beiden keine LISTE am Subjekt mehr: was
     // sie ausser ihrem Ziel brauchen, löst der Kontext auf (`kandidaten`).
+    // Teil XXIX, G-T1: eine Schicht auf dem Gelände — als Fläche und als Band; das Gelände ist Quelle.
+    { id: 'gelaendeschicht-zeichnen', el: zug(P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)),
+      zug: [P(80, 100, 60), P(90, 100, 60), P(90, 100, 70), P(80, 100, 70)],
+      werte: [{ name: 'Steinschüttung', kategorie: 'IFCCOURSE', predefinedType: 'ARMOUR', objektTyp: '', dicke: 0.4, abstand: '',
+                richtung: 'lot', gelaende: '1Ur0Gelaende0Vertrag00' }] },
+    { id: 'gelaendeschicht-band-zeichnen', el: zug(P(80, 100, 60), P(100, 100, 60)), zug: [P(80, 100, 60), P(100, 100, 60)],
+      werte: [{ name: 'Weg', kategorie: 'IFCCOURSE', predefinedType: 'PAVEMENT', objektTyp: '', dicke: 0.15, breite: 2.5, abstand: '',
+                richtung: 'lot', gelaende: '1Ur0Gelaende0Vertrag00' }] },
     { id: 'flaeche-vereinigen', el: eigen('cde-F1'), werte: [{ andere: 'cde-F2' }], kandidaten: KANDIDATEN },
     { id: 'koerper-tauschen', el: eigen('cde-S1'), werte: [{ vorlage: 'vl-dn1200' }], kandidaten: KANDIDATEN },
 

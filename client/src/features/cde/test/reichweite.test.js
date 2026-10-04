@@ -62,8 +62,9 @@ const HEUTE = Object.freeze({
     // V6: +8 Rigole (Zeichnen, 7 Setzer) — 147/124.
     // Teil XXIX, G2: +1 Eigenschaften (Formular) — 148/125.
     // G3: +4 Setzer Ausführung/Objekttyp an Pfosten und Schacht — 152/129.
-    werkzeuge: 152,
-    ausgefuehrt: 129,
+    // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände) — 154/131.
+    werkzeuge: 154,
+    ausgefuehrt: 131,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

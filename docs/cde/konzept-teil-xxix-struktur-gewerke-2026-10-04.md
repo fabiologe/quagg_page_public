@@ -310,7 +310,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G2** | Eigenschaftsformular (W1): `eigenschaften-setzen`; Setzer aus der Leiste, nicht aus dem Katalog | **gemessen:** Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11 Knöpfe; 2 Maße = 1 Vorgang (das Ziel „≤ 12“ war geschätzt — die 14 Lage-/Formoperationen einer Wand bleiben echte Werkzeuge) | Kern + Oberfläche |
 | **G3** | Werkzeugleiste: Allgemein + Gewerk-Reiter + Suche; Zeichnen aus einem Reiter setzt das Gewerk | Erzeugen 18 flach → ≤ 8 je Ansicht | Oberfläche |
 | **G3b** | Mengen folgen der Klasse (L-F): Körpermaß → Qto der gewählten Klasse; Merkmalsfelder nur, wo ihr Satz gilt | Teich: Elemente ohne Mengen 16 → 0, Warnungen 67 → 0 | Kern klein |
-| **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) | Teich: 9 Elemente in Form | Kern |
+| **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) — **gebaut 2026-10-04**, § 11.4 | Teich: 9 Elemente in Form — **gemessen 0 → 9** (8 in der Mulde, der Rasen eben oberhalb) | Kern |
 | **G-T2** | Raum in einer Erdmulde (L-B) | Dauerstau 992 m³, Rückhalteraum 1 424 m³ gemessen | Kern |
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) | — | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung | Schacht mit Gerinne 1 Kommando | Katalog |
@@ -441,3 +441,35 @@ heute, das Paket gelesen, dann durch den echten Schreiber:
 **Offen zur Entscheidung:** Welche Klasse bekommt der **Steg** als Bauwerk — IfcFacility (wie Kammer und Teich),
 IfcBridge / GIRDER (er überspannt Wasser) oder IfcMarineFacility / JETTY (Steg im Wasser; die Klasse ist für Häfen
 gedacht)? Vorschlag: **IfcFacility**, Bauwerkstyp „Steg" — die anderen beiden behaupten mehr, als der Steg ist.
+
+### 11.4 G-T1 gebaut (2026-10-04, `test/schichtGelaende.test.js`, `test_bauwerke.py::test_gt1…`)
+
+**Was es ist.** Eine Ableitung `gelaendeschicht` (Quelle: das Gelände) mit zwei Zeichenwerkzeugen — „Schicht auf dem
+Gelände" (Umriss) und „Band auf dem Gelände" (Achse + Breite, L-C). Der Ableitungslauf legt sie auf das Gelände NACH
+ALLEN Erdbau-Vorgängen (`gelaendeFolgt`, wie die Anzeige); gespeichert sind nur Umriss/Achse, Dicke, Abstand, Richtung
+— Klasse, Ausführung, Objekttyp, Gewerk und Vorlage stehen oben im Bauplan, wo `gewerkVon`, `objektTypVon`,
+`typAusVorlage` sie lesen. Kernel-Operation `schicht`: Umriss in Dreiecke, je Dreieck gegen die Dreiecke des Rasters
+geschnitten (dieselbe Diagonale wie die Anzeige) — der Rand bleibt der gezeichnete Umriss. Dicke lotrecht (Vorgabe)
+oder senkrecht zur Fläche. Die acht Schicht-Vorlagen aus G3 zeigen jetzt darauf (der Weg mit dem Band-Werkzeug).
+
+| gemessen | Wert |
+|---|---|
+| Dichtung 30 × 20 m, 0,5 m, VOR dem Aushub | Unterkante 100,00, 300 m³ |
+| dieselbe Dichtung NACH dem Aushub (Tiefe 2, 1 : 3), Journaleintrag unverändert | Unterkante 98,00, weiter 300 m³ (lotrecht = Grundfläche × Dicke) |
+| Vlies auf der Böschung 1 : 3, 14 × 6 m, senkrecht zur Fläche | 44,27 m³ = 14 · 6 · 0,5 · √(10/9) |
+| Weg als Band 50 × 2,5 × 0,15 | 18,75 m³, Gewerk Verkehrsfläche (Klassenregel IfcCourse/PAVEMENT) |
+| Teich § 11.1: die neun Schicht-Elemente aus den Vorlagen auf der Mulde | 9 geschlossen, 8 folgen der Mulde, Rasen eben auf 100,00 |
+| Zufall: 4 000 Umrisse mit Ecken auf halben Millimetern | 0 offene Körper (auf 1 mm gerundet: 2 044, auf 1 mm zusammengelegt: 6) |
+| eine muldenweite Schicht 52 × 32 m auf 0,5-m-Raster | 28 544 Dreiecke, 0,64 s |
+| Browser :3001 ohne Projekt (`erdbau_vergleich.ifc`) | 12/12: Gelände aus der Engine, Vorlage belegt Formular samt Gelände vor, 32 m³ / 11,25 m³, Unterkante folgt (Spanne 1,12 m) |
+
+**Mengen nach Klasse:** IfcCourse → `Thickness`, `Volume`; eine Oberbodenandeckung (IfcEarthworksFill) → `CompactedVolume`,
+`Depth` (neu auch für die Platte mit dieser Klasse); IfcGeographicElement hat keine Qto-Vorlage → keine Mengen. Im IFC
+geprüft (Prüftor 0 Regelverstöße).
+
+**Grenzen, benannt:** (1) Dreieckszahl: eine Schicht über die ganze Mulde trägt 28 544 Dreiecke, auch dort, wo das
+Gelände eben ist — ebene Stücke zusammenzulegen spart das (nicht gebaut). (2) Wo die Anzeige das gelieferte Netz zeigt
+(fern jeder Formung), liegt die Unterkante auf dem 0,5-m-Raster dieses Netzes, nicht auf dem Netz selbst — eine dünne
+Schicht (Vlies 1 cm) kann dort stellenweise im Gelände verschwinden. (3) Eine Schicht hat noch keine Griffe (Umriss
+ziehen) — sie wird über Kommandos und Neuzeichnen geändert.
+
