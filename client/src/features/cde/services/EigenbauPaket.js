@@ -47,7 +47,8 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
+import { gewerkVon, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
+import { GEWERKE } from './katalog/Gewerke.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -157,6 +158,13 @@ export function typAusVorlage(plan) {
     return id === undefined || id === null || id === '' ? null : { id: String(id), name: null };
 }
 
+/** Das Gewerk eines Bauplans fürs Paket — `{gewerk: {id, titel, system}}` oder nichts (Teil XXIX, G6). */
+function _gewerkFuersPaket(plan) {
+    const id = plan?.rezept ? gewerkVon(plan).gewerk : null;
+    const g = id ? GEWERKE[id] : null;
+    return g?.system ? { gewerk: { id, titel: g.titel, system: { ...g.system } } } : {};
+}
+
 /**
  * Ein Bauteil fürs Paket.
  *
@@ -198,6 +206,9 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         predefinedType: teil.predefinedType ?? plan.predefinedType ?? null,
         // Der Fachbegriff (Fund 8) — nur mit USERDEFINED Pflicht, sonst eine Verfeinerung.
         ...(objektTypVon(plan) ? { objektTyp: objektTypVon(plan) } : {}),
+        // DAS GEWERK (Teil XXIX, G6): mit seinem System aus dem Katalog — der Schreiber fasst danach je Bauwerk und
+        // Gewerk zusammen. Ohne System (Erdbau, Vermessung) bleibt der Schlüssel weg.
+        ..._gewerkFuersPaket(plan),
         name: teil.name ?? plan.name ?? '',
         rezept: plan.rezept ?? null,
         rolle: plan.rolle ?? null,

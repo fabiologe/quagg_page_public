@@ -15,27 +15,39 @@
  */
 import { istUnter } from '../Kategorien.js';
 
-const g = (titel, beschreibung, stlk, ifc) => Object.freeze({ titel, beschreibung, stlk: Object.freeze(stlk), ifc });
+/**
+ * `system` (Teil XXIX, G6 — E42): das IFC-System, zu dem die Bauteile dieses Gewerks je Bauwerk zusammengefasst werden
+ * — Klasse, Ausführung (gegen die Aufzählung des gepinnten Schemas, IFC4X3_ADD2) und Objekttyp bei USERDEFINED. Wo
+ * keine Ausführung das Gewerk trifft, USERDEFINED mit Objekttyp statt einer, die mehr behauptet (TRANSPORT ist kein
+ * Strassenbau, LOADBEARING schreibt schon das Tragwerk aus dem Merkmal). Erdbau bleibt Fachmodell-Gruppe (Vorgänge),
+ * Vermessung hat kein System.
+ */
+const sys = (klasse, typ, objektTyp = null) => Object.freeze({ klasse, typ, ...(objektTyp ? { objektTyp } : {}) });
+const g = (titel, beschreibung, stlk, ifc, system = null) => Object.freeze({ titel, beschreibung, stlk: Object.freeze(stlk), ifc, system });
 
 /** Die zehn Gewerke — Reihenfolge = Reihenfolge der Reiter. */
 export const GEWERKE = Object.freeze({
     erdbau: g('Gelände & Erdbau', 'Aushub, Auftrag, Planum, Böschung, Gräben, Baugruben', ['STLK 106', 'STLK 108', 'STLB 002'],
               'Fachmodell Erdbau (Gruppe)'),
     entwaesserung: g('Entwässerung', 'Kanal, Schächte, Becken, Versickerung, Drossel, Rechen, Straßenentwässerung',
-                     ['STLK 110', 'STLK 111', 'STLB 009', 'STLB 010', 'STLB 011'], 'IfcDistributionSystem SEWAGE / STORMWATER / DRAINAGE'),
+                     ['STLK 110', 'STLK 111', 'STLB 009', 'STLB 010', 'STLB 011'], 'IfcDistributionSystem SEWAGE / STORMWATER / DRAINAGE',
+                     sys('IfcDistributionSystem', 'DRAINAGE')),
     wasserbau: g('Wasserbau', 'Gewässer, Ufer- und Sohlsicherung, Ein- und Auslauf, Notüberlauf, Durchlass, Deich, Abdichtung',
-                 ['HOAI § 41 Gr. 3'], 'IfcBuiltSystem EROSIONPREVENTION'),
+                 ['HOAI § 41 Gr. 3'], 'IfcBuiltSystem EROSIONPREVENTION', sys('IfcBuiltSystem', 'EROSIONPREVENTION')),
     konstruktiv: g('Konstruktiver Ingenieurbau', 'Wände, Platten, Fundamente, Gründung, Tragwerk, Tunnel, Brückenteile',
-                   ['STLK 117–125', 'STLB 006', 'STLB 013'], 'IfcBuiltSystem LOADBEARING / FOUNDATION'),
+                   ['STLK 117–125', 'STLB 006', 'STLB 013'], 'IfcBuiltSystem LOADBEARING / FOUNDATION',
+                   sys('IfcBuiltSystem', 'USERDEFINED', 'Konstruktiver Ingenieurbau')),
     verkehr: g('Verkehrsfläche', 'Fahrbahn, Wege, Plätze, Einfassung, Markierung', ['STLK 112–115', 'STLK 131', 'STLB 080'],
-               'IfcRoadPart + IfcCourse / IfcPavement / IfcKerb'),
+               'IfcRoadPart + IfcCourse / IfcPavement / IfcKerb', sys('IfcBuiltSystem', 'USERDEFINED', 'Verkehrsfläche')),
     ausstattung: g('Ausstattung & Verkehrstechnik', 'Schutzeinrichtung, Geländer, Zaun, Tor, Schild, Lärmschutz, Lichtsignal',
-                   ['STLK 127–130', 'STLK 132'], 'Elemente im Bauwerksteil'),
+                   ['STLK 127–130', 'STLK 132'], 'Elemente im Bauwerksteil', sys('IfcBuiltSystem', 'USERDEFINED', 'Ausstattung')),
     leitungen: g('Leitungen', 'Trinkwasser, Gas, Fernwärme, Strom, Telekom — Leitungen Dritter', ['STLK 134', 'STLB 043'],
-                 'IfcDistributionSystem WATERSUPPLY / GAS / ELECTRICAL / COMMUNICATION'),
+                 'IfcDistributionSystem WATERSUPPLY / GAS / ELECTRICAL / COMMUNICATION',
+                 sys('IfcDistributionSystem', 'USERDEFINED', 'Leitungen Dritter')),
     ta: g('Technische Ausrüstung', 'Pumpen, Armaturen, Mess- und Steuertechnik, Beleuchtung', ['HOAI § 53'],
-          'IfcDistributionSystem CONTROL / LIGHTING / MONITORINGSYSTEM'),
-    landschaft: g('Landschaft', 'Bepflanzung, Rasen, Oberboden', ['STLK 104', 'STLK 107'], 'IfcGeographicElement VEGETATION'),
+          'IfcDistributionSystem CONTROL / LIGHTING / MONITORINGSYSTEM', sys('IfcDistributionSystem', 'USERDEFINED', 'Technische Ausrüstung')),
+    landschaft: g('Landschaft', 'Bepflanzung, Rasen, Oberboden', ['STLK 104', 'STLK 107'], 'IfcGeographicElement VEGETATION',
+                  sys('IfcBuiltSystem', 'USERDEFINED', 'Landschaft')),
     vermessung: g('Vermessung & Baugrund', 'Linien, Flächen, Bruchkanten, Gelände, Bohrungen, Bodenschichten', ['STLK 103'],
                   'IfcGeographicElement TERRAIN, IfcGeotechnicalElement'),
 });

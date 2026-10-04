@@ -314,7 +314,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G-T2** | Raum in einer Erdmulde (L-B) — **gebaut 2026-10-04**, § 11.5 | Dauerstau 992 m³, Rückhalteraum 1 424 m³ — **gemessen 991,83 / 1 423,83** (0,5-m-Raster; die Eckgrate) | Kern |
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) — **gebaut 2026-10-04**, § 11.6 | am Bauwerk sichtbar 11 → 9 (Vorlagen-Werkzeuge im Abschnitt) | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung — **gebaut 2026-10-04**, § 11.7 | Ablaufbauwerk des Teichs **11 Kommandos → 1** | Katalog |
-| **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart | Systeme im IFC 0 → je Gewerk eines; Prüftor sauber, IDS 0 | Schreiber (wirkt sofort) |
+| **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart — **Systeme gebaut 2026-10-04**, § 11.8; Brücke nicht (E43: später) | Systeme im IFC 0 → je Bauwerk und Gewerk eines; Prüftor sauber, auch im Verbund | Schreiber (wirkt sofort) |
 | **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 | Stauraum 1 424 m³, Dauerstau 992 m³ gemessen; Facetten tragen ohne Sonderfall | Test + Browser |
 | **G8** | Abnahme + Browserprobe; Pipette (W4) wenn Zeit | — | Test + Browser |
 
@@ -549,4 +549,33 @@ Bauwerk-Vorlage, `vorlageTeile`), die Verweise zeigen auf die neuen Kennungen, d
 **Grenzen:** eine Öffnung (Ableitung am Wirt) kommt nicht mit; eine Baugruppe ist ein Schnappschuss — sie wächst nicht mit
 Maßen (das bleibt der Bauwerk-Vorlage, Code); kein Bearbeiten einer gesicherten Baugruppe (neu sichern ersetzt sie nicht,
 es legt eine zweite an).
+
+### 11.8 G6 gebaut (2026-10-04, `test/gewerkSysteme.test.js`, `test_bauwerke.py::test_g6…`)
+
+**Was es ist.** Der Gewerke-Katalog (`katalog/Gewerke.js`) nennt je Gewerk sein IFC-System — Klasse, Ausführung gegen
+die Aufzählung des gepinnten Schemas, Objekttyp bei USERDEFINED; Erdbau (Fachmodell-Gruppe der Vorgänge) und Vermessung
+haben keins. Das Paket trägt je Bauteil `gewerk: {id, titel, system}` (additiv); der Schreiber fasst je Bauwerk und Gewerk
+zusammen: ein System mit den Teilen (IfcRelAssignsToGroup), am Raumelement referenziert (IfcRelReferencedInSpatialStructure —
+gelesen im Schema: `RelatedElements` ist dort `IfcSpatialReferenceSelect = IfcGroup | IfcProduct`, ein System darf stehen).
+Teile ohne Bauwerk bilden ihr System an der Site; eine Baugruppe (kein Raumelement) über ihre Anlage. Der Schreiber prüft
+nur, was das Paket nennt — eine Klasse, die kein System ist, oder eine unbekannte Ausführung wird genannt, nie geraten.
+
+| Gewerk | System |
+|---|---|
+| Entwässerung | IfcDistributionSystem / DRAINAGE |
+| Wasserbau | IfcBuiltSystem / EROSIONPREVENTION |
+| Konstruktiver Ingenieurbau | IfcBuiltSystem / USERDEFINED „Konstruktiver Ingenieurbau" (LOADBEARING schreibt schon das Tragwerk aus dem Merkmal) |
+| Verkehrsfläche | IfcBuiltSystem / USERDEFINED „Verkehrsfläche" (TRANSPORT behauptete mehr) |
+| Ausstattung & Verkehrstechnik | IfcBuiltSystem / USERDEFINED „Ausstattung" |
+| Leitungen | IfcDistributionSystem / USERDEFINED „Leitungen Dritter" |
+| Technische Ausrüstung | IfcDistributionSystem / USERDEFINED „Technische Ausrüstung" |
+| Landschaft | IfcBuiltSystem / USERDEFINED „Landschaft" |
+| Gelände & Erdbau, Vermessung | — |
+
+**Gemessen:** Kammer aus der Vorlage + Rohr unter „Leitungen" + Zaun → 4 Systeme (Konstruktiv und Entwässerung an der
+IfcFacility, Leitungen und Ausstattung an der Site), Prüftor 0 offene Befunde, im Verbund dieselben vier an DER Site.
+
+**Wirkung:** `eigenbau.py` wirkt sofort — ein Paket ohne `gewerk` (jeder heute ausgelieferte Client) schreibt keine Systeme,
+die Ausgabe bleibt wie bisher (Gold „alte Pakete ergeben dieselbe Datei" unverändert grün). Systeme entstehen erst mit dem
+neuen Client. **Nicht gebaut:** Bauwerkstyp Brücke → IfcBridge/IfcBridgePart (E43, für später).
 

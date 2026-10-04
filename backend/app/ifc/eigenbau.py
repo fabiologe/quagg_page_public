@@ -642,6 +642,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     produkte, uebersprungen, warnungen = [], [], list(behaelter_warnungen)
     raeume = []                                      # IfcSpace — zerlegt, nie enthalten (Z6)
     tragwerke = 0                                    # IfcBuiltSystem LOADBEARING je Bauwerk (Z7)
+    systeme = 0                                      # je Bauwerk und Gewerk ein System (Teil XXIX, G6)
     geschrieben = []                                 # (Element, Paketeintrag) — fuer die Gruppen
     mengen_n = 0
     merkmale_n = 0                                   # bSI-Saetze aus Rezeptfeldern (Teil XXVI, Z3)
@@ -899,6 +900,10 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                                 OwnerHistory=besitz, RelatingSystem=system, RelatedBuildings=[b_ziel["inst"]])
             tragwerke += 1
 
+        # DIE GEWERKE (Teil XXIX, G6 — E42): je Bauwerk und Gewerk EIN System mit seinen Teilen, am Raumelement
+        # referenziert. Klasse und Ausfuehrung nennt das Paket (aus dem Gewerke-Katalog des Clients) — hier nur geprueft.
+        systeme = _gewerk_systeme(f, besitz, site, behaelter, geschrieben, satz, warnungen)
+
         je_fachmodell = {}
         baugruppen = [(x["inst"], {"fachmodell": "cde"}) for x in behaelter.values() if x["rolle"] == "baugruppe"]
         for el, b in [*geschrieben, *baugruppen]:
@@ -958,6 +963,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "bauwerke": len(behaelter),
         "raeume": len(raeume),
         "tragwerke": tragwerke,
+        "systeme": systeme,
         "vorgaenge": vorgaenge,
         "typen": typen_n,
         "kanten": len(kanten_neu),
@@ -965,6 +971,61 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "dokumente": len(referenzen),
         "dauer_s": round(time.time() - begonnen, 2),
     }
+
+
+def _gewerk_systeme(f, besitz, site, behaelter: dict, geschrieben: list, satz: str, warnungen: list) -> int:
+    """Je Bauwerk und Gewerk EIN System (Teil XXIX, G6 — Konzept E42).
+
+    Ein Gewerk ist das Fachsystem eines Bauteils (Entwaesserung, Wasserbau, ...). Im IFC wird daraus je Bauwerk ein
+    `IfcDistributionSystem` bzw. `IfcBuiltSystem` mit allen Teilen dieses Gewerks (IfcRelAssignsToGroup), referenziert am
+    Raumelement des Bauwerks (IfcRelReferencedInSpatialStructure — in IFC4X3_ADD2 darf dort eine Gruppe stehen). Teile
+    ohne Bauwerk bilden ihr System an der Site; eine Baugruppe (kein Raumelement) referenziert ueber ihre Anlage.
+
+    Klasse, Ausfuehrung und Objekttyp kommen aus dem Paket (`gewerk.system`, aus dem Gewerke-Katalog des Clients) — hier
+    wird nur geprueft: eine Klasse, die kein System mit Ausfuehrung ist, oder eine Ausfuehrung, die das Schema nicht
+    kennt, wird genannt; das System entsteht dann nicht bzw. mit NOTDEFINED. Nie geraten.
+    """
+    gruppen = {}                                     # (Bauwerk|None, Gewerk-Id) -> {"g": gewerk, "glieder": [...]}
+    for el, b in geschrieben:
+        g = b.get("gewerk") if isinstance(b, dict) else None
+        if not isinstance(g, dict) or not g.get("id") or not isinstance(g.get("system"), dict):
+            continue
+        bw = b.get("teilVon") if b.get("teilVon") in behaelter else None
+        gruppen.setdefault((bw, g["id"]), {"g": g, "glieder": []})["glieder"].append(el)
+
+    def raumelement(cid):
+        """Das Raumelement, an dem ein Bauwerk haengt: eine Anlage selbst, eine Baugruppe ueber ihre Eltern."""
+        while cid is not None and cid in behaelter:
+            x = behaelter[cid]
+            if x["rolle"] != "baugruppe":
+                return x["inst"]
+            cid = x["eltern"]
+        return site
+
+    n = 0
+    for (bw, gid), eintrag in gruppen.items():
+        g, glieder = eintrag["g"], eintrag["glieder"]
+        sysdef = g["system"]
+        klasse = S.name_von(sysdef.get("klasse"))
+        if klasse is None or not S.ist_untertyp(klasse, "IfcSystem") or not S.predefined(klasse):
+            warnungen.append(f"Gewerk {gid}: {sysdef.get('klasse')!r} ist kein System mit Ausfuehrung — kein System geschrieben")
+            continue
+        objekt_typ = (str(sysdef.get("objektTyp") or "").strip() or None)
+        pt, warnung = _predefined(klasse, sysdef.get("typ"), objekt_typ)
+        if warnung:
+            warnungen.append(f"Gewerk {gid}: {warnung}")
+        titel = str(g.get("titel") or gid)
+        ort = behaelter[bw]["inst"].Name if bw else None
+        schluessel = f"{satz}|gewerk|{bw or 'site'}|{gid}"
+        system = f.create_entity(klasse, GlobalId=guids.guid_aus_cde_id(schluessel), OwnerHistory=besitz,
+                                 Name=f"{titel} – {ort}" if ort else titel, LongName=titel,
+                                 ObjectType=objekt_typ if pt == "USERDEFINED" else None, PredefinedType=pt)
+        f.create_entity("IfcRelAssignsToGroup", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|rel"), OwnerHistory=besitz,
+                        RelatedObjects=glieder, RelatingGroup=system)
+        f.create_entity("IfcRelReferencedInSpatialStructure", GlobalId=guids.guid_aus_cde_id(f"{schluessel}|ort"),
+                        OwnerHistory=besitz, RelatedElements=[system], RelatingStructure=raumelement(bw))
+        n += 1
+    return n
 
 
 def _typen_schreiben(f, besitz, projekt, geschrieben: list, satz: str, warnungen: list) -> int:

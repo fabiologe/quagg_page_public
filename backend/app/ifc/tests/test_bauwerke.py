@@ -512,8 +512,9 @@ def test_vertrag_kammer_hat_ihren_raum(kammer):
 # ── Z7 — Klassifizierung und Tragwerk ────────────────────────────────────────
 
 def _tragwerke(datei):
+    # Nur das TRAGWERK (LOADBEARING, aus dem Merkmal): seit G6 steht daneben je Gewerk ein System (Konstruktiv u. a.).
     return {s.Name: sorted(o.Name for r in s.IsGroupedBy for o in r.RelatedObjects)
-            for s in datei.by_type("IfcBuiltSystem")}
+            for s in datei.by_type("IfcBuiltSystem") if s.PredefinedType == "LOADBEARING"}
 
 
 def test_vertrag_kammer_hat_ein_tragwerk(kammer):
@@ -1001,3 +1002,76 @@ def test_gt2_raeume_in_der_mulde_kommen_an(tmp_path):
         assert abs(werte["NetVolume"] - volumen) < 1e-3 and werte["GrossVolume"] == werte["NetVolume"]
         assert abs(werte["NetFloorArea"] - flaeche) < 0.01 and round(werte["Height"], 6) == 0.5
     assert sorted(s.PredefinedType for s in datei.by_type("IfcSpace")) == ["EXTERNAL", "EXTERNAL"]
+
+
+GEWERKE_G6 = DATEN / "paket_gewerke_g6.json"
+
+
+def test_g6_je_bauwerk_und_gewerk_ein_system(tmp_path):
+    """Teil XXIX G6 (Konzept E42): die Kammer aus der Vorlage (Platten und Waende -> Konstruktiv, der Raum ->
+    Entwaesserung), dazu ohne Bauwerk ein Rohr unter "Leitungen" und ein Zaun (Ausstattung). Je Bauwerk und Gewerk EIN
+    System mit seinen Teilen, am Raumelement referenziert (IfcRelReferencedInSpatialStructure — in IFC4X3_ADD2 darf dort
+    eine Gruppe stehen); Klasse und Ausfuehrung aus dem Paket, hier nur geprueft. Das ganze Prueftor bleibt sauber."""
+    paket = _georef(json.loads(GEWERKE_G6.read_text(encoding="utf-8")))
+    ziel = tmp_path / "gewerke_g6.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="gewerke-g6")
+    assert bericht["systeme"] == 4 and bericht["warnungen"] == []
+    _sauber(ziel)
+    datei = ifcopenshell.open(str(ziel))
+    from app.ifc import guids
+    name_von = {guids.guid_aus_cde_id(b["cdeId"]): b["name"] for b in paket["bauteile"]}
+    gefunden = {}
+    for system in datei.by_type("IfcSystem"):
+        if system.is_a("IfcBuiltSystem") and system.PredefinedType == "LOADBEARING":
+            continue                                 # das Tragwerk aus dem Merkmal (Z7) — eigenes System
+        glieder = sorted(name_von.get(o.GlobalId, o.Name) for r in system.IsGroupedBy for o in r.RelatedObjects)
+        ort = [(r.RelatingStructure.is_a(), r.RelatingStructure.Name) for r in system.ReferencedInStructures]
+        gefunden[system.Name] = (system.is_a(), system.PredefinedType, system.ObjectType, glieder, ort)
+    assert gefunden == {
+        "Konstruktiver Ingenieurbau – Kammer": ("IfcBuiltSystem", "USERDEFINED", "Konstruktiver Ingenieurbau",
+            ["Bodenplatte", "Decke", "Längswand Nord", "Längswand Süd", "Querwand Ost", "Querwand West"], [("IfcFacility", "Kammer")]),
+        "Entwässerung – Kammer": ("IfcDistributionSystem", "DRAINAGE", None, ["Kammerraum"], [("IfcFacility", "Kammer")]),
+        "Leitungen": ("IfcDistributionSystem", "USERDEFINED", "Leitungen Dritter", ["Wasserleitung"], [("IfcSite", datei.by_type("IfcSite")[0].Name)]),
+        "Ausstattung & Verkehrstechnik": ("IfcBuiltSystem", "USERDEFINED", "Ausstattung", ["Zaun"], [("IfcSite", datei.by_type("IfcSite")[0].Name)]),
+    }
+
+
+def test_g6_ein_falsches_system_wird_genannt_nicht_geraten(tmp_path):
+    """Eine Klasse, die kein System ist, oder eine Ausfuehrung, die das Schema nicht kennt: genannt, nicht geraten."""
+    paket = _georef(json.loads(GEWERKE_G6.read_text(encoding="utf-8")))
+    for b in paket["bauteile"]:
+        if b["cdeId"] == "cde-LT":
+            b["gewerk"]["system"] = {"klasse": "IfcWall", "typ": "SOLIDWALL"}
+        if b["cdeId"] == "cde-ZA":
+            b["gewerk"]["system"] = {"klasse": "IfcBuiltSystem", "typ": "STRASSE"}
+    bericht = baue_datei(paket, tmp_path / "falsch.ifc", schluessel="gewerke-g6-falsch")
+    assert bericht["systeme"] == 3
+    assert any("Gewerk leitungen: 'IfcWall' ist kein System" in w for w in bericht["warnungen"])
+    assert any("Gewerk ausstattung: PredefinedType 'STRASSE'" in w for w in bericht["warnungen"])
+
+
+def test_g6_im_verbund_bleiben_die_systeme_an_ihrem_ort(tmp_path):
+    """Die Gewerk-Systeme ueberleben den Verbund: dieselben vier, dieselben Glieder; die an der Site haengen danach an
+    DER Site des Verbunds (Fund 7: `_site_aufloesen`). Das Prueftor bleibt sauber."""
+    from app.ifc import verbund as V
+    from app.ifc.pruefe import offen, pruefe
+    from app.ifc.tests.test_eigenbau import _gelieferte_gelaendedatei
+    geliefert = tmp_path / "gelaende.ifc"
+    _gelieferte_gelaendedatei(geliefert)
+    eigen = tmp_path / "eigenbau.ifc"
+    baue_datei(_georef(json.loads(GEWERKE_G6.read_text(encoding="utf-8"))), eigen, schluessel="gewerke-g6-verbund")
+    ziel = tmp_path / "verbund.ifc"
+    V.fuehre_zusammen([V.Quelle(geliefert, name="Gelaendelieferung", sha256="d" * 64),
+                       V.Quelle(eigen, name="CDE-Eigenbau", sha256="e" * 64)],
+                      ziel, projektname="Verbund mit Gewerken", bearbeiter="pytest")
+    datei = ifcopenshell.open(str(ziel))
+    site = datei.by_type("IfcSite")
+    assert len(site) == 1
+    systeme = {s.Name: ([r.RelatingStructure for r in s.ReferencedInStructures], sum(len(r.RelatedObjects) for r in s.IsGroupedBy))
+               for s in datei.by_type("IfcSystem") if not (s.is_a("IfcBuiltSystem") and s.PredefinedType == "LOADBEARING")}
+    assert {n: (ort[0].is_a(), zahl) for n, (ort, zahl) in systeme.items()} == {
+        "Konstruktiver Ingenieurbau – Kammer": ("IfcFacility", 6), "Entwässerung – Kammer": ("IfcFacility", 1),
+        "Leitungen": ("IfcSite", 1), "Ausstattung & Verkehrstechnik": ("IfcSite", 1)}
+    assert systeme["Leitungen"][0] == site
+    fehl = [b for b in pruefe(ziel)["befunde"] if offen(b)]
+    assert fehl == [], fehl

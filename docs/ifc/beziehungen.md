@@ -30,6 +30,9 @@ flowchart LR
   IfcRelDefinesByType{{IfcRelDefinesByType}}
   IfcRelDefinesByType -->|"RelatedObjects (Menge)"| IfcObject
   IfcTypeObject -->|"RelatingType"| IfcRelDefinesByType
+  IfcRelReferencedInSpatialStructure{{IfcRelReferencedInSpatialStructure}}
+  IfcRelReferencedInSpatialStructure -->|"RelatedElements (Menge)"| IfcSpatialReferenceSelect
+  IfcSpatialElement -->|"RelatingStructure"| IfcRelReferencedInSpatialStructure
   IfcRelServicesBuildings{{IfcRelServicesBuildings}}
   IfcSystem -->|"RelatingSystem"| IfcRelServicesBuildings
   IfcRelServicesBuildings -->|"RelatedBuildings (Menge)"| IfcSpatialElement
@@ -40,6 +43,7 @@ flowchart LR
   style IfcDefinitionSelect stroke-dasharray: 4 3
   style IfcDocumentSelect stroke-dasharray: 4 3
   style IfcPropertySetDefinitionSelect stroke-dasharray: 4 3
+  style IfcSpatialReferenceSelect stroke-dasharray: 4 3
 ```
 
 ## Quagg_*-Merkmalsätze
