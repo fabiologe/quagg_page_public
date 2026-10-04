@@ -12,6 +12,9 @@
  */
 import { EINGEBAUTE_VORLAGEN } from '../../services/Bibliothek.js';
 
+/** Der Dichtungsaufbau des Teichs: Tondichtung 0,5 + Vlies 0,01 + Schutzschicht 0,3 m (Vorlagen), senkrecht zur Fläche. */
+export const P11_AUFBAU = 0.81;
+
 let n = 0;
 const k = (werkzeug, rest) => ({ schema: 1, id: `p11-${++n}`, werkzeug, ziel: [], wer: 'p11', wann: '2026-10-04T15:00:00Z', ...rest });
 const vorgaben = (id) => ({ ...(EINGEBAUTE_VORLAGEN.find(v => v.id === id)?.vorgaben ?? {}), vorlage: id });
@@ -25,12 +28,14 @@ export function p11Kommandos({ O = { ost: 0, nord: 0 }, H = 100, ur = 'UR', X0 =
     const P = (x, z, dh = 0) => ({ ost: O.ost + X0 + x, nord: O.nord - (Z0 + z), hoehe: +(H + dh).toFixed(3) });
     const RECHT = (x0, z0, x1, z1, dh = 0) => [P(x0, z0, dh), P(x1, z0, dh), P(x1, z1, dh), P(x0, z1, dh)];
     const RAND = RECHT(0, 0, 52, 32);
+    const e = P11_AUFBAU * Math.sqrt(10);
+    const ERDPLANUM_RAND = RECHT(-e, -e, 52 + e, 32 + e);
     const schicht = (gid, name, vorlage, umriss, mehr = {}) => k('gelaendeschicht-zeichnen', { neu: [gid, `op-${gid.slice(4)}`],
         eingaben: { umriss }, werte: { objektTyp: '', abstand: '', richtung: 'lot', gelaende: '', ...vorgaben(vorlage), name, ...mehr } });
     const band = (gid, name, vorlage, achse, mehr = {}) => k('gelaendeschicht-band-zeichnen', { neu: [gid, `op-${gid.slice(4)}`],
         eingaben: { zug: achse }, werte: { objektTyp: '', abstand: '', richtung: 'lot', gelaende: '', breite: 2.5, ...vorgaben(vorlage), name, ...mehr } });
-    const raum = (gid, name, oben, unten) => k('muldenraum-zeichnen', { neu: [gid, `op-${gid.slice(4)}`], eingaben: { umriss: RAND },
-        werte: { name, predefinedType: 'EXTERNAL', objektTyp: '', oben: +(H + oben).toFixed(3), unten: unten === '' ? '' : +(H + unten).toFixed(3), gelaende: '' } });
+    const raum = (gid, name, oben, unten, auf = '') => k('muldenraum-zeichnen', { neu: [gid, `op-${gid.slice(4)}`], eingaben: { umriss: RAND },
+        werte: { name, predefinedType: 'EXTERNAL', objektTyp: '', oben: +(H + oben).toFixed(3), unten: unten === '' ? '' : +(H + unten).toFixed(3), gelaende: '', auf } });
     const aus = (rezept, gid, name, vorlage, zug, mehr = {}) => k(`${rezept}-zeichnen`, { neu: [gid], eingaben: { zug },
         werte: { hoehe: '', ...vorgaben(vorlage), name, ...mehr } });
 
@@ -38,20 +43,23 @@ export function p11Kommandos({ O = { ost: 0, nord: 0 }, H = 100, ur = 'UR', X0 =
         // Die Bauwerke — der Teich (RRB) und der Steg (ein eigenes Bauwerk mit Verweis, Konzept § 3).
         k('bauwerk-anlegen', { neu: ['cde-TEICH'], werte: { name: 'Retentionsteich', art: 'anlage', bauwerkstyp: 'RRB' } }),
         k('bauwerk-anlegen', { neu: ['cde-STEG'], werte: { name: 'Steg', art: 'anlage' } }),
-        // 2 · die Mulde: Rand auf H, 2 m tief, Böschung 1 : 3.
-        k('graben-ausheben', { ziel: [ur], eingaben: { umriss: RAND }, werte: { mass: 2, neigung: 3, auflockerung: 1.2 } }),
-        // 5–7 · der Dichtungsaufbau über die ganze Mulde, senkrecht zur Böschung gemessen.
+        // 2 · die Mulde WIE IN DER REALITÄT (nach G8, Fabio): ausgehoben bis zum Erdplanum, um den Dichtungsaufbau
+        //     (t = 0,81 m, senkrecht zur Fläche) tiefer; der Rand um t·√10 weiter aussen, damit die Böschung 1 : 3 bleibt
+        //     und die Oberkante des Aufbaus wieder die Mulde von Hand ist (Sohle H − 2, Rand H).
+        k('graben-ausheben', { ziel: [ur], eingaben: { umriss: ERDPLANUM_RAND }, werte: { mass: 2 + P11_AUFBAU, neigung: 3, auflockerung: 1.2 } }),
+        // 5–7 · der Dichtungsaufbau, Schicht auf Schicht — jede ein Körper mit ihrer Dicke, senkrecht zur Böschung.
         schicht('cde-T5', 'Tondichtung', 'tondichtung', RAND),
-        schicht('cde-T6', 'Schutzvlies', 'schutzvlies', RAND, { abstand: 0.5 }),
-        schicht('cde-T7', 'Dichtungsschutzschicht', 'dichtungsschutz', RAND, { abstand: 0.51 }),
-        // 8–11 · Oberboden, Steinschüttung in der Wasserwechselzone (Band entlang der Uferlinie), Schilf, Rasen.
-        schicht('cde-T8', 'Oberboden Böschung Nord', 'oberboden', RECHT(8, 0, 44, 1.5)),
-        band('cde-T9', 'Steinschüttung Wasserwechselzone', 'steinschuettung', [P(3, 3), P(49, 3)], { breite: 2.4 }),
-        schicht('cde-T10', 'Schilf Flachwasser Süd', 'schilf', RECHT(8, 28, 44, 31)),
+        schicht('cde-T6', 'Schutzvlies', 'schutzvlies', RAND, { auf: 'cde-T5' }),
+        schicht('cde-T7', 'Dichtungsschutzschicht', 'dichtungsschutz', RAND, { auf: 'cde-T6' }),
+        // 8–11 · Oberboden, Steinschüttung in der Wasserwechselzone (Band entlang der Uferlinie), Schilf — auf dem Aufbau;
+        //        Rasen ausserhalb auf dem Gelände.
+        schicht('cde-T8', 'Oberboden Böschung Nord', 'oberboden', RECHT(8, 0, 44, 1.5), { auf: 'cde-T7' }),
+        band('cde-T9', 'Steinschüttung Wasserwechselzone', 'steinschuettung', [P(3, 3), P(49, 3)], { breite: 2.4, auf: 'cde-T7' }),
+        schicht('cde-T10', 'Schilf Flachwasser Süd', 'schilf', RECHT(8, 28, 44, 31), { auf: 'cde-T7' }),
         schicht('cde-T11', 'Rasen Uferstreifen Nord', 'rasen', RECHT(-4, -4, 56, 0)),
-        // 12–13 · Dauerstau und Rückhalteraum.
-        raum('cde-T12', 'Dauerstau', -1, ''),
-        raum('cde-T13', 'Rückhalteraum', 0, -1),
+        // 12–13 · Dauerstau und Rückhalteraum — über dem Aufbau, nicht über dem Erdplanum.
+        raum('cde-T12', 'Dauerstau', -1, '', 'cde-T7'),
+        raum('cde-T13', 'Rückhalteraum', 0, -1, 'cde-T7'),
         // 14–17 · der Zulauf von Osten: Haltung DN 600, Stirnwand (Wasserbau), Kolkschutz, Grobrechen.
         k('rohr-zeichnen', { neu: ['cde-T14'], eingaben: { zug: [P(70, 16, -0.9), P(49, 16, -1.1)] },
             werte: { name: 'Zulaufhaltung DN 600', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 600 } }),

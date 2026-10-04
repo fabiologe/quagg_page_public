@@ -675,3 +675,44 @@ Knoten mit Geometrie). Jetzt wählt er das Bauwerk aus dem Stand (derselbe Weg w
 Klassenregel. Gemessen: Steg IfcFacility, 9 Bauteile, Systeme Konstruktiv 7 + Ausstattung 2 (= die Zahlen des Schreibers
 in `test_p11…`); Teich IfcFacility, RRB, 23 Bauteile, 5 Systeme. Browser in 10001: beide Klicks 7/7, Journal unverändert.
 Nebenbei gesehen, nicht geändert: am Bauwerk steht „Baugrube ums Bauwerk" unter „Weil netz" (Bauform des Bauwerks).
+
+**Nachtrag 2 — Farben und Schicht auf Schicht (Fabio: „die Render-Sachen sind messed up — wie macht man das, wenn mehrere
+Elemente übereinander stecken?" / „wie in der Realität: ein eigener Auftrag mit Volumen und Höhe, 0,01 m für die
+Dichtungsbahn").**
+
+*Farben* (`218084b`): Der Katalog `Bauteilfarben` kennt `KLASSE.AUSFÜHRUNG` vor `KLASSE` — die fünf Schichten der Dichtung
+sind alle IfcCourse (CORE, FILTER, PROTECTION, ARMOUR, PAVEMENT) —, dazu Bewuchs, Oberboden, Raum im Freien und die
+Bauteilklassen (Wand, Rohr, Schacht, Pfahl, Träger, Geländer, Schild, Messgerät …). Alle Töne unter der Clipping-Grenze (Test
+je Eintrag). Raum und Paket lesen dieselbe Farbe; das IFC bekommt sie als IfcSurfaceStyle. Gelieferte Bauteile ohne eigene
+Farbe bekommen den Katalogton ebenso (K4).
+
+*Schicht auf Schicht:* Jede Schicht war schon ein Körper mit Dicke und Volumen — aber jede mass ihren Abstand vom Gelände,
+nicht von der Schicht darunter: Steinschüttung, Schilf und Oberboden steckten IN der 0,5-m-Tondichtung, die Wasserräume
+begannen am Erdplanum und enthielten den Aufbau. Jetzt: eine Schicht (ein Raum in der Mulde) nennt mit `auf` die Schicht
+darunter — Feld „Liegt auf" im Werkzeug, Kandidaten `eigene:schicht` (nie sie selbst, nichts, das auf ihr liegt), eine
+erfundene wird abgelehnt. `Ableitungen.unterlageVon` folgt der Kette über den Stand (Kreis, fehlendes Ziel: Grund und
+Befund `schicht_unterlage`); der Lauf reicht sie als `unterlage` herein; Schicht und Raum liegen auf dem Gelände, das
+`rasterAngehoben` Glied für Glied anhebt. Ein angehobenes Raster ERBT die Triangulierung seiner Quelle, und die Schicht liest
+Unter- und Oberkante aus genau diesen Rastern — die Oberkante der einen ist die Unterkante der nächsten, per Konstruktion.
+„Senkrecht zur Fläche" hebt je Knoten um die GRÖSSTE Neigung der anliegenden Dreiecke (in einem Tal der Schnitt der
+versetzten Ebenen; das Mittel machte die Schicht im Tal dünner als ihre Dicke).
+
+P11 wie in der Realität: Aushub bis zum Erdplanum, um den Aufbau t = 0,81 m tiefer, Rand t·√10 = 2,56 m weiter aussen
+(Böschung bleibt 1 : 3); darauf Tondichtung 0,5 → Vlies 0,01 → Schutzschicht 0,3, darauf Oberboden, Steinschüttung, Schilf;
+die Wasserräume auf der Schutzschicht.
+
+| gemessen | Wert |
+|---|---|
+| Fuge Tondichtung/Vlies, Vlies/Schutzschicht, Schutzschicht/Steinschüttung, /Schilf, /Oberboden (je gemeinsamer Ecke) | **0,000 m** |
+| Fuge Schutzschicht/Dauerstau | 7,6 µm (der Wasserkörper hält an seiner Wasserlinie 10 µm Abstand) |
+| ohne geerbte Triangulierung (Gegenprobe) | Fuge 2,6 cm am Teich, 0,33 m auf rauem Gelände — rot |
+| Aushub bis Erdplanum | 3 992,16 m³ (von Hand 3 992,47) |
+| Dauerstau / Rückhalteraum | 989,67 / 1 423,08 m³ (von Hand 992 / 1 424: −0,22 % / −0,06 %) |
+
+Die Abweichung der Wasserräume ist die Rasterweite: die Aushubkante liegt jetzt ZWISCHEN den Knoten (0,5 m), im Raster eine
+Schräge über eine Zelle; der Aufbau folgt ihr. Vorher (Kanten auf Knoten) war es auf 1e-3 genau.
+
+**Grenzen, benannt:** eine Schicht, die über den Rand der Schicht darunter hinausragt, schwebt dort um deren Dicke (das
+angehobene Gelände gilt überall, nicht nur unter der unteren Schicht); eine Schicht auf einer verborgenen Schicht stapelt
+weiter auf ihr. Zwischen Aushubrand und Teichrand (2,56 m Streifen) liegt der Aushub offen — Verankerungsgraben und
+Anschluss an die Krone sind nicht modelliert. Projekt 10001 trägt noch den Teich ohne Aufbau.

@@ -45,6 +45,7 @@ export const KANDIDATENARTEN = Object.freeze({
     'eigene:traeger': 'ein eigenes Bauteil mit Körper, auf dem das Subjekt stehen kann',
     'gelaende': 'ein Gelände, auf dem etwas liegen kann — ein Ur-Gelände aus dem Journal oder ein geliefertes',
     'vorlage:baugruppe': 'eine Baugruppe der Bibliothek — ein fertiges Bauwerk zum Setzen',
+    'eigene:schicht': 'eine eigene Schicht auf dem Gelände, auf der eine weitere Schicht (ein Raum) liegen kann',
 });
 
 /**
@@ -64,6 +65,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende =
             .map(v => ({ id: v.id, titel: v.name || v.id, baugruppe: v }));
         if (art === 'vorgang:teile') return _vorgangsteile(wirksamerStand, el);
         if (art === 'eigene:bauwerk') return _eigeneBauwerke(wirksamerStand, el);
+        if (art === 'eigene:schicht') return _eigeneSchichten(wirksamerStand, el);
         if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
         if (art === 'eigene:wirt') return _eigeneWirte(wirksamerStand, el);
         if (art === 'eigene:traeger') return _eigeneTraeger(wirksamerStand, el);
@@ -121,6 +123,28 @@ function _eigeneFlaechen(wirksamerStand, el) {
  * Bauwerk, das schon IN dem Subjekt steckt. Sonst ergäbe „Kammer in RÜB, RÜB in
  * Kammer" einen Kreis, den erst der Schreiber bemerkte.
  */
+/** Schichten, auf denen etwas liegen kann (Teil XXIX, nach G8) — nie das Subjekt selbst und nichts, das schon auf ihm liegt. */
+function _eigeneSchichten(wirksamerStand, el) {
+    if (typeof wirksamerStand !== 'function') return [];
+    const erzeugt = wirksamerStand('erzeugt');
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const aufVon = (gid) => (erzeugt.get(gid)?.parameter?.operationen ?? [])[0]?.parameter?.auf ?? null;
+    const liegtAufMir = (gid) => {
+        const gesehen = new Set();
+        for (let e = gid; e && !gesehen.has(e); e = aufVon(e)) {
+            if (e === el?.globalId) return true;
+            gesehen.add(e);
+        }
+        return false;
+    };
+    const aus = [];
+    for (const [globalId, plan] of erzeugt) {
+        if (!rezeptNach(plan?.rezept)?.traegtSchichten || verdeckt.has(globalId) || liegtAufMir(globalId)) continue;
+        aus.push({ id: globalId, titel: plan.name || globalId });
+    }
+    return aus;
+}
+
 function _eigeneBauwerke(wirksamerStand, el) {
     if (typeof wirksamerStand !== 'function') return [];
     const erzeugt = wirksamerStand('erzeugt');

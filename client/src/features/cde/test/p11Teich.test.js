@@ -66,11 +66,42 @@ describe('Teil XXIX, G7 — P11: der Retentionsteich über Kommandos', () => {
         const gebaut = new Set(g.bauteile.map(t => t.globalId));
         for (const gid of [...teich, ...steg, ...ohne]) expect(gebaut.has(gid), gid).toBe(true);
 
-        // Das Wasser — die Mulde des Aushubs, nicht ein Prisma.
+        // Das Wasser — die Mulde des Aushubs, nicht ein Prisma. WIE IN DER REALITÄT (nach G8, Fabio): ausgehoben bis zum
+        // Erdplanum (um den Aufbau 0,81 m tiefer, Rand 2,56 m weiter aussen), darauf Schicht auf Schicht; die Oberkante
+        // ist wieder die Mulde von Hand. Vorher (ohne Aufbau, Kanten auf Rasterknoten) auf 1e-3 genau: 992 − 1/6 m³.
+        // Jetzt liegt die Aushubkante ZWISCHEN den Knoten (0,5-m-Raster): eine Schräge über eine Zelle, der Aufbau folgt
+        // ihr. Gemessen 989,67 / 1 423,08 m³ (−0,22 % / −0,06 %); die Grenze hier ist 0,3 %.
         const kz = (gid) => g.bauteile.find(t => t.globalId === gid).kennzahlen;
-        expect(Math.abs(kz('cde-T12').volumen - (992 - 1 / 6))).toBeLessThan(1e-3);
-        expect(Math.abs(kz('cde-T13').volumen - (1424 - 1 / 6))).toBeLessThan(1e-3);
+        expect(Math.abs(kz('cde-T12').volumen / 992 - 1)).toBeLessThan(0.003);
+        expect(Math.abs(kz('cde-T13').volumen / 1424 - 1)).toBeLessThan(0.003);
         expect(kz('cde-T12').gelaende).toBe('nach Erdbau');
+        expect(kz('cde-T7').liegtAuf).toEqual(['cde-T5', 'cde-T6']);
+
+        // DIE FUGEN — liegt Schicht auf Schicht, ohne Spalt und ohne Überschneidung? Je gemeinsamer Ecke (x, z): die
+        // Oberkante der unteren gegen die Unterkante der oberen. Gemessen 0,000 m (die Schicht liest Unter- und
+        // Oberkante aus DEMSELBEN angehobenen Raster wie die nächste ihr Gelände); der Wasserkörper hält an seiner
+        // Wasserlinie 10 µm Abstand (Mulde.js, KNOTEN_ABSTAND).
+        const spanne = (gid) => {
+            const p = g.bauteile.find(t => t.globalId === gid).positionen, m = new Map();
+            for (let k = 0; k < p.length; k += 3) {
+                const key = `${Math.round(p[k] * 1e5)}|${Math.round(p[k + 2] * 1e5)}`;
+                const e = m.get(key) ?? [Infinity, -Infinity];
+                m.set(key, [Math.min(e[0], p[k + 1]), Math.max(e[1], p[k + 1])]);
+            }
+            return m;
+        };
+        const fuge = (unten, oben) => {
+            const a = spanne(unten), b = spanne(oben);
+            let n = 0, max = 0;
+            for (const [k, [, top]] of a) { const e = b.get(k); if (e) { n++; max = Math.max(max, Math.abs(e[0] - top)); } }
+            return { n, max };
+        };
+        for (const [u, o] of [['cde-T5', 'cde-T6'], ['cde-T6', 'cde-T7'], ['cde-T7', 'cde-T9'], ['cde-T7', 'cde-T10'], ['cde-T7', 'cde-T8']]) {
+            const f = fuge(u, o);
+            expect(f.n, `${u}/${o}: gemeinsame Ecken`).toBeGreaterThan(100);
+            expect(f.max, `${u}/${o}`).toBe(0);
+        }
+        expect(fuge('cde-T7', 'cde-T12').max).toBeLessThan(2e-5);
 
         // Klasse, Ausführung, Gewerk je Element (§ 11.1).
         const ist = Object.fromEntries(Object.keys(P11_SOLL).map(gid => {

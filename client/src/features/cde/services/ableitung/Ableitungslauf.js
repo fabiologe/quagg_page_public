@@ -381,7 +381,10 @@ export function neuerAbleitungslauf({ stand, rezeptNach, holeQuellForm, holeQuel
                     quellen[name] = daten;
                 }
             }
-            const erg = await rezept.leite(bauplan.parameter, quellen, { kernel, hoehenversatz, stapel });
+            // WORAUF ES LIEGT (Teil XXIX, nach G8): ein Rezept, das eine Unterlage kennt, bekommt die Kette aus dem Stand.
+            const unterlage = typeof rezept.unterlage === 'function'
+                ? rezept.unterlage(bauplan.parameter, (gid) => stand.get(gid) ?? null) : null;
+            const erg = await rezept.leite(bauplan.parameter, quellen, { kernel, hoehenversatz, stapel, unterlage });
             // DURCH EINE AUFFÜLLUNG GESCHNITTEN (Stufe 2, Fabios Entscheidung 3):
             // der Wirt eines Cuts bleibt IMMER das Ur-Gelände. Schneidet er durch
             // den Auftrag eines früheren Vorgangs, sagen das eine Kennzahl (wie

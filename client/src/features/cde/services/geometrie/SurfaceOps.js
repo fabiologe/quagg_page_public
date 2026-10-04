@@ -237,6 +237,9 @@ export function rasterKnoten(raster, ix, iz) {
  * @returns {boolean} true = 00–11 (sonst 10–01)
  */
 export function diagonale00_11(raster, ix, iz) {
+    // Ein ANGEHOBENES Raster (eine Schicht auf einer Schicht, Teil XXIX nach G8) erbt die Triangulierung seiner
+    // Quelle — sonst wäre die Oberkante der einen nicht genau die Unterkante der nächsten.
+    if (raster.diagonalen) return raster.diagonalen[ix * (raster.nz - 1) + iz] === 1;
     const { nz, heights } = raster;
     const y00 = heights[ix * nz + iz], y11 = heights[(ix + 1) * nz + iz + 1];
     const y10 = heights[(ix + 1) * nz + iz], y01 = heights[ix * nz + iz + 1];

@@ -1917,6 +1917,9 @@ function gelaendeWerkzeug(art) {
                   optionen: Object.entries(rz.richtungen).map(([wert, titel]) => ({ wert, titel })) },
             ]),
             { name: 'gelaende', titel: 'Gelände (leer = das erste)', typ: 'auswahl', leerErlaubt: true, optionenAus: 'gelaende' },
+            // WORAUF ES LIEGT (Teil XXIX, nach G8 — Fabio: „wie in der Realität, jede Schicht ein eigener Auftrag"):
+            // leer = auf dem Gelände; sonst auf der Oberkante dieser Schicht — sie wandert mit, wenn jene dicker wird.
+            { name: 'auf', titel: 'Liegt auf (leer = Gelände)', typ: 'auswahl', leerErlaubt: true, optionenAus: 'eigene:schicht' },
             ZEICHEN_GEWERK_FELD,
         ],
         vorbelegung: (el, { kandidatenVon = null } = {}) => ({
@@ -1933,6 +1936,9 @@ function gelaendeWerkzeug(art) {
             const kandidaten = kandidatenVon?.('gelaende', el) ?? [];
             const gelaende = String(werte?.gelaende || kandidaten[0]?.id || '');
             if (!gelaende) return null;
+            // Nur auf eine Schicht, die es gibt (E8: bei der Eingabe ablehnen).
+            const auf = werte?.auf ? String(werte.auf) : null;
+            if (auf && kandidatenVon && !(kandidatenVon('eigene:schicht', el) ?? []).some(x => x.id === auf)) return null;
             const k = kandidaten.find(x => x.id === gelaende) ?? null;
             const kategorie = raum ? rz.kategorieVorgabe : String(werte?.kategorie || rz.kategorieVorgabe).toUpperCase();
             const oben = {
@@ -1946,10 +1952,10 @@ function gelaendeWerkzeug(art) {
             }
             // Die Höhen eines Raums stehen in m NN — wie jede Höhe, die der Planer tippt; der Lauf rechnet um.
             const op = raum
-                ? { umriss: punkte, oben: Number(werte?.oben), unten: zahl(werte?.unten, null) }
+                ? { umriss: punkte, oben: Number(werte?.oben), unten: zahl(werte?.unten, null), ...(auf ? { auf } : {}) }
                 : { ...(art === 'band' ? { achse: punkte, breite: Number(werte?.breite) } : { umriss: punkte }),
                     dicke: Number(werte?.dicke), abstand: zahl(werte?.abstand, 0),
-                    richtung: rz.richtungen[werte?.richtung] ? werte.richtung : 'lot' };
+                    richtung: rz.richtungen[werte?.richtung] ? werte.richtung : 'lot', ...(auf ? { auf } : {}) };
             return _anModell(ableitungsSchritte({
                 rezept: d.rezept,
                 quellen: { gelaende }, quellBasis: { gelaende: k?.pruefmass ?? null }, raster: { cell: k?.cell ?? null },

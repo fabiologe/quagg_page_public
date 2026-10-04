@@ -192,6 +192,53 @@ export function zellEbenen(raster, ix, iz) {
 }
 
 /**
+ * DAS GELÄNDE, ANGEHOBEN UM EINE SCHICHT (Teil XXIX, nach G8 — Fabio: „wie in der Realität: jede Schicht ein eigener
+ * Auftrag mit Volumen und Höhe"). Eine Schicht, die AUF einer anderen liegt, sieht als Gelände deren Oberkante.
+ * Je Knoten `h + hoehe · f`: lotrecht f = 1; senkrecht zur Fläche f = grösste Neigung (1/cos) der anliegenden
+ * Rasterdreiecke. Auf einer Ebene genau; in einem Tal der Schnitt der versetzten Ebenen. Das neue Raster ERBT die Triangulierung der Quelle
+ * (`diagonalen`) — `schicht` liest Unter- und Oberkante aus genau diesen Rastern, und eine Schicht, die auf ihr liegt,
+ * sieht dasselbe Raster als Gelände: die Oberkante der einen IST die Unterkante der nächsten.
+ * Rein: ein neues Raster, das alte bleibt.
+ */
+export function rasterAngehoben(raster, hoehe, richtung = 'lot') {
+    const d = Number(hoehe);
+    if (!raster?.heights || !Number.isFinite(d) || d === 0) return raster;
+    const { nx, nz } = raster;
+    const heights = Float64Array.from(raster.heights);
+    // Die Triangulierung bleibt die der Quelle (`diagonale00_11` liest sie).
+    const diagonalen = raster.diagonalen ?? Uint8Array.from({ length: (nx - 1) * (nz - 1) },
+        (_, k) => (diagonale00_11(raster, Math.floor(k / (nz - 1)), k % (nz - 1)) ? 1 : 0));
+    if (richtung !== 'normal') {
+        for (let i = 0; i < heights.length; i++) if (Number.isFinite(heights[i])) heights[i] += d;
+        return { ...raster, heights, diagonalen };
+    }
+    // Je Knoten das MAXIMUM der Neigung der anliegenden Dreiecke — das Versatzmass der modellierten Fläche: in einem
+    // Tal (Sohle an Böschung) der Schnitt der versetzten Ebenen, an einem Grat der Gehrungsstoss. Gemessen: exakt, wo
+    // ein Knick auf Rasterknoten liegt (Vlies auf der Böschung, 44,27 m³). Das MITTEL machte die Schicht in jedem Tal
+    // dünner als ihre Dicke (dort 44,18 m³). Liegt ein Knick ZWISCHEN den Knoten, ist er im Raster eine Schräge über
+    // eine Zelle — sie wird mitversetzt (Teich P11: der Aushubrand 2,56 m ausserhalb, siehe dort).
+    const faktor = new Float64Array(nx * nz).fill(1);
+    for (let ix = 0; ix < nx - 1; ix++) {
+        for (let iz = 0; iz < nz - 1; iz++) {
+            const diag = diagonalen[ix * (nz - 1) + iz] === 1;
+            const ebenen = zellEbenen({ ...raster, diagonalen }, ix, iz);
+            if (ebenen.length !== 2) continue;
+            // Dreieck 1: 00-10-11 bzw. 00-10-01; Dreieck 2: 00-11-01 bzw. 10-11-01 (wie `zellEbenen`).
+            const knoten = diag ? [[[0, 0], [1, 0], [1, 1]], [[0, 0], [1, 1], [0, 1]]]
+                                : [[[0, 0], [1, 0], [0, 1]], [[1, 0], [1, 1], [0, 1]]];
+            for (let t = 0; t < 2; t++) {
+                for (const [di, dj] of knoten[t]) {
+                    const k = (ix + di) * nz + iz + dj;
+                    if (ebenen[t].neigung > faktor[k]) faktor[k] = ebenen[t].neigung;
+                }
+            }
+        }
+    }
+    for (let i = 0; i < heights.length; i++) if (Number.isFinite(heights[i])) heights[i] += d * faktor[i];
+    return { ...raster, heights, diagonalen };
+}
+
+/**
  * @param {{raster}} eingaben  das Gelände, auf dem die Schicht liegt (Welt)
  * @param {{umriss: Array<{x, z}>, dicke: number, abstand?: number, richtung?: 'lot'|'normal'}} parameter
  *   `abstand`: Unterkante über dem Gelände (m, negativ = darunter), in derselben Richtung wie die Dicke.
@@ -208,9 +255,17 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
 
     // ── Stücke: Umriss-Dreieck ∩ Gelände-Dreieck, je eine Ebene ───────────────
     // ECKEN ZUSAMMENLEGEN (siehe QUANT): was übrig bleibt, liegt weiter auseinander als die Rundung des Attests.
+    // UNTER- UND OBERKANTE aus dem angehobenen Gelände (Teil XXIX, nach G8): dieselbe Regel, mit der eine Schicht,
+    // die AUF dieser liegt, ihre Unterkante findet — die Oberkante der einen ist die Unterkante der nächsten, Ecke für Ecke.
+    const rU = rasterAngehoben(raster, Number(abstand || 0), richtung);
+    const rO = rasterAngehoben(raster, Number(abstand || 0) + Number(dicke), richtung);
     const { ecke: eckeRoh, ex, ez, ey } = eckenSammler();
-    const fw = [], fs = [];   // je Ecke: Gewicht, Σ Gewicht·Neigung
-    const ecke = (p, ebene) => { const i = eckeRoh(p, (q) => ebene.y(q.x, q.z)); while (fw.length <= i) { fw.push(0); fs.push(0); } return i; };
+    const yU = [], yO = [];
+    const ecke = (p, ebene, eU, eO) => {
+        const i = eckeRoh(p, (q) => ebene.y(q.x, q.z));
+        if (yU[i] === undefined) { yU[i] = eU.y(p.x, p.z); yO[i] = eO.y(p.x, p.z); }
+        return i;
+    };
     const oben = [];   // Dreiecke (Indextripel, gegen den Uhrzeiger in x/z)
     let grund = 0, ober = 0, umrissFl = 0;
     for (const [ia, ib, ic] of dreiecke) {
@@ -222,17 +277,19 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
         const iz0 = Math.max(0, Math.floor((minZ - z0) / cell)), iz1 = Math.min(nz - 2, Math.floor((maxZ - z0) / cell));
         for (let ix = ix0; ix <= ix1; ix++) {
             for (let iz = iz0; iz <= iz1; iz++) {
-                for (const ebene of zellEbenen(raster, ix, iz)) {
+                const ebenen = zellEbenen(rU, ix, iz);
+                const eU = ebenen, eO = zellEbenen(rO, ix, iz), eG = zellEbenen(raster === rU ? rU : { ...raster, diagonalen: rU.diagonalen }, ix, iz);
+                for (let k = 0; k < eG.length; k++) {
+                    const ebene = eG[k];
                     const stueck = schneideKonvex(t, ebene.tri);
                     if (stueck.length < 3) continue;
                     for (const [pa, pb, pc] of zerlegeKonvex(stueck)) {
-                        const a = ecke(pa, ebene), b = ecke(pb, ebene), c = ecke(pc, ebene);
+                        const a = ecke(pa, ebene, eU[k], eO[k]), b = ecke(pb, ebene, eU[k], eO[k]), c = ecke(pc, ebene, eU[k], eO[k]);
                         if (a === b || b === c || a === c) continue;
                         oben.push([a, b, c]);
                         const f = ((ex[b] - ex[a]) * (ez[c] - ez[a]) - (ez[b] - ez[a]) * (ex[c] - ex[a])) / 2;
                         if (!(f > 0)) continue;
                         grund += f; ober += f * ebene.neigung;
-                        for (const v of [a, b, c]) { fw[v] += f; fs[v] += f * ebene.neigung; }
                     }
                 }
             }
@@ -244,12 +301,7 @@ export function schicht({ raster } = {}, { umriss, dicke, abstand = 0, richtung 
 
     // ── Höhen: Unterkante und Oberkante je Ecke ───────────────────────────────
     const n = ex.length;
-    const unten = new Float64Array(n), obenY = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-        const f = richtung === 'normal' && fw[i] > 0 ? fs[i] / fw[i] : 1;
-        unten[i] = ey[i] + Number(abstand || 0) * f;
-        obenY[i] = unten[i] + Number(dicke) * f;
-    }
+    const unten = Float64Array.from(yU), obenY = Float64Array.from(yO);
 
     // ── Randkanten: gerichtete Kante ohne Gegenkante ──────────────────────────
     const rand = randkanten(oben, n);

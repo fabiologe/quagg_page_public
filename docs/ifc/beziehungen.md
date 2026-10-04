@@ -52,7 +52,7 @@ Eigene Merkmalsätze der CDE — kein bSI-Standard. Wo sie geschrieben oder gele
 
 | Merkmalsatz | Fundstellen |
 |---|---|
-| `Quagg_CDE` | `backend/app/ifc/eigenbau.py`, `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `client/src/features/cde/services/IdsXml.js` |
+| `Quagg_CDE` | `backend/app/ifc/eigenbau.py`, `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `client/src/features/cde/services/EigenbauPaket.js`, `client/src/features/cde/services/IdsXml.js` |
 | `Quagg_Drossel` | `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Entlastung` | `client/src/features/cde/services/katalog/Merkmalsziele.js`, `client/src/features/cde/services/rezept/Eingebaut.js` |
 | `Quagg_Fachmodell` | `backend/app/ifc/herkunft.py`, `backend/app/ifc/schema.py`, `backend/app/ifc/verbund.py` |

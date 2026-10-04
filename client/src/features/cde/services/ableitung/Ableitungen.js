@@ -34,7 +34,7 @@ import { regelquelle, regeltabelle, regelwert } from '../regeln/Regelwerk.js';
 // Aus dem Kern nur das Hilfen-Fass (Teil XXIII, A8) — Formen laufen über `kernel.op`.
 import {
     rasterAbtasten, PROFIL_QUER, PROFIL_SCHRITT, kreisProfil, rechteckProfil, trapezProfil, sweep, extrudiere,
-    versetztePunkte, ringFlaeche, umrissFlaeche, SCHICHT_MIN_DICKE,
+    versetztePunkte, ringFlaeche, umrissFlaeche, SCHICHT_MIN_DICKE, rasterAngehoben,
 } from '../geometrie/hilfen.js';
 import { ortBei, stationenEntlang, stationiere } from '../geometrie/Stationierung.js';
 import { bezugTitel, bezugWaehlen, knotensohle, rohrmitte, rohrscheitel, rohrsohle } from '../Achsbezug.js';
@@ -1699,6 +1699,46 @@ function _schichtBox(ring, rand) {
     return { minX: Math.min(...xs) - rand, maxX: Math.max(...xs) + rand, minZ: Math.min(...zs) - rand, maxZ: Math.max(...zs) + rand };
 }
 
+/**
+ * WORAUF EINE SCHICHT LIEGT (Teil XXIX, nach G8 — Fabio: „wie in der Realität: jede Schicht ein eigener Auftrag mit
+ * Volumen und Höhe, z. B. 0,01 m für die Dichtungsbahn"). Eine Schicht nennt mit `auf` die Schicht darunter; ihr Gelände
+ * ist dann deren Oberkante — ein VERWEIS: wird die Dichtung dicker, wandert alles darüber mit. Die Kette von unten nach
+ * oben, je Glied `{hoehe: Abstand + Dicke, richtung}`; `grund`, wenn sie bricht (Ziel fehlt, ist keine Schicht, Kreis) —
+ * dann gilt das Gelände ab dem Bruch.
+ *
+ * Rein: `planVon(gid)` liefert den Bauplan (der Lauf reicht seinen Stand herein).
+ * @returns {{glieder: Array<{gid, hoehe, richtung}>, grund: string|null}|null}  null ohne `auf`
+ */
+export function unterlageVon(parameter, planVon) {
+    const op = (parameter?.operationen ?? [])[0]?.parameter ?? {};
+    let gid = op.auf ? String(op.auf) : null;
+    if (!gid) return null;
+    const glieder = [];
+    const gesehen = new Set();
+    let grund = null;
+    while (gid) {
+        if (gesehen.has(gid)) { grund = `liegt im Kreis über ${gid}`; break; }
+        gesehen.add(gid);
+        const unter = _schichtOp(planVon?.(gid)?.parameter);
+        if (!Number.isFinite(Number(unter.dicke))) { grund = `${gid} ist keine Schicht auf dem Gelände (gelöscht?)`; break; }
+        glieder.push({ gid, hoehe: (Number(unter.abstand) || 0) + (Number(unter.dicke) || 0),
+                       richtung: unter.richtung === 'normal' ? 'normal' : 'lot' });
+        gid = unter.auf ? String(unter.auf) : null;
+    }
+    return { glieder: glieder.reverse(), grund };
+}
+
+/** Das Gelände, auf dem eine Schicht (ein Raum) liegt: das Raster, Glied für Glied um die Schichten darunter angehoben. */
+function _aufUnterlage(raster, unterlage) {
+    let r = raster;
+    for (const g of unterlage?.glieder ?? []) r = rasterAngehoben(r, g.hoehe, g.richtung);
+    return r;
+}
+function _unterlageBefund(unterlage) {
+    return unterlage?.grund ? [{ regel: 'schicht_unterlage', schwere: 'warnung',
+        text: `Die Schicht darunter fehlt: ${unterlage.grund} — sie liegt dort auf dem Gelände` }] : [];
+}
+
 ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
     id: 'gelaendeschicht',
     // Wo die Palette sie zeigt; das Gewerk eines Bauteils sagt die Regelkette nach seiner Klasse.
@@ -1729,6 +1769,11 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
           menge: { volume: 'volumen', grossArea: 'flaeche', thickness: 'dicke' }, mengeNachKlasse: true },
     ],
 
+    // Worauf sie liegt — der Lauf löst die Kette über seinen Stand auf und reicht sie als `unterlage` herein.
+    unterlage: unterlageVon,
+    // Auf ihr kann eine andere Schicht (ein Raum) liegen — die Kandidatenliste „Liegt auf" fragt das.
+    traegtSchichten: true,
+
     /** Das Gelände ein zweites Mal, FEIN, nur unter dem Umriss — auf dem Gitter des groben (wie der Erdbau). */
     zusatzQuellen(parameter, quellen, genannt) {
         const gid = genannt?.gelaende;
@@ -1745,7 +1790,7 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
             opts: { cell: ur.cell / k, bereich, gitter: { x0: ur.x0, z0: ur.z0, cell: ur.cell } } } };
     },
 
-    async leite(parameter, quellen, { kernel, stapel = null } = {}) {
+    async leite(parameter, quellen, { kernel, stapel = null, unterlage = null } = {}) {
         const grob = quellen?.gelaende;
         if (!grob) throw new Error('gelaendeschicht: Gelände fehlt');
         if (!kernel) throw new Error('gelaendeschicht: kein Kernel');
@@ -1755,7 +1800,7 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
         const dicke = Number(op.dicke);
         // Das feine Gelände nach denselben Vorgängen wie das grobe — sonst läge die Schicht auf dem Ur.
         const fein = quellen.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
-        const raster = fein ?? grob;
+        const raster = _aufUnterlage(fein ?? grob, unterlage);
         const r = await kernel.op('schicht', { raster },
             { umriss, dicke, abstand: Number(op.abstand) || 0, richtung: SCHICHT_RICHTUNGEN[op.richtung] ? op.richtung : 'lot' });
         if (!r.ergebnis) throw new Error(`gelaendeschicht: ${r.warnungen.join('; ') || 'kein Körper'}`);
@@ -1764,9 +1809,11 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
             teile: { schicht: { form: 'koerper', daten: e } },
             kennzahlen: { volumen: e.volumen, flaeche: e.flaeche, grundflaeche: e.grundflaeche, umfang: e.umfang,
                           dicke, ausserhalb: e.ausserhalb, zellweite: raster.cell,
-                          gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle' },
-            befunde: e.ausserhalb > 0.001 ? [{ regel: 'schicht_ausserhalb', schwere: 'warnung',
-                text: `${(e.ausserhalb * 100).toFixed(1)} % des Umrisses liegen nicht auf dem Gelände — dort fehlt die Schicht` }] : [],
+                          gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle',
+                          liegtAuf: unterlage?.glieder?.map(g => g.gid) ?? [] },
+            befunde: [...(e.ausserhalb > 0.001 ? [{ regel: 'schicht_ausserhalb', schwere: 'warnung',
+                text: `${(e.ausserhalb * 100).toFixed(1)} % des Umrisses liegen nicht auf dem Gelände — dort fehlt die Schicht` }] : []),
+                      ..._unterlageBefund(unterlage)],
             warnungen: r.warnungen, bild: [],
         };
     },
@@ -1820,6 +1867,8 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
     braucht: { gelaende: ['hoehenfeld'] },
     formen:  { gelaende: 'raster' },
     hoehenFelder: { muldenraum: ['oben', 'unten'] },
+    // Ein Raum über einem Dichtungsaufbau beginnt an dessen Oberkante, nicht am Erdplanum (Teil XXIX, nach G8).
+    unterlage: (parameter, planVon) => unterlageVon(parameter, planVon),
     teile: [
         { rolle: 'raum', kategorie: 'IFCSPACE', bauform: 'koerper', form: 'koerper',
           predefinedType: (parameter) => (parameter?.predefinedType ? String(parameter.predefinedType).toUpperCase() : null),
@@ -1833,7 +1882,7 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
             { operationen: [{ art: 'gelaendeschicht', parameter: { umriss: _muldenOp(parameter).umriss } }] }, quellen, genannt);
     },
 
-    async leite(parameter, quellen, { kernel, stapel = null, hoehenversatz = 0 } = {}) {
+    async leite(parameter, quellen, { kernel, stapel = null, hoehenversatz = 0, unterlage = null } = {}) {
         const grob = quellen?.gelaende;
         if (!grob) throw new Error('muldenraum: Gelände fehlt');
         if (!kernel) throw new Error('muldenraum: kein Kernel');
@@ -1844,7 +1893,7 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
         if (!Number.isFinite(oben)) throw new Error('muldenraum: kein Spiegel');
         const unten = op.unten === null || op.unten === undefined || op.unten === '' ? null : Number(op.unten);
         const fein = quellen.gelaendeFein ? (stapel?.vorherVon?.(quellen.gelaendeFein) ?? quellen.gelaendeFein) : null;
-        const raster = fein ?? grob;
+        const raster = _aufUnterlage(fein ?? grob, unterlage);
         const r = await kernel.op('raumInMulde', { raster }, {
             umriss, oben: weltAusNn(oben, hoehenversatz), unten: unten === null ? null : weltAusNn(unten, hoehenversatz) });
         if (!r.ergebnis) throw new Error(`muldenraum: ${r.warnungen.join('; ') || 'kein Körper'}`);
@@ -1854,8 +1903,9 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
             kennzahlen: { volumen: e.volumen, wasserflaeche: e.wasserflaeche, tiefe: weltAusNn(oben, hoehenversatz) - e.tiefster,
                           spiegel: oben, unten, ausserhalb: e.ausserhalb, zellweite: raster.cell,
                           gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle' },
-            befunde: r.warnungen.some(w => w.startsWith('raum_am_umriss')) ? [{ regel: 'raum_am_umriss', schwere: 'hinweis',
-                text: 'Am Umriss liegt das Gelände unter dem Spiegel — der Raum ist dort senkrecht abgeschnitten (Umriss grösser ziehen?)' }] : [],
+            befunde: [...(r.warnungen.some(w => w.startsWith('raum_am_umriss')) ? [{ regel: 'raum_am_umriss', schwere: 'hinweis',
+                text: 'Am Umriss liegt das Gelände unter dem Spiegel — der Raum ist dort senkrecht abgeschnitten (Umriss grösser ziehen?)' }] : []),
+                      ..._unterlageBefund(unterlage)],
             warnungen: r.warnungen, bild: [],
         };
     },
