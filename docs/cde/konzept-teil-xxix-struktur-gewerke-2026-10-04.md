@@ -309,6 +309,9 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G1** | Gewerke-Katalog (Daten, Katalogschema) + `gewerk` an Rezepten, Vorlagen-Rollen, Typprofil-Familien; Auflöser `gewerkVon` (Regelkette §3.1) | Rezepte ohne Gewerk 17 → 0 | Kern klein |
 | **G2** | Eigenschaftsformular (W1): Mehrfeld-Kommando `werte-setzen`; Setzer aus der Leiste, nicht aus dem Katalog | Wand 30 → ≤ 12 Knöpfe; 2 Maße = 1 Vorgang | Kern + Oberfläche |
 | **G3** | Werkzeugleiste: Allgemein + Gewerk-Reiter + Suche; Zeichnen aus einem Reiter setzt das Gewerk | Erzeugen 18 flach → ≤ 8 je Ansicht | Oberfläche |
+| **G3b** | Mengen folgen der Klasse (L-F): Körpermaß → Qto der gewählten Klasse; Merkmalsfelder nur, wo ihr Satz gilt | Teich: Elemente ohne Mengen 16 → 0, Warnungen 67 → 0 | Kern klein |
+| **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) | Teich: 9 Elemente in Form | Kern |
+| **G-T2** | Raum in einer Erdmulde (L-B) | Dauerstau 992 m³, Rückhalteraum 1 424 m³ gemessen | Kern |
 | **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) | — | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung | Schacht mit Gerinne 1 Kommando | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart | Systeme im IFC 0 → je Gewerk eines; Prüftor sauber, IDS 0 | Schreiber (wirkt sofort) |
@@ -352,25 +355,89 @@ Abdichtung (Tondichtung) auf Sohle und Böschung, Wartungsweg, Zaun, Uferbepflan
 | Dauerstau | 98,00 → 99,00 | 40·20 = 800 · 43·23 = 989 · 46·26 = 1 196 m² | (800 + 3 956 + 1 196)/6 = **992,0 m³** |
 | **Rückhalteraum** | 99,00 → 100,00 | 1 196 · 49·29 = 1 421 · 52·32 = 1 664 m² | (1 196 + 5 684 + 1 664)/6 = **1 424,0 m³** |
 
-**Was jedes Teil ist — die Facetten im Einsatz:**
+### 11.1 Die Elemente eines Retentionsteichs in BIM
 
-| Teil | Gewerk | Bauteilart (IFC) | heute baubar? (eingeschätzt) |
+Belegt aus **DWA-M 176 (2013)** (NormRAG): Regenrückhaltebecken mit Dauerstau „müssen immer abgedichtet werden" (5.2);
+Dichtungsaufbau mit Oberboden, Dichtungsschutzschicht, Geogitter, Geotextil-Vliesstofflage, Kunststoffdichtungsbahn (KDB)
+und **Verankerungsgraben**; **Freibord** (5.3), dabei Bewuchs mit Höhe (Schilf 0,40 m); „Jede Regenrückhalteanlage ist
+für den Überlastungsfall mit einem **Notüberlauf** auszustatten" (5.4.5, Beispiel Dammscharte); **Zufahrt** (6.1.10),
+**Umzäunung** (6.1.11), Anlagen zur Abflussbegrenzung (6.2). Steg und Zuwegung zum Steg sind Fabios Ausstattung,
+nicht aus dem Merkblatt. Klassen und Ausführungen gegen das gepinnte Schema geprüft — **IfcGeotextile gibt es in
+IFC4X3_ADD2 nicht**.
+
+Das Bauwerk **„Retentionsteich" (RRB, IfcFacility)** mit Anlagenteilen; der Steg ist ein eigenes Bauwerk mit Verweis
+(wie Straße und Brücke, § 3).
+
+| # | Element | Gewerk | IFC-Klasse / Ausführung | Form | Merkmale, Mengen | heute (eingeschätzt, G0 misst) |
+|---|---|---|---|---|---|---|
+| **Becken** | | | | | | |
+| 1 | Oberbodenabtrag | Gelände & Erdbau | IfcEarthworksCut / TOPSOILREMOVAL | Fläche × Dicke | Volumen | teilweise (Erdbau) |
+| 2 | Aushub Teichmulde | Gelände & Erdbau | IfcEarthworksCut / EXCAVATION | Grube mit Böschung 1 : 3 | UndisturbedVolume | ja (Ausheben) |
+| 3 | Verwallung / Damm | Gelände & Erdbau | IfcEarthworksFill / EMBANKMENT | Auffüllung | CompactedVolume | ja (Auffüllen) |
+| 4 | Verankerungsgraben der Dichtung | Gelände & Erdbau | IfcEarthworksCut / TRENCH | Graben am Böschungskopf | Länge | teilweise |
+| 5 | Tondichtung (oder KDB) | Wasserbau | IfcCourse / CORE (KDB: IfcCovering / MEMBRANE) | **Schicht, die dem Gelände folgt** | Dicke, Fläche, kf | **nein** |
+| 6 | Schutzvlies / Geotextil | Wasserbau | IfcCourse / FILTER (kein IfcGeotextile) | dieselbe Schicht | Fläche | **nein** |
+| 7 | Dichtungsschutzschicht | Wasserbau | IfcCourse / PROTECTION | dieselbe Schicht | Dicke | **nein** |
+| 8 | Oberboden auf der Böschung | Landschaft | IfcEarthworksFill / USERDEFINED „Oberbodenandeckung" | dieselbe Schicht | Volumen | **nein** |
+| 9 | **Steinschüttung** Wasserwechselzone | Wasserbau | IfcCourse / ARMOUR | Band entlang der Uferlinie, auf der Böschung | Dicke, Steinklasse, Fläche | **nein** |
+| 10 | **Schilf** in der Flachwasserzone | Landschaft | IfcGeographicElement / VEGETATION | Fläche auf der Berme | Pflanzenart, Pflanzdichte St./m², Wuchshöhe | **nein** (Klasse ja, Ausführung fehlt) |
+| 11 | Rasenansaat Böschung | Landschaft | IfcGeographicElement / VEGETATION | Fläche | Fläche | teilweise |
+| 12 | Dauerstau (Wasserkörper) | Entwässerung | IfcSpace | **Raum in der Mulde** bis 99,00 | NetVolume 992 m³, Betriebswasser | **nein** (Raum = Prisma) |
+| 13 | Rückhalteraum | Entwässerung | IfcSpace | Raum 99,00 → 100,00 | NetVolume 1 424 m³ | **nein** |
+| **Zulauf** | | | | | | |
+| 14 | Zulaufhaltung DN 600 | Entwässerung | IfcPipeSegment | Rohr | DN, Sohle | ja |
+| 15 | Einlaufbauwerk (Stirnwand, Sohlplatte) | Wasserbau | IfcWall / IfcSlab im Anlagenteil | Wand + Platte | Volumen | ja (Teile), Vorlage nein |
+| 16 | Kolkschutz vor dem Einlauf | Wasserbau | IfcCourse / ARMOUR | Schicht auf Sohle/Böschung | Dicke, Steinklasse | **nein** |
+| 17 | Grobrechen am Einlauf | Entwässerung | IfcFilter / STRAINER | Rechen | Stababstand | ja |
+| **Ablauf** | | | | | | |
+| 18 | Drosselschacht | Entwässerung | IfcDistributionChamberElement / MANHOLE | Schacht | DN | ja |
+| 19 | Drossel | Entwässerung | IfcValve / REGULATING | Drossel | Q_Dr, Stauhöhe | ja |
+| 20 | **Wehrschwelle** (Stauziel 100,00) | Entwässerung | IfcWall / USERDEFINED „Überlaufschwelle" + Quagg_Entlastung | Schwelle | Schwellenhöhe gemessen, µ | ja |
+| 21 | Tauchwand vor der Drossel | Entwässerung | IfcWall / USERDEFINED „Tauchwand" | Wand | — | ja |
+| 22 | Ablaufhaltung | Entwässerung | IfcPipeSegment | Rohr | DN | ja |
+| **Notüberlauf** | | | | | | |
+| 23 | Dammscharte | Gelände & Erdbau | IfcEarthworksCut / CUT | Absenkung der Krone | Breite, Sohlhöhe | teilweise |
+| 24 | Befestigung der Scharte | Wasserbau | IfcCourse / ARMOUR | Schicht | Dicke | **nein** |
+| **Steg** (eigenes Bauwerk) | | | | | | |
+| 25 | Pfähle | Konstruktiv | IfcPile / DRIVEN | Stab, senkrecht | Länge, Querschnitt, Material | teilweise (Pfosten, ohne Ausführung) |
+| 26 | Jochträger, Längsträger | Konstruktiv | IfcBeam / JOIST | Profilkörper, waagerecht | Querschnitt, Länge | **nein** (kein Träger-Rezept) |
+| 27 | Belag | Konstruktiv | IfcSlab / FLOOR | Platte | Dicke, Fläche | ja (Platte) |
+| 28 | Geländer | Ausstattung & Verkehrstechnik | IfcRailing / HANDRAIL | Linie mit Höhe | Höhe, Länge | **nein** |
+| **Zuwegung, Zufahrt, Ausstattung** | | | | | | |
+| 29 | Weg zum Steg (wassergebundene Decke) | Verkehrsfläche | IfcCourse / PAVEMENT (+ Tragschicht) | Band entlang einer Achse mit Breite, auf dem Gelände | Breite, Aufbau, Fläche | teilweise (Platte, eben) |
+| 30 | Wegeinfassung | Verkehrsfläche | IfcKerb | Profilkörper entlang Linie | Länge | **nein** |
+| 31 | Zufahrt / Wartungsweg | Verkehrsfläche | IfcCourse / PAVEMENT | Band | Breite, Fläche | teilweise |
+| 32 | Zaun | Ausstattung & Verkehrstechnik | IfcRailing / FENCE | Linie mit Höhe | Länge, Höhe | **nein** |
+| 33 | Tor | Ausstattung & Verkehrstechnik | IfcDoor / GATE | Punkt mit Breite | Breite | **nein** |
+| 34 | Pegellatte | Technische Ausrüstung | IfcSensor / LEVELSENSOR | Punkt | Nullpunkt NN | **nein** |
+| 35 | Warnschild | Ausstattung & Verkehrstechnik | IfcSign / PICTORAL | Punkt | — | teilweise (Pfosten) |
+
+### 11.2 G0 gemessen (2026-10-04, `test/strukturG0.test.js`, `test_bauwerke.py::test_g0_teich…`)
+
+Die Spalte „heute" oben war geschätzt — und bei der **Klasse zu pessimistisch**. Je Element das passendste Kommando von
+heute, das Paket gelesen, dann durch den echten Schreiber:
+
+| Größe | gemessen |
+|---|---|
+| Elemente ohne Erdbau | 30 |
+| Klasse **und** Ausführung kommen richtig an | **26** — über Platte, Wand, Fundament mit überschriebener Klasse |
+| nur die Ausführung fehlt | 4 — Drosselschacht, Pfahl, Pegellatte, Warnschild (Schacht und Pfosten haben kein Feld dafür) |
+| Schreiber nimmt an, Prüftor offen | 28 Bauteile + 2 Räume, **0 offene Befunde** |
+| **Elemente, deren Mengen und Merkmale nicht zur Klasse passen** | **16** — 67 Warnungen: die Steinschüttung bringt `NetVolume`/`Pset_SlabCommon` der Platte mit, `IfcCourse` kennt `Thickness`/`Volume`; der Schreiber schreibt nichts Falsches, aber **Volumen und Flächen fehlen im IFC** |
+
+**Die Lücke ist nicht die Klasse, sondern Form und Mengen.**
+
+### 11.3 Was der Teich verlangt — die Lücken, nach Hebel geordnet
+
+| Lücke | betrifft Elemente | Art | Vorschlag |
 |---|---|---|---|
-| Teichmulde | Gelände & Erdbau | IfcEarthworksCut | ja — Grube mit Böschung |
-| Oberbodenabtrag | Gelände & Erdbau | IfcEarthworksCut/TOPSOILREMOVAL | teilweise (Planum) |
-| Rückhalteraum, Dauerstau | Entwässerung | IfcSpace (Volumen zwischen zwei Wasserspiegeln) | **nein** — ein Raum ist heute ein Prisma, kein Raum über einer Erdmulde |
-| Tondichtung Sohle + Böschung | Wasserbau | IfcCourse/CORE (oder PROTECTION) | **nein** — eine Schicht, die dem Gelände folgt, gibt es nicht |
-| Steinschüttung am Einlauf | Wasserbau | IfcCourse/ARMOUR | **nein** — dieselbe Lücke |
-| Einlaufbauwerk | Wasserbau | Wände/Platte im Bauwerk | ja (Wand, Platte) |
-| Zulauf DN 600 | Entwässerung | IfcPipeSegment | ja |
-| Drosselbauwerk | Entwässerung (Teile Konstruktiv) | Schacht + Drossel + Überlaufschwelle | ja, als Teile; als Vorlage nein |
-| Notüberlauf-Rinne | Wasserbau | IfcCourse/ARMOUR oder IfcPipeSegment/GUTTER | teilweise |
-| Wartungsweg | Verkehrsfläche | IfcCourse/PAVEMENT | teilweise (Platte) |
-| Zaun | Ausstattung & Verkehrstechnik | IfcRailing/FENCE | nein (kein Rezept) |
-| Uferbepflanzung | Landschaft | IfcGeographicElement/VEGETATION | nein (kein Rezept) |
+| **L-A Schicht, die dem Gelände folgt** (Fläche auf dem geformten Raster, Dicke senkrecht zur Fläche oder lotrecht wählbar) | 5, 6, 7, 8, 9, 10, 11, 16, 24 — **neun** | Kern (neue Ableitung aus Gelände + Umriss) | eigene Stufe **G-T1** |
+| **L-B Raum in einer Erdmulde** (Volumen zwischen Gelände und einer Höhe, oder zwischen zwei Höhen) | 12, 13 | Kern (Ableitung aus Gelände) | eigene Stufe **G-T2**; Zahl 992 / 1 424 m³ |
+| **L-C Band entlang einer Achse mit Breite, auf dem Gelände** | 29, 31 (auch Graben-/Mulden-Wege) | Kern klein (Variante von L-A) | mit G-T1 |
+| **L-D freie Klasse an den allgemeinen Formen** (Profilkörper → IfcRailing, IfcKerb, IfcBeam; Stab → IfcPile, IfcSensor, IfcDoor) — mit Ausführung | 25, 26, 28, 30, 32, 33, 34, 35 — **acht** | Katalog (G3 „Allgemein", § 4) | Rezepte als Vorgaben: Zaun, Geländer, Träger, Pfahl, Einfassung, Pegel |
+| **L-F Mengen und Merkmale folgen der Klasse** (G0: 16 von 30 Elementen ohne Mengen im IFC) — Körpermaße (Volumen, Dicke, Fläche, Länge) werden auf die Qto-Vorlage der GEWÄHLTEN Klasse abgebildet, Merkmalsfelder nur, wo ihr Satz gilt | 5–11, 16, 24, 26, 28–33 — **sechzehn** | Kern klein (Mengenabbildung je Klasse aus der bSI-Vorlage) | mit G3 (allgemeine Formen mit wählbarer Klasse brauchen es zuerst) |
+| **L-E Vorlagen** | 15, 18–22 (Ablaufbauwerk), 25–28 (Steg) | Katalog | Baugruppe (G5) bzw. parametrisch „Steg" (Länge, Breite, Pfahlabstand) |
 
-**Absehbare Lücken, die P11 messen wird** (eingeschätzt, in G0 nachzumessen): (1) **Raum über einer Erdmulde** —
-Speichervolumen zwischen Teichsohle (Gelände nach dem Aushub) und einer Höhe; (2) **Schicht, die dem Gelände folgt**
-(Dichtung, Steinschüttung, Oberboden) — eine Fläche auf dem geformten Raster mit Dicke; (3) Zaun und Bepflanzung
-als einfache Rezepte; (4) das Drosselbauwerk als Vorlage. (1) und (2) sind Kern — sie kommen als eigene Stufen in den
-Fahrplan, sobald G0 sie gemessen hat.
+**Offen zur Entscheidung:** Welche Klasse bekommt der **Steg** als Bauwerk — IfcFacility (wie Kammer und Teich),
+IfcBridge / GIRDER (er überspannt Wasser) oder IfcMarineFacility / JETTY (Steg im Wasser; die Klasse ist für Häfen
+gedacht)? Vorschlag: **IfcFacility**, Bauwerkstyp „Steg" — die anderen beiden behaupten mehr, als der Steg ist.
