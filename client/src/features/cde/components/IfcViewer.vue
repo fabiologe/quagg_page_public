@@ -519,7 +519,7 @@ import { bauformAusRegel } from '../services/bauform/Bauformregeln.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
 import { pruefmassVon, zellweiteVorschlag, grundrissAusMesh } from '../services/geometrie/hilfen.js';
 import { useAenderungen, AENDERUNGS_ARTEN } from '../stores/useAenderungen.js';
-import { GRUPPEN, werkzeugKatalog } from '../services/Bearbeitungen.js';
+import { GRUPPEN, nachId, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, vorlagenbezugVon } from '../services/Bibliothek.js';
 
@@ -859,9 +859,35 @@ watch(() => bearbeitung.scharfId, (id) => { if (id) _letztesWerkzeugId = id; });
  * erneutem Anwählen). Jetzt geht jeder Weg hier durch, und die Mengen stehen
  * in derselben Zeile.
  */
+/** Die Ansicht vor dem Zeichnen (B2) — null, solange keins läuft. */
+let kameraVorZeichnen = null;
+watch(() => bearbeitung.scharfId, (id) => {
+  if (id || !kameraVorZeichnen) return;
+  const v = kameraVorZeichnen;
+  kameraVorZeichnen = null;
+  engine.value?.applyView?.({ camera: v.camera });
+});
+
+/**
+ * DAS ERGEBNIS IN DER HAND (Teil XXX, B2): nach dem Zeichnen ist das NEUE Bauteil gewählt — die Tafel zeigt es, der
+ * nächste Schritt („Dicke ändern") ist ein Klick. Vorher war nichts gewählt, und eine 0,3-m-Wand in der Draufsicht war
+ * ein Strich von 2 px (Messlauf B0). Nur nach einem Erzeugen-Werkzeug; das erste neue Bauteil, das kein Ableitungsteil
+ * eines Erdbau-Vorgangs ist — sonst das erste.
+ */
+async function waehleNeues(eintraege, warErzeugen) {
+  if (!warErzeugen) return;
+  const neu = (Array.isArray(eintraege) ? eintraege : [eintraege])
+    .filter(e => e?.art === 'erzeugt' && e.nachher && !e.vorher && e.globalId);
+  const ziel = neu.find(e => !e.nachher.ableitung) ?? neu[0];
+  if (ziel) await waehleEigenes(ziel.globalId);
+}
+
 async function nachBauenMitMeldung(eintraege, werkzeugId = null) {
   const gid = bearbeitung.bauteil?.globalId ?? null;
+  // Der Motor ruft ohne Kennung — `ausfuehren` hat das Werkzeug da schon geräumt; der Viewer merkt sich das letzte.
+  const warErzeugen = nachId(werkzeugId ?? bearbeitung.scharfId ?? _letztesWerkzeugId ?? '')?.gruppe === 'erzeugen';
   const r = await wendeEintragAn(eintraege);
+  if (r?.angewandt) await waehleNeues(eintraege, warErzeugen);
   const text = r?.angewandt ? 'Übernommen.' : r?.nurFestlegung ? 'Als Forderung an den Planer geführt.' : 'Eingetragen.';
   _melderueck(_mitMengen(text, eintraege), werkzeugId ?? _letztesWerkzeugId);
   // DIE SERIE (K5): ein Griffwerkzeug bleibt scharf, damit die nächste Ecke
@@ -1063,6 +1089,7 @@ async function uebernehmeScharf() {
     });
     if (!eintrag) { melde(bearbeitung.letzterGrund || 'Nichts eingetragen.'); return; }
     const r = await wendeEintragAn(eintrag);
+    if (r?.angewandt) await waehleNeues(eintrag, b.gruppe === 'erzeugen');
     _melderueck(!r ? 'Eingetragen.'
       : r.auslegung ? 'Ausgelegt — so liest die CDE dieses Bauteil ab jetzt.'
       : r.angewandt ? _mitMengen('Übernommen.', eintrag)
@@ -1594,7 +1621,12 @@ function zeichnenStarten(id, { vorgaben = null, vorlage = null } = {}) {
   if (vorlage) bearbeitung.vorbelegeAusVorlage(vorlage);
   // Vorgaben NACH der Vorlage (Teil XXIX, G3): das Gewerk des Reiters, aus dem gezeichnet wird.
   for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
-  if (bearbeitung.scharf?.gruppe === 'erzeugen') engine.value?.viewTop?.();
+  if (bearbeitung.scharf?.gruppe === 'erzeugen') {
+    // DIE ANSICHT VORHER MERKEN (Teil XXX, B2 — Fabios E-B2): gezeichnet wird in der Draufsicht, angeschaut im Raum.
+    // Wird das Werkzeug frei — übernommen oder abgebrochen —, kehrt die Kamera dorthin zurück.
+    kameraVorZeichnen = engine.value?.captureView?.() ?? null;
+    engine.value?.viewTop?.();
+  }
   return true;
 }
 

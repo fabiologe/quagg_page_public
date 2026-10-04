@@ -37,6 +37,15 @@ async function api(page, ausdruck, arg = null) {
         return JSON.stringify(await f(a, pinia, arg));
     }, ausdruck, arg).then(JSON.parse);
 }
+/** Wo die Kamera steht — über das, was der Viewer per `defineExpose` zeigt (`captureViewpoint`, gespeicherte Ansichten). */
+const kamera = (page) => page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+        for (let i = el.__vueParentComponent; i; i = i.parent) {
+            if (typeof i.exposed?.captureViewpoint === 'function') return i.exposed.captureViewpoint()?.camera?.position ?? null;
+        }
+    }
+    return null;
+});
 const journal = (page) => api(page, `return (pinia._s.get('cde-aenderungen').eintraege ?? []).length;`);
 const eigene = (page) => api(page, `return [...pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt')].filter(([, p]) => p).map(([g]) => g);`);
 
@@ -99,7 +108,7 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         zahlen.klicksBisPalette = (await wandSichtbar()) ? klicks : null;
 
         // M2 · Eine Wand zeichnen: verdeckte Zeichenfläche, zwei Klicks in die Bildmitte, Enter.
-        const kameraVorher = await api(page, `return api.viewpoint?.() ?? null;`);
+        const kameraVorher = await kamera(page);
         const vorJ = await journal(page), vorE = await eigene(page);
         await knopf(page, 'Wand', '.tb'); await warte(2500);
         await foto(page, 'wand_scharf');
@@ -114,8 +123,8 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         zahlen.zeichnenMitteGeklappt = nachJ > vorJ && neu.length === 1;
         // M3/M4 · Danach: ist das Neue gewählt? Ist die Kamera zurück?
         zahlen.neuesGewaehlt = neu.length === 1 && (await api(page, `return pinia._s.get('cde-bearbeitung').bauteil?.globalId ?? null;`)) === neu[0];
-        const kameraNachher = await api(page, `return api.viewpoint?.() ?? null;`);
-        const a = kameraVorher?.camera?.position, b = kameraNachher?.camera?.position;
+        const kameraNachher = await kamera(page);
+        const a = kameraVorher, b = kameraNachher;
         zahlen.kameraZurueck = a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 0.5 : null;
 
         // Für die Tasten braucht es ein Bauteil: das Gezeichnete — oder, wenn das Zeichnen mit der Maus scheiterte, eine

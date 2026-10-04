@@ -226,3 +226,20 @@ dazu die schmale Zeile.
 montiert) war grün, im Browser änderte sich nichts (23,9 % wie vorher): in der App ist die Tafel ein GESCHWISTER des
 Viewers. Der Test montiert jetzt beide als Geschwister wie die Seite. Gegenprobe (Tafel meldet sich nicht an) rot.
 
+### B2 — Das Ergebnis in der Hand (2026-10-04)
+
+Nach dem Zeichnen ist das NEUE Bauteil gewählt (`waehleNeues` — das erste neue, das kein Ableitungsteil ist; nur nach
+einem Erzeugen-Werkzeug), auf beiden Wegen (Knopf und Enter im Motor). Die Ansicht vor dem Zeichnen wird gemerkt, bevor die
+Draufsicht kommt; wird das Werkzeug frei — übernommen oder abgebrochen —, kehrt die Kamera dorthin zurück (nur die Kamera,
+Sichtbarkeit und Schnitt bleiben).
+
+| Messlauf | B1 | B2 |
+|---|---|---|
+| neues Bauteil danach gewählt | nein | **ja** |
+| Kamera danach zurück | (nicht messbar) | **ja** — Gegenprobe im Browser (Zurückkehren abgeschaltet): nein |
+
+**Gefunden beim Bauen:** der Motor ruft nach Enter `nachBauen(eintrag)` ohne Werkzeugkennung, und `ausfuehren` hat das
+Werkzeug da schon geräumt — „war es ein Erzeugen?" kam ohne den gemerkten letzten Werkzeugnamen falsch heraus. Ein
+Schlüssel `kameraZustand` an der Viewer-Schnittstelle nur für den Messlauf hätte die Hausregel gebrochen (jeder Schlüssel
+hat einen Nutzer in der App) — der Messlauf liest die Kamera über `captureViewpoint` (gespeicherte Ansichten).
+

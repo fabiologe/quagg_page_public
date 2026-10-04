@@ -121,7 +121,8 @@ describe('der Viewer startet Zeichnen im Raum', () => {
         expect(rumpf).toContain('bearbeitenEin()');
         expect(rumpf).toContain('eingabe.starte(id)');
         expect(rumpf).toContain('bearbeitung.setzeWert(feld, wert)');
-        expect(rumpf).toMatch(/gruppe === 'erzeugen'\) engine\.value\?\.viewTop\?\.\(\)/);
+        // Seit Teil XXX (B2) merkt sich der Viewer vorher die Ansicht — er kehrt nach dem Zeichnen dorthin zurück.
+        expect(rumpf).toMatch(/gruppe === 'erzeugen'\) \{[\s\S]*?kameraVorZeichnen = engine\.value\?\.captureView\?\.\(\)[\s\S]*?engine\.value\?\.viewTop\?\.\(\)/);
         expect(viewer).toContain('zeichnenStarten: (id, opts) => zeichnenStarten(id, opts),');
     });
 });

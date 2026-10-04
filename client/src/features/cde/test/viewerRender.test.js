@@ -40,6 +40,7 @@ vi.mock('../services/IfcEngine.js', () => ({
 import IfcViewer from '../components/IfcViewer.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
+import { useViewerApi } from '../composables/viewerApi.js';
 
 const STUBS = {
   IfcLayerPanel: true, CdeCommandPalette: true, IfcStoreyNav: true, IfcSavedViews: true,
@@ -263,6 +264,34 @@ describe('Strg+Z und Strg+Umschalt+Z (Teil XXIV, F3 — 2026-09-19)', () => {
     expect(ae.wirksamerStand('kg').get('H1')).toBe('411');
     expect(w.text()).toContain('Erst die laufende Bearbeitung übernehmen');
     feld.remove();
+    w.unmount();
+  });
+});
+
+describe('Teil XXX, B2 — nach dem Zeichnen zurück in die Ansicht von vorher (Fabios E-B2)', () => {
+  // Messlauf B0: nach dem Zeichnen blieb die Draufsicht, das Neue war nicht gewählt. Ob das NEUE Bauteil gewählt wird,
+  // braucht einen echten Aufbau — das misst der Messlauf im Browser (`neuesGewaehlt`); hier die Kamera.
+  it('Zeichnen merkt die Ansicht VOR der Draufsicht; wird das Werkzeug frei, kehrt sie zurück', async () => {
+    const w = await montiert();
+    const e = instanzen.at(-1);
+    const ansicht = { camera: { position: [1, 2, 3], target: [0, 0, 0], up: [0, 1, 0] }, visibleCategories: ['X'] };
+    e.captureView = vi.fn(() => ansicht);
+    e.applyView = vi.fn(async () => {});
+    e.viewTop = vi.fn();
+    useIfcStore().modelList.push({ modelId: 'm1', name: 'test.ifc' });
+    const api = useViewerApi();
+    expect(api.zeichnenStarten('wand-zeichnen')).toBe(true);
+    await flushPromises();
+    expect(e.captureView.mock.invocationCallOrder[0]).toBeLessThan(e.viewTop.mock.invocationCallOrder[0]);
+    expect(e.applyView).not.toHaveBeenCalled();
+    useBearbeitung().abbrechen();
+    await flushPromises();
+    // Nur die Kamera — Sichtbarkeit und Schnitt bleiben, wie sie inzwischen sind.
+    expect(e.applyView).toHaveBeenCalledWith({ camera: ansicht.camera });
+    // Ein zweites Freiwerden ändert nichts mehr (die gemerkte Ansicht ist verbraucht).
+    useBearbeitung().abbrechen();
+    await flushPromises();
+    expect(e.applyView).toHaveBeenCalledTimes(1);
     w.unmount();
   });
 });
