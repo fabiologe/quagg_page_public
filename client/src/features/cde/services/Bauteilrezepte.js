@@ -35,6 +35,7 @@
  * Stelle und wird nirgends noch einmal entschieden.
  */
 
+import { getPsetsForType } from '../data/pset-templates.js';
 import { gewerkNachKlasse, istGewerk } from './katalog/Gewerke.js';
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
@@ -678,7 +679,52 @@ export function istAnzeigeform(bauplan) {
  * Paket reicht sie durch, der Schreiber prüft sie gegen die Vorlage.
  */
 export function merkmaleVon(bauplan) {
-    return merkmaleAusFeldern(rezeptNach(bauplan?.rezept)?.felder, bauplan?.parameter ?? {});
+    const rz = rezeptNach(bauplan?.rezept);
+    const alle = merkmaleAusFeldern(rz?.felder, bauplan?.parameter ?? {});
+    // NUR, WAS FÜR DIE KLASSE GILT (Teil XXIX, G3b): eine Platte als Steinschüttung (IfcCourse) trägt kein
+    // Pset_SlabCommon — der Schreiber hätte es verworfen und gewarnt; hier wird es gar nicht erst gesammelt.
+    const kategorie = String(bauplan?.kategorie ?? rz?.kategorieVorgabe ?? '').toUpperCase();
+    if (!kategorie) return alle;
+    const gilt = new Set(getPsetsForType(kategorie, predefinedTypeVon(bauplan)).map(([n]) => n));
+    return Object.fromEntries(Object.entries(alle).filter(([satz]) => gilt.has(satz)));
+}
+
+/**
+ * MENGEN FOLGEN DER KLASSE (Teil XXIX, G3b — G0: 16 von 30 Teich-Elementen kamen ohne Mengen ins IFC).
+ * Ein Rezept nennt seine Mengen für SEINE Klasse (`menge`, Qto der Vorgabeklasse). Überschreibt der Planer
+ * die Klasse — eine Platte als Steinschüttung —, wird jede Menge nach ihrer BEDEUTUNG auf die Qto-Vorlage
+ * der tatsächlichen Klasse abgebildet: `depth` der Platte wird `thickness` der Schicht, `netVolume` wird
+ * `volume`. Was die Klasse nicht kennt, entfällt (statt im Schreiber als Warnung zu enden).
+ */
+const MENGEN_SINN = Object.freeze({
+    netVolume: 'volumen', grossVolume: 'volumen', volume: 'volumen',
+    netArea: 'flaeche', grossArea: 'flaeche', netFloorArea: 'flaeche',
+    grossSideArea: 'seitenflaeche', perimeter: 'umfang', length: 'laenge',
+    width: 'breite', depth: 'dicke', thickness: 'dicke', height: 'hoehe',
+});
+const ZIEL_JE_SINN = Object.freeze({
+    volumen: ['NetVolume', 'Volume', 'GrossVolume'], flaeche: ['NetArea', 'GrossArea', 'Area', 'NetFloorArea'],
+    seitenflaeche: ['GrossSideArea'], umfang: ['Perimeter'], laenge: ['Length'], breite: ['Width'],
+    dicke: ['Depth', 'Thickness'], hoehe: ['Height'],
+});
+const _klein = (n) => n.slice(0, 1).toLowerCase() + n.slice(1);
+
+/** Die Qto-Vorlage einer Klasse — dieselbe Regel wie `schema.qto_vorlage` und das Katalogschema. */
+function _qtoVorlage(kategorie) {
+    const ziel = `QTO_${String(kategorie).toUpperCase().slice(3)}BASEQUANTITIES`;
+    return getPsetsForType(kategorie).find(([n]) => n.toUpperCase() === ziel)?.[1] ?? null;
+}
+
+function _mengenFuerKlasse(mengen, kategorie) {
+    const vorlage = _qtoVorlage(kategorie);
+    if (!vorlage) return {};
+    const namen = new Set(vorlage.props.map(p => p.name));
+    const aus = {};
+    for (const [menge, wert] of Object.entries(mengen)) {
+        const ziel = (ZIEL_JE_SINN[MENGEN_SINN[menge]] ?? []).find(n => namen.has(n) && !(_klein(n) in aus));
+        if (ziel) aus[_klein(ziel)] = wert;
+    }
+    return aus;
 }
 
 export function mengenVon(bauplan, kennzahlen) {
@@ -692,6 +738,8 @@ export function mengenVon(bauplan, kennzahlen) {
     // EIN EIGENES BAUTEIL (Teil XXVI, Z4): die Mengen aus seinem Körper und seinen
     // Feldern — derselbe Ausgang, ein anderer Eingang.
     if (!teil && typeof r?.mengen === 'function') Object.assign(out, r.mengen(bauplan?.parameter ?? {}));
+    const kategorie = String(bauplan?.kategorie ?? '').toUpperCase();
+    if (!teil && kategorie && kategorie !== String(r?.kategorieVorgabe ?? '').toUpperCase()) return _mengenFuerKlasse(out, kategorie);
     return out;
 }
 

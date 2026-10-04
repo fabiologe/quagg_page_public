@@ -122,7 +122,7 @@ describe('Teil XXIX, G0 — der Retentionsteich mit den Kommandos von heute', ()
         });
     });
 
-    it('alle 30 in EINEM Paket — das Vertragspaket für den Schreiber (Mengen und Merkmale folgen dem Rezept, nicht der Klasse)', async () => {
+    it('alle 30 in EINEM Paket — das Vertragspaket für den Schreiber (G0: Mengen folgten dem Rezept — G3b: der Klasse)', async () => {
         //     TEICH_VERTRAG_SCHREIBEN=1 npx vitest run src/features/cde/test/strukturG0.test.js
         const b = useBearbeitung(), ae = useAenderungen();
         for (const [nr, , , kom] of TEICH) {
@@ -131,10 +131,13 @@ describe('Teil XXIX, G0 — der Retentionsteich mit den Kommandos von heute', ()
             expect((await b.fuehreAus(k2)).ausgefuehrt, String(nr)).toBe(true);
         }
         const p = await paketAus(ae);
-        // Die Steinschüttung über „Platte zeichnen": Klasse richtig, Mengen und Merkmale die der Platte.
+        // Die Steinschüttung über „Platte zeichnen": G0 trug sie Mengen und Merkmale der Platte (depth, netArea,
+        // netVolume, perimeter; Pset_SlabCommon). G3b gedreht: die Mengen der Klasse IfcCourse, kein Platten-Satz.
         const stein = p.bauteile.find(t => t.cdeId === 'cde-T9');
-        expect([stein.klasse, stein.predefinedType, Object.keys(stein.mengen).sort(), Object.keys(stein.merkmale)])
-            .toEqual(['IFCCOURSE', 'ARMOUR', ['depth', 'netArea', 'netVolume', 'perimeter'], ['Pset_SlabCommon']]);
+        expect([stein.klasse, stein.predefinedType, Object.keys(stein.mengen).sort(), Object.keys(stein.merkmale ?? {})])
+            .toEqual(['IFCCOURSE', 'ARMOUR', ['thickness', 'volume'], []]);
+        // 6 · 3,16 (die geneigte Länge zählt nicht — Grundriss 6 × 3) · 0,3 lotrecht = 5,4 m³.
+        expect(Math.round(stein.mengen.volume * 1e6) / 1e6).toBe(5.4);
         if (process.env.TEICH_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(p));
         expect(existsSync(FIXTURE), 'Fixture fehlt: TEICH_VERTRAG_SCHREIBEN=1 …').toBe(true);
         expect(JSON.parse(readFileSync(FIXTURE, 'utf8')).bauteile.map(t => [t.cdeId, t.klasse, t.predefinedType ?? null]))
