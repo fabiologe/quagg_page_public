@@ -708,7 +708,9 @@ const ZIEL_JE_SINN = Object.freeze({
     // Eine eingebaute Auffüllung (Oberbodenandeckung als IfcEarthworksFill) misst verdichtet — ihr Raum IST das CompactedVolume.
     volumen: ['NetVolume', 'Volume', 'GrossVolume', 'CompactedVolume'], flaeche: ['NetArea', 'GrossArea', 'Area', 'NetFloorArea'],
     seitenflaeche: ['GrossSideArea'], umfang: ['Perimeter'], laenge: ['Length'], breite: ['Width'],
-    dicke: ['Depth', 'Thickness'], hoehe: ['Height'],
+    // Eine HÖHE, die die Klasse nicht kennt, ist die LÄNGE eines stehenden Stabs (Teil XXIX, G8: ein Pfahl aus dem
+    // Pfosten — Qto_PileBaseQuantities hat Length, kein Height). Erst Height; Length nur, wenn sie noch frei ist.
+    dicke: ['Depth', 'Thickness'], hoehe: ['Height', 'Length'],
 });
 const _klein = (n) => n.slice(0, 1).toLowerCase() + n.slice(1);
 

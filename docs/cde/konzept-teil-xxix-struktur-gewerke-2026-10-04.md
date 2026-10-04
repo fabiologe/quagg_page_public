@@ -316,7 +316,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung — **gebaut 2026-10-04**, § 11.7 | Ablaufbauwerk des Teichs **11 Kommandos → 1** | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart — **Systeme gebaut 2026-10-04**, § 11.8; Brücke nicht (E43: später) | Systeme im IFC 0 → je Bauwerk und Gewerk eines; Prüftor sauber, auch im Verbund | Schreiber (wirkt sofort) |
 | **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 — **gebaut 2026-10-04**, § 11.9 | Stauraum 1 424 m³, Dauerstau 992 m³ — **gemessen 1 423,83 / 991,83**, im Test und im Projekt; Gewerk ausdrücklich nur an 2 von 30 Elementen | Test + Browser |
-| **G8** | Abnahme + Browserprobe; Pipette (W4) wenn Zeit | — | Test + Browser |
+| **G8** | Abnahme + Browserprobe; Pipette (W4) wenn Zeit — **gebaut 2026-10-04**, § 11.10 | W4: 30 von 30 Teichelementen „wie dieses“ gleich; Abnahme fand Qto-Lücken an Rohr/Schacht/Stab: **P11 8 → 0**, G0 5 → 0 | Test + Browser |
 
 Grob 14–18 Halbtage (eingeschätzt). **Nicht in diesem Teil:** Regelquerschnitt × Achse (W7), Tabelle am Bauwerk (W5),
 Versorgungs- und TA-Rezepte über das Rohr hinaus, Fremdklassifikationen (Uniclass, Objektkatalog) als Etiketten.
@@ -620,4 +620,48 @@ die zweite schrieb das Journal ohne Neuaufbau und baute einmal. Für eine Komman
 **Grenzen, benannt:** die muldenweiten Schichten und die beiden Räume sind im Vertragspaket draußen (je 20 000–30 000
 Dreiecke, G-T1/G-T2 tragen eigene Verträge); im Projekt stehen sie im Paket. Das Beispielgelände ist im Teichbereich eben —
 ein Teich am Hang ist nicht geprobt.
+
+### 11.10 G8 — Abnahme und Pipette (2026-10-04, `test/wieDieses.test.js`, Browserprobe 15/15 in 10001)
+
+**„Wie dieses" (W4).** Am gewählten Eigenbau der Abschnitt „Wie dieses" mit dem Knopf „Wie dieses zeichnen": das
+Zeichenwerkzeug, das das Bauteil gemacht hat, mit seinen Feldern vorbelegt — so wie eine Vorlage, nur ohne Bibliothek.
+Kein neues Werkzeug, kein neuer Journalweg: `Bearbeitungen.wieDieses(bauplan)` (rein) liefert `{werkzeug, vorgaben}`;
+genommen wird genau, was das Formular des Werkzeugs kennt (Klasse, Ausführung, Objekttyp, Maße, Gewerk) und die Vorlage
+(die Herkunft bleibt). Name, Höhe und Gelände gehören zum einzelnen Bauteil. Eine Schicht findet ihr Werkzeug über ihre
+Form (Umriss → Fläche, Achse → Band). Nicht an einem Bauwerk („als Baugruppe sichern"), nicht an einem Erdbau-Vorgang
+(Aushub + Auftrag — dieselbe Regel wie beim Zuordnen), nicht an Geliefertem.
+
+| gemessen | Wert |
+|---|---|
+| jedes der 30 Teichelemente „wie dieses" als Kommando neu gezeichnet: Rezept, Klasse, Ausführung, Gewerk, alle Werte ohne Ort/Name/Bauwerk | **30 von 30 gleich** |
+| Gegenproben (Operationswerte, Klasse, Form → Werkzeug, Vorlage je weggenommen) | 4 / 4 rot |
+| Browser :3001, Projekt 10001 | Tondichtung → Schicht-Werkzeug mit Dicke 0,5, Klasse IfcCourse, Vorlage „tondichtung"; Weg → Band mit Breite 2,5; Pfahl → Pfosten als IfcPile/DRIVEN; am Teich kein „Wie dieses"; Journal 73 → 73 (nichts geschrieben); 0 pageerror |
+
+**Die Abnahme der Stufen (§ 9) — Ziel gegen Messung:**
+
+| Stufe | Ziel | gemessen (Test) |
+|---|---|---|
+| G1 | Rezepte ohne Gewerk 17 → 0 | 0 von 17, Ableitungen 9 von 9 (`gewerke.test.js`) |
+| G2 | weniger Knöpfe, 2 Maße = 1 Vorgang | Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 9; 1 Vorgang (`strukturG0.test.js`) |
+| G3 | Erzeugen 18 flach → ≤ 8 je Ansicht | Allgemein 7; je Abschnitt höchstens 9 — Entwässerung hat 9 Bauteile (mit dem Raum in der Mulde, G-T2) und 5 Vorlagen (`palette.test.js`): das Ziel „≤ 8" ist dort um einen Eintrag verfehlt |
+| G3b | Teich: Mengen passend zur Klasse, Warnungen 67 → 0 | 0 Warnungen (`test_g0_teich…`) |
+| G-T1/G-T2, G4–G7 | wie § 11.4–11.9 | grün |
+
+**In der Abnahme gefunden und behoben — Mengen an Rohr, Schacht, Stab.** G3b hatte die Mengen, die NICHT zur Klasse passten,
+auf 0 gebracht; die Gegenrichtung zählte niemand: Elemente, deren Klasse eine Mengenvorlage mit Länge, Fläche oder Volumen
+kennt, die aber gar keine Mengen trugen. Gemessen im Schreiber (bSI-Vorlagen des gepinnten ifcopenshell): **G0-Paket 5,
+P11 8** — vier Pfähle, Drosselschacht, zwei Haltungen, Warnschild. Ursache: Rohr, Schacht und Pfosten deklarierten keine
+Mengen. Kur als Deklaration (kein Code je Klasse): Rohr `length` (waagerechte Achslänge, wie das Gefälle), Schacht
+`depth` (neues Körpermaß „Höhenspanne": Sohle bis Deckel) und `grossVolume`, Pfosten `height`/`width`/`thickness` (in den
+Namen seiner Vorgabeklasse IfcSign). Eine Klasse ohne Höhe nimmt die Höhe als Länge (`ZIEL_JE_SINN`), so bekommt der
+Pfahl `Length`. **Nachher 0 und 0**; Mengensätze G0 20 → 25, P11 16 → 24. Von Hand: Haltungen 21 / 22 m, Pfahl 3 m,
+Schild 2 × 0,08 × 0,08 m, Drosselschacht 2,20 m tief, 3,789 m³ (16-Eck, r 0,75 — 2,5 % unter π r² h). Gelesen, nicht
+geändert: Ventil, Filter, Sensor kennen nur ein Gewicht, Vegetation hat keine Mengenvorlage — dort sind keine Mengen richtig.
+Die Gold-Pakete (Schächte, Leitpfosten) bleiben unverändert; ihr Vergleich nimmt `mengenMethode` aus wie schon `gewerk`.
+Zwei Tests gedreht, mit Grund: „ein Rohr hat (noch) keine Mengendeklaration" → „ein Rohr trägt seine Länge"; ein
+Testhelfer, der ein aufgelöstes Rezept zur Deklaration zurückbaut, streicht auch die neue Funktion `mengen`.
+
+**Offen, benannt:** G3 „≤ 8 je Ansicht" im Reiter Entwässerung um eins verfehlt (9 Bauteile, bewusst: der Raum in der Mulde gehört dorthin); ein Kommando über die
+Oberfläche baut die Szene neu (§ 11.9); „Wie dieses" nimmt keine Merkmalssätze mit (sie hängen am Bauteil, nicht am
+Formular) — die Bibliothek ist dafür der Weg.
 

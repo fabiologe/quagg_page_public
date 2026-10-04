@@ -4668,6 +4668,48 @@ export function nachId(id, katalog = werkzeugKatalog()) {
     return katalog.find(b => b.id === id) ?? null;
 }
 
+/** Was „Wie dieses" NIE mitnimmt: was zum einzelnen Bauteil gehört (wie beim Sichern einer Vorlage), nicht zur Art. */
+const WIE_DIESES_OHNE = Object.freeze(new Set(['name', 'hoehe', 'gelaende']));
+
+/**
+ * „WIE DIESES" — DIE PIPETTE (Teil XXIX, G8 — Konzept § 7, W4): ein neues Bauteil mit den Werten des gewählten.
+ * Kein neues Werkzeug: das Zeichenwerkzeug, das dieses Bauteil gemacht hat, mit seinen Feldern vorbelegt — so wie eine
+ * Vorlage es tut, nur ohne Bibliothek. Mitgenommen wird genau, was das Formular des Werkzeugs kennt (Klasse, Ausführung,
+ * Maße, Gewerk, Vorlage); Name, Höhe und Gelände gehören zum einzelnen Bauteil. Die Punkte zeichnet man neu.
+ *
+ * Rein: der Bauplan herein, `{werkzeug, vorgaben}` oder `{grund}` heraus.
+ */
+export function wieDieses(bauplan, { katalog = werkzeugKatalog() } = {}) {
+    if (!bauplan?.rezept) return { grund: 'Nur an Eigenbau — ein geliefertes Bauteil hat keinen Bauplan.' };
+    const rz = rezeptNach(bauplan.rezept);
+    if (!rz) return { grund: `Rezept „${bauplan.rezept}" ist unbekannt.` };
+    if (rz.behaelter) return { grund: 'Ein Bauwerk wird als Baugruppe gesichert und gesetzt, nicht so.' };
+    // Eine Ableitung: ihre Werte stehen in der (einen) Operation, Klasse & Co. oben in den Parametern (G-T1).
+    // Eine mehrteilige (Aushub + Auftrag) ist ein Erdbau-Vorgang — dieselbe Regel wie beim Zuordnen (G7).
+    if (typeof rz.leite === 'function' && !_einTeilDerAbleitung(bauplan)) {
+        return { grund: 'Ein Erdbau-Vorgang wird über seine Werkzeuge gezeichnet, nicht so.' };
+    }
+    const op = typeof rz.leite === 'function' ? (bauplan.parameter?.operationen ?? []) : null;
+    if (op && op.length !== 1) return { grund: 'Diese Ableitung trägt mehr als eine Operation — so nicht nachzuzeichnen.' };
+    const opp = op?.[0]?.parameter ?? null;
+    // Welches Werkzeug hat es gemacht? Eines, das dieses Rezept erzeugt und dessen Eingabe zur Form passt
+    // (eine Schicht als Umriss oder als Band entlang einer Achse).
+    const eingabe = opp ? (Array.isArray(opp.achse) ? 'zug' : 'umriss') : null;
+    const w = katalog.find(b => b.art === 'erzeugt' && b.gruppe === 'erzeugen' && b.rezept === bauplan.rezept
+                               && (!eingabe || b.eingabe === eingabe));
+    if (!w) return { grund: `Für „${rz.titel}" gibt es kein Zeichenwerkzeug.` };
+    const quelle = { ...(bauplan.kategorie ? { kategorie: bauplan.kategorie } : {}), ...(bauplan.parameter ?? {}), ...(opp ?? {}) };
+    const vorgaben = {};
+    for (const f of w.felder ?? []) {
+        if (!f?.name || WIE_DIESES_OHNE.has(f.name)) continue;
+        const v = quelle[f.name];
+        if (['string', 'number', 'boolean'].includes(typeof v) && v !== '') vorgaben[f.name] = v;
+    }
+    // Die Herkunft bleibt: wer „wie dieses" zeichnet, zeichnet aus derselben Vorlage (A1).
+    if (typeof quelle.vorlage === 'string' && quelle.vorlage) vorgaben.vorlage = quelle.vorlage;
+    return { werkzeug: w.id, vorgaben };
+}
+
 /**
  * Die Felder einer Bearbeitung für ein konkretes Bauteil auflösen.
  *

@@ -72,7 +72,7 @@ describe('2 — ein Symbol aus der Bibliothek', () => {
 
 /** Die Pfosten-Deklaration unter neuer Id — wie ein Bibliotheksrezept. */
 function rezeptNachDeklaration() {
-    const { liefert, baue, formAus, verschiebe, fachmodell, punkteIn, ...d } = rezeptNach('pfosten');
+    const { liefert, baue, formAus, verschiebe, fachmodell, punkteIn, mengen, ...d } = rezeptNach('pfosten');
     return { ...d, id: 'kegel' };
 }
 

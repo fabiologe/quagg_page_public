@@ -263,6 +263,18 @@
             </button>
           </div>
         </section>
+        <!-- „WIE DIESES" (Teil XXIX, G8 — Pipette, W4): ein neues Bauteil mit den Werten des gewählten, ohne Bibliothek.
+             Das Zeichenwerkzeug, das es gemacht hat, mit seinen Feldern vorbelegt; die Punkte zeichnet man neu. -->
+        <section v-if="wieDiesesPlan" class="tb-gruppe">
+          <h4 class="tb-kopf" title="Ein neues Bauteil mit den Werten des gewählten — Klasse, Ausführung, Maße, Gewerk, Vorlage">Wie dieses</h4>
+          <div class="tb-liste">
+            <button class="tb-btn" :disabled="!!sperrgrund"
+                    :title="sperrgrund || `Neu zeichnen mit: ${Object.keys(wieDiesesPlan.vorgaben).join(', ') || 'den Vorgaben des Werkzeugs'}`"
+                    @click="wieDiesesZeichnen">
+              <CdeIcon name="copy" :size="13" /> <span>Wie dieses zeichnen</span>
+            </button>
+          </div>
+        </section>
         <!-- ECKEN ZIEHEN (Teil XXII, Fabio 2026-09-18: „nur in der Bearbeitung,
              nur als Knopf, dann an allen Ecken"): ohne diesen Knopf trägt ein
              Erdkörper keine Griffe. -->
@@ -501,7 +513,7 @@ import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
-import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog } from '../services/Bearbeitungen.js';
+import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog, wieDieses } from '../services/Bearbeitungen.js';
 import { palette, suchePalette } from '../services/Palette.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { facettenVon, rollenTabelle } from '../services/Facetten.js';
@@ -782,14 +794,26 @@ watch(() => bearbeitung.bauteil?.globalId, () => { querschnittOffen.value = fals
 
 // ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────
 /** Ein Zeichenwerkzeug starten — über den Motor im Raum; Vorlagen belegen vor. */
-function zeichnen(id, { vorlage = null, gewerk = null } = {}) {
+function zeichnen(id, { vorlage = null, gewerk = null, mit = null } = {}) {
   rueckmeldung.value = '';
   const b = nachId(id);
   if (!b || !['zug', 'umriss'].includes(eingabeArt(b))) return werkzeug(id);
-  const vorgaben = gewerk ? { gewerk } : null;
+  const vorgaben = (gewerk || mit) ? { ...(mit ?? {}), ...(gewerk ? { gewerk } : {}) } : null;
   const ok = api.zeichnenStarten?.(id, { ...(vorlage ? { vorlage } : {}), ...(vorgaben ? { vorgaben } : {}) });
   if (ok === false) rueckmeldung.value = bearbeitung.letzterGrund || 'Zeichnen liess sich gerade nicht starten.';
   return ok;
+}
+
+/** „Wie dieses" (G8, W4): nur an Eigenbau, das ein Zeichenwerkzeug gemacht hat — sonst kein Abschnitt. */
+const wieDiesesPlan = computed(() => {
+  void bearbeitung.katalogStand;
+  const plan = bearbeitung.bauteil?.stand?.bauplan ?? null;
+  const w = plan ? wieDieses(plan) : null;
+  return w?.werkzeug ? w : null;
+});
+function wieDiesesZeichnen() {
+  const w = wieDiesesPlan.value;
+  if (w) zeichnen(w.werkzeug, { mit: w.vorgaben });
 }
 
 // Bauteilbibliothek (Lücke ⑨ / Stufe 9.8) — zog mit dem Zeichnen aus dem Lageplan hierher.

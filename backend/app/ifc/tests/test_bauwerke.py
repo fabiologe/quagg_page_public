@@ -931,13 +931,15 @@ def test_g0_teich_klassen_kommen_an_mengen_und_merkmale_nicht(tmp_path):
     Klasse. G0: der Schreiber nahm alle an, aber 16 Elemente trugen Mengen und Merkmale ihres Rezepts
     statt ihrer Klasse (67 Warnungen, Volumen fehlten im IFC). G3b: die Mengen folgen der Klasse
     (Bedeutung -> Qto der Klasse), Merkmale nur, wo ihr Satz gilt — 0 Warnungen, 20 Mengensaetze;
-    die Steinschuettung traegt Qto_CourseBaseQuantities (Thickness 0,3, Volume 5,4)."""
+    die Steinschuettung traegt Qto_CourseBaseQuantities (Thickness 0,3, Volume 5,4). G8: Rohr, Schacht und Stab
+    tragen jetzt Mengen (Laenge, Tiefe, Hoehe) — 25 Mengensaetze, keine Qto-Luecke mehr (vorher 5)."""
     paket = _georef(json.loads(TEICH_G0.read_text(encoding="utf-8")))
     ziel = tmp_path / "teich_g0.ifc"
     bericht = baue_datei(paket, ziel, schluessel="teich-g0")
     assert bericht["bauteile"] == 28 and bericht["uebersprungen"] == []
     assert bericht["warnungen"] == []
-    assert bericht["mengen"] == 20
+    assert bericht["mengen"] == 25
+    assert _qto_luecken(ziel) == []
     assert _regeln(ziel) == []
     from app.ifc import guids
     qto = _qto(ifcopenshell.open(str(ziel)))
@@ -1080,6 +1082,22 @@ def test_g6_im_verbund_bleiben_die_systeme_an_ihrem_ort(tmp_path):
 P11_TEICH = DATEN / "paket_p11_teich.json"
 
 
+def _qto_luecken(ziel) -> list:
+    """Elemente, deren Klasse eine Mengenvorlage mit Laenge, Flaeche oder Volumen kennt, die aber keine Mengen tragen
+    (Teil XXIX G8 — gefunden in der Abnahme: Rohr, Schacht, Pfahl, Schild). Gelesen aus den bSI-Vorlagen."""
+    import ifcopenshell.util.element as E
+    import ifcopenshell.util.pset as P
+    tpl = P.get_template("IFC4X3")
+
+    def geometrisch(klasse):
+        return any(p.TemplateType in ("Q_LENGTH", "Q_AREA", "Q_VOLUME")
+                   for q in tpl.get_applicable(klasse) if q.Name == f"Qto_{klasse[3:]}BaseQuantities"
+                   for p in q.HasPropertyTemplates)
+    datei = ifcopenshell.open(str(ziel))
+    return [(e.is_a(), e.Name) for e in datei.by_type("IfcElement")
+            if geometrisch(e.is_a()) and not E.get_psets(e, qtos_only=True)]
+
+
 def test_p11_retentionsteich_kommt_an(tmp_path):
     """Teil XXIX G7 — die Probe P11 (Konzept § 11): der Retentionsteich aus 70 Kommandos, durch den Schreiber. Zwei
     Bauwerke (Retentionsteich als IfcFacility mit Klassifizierung RRB, der Steg als eigene IfcFacility), die Teile
@@ -1093,6 +1111,8 @@ def test_p11_retentionsteich_kommt_an(tmp_path):
     assert bericht["warnungen"] == ["IfcEarthworksFill kennt im Schema keinen Typ — die Vorlage steht nur am Merkmal Quagg_CDE.Vorlage"]
     assert (bericht["bauteile"], bericht["bauwerke"], bericht["systeme"]) == (28, 2, 8)
     _sauber(ziel)
+    # G8: jedes Element, dessen Klasse eine geometrische Mengenvorlage hat, traegt Mengen (vorher 8 ohne).
+    assert _qto_luecken(ziel) == []
     datei = ifcopenshell.open(str(ziel))
     anlagen = sorted(a.Name for a in datei.by_type("IfcFacility"))
     assert anlagen == ["Retentionsteich", "Steg"]

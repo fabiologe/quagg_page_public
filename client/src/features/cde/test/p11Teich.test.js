@@ -101,6 +101,13 @@ describe('Teil XXIX, G7 — P11: der Retentionsteich über Kommandos', () => {
             jetzt: new Date('2026-10-04T00:00:00Z'), nachProjekt: (q) => ({ ost: 362000 + q.x, nord: 5462000 - q.z, hoehe: q.y + 100 }) });
         const zeile = (t) => [t.cdeId, t.klasse, t.predefinedType ?? null, t.gewerk?.id ?? null];
         expect(p.bauteile.map(t => t.cdeId).sort()).toEqual([...teich, ...steg, ...ohne].filter(gid => !RAUS.includes(gid)).sort());
+        // G8 (Abnahme): Rohr, Schacht und Stab tragen Mengen — gefunden: acht Elemente kamen ohne Qto an, obwohl ihre Klasse
+        // eine kennt. Der Pfahl hat keine Höhe in seiner Vorlage, er bekommt die Länge.
+        const m = (gid) => p.bauteile.find(t => t.cdeId === gid)?.mengen;
+        expect([m('cde-T25a'), m('cde-T14'), m('cde-T22'), m('cde-T35')])
+            .toEqual([{ length: 3 }, { length: 21 }, { length: 22 }, { height: 2, width: 0.08, thickness: 0.08 }]);
+        expect(m('cde-T18').depth).toBeCloseTo(2.2, 9);
+        expect(m('cde-T18').grossVolume).toBeCloseTo(8 * 0.75 ** 2 * Math.sin(Math.PI / 8) * 2.2, 9);   // 16-Eck, r 0,75
         if (process.env.P11_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(p));
         expect(existsSync(FIXTURE), 'Fixture fehlt: P11_VERTRAG_SCHREIBEN=1 …').toBe(true);
         expect(JSON.parse(readFileSync(FIXTURE, 'utf8')).bauteile.map(zeile)).toEqual(p.bauteile.map(zeile));

@@ -110,6 +110,8 @@ export function profilSchluessel(art) {
 export const KOERPERMASSE = Object.freeze({
     volumen:      Object.freeze({ typ: 'IfcVolumeMeasure', text: 'Volumen des geschlossenen Körpers' }),
     achslaenge:   Object.freeze({ typ: 'IfcLengthMeasure', text: 'waagerechte Länge der gezeichneten Linie' }),
+    // Teil XXIX, G8: die Tiefe eines Schachts — Sohle bis Deckel, der senkrechte Abstand seiner zwei Punkte.
+    hoehenspanne: Object.freeze({ typ: 'IfcLengthMeasure', text: 'senkrechter Abstand zwischen tiefstem und höchstem Punkt' }),
     grundflaeche: Object.freeze({ typ: 'IfcAreaMeasure', text: 'Fläche des Umrisses in der Draufsicht' }),
     umfang:       Object.freeze({ typ: 'IfcLengthMeasure', text: 'Umfang des Umrisses in der Draufsicht' }),
     // Teil XXVIII, V7: die Ansicht der Mittelebene eines Profilkörpers — Achslänge ×
@@ -123,6 +125,10 @@ export const KOERPERMASSE = Object.freeze({
 function _koerpermass(name, geo, parameter, vorgabe) {
     const punkte = punkteAus(parameter).map(punktXYZ);
     if (name === 'achslaenge') return punkte.length >= 2 ? stationiere(punkte).laenge : undefined;
+    if (name === 'hoehenspanne') {
+        const y = punkte.map(q => q.y).filter(Number.isFinite);
+        return y.length >= 2 ? Math.max(...y) - Math.min(...y) : undefined;
+    }
     if (name === 'umfang') return punkte.length >= 3 ? stationiere([...punkte, punkte[0]]).laenge : undefined;
     if (name === 'grundflaeche') return punkte.length >= 3 ? ringFlaeche(punkte) : undefined;
     if (name === 'seitenflaeche') {

@@ -154,6 +154,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         // HALTUNGEN, nicht aus zwei flachen Streifen — und die Bauform wäre
         // `linie` statt `achse+profil`, womit alle Werkzeuge dieser Form ausfielen.
         geometrie: { art: 'sweep', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 12 } },
+        // Teil XXIX, G8 (gefunden in der Abnahme: Rohr, Schacht, Pfosten kamen ohne Mengen ins IFC) — die Haltungslänge.
+        menge: { length: 'achslaenge' },
     },
     {
         id: 'schacht',
@@ -180,6 +182,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         // übereinander — als Linienzug war ein eigener Schacht unsichtbar.
         symbol: 'schacht',
         geometrie: { art: 'sweep', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 16 } },
+        // Teil XXIX, G8: Tiefe = Sohle bis Deckel, Volumen des Körpers (aussen — GrossVolume).
+        menge: { depth: 'hoehenspanne', grossVolume: 'volumen' },
     },
     {
         /**
@@ -212,6 +216,9 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         symbol: 'pfosten',
         geometrie: { art: 'stab', laenge: 'laenge',
                      profil: { art: 'rechteck', breite: 'breite', tiefe: 'tiefe', einheit: 'm' } },
+        // Teil XXIX, G8: die Masse des Stabs, benannt wie in der Vorlage seiner Vorgabeklasse (IfcSign). Eine andere Klasse
+        // bekommt sie über ihre Bedeutung — ein Pfahl kennt keine Höhe, er bekommt die Länge (`Bauteilrezepte.ZIEL_JE_SINN`).
+        menge: { height: 'laenge', width: 'breite', thickness: 'tiefe' },
     },
     {
         /**

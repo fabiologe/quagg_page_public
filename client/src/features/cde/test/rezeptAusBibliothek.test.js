@@ -193,9 +193,10 @@ describe('Leitpfosten: zeichnen, Reihe, Journal, Autor, Paket', () => {
         if (process.env.PAKET_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(paket));
         expect(existsSync(FIXTURE), 'Fixture fehlt — mit PAKET_VERTRAG_SCHREIBEN=1 schreiben').toBe(true);
         const fix = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-        // `gewerk` (Teil XXIX, G6) kam additiv dazu, NACH dieser Fixture: sie ist Gold für „alte Pakete ergeben dieselbe
-        // Datei" (`test_bauwerke.py::test_gold…`) und bleibt, wie sie ist.
-        const form = (p) => p.bauteile.map(t => ({ klasse: t.klasse, rezept: t.rezept, n: t.dreiecke.length, k: Object.keys(t).filter(n => n !== 'gewerk').sort() }));
+        // `gewerk` (Teil XXIX, G6) und `mengenMethode` (G8: Schacht und Pfosten tragen jetzt Mengen) kamen additiv dazu,
+        // NACH dieser Fixture: sie ist Gold für „alte Pakete ergeben dieselbe Datei" (`test_bauwerke.py::test_gold…`) und
+        // bleibt, wie sie ist.
+        const form = (p) => p.bauteile.map(t => ({ klasse: t.klasse, rezept: t.rezept, n: t.dreiecke.length, k: Object.keys(t).filter(n => n !== 'gewerk' && n !== 'mengenMethode').sort() }));
         expect(form(fix)).toEqual(form(paket));
     });
 

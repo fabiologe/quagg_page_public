@@ -195,10 +195,12 @@ describe('Z4 — ein eigenes Bauteil trägt seine Mengen (Fund 5)', () => {
         expect(runde(mengenVon(plan)).length).toBe(10);
     });
 
-    it('ein Rohr hat (noch) keine Mengendeklaration — keine Mengen, keine Methode', () => {
-        const plan = { rezept: 'rohr', parameter: { punkte: [[0, 0, 0], [10, 0, 0]], dn: 300 } };
-        expect(mengenVon(plan)).toEqual({});
-        expect(mengenMethodeVon(plan)).toBeNull();
+    // Bis Teil XXIX G8 hatte ein Rohr keine Mengendeklaration (keine Mengen, keine Methode). Die Abnahme von XXIX fand
+    // es am Teich: fünf Elemente ohne Qto, obwohl ihre Klasse eine kennt. Jetzt trägt das Rohr seine Haltungslänge.
+    it('ein Rohr trägt seine Länge (waagerecht, wie das Gefälle) — gemessen am Körper', () => {
+        const plan = { rezept: 'rohr', parameter: { punkte: [[0, 0, 0], [6, 0.5, 8]], dn: 300 } };
+        expect(mengenVon(plan)).toEqual({ length: 10 });
+        expect(mengenMethodeVon(plan)).toBe('koerper');
     });
 });
 
