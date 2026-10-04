@@ -92,7 +92,8 @@ describe('Teil XXIX, G1 — der Retentionsteich bekommt seine Gewerke', () => {
         mit.werte.gewerk = 'landschaft';
         const b = useBearbeitung();
         expect((await b.fuehreAus(mit)).ausgefuehrt).toBe(true);
-        // Heute nimmt das Zeichenwerkzeug nur Rezeptfelder: ein Gewerk im Kommando geht verloren — G2/G3 holen es herein.
-        expect(gewerkVon(useAenderungen().wirksamerStand('erzeugt').get('cde-X')).gewerk).toBe('erdbau');
+        // G1 fror ein: das Zeichenwerkzeug nahm nur Rezeptfelder, ein Gewerk im Kommando ging verloren.
+        // G3 gedreht: das Zeichenwerkzeug hat das Feld „Gewerk" und schreibt es, wo es von der Regel abweicht.
+        expect(gewerkVon(useAenderungen().wirksamerStand('erzeugt').get('cde-X'))).toEqual({ gewerk: 'landschaft', quelle: 'bauplan' });
     });
 });

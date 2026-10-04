@@ -45,6 +45,7 @@ const achse = (a, b, y) => [[a[0], y, a[1]], [b[0], y, b[1]]];
 const RECHTECKKAMMER = Object.freeze({
     id: 'rechteckkammer',
     titel: 'Rechteckkammer',
+    gewerk: 'entwaesserung',
     felder: Object.freeze([
         zahl('laenge', 'Lichte Länge (Ost–West)', 4),
         zahl('breite', 'Lichte Breite (Nord–Süd)', 3),
@@ -84,6 +85,7 @@ const RECHTECKKAMMER = Object.freeze({
 const ZWEIKAMMER_RUEB = Object.freeze({
     id: 'zweikammer-rueb',
     titel: 'Zweikammer-RÜB',
+    gewerk: 'entwaesserung',
     felder: Object.freeze([
         zahl('laenge', 'Lichte Länge je Kammer (Ost–West)', 4),
         zahl('breite', 'Lichte Breite (Nord–Süd)', 3),

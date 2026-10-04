@@ -34,7 +34,7 @@ import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
          modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte,
-         BAUWERKSARTEN, behaelterRezept, neueGlobalId } from './Bauteilrezepte.js';
+         BAUWERKSARTEN, behaelterRezept, neueGlobalId, gewerkVon } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { hoeheAus } from './kommando/Folgen.js';
 import { MASSNAHMEN } from './Sanierung.js';
@@ -843,10 +843,14 @@ function zeichenBearbeitung(rezept) {
         //
         // Der Versatz kommt mit dem Gezeichneten herein (`useZeichnen` legt
         // ihn ins Subjekt), nicht aus einer zweiten Rechnung hier.
-        felder: rezept.felder.map(f => ({
-            ...f,
-            rueckfall: { ...f, ...(f.name === 'hoehe' ? { einheit: 'm NN' } : {}) },
-        })),
+        felder: [
+            ...rezept.felder.map(f => ({
+                ...f,
+                rueckfall: { ...f, ...(f.name === 'hoehe' ? { einheit: 'm NN' } : {}) },
+            })),
+            // DAS GEWERK (Teil XXIX, G3): aus einem Gewerk-Reiter vorbelegt; leer = nach der Regel (`gewerkVon`).
+            ZEICHEN_GEWERK_FELD,
+        ],
         vorbelegung: (el) => ({
             name: '', kategorie: rezept.kategorieVorgabe,
             // Auf dem Gelände bleibt das Feld LEER — die Höhe kommt aus dem
@@ -880,6 +884,12 @@ function zeichenBearbeitung(rezept) {
                 // entsteht beim Start aus der Bibliothek (`vorbelegeAusVorlage`).
                 ...(werte.vorlage ? { vorlage: String(werte.vorlage) } : {}),
             };
+            // DAS GEWERK (Teil XXIX, G3): nur, wenn es von der Regel abweicht — ein Rohr aus dem Reiter
+            // „Leitungen" trägt es, ein Rohr aus „Entwässerung" nicht (die Regel sagt dasselbe).
+            if (istGewerk(werte.gewerk)) {
+                const { gewerk: nachRegel } = gewerkVon({ rezept: rezept.id, kategorie: werte.kategorie, parameter });
+                if (werte.gewerk !== nachRegel) parameter = { ...parameter, gewerk: werte.gewerk };
+            }
             // DER ANSCHLUSS (Teil XXIV, K8 — Fabios E6): beginnt oder endet eine
             // KANTE auf einem Knoten, nennt der Bauplan ihn. Das Netz nimmt die
             // Erklärung vor der Koinzidenz; weicht der Ort später ab, ist es ein Befund.
@@ -1746,6 +1756,10 @@ const VORLAGE_WERKZEUGE = [
             _vorlageSchritte(el, {}, { kandidatenVon, angleichen: werte?.rolle || '*' }).grund ?? null,
     },
 ];
+
+/** Das Gewerk am Zeichenwerkzeug (Teil XXIX, G3) — aus dem Reiter vorbelegt, leer heisst „nach Regel". */
+const ZEICHEN_GEWERK_FELD = Object.freeze({ name: 'gewerk', titel: 'Gewerk (leer = nach Regel)', typ: 'auswahl', leerErlaubt: true,
+    optionen: Object.entries(GEWERKE).map(([wert, g]) => ({ wert, titel: g.titel })) });
 
 /** Die Felder der Merkmal-Setzer — EINMAL, für den Setzer und das Formular (Teil XXIX, G2). */
 const KG_FELD = Object.freeze({

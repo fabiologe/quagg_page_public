@@ -50,8 +50,9 @@ async function miss([, , [klasse, pdt, objektTyp], kom]) {
 describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
     it('G0 147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste — G2: +1 Formular', () => {
         const kat = werkzeugKatalog();
-        expect(kat).toHaveLength(148);
-        expect(kat.filter(b => b.setzt)).toHaveLength(84);
+        // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung").
+        expect(kat).toHaveLength(152);
+        expect(kat.filter(b => b.setzt)).toHaveLength(88);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(18);
     });
 

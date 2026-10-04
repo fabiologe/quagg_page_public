@@ -59,18 +59,27 @@ describe('der Lageplan ist das Blatt', () => {
 describe('Erzeugen in der Tafel „Bauteil“', () => {
     beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); });
 
-    it('ohne Auswahl: jedes Werkzeug zum Erzeugen als Knopf — der Klick startet im 3D über den Viewer', async () => {
+    it('ohne Auswahl: jedes Werkzeug zum Erzeugen ist erreichbar — unter „Allgemein" oder in seinem Gewerk; der Klick startet im 3D', async () => {
+        // Teil XXIX, G3: keine flache Liste mehr (G0: 18 Knöpfe), sondern „Allgemein" + ein Reiter je Gewerk.
         const api = { zeichnenStarten: vi.fn(() => true), werkzeugStarten: vi.fn(() => true), bearbeitenSperrgrund: () => null };
         const w = montiere(api);
         await flushPromises();
         const erzeugen = ausGruppe('erzeugen');
         expect(erzeugen.length).toBeGreaterThan(0);
-        const knoepfe = w.findAll('.tb-liste .tb-btn');
-        for (const b of erzeugen) expect(knoepfe.map(k => k.text())).toContain(b.titel);
+        const gesehen = new Set(w.findAll('.tb-liste .tb-btn').map(k => k.text()));
+        const reiter = w.findAll('.tb-reiter-btn');
+        expect(reiter.length).toBeGreaterThan(1);
+        for (const r of reiter) {
+            await r.trigger('click');
+            for (const k of w.findAll('.tb-liste .tb-btn')) gesehen.add(k.text());
+        }
+        for (const b of erzeugen) expect([...gesehen], b.id).toContain(b.titel.replace(/ zeichnen$/, ''));
 
-        const zug = erzeugen.find(istZug);
-        await knoepfe.find(k => k.text() === zug.titel).trigger('click');
-        expect(api.zeichnenStarten).toHaveBeenCalledWith(zug.id, {});
+        // Ein Grundform-Werkzeug unter „Allgemein": ohne Vorgaben gestartet.
+        await w.findAll('.tb-reiter-btn')[0].trigger('click');
+        const linie = w.findAll('.tb-liste .tb-btn').find(k => k.text() === 'Linie');
+        await linie.trigger('click');
+        expect(api.zeichnenStarten).toHaveBeenCalledWith('linie-zeichnen', {});
         w.unmount();
     });
 

@@ -93,6 +93,7 @@ const schicht = (id, titel, objektTyp, dicke) => ({
 export const EINGEBAUTE_REZEPTE = Object.freeze([
     {
         id: 'linie',
+        allgemein: true,
         gewerk: 'vermessung',
         titel: 'Linie',
         icon: 'route',
@@ -112,6 +113,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         id: 'flaeche',
+        allgemein: true,
         gewerk: 'vermessung',
         titel: 'Fläche',
         icon: 'areas',
@@ -127,6 +129,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         id: 'rohr',
+        auchIn: ['leitungen'],          // Teil XXIX, G3: dasselbe Rohr als Trinkwasser-, Gas-, Kabelleitung
         gewerk: 'entwaesserung',
         titel: 'Rohr',
         icon: 'laengsschnitt',
@@ -169,6 +172,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             NAME, TYP,
             { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
             { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, gueltig: { ueber: 0 }, vorgabe: 1000, setzbar: true },
+            // Teil XXIX, G3: die Ausführung (MANHOLE, INSPECTIONCHAMBER …) — ohne Vorgabe, wie bisher NOTDEFINED.
+            ...ausfuehrung(),
         ],
         netzrolle: 'knoten',
         // Im Lageplan ein SYMBOL (A5): Sohle und Deckel liegen im Grundriss
@@ -185,6 +190,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Schild und trägt im Katalog dieselbe Bauform.
          */
         id: 'pfosten',
+        allgemein: true,
         gewerk: 'ausstattung',
         titel: 'Pfosten',
         icon: 'cat-column',
@@ -199,6 +205,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             { name: 'laenge', titel: 'Höhe des Pfostens', einheit: 'm', typ: 'zahl', min: 0.05, max: 30, gueltig: { ueber: 0 }, vorgabe: 1, setzbar: true },
             { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.12 },
             { name: 'tiefe', titel: 'Tiefe', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.12 },
+            // Teil XXIX, G3: der Stab ist auch Pfahl (IfcPile/DRIVEN), Pegel (IfcSensor/LEVELSENSOR), Schild (PICTORAL).
+            ...ausfuehrung(),
         ],
         hoehenAus: 'gelaende',
         symbol: 'pfosten',
@@ -213,6 +221,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Punkt behält seine Höhe wie bei der Fläche.
          */
         id: 'platte',
+        allgemein: true,
         gewerk: 'konstruktiv',
         titel: 'Platte',
         icon: 'cat-slab',
@@ -247,6 +256,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Keine Netzrolle: eine Wand bekommt keine Haltungswerkzeuge.
          */
         id: 'wand',
+        allgemein: true,
         gewerk: 'konstruktiv',
         titel: 'Wand',
         icon: 'cat-wall',
@@ -369,6 +379,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Die Bezeichnung ist Pflicht — die IDS verlangt sie („Räume — Name vorhanden").
          */
         id: 'raum',
+        allgemein: true,
         gewerk: 'entwaesserung',
         titel: 'Raum',
         icon: 'space',

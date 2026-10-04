@@ -30,44 +30,57 @@
         <p v-if="sperrgrund" class="tb-sperre">
           <CdeIcon name="warn" :size="12" /> {{ sperrgrund }}
         </p>
-        <div class="tb-liste">
-          <button
-            v-for="b in zeichenWerkzeuge"
-            :key="b.id"
-            class="tb-btn"
-            :disabled="!!sperrgrund"
-            :title="sperrgrund || b.titel"
-            @click="zeichnen(b.id)"
-          >
-            <CdeIcon :name="b.icon" :size="13" />
-            <span>{{ b.titel }}</span>
-          </button>
-        </div>
-        <!-- Bauteilbibliothek (Lücke ⑨): Vorlagen = Rezept + vorbelegte Werte.
-             Projekt schlägt Büro schlägt eingebauten Satz. -->
-        <template v-if="vorlagen.length">
-          <h4 class="tb-kopf">Vorlagen</h4>
+        <!-- DIE PALETTE (Teil XXIX, G3): Suche, „Allgemein" (Grundformen, Klasse wählbar), darunter je Gewerk
+             seine Bauteile und Vorlagen. Vorher eine flache Liste mit 18 Einträgen und eine zweite für Vorlagen. -->
+        <input v-model="suche" class="tb-suche" type="search" placeholder="Suchen: Bauteil, Vorlage …" aria-label="Werkzeug suchen" />
+        <template v-if="suche.trim()">
           <div class="tb-liste">
-            <div v-for="v in vorlagen" :key="v.id" class="tb-vorlage">
-              <button
-                class="tb-btn"
-                :disabled="!!sperrgrund"
-                :title="sperrgrund || `${v.name} — ${VORLAGE_HERKUNFT[v.herkunft] ?? 'Vorlage'}`"
-                @click="vorlageZeichnen(v)"
-              >
-                <CdeIcon :name="rezeptNach(v.rezept)?.icon ?? 'route'" :size="13" />
-                <span>{{ v.name }}</span>
-              </button>
-              <button
-                v-if="v.herkunft !== 'eingebaut'"
-                class="tb-vorlage-weg"
-                type="button"
-                :title="`Vorlage löschen (${v.herkunft === 'buero' ? 'Büro' : 'Projekt'})`"
-                aria-label="Vorlage löschen"
-                @click="vorlageEntfernen(v)"
-              ><CdeIcon name="delete" :size="11" /></button>
-            </div>
+            <button v-for="e in suchTreffer" :key="`${e.art}:${e.id}:${e.gewerk ?? ''}`" class="tb-btn" :disabled="!!sperrgrund"
+                    :title="sperrgrund || e.titel" @click="starteEintrag(e)">
+              <CdeIcon :name="eintragIcon(e)" :size="13" /> <span>{{ e.titel }}</span>
+            </button>
           </div>
+          <p v-if="!suchTreffer.length" class="tb-warum">Nichts gefunden.</p>
+        </template>
+        <template v-else>
+          <h5 class="tb-unterkopf">Allgemein</h5>
+          <div class="tb-liste">
+            <button v-for="e in pal.allgemein" :key="e.id" class="tb-btn" :disabled="!!sperrgrund"
+                    :title="sperrgrund || `${e.titel} — die Klasse ist im Formular wählbar`" @click="starteEintrag(e)">
+              <CdeIcon :name="eintragIcon(e)" :size="13" /> <span>{{ e.titel }}</span>
+            </button>
+          </div>
+          <div class="tb-reiter" role="tablist" aria-label="Gewerke">
+            <button v-for="g in reiter" :key="g.id" type="button" role="tab" :aria-selected="g.id === reiterId"
+                    :class="['tb-reiter-btn', { 'tb-reiter-btn--an': g.id === reiterId }]" @click="waehleReiter(g.id)">
+              {{ g.titel }}
+            </button>
+          </div>
+          <template v-if="reiterInhalt">
+            <template v-if="reiterInhalt.bauteile.length">
+              <h5 class="tb-unterkopf">Bauteile</h5>
+              <div class="tb-liste">
+                <button v-for="e in reiterInhalt.bauteile" :key="e.id" class="tb-btn" :disabled="!!sperrgrund"
+                        :title="sperrgrund || e.titel" @click="starteEintrag(e)">
+                  <CdeIcon :name="eintragIcon(e)" :size="13" /> <span>{{ e.titel }}</span>
+                </button>
+              </div>
+            </template>
+            <template v-if="reiterInhalt.vorlagen.length">
+              <h5 class="tb-unterkopf">Vorlagen</h5>
+              <div class="tb-liste">
+                <div v-for="e in reiterInhalt.vorlagen" :key="e.id" class="tb-vorlage">
+                  <button class="tb-btn" :disabled="!!sperrgrund"
+                          :title="sperrgrund || `${e.titel} — ${VORLAGE_HERKUNFT[e.herkunft] ?? 'Vorlage'}`" @click="starteEintrag(e)">
+                    <CdeIcon :name="eintragIcon(e)" :size="13" /> <span>{{ e.titel }}</span>
+                  </button>
+                  <button v-if="e.art === 'vorlage' && e.herkunft !== 'eingebaut'" class="tb-vorlage-weg" type="button"
+                          :title="`Vorlage löschen (${e.herkunft === 'buero' ? 'Büro' : 'Projekt'})`" aria-label="Vorlage löschen"
+                          @click="vorlageEntfernen(e.vorlage)"><CdeIcon name="delete" :size="11" /></button>
+                </div>
+              </div>
+            </template>
+          </template>
         </template>
         <!-- GELÄNDE (K4, Fabio 2026-09-20): „das Gelände sollte am besten gar
              nicht auswählbar sein — oder nur über einen Knopf." Seit K3 fängt
@@ -406,7 +419,8 @@ import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
-import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende } from '../services/Bearbeitungen.js';
+import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog } from '../services/Bearbeitungen.js';
+import { palette, suchePalette } from '../services/Palette.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
@@ -424,7 +438,26 @@ const api = useViewerApi();
 // mit (Teil XXIII, A5). `katalogStand` wandert mit jeder Registrierung.
 // Dazu die Bauwerke (Teil XXVI, Z5e): angelegt, nicht gezeichnet — `zeichnen` fällt
 // für alles ohne Zug auf das normale Werkzeug zurück.
-const zeichenWerkzeuge = computed(() => (void bearbeitung.katalogStand, [...ausGruppe('erzeugen'), ...ausGruppe('bauwerk')]));
+// DIE PALETTE (Teil XXIX, G3) — `services/Palette.js`, rein; die Tafel zeigt nur.
+const pal = computed(() => (void bearbeitung.katalogStand, palette({ katalog: werkzeugKatalog(), vorlagen: vorlagen.value })));
+const suche = ref('');
+const suchTreffer = computed(() => suchePalette(pal.value, suche.value));
+const reiter = computed(() => pal.value.gewerke.filter(g => g.bauteile.length || g.vorlagen.length));
+const REITER_SCHLUESSEL = 'cde.palette.reiter';
+const reiterId = ref((() => { try { return localStorage.getItem(REITER_SCHLUESSEL) || 'entwaesserung'; } catch { return 'entwaesserung'; } })());
+const reiterInhalt = computed(() => reiter.value.find(g => g.id === reiterId.value) ?? reiter.value[0] ?? null);
+function waehleReiter(id) {
+  reiterId.value = id;
+  try { localStorage.setItem(REITER_SCHLUESSEL, id); } catch { /* ohne Speicher gilt der Reiter bis zum Neuladen */ }
+}
+function eintragIcon(e) {
+  return e.art === 'vorlage' ? (rezeptNach(e.rezept)?.icon ?? 'route') : (e.icon ?? 'edit');
+}
+/** Ein Eintrag der Palette: ein Werkzeug (aus einem Reiter mit dessen Gewerk, wo es abweicht) oder eine Vorlage. */
+function starteEintrag(e) {
+  if (e.art === 'vorlage') return zeichnen(`${e.rezept}-zeichnen`, { vorlage: e.vorlage });
+  return zeichnen(e.id, { gewerk: e.gewerk });
+}
 
 // ── Gelände formen, ohne es anzuklicken (K4) ────────────────────────────────
 //
@@ -647,11 +680,12 @@ watch(() => bearbeitung.bauteil?.globalId, () => { querschnittOffen.value = fals
 
 // ── Erzeugen im 3D (Abnahme 2026-09-12, E8) ────────────────────────────────
 /** Ein Zeichenwerkzeug starten — über den Motor im Raum; Vorlagen belegen vor. */
-function zeichnen(id, { vorlage = null } = {}) {
+function zeichnen(id, { vorlage = null, gewerk = null } = {}) {
   rueckmeldung.value = '';
   const b = nachId(id);
   if (!b || !['zug', 'umriss'].includes(eingabeArt(b))) return werkzeug(id);
-  const ok = api.zeichnenStarten?.(id, vorlage ? { vorlage } : {});
+  const vorgaben = gewerk ? { gewerk } : null;
+  const ok = api.zeichnenStarten?.(id, { ...(vorlage ? { vorlage } : {}), ...(vorgaben ? { vorgaben } : {}) });
   if (ok === false) rueckmeldung.value = bearbeitung.letzterGrund || 'Zeichnen liess sich gerade nicht starten.';
   return ok;
 }
@@ -669,7 +703,6 @@ onMounted(vorlagenLaden);
 watch(() => cde.auftrag?.id, vorlagenLaden);
 // Eine Vorlage kann ein Rezept der Bibliothek nennen — gültig erst, wenn es registriert ist.
 watch(() => bearbeitung.katalogStand, vorlagenLaden);
-function vorlageZeichnen(v) { return zeichnen(`${v.rezept}-zeichnen`, { vorlage: v }); }
 
 /**
  * Die WERTE des scharfen Zeichenwerkzeugs als Vorlage sichern. Bezeichnung
@@ -841,6 +874,19 @@ async function vorlageEntfernen(v) {
 .tb-entwurf { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
 .tb-entwurf-feld { font-size: 0.68rem; color: var(--cde-text); }
 .tb-vorlage { display: flex; align-items: center; gap: 0.2rem; }
+.tb-suche {
+  width: 100%; box-sizing: border-box; margin: 0.2rem 0; padding: 0.3rem 0.45rem;
+  background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm); font: inherit; font-size: 0.75rem;
+}
+.tb-unterkopf { margin: 0.35rem 0 0; font-size: 0.66rem; font-weight: 600; color: var(--cde-text-dim); }
+.tb-reiter { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.45rem; }
+.tb-reiter-btn {
+  padding: 0.2rem 0.45rem; font: inherit; font-size: 0.68rem; cursor: pointer; touch-action: manipulation;
+  background: none; color: var(--cde-text-dim); border: 1px solid var(--cde-line); border-radius: 999px;
+}
+.tb-reiter-btn:hover { color: var(--cde-text); }
+.tb-reiter-btn--an { background: var(--cde-fill); color: var(--cde-text); border-color: var(--cde-text-dim); }
 .tb-vorlage > .tb-btn { flex: 1; min-width: 0; }
 .tb-vorlage-weg {
   background: none; border: none; border-radius: var(--cde-radius-sm);

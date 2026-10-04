@@ -206,6 +206,8 @@ const NEU = [
         'cde-TW1': ['tauchwand', { dicke: 0.25, wandhoehe: 1.2, tragend: 'ja', aussen: 'ja', predefinedType: 'SOLIDWALL', objektTyp: 'Prallwand' }],
         'cde-SK1': ['sauberkeitsschicht', { dicke: 0.08, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Blinding' }],
         'cde-BT1': ['bettung', { dicke: 0.25, tragend: 'ja', predefinedType: 'BASESLAB', objektTyp: 'Kiesbett' }],
+        'cde-PF1': ['pfosten', { predefinedType: 'PICTORAL', objektTyp: 'Warnschild' }],
+        'cde-S1': ['schacht', { predefinedType: 'MANHOLE', objektTyp: 'Drosselschacht' }],
         'cde-RG1': ['rigole', { dicke: 1.5, hohlraumanteil: 35, kf: 0.0002, versickerungsflaeche: 44, herleitung: 'Versuch 2026-10-02',
                                 predefinedType: 'CORE', objektTyp: 'Kiesrigole' }],
     }).flatMap(([gid, [rezept, werte]]) => Object.entries(werte).map(([feld, wert]) =>

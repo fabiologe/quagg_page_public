@@ -50,7 +50,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
-    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale', 'gewerk',
+    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale', 'gewerk', 'allgemein', 'auchIn',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset', 'griff']);
 
@@ -109,6 +109,7 @@ function _vorlage(v, fehler) {
     if (!_istObjekt(v)) { fehler.push('keine Vorlage'); return; }
     if (!String(v.name ?? '').trim()) fehler.push('Der Name fehlt.');
     if (!rezeptNach(v.rezept)) fehler.push(`Unbekanntes Rezept „${v.rezept}".`);
+    if (v.gewerk !== undefined && !istGewerk(v.gewerk)) fehler.push(`Gewerk „${v.gewerk}" gibt es nicht.`);
     const vorgaben = v.vorgaben ?? {};
     if (!_istObjekt(vorgaben)) { fehler.push('Vorgaben müssen ein Objekt sein.'); return; }
     for (const [feld, wert] of Object.entries(vorgaben)) {
@@ -181,6 +182,8 @@ function _rezept(d, fehler) {
     if (typeof d.symbol === 'string' && !symbolNach(d.symbol)) fehler.push(`Plansymbol „${d.symbol}" gibt es nicht.`);
     // DAS GEWERK (Teil XXIX, G1): eines aus dem Katalog — ein vertipptes wäre ein Gewerk, das niemand findet.
     if (d.gewerk !== undefined && !istGewerk(d.gewerk)) fehler.push(`Gewerk „${d.gewerk}" gibt es nicht (${Object.keys(GEWERKE).join(', ')}).`);
+    if (d.auchIn !== undefined && !(Array.isArray(d.auchIn) && d.auchIn.every(istGewerk))) fehler.push('`auchIn` ist eine Liste von Gewerken.');
+    if (d.allgemein !== undefined && typeof d.allgemein !== 'boolean') fehler.push('`allgemein` ist wahr oder falsch.');
     const felder = _felder(d.felder, fehler);
     if (d.menge !== undefined) _menge(d, felder, fehler);
     // EIN FELD, DAS EIN bSI-MERKMAL IST (Teil XXVI, Z3): Satz und Merkmal müssen

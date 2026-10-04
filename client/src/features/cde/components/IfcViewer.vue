@@ -1566,7 +1566,8 @@ function zeichnenStarten(id, { vorgaben = null, vorlage = null } = {}) {
   // Aus einer Vorlage: ihre Vorgaben UND ihre Id (Teil XXIII, A1) — über den
   // EINEN Weg im Store, den auch der Test geht.
   if (vorlage) bearbeitung.vorbelegeAusVorlage(vorlage);
-  else for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
+  // Vorgaben NACH der Vorlage (Teil XXIX, G3): das Gewerk des Reiters, aus dem gezeichnet wird.
+  for (const [feld, wert] of Object.entries(vorgaben ?? {})) bearbeitung.setzeWert(feld, wert);
   if (bearbeitung.scharf?.gruppe === 'erzeugen') engine.value?.viewTop?.();
   return true;
 }

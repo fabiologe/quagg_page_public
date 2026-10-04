@@ -37,6 +37,43 @@ export const EINGEBAUTE_VORLAGEN = Object.freeze([
       vorgaben: { dn: 1000, kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT' } },
     { id: 'trasse', name: 'Trasse (Alignment)', rezept: 'linie',
       vorgaben: { kategorie: 'IFCALIGNMENT' } },
+    // TEIL XXIX, G3 — die Fachobjekte der Gewerke, als Vorgaben an die allgemeinen Rezepte (Konzept § 11, Lücke
+    // L-D). Ihr Gewerk ergibt die Regelkette (`gewerkVon`) aus Klasse und Ausführung; ausdrücklich nur, wo die
+    // Klasse etwas anderes sagt (Oberboden ist IfcEarthworksFill, gehört aber zum Landschaftsbau). Die Dicken sind
+    // Formularvorgaben, keine Normwerte. Die FORM folgt dem Gelände noch nicht (Lücke L-A, G-T1).
+    { id: 'steinschuettung', name: 'Steinschüttung', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCCOURSE', predefinedType: 'ARMOUR', dicke: 0.4, tragend: 'nein' } },
+    { id: 'tondichtung', name: 'Tondichtung', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCCOURSE', predefinedType: 'CORE', dicke: 0.5, tragend: 'nein' } },
+    { id: 'schutzvlies', name: 'Schutzvlies (Geotextil)', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCCOURSE', predefinedType: 'FILTER', dicke: 0.01, tragend: 'nein' } },
+    { id: 'dichtungsschutz', name: 'Dichtungsschutzschicht', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCCOURSE', predefinedType: 'PROTECTION', dicke: 0.3, tragend: 'nein' } },
+    { id: 'schilf', name: 'Schilf (Röhricht)', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'VEGETATION', dicke: 0.4, tragend: 'nein' } },
+    { id: 'rasen', name: 'Rasenansaat', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCGEOGRAPHICELEMENT', predefinedType: 'VEGETATION', dicke: 0.05, tragend: 'nein' } },
+    { id: 'oberboden', name: 'Oberbodenandeckung', rezept: 'platte', gewerk: 'landschaft',
+      vorgaben: { kategorie: 'IFCEARTHWORKSFILL', predefinedType: 'USERDEFINED', objektTyp: 'Oberbodenandeckung', dicke: 0.2,
+                  tragend: 'nein', gewerk: 'landschaft' } },
+    { id: 'weg-wassergebunden', name: 'Weg (wassergebundene Decke)', rezept: 'platte',
+      vorgaben: { kategorie: 'IFCCOURSE', predefinedType: 'PAVEMENT', dicke: 0.15, tragend: 'nein' } },
+    { id: 'einfassung', name: 'Wegeinfassung', rezept: 'streifenfundament',
+      vorgaben: { kategorie: 'IFCKERB', predefinedType: 'NOTDEFINED', breite: 0.08, dicke: 0.25, tragend: 'nein' } },
+    { id: 'zaun', name: 'Zaun', rezept: 'wand',
+      vorgaben: { kategorie: 'IFCRAILING', predefinedType: 'FENCE', dicke: 0.05, wandhoehe: 1.6, tragend: 'nein', aussen: 'ja' } },
+    { id: 'gelaender', name: 'Geländer', rezept: 'wand',
+      vorgaben: { kategorie: 'IFCRAILING', predefinedType: 'HANDRAIL', dicke: 0.05, wandhoehe: 1.0, tragend: 'nein', aussen: 'ja' } },
+    { id: 'tor', name: 'Tor', rezept: 'wand',
+      vorgaben: { kategorie: 'IFCDOOR', predefinedType: 'GATE', dicke: 0.05, wandhoehe: 1.6, tragend: 'nein', aussen: 'ja' } },
+    { id: 'warnschild', name: 'Warnschild', rezept: 'pfosten',
+      vorgaben: { kategorie: 'IFCSIGN', predefinedType: 'PICTORAL', laenge: 2, breite: 0.08, tiefe: 0.08 } },
+    { id: 'pfahl', name: 'Pfahl (gerammt)', rezept: 'pfosten',
+      vorgaben: { kategorie: 'IFCPILE', predefinedType: 'DRIVEN', laenge: 3, breite: 0.2, tiefe: 0.2 } },
+    { id: 'traeger', name: 'Träger (Holz)', rezept: 'streifenfundament',
+      vorgaben: { kategorie: 'IFCBEAM', predefinedType: 'JOIST', breite: 0.12, dicke: 0.2, tragend: 'ja' } },
+    { id: 'pegellatte', name: 'Pegellatte', rezept: 'pfosten',
+      vorgaben: { kategorie: 'IFCSENSOR', predefinedType: 'LEVELSENSOR', laenge: 2, breite: 0.1, tiefe: 0.02 } },
 ]);
 
 /**
