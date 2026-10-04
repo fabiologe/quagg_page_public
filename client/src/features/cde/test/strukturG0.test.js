@@ -25,60 +25,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { e, k } from './hilfen/kammerKommandos.js';
+import { TEICH, wand } from './hilfen/teichKommandos.js';
 import { Speicher, paketAus } from './hilfen/vorlagenKommandos.js';
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../backend/app/ifc/tests/daten/paket_teich_g0.json');
 
 beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
 afterEach(() => repo.setBackend(null));
-
-/** Eine geneigte Fläche 1 : 3 (Böschung) — vier Ecken, Höhe in m NN. */
-const BOESCHUNG = [e(0, 0, 100), e(6, 0, 100), e(6, -3, 99), e(0, -3, 99)];
-const EBEN = (h) => [e(0, 0, h), e(4, 0, h), e(4, -2, h), e(0, -2, h)];
-const LINIE = (h) => [e(0, 0, h), e(5, 0, h)];
-const PUNKT = (h) => [e(1, -1, h)];
-const platte = (kategorie, predefinedType, objektTyp = '', umriss = BOESCHUNG, dicke = 0.3) =>
-    k('platte-zeichnen', { neu: ['cde-X'], eingaben: { umriss }, werte: { name: 'X', kategorie, hoehe: '', dicke, predefinedType, objektTyp } });
-const wand = (kategorie, predefinedType, objektTyp = '') =>
-    k('wand-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(100) }, werte: { name: 'X', kategorie, hoehe: '', dicke: 0.05, wandhoehe: 1.2, predefinedType, objektTyp } });
-const stab = (kategorie) =>
-    k('pfosten-zeichnen', { neu: ['cde-X'], eingaben: { zug: PUNKT(100) }, werte: { name: 'X', kategorie, hoehe: '', laenge: 1.5, breite: 0.2, tiefe: 0.2 } });
-const traeger = (kategorie, predefinedType) =>
-    k('streifenfundament-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(100.3) }, werte: { name: 'X', kategorie, hoehe: '', breite: 0.2, dicke: 0.3, predefinedType } });
-
-/** Der Teich, § 11.1 — ohne die Erdbau-Elemente. `soll`: Klasse, Ausführung (null = egal), Objekttyp. */
-const TEICH = [
-    [5, 'Tondichtung', ['IFCCOURSE', 'CORE'], platte('IFCCOURSE', 'CORE')],
-    [6, 'Schutzvlies', ['IFCCOURSE', 'FILTER'], platte('IFCCOURSE', 'FILTER', '', BOESCHUNG, 0.005)],
-    [7, 'Dichtungsschutzschicht', ['IFCCOURSE', 'PROTECTION'], platte('IFCCOURSE', 'PROTECTION')],
-    [8, 'Oberboden auf der Böschung', ['IFCEARTHWORKSFILL', 'USERDEFINED', 'Oberbodenandeckung'], platte('IFCEARTHWORKSFILL', 'USERDEFINED', 'Oberbodenandeckung')],
-    [9, 'Steinschüttung', ['IFCCOURSE', 'ARMOUR'], platte('IFCCOURSE', 'ARMOUR')],
-    [10, 'Schilf', ['IFCGEOGRAPHICELEMENT', 'VEGETATION'], platte('IFCGEOGRAPHICELEMENT', 'VEGETATION', '', EBEN(99.2), 0.4)],
-    [11, 'Rasenansaat', ['IFCGEOGRAPHICELEMENT', 'VEGETATION'], platte('IFCGEOGRAPHICELEMENT', 'VEGETATION', '', BOESCHUNG, 0.05)],
-    [12, 'Dauerstau', ['IFCSPACE', 'EXTERNAL'], k('raum-zeichnen', { neu: ['cde-X'], eingaben: { umriss: EBEN(98) }, werte: { name: 'Dauerstau', hoehe: '', raumhoehe: 1, predefinedType: 'EXTERNAL' } })],
-    [13, 'Rückhalteraum', ['IFCSPACE', 'EXTERNAL'], k('raum-zeichnen', { neu: ['cde-X'], eingaben: { umriss: EBEN(99) }, werte: { name: 'Rückhalteraum', hoehe: '', raumhoehe: 1, predefinedType: 'EXTERNAL' } })],
-    [14, 'Zulaufhaltung DN 600', ['IFCPIPESEGMENT', null], k('rohr-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(98.5) }, werte: { name: 'Zulauf', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 600 } })],
-    [15, 'Einlaufbauwerk (Stirnwand)', ['IFCWALL', null], wand('IFCWALL', 'RETAININGWALL')],
-    [16, 'Kolkschutz', ['IFCCOURSE', 'ARMOUR'], platte('IFCCOURSE', 'ARMOUR', '', EBEN(98), 0.4)],
-    [17, 'Grobrechen', ['IFCFILTER', 'STRAINER'], k('rechen-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(98) }, werte: { name: 'Rechen', kategorie: 'IFCFILTER', hoehe: '', stabtiefe: 0.08, rechenhoehe: 1.2 } })],
-    [18, 'Drosselschacht', ['IFCDISTRIBUTIONCHAMBERELEMENT', 'MANHOLE'], k('schacht-zeichnen', { neu: ['cde-X'], eingaben: { zug: [e(1, -1, 97.5), e(1, -1, 100)] }, werte: { name: 'Drosselschacht', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', dn: 1500 } })],
-    [19, 'Drossel', ['IFCVALVE', 'REGULATING'], k('drossel-zeichnen', { neu: ['cde-X'], eingaben: { zug: [e(0, 0, 97.5), e(1, 0, 97.5)] }, werte: { name: 'Drossel', kategorie: 'IFCVALVE', hoehe: '', dn: 200 } })],
-    [20, 'Wehrschwelle', ['IFCWALL', 'USERDEFINED', 'Überlaufschwelle'], k('ueberlaufschwelle-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(99.5) }, werte: { name: 'Wehrschwelle', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 0.5 } })],
-    [21, 'Tauchwand', ['IFCWALL', 'USERDEFINED', 'Tauchwand'], k('tauchwand-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(98.8) }, werte: { name: 'Tauchwand', kategorie: 'IFCWALL', hoehe: '', dicke: 0.2, wandhoehe: 1 } })],
-    [22, 'Ablaufhaltung', ['IFCPIPESEGMENT', null], k('rohr-zeichnen', { neu: ['cde-X'], eingaben: { zug: LINIE(97.5) }, werte: { name: 'Ablauf', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 300 } })],
-    [24, 'Befestigung der Dammscharte', ['IFCCOURSE', 'ARMOUR'], platte('IFCCOURSE', 'ARMOUR')],
-    [25, 'Pfahl', ['IFCPILE', 'DRIVEN'], stab('IFCPILE')],
-    [26, 'Jochträger', ['IFCBEAM', 'JOIST'], traeger('IFCBEAM', 'JOIST')],
-    [27, 'Stegbelag', ['IFCSLAB', 'FLOOR'], platte('IFCSLAB', 'FLOOR', '', EBEN(100.5), 0.05)],
-    [28, 'Geländer', ['IFCRAILING', 'HANDRAIL'], wand('IFCRAILING', 'HANDRAIL')],
-    [29, 'Weg zum Steg', ['IFCCOURSE', 'PAVEMENT'], platte('IFCCOURSE', 'PAVEMENT', '', EBEN(100), 0.15)],
-    [30, 'Wegeinfassung', ['IFCKERB', null], traeger('IFCKERB', 'NOTDEFINED')],
-    [31, 'Zufahrt', ['IFCCOURSE', 'PAVEMENT'], platte('IFCCOURSE', 'PAVEMENT', '', EBEN(100), 0.3)],
-    [32, 'Zaun', ['IFCRAILING', 'FENCE'], wand('IFCRAILING', 'FENCE')],
-    [33, 'Tor', ['IFCDOOR', 'GATE'], wand('IFCDOOR', 'GATE')],
-    [34, 'Pegellatte', ['IFCSENSOR', 'LEVELSENSOR'], stab('IFCSENSOR')],
-    [35, 'Warnschild', ['IFCSIGN', 'PICTORAL'], stab('IFCSIGN')],
-];
 
 /** Ein Element über sein Kommando — was im Paket ankommt: 'voll' | 'ohne Ausführung' | 'abgelehnt: …'. */
 async function miss([, , [klasse, pdt, objektTyp], kom]) {
@@ -120,10 +73,10 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         expect(new Set(ae.eintraege.map(x => x.vorgang)).size - 1).toBe(2);
     });
 
-    it('Gewerk: kein Rezept nennt eines (0 von 17)', () => {
+    it('Gewerk: G0 kein Rezept nannte eines (0 von 17) — G1 gedreht: alle 17', () => {
         const rezepte = Object.values(REZEPTE).filter(r => !r.behaelter);
         expect(rezepte).toHaveLength(17);
-        expect(rezepte.filter(r => r.gewerk)).toHaveLength(0);
+        expect(rezepte.filter(r => r.gewerk)).toHaveLength(17);
     });
 });
 

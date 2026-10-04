@@ -312,6 +312,7 @@ const ABLEITUNGEN_ERWEITERT = {
      */
     erdbau: {
         id: 'erdbau',
+        gewerk: 'erdbau',
         titel: 'Gelände formen',
         icon: 'terrain',
         // Ein ERDBAU-VORGANG (Stufe 1): fusst auf dem Ur-Gelände, meldet seine
@@ -686,6 +687,7 @@ export const KANALGRABEN_PROFILE_MAX = 400;
 
 ABLEITUNGEN_ERWEITERT.kanalgraben = {
     id: 'kanalgraben',
+    gewerk: 'erdbau',
     titel: 'Kanalgraben',
     /** So heisst der Vorgang im Mengen-Reiter hinter dem Quellnamen („H-001 · Kanalgraben"). */
     mengenzeile: 'Kanalgraben',
@@ -1292,6 +1294,7 @@ ABLEITUNGEN_ERWEITERT.kanalgraben = {
  */
 const BAUWERKSGRUBE = {
     id: 'bauwerksgrube',
+    gewerk: 'erdbau',
     titel: 'Bauwerksgrube',
     /** So heisst der Vorgang im Mengen-Reiter hinter dem Quellnamen („H-001 · Baugrube"). */
     mengenzeile: 'Baugrube',
@@ -1546,6 +1549,7 @@ ABLEITUNGEN_ERWEITERT.bauwerksgrube = BAUWERKSGRUBE;
  */
 ABLEITUNGEN_ERWEITERT.anzeige = {
     id: 'anzeige',
+    gewerk: 'erdbau',
     titel: 'Gelände (Anzeige)',
     icon: 'terrain',
     bauform: 'hoehenfeld',
@@ -1663,6 +1667,7 @@ ABLEITUNGEN_ERWEITERT.anzeige = {
 
 ABLEITUNGEN_ERWEITERT.aussparung = {
     id: 'aussparung',
+    gewerk: 'konstruktiv',
     titel: 'Aussparung',
     icon: 'schnitt',
     bauform: 'koerper',
@@ -1797,6 +1802,7 @@ function _oeffnungBauen(parameter, quellen) {
 
 ABLEITUNGEN_ERWEITERT.oeffnung = {
     id: 'oeffnung',
+    gewerk: 'konstruktiv',
     titel: 'Öffnung',
     icon: 'schnitt',
     bauform: 'koerper',
@@ -1889,6 +1895,7 @@ function _durchfuehrungBauen(parameter, quellen) {
 
 ABLEITUNGEN_ERWEITERT.durchfuehrung = {
     id: 'durchfuehrung',
+    gewerk: 'konstruktiv',
     titel: 'Rohrdurchführung',
     icon: 'schnitt',
     bauform: 'koerper',

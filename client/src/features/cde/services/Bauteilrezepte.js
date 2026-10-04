@@ -35,6 +35,7 @@
  * Stelle und wird nirgends noch einmal entschieden.
  */
 
+import { gewerkNachKlasse, istGewerk } from './katalog/Gewerke.js';
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
@@ -318,6 +319,7 @@ function _verschiebeGelaende(parameter, delta) {
  */
 const GELAENDE_REZEPT = Object.freeze({
     id: 'gelaende',
+    gewerk: 'erdbau',
     art: 'code',
     titel: 'Geformtes Gelände',
     icon: 'terrain',
@@ -448,6 +450,31 @@ export function planbildVon(bauplan) {
     const symbol = rezept?.symbol && symbolNach(rezept.symbol) ? rezept.symbol : null;
     if (!Array.isArray(punkte) || punkte.length < (symbol ? 1 : 2)) return null;
     return { punkte, name: bauplan.name, geschlossen: !!rezept?.geschlossen, symbol };
+}
+
+/**
+ * DAS GEWERK eines Bauplans (Teil XXIX, G1) — eine Regelkette, damit der Strukturbaum, die Werkzeugleiste,
+ * das Formular und der Schreiber dieselbe Antwort bekommen:
+ *   1. ausdrücklich am Bauplan (`parameter.gewerk`) — gesetzt beim Zeichnen aus einem Gewerk oder im Formular,
+ *      oder von der Rolle einer Vorlage, die vom Rezept abweicht;
+ *   2. das Rezept, wenn das Bauteil die Klasse des Rezepts hat;
+ *   3. die Klassenregel (`katalog/Gewerke.js`) — wer die Klasse überschreibt (eine Platte als Steinschüttung,
+ *      IfcCourse/ARMOUR), sagt damit mehr als das Rezept;
+ *   4. das Rezept;
+ *   5. keines — sichtbar, nie geraten.
+ * @returns {{ gewerk: string|null, quelle: 'bauplan'|'rezept'|'klasse'|null }}
+ */
+export function gewerkVon(bauplan) {
+    const eigen = bauplan?.parameter?.gewerk;
+    if (istGewerk(eigen)) return { gewerk: eigen, quelle: 'bauplan' };
+    const rz = rezeptNach(bauplan?.rezept);
+    const vomRezept = istGewerk(rz?.gewerk) ? rz.gewerk : null;
+    const kategorie = String(bauplan?.kategorie ?? rz?.kategorieVorgabe ?? '').toUpperCase();
+    const eigeneKlasse = !bauplan?.kategorie || kategorie === String(rz?.kategorieVorgabe ?? '').toUpperCase();
+    if (vomRezept && eigeneKlasse) return { gewerk: vomRezept, quelle: 'rezept' };
+    const nachKlasse = kategorie ? gewerkNachKlasse(kategorie, predefinedTypeVon(bauplan)) : null;
+    if (nachKlasse) return { gewerk: nachKlasse, quelle: 'klasse' };
+    return vomRezept ? { gewerk: vomRezept, quelle: 'rezept' } : { gewerk: null, quelle: null };
 }
 
 /**

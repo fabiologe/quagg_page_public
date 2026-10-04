@@ -77,7 +77,7 @@ const nichtTragend = (satz) => Object.freeze({ ...tragend(satz), titel: 'Tragend
  * Die Dicken sind Formularvorgaben, keine Normwerte.
  */
 const schicht = (id, titel, objektTyp, dicke) => ({
-    id, titel, icon: 'cat-slab', bauform: 'flaeche+dicke', kategorieVorgabe: 'IFCSLAB', mindestPunkte: 3, geschlossen: true,
+    id, titel, gewerk: 'konstruktiv', icon: 'cat-slab', bauform: 'flaeche+dicke', kategorieVorgabe: 'IFCSLAB', mindestPunkte: 3, geschlossen: true,
     felder: [
         NAME, TYP,
         { name: 'hoehe', titel: 'Oberkante', einheit: 'm', typ: 'zahl', leerErlaubt: true },
@@ -93,6 +93,7 @@ const schicht = (id, titel, objektTyp, dicke) => ({
 export const EINGEBAUTE_REZEPTE = Object.freeze([
     {
         id: 'linie',
+        gewerk: 'vermessung',
         titel: 'Linie',
         icon: 'route',
         bauform: 'linie',
@@ -111,6 +112,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         id: 'flaeche',
+        gewerk: 'vermessung',
         titel: 'Fläche',
         icon: 'areas',
         bauform: 'flaeche',
@@ -125,6 +127,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         id: 'rohr',
+        gewerk: 'entwaesserung',
         titel: 'Rohr',
         icon: 'laengsschnitt',
         bauform: 'achse+profil',
@@ -151,6 +154,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         id: 'schacht',
+        gewerk: 'entwaesserung',
         titel: 'Schacht',
         icon: 'schacht',
         bauform: 'koerper',
@@ -181,6 +185,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Schild und trägt im Katalog dieselbe Bauform.
          */
         id: 'pfosten',
+        gewerk: 'ausstattung',
         titel: 'Pfosten',
         icon: 'cat-column',
         bauform: 'punkt',
@@ -208,6 +213,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Punkt behält seine Höhe wie bei der Fläche.
          */
         id: 'platte',
+        gewerk: 'konstruktiv',
         titel: 'Platte',
         icon: 'cat-slab',
         bauform: 'flaeche+dicke',
@@ -241,6 +247,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Keine Netzrolle: eine Wand bekommt keine Haltungswerkzeuge.
          */
         id: 'wand',
+        gewerk: 'konstruktiv',
         titel: 'Wand',
         icon: 'cat-wall',
         // Gezeichnet ist sie eine ACHSE MIT PROFIL — bearbeitet wird sie an ihrer
@@ -277,6 +284,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Muster, zwei Katalogeinträge. Die Linie ist die Sohle des Fundaments.
          */
         id: 'streifenfundament',
+        gewerk: 'konstruktiv',
         titel: 'Streifenfundament',
         icon: 'cat-footing',
         bauform: 'achse+profil',
@@ -313,6 +321,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Nicht tragend und innen — sie steht im Becken, nicht im Erdreich.
          */
         id: 'ueberlaufschwelle',
+        gewerk: 'entwaesserung',
         titel: 'Überlaufschwelle',
         icon: 'cat-wall',
         bauform: 'achse+profil',
@@ -360,6 +369,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Die Bezeichnung ist Pflicht — die IDS verlangt sie („Räume — Name vorhanden").
          */
         id: 'raum',
+        gewerk: 'entwaesserung',
         titel: 'Raum',
         icon: 'space',
         bauform: 'koerper',
@@ -394,6 +404,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * schreibt hier niemand fest.
          */
         id: 'rechen',
+        gewerk: 'entwaesserung',
         titel: 'Rechen',
         icon: 'cat-railing',
         bauform: 'achse+profil',
@@ -426,6 +437,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Keine Netzrolle: sie bekommt keine Haltungswerkzeuge.
          */
         id: 'drossel',
+        gewerk: 'entwaesserung',
         titel: 'Drossel',
         icon: 'cat-flow',
         bauform: 'achse+profil',
@@ -453,6 +465,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Objekttyp „Tauchwand"; innen, nicht tragend.
          */
         id: 'tauchwand',
+        gewerk: 'entwaesserung',
         titel: 'Tauchwand',
         icon: 'cat-wall',
         bauform: 'achse+profil',
@@ -488,6 +501,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
          * Bemessung nach DWA-A 138 — der Normtext ist hier nicht geprüft.
          */
         id: 'rigole',
+        gewerk: 'entwaesserung',
         titel: 'Rigole',
         icon: 'cat-slab',
         bauform: 'flaeche+dicke',

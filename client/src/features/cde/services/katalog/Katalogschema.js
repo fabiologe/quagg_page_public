@@ -28,6 +28,7 @@ import { getPsetsForType } from '../../data/pset-templates.js';
 import { EINHEITEN } from '../rezept/Geometriebau.js';
 import { ACHSBEZUEGE } from '../Achsbezug.js';
 import { zielfehler, lagezielfehler, rechenzielfehler } from './Merkmalsziele.js';
+import { GEWERKE, istGewerk } from './Gewerke.js';
 import { EINGEBAUTE_SYMBOLE, SYMBOL_FORMEN, symbolNach } from '../PlanSymbols.js';
 import { REGELTABELLEN, eingebauteRegel } from '../regeln/Regelwerk.js';
 import { AUFLOCKERUNG, GRABENREGELN } from '../gelaende/Grabenregeln.js';
@@ -49,7 +50,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
-    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale',
+    'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale', 'gewerk',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset', 'griff']);
 
@@ -178,6 +179,8 @@ function _rezept(d, fehler) {
     if (d.netzrolle !== undefined && !NETZROLLEN.includes(d.netzrolle)) fehler.push(`Netzrolle „${d.netzrolle}" gibt es nicht (${NETZROLLEN.join(', ')}).`);
     for (const k of ['icon', 'symbol', 'beschreibung']) if (d[k] !== undefined && typeof d[k] !== 'string') fehler.push(`\`${k}\` muss ein Text sein.`);
     if (typeof d.symbol === 'string' && !symbolNach(d.symbol)) fehler.push(`Plansymbol „${d.symbol}" gibt es nicht.`);
+    // DAS GEWERK (Teil XXIX, G1): eines aus dem Katalog — ein vertipptes wäre ein Gewerk, das niemand findet.
+    if (d.gewerk !== undefined && !istGewerk(d.gewerk)) fehler.push(`Gewerk „${d.gewerk}" gibt es nicht (${Object.keys(GEWERKE).join(', ')}).`);
     const felder = _felder(d.felder, fehler);
     if (d.menge !== undefined) _menge(d, felder, fehler);
     // EIN FELD, DAS EIN bSI-MERKMAL IST (Teil XXVI, Z3): Satz und Merkmal müssen
