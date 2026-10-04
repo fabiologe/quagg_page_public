@@ -145,6 +145,37 @@
         <strong>{{ bearbeitung.bauteil.name || '(ohne Namen)' }}</strong>
         <code>{{ herleitung.kategorie }}</code>
       </div>
+      <!-- DIE FACETTEN (Teil XXIX, G4): Gewerk, Ausführung, das Bauwerk mit Pfad, die Vorlage — kein Baum, Eigenschaften
+           des Bauteils. Ein Bauwerk im Pfad ist ein Sprung dorthin. -->
+      <div v-if="facetten.gewerk || facetten.bauwerk.length || facetten.vorlage || facetten.klasse?.predefinedType" class="tb-facetten">
+        <span v-if="facetten.gewerk" class="tb-chip" :title="`Gewerk — ${GEWERK_QUELLE[facetten.gewerk.quelle] ?? ''}`">
+          {{ facetten.gewerk.titel }}
+        </span>
+        <span v-if="facetten.klasse?.predefinedType" class="tb-chip" title="Ausführung (IFC-PredefinedType) und Objekttyp">
+          {{ facetten.klasse.predefinedType }}<template v-if="facetten.klasse.objektTyp"> · {{ facetten.klasse.objektTyp }}</template>
+        </span>
+        <span v-if="facetten.bauwerk.length" class="tb-pfad" title="Gehört zu — ein Klick wählt das Bauwerk">
+          <template v-for="(b, i) in bauwerkPfad" :key="b.globalId">
+            <span v-if="i" class="tb-pfad-trenner">›</span>
+            <button type="button" class="tb-chip tb-chip--link" :disabled="b.fehlt" @click="zumBauteil(b.globalId)">{{ b.name }}</button>
+          </template>
+        </span>
+        <span v-if="facetten.vorlage?.art === 'bauwerk'" class="tb-chip tb-chip--vorlage">aus Vorlage „{{ facetten.vorlage.titel }}"</span>
+        <span v-else-if="facetten.vorlage?.art === 'rolle'" class="tb-chip tb-chip--vorlage">
+          Rolle {{ facetten.vorlage.rolle }} der Vorlage „{{ facetten.vorlage.titel }}"
+        </span>
+        <span v-else-if="facetten.vorlage?.art === 'bibliothek'" class="tb-chip tb-chip--vorlage" title="Aus der Bibliothek gezeichnet">
+          Vorlage {{ facetten.vorlage.id }}
+        </span>
+      </div>
+      <p v-if="facetten.vorlage?.art === 'rolle' && facetten.vorlage.abweichend.length" class="tb-hinweis">
+        Weicht von der Vorlage ab ({{ facetten.vorlage.abweichend.join(', ') }}) — beim nächsten Wertesetzen wird es übersprungen.
+        Angleichen am Bauwerk „{{ facetten.vorlage.bauwerkName }}".
+      </p>
+      <p v-else-if="facetten.vorlage?.art === 'rolle'" class="tb-warum">
+        Die Vorlage steuert Maße und Lage dieses Teils. Wer sie hier ändert, nimmt es aus der Steuerung — beim nächsten
+        Wertesetzen wird es übersprungen. Stattdessen am Bauwerk „{{ facetten.vorlage.bauwerkName }}" die Werte ändern.
+      </p>
 
       <!-- WORAUF SICH DER KLICK BEZIEHT. Bei einer Rahmenauswahl ändert eine
            Bearbeitung womöglich fünfzehn Bauteile — das muss dastehen, bevor
@@ -181,6 +212,43 @@
         <p v-if="sperrgrund" class="tb-sperre">
           <CdeIcon name="warn" :size="12" /> {{ sperrgrund }}
         </p>
+        <!-- DIE VORLAGE (Teil XXIX, G4 — Konzept § 6): am Bauwerk aus einer Vorlage ihre Rollen als Tabelle — Bauteil,
+             Stand (gesteuert / abweichend: Feld / fehlt), „Angleichen" je Zeile —, die Werte und „Lösen". -->
+        <section v-if="facetten.vorlage?.art === 'bauwerk'" class="tb-gruppe">
+          <h4 class="tb-kopf" title="Bauwerk aus einer Vorlage: die Werte steuern die Teile">Vorlage „{{ facetten.vorlage.titel }}"</h4>
+          <table class="tb-rollen">
+            <tbody>
+              <tr v-for="r in rollen" :key="r.rolle">
+                <td class="tb-rolle">{{ r.rolle }}</td>
+                <td>
+                  <button v-if="r.status !== 'fehlt'" type="button" class="tb-chip tb-chip--link" @click="zumBauteil(r.globalId)">{{ r.name }}</button>
+                  <span v-else class="tb-leise">gelöscht</span>
+                </td>
+                <td>
+                  <span :class="['tb-status', `tb-status--${r.status}`]" :title="r.felder.join(', ')">
+                    {{ ROLLEN_STATUS[r.status] }}<template v-if="r.felder.length">: {{ r.felder.join(', ') }}</template>
+                  </span>
+                </td>
+                <td>
+                  <button v-if="r.status !== 'gesteuert'" type="button" class="tb-btn tb-btn--klein" :disabled="!!sperrgrund"
+                          :title="sperrgrund || `Die Rolle ${r.rolle} wieder nach der Vorlage bauen`" @click="werkzeug('an-vorlage-angleichen', { rolle: r.rolle })">
+                    Angleichen
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tb-liste">
+            <button class="tb-btn" :disabled="!!sperrgrund" :title="sperrgrund || 'Die Werte der Vorlage — alle gesteuerten Teile folgen'"
+                    @click="werkzeug('vorlage-werte-setzen')">
+              <CdeIcon name="measure" :size="13" /> <span>Werte ändern</span>
+            </button>
+            <button class="tb-btn" :disabled="!!sperrgrund" :title="sperrgrund || 'Danach ein gewöhnliches Bauwerk — die Teile bleiben, nur ohne Steuerung'"
+                    @click="werkzeug('von-vorlage-loesen')">
+              <CdeIcon name="close" :size="13" /> <span>Von der Vorlage lösen</span>
+            </button>
+          </div>
+        </section>
         <!-- ECKEN ZIEHEN (Teil XXII, Fabio 2026-09-18: „nur in der Bearbeitung,
              nur als Knopf, dann an allen Ecken"): ohne diesen Knopf trägt ein
              Erdkörper keine Griffe. -->
@@ -422,6 +490,9 @@ import { herleite } from '../services/Herleitung.js';
 import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { palette, suchePalette } from '../services/Palette.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { facettenVon, rollenTabelle } from '../services/Facetten.js';
+import { verdeckteAus } from '../services/CdeAchsen.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
 import { achsAnzeige } from '../services/Achsanzeige.js';
@@ -433,6 +504,20 @@ import { schnittachseVon } from '../services/QuerschnittSicht.js';
 const bearbeitung = useBearbeitung();
 const ifc = useIfcStore();
 const api = useViewerApi();
+const aenderungen = useAenderungen();
+
+// DIE FACETTEN (Teil XXIX, G4) — `services/Facetten.js`, rein; die Tafel zeigt nur.
+const GEWERK_QUELLE = Object.freeze({ bauplan: 'am Bauteil gesetzt', rezept: 'aus dem Rezept', klasse: 'nach der Klasse' });
+const ROLLEN_STATUS = Object.freeze({ gesteuert: 'gesteuert', abweichend: 'abweichend', fehlt: 'fehlt' });
+const bauplanVon = (gid) => aenderungen.wirksamerStand('erzeugt').get(gid) ?? null;
+const facetten = computed(() => (void aenderungen.anzahl, facettenVon(bearbeitung.bauteil, { bauplanVon, bauform: herleitung.value?.bauform ?? null })));
+const bauwerkPfad = computed(() => [...facetten.value.bauwerk].reverse());
+const rollen = computed(() => (void aenderungen.anzahl, facetten.value.vorlage?.art === 'bauwerk'
+  ? rollenTabelle(bearbeitung.bauteil?.stand?.bauplan, bauplanVon, verdeckteAus(aenderungen.wirksamerStand('geloescht'))) : []));
+function zumBauteil(gid) {
+  rueckmeldung.value = '';
+  return api.waehleEigenes?.(gid);
+}
 
 // Der Katalog lebt: ein Rezept aus der Bibliothek bringt sein Zeichenwerkzeug
 // mit (Teil XXIII, A5). `katalogStand` wandert mit jeder Registrierung.
@@ -887,6 +972,27 @@ async function vorlageEntfernen(v) {
   background: none; color: var(--cde-text-dim); border: 1px solid var(--cde-line); border-radius: 999px;
 }
 .tb-reiter-btn:hover { color: var(--cde-text); }
+/* DIE FACETTEN (Teil XXIX, G4): Gewerk, Ausführung, Bauwerk-Pfad, Vorlage — Chips unter dem Titel. */
+.tb-facetten { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.2rem 0 0.3rem; }
+.tb-chip {
+  padding: 0.1rem 0.4rem; font: inherit; font-size: var(--cde-font-xs); color: var(--cde-text-dim);
+  background: var(--cde-fill); border: 1px solid var(--cde-line); border-radius: 999px;
+}
+.tb-chip--link { cursor: pointer; color: var(--cde-accent); border-color: var(--cde-accent-line); touch-action: manipulation; }
+.tb-chip--link:hover { background: var(--cde-accent-fill); }
+.tb-chip--link:disabled { cursor: default; color: var(--cde-text-dim); border-color: var(--cde-line); }
+.tb-chip--vorlage { border-style: dashed; }
+.tb-pfad { display: inline-flex; align-items: center; gap: 0.15rem; }
+.tb-pfad-trenner { color: var(--cde-text-dim); font-size: var(--cde-font-xs); }
+.tb-rollen { width: 100%; border-collapse: collapse; font-size: var(--cde-font-xs); margin-bottom: 0.3rem; }
+.tb-rollen td { padding: 0.15rem 0.2rem; border-bottom: 1px solid var(--cde-line); vertical-align: middle; }
+.tb-rolle { color: var(--cde-text-dim); }
+.tb-leise { color: var(--cde-text-dim); font-style: italic; }
+.tb-status { white-space: nowrap; }
+.tb-status--gesteuert { color: var(--cde-success-strong); }
+.tb-status--abweichend { color: var(--cde-warn); }
+.tb-status--fehlt { color: var(--cde-danger); }
+.tb-btn--klein { padding: 0.1rem 0.4rem; font-size: var(--cde-font-xs); }
 .tb-reiter-btn--an { background: var(--cde-fill); color: var(--cde-text); border-color: var(--cde-text-dim); }
 .tb-vorlage > .tb-btn { flex: 1; min-width: 0; }
 .tb-vorlage-weg {

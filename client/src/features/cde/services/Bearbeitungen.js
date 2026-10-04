@@ -1718,6 +1718,11 @@ const VORLAGE_ROLLEN = [...new Set(Object.values(BAUWERKSVORLAGEN)
 
 const _ausVorlageDiesesBauwerks = (v) => (el) => el?.stand?.bauplan?.parameter?.bauwerksvorlage?.id === v.id;
 
+/**
+ * Die Werkzeuge einer Bauwerk-Vorlage — am einzelnen Bauwerk stehen sie im Abschnitt „Vorlage" des Bauteilfensters
+ * (Teil XXIX, G4: Werte, Rollentabelle mit „Angleichen" je Zeile, „Lösen"), nicht als Knöpfe in der Leiste. Im Katalog
+ * bleiben sie: Kommandos, Skripte und Mehrfachauswahl rufen sie wie bisher.
+ */
 const VORLAGE_WERKZEUGE = [
     {
         id: 'vorlage-werte-setzen',
@@ -1727,6 +1732,7 @@ const VORLAGE_WERKZEUGE = [
         bauform: '*',
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        imAbschnitt: 'vorlage',
         gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
         giltGrund: 'Nur an einem Bauwerk aus einer Vorlage.',
         art: 'erzeugt',
@@ -1744,6 +1750,7 @@ const VORLAGE_WERKZEUGE = [
         bauform: '*',
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        imAbschnitt: 'vorlage',
         gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
         giltGrund: 'Nur an einem Bauwerk aus einer Vorlage.',
         art: 'erzeugt',
@@ -1754,6 +1761,30 @@ const VORLAGE_WERKZEUGE = [
             _vorlageSchritte(el, {}, { kandidatenVon, angleichen: werte?.rolle || '*' }).schritte ?? null,
         warumNicht: (el, werte, { kandidatenVon = null } = {}) =>
             _vorlageSchritte(el, {}, { kandidatenVon, angleichen: werte?.rolle || '*' }).grund ?? null,
+    },
+    {
+        // VON DER VORLAGE LÖSEN (Teil XXIX, G4 — Konzept § 6): danach ist das Bauwerk ein gewöhnliches Bauwerk, seine
+        // Teile gewöhnliche Bauteile — sie bleiben, wo und wie sie sind, nur steuert sie keine Vorlage mehr. Ein Kommando.
+        id: 'von-vorlage-loesen',
+        titel: 'Von der Vorlage lösen',
+        icon: 'close',
+        gruppe: 'parametrik',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        imAbschnitt: 'vorlage',
+        gilt: (_e, ctx) => !!ctx?.rezept?.behaelter,
+        giltGrund: 'Nur an einem Bauwerk aus einer Vorlage.',
+        art: 'erzeugt',
+        felder: [],
+        vorbelegung: () => ({}),
+        anwenden: (el) => {
+            const plan = el?.stand?.bauplan;
+            if (!plan?.parameter?.bauwerksvorlage) return null;
+            const { bauwerksvorlage: _weg, ...rest } = plan.parameter;
+            return bauplanFortschreiben(el, plan, rest);
+        },
+        warumNicht: (el) => (el?.stand?.bauplan?.parameter?.bauwerksvorlage ? null : 'Das Bauwerk stammt aus keiner Vorlage.'),
     },
 ];
 
@@ -1980,7 +2011,8 @@ const EIGENSCHAFTEN_WERKZEUG = {
  * Setzer (eine Kostengruppe für zehn Haltungen) und kein Formular (es ist mit dem ersten Bauteil vorbelegt).
  */
 export function sichtbarInLeiste(b, { einzeln = true } = {}) {
-    if (einzeln) return !b?.imFormular;
+    // Am einzelnen Bauteil steht ein Feld im Formular (G2), ein Vorlagen-Werkzeug im Abschnitt „Vorlage" (G4).
+    if (einzeln) return !b?.imFormular && !b?.imAbschnitt;
     return b?.id !== EIGENSCHAFTEN_WERKZEUG.id;
 }
 

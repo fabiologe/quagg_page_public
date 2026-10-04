@@ -1926,6 +1926,8 @@ provideViewerApi({
   waehleBauteil: (modelId, localId) => waehleOrtVoll(modelId, localId, { fahrt: true }),
   /** Dasselbe OHNE Kamerafahrt — der Weg der Tafel „Gelände" (K4). */
   waehleOhneFahrt: (modelId, localId) => waehleOrtVoll(modelId, localId, { fahrt: false }),
+  /** Ein EIGENES Bauteil wählen (Teil XXIX, G4: Sprung zum Bauwerk) — mit Körper wie ein Klick, ein Bauwerk aus dem Stand. */
+  waehleEigenes: (globalId) => waehleEigenes(globalId),
   /** Die Geländeflächen als Liste — ohne Prüfmass, für die Tafel (K4). */
   gelaendeListe: () => engine.value?.gelaendeKandidaten?.() ?? Promise.resolve([]),
   /** Eine Geländeoperation starten, ohne dass jemand das Gelände anklicken muss (K4). */
@@ -2171,6 +2173,13 @@ async function wendeEintragAn(eintragOderListe) {
  */
 async function nachAusfuehrenEinordnen(eintraege) {
   const el = ifc.selectedElement;
+  // EIN BAUWERK (ohne Körper, aus dem Stand gewählt — G4): frisch aus dem Stand, sonst zeigte die Tafel den alten Bauplan.
+  const b = bearbeitung.bauteil;
+  if (!el && b?.globalId && !b.modelId && istBehaelter(b.stand?.bauplan)) {
+    const frisch = subjektAusStand(b.globalId, { wirksamerStand: aenderungen.wirksamerStand, rahmen: bearbeitung.rahmen ?? undefined });
+    await bearbeitung.einordne(frisch, null);
+    return;
+  }
   if (!el || !engine.value) return;
   const liste = (Array.isArray(eintraege) ? eintraege : [eintraege]).filter(Boolean);
   if (liste.some(e => e.art === 'geloescht' && e.nachher && e.globalId === el.globalId)) {
@@ -2193,6 +2202,27 @@ async function nachAusfuehrenEinordnen(eintraege) {
   if (!frisch) return;
   ifc.setElement(frisch);
   await _einordnenMitHuelle(frisch);
+}
+
+/**
+ * EIN EIGENES BAUTEIL WÄHLEN (Teil XXIX, G4) — aus der Kopfzeile („Bauwerk Teich › …") oder der Rollentabelle. Hat es
+ * einen Körper, wie ein Klick auf ihn; ein Bauwerk ist ein Behälter ohne Körper — dann aus dem Stand eingeordnet,
+ * derselbe Weg, den ein Kommando ohne Oberfläche geht (`subjektAusStand`).
+ */
+async function waehleEigenes(globalId) {
+  if (!globalId || !engine.value) return false;
+  const { karte } = await karteMitEngine(engine.value, new Set([globalId]));
+  const o = karte.get(globalId);
+  if (o) return waehleOrtVoll(o.modelId, o.localId, { fahrt: false });
+  const subjekt = subjektAusStand(globalId, { wirksamerStand: aenderungen.wirksamerStand, rahmen: bearbeitung.rahmen ?? undefined });
+  if (!subjekt) { melde('Dieses Bauteil gibt es nicht mehr.'); return false; }
+  // Die Modellauswahl leeren: sonst hielte sie das zuletzt geklickte Teil, und das Nachwählen nach einem Werkzeug
+  // (`nachAusfuehrenEinordnen`) spränge dorthin zurück (Browserprobe G4: nach „Lösen" stand die Wand in der Tafel).
+  await engine.value.clearSelection?.();
+  ifc.clearElement();
+  panels.open('bauteil');
+  await bearbeitung.einordne(subjekt, null);
+  return true;
 }
 
 async function wendeVorgangAn(eintraege) {

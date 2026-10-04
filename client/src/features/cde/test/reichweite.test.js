@@ -64,8 +64,9 @@ const HEUTE = Object.freeze({
     // G3: +4 Setzer Ausführung/Objekttyp an Pfosten und Schacht — 152/129.
     // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände) — 154/131.
     // G-T2: +1 Raum in der Mulde — 155/132.
-    werkzeuge: 155,
-    ausgefuehrt: 132,
+    // G4: +1 Von der Vorlage lösen — 156/133.
+    werkzeuge: 156,
+    ausgefuehrt: 133,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

@@ -263,6 +263,8 @@ const NEU = [
     { id: 'vorlage-werte-setzen', el: eigen('cde-VK0'),
       werte: [{ laenge: 5, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }], kandidaten: KANDIDATEN },
     { id: 'an-vorlage-angleichen', el: eigen('cde-VK0'), werte: [{ rolle: '' }, { rolle: 'laengswandNord' }], kandidaten: KANDIDATEN },
+    // Teil XXIX, G4: das Bauwerk wird gewöhnlich — die Teile bleiben.
+    { id: 'von-vorlage-loesen', el: eigen('cde-VK0'), werte: [{}], kandidaten: KANDIDATEN },
     { id: 'bauwerk-verschieben', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-kopieren', el: eigen('cde-BW1'), werte: [{ ost: 10, nord: 0, hoehe: 0 }], kandidaten: KANDIDATEN },
     { id: 'bauwerk-drehen', el: eigen('cde-BW1'), werte: [{ winkel: 90 }], kandidaten: KANDIDATEN },

@@ -312,7 +312,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 | **G3b** | Mengen folgen der Klasse (L-F): Körpermaß → Qto der gewählten Klasse; Merkmalsfelder nur, wo ihr Satz gilt | Teich: Elemente ohne Mengen 16 → 0, Warnungen 67 → 0 | Kern klein |
 | **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) — **gebaut 2026-10-04**, § 11.4 | Teich: 9 Elemente in Form — **gemessen 0 → 9** (8 in der Mulde, der Rasen eben oberhalb) | Kern |
 | **G-T2** | Raum in einer Erdmulde (L-B) — **gebaut 2026-10-04**, § 11.5 | Dauerstau 992 m³, Rückhalteraum 1 424 m³ — **gemessen 991,83 / 1 423,83** (0,5-m-Raster; die Eckgrate) | Kern |
-| **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) | — | Oberfläche |
+| **G4** | Kopfzeile mit Facetten; Abschnitt „Vorlage" (Rollentabelle, Angleichen je Rolle, Lösen) — **gebaut 2026-10-04**, § 11.6 | am Bauwerk sichtbar 11 → 9 (Vorlagen-Werkzeuge im Abschnitt) | Oberfläche |
 | **G5** | Baugruppe: „Als Vorlage sichern" am Bauwerk → Bibliothek; setzen mit Punkt + Drehung | Schacht mit Gerinne 1 Kommando | Katalog |
 | **G6** | IFC: Gewerk → System je Bauwerk (E42); Bauwerkstyp Brücke → IfcBridge + IfcBridgePart | Systeme im IFC 0 → je Gewerk eines; Prüftor sauber, IDS 0 | Schreiber (wirkt sofort) |
 | **G7** | Probe **P11 Retentionsteich** (§ 11) über Kommandos, abgelegt im Projekt 10001 | Stauraum 1 424 m³, Dauerstau 992 m³ gemessen; Facetten tragen ohne Sonderfall | Test + Browser |
@@ -505,4 +505,23 @@ Oberfläche kennen nur eigene Bauteile) — im Browser wurde der Raum deshalb in
 über den echten Weg im Test. (2) Liegt der Spiegel am Umriss über dem Gelände, ist der Raum dort senkrecht abgeschnitten
 (Hinweis `raum_am_umriss`). (3) Der Reiter Entwässerung trägt jetzt neun Bauteile (Grenze aus § 5: acht) — der
 Regenrückhalteraum gehört fachlich dorthin.
+
+### 11.6 G4 gebaut (2026-10-04, `test/facetten.test.js`, Browserprobe 16/16)
+
+**Was es ist.** `services/Facetten.js` (rein) liest je Bauteil seine Facetten — Form, Klasse + Ausführung + Objekttyp,
+Gewerk (mit Quelle: am Bauteil / Rezept / Klasse), das Bauwerk mit Pfad (`teilVon`, Baugruppe › Anlage) und die Vorlage:
+ein Bauwerk „aus Vorlage", ein Teil „Rolle … der Vorlage" (mit seiner Abweichung), ein Bauteil aus der Bibliothek.
+Dazu die **Rollentabelle** eines Bauwerks: je Rolle Bauteil und Stand (gesteuert / abweichend: Feld / fehlt) — dieselbe
+Regel wie der Befund `vorlage_abweichung`. Neues Werkzeug **„Von der Vorlage lösen"** (ein Kommando, ein Eintrag: das
+Bauwerk wird gewöhnlich, die Teile bleiben, wie sie sind, und Teil des Bauwerks).
+
+**In der Tafel „Bauteil":** unter dem Titel die Facetten als Chips (ein Bauwerk im Pfad ist ein Sprung dorthin — auch ein
+Bauwerk ohne Körper wird gewählt, aus dem Stand, `api.waehleEigenes`); am Teil einer Vorlage der Hinweis, dass eine
+Änderung es aus der Steuerung nimmt, bzw. dass es schon abweicht. Am Bauwerk aus einer Vorlage der Abschnitt „Vorlage":
+Tabelle mit „Angleichen" je abweichender Zeile (startet `an-vorlage-angleichen` mit der Rolle), „Werte ändern", „Von der
+Vorlage lösen". Diese drei Werkzeuge stehen am einzelnen Bauwerk nicht mehr als Knöpfe in der Leiste (`imAbschnitt`).
+
+**Gefunden in der Browserprobe:** nach „Übernehmen" am Bauwerk sprang die Auswahl auf die zuletzt geklickte Wand — das
+Nachwählen suchte das Subjekt über seinen Ort im Modell, ein Bauwerk hat keinen. Kur: ein Bauwerk wird nach dem Anwenden
+aus dem Stand neu eingeordnet, und beim Wählen eines Bauwerks wird die Modellauswahl geleert.
 

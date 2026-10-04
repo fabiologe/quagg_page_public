@@ -51,8 +51,8 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
     it('G0 147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste — G2: +1 Formular', () => {
         const kat = werkzeugKatalog();
         // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung");
-        // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde).
-        expect(kat).toHaveLength(155);
+        // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen).
+        expect(kat).toHaveLength(156);
         expect(kat.filter(b => b.setzt)).toHaveLength(88);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(21);
     });
@@ -62,15 +62,17 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
             { eigenes: true, rezept: rezeptNach(r), typprofil: kat ? profilFuer(kat) : null }).length;
         expect([knoepfe('wand', 'achse+profil', 'IFCWALL'), knoepfe('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 knoepfe('platte', 'flaeche+dicke', 'IFCSLAB'), knoepfe('raum', 'koerper', 'IFCSPACE'),
-                knoepfe('bauwerk', 'netz', null)]).toEqual([31, 37, 25, 22, 17]);
+                // G4: +1 am Bauwerk (Von der Vorlage lösen) — angeboten, sichtbar im Abschnitt „Vorlage".
+                knoepfe('bauwerk', 'netz', null)]).toEqual([31, 37, 25, 22, 18]);
     });
 
-    it('G2: SICHTBAR in der Leiste am einzelnen Bauteil — Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11', () => {
+    it('G2: SICHTBAR in der Leiste am einzelnen Bauteil — Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11 (G4: 9)', () => {
         const sichtbar = (r, bauform, kat, einzeln = true) => passende({ bauform, guete: 'gemessen' },
             { eigenes: true, rezept: rezeptNach(r), typprofil: kat ? profilFuer(kat) : null }).filter(b => sichtbarInLeiste(b, { einzeln })).length;
         expect([sichtbar('wand', 'achse+profil', 'IFCWALL'), sichtbar('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 sichtbar('platte', 'flaeche+dicke', 'IFCSLAB'), sichtbar('raum', 'koerper', 'IFCSPACE'),
-                sichtbar('bauwerk', 'netz', null)]).toEqual([20, 31, 16, 13, 11]);
+                // G4: am Bauwerk wandern die Vorlagen-Werkzeuge (Werte, Angleichen, Lösen) in den Abschnitt „Vorlage" — 11 → 9.
+                sichtbar('bauwerk', 'netz', null)]).toEqual([20, 31, 16, 13, 9]);
         // Mehrfachauswahl: die Setzer wie bisher, kein Formular.
         expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(30);
     });
