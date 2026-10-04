@@ -67,4 +67,40 @@ describe('IfcSpatialWindow — Auge je Modell, Abschnitt Eigenbau', () => {
     expect(api.vorgangEntfernen).toHaveBeenCalledWith('ab-1');
     w.unmount();
   });
+
+  // Teil XXIX, nach G8 (Fabio: „Steg anklicken öffnet die Eigenschaften nicht"). Im IFC ist ein Bauwerk ein Raumelement
+  // (IfcFacility) mit eigener Kennung und Merkmalen — ein Viewer zeigt sie beim Klick auf den Knoten. Vorher: der Name
+  // eines Bauwerks war kein Ziel, der Klick klappte nur auf und zu.
+  it('ein Klick auf den Namen eines Bauwerks wählt es — der Pfeil klappt nur auf', async () => {
+    const api = { zoomToLocalId: vi.fn(async () => {}), setStoreyVisible: vi.fn(async () => {}), waehleEigenes: vi.fn(async () => true) };
+    useIfcStore().setSpatialBaeume([eigenbauBaum({
+      modelId: 'cde-eigenbau', karte: new Map([['cde-pfahl', 21]]), istBehaelter: (w) => w?.rezept === 'bauwerk',
+      stand: new Map([
+        ['cde-steg', { rezept: 'bauwerk', name: 'Steg', parameter: { art: 'anlage' } }],
+        ['cde-pfahl', { rezept: 'pfosten', kategorie: 'IFCPILE', name: 'Pfahl 1', parameter: { teilVon: 'cde-steg' } }],
+      ]) })]);
+    const Huelle = { setup() { provideViewerApi(api); return () => h(IfcSpatialWindow); } };
+    const w = mount(Huelle, { global: { plugins: [pinia], stubs: { CdeIcon: { template: '<i />' } } } });
+    await flushPromises();
+    const steg = () => w.findAll('.node-label').find(n => n.text() === 'Steg');
+    expect(steg()).toBeTruthy();
+    const pfahlDa = () => w.findAll('.node-label').some(n => n.text() === 'Pfahl 1');
+    expect(pfahlDa()).toBe(true);                                           // offen (Tiefe < 2)
+    // Der Pfeil klappt zu und wieder auf — und wählt nichts.
+    const pfeil = async () => { await steg().element.closest('.node-row').querySelector('.caret').click(); await flushPromises(); };
+    await pfeil();
+    expect(pfahlDa()).toBe(false);
+    await pfeil();
+    expect(pfahlDa()).toBe(true);
+    expect(api.waehleEigenes).not.toHaveBeenCalled();
+    // Der Name wählt das Bauwerk — und klappt dabei nicht zu.
+    await steg().trigger('click');
+    await flushPromises();
+    expect(api.waehleEigenes).toHaveBeenCalledWith('cde-steg');
+    expect(pfahlDa()).toBe(true);
+    // Ein Teil mit Körper zoomt wie bisher.
+    await w.findAll('.node-label').find(n => n.text() === 'Pfahl 1').trigger('click');
+    expect(api.zoomToLocalId).toHaveBeenCalledWith(21, 'cde-eigenbau');
+    w.unmount();
+  });
 });

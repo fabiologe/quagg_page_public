@@ -665,3 +665,13 @@ Testhelfer, der ein aufgelöstes Rezept zur Deklaration zurückbaut, streicht au
 Oberfläche baut die Szene neu (§ 11.9); „Wie dieses" nimmt keine Merkmalssätze mit (sie hängen am Bauteil, nicht am
 Formular) — die Bibliothek ist dafür der Weg.
 
+
+**Nachtrag (Fabio nach G8: „Steg anklicken öffnet die Eigenschaften nicht — wie wird das bei IFC gehandelt?").** Im IFC ist
+ein Bauwerk ein Raumelement (IfcFacility; in einer Anlage IfcFacilityPartCommon, eine Baugruppe IfcElementAssembly) mit
+eigener GlobalId, Name, Merkmalen und Klassifizierung; die Teile stehen darin, je Gewerk ein System. Ein Viewer zeigt das
+beim Klick auf den Knoten, obwohl es keinen Körper hat. Bei uns führte der Klick auf den Namen ins Leere (er zoomt nur zu
+Knoten mit Geometrie). Jetzt wählt er das Bauwerk aus dem Stand (derselbe Weg wie die Kopfzeile); die Tafel zeigt unter
+„Merkmale" den Steckbrief `EigenbauPaket.bauwerkImIfc` — aus demselben Paketeintrag, den der Schreiber bekommt, mit seiner
+Klassenregel. Gemessen: Steg IfcFacility, 9 Bauteile, Systeme Konstruktiv 7 + Ausstattung 2 (= die Zahlen des Schreibers
+in `test_p11…`); Teich IfcFacility, RRB, 23 Bauteile, 5 Systeme. Browser in 10001: beide Klicks 7/7, Journal unverändert.
+Nebenbei gesehen, nicht geändert: am Bauwerk steht „Baugrube ums Bauwerk" unter „Weil netz" (Bauform des Bauwerks).

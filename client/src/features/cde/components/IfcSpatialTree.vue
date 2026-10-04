@@ -59,6 +59,13 @@ const TreeNode = defineComponent({
     // Anders als das Auge eines Bauteils hängt es nicht an einer localId,
     // sondern an der Ableitung; die Engine kennt ihre Teile.
     const vorgangAuge = inject('vorgangAuge', null);
+    // Ein BAUWERK hat keinen Körper — der Klick auf seinen Namen wählt es aus dem Stand (Teil XXIX, nach G8).
+    const eigenesWaehlen = inject('eigenesWaehlen', null);
+    const waehlbar = () => !!(props.node.bauwerk && props.node.globalId && eigenesWaehlen);
+    function waehleBauwerk(e) {
+      e.stopPropagation();
+      eigenesWaehlen(props.node);
+    }
 
     function toggleExpand(e) {
       e.stopPropagation();
@@ -140,10 +147,12 @@ const TreeNode = defineComponent({
             class: 'node-label',
             title: bedienbar()
               ? `${label(node)}${node.aussparung ? ' — Aussparung im Gelände' : ''} — Klick zum Zoomen`
-              : node.verdecktVon?.length
-                ? `${label(node)} — überdeckt von ${node.verdecktVon.join(', ')}`
-                : label(node),
-            onClick: bedienbar() ? zoomToNode : undefined,
+              : waehlbar()
+                ? `${label(node)} — Klick zeigt das Bauwerk in der Tafel „Bauteil"`
+                : node.verdecktVon?.length
+                  ? `${label(node)} — überdeckt von ${node.verdecktVon.join(', ')}`
+                  : label(node),
+            onClick: bedienbar() ? zoomToNode : waehlbar() ? waehleBauwerk : undefined,
           }, label(node)),
 
           // „(verdeckt von …)" steht am Knoten, nicht nur im Titel: sonst

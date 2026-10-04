@@ -123,6 +123,15 @@ provide('vorgangAuge', async (knoten, sichtbar) => {
   await api.setzeVorgangSichtbar?.(knoten.vorgang, sichtbar);
 });
 
+/**
+ * EIN BAUWERK IM BAUM WÄHLEN (Teil XXIX, nach G8 — Fabio: „Steg anklicken öffnet die Eigenschaften nicht"). Im IFC ist ein
+ * Bauwerk ein Raumelement (IfcFacility) mit eigener Kennung und eigenen Merkmalen; ein Viewer zeigt sie beim Klick auf den
+ * Knoten, obwohl es keinen Körper hat. Hier derselbe Weg wie die Kopfzeile: aus dem Stand gewählt, die Tafel öffnet.
+ */
+provide('eigenesWaehlen', async (knoten) => {
+  await api.waehleEigenes?.(knoten.globalId);
+});
+
 // „Vorgang entfernen" am Knoten eines Erdbau-Vorgangs (A6) — mit Rückfrage.
 provide('vorgangEntfernen', async (knoten) => {
   if (!confirm(`„${knoten.name}" entfernen?\nAushub, Auftrag und die Grube im Gelände gehen; der Verlauf behält den Schritt.`)) return;

@@ -47,7 +47,7 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { gewerkVon, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
+import { gewerkVon, istBehaelter, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
 import { GEWERKE } from './katalog/Gewerke.js';
 
 export const PAKET_VERSION = 2;
@@ -339,6 +339,45 @@ export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), 
         // und Beziehung daraus wird, entscheidet der Schreiber aus `art`.
         ...(bauwerke.length ? { bauwerke: bauwerke.map(bauwerkFuersPaket) } : {}),
         uebersprungen,
+    };
+}
+
+/**
+ * WAS EIN BAUWERK IM IFC IST (Teil XXIX, nach G8 — Fabio: „Steg anklicken öffnet die Eigenschaften nicht; wie wird das bei
+ * IFC gehandelt?"). Ein Bauwerk ist dort ein RAUMELEMENT mit eigener Kennung, Name, Merkmalen und Klassifizierung — ein
+ * Viewer zeigt sie beim Klick auf den Knoten, obwohl es keinen Körper hat. Hier dieselben Angaben, gelesen aus demselben
+ * Paketeintrag, den der Schreiber bekommt (`bauwerkFuersPaket`), und mit SEINER Klassenregel (`eigenbau._bauwerke_anlegen`):
+ *   Baugruppe → IfcElementAssembly · Anlage in einer Anlage → IfcFacilityPartCommon · sonst → IfcFacility.
+ * Die Teile stehen darin (IfcRelContainedInSpatialStructure), je Gewerk ein System (G6). Die IFC-GlobalId leitet der
+ * Schreiber beim Ausgeben aus der CDE-Kennung ab — sie wird hier nicht nachgerechnet.
+ *
+ * Rein: der Stand herein (Map GlobalId → Bauplan), der Steckbrief heraus — oder null.
+ */
+export function bauwerkImIfc(globalId, { stand, verdeckt = new Set() } = {}) {
+    const wert = stand?.get?.(globalId);
+    if (!istBehaelter(wert)) return null;
+    const p = bauwerkFuersPaket({ globalId, wert });
+    const eltern = p.teilVon ? stand.get(p.teilVon) : null;
+    const klasse = p.art === 'baugruppe' ? 'IfcElementAssembly'
+        : istBehaelter(eltern) && eltern?.parameter?.art === 'anlage' ? 'IfcFacilityPartCommon' : 'IfcFacility';
+    const teile = [...stand].filter(([gid, w]) => !verdeckt.has(gid) && w?.parameter?.teilVon === globalId);
+    const systeme = new Map();
+    for (const [, w] of teile) {
+        const g = _gewerkFuersPaket(w).gewerk;
+        if (!g) continue;
+        const s = systeme.get(g.id) ?? { titel: g.titel, klasse: g.system.klasse, ausfuehrung: g.system.typ ?? null,
+                                          objektTyp: g.system.objektTyp ?? null, teile: 0 };
+        s.teile += 1;
+        systeme.set(g.id, s);
+    }
+    return {
+        klasse, name: p.name, cdeId: globalId,
+        objectType: klasse === 'IfcElementAssembly' ? 'Baugruppe' : null,
+        klassifikation: p.klassifikation ?? null,
+        merkmale: { Quagg_CDE: { CdeId: globalId, Rezept: wert.rezept, Art: p.art } },
+        teile: teile.filter(([, w]) => !istBehaelter(w)).length,
+        bauwerke: teile.filter(([, w]) => istBehaelter(w)).map(([, w]) => w.name ?? ''),
+        systeme: [...systeme.values()],
     };
 }
 

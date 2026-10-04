@@ -382,7 +382,26 @@
       <!-- MERKMALE — vorher eine eigene Tafel („Eigenschaften“). -->
       <details class="tb-merkmale" open>
         <summary>Merkmale</summary>
-        <IfcSemanticWindow eingebettet />
+        <!-- EIN BAUWERK hat keinen Körper, also kein Element im Viewer — im IFC ist es ein Raumelement mit eigenen
+             Angaben (Teil XXIX, nach G8). Hier, was der Schreiber für es schreibt. -->
+        <table v-if="bauwerkIfc" class="tb-rollen tb-ifc">
+          <tbody>
+            <tr><td class="tb-rolle">Klasse</td><td>{{ bauwerkIfc.klasse }}<template v-if="bauwerkIfc.objectType"> · {{ bauwerkIfc.objectType }}</template></td></tr>
+            <tr><td class="tb-rolle">Name</td><td>{{ bauwerkIfc.name || '—' }}</td></tr>
+            <tr><td class="tb-rolle">CDE-Id</td>
+                <td :title="'Die IFC-GlobalId entsteht beim Ausgeben aus dieser Id — sie bleibt über Ausgaben gleich.'">
+                  {{ bauwerkIfc.cdeId }} <span class="tb-leise">→ GlobalId beim Ausgeben</span></td></tr>
+            <tr v-if="bauwerkIfc.klassifikation"><td class="tb-rolle">Klassifizierung</td>
+                <td :title="bauwerkIfc.klassifikation.quelle ?? ''">{{ bauwerkIfc.klassifikation.code }} — {{ bauwerkIfc.klassifikation.name }}
+                  <span class="tb-leise">({{ [bauwerkIfc.klassifikation.system, bauwerkIfc.klassifikation.edition].filter(Boolean).join(', ') }})</span></td></tr>
+            <tr><td class="tb-rolle">Quagg_CDE</td><td>CdeId {{ bauwerkIfc.merkmale.Quagg_CDE.CdeId }} · Art {{ bauwerkIfc.merkmale.Quagg_CDE.Art }}</td></tr>
+            <tr><td class="tb-rolle">Enthält</td>
+                <td>{{ bauwerkIfc.teile }} {{ bauwerkIfc.teile === 1 ? 'Bauteil' : 'Bauteile' }}<template v-if="bauwerkIfc.bauwerke.length">, {{ bauwerkIfc.bauwerke.join(', ') }}</template></td></tr>
+            <tr v-for="sy in bauwerkIfc.systeme" :key="sy.titel"><td class="tb-rolle">System</td>
+                <td>{{ sy.titel }} <span class="tb-leise">— {{ sy.klasse }} {{ sy.ausfuehrung }}<template v-if="sy.objektTyp"> „{{ sy.objektTyp }}"</template>, {{ sy.teile }} {{ sy.teile === 1 ? 'Teil' : 'Teile' }}</span></td></tr>
+          </tbody>
+        </table>
+        <IfcSemanticWindow v-else eingebettet />
       </details>
 
       <!-- WARUM? Die Herleitung beantwortet „woher weiß die CDE, was hier geht?“ —
@@ -519,6 +538,7 @@ import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { facettenVon, rollenTabelle } from '../services/Facetten.js';
 import { baugruppeAus } from '../services/rezept/Baugruppe.js';
 import { verdeckteAus } from '../services/CdeAchsen.js';
+import { bauwerkImIfc } from '../services/EigenbauPaket.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';
@@ -540,6 +560,11 @@ const bauplanVon = (gid) => aenderungen.wirksamerStand('erzeugt').get(gid) ?? nu
 const facetten = computed(() => (void aenderungen.anzahl, facettenVon(bearbeitung.bauteil,
   { bauplanVon, bauform: herleitung.value?.bauform ?? null, vorlagen: vorlagen.value ?? [] })));
 const bauwerkPfad = computed(() => [...facetten.value.bauwerk].reverse());
+/** Ein gewähltes Bauwerk, wie es im IFC steht (Teil XXIX, nach G8) — null für jedes andere Bauteil. */
+const bauwerkIfc = computed(() => (void aenderungen.anzahl, facetten.value.behaelter && bearbeitung.bauteil?.globalId
+  ? bauwerkImIfc(bearbeitung.bauteil.globalId, { stand: aenderungen.wirksamerStand('erzeugt'),
+                                                verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')) })
+  : null));
 const rollen = computed(() => (void aenderungen.anzahl, facetten.value.vorlage?.art === 'bauwerk'
   ? rollenTabelle(bearbeitung.bauteil?.stand?.bauplan, bauplanVon, verdeckteAus(aenderungen.wirksamerStand('geloescht'))) : []));
 function zumBauteil(gid) {
