@@ -575,6 +575,8 @@ const herleitung = computed(() => herleite({
   // Derselbe Kontext wie `bearbeitung.moeglich` — sonst zeigte die Toolbox
   // einen Knopf, den der Store dann ablehnt (AE).
   kontext: bearbeitung.passendeKontext,
+  // Teil XXIX, G2: am einzelnen Bauteil das Formular „Eigenschaften" statt eines Knopfs je Feld.
+  einzeln: bearbeitung.bauteile.length < 2,
 }));
 
 /**

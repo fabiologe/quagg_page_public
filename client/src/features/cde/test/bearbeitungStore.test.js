@@ -377,7 +377,8 @@ describe('Toolbox und Kontextmenü dürfen nicht auseinanderlaufen', () => {
             el: ROHR, einordnung: b.einordnung, profilSatz: b.profilSatz,
         }).gruppen.flatMap(g => g.eintraege).map(e => e.id).sort();
 
-        expect(b.moeglich.map(x => x.id).sort()).toEqual(ausToolbox);
+        // Teil XXIX, G2: Leiste und Kontextmenü zeigen dasselbe (`inLeiste`); `moeglich` bleibt die Eignung.
+        expect(b.inLeiste.map(x => x.id).sort()).toEqual(ausToolbox);
     });
 
     it('lässt JEDE angebotene Bearbeitung auch scharf schalten', async () => {

@@ -91,10 +91,12 @@ describe('Die Tafel „Bauteil" ohne Bearbeiten-Modus', () => {
     expect(knoepfe.length).toBeGreaterThan(0);
     expect(knoepfe.filter(k => k.attributes('disabled') !== undefined)).toHaveLength(0);
 
-    await knoepfe.find(k => k.text().includes('Kostengruppe')).trigger('click');
-    expect(api.werkzeugStarten).toHaveBeenCalledWith('kg-setzen', {});
+    // Teil XXIX, G2: die Kostengruppe steht im Formular „Eigenschaften", nicht als eigener Knopf.
+    expect(knoepfe.some(k => k.find('span').text() === 'Kostengruppe setzen')).toBe(false);
+    await knoepfe.find(k => k.text().includes('Eigenschaften')).trigger('click');
+    expect(api.werkzeugStarten).toHaveBeenCalledWith('eigenschaften-setzen', {});
     expect(b.modusAn).toBe(true);
-    expect(b.scharfId).toBe('kg-setzen');
+    expect(b.scharfId).toBe('eigenschaften-setzen');
     w.unmount();
   });
 
@@ -138,11 +140,12 @@ describe('Die Pille ohne Bearbeiten-Modus', () => {
     };
     const w = mount(Huelle, { global: { plugins: [pinia], stubs: STUBS } });
     await w.find('.hud-pille').trigger('click');
-    const kg = w.findAll('.hud-bearb-btn').find(k => k.text().includes('Kostengruppe'));
+    // Teil XXIX, G2: das Kontextmenü zeigt, was die Leiste zeigt — das Formular statt des Kostengruppen-Knopfs.
+    const kg = w.findAll('.hud-bearb-btn').find(k => k.text().includes('Eigenschaften'));
     expect(kg).toBeTruthy();
     await kg.trigger('click');
-    expect(api.werkzeugStarten).toHaveBeenCalledWith('kg-setzen');
-    expect(b.scharfId).toBe('kg-setzen');
+    expect(api.werkzeugStarten).toHaveBeenCalledWith('eigenschaften-setzen');
+    expect(b.scharfId).toBe('eigenschaften-setzen');
     w.unmount();
   });
 });

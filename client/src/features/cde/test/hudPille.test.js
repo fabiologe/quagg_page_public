@@ -52,16 +52,17 @@ describe('CdeHudLayer — die Pille', () => {
         expect(w.findAll('.hud-menu-btn').length).toBeGreaterThan(0);
         const knoepfe = w.findAll('.hud-bearb-btn');
         expect(knoepfe.length).toBeGreaterThan(0);
-        const kg = knoepfe.find(k => k.text().includes('Kostengruppe'));
+        // Teil XXIX, G2: am einzelnen Bauteil das Formular „Eigenschaften" statt des Kostengruppen-Knopfs.
+        const kg = knoepfe.find(k => k.text().includes('Eigenschaften'));
         expect(kg).toBeTruthy();
         await kg.trigger('click');
-        expect(b.scharfId).toBe('kg-setzen');
+        expect(b.scharfId).toBe('eigenschaften-setzen');
         expect(w.find('.hud-menu').classes()).toContain('hud-menu--zu');
         expect(w.find('.hud-menu').classes()).toContain('hud-menu--scharf');
         // KEIN Formular hier — die Leiste hat es.
         expect(w.find('.bearb-form').exists()).toBe(false);
         await w.find('.hud-pille').trigger('click');
-        expect(w.find('.hud-bearb-hinweis').text()).toContain('Kostengruppe');
+        expect(w.find('.hud-bearb-hinweis').text()).toContain('Eigenschaften');
         expect(w.find('.bearb-form').exists()).toBe(false);
         w.unmount();
     });

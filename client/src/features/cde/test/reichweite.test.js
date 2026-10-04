@@ -60,8 +60,9 @@ const HEUTE = Object.freeze({
     // V4: +1 Zweikammer-RÜB aus Vorlage — 108/85.
     // V5: +31 Einbauten (5 Rezepte: je ein Zeichenwerkzeug, 26 Setzer) — 139/116.
     // V6: +8 Rigole (Zeichnen, 7 Setzer) — 147/124.
-    werkzeuge: 147,
-    ausgefuehrt: 124,
+    // Teil XXIX, G2: +1 Eigenschaften (Formular) — 148/125.
+    werkzeuge: 148,
+    ausgefuehrt: 125,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

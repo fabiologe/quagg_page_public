@@ -25,7 +25,7 @@ import {
 import { repo } from '../services/RepoFacade.js';
 import { EINGEBAUTE_PROFILE, REPO_KEY as TYP_KEY, profilFuer } from '../services/bauform/Typprofile.js';
 import { entwurfFuer, profilAusEntwurf } from '../services/bauform/Typprofilentwurf.js';
-import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugRollen } from '../services/Bearbeitungen.js';
+import { BEARBEITUNGEN, GRUPPEN, felderFuer, nachId, passende, pruefe, werkzeugRollen, sichtbarInLeiste } from '../services/Bearbeitungen.js';
 import { ladeKatalog } from '../services/katalog/Katalog.js';
 import { katalogSchreibe } from '../services/katalog/Katalogablage.js';
 import { eingebauteRollen, pruefeEintrag } from '../services/katalog/Katalogschema.js';
@@ -217,6 +217,9 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         regel: regelTreffer.value,
     }));
     const moeglich = computed(() => (einordnung.value ? passende(einordnung.value, passendeKontext.value) : []));
+    // WAS DIE LEISTE UND DAS KONTEXTMENÜ ZEIGEN (Teil XXIX, G2): am einzelnen Bauteil das Formular statt der
+    // Setzer, deren Felder es trägt. `moeglich` bleibt die Eignung — Palette und Kommandos brauchen die Setzer.
+    const inLeiste = computed(() => moeglich.value.filter(b => sichtbarInLeiste(b, { einzeln: bauteile.value.length < 2 })));
 
     /** Profilsatz und Bauformregeln laden. Einmal je Projekt, nicht je Auswahl. */
     /**
@@ -982,7 +985,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     return {
         entferneVorgang,
         einordnung, bauteil, bauteile, profilSatz, regeln, katalogBefunde, katalogStand, scharfId, werte, laeuft, letzterGrund,
-        typprofil, passendeKontext, scharf, felder, fehler, bereit, grenzhinweise, moeglich, befunde,
+        typprofil, passendeKontext, scharf, felder, fehler, bereit, grenzhinweise, moeglich, inLeiste, befunde,
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,

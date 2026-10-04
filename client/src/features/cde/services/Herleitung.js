@@ -37,7 +37,7 @@
 
 import { BAUFORMEN } from './bauform/Bauformen.js';
 import { imWoerterbuch, profilHerkunft, vererbungskette } from './bauform/Typprofile.js';
-import { GRUPPEN, eignungVon, felderFuer, passende, werkzeugKatalog } from './Bearbeitungen.js';
+import { GRUPPEN, eignungVon, felderFuer, passende, sichtbarInLeiste, werkzeugKatalog } from './Bearbeitungen.js';
 import { verlangtVon } from './eigenschaften/Eigenschaftsarten.js';
 
 /** Warum eine Bearbeitung angeboten wird — der Text neben der Gruppe. */
@@ -84,7 +84,7 @@ function _herkunft(b) {
  * @param {Array} [opts.katalog]    für Tests
  * @returns {object} siehe unten — bewusst flach und ohne Vue-Bezug
  */
-export function herleite({ el, einordnung, profilSatz, kontext = null, katalog = werkzeugKatalog() } = {}) {
+export function herleite({ el, einordnung, profilSatz, kontext = null, katalog = werkzeugKatalog(), einzeln = true } = {}) {
     const kategorie = String(el?.category ?? el?.type ?? '').toUpperCase().trim();
     const kette = vererbungskette(kategorie);
     const { profil, ausTyp, ueberVererbung } = profilHerkunft(kategorie, profilSatz);
@@ -105,7 +105,8 @@ export function herleite({ el, einordnung, profilSatz, kontext = null, katalog =
              : 'Weil das Bauteil es hat',
         warum: HERKUNFT_TEXT[art],
         eintraege: moeglich
-            .filter(b => _herkunft(b) === art)
+            // Teil XXIX, G2: am einzelnen Bauteil das Formular statt der Setzer, deren Felder es trägt.
+            .filter(b => _herkunft(b) === art && sichtbarInLeiste(b, { einzeln }))
             .map(b => ({
                 id: b.id, titel: b.titel, icon: b.icon, gruppe: b.gruppe,
                 nurFestlegung: !!b.nurFestlegung,

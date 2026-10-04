@@ -73,7 +73,9 @@ describe('Ein Typ, den niemand eingetragen hat, ist trotzdem bedienbar', () => {
         }
         // Ein Anker gegen Leerlauf — und der Gegenbeweis: was eine Rolle
         // braucht, ist hier NICHT dabei.
-        expect(ids(k)).toContain('kg-setzen');
+        // Teil XXIX, G2: am einzelnen Bauteil steht das Formular „Eigenschaften" (mit der Kostengruppe) statt
+        // des Kostengruppen-Knopfs — der Anker ist das Formular.
+        expect(ids(k)).toContain('eigenschaften-setzen');
         expect(ids(k)).not.toContain('profilgroesse-setzen');
     });
 
@@ -145,7 +147,7 @@ describe('Drei Herkünfte, drei Fragen — mehr gibt es nicht', () => {
         for (const e of nach.rolle) expect(verlangtVon(nachId(e.id)).length, e.id).toBeGreaterThan(0);
 
         // Zwei Anker, damit die Prüfung nicht ins Leere laufen kann.
-        expect(nach.immer.map(e => e.id)).toContain('kg-setzen');
+        expect(nach.immer.map(e => e.id)).toContain('eigenschaften-setzen');   // G2: statt „Kostengruppe setzen"
         expect(nach.rolle.map(e => e.id)).toContain('profilgroesse-setzen');
     });
 

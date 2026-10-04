@@ -17,7 +17,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { repo } from '../services/RepoFacade.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { passende, werkzeugKatalog } from '../services/Bearbeitungen.js';
+import { passende, sichtbarInLeiste, werkzeugKatalog } from '../services/Bearbeitungen.js';
 import { REZEPTE, rezeptNach } from '../services/Bauteilrezepte.js';
 import { ABLEITUNGEN } from '../services/ableitung/Ableitungen.js';
 import { profilFuer } from '../services/bauform/Typprofile.js';
@@ -48,22 +48,42 @@ async function miss([, , [klasse, pdt, objektTyp], kom]) {
 }
 
 describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
-    it('147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste', () => {
+    it('G0 147 Werkzeuge, davon 84 Setzer; „Erzeugen" sind 18 Einträge in einer Liste — G2: +1 Formular', () => {
         const kat = werkzeugKatalog();
-        expect(kat).toHaveLength(147);
+        expect(kat).toHaveLength(148);
         expect(kat.filter(b => b.setzt)).toHaveLength(84);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(18);
     });
 
-    it('Knöpfe am gewählten Bauteil: Wand 30, Rohr 36, Platte 24, Raum 21, Bauwerk 16', () => {
+    it('angeboten (Eignung) am gewählten Bauteil: G0 Wand 30, Rohr 36, Platte 24, Raum 21, Bauwerk 16 — G2 je +1 Formular', () => {
         const knoepfe = (r, bauform, kat) => passende({ bauform, guete: 'gemessen' },
             { eigenes: true, rezept: rezeptNach(r), typprofil: kat ? profilFuer(kat) : null }).length;
         expect([knoepfe('wand', 'achse+profil', 'IFCWALL'), knoepfe('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 knoepfe('platte', 'flaeche+dicke', 'IFCSLAB'), knoepfe('raum', 'koerper', 'IFCSPACE'),
-                knoepfe('bauwerk', 'netz', null)]).toEqual([30, 36, 24, 21, 16]);
+                knoepfe('bauwerk', 'netz', null)]).toEqual([31, 37, 25, 22, 17]);
     });
 
-    it('Dicke und Höhe einer Wand ändern: zwei Kommandos, zwei Vorgänge', async () => {
+    it('G2: SICHTBAR in der Leiste am einzelnen Bauteil — Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11', () => {
+        const sichtbar = (r, bauform, kat, einzeln = true) => passende({ bauform, guete: 'gemessen' },
+            { eigenes: true, rezept: rezeptNach(r), typprofil: kat ? profilFuer(kat) : null }).filter(b => sichtbarInLeiste(b, { einzeln })).length;
+        expect([sichtbar('wand', 'achse+profil', 'IFCWALL'), sichtbar('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
+                sichtbar('platte', 'flaeche+dicke', 'IFCSLAB'), sichtbar('raum', 'koerper', 'IFCSPACE'),
+                sichtbar('bauwerk', 'netz', null)]).toEqual([20, 31, 16, 13, 11]);
+        // Mehrfachauswahl: die Setzer wie bisher, kein Formular.
+        expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(30);
+    });
+
+    it('G2: Dicke und Höhe mit dem Formular — EIN Kommando, EIN Vorgang, EIN Bauplanschritt', async () => {
+        const b = useBearbeitung(), ae = useAenderungen();
+        expect((await b.fuehreAus(wand('IFCWALL', 'RETAININGWALL'))).ausgefuehrt).toBe(true);
+        const erg = await b.fuehreAus(k('eigenschaften-setzen', { ziel: ['cde-X'], werte: { dicke: 0.4, wandhoehe: 2 } }));
+        expect(erg.ausgefuehrt, erg.grund).toBe(true);
+        expect(erg.eintraege).toHaveLength(1);
+        expect(new Set(ae.eintraege.map(x => x.vorgang)).size - 1).toBe(1);
+        expect(ae.wirksamerStand('erzeugt').get('cde-X').parameter).toMatchObject({ dicke: 0.4, wandhoehe: 2 });
+    });
+
+    it('G0: Dicke und Höhe einer Wand mit den Setzern: zwei Kommandos, zwei Vorgänge (bleibt so)', async () => {
         const b = useBearbeitung(), ae = useAenderungen();
         for (const kom of [wand('IFCWALL', 'RETAININGWALL'),
                            k('wand-dicke-setzen', { ziel: ['cde-X'], werte: { dicke: 0.4 } }),

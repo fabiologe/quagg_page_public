@@ -255,6 +255,9 @@ const NEU = [
     { id: 'durchfuehrung-setzen', el: eigen('cde-H1'), werte: [{ wirt: 'cde-W1', ringspalt: 0.05 }], kandidaten: KANDIDATEN },
     // Teil XXVII, B3: eine Kernbohrung in der Wand W1.
     { id: 'oeffnung-setzen', el: eigen('cde-W1'), werte: [{ form: 'rund', station: 5, unterkante: 1, durchmesser: 0.3, breite: '', hoehe: '' }] },
+    // Teil XXIX, G2: das Formular — zwei Maße und eine Kostengruppe in EINEM Kommando.
+    { id: 'eigenschaften-setzen', el: eigen('cde-W1'), werte: [{ dicke: 0.4, wandhoehe: 3, kg: '331', gewerk: 'wasserbau' }],
+      kandidaten: KANDIDATEN },
     { id: 'vorlage-werte-setzen', el: eigen('cde-VK0'),
       werte: [{ laenge: 5, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25 }], kandidaten: KANDIDATEN },
     { id: 'an-vorlage-angleichen', el: eigen('cde-VK0'), werte: [{ rolle: '' }, { rolle: 'laengswandNord' }], kandidaten: KANDIDATEN },

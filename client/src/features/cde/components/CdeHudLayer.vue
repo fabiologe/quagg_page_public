@@ -104,10 +104,10 @@
         <!-- Bearbeiten am Bauteil (Stufe 9.0). Was hier steht, kommt aus dem
              Katalog und ist über die Bauform gefiltert — dieselbe Liste, die auch
              die Befehls-Palette liest. -->
-        <div v-if="bearbeitung.moeglich.length" class="hud-bearb">
+        <div v-if="bearbeitung.inLeiste.length" class="hud-bearb">
           <div v-if="!bearbeitung.scharf" class="hud-bearb-liste">
             <button
-              v-for="b in bearbeitung.moeglich"
+              v-for="b in bearbeitung.inLeiste"
               :key="b.id"
               class="hud-bearb-btn"
               :title="b.titel"

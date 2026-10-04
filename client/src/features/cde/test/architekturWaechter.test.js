@@ -166,7 +166,7 @@ const FACHWOERTER_ERLAUBT = {};
  * aufgelösten Rezept: dort stehen die Funktionen des Rezeptbaus, einmal für
  * alle geschrieben. 17 → 2 (nur das Altrezept `gelaende`: verschiebe, baueMit).
  */
-const HOOKS_MAX = { anwenden: 41, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung, + XXVIII V1 (eine Fabrik je Vorlage), + V3 (Werte setzen, Angleichen)
+const HOOKS_MAX = { anwenden: 42, rezeptFunktionen: 2 };   // A6: 48 → 32, + Spiegeln, + V5, + XXVII B2 (eine Fabrik für vier Bauwerkswerkzeuge), + B3 Öffnung, + XXVIII V1 (eine Fabrik je Vorlage), + V3 (Werte setzen, Angleichen), + XXIX G2 (Formular)
 // V5 (Teil XXV) bringt einen Hook DAZU — und nimmt dafür Store-Code weg:
 // „Vorgang entfernen“ war `useBearbeitung.entferneVorgang` mit Systembeleg und
 // ist jetzt ein Katalogwerkzeug. Die Rechnung selbst blieb, wo sie war
@@ -230,6 +230,9 @@ const RUECKFUEHRUNG = {
         // Teil XXVIII, V3: Neuauswerten an der Fähigkeit `bauwerksvorlage` eines Behälters —
         // für jede Vorlage dasselbe Werkzeug, an keinen Namen gebunden.
         'vorlage-werte-setzen', 'an-vorlage-angleichen',
+        // Teil XXIX, G2: das Formular — dieselben allgemeinen Operationen wie die Setzer (Bauplanfeld,
+        // Bezeichnung, Merkmal), zusammengefasst in EINEM Schritt; an keinen Namen gebunden.
+        'eigenschaften-setzen',
     ],
 };
 const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 7, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1/V4 je Vorlage eines

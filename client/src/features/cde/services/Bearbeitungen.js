@@ -84,6 +84,7 @@ import { registerStand, registrierte } from './rezept/Register.js';
 import { GELAENDE_OPS } from './gelaende/Operationen.js';
 import { regeltabelle, regelwert } from './regeln/Regelwerk.js';
 import { BAUWERKSTYP_OPTIONEN, klassifikationVon } from './katalog/Bauwerkstypen.js';
+import { GEWERKE, istGewerk } from './katalog/Gewerke.js';
 import { BAUWERKSVORLAGEN, abweichungVon, gesteuerterStand, rahmenAus, rahmenNach, vorlageGrund, vorlageNach, vorlageTeile,
          vorlagenWerte } from './rezept/Bauwerksvorlagen.js';
 
@@ -778,6 +779,9 @@ function setzerFuerRezept(rezept) {
         nurEigene: true,
         nurRezept: rezept.id,
         ausRezept: rezept.id,
+        // Teil XXIX, G2: am einzelnen Bauteil steht das Feld im Formular „Eigenschaften" — eingebaute
+        // Rezepte; ein Bibliotheksrezept behält seine Knöpfe, bis das Formular es kennt.
+        imFormular: !!REZEPTE[rezept.id],
         art: 'erzeugt',
         felder: [{ ...f, leerErlaubt: false }],
         setzt: { art: 'parameter', feld: f.name, zahl: f.typ === 'zahl', rezept: rezept.id },
@@ -1743,6 +1747,134 @@ const VORLAGE_WERKZEUGE = [
     },
 ];
 
+/** Die Felder der Merkmal-Setzer — EINMAL, für den Setzer und das Formular (Teil XXIX, G2). */
+const KG_FELD = Object.freeze({
+    name: 'kg', rueckfall: { titel: 'Kostengruppe (DIN 276)', typ: 'auswahl', optionen: _kgOptionen(), leerErlaubt: true },
+});
+const DIN277_FELD = Object.freeze({
+    name: 'din277',
+    rueckfall: { titel: 'DIN-277-Klasse', typ: 'auswahl', leerErlaubt: true,
+                 optionen: Object.values(DIN277_CLASSES).map(k => ({ wert: k.code, titel: `${k.code} — ${k.label}` })) },
+});
+const MASSNAHME_FELD = Object.freeze({
+    name: 'massnahme',
+    rueckfall: { titel: 'Sanierung', typ: 'auswahl', leerErlaubt: true, optionen: MASSNAHMEN.map(m => ({ wert: m.wert, titel: m.titel })) },
+});
+const MERKMAL_JOURNALE = Object.freeze([['kg', 'kg'], ['din277', 'din277'], ['massnahme', 'massnahme']]);
+
+/**
+ * DAS EIGENSCHAFTSFORMULAR (Teil XXIX, G2 — Konzept § 7 W1). Statt eines Knopfs je Feld (G0: 84 Setzer, an
+ * einer Wand 15) EIN Formular mit allem, was sich am Bauteil setzen lässt: Bezeichnung, Gewerk, Bauwerk,
+ * Kostengruppe, DIN 277, Maßnahme und die setzbaren Felder seines Rezepts. Übernehmen = EIN Kommando, EIN
+ * Vorgang; geschrieben wird nur, was sich ändert — die Rezeptfelder, das Gewerk und das Bauwerk zusammen in
+ * EINEM Bauplanschritt (zwei Setzer nacheinander hätten je den alten Bauplan fortgeschrieben).
+ *
+ * Die einzelnen Setzer bleiben im Katalog — Kommandos, Kuren, Griffe und die Mehrfachauswahl brauchen sie;
+ * am einzelnen Bauteil blendet die Leiste sie aus (`sichtbarInLeiste`).
+ * Ein leeres Feld heisst „Vorgabe" (wo das Rezept leer erlaubt) und sonst „unverändert".
+ */
+const _eigen = (el) => !!el?.stand?.bauplan?.rezept;
+const EIGENSCHAFTS_FELDER = Object.freeze([
+    { name: 'name', titel: 'Bezeichnung', typ: 'text', leerErlaubt: true },
+    { name: 'gewerk', titel: 'Gewerk (leer = nach Regel)', typ: 'auswahl', leerErlaubt: true, nurWenn: _eigen,
+      optionen: Object.entries(GEWERKE).map(([wert, g]) => ({ wert, titel: g.titel })) },
+    { name: 'bauwerk', titel: 'Gehört zum Bauwerk (leer = keinem)', typ: 'auswahl', leerErlaubt: true, nurWenn: _eigen,
+      optionenAus: 'eigene:bauwerk' },
+    KG_FELD, DIN277_FELD, MASSNAHME_FELD,
+    ...Object.values(REZEPTE).flatMap(r => (r.felder ?? []).filter(f => f?.setzbar).map(({ griff: _g, ...f }) => ({
+        ...f, leerErlaubt: true, nurWenn: (el) => el?.stand?.bauplan?.rezept === r.id }))),
+]);
+
+function _eigenschaftenSchritte(el, werte, { kandidatenVon = null } = {}) {
+    if (!el?.globalId) return [];
+    const schritte = [];
+    const plan = el?.stand?.bauplan;
+    if (plan?.rezept) {
+        const rz = rezeptNach(plan.rezept);
+        let p = { ...(plan.parameter ?? {}) };
+        let geaendert = false;
+        const setze = (feld, wert) => {
+            // Leer gespeichert und gar nicht da heisst dasselbe — das Entfernen eines leeren Werts ist keine Änderung.
+            if (wert === undefined) {
+                if (feld in p) { if (!['', null, undefined].includes(p[feld])) geaendert = true; delete p[feld]; }
+                return;
+            }
+            if (p[feld] !== wert) { p[feld] = wert; geaendert = true; }
+        };
+        for (const f of (REZEPTE[plan.rezept] ? rz?.felder ?? [] : []).filter(x => x?.setzbar)) {
+            const roh = werte?.[f.name];
+            if (roh === undefined) continue;
+            if (roh === '' || roh === null) { if (f.leerErlaubt) setze(f.name, undefined); continue; }
+            const wert = f.typ === 'zahl' ? Number(roh) : roh;
+            if (f.typ === 'zahl' && !Number.isFinite(wert)) return null;
+            setze(f.name, wert);
+        }
+        if (werte?.gewerk !== undefined) setze('gewerk', istGewerk(werte.gewerk) ? werte.gewerk : undefined);
+        if (werte?.bauwerk !== undefined) {
+            if (!werte.bauwerk) setze('teilVon', undefined);
+            else {
+                const ziel = (kandidatenVon?.('eigene:bauwerk', el) ?? []).find(b => b.id === werte.bauwerk);
+                if (!ziel) return null;
+                setze('teilVon', ziel.id);
+            }
+        }
+        if (geaendert) {
+            // DIE SOHLE BLEIBT (K4), wie beim einzelnen Setzer: ein grösseres DN hebt die Haltung nicht.
+            const sohlen = rz?.sohlen;
+            if (sohlen) p = sohlen.speichere(p, sohlen.lies(plan.parameter), { bezug: kantenbezugNeu() });
+            schritte.push(bauplanFortschreiben(el, plan, p));
+        }
+    }
+    if (werte?.name !== undefined) {
+        const name = String(werte.name ?? '').trim();
+        if (name && name !== (el.name ?? '')) schritte.push({ art: 'bezeichnung', globalId: el.globalId, nachher: name });
+    }
+    for (const [feld, journal] of MERKMAL_JOURNALE) {
+        if (werte?.[feld] === undefined) continue;
+        const neu = werte[feld] || null;
+        if (neu !== (el?.stand?.[feld] ?? null)) schritte.push({ art: journal, globalId: el.globalId, nachher: neu });
+    }
+    return schritte;
+}
+
+const EIGENSCHAFTEN_WERKZEUG = {
+    id: 'eigenschaften-setzen',
+    titel: 'Eigenschaften',
+    icon: 'edit',
+    gruppe: 'merkmale',
+    bauform: '*',
+    mindestGuete: 'unbekannt',
+    art: 'erzeugt',
+    felder: EIGENSCHAFTS_FELDER,
+    vorbelegung: (el) => {
+        const plan = el?.stand?.bauplan;
+        const rz = rezeptNach(plan?.rezept);
+        return {
+            name: el?.name ?? '',
+            ...(plan ? { gewerk: plan.parameter?.gewerk ?? '', bauwerk: plan.parameter?.teilVon ?? '' } : {}),
+            kg: el?.stand?.kg ?? '', din277: el?.stand?.din277 ?? '', massnahme: el?.stand?.massnahme ?? '',
+            ...Object.fromEntries((REZEPTE[plan?.rezept] ? rz?.felder ?? [] : []).filter(f => f?.setzbar)
+                .map(f => [f.name, plan.parameter?.[f.name] ?? ''])),
+        };
+    },
+    anwenden: (el, werte, kontext = {}) => {
+        const s = _eigenschaftenSchritte(el, werte, kontext);
+        return s?.length ? s : null;
+    },
+    warumNicht: (el, werte, kontext = {}) => (_eigenschaftenSchritte(el, werte, kontext) === null
+        ? 'Ein Wert passt nicht (keine Zahl, oder ein Bauwerk, das es nicht gibt).' : 'Nichts geändert.'),
+};
+
+/**
+ * WAS DIE LEISTE ZEIGT (Teil XXIX, G2) — Anzeige, nicht Eignung: `passende` bleibt, was ein Kommando darf.
+ * Am einzelnen Bauteil steht das Formular statt der Setzer, deren Felder es trägt; bei Mehrfachauswahl die
+ * Setzer (eine Kostengruppe für zehn Haltungen) und kein Formular (es ist mit dem ersten Bauteil vorbelegt).
+ */
+export function sichtbarInLeiste(b, { einzeln = true } = {}) {
+    if (einzeln) return !b?.imFormular;
+    return b?.id !== EIGENSCHAFTEN_WERKZEUG.id;
+}
+
 /** Die Parameter einer Öffnung aus dem Formular — oder null, wenn ein Mass fehlt (Teil XXVII, B3). */
 function _oeffnungParameter(werte) {
     const zahl = (v) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
@@ -1773,6 +1905,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...Object.values(BAUWERKSVORLAGEN).map(vorlageWerkzeug),
     // V3: am Bauwerk neu auswerten — mit neuen Werten, oder angleichen.
     ...VORLAGE_WERKZEUGE,
+    // Teil XXIX, G2: alle setzbaren Eigenschaften in EINEM Formular.
+    EIGENSCHAFTEN_WERKZEUG,
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',
@@ -1984,10 +2118,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: '*',
         mindestGuete: 'unbekannt',
         art: 'kg',
-        felder: [{
-            name: 'kg',
-            rueckfall: { titel: 'Kostengruppe (DIN 276)', typ: 'auswahl', optionen: _kgOptionen(), leerErlaubt: true },
-        }],
+        imFormular: true,
+        felder: [KG_FELD],
         setzt: { art: 'merkmal', journal: 'kg', feld: 'kg' },
     },
     {
@@ -3894,13 +4026,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         mindestGuete: 'unbekannt',
         art: 'massnahme',
         mehrfach: true,
-        felder: [{
-            name: 'massnahme',
-            rueckfall: {
-                titel: 'Sanierung', typ: 'auswahl', leerErlaubt: true,
-                optionen: MASSNAHMEN.map(m => ({ wert: m.wert, titel: m.titel })),
-            },
-        }],
+        imFormular: true,
+        felder: [MASSNAHME_FELD],
         setzt: { art: 'merkmal', journal: 'massnahme', feld: 'massnahme' },
     },
     {
@@ -4023,13 +4150,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: '*',
         mindestGuete: 'unbekannt',
         art: 'din277',
-        felder: [{
-            name: 'din277',
-            rueckfall: {
-                titel: 'DIN-277-Klasse', typ: 'auswahl', leerErlaubt: true,
-                optionen: Object.values(DIN277_CLASSES).map(k => ({ wert: k.code, titel: `${k.code} — ${k.label}` })),
-            },
-        }],
+        imFormular: true,
+        felder: [DIN277_FELD],
         setzt: { art: 'merkmal', journal: 'din277', feld: 'din277' },
     },
     {
@@ -4113,6 +4235,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
               optionenAus: 'eigene:bauwerk' },
         ],
         setzt: { art: 'bauwerk', tut: 'zuordnen' },
+        imFormular: true,
     },
     {
         /** Ein Teil aus seinem Bauwerk lösen — es steht danach wieder frei an der Site. */
@@ -4126,6 +4249,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         art: 'erzeugt',
         felder: [],
         setzt: { art: 'bauwerk', tut: 'loesen' },
+        imFormular: true,
     },
     {
         /** Rotstift (Teil XXIV, Fahrplan R2) — Striche zeichnen und radieren, wie „Planinhalt". */

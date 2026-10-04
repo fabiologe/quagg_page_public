@@ -239,7 +239,7 @@ Form:   Stützpunkte  Teilen
 Fach:   Öffnung setzen  Rohrdurchführung
 ```
 
-Zahl, die das messen soll: Knöpfe an einer Wand **30 → ≤ 12**, Dicke + Höhe ändern **2 Vorgänge → 1**,
+Zahl, die das messen soll: Knöpfe an einer Wand **30 → 20** (G2 gemessen; geschätzt waren ≤ 12), Dicke + Höhe ändern **2 Vorgänge → 1**,
 „Erzeugen" **18 flach → ≤ 8 Allgemein + ≤ 8 je Gewerk**.
 
 ---
@@ -307,7 +307,7 @@ gesteuertes Feld, sagt das Formular vorher: „Dieses Feld steuert die Vorlage �
 |---|---|---|---|
 | **G0** | messen und einfrieren | Knöpfe Wand 30 / Rohr 36; Erzeugen 18 flach; Dicke+Höhe = 2 Vorgänge; Bauteile mit Gewerk 0 | Test |
 | **G1** | Gewerke-Katalog (Daten, Katalogschema) + `gewerk` an Rezepten, Vorlagen-Rollen, Typprofil-Familien; Auflöser `gewerkVon` (Regelkette §3.1) | Rezepte ohne Gewerk 17 → 0 | Kern klein |
-| **G2** | Eigenschaftsformular (W1): Mehrfeld-Kommando `werte-setzen`; Setzer aus der Leiste, nicht aus dem Katalog | Wand 30 → ≤ 12 Knöpfe; 2 Maße = 1 Vorgang | Kern + Oberfläche |
+| **G2** | Eigenschaftsformular (W1): `eigenschaften-setzen`; Setzer aus der Leiste, nicht aus dem Katalog | **gemessen:** Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11 Knöpfe; 2 Maße = 1 Vorgang (das Ziel „≤ 12“ war geschätzt — die 14 Lage-/Formoperationen einer Wand bleiben echte Werkzeuge) | Kern + Oberfläche |
 | **G3** | Werkzeugleiste: Allgemein + Gewerk-Reiter + Suche; Zeichnen aus einem Reiter setzt das Gewerk | Erzeugen 18 flach → ≤ 8 je Ansicht | Oberfläche |
 | **G3b** | Mengen folgen der Klasse (L-F): Körpermaß → Qto der gewählten Klasse; Merkmalsfelder nur, wo ihr Satz gilt | Teich: Elemente ohne Mengen 16 → 0, Warnungen 67 → 0 | Kern klein |
 | **G-T1** | Schicht, die dem Gelände folgt (L-A, mit L-C Band entlang Achse) | Teich: 9 Elemente in Form | Kern |
