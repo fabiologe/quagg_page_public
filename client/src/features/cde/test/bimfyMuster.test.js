@@ -20,6 +20,8 @@ import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bim
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
 import { ringStoss } from '../services/bimfy/muster/Normwerte.js';
+import { kastenschacht } from '../services/bimfy/muster/Kastenschacht.js';
+import { vorschlagFuer } from '../services/bimfy/Uebersetzer.js';
 import { liesIsybau } from '../services/bimfy/Geometrieleser.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 
@@ -464,5 +466,74 @@ describe('Abnahme I7 · Format 2017, wie es echte Dateien schreiben (nachgestell
         expect(Math.abs(g.ost - 2564686.715)).toBeLessThan(0.001);
         expect(Math.abs(g.nord - 5461937.015)).toBeLessThan(0.001);
         expect(umrechner('EPSG:31466', 'EPSG:31466')).toBeNull();
+    });
+});
+
+describe('BIMFY I9 · Kastenschacht (ISYBAU Aufbauform E und Q)', () => {
+    beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
+    afterEach(() => repo.setBackend(null));
+    const KLEIN = '<Aufbauform>E</Aufbauform><LaengeAufbau>0,50</LaengeAufbau><BreiteAufbau>0,50</BreiteAufbau><HoeheAufbau>0,00</HoeheAufbau>';
+    const GROSS = '<Aufbauform>Q</Aufbauform><Konus>0</Konus><Abdeckplatte>0</Abdeckplatte><LaengeAufbau>1,00</LaengeAufbau><BreiteAufbau>2,00</BreiteAufbau><MaterialAufbau>MA</MaterialAufbau>';
+    const lies = (aufbau, opt = {}) => liesIsybauDaten(datei(schachtXml({ aufbau, unterteil: '', abdeckung: '', ...opt }))).schaechte[0];
+    const rollen = (k) => k.teile.map(t => t.rolle);
+
+    it('klein (50 × 50): Kasten mit rechteckiger Abdeckung, Wand 8 cm — die Kette geht auf', () => {
+        const k = kastenschacht(lies(KLEIN, { deckel: '100,80', sohle: '100,00' }));
+        expect(rollen(k)).toEqual(['kastenunterteil', 'kastenabdeckung']);
+        expect(k.kopf).toMatchObject({ vorlage: 'kastenschacht', laenge: 0.5, breite: 0.5, wand: 0.08, begehbar: false });
+        expect(k.teile[0]).toMatchObject({ unten: 99.9, oben: 100.7 });          // Boden unter der Sohle
+        expect(k.teile[1]).toMatchObject({ unten: 100.7, oben: 100.8 });         // Abdeckung bis zum Deckel
+        expect(k.teile[0].herleitung.wanddicke.art).toBe('annahme');
+    });
+
+    it('gross, gemauert (1 × 2 m, 1,8 m tief): Platte mit Öffnung, Auflagering, Abdeckung, Steigeisen', () => {
+        const k = kastenschacht(lies(GROSS, { deckel: '101,80', sohle: '100,00' }));
+        expect(rollen(k)).toEqual(['kastenunterteil', 'kastenplatte', 'auflagering', 'abdeckung', 'steigeisen']);
+        expect(k.kopf).toMatchObject({ wand: 0.24, boden: 0.2, begehbar: true });
+        // Lückenlos von der Sohle bis zum Deckel.
+        const kette = k.teile.filter(t => t.rolle !== 'steigeisen');
+        for (let i = 1; i < kette.length; i++) expect(kette[i].unten).toBeCloseTo(kette[i - 1].oben, 6);
+        expect(kette.at(-1).oben).toBe(101.8);
+        expect(k.befunde.map(b => b.regel)).toEqual(['mauerwerk', 'kasten_annahmen']);
+    });
+
+    it('der Körper: Boden, Wand und Platte mit runder Öffnung rechnen nach', () => {
+        const v = (p, id) => { const x = rezeptNach(id).formAus(p, 'koerper'); return meshVolume(x.positions, x.positions.length / 9); };
+        const unterteil = v({ punkte: [[0, -0.2, 0], [0, 1.4, 0], [1, -0.2, 0]], laenge: 1, breite: 1, wand: 0.15, boden: 0.2 }, 'kastenunterteil');
+        expect(unterteil.closed).toBe(true);
+        expect(unterteil.volume).toBeCloseTo(1.3 * 1.3 * 0.2 + (1.69 - 1) * 1.4, 6);
+        const k = 16 * Math.sin(2 * Math.PI / 32);                           // 32-Eck: Fläche k·r²
+        const platte = v({ punkte: [[0, 1.4, 0], [0, 1.6, 0], [1, 1.4, 0]], laenge: 1, breite: 1, wand: 0.15, deckel: 0.2, oeffnung: 0.625 }, 'kastenplatte');
+        expect(platte.volume).toBeCloseTo((1.69 - k * 0.3125 ** 2) * 0.2, 6);
+        // Gedreht bleibt das Volumen.
+        const gedreht = v({ punkte: [[0, -0.2, 0], [0, 1.4, 0], [0.6, -0.2, -0.8]], laenge: 1, breite: 1, wand: 0.15, boden: 0.2 }, 'kastenunterteil');
+        expect(gedreht.volume).toBeCloseTo(unterteil.volume, 6);
+    });
+
+    it('ISYBAU → Vorlage über den Kommandoweg: eigene Ebene, ein Bauwerk Schacht mit seinen Teilen', async () => {
+        const text = datei(schachtXml({ name: 'K1', ost: 10, nord: 20, aufbau: GROSS, unterteil: '', abdeckung: '', deckel: '101,80', sohle: '100,00' }),
+                           schachtXml({ name: 'K2', ost: 30, nord: 20, aufbau: KLEIN, unterteil: '', abdeckung: '', deckel: '100,60', sohle: '99,90' }));
+        const { geometrien } = liesIsybau(text);
+        expect(geometrien.map(g => g.ebene)).toEqual(['ISYBAU Schacht (rechteckig)', 'ISYBAU Schacht (rechteckig)']);
+        expect(vorschlagFuer(geometrien[0]).rezept).toBe('vorlage:kastenschacht');
+        const { kommandos, fehler } = kommandosFuer(gruppiere(geometrien));
+        expect(fehler).toEqual([]);
+        expect(kommandos.map(k => k.kommando.werkzeug)).toEqual(['bauwerk-aus-vorlage-kastenschacht', 'bauwerk-aus-vorlage-kastenschacht']);
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-i9-${++n}`, ziel: [], wer: 'test', wann: '2026-10-05T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-i9-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const plaene = [...useAenderungen().wirksamerStand('erzeugt').values()];
+        const bauwerke = plaene.filter(p => p.rezept === 'bauwerk');
+        expect(bauwerke.map(p => p.name).sort()).toEqual(['K1', 'K2']);
+        const teileVon = (name) => {
+            const gid = [...useAenderungen().wirksamerStand('erzeugt')].find(([, p]) => p.rezept === 'bauwerk' && p.name === name)[0];
+            return plaene.filter(p => p.parameter?.teilVon === gid).map(p => p.rezept);
+        };
+        expect(teileVon('K1')).toEqual(['kastenunterteil', 'kastenplatte', 'auflagering', 'schachtabdeckung', 'steigeisen']);
+        expect(teileVon('K2')).toEqual(['kastenunterteil', 'kastenabdeckung']);
     });
 });

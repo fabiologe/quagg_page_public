@@ -48,6 +48,7 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
     ringstueck: ['koerper'],
     berme:   ['koerper'],
     tritte:  ['koerper'],
+    kasten:  ['koerper'],
 });
 
 const REZEPT_SCHLUESSEL = Object.freeze([

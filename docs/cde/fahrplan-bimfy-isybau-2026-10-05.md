@@ -174,10 +174,26 @@ Ergebnis: 463 Geometrien, 444 Kommandos, 100 Normschächte (5 bis 10 Teile), 40 
 | Schachtteile mit Stoss | 0 | 248 |
 | Prüftor offen | 0 | 0 |
 
+### I9 · Gehrung im Sweep, Kastenschacht (gebaut)
+
+1. **Gehrung.** Der Sweep streckt das Profil am Knick um 1/cos(w/2). Ein Rohr mit Knick hat
+   jetzt Fläche × Achslänge als Volumen (Gold `rohr` Fall 0: 4,3204 → 4,4143 m³).
+2. **Kastenschacht** (`muster/Kastenschacht.js`, Vorlage `kastenschacht`, Körper `kasten`).
+   Klein (lichte Seite < 0,8 m): Kasten mit rechteckiger Abdeckung. Begehbar: Kasten, Abdeckplatte
+   mit runder Öffnung, Auflagering, runde Abdeckung, Steigeisen ab 1 m Tiefe. Die Längsachse folgt
+   dem Ablauf und dreht mit dem Bauwerk. Wand, Boden und Abdeckung sind Annahmen (DIN EN 1917
+   nicht im Bestand), gemauert 24 cm.
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| eckige Schächte als Sonderform | 32 | 0 |
+| gegliederte Schächte im IFC | 100 | 125 (dazu 7 rückgebaute, abgewählt) |
+| Prüftor offen | 0 | 0 |
+
 ### Offen nach I8
 
 1. Netzknoten des Normschachts (siehe oben, Punkt 1).
-2. Rechteck‑ und Kastenvorlage für die 32 eckigen Schächte.
+2. ~~Kastenvorlage für die 32 eckigen Schächte~~ — gebaut (I9).
 3. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
 4. PP profiliert (DIN EN 13476), GFK, Polymerbeton, Faserzement: Normen fehlen im Bestand.
    Muffenspalt der Schachtringe (DIN V 4034‑1, Tab. 7) und Falzmasse (DIN 4034‑2, nur Bild) ebenso.

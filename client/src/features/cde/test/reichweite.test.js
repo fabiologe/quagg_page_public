@@ -63,8 +63,9 @@ const HEUTE = Object.freeze({
     // BIMFY I2: +2 Rohrwand (Wanddicke, DN-Bezug setzen); die Schachtteile bringen
     // kein Werkzeug mit (`nurVorlage`, nichts setzbar) — 149/126.
     // BIMFY I4: +1 Normschacht aus Vorlage, ohne Oberfläche ausführbar — 150/127.
-    werkzeuge: 150,
-    ausgefuehrt: 127,
+    // BIMFY I9: +1 Kastenschacht aus Vorlage, ohne Oberfläche ausführbar — 151/128.
+    werkzeuge: 151,
+    ausgefuehrt: 128,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

@@ -288,6 +288,57 @@ export function extrudiere({ umriss } = {}, { von, bis } = {}) {
     return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
 }
 
+/**
+ * EIN TOPF (BIMFY I9): ein Prisma mit Hohlraum und Boden in EINEM Körper — der
+ * Rechteckschacht. Aussen `ring` von `von` bis `bis`, innen `innen` ab
+ * `von + boden` offen nach oben. Zwei Körper (Boden und Wand) stiessen an
+ * einer gemeinsamen Fläche zusammen und wären nicht mannigfaltig.
+ *
+ * @param {{umriss: {ring: [{x, z}], innen: [{x, z}]}}} eingaben
+ * @param {{von: number, bis: number, boden: number}} parameter
+ * @returns {{ergebnis: koerper|null, warnungen: string[]}}
+ */
+export function topf({ umriss } = {}, { von, bis, boden } = {}) {
+    const warnungen = [];
+    if (!Number.isFinite(von) || !Number.isFinite(bis) || !(bis > von)) return { ergebnis: null, warnungen: ['topf_ohne_hoehe'] };
+    if (!(boden > 0) || boden >= bis - von) return { ergebnis: null, warnungen: ['topf_boden_ungueltig'] };
+    const normiere = (r, sollPositiv) => {
+        const p = (r ?? []).map(q => ({ x: Number(q.x), z: Number(q.z) })).filter(q => Number.isFinite(q.x) && Number.isFinite(q.z));
+        if (p.length > 1 && Math.hypot(p[0].x - p[p.length - 1].x, p[0].z - p[p.length - 1].z) < 1e-9) p.pop();
+        if (p.length < 3) return null;
+        const f = _flaeche2d(p, 'x', 'z');
+        if (Math.abs(f) < 1e-12) return null;
+        return (f > 0) === sollPositiv ? p : p.slice().reverse();
+    };
+    const ring = normiere(umriss?.ring, true), innen = normiere(umriss?.innen, false);
+    if (!ring || !innen) return { ergebnis: null, warnungen: ['topf_umriss_entartet'] };
+    const sohle = von + boden;
+    const P = (q, y) => ({ x: q.x, y, z: q.z });
+    const dreiecke = [];
+    // Mantel aussen (von → bis) und innen (Sohle → bis) — dieselbe Seitenformel, innen gegenläufig.
+    for (const [r, u] of [[ring, von], [innen, sohle]]) {
+        for (let j = 0; j < r.length; j++) {
+            const a = P(r[j], u), b = P(r[(j + 1) % r.length], u);
+            const c = P(r[j], bis), d = P(r[(j + 1) % r.length], bis);
+            dreiecke.push([a, c, b], [b, c, d]);
+        }
+    }
+    // Oben der Rand (aussen ohne innen), unten der volle Boden, innen die Sohle.
+    const rand = _deckelIndizes([ring, innen], 'x', 'z'), flach = [...ring, ...innen];
+    for (let i = 0; i < rand.length; i += 3) {
+        dreiecke.push(_gerichtet(P(flach[rand[i]], bis), P(flach[rand[i + 1]], bis), P(flach[rand[i + 2]], bis), { x: 0, y: 1, z: 0 }));
+    }
+    const unten = _deckelIndizes([ring], 'x', 'z');
+    for (let i = 0; i < unten.length; i += 3) {
+        dreiecke.push(_gerichtet(P(ring[unten[i]], von), P(ring[unten[i + 1]], von), P(ring[unten[i + 2]], von), { x: 0, y: -1, z: 0 }));
+    }
+    const boden2 = _deckelIndizes([innen], 'x', 'z');
+    for (let i = 0; i < boden2.length; i += 3) {
+        dreiecke.push(_gerichtet(P(innen[boden2[i]], sohle), P(innen[boden2[i + 1]], sohle), P(innen[boden2[i + 2]], sohle), { x: 0, y: 1, z: 0 }));
+    }
+    return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
+}
+
 // ── Platte ─────────────────────────────────────────────────────────────────
 
 /**

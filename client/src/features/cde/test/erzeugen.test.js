@@ -83,6 +83,8 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       'bauwerk-aus-vorlage-rechteckkammer', 'bauwerk-aus-vorlage-zweikammer-rueb',
                       // BIMFY I4: der Normschacht — Teil für Teil aus einer Vorlage.
                       'bauwerk-aus-vorlage-normschacht',
+                      // BIMFY I9: der Kastenschacht — rechteckig, aus derselben Fabrik.
+                      'bauwerk-aus-vorlage-kastenschacht',
                       // V5: die Einbauten — aus den vorhandenen Bausteinen.
                       'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen',
                       // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.

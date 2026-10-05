@@ -8,7 +8,7 @@
  * (`geometrie.art`), nicht diese Datei.
  */
 import * as THREE from 'three';
-import { sweep, kreisProfil, rechteckProfil, platte, extrudiere, ringstueck } from '../geometrie/hilfen.js';
+import { sweep, kreisProfil, rechteckProfil, platte, extrudiere, ringstueck, topf } from '../geometrie/hilfen.js';
 // Default-Import wie in Bauteilrezepte (CJS-Interop im Build).
 import polygonClipping from 'polygon-clipping';
 
@@ -473,4 +473,46 @@ export function trittKoerper(punkte, { breite, tiefe, dicke } = {}) {
         return extrudiere({ umriss: { ring } }, { von: p.y, bis: p.y + dicke }).ergebnis;
     });
     return _vereinige(koerper);
+}
+
+
+// ── Kasten (BIMFY I9) ───────────────────────────────────────────────────────
+
+/**
+ * Ein RECHTECKIGER HOHLKÖRPER: punkte[0] die Mitte unten, punkte[1] die Mitte
+ * oben, punkte[2] (wenn da) ein Punkt in Richtung der Längsachse auf Höhe von
+ * punkte[0] — so dreht er mit, wenn das Bauwerk gedreht wird. Masse in m:
+ * `laenge`/`breite` LICHT, `wand` drumherum. `boden` > 0 schliesst unten (über
+ * die volle Aussenfläche), `deckel` > 0 oben — mit einer runden `oeffnung`
+ * (Durchmesser). Eine Platte ist ein Kasten, dessen Deckel die ganze Höhe hat.
+ */
+export function kastenKoerper(punkte, { laenge, breite, wand = 0, boden = 0, deckel = 0, oeffnung = 0 } = {}, ecken = 32) {
+    if (!Array.isArray(punkte) || punkte.length < 2 || !(laenge > 0) || !(breite > 0)) return null;
+    const u = punktXYZ(punkte[0]), o = punktXYZ(punkte[1]);
+    if (!(o.y > u.y)) return null;
+    const r = punkte[2] ? punktXYZ(punkte[2]) : { x: u.x + 1, y: u.y, z: u.z };
+    let ex = r.x - u.x, ez = r.z - u.z;
+    const le = Math.hypot(ex, ez) || 1;
+    ex /= le; ez /= le;
+    const nx = -ez, nz = ex;                                       // quer zur Längsachse
+    const rechteck = (l, b) => [[-l / 2, -b / 2], [l / 2, -b / 2], [l / 2, b / 2], [-l / 2, b / 2]]
+        .map(([a, q]) => ({ x: u.x + a * ex + q * nx, z: u.z + a * ez + q * nz }));
+    const kreis = (d) => Array.from({ length: ecken }, (_, i) => {
+        const w = (2 * Math.PI * i) / ecken;
+        return { x: u.x + (d / 2) * Math.cos(w), z: u.z + (d / 2) * Math.sin(w) };
+    });
+    const t = Math.max(0, wand);
+    const aussen = rechteck(laenge + 2 * t, breite + 2 * t), innen = rechteck(laenge, breite);
+    const h = o.y - u.y;
+    const b = Math.min(Math.max(0, boden), h), d = Math.min(Math.max(0, deckel), h - b);
+    // Boden und Wand ohne Deckel: EIN Körper (ein Topf) — zwei stiessen an einer Fläche zusammen.
+    if (b > 0 && t > 0 && !(d > 0)) return topf({ umriss: { ring: aussen, innen } }, { von: u.y, bis: o.y, boden: b }).ergebnis ?? null;
+    const teile = [];
+    if (b > 0) teile.push(extrudiere({ umriss: { ring: aussen } }, { von: u.y, bis: u.y + b }).ergebnis);
+    if (t > 0 && h - b - d > 1e-9) teile.push(extrudiere({ umriss: { ring: aussen, loecher: [innen] } }, { von: u.y + b, bis: o.y - d }).ergebnis);
+    if (d > 0) {
+        const loch = oeffnung > 0 && oeffnung < Math.min(laenge, breite) + 2 * t ? [kreis(oeffnung)] : [];
+        teile.push(extrudiere({ umriss: { ring: aussen, loecher: loch } }, { von: o.y - d, bis: o.y }).ergebnis);
+    }
+    return _vereinige(teile);
 }

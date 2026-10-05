@@ -28,6 +28,7 @@
 import { liesIsybauDaten, kantenzugMitSohle } from './isybau/Isybauleser.js';
 import { normschacht } from './muster/Normschacht.js';
 import { rohrwand } from './muster/Rohrwand.js';
+import { kastenschacht } from './muster/Kastenschacht.js';
 
 /** Die Formate, die BIMFY liest — Endung → Leser. */
 export const FORMATE = Object.freeze({
@@ -460,15 +461,21 @@ export function liesIsybau(text) {
     for (const s of schaechte) {
         if (!s.ort) { warnungen.push(`ISYBAU: Schacht „${s.name}" ohne Lage übergangen`); continue; }
         const anschluesse = anschluesseVon(s, kanten, nachName);
-        const muster = normschacht(s, { anschluesse });
+        let muster = normschacht(s, { anschluesse });
+        // EIN ECKIGER SCHACHT (I9) wird ein Kasten — die Befunde des Normschachts bleiben dabei.
+        if (!muster.kopf && muster.befunde.some(b => b.regel === 'form_eckig')) {
+            const kasten = kastenschacht(s, { anschluesse });
+            muster = { ...kasten, befunde: [...muster.befunde.filter(b => b.regel !== 'form_eckig'), ...kasten.befunde] };
+        }
+        const istKasten = muster.kopf?.vorlage === 'kastenschacht';
         const zDeckel = s.deckelHoehe, zSohle = s.sohle?.hoehe;
-        const durchmesser = muster.kopf?.dn ?? s.aufbau?.laenge ?? 1;
+        const durchmesser = (istKasten ? null : muster.kopf?.dn) ?? s.aufbau?.laenge ?? 1;
         const zug = Number.isFinite(zDeckel) && Number.isFinite(zSohle) && zDeckel - zSohle > 0.01;
         geometrien.push({
             art: zug ? 'zug' : 'punkt',
             punkte: zug ? [{ ...s.ort, hoehe: zSohle }, { ...s.ort, hoehe: zDeckel }]
                         : [_punkt(s.ort.ost, s.ort.nord, zSohle ?? zDeckel)],
-            ebene: _isyEbene('Schacht', s.status, muster.kopf ? '' : ' (Sonderform)'), name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
+            ebene: _isyEbene('Schacht', s.status, !muster.kopf ? ' (Sonderform)' : istKasten ? ' (rechteckig)' : ''), name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
         });
     }
 

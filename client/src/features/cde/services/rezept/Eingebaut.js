@@ -117,6 +117,16 @@ const RINGMASSE = [
 const RINGSTUECK = Object.freeze({ art: 'ringstueck', aussen: 'aussen', innen: 'innen', aussenOben: 'aussenOben',
                                    innenOben: 'innenOben', boden: 'boden', deckel: 'deckel',
                                    spitzende: 'spitzende', spitzendeHoehe: 'spitzendeHoehe', muffe: 'muffe', muffeTiefe: 'muffeTiefe', ecken: 32 });
+const KASTENMASSE = [
+    mass('laenge', 'Lichte Länge', 1.0, { gueltig: { ueber: 0 }, leerErlaubt: false }),
+    mass('breite', 'Lichte Breite', 1.0, { gueltig: { ueber: 0 }, leerErlaubt: false }),
+    mass('wand', 'Wanddicke', 0.15),
+    mass('boden', 'Bodendicke (0 = offen)'),
+    mass('deckel', 'Deckeldicke (0 = offen)'),
+    mass('oeffnung', 'Runde Öffnung im Deckel (0 = keine)'),
+];
+const KASTEN = Object.freeze({ art: 'kasten', laenge: 'laenge', breite: 'breite', wand: 'wand', boden: 'boden', deckel: 'deckel',
+                               oeffnung: 'oeffnung', ecken: 32 });
 const schachtteil = (id, titel, klasse, objektTyp, geometrie = RINGSTUECK, felder = RINGMASSE) => ({
     id, titel, icon: 'schacht', bauform: 'koerper', kategorieVorgabe: klasse, nurVorlage: true,
     mindestPunkte: 2, geschlossen: false,
@@ -142,6 +152,10 @@ export const SCHACHTTEILE = Object.freeze([
         [mass('trittbreite', 'Auftrittsbreite', 0.3, { gueltig: { ueber: 0 } }),
          mass('trittiefe', 'Fussfreiraum (Wand bis Vorderkante)', 0.16, { gueltig: { ueber: 0 } }),
          mass('trittdicke', 'Stärke', 0.025, { gueltig: { ueber: 0 } })]),
+    // BIMFY I9 — der Rechteckschacht (ISYBAU Aufbauform E/Q). Punkte: Mitte unten, Mitte oben, Längsachse.
+    schachtteil('kastenunterteil', 'Schachtunterteil rechteckig', 'IFCBUILDINGELEMENTPART', 'Schachtunterteil rechteckig', KASTEN, KASTENMASSE),
+    schachtteil('kastenplatte', 'Abdeckplatte rechteckig', 'IFCBUILDINGELEMENTPART', 'Abdeckplatte rechteckig', KASTEN, KASTENMASSE),
+    schachtteil('kastenabdeckung', 'Abdeckung rechteckig', 'IFCDISCRETEACCESSORY', 'Schachtabdeckung rechteckig', KASTEN, KASTENMASSE),
 ]);
 
 export const EINGEBAUTE_REZEPTE = Object.freeze([

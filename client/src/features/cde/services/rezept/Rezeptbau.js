@@ -14,7 +14,7 @@
  */
 import {
     bandGeometrie, bermeKoerper, dreiecksGeometrie, flaechenGeometrie, hoehenUeberLaenge, massAus, platteKoerper, profilAus,
-    punktXYZ, punkteAus, ringstueckKoerper, rohrMitMuffen, stabKoerper, sweepKoerper, trittKoerper,
+    kastenKoerper, punktXYZ, punkteAus, ringstueckKoerper, rohrMitMuffen, stabKoerper, sweepKoerper, trittKoerper,
 } from './Geometriebau.js';
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
 import { meshVolume } from '../geometrie/MeshOps.js';
@@ -63,6 +63,8 @@ export const GEOMETRIE_ARTEN = Object.freeze({
     berme:   { koerper: true,  profil: false, masse: ['durchmesser', 'hoehe', 'breite'], weitere: [] },
     // Tritte (Steigeisen): Punkt 1 ist die Achse des Schachts, jeder weitere die Mitte eines Tritts an der Wand.
     tritte:  { koerper: true,  profil: false, masse: ['breite', 'tiefe', 'dicke'], weitere: [] },
+    // BIMFY I9 — der Rechteckschacht: Mitte unten, Mitte oben, Richtung der Längsachse.
+    kasten:  { koerper: true,  profil: false, masse: ['laenge', 'breite', 'wand', 'boden', 'deckel', 'oeffnung'], weitere: ['ecken'] },
 });
 
 /**
@@ -303,6 +305,10 @@ function _koerper(geo, parameter, vorgabe) {
     }
     if (geo.art === 'berme') return bermeKoerper(punkte, { durchmesser: mass('durchmesser'), hoehe: mass('hoehe'), breite: mass('breite') });
     if (geo.art === 'tritte') return trittKoerper(punkte, { breite: mass('breite'), tiefe: mass('tiefe'), dicke: mass('dicke') });
+    if (geo.art === 'kasten') {
+        return kastenKoerper(punkte, { laenge: mass('laenge'), breite: mass('breite'), wand: mass('wand'), boden: mass('boden'),
+                                       deckel: mass('deckel'), oeffnung: mass('oeffnung') }, geo.ecken);
+    }
     return null;
 }
 

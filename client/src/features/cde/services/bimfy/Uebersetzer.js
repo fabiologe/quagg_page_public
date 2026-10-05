@@ -95,18 +95,27 @@ export function formenFuer(geo) {
 export const NORMSCHACHT_WAHL = Object.freeze({
     id: 'vorlage:normschacht', titel: 'Normschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
 });
-const _mitNormschacht = (geo) => geo?.isybau?.art === 'schacht' && !!geo?.muster?.kopf;
+const _mitNormschacht = (geo) => geo?.isybau?.art === 'schacht' && !!geo?.muster?.kopf && geo.muster.kopf.vorlage !== 'kastenschacht';
+
+/** DER KASTENSCHACHT ALS WAHL (BIMFY I9): ein eckiger ISYBAU-Schacht mit Kette. */
+export const KASTENSCHACHT_WAHL = Object.freeze({
+    id: 'vorlage:kastenschacht', titel: 'Kastenschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+});
+const _mitKasten = (geo) => geo?.isybau?.art === 'schacht' && geo?.muster?.kopf?.vorlage === 'kastenschacht';
+const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL];
 
 /** Die IFC-Klasse, die eine Wahl vorgibt — Rezept oder Vorlage. */
 export function klasseFuer(id) {
-    if (id === NORMSCHACHT_WAHL.id) return NORMSCHACHT_WAHL.kategorieVorgabe;
+    const vorlage = VORLAGEN_WAHLEN.find(v => v.id === id);
+    if (vorlage) return vorlage.kategorieVorgabe;
     return String(rezeptNach(id)?.kategorieVorgabe ?? '').toUpperCase();
 }
 
 /** Die Rezepte (und Vorlagen), die zu dieser Geometrie passen. */
 export function rezepteFuer(geo) {
     const formen = formenFuer(geo);
-    return [...(_mitNormschacht(geo) ? [NORMSCHACHT_WAHL] : []), ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
+    return [...(_mitNormschacht(geo) ? [NORMSCHACHT_WAHL] : []), ...(_mitKasten(geo) ? [KASTENSCHACHT_WAHL] : []),
+            ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
 }
 
 // ── Vorschlag ─────────────────────────────────────────────────────────────
@@ -171,6 +180,7 @@ const _vorgabeKlasse = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? 'IFCBU
  */
 export function vorschlagFuer(geo) {
     if (_mitNormschacht(geo)) return { rezept: NORMSCHACHT_WAHL.id, kategorie: NORMSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht, Muster DIN 4034-1' };
+    if (_mitKasten(geo)) return { rezept: KASTENSCHACHT_WAHL.id, kategorie: KASTENSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht rechteckig, Muster Kasten' };
     const passende = rezepteFuer(geo);
     const text = `${geo?.ebene ?? ''} ${geo?.name ?? ''}`.toLowerCase();
     for (const s of STICHWORTE) {
@@ -224,7 +234,7 @@ export function gruppiere(geometrien) {
 /** Die Rezepte, die ALLEN Geometrien einer Zeile passen. */
 export function rezepteFuerZeile(zeile) {
     const listen = zeile.geometrien.map(g => new Set(rezepteFuer(g).map(r => r.id)));
-    return [NORMSCHACHT_WAHL, ...bimfyRezepte()].filter(r => listen.every(s => s.has(r.id)));
+    return [...VORLAGEN_WAHLEN, ...bimfyRezepte()].filter(r => listen.every(s => s.has(r.id)));
 }
 
 // ── Kommando ──────────────────────────────────────────────────────────────
@@ -262,6 +272,7 @@ function _mass(meter, einheit) {
  */
 export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umrechnen = null } = {}) {
     if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz, umrechnen });
+    if (wahl?.rezept === KASTENSCHACHT_WAHL.id) return kastenschachtKommando(geo, wahl, { versatz, umrechnen });
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -437,5 +448,29 @@ export function normschachtKommando(geo, wahl = {}, { versatz = null, umrechnen 
         werkzeug: 'bauwerk-aus-vorlage-normschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) },
+    };
+}
+
+/** Die Werte der Vorlage „Kastenschacht" aus einem eckigen ISYBAU-Schacht und seiner Kette (I9). */
+export function kastenschachtWerte(geo) {
+    const s = geo.isybau, k = geo.muster.kopf;
+    return {
+        tiefe: k.tiefe, laenge: k.laenge, breite: k.breite, wand: 0,
+        mauerwerk: String(s.aufbau?.material ?? '').toUpperCase() === 'MA' ? 1 : 0,
+        oberteil: 0,
+        steighilfe: s.einstieghilfe === false ? 5 : 1,
+        richtung: _grad(k.richtung) ?? 0,
+        deckelklasse: Math.max(0, KLASSEN.indexOf(s.abdeckung?.klasse ?? '')),
+    };
+}
+
+/** Das Kommando „Kastenschacht aus Vorlage": die Schachtmitte auf der Sohle. */
+export function kastenschachtKommando(geo, wahl = {}, { versatz = null, umrechnen = null } = {}) {
+    if (!_mitKasten(geo)) return { fehler: 'Für diesen Schacht hat das Muster keinen Kasten (siehe Befunde)' };
+    const k = geo.muster.kopf;
+    return {
+        werkzeug: 'bauwerk-aus-vorlage-kastenschacht',
+        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) },
     };
 }

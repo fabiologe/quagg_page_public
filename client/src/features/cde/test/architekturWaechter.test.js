@@ -194,6 +194,8 @@ const RUECKFUEHRUNG = {
         'bauwerk-aus-vorlage-rechteckkammer', 'bauwerk-aus-vorlage-zweikammer-rueb',
         // BIMFY I4: der Normschacht aus derselben Fabrik.
         'bauwerk-aus-vorlage-normschacht',
+        // BIMFY I9: der Kastenschacht (rechteckig) ebenso.
+        'bauwerk-aus-vorlage-kastenschacht',
     ],
     /** Muster + Operation + Katalogeintrag gäbe es — trotzdem von Hand geschrieben (A6). */
     handgeschrieben: [
@@ -234,7 +236,7 @@ const RUECKFUEHRUNG = {
         'vorlage-werte-setzen', 'an-vorlage-angleichen',
     ],
 };
-const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 8, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1/V4 je Vorlage eines, + BIMFY I4 Normschacht
+const RUECKFUEHRUNG_MAX = { nichtRueckfuehrbar: 9, handgeschrieben: 0 };   // + B3 Öffnung, + B4 Durchführung, + XXVIII V1/V4 je Vorlage eines, + BIMFY I4 Normschacht, + I9 Kastenschacht
 
 /** W8 — Fachregeln, die LOSE im Code liegen statt in einer Regeltabelle. Ziel: leer (AR). */
 const LOSE_REGELN = [

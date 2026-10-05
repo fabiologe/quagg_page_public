@@ -17,14 +17,18 @@
  * Rein: kein Store, keine Engine. Ost = +x, Nord = −z (Welt).
  */
 import { normschacht } from '../bimfy/muster/Normschacht.js';
+import { kastenschacht } from '../bimfy/muster/Kastenschacht.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
 const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
                                       'spitzende', 'spitzendeHoehe', 'muffe', 'muffeTiefe']);
+const KASTEN_GESTEUERT = Object.freeze(['punkte', 'laenge', 'breite', 'wand', 'boden', 'deckel', 'oeffnung']);
 export const GESTEUERT = Object.freeze({
     // BIMFY I4: die Teile des Normschachts.
     schachtunterteil: RING_GESTEUERT, schachtring: RING_GESTEUERT, schachthals: RING_GESTEUERT,
     schachtplatte: RING_GESTEUERT, auflagering: RING_GESTEUERT, schachtabdeckung: RING_GESTEUERT,
+    // BIMFY I9: die Teile des Rechteckschachts.
+    kastenunterteil: KASTEN_GESTEUERT, kastenplatte: KASTEN_GESTEUERT, kastenabdeckung: KASTEN_GESTEUERT,
     berme: Object.freeze(['punkte', 'durchmesser', 'auftritt', 'gerinnebreite']),
     steigeisen: Object.freeze(['punkte']),
     platte: Object.freeze(['punkte', 'dicke']),
@@ -273,8 +277,89 @@ const NORMSCHACHT = Object.freeze({
     },
 });
 
+/**
+ * DER KASTENSCHACHT (BIMFY I9): ein rechteckiger Schacht — ISYBAU Aufbauform E
+ * oder Q. Die Kette rechnet `muster/Kastenschacht.js`: klein ein Kasten mit
+ * rechteckiger Abdeckung, begehbar dazu Abdeckplatte mit runder Öffnung,
+ * Auflagering, runde Abdeckung und Steigeisen. Die Längsachse dreht mit.
+ */
+const KASTENSCHACHT = Object.freeze({
+    id: 'kastenschacht',
+    titel: 'Kastenschacht',
+    ort: Object.freeze({ punkt: 'Schachtmitte', hoehe: 'Sohlhöhe' }),
+    felder: Object.freeze([
+        zahl('tiefe', 'Tiefe (Deckel über Sohle)', 1.5, { min: 0.2, max: 15 }),
+        zahl('laenge', 'Lichte Länge (Längsachse)', 1.0, { min: 0.2, max: 10 }),
+        zahl('breite', 'Lichte Breite', 1.0, { min: 0.2, max: 10 }),
+        wahl('wand', 'Wanddicke (0 = Annahme nach Grösse)', 0, { max: 1, einheit: 'm' }),
+        wahl('mauerwerk', 'Gemauert (1 = ja, 0 = nein)', 0, { max: 1 }),
+        wahl('oberteil', 'Oberteil (0 = nach Grösse, 1 = Abdeckplatte, 2 = rechteckige Abdeckung)', 0, { max: 2 }),
+        wahl('steighilfe', 'Steighilfe (5 = keine)', 1, { min: 1, max: 5 }),
+        wahl('richtung', 'Richtung der Längsachse (Grad, 0 = Ost)', 0),
+        wahl('deckelklasse', 'Deckelklasse (1–6 = A–F, 0 = unbekannt)', 0, { max: 6 }),
+    ]),
+    bauwerk: { name: 'Schacht', art: 'schacht' },
+    pruefe(w) {
+        return this.kette(w, 0).kopf ? null : 'Zu flach für Boden, Wand und Abdeckung.';
+    },
+    merkmale(w, rahmen = null) {
+        const { teile, kopf } = this.kette(w, 0);
+        if (!kopf) return {};
+        const sohleNn = Number.isFinite(rahmen?.y) ? rahmen.y + (rahmen.hoehenversatz ?? 0) : null;
+        const platte = teile.find(t => t.rolle === 'kastenplatte');
+        return { Pset_DistributionChamberElementTypeManhole: {
+            ...(sohleNn !== null ? { InvertLevel: Math.round(sohleNn * 1000) / 1000 } : {}),
+            WallThickness: kopf.wand, BaseThickness: kopf.boden,
+            HasSteps: teile.some(t => t.rolle === 'steigeisen'),
+            IsAccessibleOnFoot: kopf.begehbar,
+            NumberOfManholeCovers: 1,
+            AccessLengthOrRadius: platte ? platte.oeffnung / 2 : Math.min(kopf.laenge, kopf.breite),
+        } };
+    },
+    kette(w, sohle = 0) {
+        const klasse = KLASSEN[Math.round(w.deckelklasse)] || null;
+        const oberteil = Math.round(w.oberteil) === 1 ? 'platte' : Math.round(w.oberteil) === 2 ? 'abdeckung' : undefined;
+        return kastenschacht({
+            name: 'Schacht', ort: { ost: 0, nord: 0 }, deckelHoehe: sohle + w.tiefe, sohle: { hoehe: sohle, quelle: 'Vorlage' },
+            aufbau: { form: 'E', laenge: w.laenge, breite: w.breite, material: Math.round(w.mauerwerk) === 1 ? 'MA' : null },
+            ...(w.wand > 0 ? { wand: w.wand } : {}),
+            richtung: grad(w.richtung), oberteil,
+            abdeckung: { klasse }, einstieghilfe: Math.round(w.steighilfe) !== 5,
+        }, { quelle: 'vorlage' });
+    },
+    rollen(w, ort) {
+        const y0 = ort.y;
+        const { teile, kopf } = this.kette(w, y0);
+        if (!kopf) return [];
+        const r = kopf.richtung;
+        const aus = [];
+        const teil = (rolle, rezept, name, t, parameter) => aus.push({ rolle, rezept, name, parameter: { ...parameter, herleitung: t.herleitung } });
+        // Die Achse mit dem dritten Punkt in Richtung der Längsachse — er dreht mit dem Bauwerk.
+        const kastenPunkte = (t) => [welt(0, t.unten, 0), welt(0, t.oben, 0), inRichtung(r, 1, t.unten)];
+        for (const t of teile) {
+            if (t.rolle === 'kastenunterteil') {
+                teil('unterteil', 'kastenunterteil', t.name, t, { punkte: kastenPunkte(t), laenge: t.laenge, breite: t.breite, wand: t.wand, boden: t.boden });
+            } else if (t.rolle === 'kastenplatte') {
+                teil('abdeckplatte', 'kastenplatte', t.name, t, { punkte: kastenPunkte(t), laenge: t.laenge, breite: t.breite, wand: t.wand,
+                                                                  deckel: t.oben - t.unten, oeffnung: t.oeffnung });
+            } else if (t.rolle === 'kastenabdeckung') {
+                teil('abdeckung', 'kastenabdeckung', t.name, t, { punkte: kastenPunkte(t), laenge: t.laenge, breite: t.breite, wand: t.wand,
+                                                                  deckel: t.oben - t.unten });
+            } else if (t.rolle === 'auflagering') {
+                teil('auflagering1', 'auflagering', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)], aussen: t.dAussen, innen: t.dInnen });
+            } else if (t.rolle === 'abdeckung') {
+                teil('abdeckung', 'schachtabdeckung', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
+                                                                   aussen: t.dAussen, innen: t.lichteWeite, deckel: t.deckeldicke });
+            } else if (t.rolle === 'steigeisen' && t.hoehen.length) {
+                teil('steigeisen', 'steigeisen', t.name, t, { punkte: [welt(0, y0, 0), ...t.hoehen.map(h => inRichtung(t.richtung, t.abstand, h))] });
+            }
+        }
+        return aus.map(a => ({ ...a, kategorie: null }));
+    },
+});
+
 export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB,
-                                                [NORMSCHACHT.id]: NORMSCHACHT });
+                                                [NORMSCHACHT.id]: NORMSCHACHT, [KASTENSCHACHT.id]: KASTENSCHACHT });
 
 /** Was an diesen Werten nicht baubar ist — oder null. Jede Vorlage darf es sagen (`pruefe`). */
 export function vorlageGrund(vorlage, w) {

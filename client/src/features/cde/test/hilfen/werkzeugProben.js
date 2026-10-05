@@ -187,6 +187,10 @@ const NEU = [
     { id: 'bauwerk-aus-vorlage-normschacht', el: zug(P(600, 100, 0)), zug: [P(600, 100, 0)],
       werte: [{ name: 'S1', hoehe: '', tiefe: 3, dn: 1, oeffnung: 0.625, anschlussDn: 0.3, unterteilHoehe: 0, auflageringe: 0,
                 oberteil: 1, steighilfe: 1, gerinneform: 0, abgang: 0, zulauf: 180, steigRichtung: 90, deckelklasse: 4 }] },
+    // BIMFY I9: der Kastenschacht — Schachtmitte auf der Sohle, begehbar mit Platte und Steigeisen.
+    { id: 'bauwerk-aus-vorlage-kastenschacht', el: zug(P(700, 100, 0)), zug: [P(700, 100, 0)],
+      werte: [{ name: 'K1', hoehe: '', tiefe: 1.8, laenge: 1, breite: 1, wand: 0, mauerwerk: 0, oberteil: 0, steighilfe: 1,
+                richtung: 30, deckelklasse: 4 }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },
