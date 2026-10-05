@@ -357,7 +357,7 @@ ein früherer Vorgang fällt weg, ein verborgener kommt in den Stapel, Regelwerk
 Bauform, Vergessen, wieder auftauchende Teile. 8 Gegenproben rot. Bild nach einem Neuaufbau gegen den Stand vor B4: 0
 abweichende Pixel; Messlauf Bedienung unverändert.
 
-**Nicht abgedeckt:** ein Rezept aus der Bibliothek, das mitten in der Sitzung neu geladen wird und dabei seine Form
-ändert (etwa das Profil eines Rechteckkanals, den ein Kanalgraben liest). Der Schlüssel kennt den Katalog nicht; erst
-der nächste Wechsel an Geliefertem oder an einer Ableitung rechnet neu. Bauform-Antworten für Geliefertes sind gedeckt
-(sie werden nachgefragt und verglichen).
+**Nachgezogen (Fabio „weiter gehts"):** auch ein neu geladener Rezeptkatalog der Bibliothek gehört in den Schlüssel
+(`registerStand`) — ein Rezept kann dabei seine Form ändern, etwa das Profil eines Kanals, den ein Graben liest. Jedes
+Neuladen rechnet neu (vorsichtig, und selten). Test dazu, Gegenprobe rot. Bauform-Antworten für Geliefertes werden ohnehin
+nachgefragt und verglichen.

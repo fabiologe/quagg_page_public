@@ -48,6 +48,7 @@ import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
 import { regelwerkStand } from './regeln/Regelwerk.js';
+import { registerStand } from './rezept/Register.js';
 import { huelleAusGrenzen } from './geometrie/Huelle.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
@@ -732,7 +733,9 @@ export class IfcAutor {
      *   - jeder Eintrag aus Stand und Historie, den der Lauf GELESEN hat
      *     (Quellen, Unterlagen, die Kette zum Ur),
      *   - die Bauform jedes gelieferten Bauteils, nach der er fragte,
-     *   - Höhenversatz und Regelwerk,
+     *   - Höhenversatz, Regelwerk und der Rezeptkatalog der Bibliothek (jedes
+     *     Neuladen zählt — ein Rezept kann dabei seine Form ändern, etwa das
+     *     Profil eines Kanals, den ein Graben liest),
      *   - das gelieferte Material selbst — das vergisst die Engine
      *     (`ableitungenVergessen`), wenn ein Modell kommt, geht oder sich ändert.
      */
@@ -740,7 +743,7 @@ export class IfcAutor {
         const teile = (schritte ?? [])
             .filter(s => s.wert?.ableitung || istAbleitung(rezeptNach(s.wert?.rezept)))
             .map(s => [s.globalId, s.wert]);
-        return _json({ teile, hoehenversatz: this._getHoehenversatz() ?? 0, regelwerk: regelwerkStand() });
+        return _json({ teile, hoehenversatz: this._getHoehenversatz() ?? 0, regelwerk: regelwerkStand(), rezepte: registerStand() });
     }
 
     async _ableitungenGelten(alt, kopf, stand, historie) {

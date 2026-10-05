@@ -19,6 +19,7 @@ import { ableitungsSchritte, erzeugtEintrag } from '../services/Bauteilrezepte.j
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
 import { setzeRegelwerk } from '../services/regeln/Regelwerk.js';
+import { registrierte, setzeRegistrierte } from '../services/rezept/Register.js';
 
 function gelaende() {
     const h = (x) => 300 + 0.01 * x;
@@ -172,6 +173,14 @@ describe('Ableitungen werden wiederverwendet — nur, solange sie gelten', () =>
         await b.baueErzeugte(s);
         hv = 0.5;
         expect((await b.baueErzeugte(s)).wiederverwendet).toBe(false);
+    });
+
+    it('der Rezeptkatalog der Bibliothek wird neu geladen: neu gerechnet', async () => {
+        const a = autor();
+        const s = szenario();
+        await a.baueErzeugte(s);
+        setzeRegistrierte(registrierte());                    // dieselbe Liste, neu geladen — die Form könnte anders sein
+        expect((await bauenUndVergleichen(a, s)).wiederverwendet).toBe(false);
     });
 
     it('die Bauform einer gelieferten Quelle ändert sich: neu gerechnet', async () => {
