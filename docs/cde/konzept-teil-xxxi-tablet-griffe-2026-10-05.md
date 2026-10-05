@@ -167,3 +167,25 @@ E-T2 bis E-T6: noch offen.
 
 Test `uebernahmeSichtbar.test.js` (6: Zähler, Griffzug mit Neuaufbau, Abbruch, Tafel, Animation, Viewer); 6
 Gegenproben rot. Tabletlauf ohne/mit T1 im selben Stand gemessen; Messlauf Bedienung unverändert.
+
+### T2 — Griffe in Fingergrösse (2026-10-05)
+
+| Tabletlauf (iPad hochkant, „Verschieben" an der Wand) | T0 | T2 |
+|---|---|---|
+| Griff-Durchmesser in der Übersicht · auf die Wand gezoomt | 3 px · 14 px | **24 px · 24 px** |
+| Trefferfläche der Pfeile (Radius, quer zur Achse, bis ein anderer Griff trifft) | ≈ 1–7 px (Hülse 5 × Schaft) | **22 px** (44 px breit) |
+
+- **Grösse in Bildschirmpixeln** (`IfcOverlay`: `GRIFF_PX = 12` Radius, `TREFFER_PX = 22`): jeder Griff ist ein Halter
+  am Griffpunkt, sein Inhalt in Griffradien gebaut; bei `radius: 'auto'` setzt der sichtbare Teil vor jeder Ausgabe den
+  Massstab aus der Kamera (`weltJePixel`: perspektivisch aus der Tiefe entlang der Blickachse, orthografisch aus dem
+  Sichtfenster). Vorher: einmal beim Anzeigen 1/70 des Abstands, höchstens 50 cm — und beim Zoomen blieb er stehen.
+- **Überlappende Hülsen:** trifft der Strahl nur Trefferflächen, gewinnt der Griff, der auf dem SCHIRM näher am Finger
+  liegt (beim Pfeil: zur Achse), nicht die vordere Hülse.
+- **Bleibt:** Nordpfeil und Ebenenquadrat des Gizmos verkümmern bei fast waagerechtem Blick (Pfeil in die Tiefe,
+  Quadrat von der Kante) — die Messung trifft dort nach 1–13 px den Nachbarn. Das ist die Lage des Gizmos zur Kamera,
+  nicht seine Grösse. Der Lageplan misst seine Griffe weiter in Papier-mm (6 mm × Massstab).
+
+Test `griffFingergross.test.js` (5: Übersicht/nah ohne Neuanzeige, Treffer über `griffUnter` vor/nach Zoom, Pfeil,
+fester Radius, überlappende Hülsen); Gegenproben rot: alte Wahl (vordere Hülse), kein Mitwachsen, alte Hülse 1,35;
+der alte Radius fällt in `ifcOverlay.test.js`. Tabletlauf misst jetzt das GEZEICHNETE (Halter-Massstab, Treffer über
+`griffUnter` Pixel für Pixel) statt der Formel.

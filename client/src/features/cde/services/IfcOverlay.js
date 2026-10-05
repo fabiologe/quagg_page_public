@@ -357,56 +357,79 @@ export class IfcOverlay {
         this._griffe.clear();
         this._zugbild = null;
         const cam = this._getWorld?.()?.camera?.three ?? null;
+        const hoehePx = this._getWorld?.()?.renderer?.three?.domElement?.clientHeight ?? null;
         const rollenFarbe = { entfernen: farbeEntfernen, einfuegen: farbeEinfuegen };
         const gizmoFarbe = { danger: farbeEntfernen, ok: farbeEinfuegen, accent: farbe, warn: farbeForderung };
         for (const gr of griffe) {
             if (!_endlich(gr?.pos)) continue;
             const f = gr.farbe ?? gizmoFarbe[gr.farbrolle] ?? rollenFarbe[gr.rolle] ?? (gr.forderung ? farbeForderung : farbe);
-            // Der Radius folgt dem KAMERAABSTAND — ein fester Meterwert füllte
-            // nach „auf Auswahl zoomen" den ganzen Schacht (Headless 2026-09-08).
-            const r = radius === 'auto' ? griffRadius(cam, gr.pos) : radius;
+            // FINGERGRÖSSE (Teil XXXI, T2): jeder Griff ist ein HALTER am
+            // Griffpunkt, sein Inhalt ist in GRIFFRADIEN gebaut (r = 1). Der
+            // Halter trägt den Massstab — bei `radius: 'auto'` rechnet ihn
+            // jedes Bild neu aus Kamera und Zeichenfläche, damit der Griff in
+            // jeder Zoomstufe GRIFF_PX auf dem Schirm hat. Vorher: einmal beim
+            // Anzeigen 1/70 des Abstands, höchstens 50 cm — gemessen 3 px in
+            // der Übersicht, 14 px gezoomt (Tabletlauf T0).
+            const halter = new THREE.Group();
+            halter.position.set(gr.pos.x, gr.pos.y, gr.pos.z);
+            halter.scale.setScalar(radius === 'auto' ? griffRadius(cam, gr.pos, { hoehePx }) : radius);
+            halter.renderOrder = EBENEN.griffe;
+            g.add(halter);
             // DER VERSCHIEBE-GIZMO (K6, Fabio 2026-09-20: „keine Verschiebung
             // mit den Griffpunkten hat funktioniert"): Pfeile und ein
             // Ebenenquadrat statt einer Kugel, deren Achse man erraten musste.
             // Man greift, was man sieht.
             if (gr.form === 'pfeil' || gr.form === 'quadrat') {
-                const teil = gr.form === 'pfeil' ? _pfeil(gr, r, f, this) : _quadrat(gr, r, f, this);
-                for (const k of teil.objekte) { k.renderOrder = EBENEN.griffe; k.traverse?.(x => { x.renderOrder = EBENEN.griffe; }); g.add(k); }
-                this._griffe.set(gr.key, { kugel: teil.sichtbar, hitbox: teil.hitbox, zeigtBei: null,
-                                           versteckt: false, versatz: { x: 0, y: 0, z: 0 } });
+                const lokal = { ...gr, pos: { x: 0, y: 0, z: 0 } };
+                const teil = gr.form === 'pfeil' ? _pfeil(lokal, 1, f, this) : _quadrat(lokal, 1, f, this);
+                for (const k of teil.objekte) { k.renderOrder = EBENEN.griffe; k.traverse?.(x => { x.renderOrder = EBENEN.griffe; }); halter.add(k); }
+                if (radius === 'auto') _haeltPixel(halter, teil.sichtbar);
+                halter.updateMatrixWorld(true);
+                this._griffe.set(gr.key, { halter, kugel: teil.sichtbar, hitbox: teil.hitbox, zeigtBei: null,
+                                           versteckt: false, strecke: teil.strecke ?? null });
                 continue;
             }
             // TIPP-GRIFFE sind WÜRFEL (S10): sie werden angetippt, nicht gezogen,
             // und die Form sagt es, bevor jemand es ausprobiert. Sie sitzen etwas
             // über ihrem Zug-Griff, damit beide getroffen werden können.
             const tipp = gr.wirkung === 'tipp';
-            const rr = gr.zeigtBei ? r * 0.72 : r;
+            const rr = gr.zeigtBei ? 0.72 : 1;
             const geo = tipp ? new THREE.BoxGeometry(rr * 1.7, rr * 1.7, rr * 1.7) : new THREE.SphereGeometry(rr, 14, 14);
             const kugel = new THREE.Mesh(geo, this._material('flaeche', f, { opacity: 0.95 }));
             // NEBENGRIFFE sitzen VERSETZT um ihren Zug-Griff — mehrere an
             // derselben Stelle wären nicht einzeln zu treffen. Der Versatz
-            // zählt in Griffradien, damit er in jeder Entfernung gleich wirkt.
+            // zählt in Griffradien (der Halter skaliert ihn mit).
             const nv = gr.nebenVersatz ?? (gr.zeigtBei ? { x: 0, y: 2.2 } : null);
-            const versatz = nv ? { x: (nv.x ?? 0) * r, y: (nv.y ?? 0) * r, z: (nv.z ?? 0) * r } : { x: 0, y: 0, z: 0 };
-            kugel.position.set(gr.pos.x + versatz.x, gr.pos.y + versatz.y, gr.pos.z + versatz.z);
+            if (nv) kugel.position.set(nv.x ?? 0, nv.y ?? 0, nv.z ?? 0);
             kugel.userData.griffKey = gr.key;
-            const hitbox = new THREE.Mesh(new THREE.SphereGeometry(rr * 1.35, 8, 6), this._material('flaeche', f, { opacity: 0 }));
+            // Die Trefferfläche hat TREFFER_PX auf dem Schirm — auch am kleinen
+            // Nebengriff (der Finger ist nicht kleiner, weil der Griff es ist).
+            const hitbox = new THREE.Mesh(new THREE.SphereGeometry(TREFFER, 8, 6), this._material('flaeche', f, { opacity: 0 }));
             hitbox.visible = false;
             hitbox.position.copy(kugel.position);
             hitbox.userData.griffKey = gr.key;
             for (const k of [kugel, hitbox]) k.renderOrder = EBENEN.griffe;
-            g.add(kugel, hitbox);
+            halter.add(kugel, hitbox);
+            if (radius === 'auto') _haeltPixel(halter, kugel);
+            halter.updateMatrixWorld(true);
             // NEBENGRIFFE (`zeigtBei`) bleiben verborgen, bis der Zeiger auf
             // ihrem Zug-Griff steht — an einer Fläche mit zehn Ecken stünden
             // sonst vierzig Marken zugleich im Bild.
-            const eintrag = { kugel, hitbox, zeigtBei: gr.zeigtBei ?? null, versteckt: !!gr.zeigtBei, versatz };
+            const eintrag = { halter, kugel, hitbox, zeigtBei: gr.zeigtBei ?? null, versteckt: !!gr.zeigtBei, strecke: null };
             if (eintrag.versteckt) kugel.visible = false;
             this._griffe.set(gr.key, eintrag);
         }
         return this._griffe.size;
     }
 
-    /** Welcher Griff liegt unter dem Zeiger? — key oder null. Verborgene zählen nicht. */
+    /**
+     * Welcher Griff liegt unter dem Zeiger? — key oder null. Verborgene zählen nicht.
+     *
+     * Trifft der Strahl einen SICHTBAREN Griff, gilt der. Trifft er nur
+     * Trefferflächen (44 px, T2 — sie überlappen bei nahen Griffen), gewinnt
+     * der Griff, der auf dem SCHIRM am nächsten liegt, nicht der, dessen
+     * Hülse zufällig näher an der Kamera steht.
+     */
     griffUnter(clientX, clientY) {
         if (!this._griffe.size) return null;
         const strahl = this._raycasterFuer(clientX, clientY);
@@ -418,7 +441,18 @@ export class IfcOverlay {
         }
         if (!ziele.length) return null;
         const treffer = strahl.intersectObjects(ziele, false);
-        return treffer.length ? (treffer[0].object.userData.griffKey ?? null) : null;
+        if (!treffer.length) return null;
+        const direkt = treffer.find(t => t.object.visible !== false);
+        if (direkt) return direkt.object.userData.griffKey ?? null;
+        let best = null, bestAbstand = Infinity;
+        for (const t of treffer) {
+            const key = t.object.userData.griffKey;
+            const e = this._griffe.get(key);
+            if (!e) continue;
+            const a = _bildAbstand(strahl, e);
+            if (a < bestAbstand) { bestAbstand = a; best = key; }
+        }
+        return best;
     }
 
     /**
@@ -441,9 +475,8 @@ export class IfcOverlay {
     griffVersetzen(key, pos) {
         const g = this._griffe.get(key);
         if (!g || !_endlich(pos)) return false;
-        const v = g.versatz ?? { x: 0, y: 0, z: 0 };
-        g.kugel.position.set(pos.x + v.x, pos.y + v.y, pos.z + v.z);
-        g.hitbox.position.copy(g.kugel.position);
+        g.halter.position.set(pos.x, pos.y, pos.z);
+        g.halter.updateMatrixWorld(true);
         return true;
     }
 
@@ -575,13 +608,16 @@ function _pfeil(gr, r, farbe, overlay) {
     gruppe.position.copy(mitte);
     gruppe.traverse(k => { k.userData.griffKey = gr.key; });
 
-    const hitbox = new THREE.Mesh(new THREE.CylinderGeometry(dicke * GIZMO_TREFFER, dicke * GIZMO_TREFFER, laenge * 1.15, 8),
+    const hitbox = new THREE.Mesh(new THREE.CylinderGeometry(r * TREFFER, r * TREFFER, laenge * 1.15, 8),
                                   overlay._material('flaeche', farbe, { opacity: 0 }));
     hitbox.visible = false;
     hitbox.quaternion.copy(gruppe.quaternion);
     hitbox.position.copy(mitte);
     hitbox.userData.griffKey = gr.key;
-    return { objekte: [gruppe, hitbox], sichtbar: gruppe, hitbox };
+    // Die Achse des Pfeils (im Halter) — `griffUnter` misst den Bildabstand zu ihr.
+    const ursprung = new THREE.Vector3(gr.pos.x, gr.pos.y, gr.pos.z);
+    const strecke = [ursprung, ursprung.clone().addScaledVector(richtung, laenge)];
+    return { objekte: [gruppe, hitbox], sichtbar: gruppe, hitbox, strecke };
 }
 
 /** Das EBENENQUADRAT: waagerecht, vom Ursprung abgesetzt, mit Rand. */
@@ -599,7 +635,8 @@ function _quadrat(gr, r, farbe, overlay) {
     gruppe.position.copy(mitte);
     gruppe.traverse(k => { k.userData.griffKey = gr.key; });
 
-    const hitbox = new THREE.Mesh(new THREE.PlaneGeometry(kante * 1.3, kante * 1.3), overlay._material('flaeche', farbe, { opacity: 0 }));
+    const seite = Math.max(kante * 1.3, 2 * r * TREFFER);
+    const hitbox = new THREE.Mesh(new THREE.PlaneGeometry(seite, seite), overlay._material('flaeche', farbe, { opacity: 0 }));
     hitbox.rotation.x = -Math.PI / 2;
     hitbox.visible = false;
     hitbox.position.copy(mitte);
@@ -609,18 +646,89 @@ function _quadrat(gr, r, farbe, overlay) {
 
 /** Wie lang ein Gizmo-Pfeil im Verhältnis zum Griffradius ist. */
 export const GIZMO_LAENGE = 6;
-/** Wie viel grosszügiger die Trefferhülse ist als der sichtbare Schaft (T4). */
-export const GIZMO_TREFFER = 5;
+/**
+ * Griffgrösse in BILDSCHIRMPIXELN (Teil XXXI, T2 — Tabletlauf T0: 3 px in der
+ * Übersicht, 14 px gezoomt; Ziel ≥ 24 px sichtbar, ≥ 44 px Trefferfläche auf
+ * dem Finger, Apple HIG / Material 44–48 pt).
+ * GRIFF_PX ist der RADIUS des sichtbaren Griffs, TREFFER_PX der seiner Hülse.
+ */
+export const GRIFF_PX = 12;
+export const TREFFER_PX = 22;
+/** Trefferhülse in Griffradien. */
+const TREFFER = TREFFER_PX / GRIFF_PX;
 
 /**
- * Griffradius aus dem Kameraabstand: etwa 1/70 des Abstands, zwischen 8 cm
- * und 50 cm — auf dem Schirm ungefähr gleich gross, ob man das Netz oder
- * einen Schacht vor sich hat. Ohne Kamera (Tests, Plan) 0,25 m.
+ * Wie viele Meter ein Bildschirmpixel am Ort `pos` misst — perspektivisch aus
+ * der TIEFE entlang der Blickachse (nicht dem Abstand: am Bildrand wäre der
+ * Griff sonst zu gross), orthografisch aus dem Sichtfenster. `null`, wenn es
+ * sich nicht sagen lässt (keine Kamera, keine Zeichenfläche, Punkt hinter der
+ * Kamera).
  */
-export function griffRadius(cam, pos, { anteil = 1 / 70, min = 0.08, max = 0.5 } = {}) {
-    if (!cam?.position || !_endlich(pos)) return 0.25;
-    const d = cam.position.distanceTo(new THREE.Vector3(pos.x, pos.y, pos.z));
-    if (!Number.isFinite(d)) return 0.25;
-    return Math.min(max, Math.max(min, d * anteil));
+export function weltJePixel(cam, pos, hoehePx) {
+    if (!cam || !(hoehePx > 0)) return null;
+    const zoom = cam.zoom > 0 ? cam.zoom : 1;
+    if (cam.isOrthographicCamera) {
+        const h = (cam.top - cam.bottom) / zoom;
+        return h > 0 ? h / hoehePx : null;
+    }
+    if (!cam.position || !_endlich(pos)) return null;
+    const v = new THREE.Vector3(pos.x - cam.position.x, pos.y - cam.position.y, pos.z - cam.position.z);
+    const blick = cam.getWorldDirection ? cam.getWorldDirection(new THREE.Vector3()) : null;
+    const tiefe = blick ? v.dot(blick) : v.length();
+    if (!(tiefe > 1e-6)) return null;
+    const fov = (Number.isFinite(cam.fov) ? cam.fov : 50) * Math.PI / 180;
+    return (2 * tiefe * Math.tan(fov / 2)) / zoom / hoehePx;
+}
+
+/**
+ * Griffradius in METERN, der am Ort `pos` `px` Bildschirmpixel ergibt.
+ * Ohne Kamera oder Zeichenfläche (Tests, Plan) 0,25 m.
+ */
+export function griffRadius(cam, pos, { px = GRIFF_PX, hoehePx = null } = {}) {
+    const w = weltJePixel(cam, pos, hoehePx);
+    return w ? px * w : 0.25;
+}
+
+const _halterOrt = new THREE.Vector3();
+
+/**
+ * Hält einen Griff-Halter jedes Bild auf GRIFF_PX: der sichtbare Teil rechnet
+ * vor seiner Ausgabe den Massstab aus der Kamera, mit der gerade gezeichnet
+ * wird. Die (unsichtbare) Hülse hängt am selben Halter und wächst mit — das
+ * Ziel des Fingers ist immer so gross wie das Bild es verspricht.
+ */
+function _haeltPixel(halter, sichtbar) {
+    const halte = (renderer, _scene, camera) => {
+        const h = renderer?.domElement?.clientHeight;
+        halter.getWorldPosition(_halterOrt);
+        const w = weltJePixel(camera, _halterOrt, h);
+        if (!w) return;
+        const s = GRIFF_PX * w;
+        if (Math.abs(halter.scale.x - s) <= s * 1e-3) return;
+        halter.scale.setScalar(s);
+        halter.updateMatrixWorld(true);
+    };
+    sichtbar.traverse?.(k => { if (k.isMesh || k.isLine) k.onBeforeRender = halte; });
+}
+
+/**
+ * Wie weit ein Griff auf dem SCHIRM vom Zeigestrahl liegt — als Winkel
+ * (perspektivisch) bzw. Abstand (orthografisch); nur zum Vergleichen.
+ * Ein Pfeil misst zu seiner Achse, alle anderen zu ihrer Hülse.
+ */
+function _bildAbstand(strahl, e) {
+    const ray = strahl.ray;
+    let punkt;
+    if (e.strecke) {
+        const a = e.halter.localToWorld(e.strecke[0].clone());
+        const b = e.halter.localToWorld(e.strecke[1].clone());
+        punkt = new THREE.Vector3();
+        ray.distanceSqToSegment(a, b, null, punkt);
+    } else {
+        punkt = e.hitbox.getWorldPosition(new THREE.Vector3());
+    }
+    const quer = ray.distanceToPoint(punkt);
+    const tiefe = punkt.clone().sub(ray.origin).dot(ray.direction);
+    return strahl.camera?.isOrthographicCamera || !(tiefe > 1e-6) ? quer : quer / tiefe;
 }
 

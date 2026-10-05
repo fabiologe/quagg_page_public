@@ -189,15 +189,28 @@ describe('Der Zeiger', () => {
     });
 });
 
-describe('griffRadius — die Kugel bleibt auf dem Schirm gleich gross', () => {
-    it('folgt dem Kameraabstand, zwischen 8 cm und 50 cm; ohne Kamera 25 cm', async () => {
-        const { griffRadius } = await import('../services/IfcOverlay.js');
-        const cam = { position: new THREE.Vector3(0, 0, 0) };
-        expect(griffRadius(cam, { x: 70, y: 0, z: 0 })).toBeLessThanOrEqual(0.5);
-        expect(griffRadius(cam, { x: 14, y: 0, z: 0 })).toBeCloseTo(0.2, 6);
-        expect(griffRadius(cam, { x: 1, y: 0, z: 0 })).toBe(0.08);                 // nah dran: Untergrenze
-        expect(griffRadius(cam, { x: 3500, y: 0, z: 0 })).toBe(0.5);              // weit weg: Obergrenze
+describe('griffRadius — der Griff hat auf dem Schirm GRIFF_PX (Teil XXXI, T2)', () => {
+    it('perspektivisch: aus der Tiefe, dem Blickwinkel und der Höhe der Zeichenfläche; ohne Kamera 25 cm', async () => {
+        const { griffRadius, GRIFF_PX } = await import('../services/IfcOverlay.js');
+        const cam = new THREE.PerspectiveCamera(60, 820 / 519, 0.1, 10000);
+        cam.position.set(0, 0, 0); cam.lookAt(0, 0, -1); cam.updateMatrixWorld(true);
+        // 519 px hoch, 60°: in 100 m Tiefe misst ein Pixel 2·100·tan 30° / 519 m.
+        const jePx = 2 * 100 * Math.tan(Math.PI / 6) / 519;
+        expect(griffRadius(cam, { x: 0, y: 0, z: -100 }, { hoehePx: 519 })).toBeCloseTo(GRIFF_PX * jePx, 9);
+        // Keine Obergrenze in Metern mehr — 3,5 km weit ist er so gross wie nah dran (vorher: 50 cm = 3 px).
+        expect(griffRadius(cam, { x: 0, y: 0, z: -3500 }, { hoehePx: 519 }) / griffRadius(cam, { x: 0, y: 0, z: -1 }, { hoehePx: 519 }))
+            .toBeCloseTo(3500, 6);
+        // Tiefe, nicht Abstand: seitlich versetzt gleich gross.
+        expect(griffRadius(cam, { x: 40, y: 0, z: -100 }, { hoehePx: 519 })).toBeCloseTo(GRIFF_PX * jePx, 9);
         expect(griffRadius(null, { x: 1, y: 0, z: 0 })).toBe(0.25);
+        expect(griffRadius(cam, { x: 0, y: 0, z: -100 })).toBe(0.25);             // ohne Zeichenfläche
+    });
+
+    it('orthografisch: aus dem Sichtfenster und dem Zoom', async () => {
+        const { griffRadius, GRIFF_PX } = await import('../services/IfcOverlay.js');
+        const cam = new THREE.OrthographicCamera(-50, 50, 30, -30, 0.1, 1000);
+        cam.zoom = 2;
+        expect(griffRadius(cam, { x: 0, y: 0, z: 0 }, { hoehePx: 600 })).toBeCloseTo(GRIFF_PX * (60 / 2 / 600), 9);
     });
 });
 
@@ -216,9 +229,10 @@ describe('Der Verschiebe-Gizmo (K6)', () => {
         ], { radius: 0.25, farbe: '#0af', farbeEntfernen: '#f00', farbeEinfuegen: '#0f0' });
 
         const ebene = overlay._ebenen.get('griffe');
-        // Je Teil ein sichtbares Objekt und eine Hitbox.
-        expect(ebene.children).toHaveLength(6);
-        const sichtbar = ebene.children.filter(k => k.visible !== false && k.type === 'Group');
+        // Je Teil ein HALTER (T2) mit einem sichtbaren Objekt und einer Hitbox.
+        expect(ebene.children).toHaveLength(3);
+        expect(ebene.children.every(h => h.children.length === 2)).toBe(true);
+        const sichtbar = ebene.children.map(h => h.children.find(k => k.visible !== false && k.type === 'Group'));
         expect(sichtbar).toHaveLength(3);
         // Der Ost-Pfeil trägt zwei Meshes (Schaft, Spitze) und zeigt nach +x.
         const ost = sichtbar[0];
@@ -237,9 +251,9 @@ describe('Der Verschiebe-Gizmo (K6)', () => {
     it('die Trefferhülse ist grosszügiger als der sichtbare Schaft (T4 — Finger)', () => {
         const { overlay } = baue();
         overlay.zeigeGriffe([GIZMO('pfeil', { x: 1, y: 0, z: 0 }, 'bauteil:R1:ost')], { radius: 0.25 });
-        const ebene = overlay._ebenen.get('griffe');
-        const hitbox = ebene.children.find(k => k.visible === false);
-        const schaft = ebene.children.find(k => k.type === 'Group').children[0];
+        const halter = overlay._ebenen.get('griffe').children[0];
+        const hitbox = halter.children.find(k => k.visible === false);
+        const schaft = halter.children.find(k => k.type === 'Group').children[0];
         expect(hitbox.geometry.parameters.radiusTop)
             .toBeGreaterThan(schaft.geometry.parameters.radiusTop * 2);
         expect(hitbox.material.opacity).toBe(0);
@@ -248,8 +262,8 @@ describe('Der Verschiebe-Gizmo (K6)', () => {
     it('das Quadrat liegt waagerecht und abgesetzt — beide sind einzeln zu treffen', () => {
         const { overlay } = baue();
         overlay.zeigeGriffe([GIZMO('quadrat', null, 'bauteil:R1:ebene')], { radius: 0.25 });
-        const ebene = overlay._ebenen.get('griffe');
-        const gruppe = ebene.children.find(k => k.type === 'Group');
+        const halter = overlay._ebenen.get('griffe').children[0];
+        const gruppe = halter.children.find(k => k.type === 'Group');
         expect(gruppe.position.x).toBeGreaterThan(0);
         expect(gruppe.position.z).toBeLessThan(0);        // nach Nord versetzt (−z)
         expect(gruppe.position.y).toBe(0);                // in der Ebene des Griffs

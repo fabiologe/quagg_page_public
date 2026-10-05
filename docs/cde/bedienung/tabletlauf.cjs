@@ -163,27 +163,33 @@ function auswerten(reihe, xVorher) {
             return v.griffe.griffe.value.map(g => { const s = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
                 return { key: g.key, art: g.art, form: g.form ?? null, achse: g.achsName ?? null, x: s ? c.left + s.x : null, y: s ? c.top + s.y : null }; });`);
         zahlen.griffeVerschieben = griffe.length;
-        // Wie gross ist ein Griff auf dem Schirm? Radius aus `griffRadius` (1/70 des Kameraabstands), quer zur Blickrichtung.
-        zahlen.griffDurchmesserPx = await v(page, `
-            const { griffRadius } = await import('/src/features/cde/services/IfcOverlay.js');
-            const cam = v.engine.overlay._getWorld?.()?.camera?.three ?? v.engine._getWorld?.()?.camera?.three;
-            if (!cam) return null;
+        // Wie gross ist ein Griff auf dem Schirm? GEZEICHNET gemessen (T2): der Massstab des Halters, den das Bild gesetzt
+        // hat (Radius in Metern), quer zur Blickrichtung projiziert — und die Trefferfläche über `griffUnter`, vom Griff
+        // aus Pixel für Pixel nach aussen (beim Pfeil quer zur Achse, an der Pfeilmitte), bis ein anderer oder keiner trifft.
+        // T0 rechnete denselben Radius aus der Formel `griffRadius` (1/70 des Abstands) — damals war das, was gezeichnet wurde.
+        const MISS = `const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+            const o = v.engine.overlay; const cam = o._getWorld?.()?.camera?.three;
             const rechts = { x: cam.matrixWorld.elements[0], y: cam.matrixWorld.elements[1], z: cam.matrixWorld.elements[2] };
-            return v.griffe.griffe.value.map(g => { const r = griffRadius(cam, g.pos);
-                const a = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
-                const b = v.engine.projectToScreen([g.pos.x + rechts.x * r, g.pos.y + rechts.y * r, g.pos.z + rechts.z * r]);
-                return a && b ? Math.round(2 * Math.hypot(b.x - a.x, b.y - a.y)) : null; });`);
+            const px = (p) => { const s = v.engine.projectToScreen([p.x, p.y, p.z]); return s ? { x: c.left + s.x, y: c.top + s.y } : null; };
+            const aus = [];
+            for (const [key, e] of o._griffe) {
+                if (e.versteckt) continue;
+                const r = e.halter.scale.x;
+                const m = e.halter.getWorldPosition(e.halter.position.clone());
+                const a = px(m), b = px({ x: m.x + rechts.x * r, y: m.y + rechts.y * r, z: m.z + rechts.z * r });
+                const ziel = e.hitbox.getWorldPosition(e.hitbox.position.clone()); const zp = px(ziel);
+                let rx = 1, ry = 0;
+                if (e.strecke) { const s0 = px(e.halter.localToWorld(e.strecke[0].clone())), s1 = px(e.halter.localToWorld(e.strecke[1].clone()));
+                    const l = Math.hypot(s1.x - s0.x, s1.y - s0.y) || 1; rx = -(s1.y - s0.y) / l; ry = (s1.x - s0.x) / l; }
+                let treffer = 0; while (treffer < 80 && o.griffUnter(zp.x + rx * (treffer + 1), zp.y + ry * (treffer + 1)) === key) treffer++;
+                aus.push({ key, durchmesser: a && b ? Math.round(2 * Math.hypot(b.x - a.x, b.y - a.y)) : null, trefferRadius: treffer });
+            }
+            return aus;`;
+        zahlen.griffDurchmesserPx = await v(page, MISS);
         // Dasselbe, nachdem auf die Wand gezoomt wurde — so arbeitet man an einem Bauteil.
         await v(page, `const b = pinia._s.get('cde-bearbeitung').bauteil; await v.engine.zoomToElement?.(b.modelId, b.localId, { select: false }); return 1;`);
         await warte(2500);
-        zahlen.griffDurchmesserNahPx = await v(page, `
-            const { griffRadius } = await import('/src/features/cde/services/IfcOverlay.js');
-            const cam = v.engine.overlay._getWorld?.()?.camera?.three ?? v.engine._getWorld?.()?.camera?.three;
-            const rechts = { x: cam.matrixWorld.elements[0], y: cam.matrixWorld.elements[1], z: cam.matrixWorld.elements[2] };
-            return v.griffe.griffe.value.map(g => { const r = griffRadius(cam, g.pos);
-                const a = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
-                const b = v.engine.projectToScreen([g.pos.x + rechts.x * r, g.pos.y + rechts.y * r, g.pos.z + rechts.z * r]);
-                return a && b ? Math.round(2 * Math.hypot(b.x - a.x, b.y - a.y)) : null; });`);
+        zahlen.griffDurchmesserNahPx = await v(page, MISS);
         await foto(page, 'verschieben_nah');
         zahlen.leinwand = await page.evaluate(() => { const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
             return { breite: Math.round(c.width), hoehe: Math.round(c.height), anteil: +(c.width * c.height / (innerWidth * innerHeight)).toFixed(2) }; });
