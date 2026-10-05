@@ -33,7 +33,7 @@
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
-         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte,
+         modellVon, istAnzeigeform, rezeptFuerNetzrolle, operationenMitKennung, neueOperationsId, vorgangEntfernenSchritte, zuruecknahmeEintrag,
          BAUWERKSARTEN, behaelterRezept, neueGlobalId, gewerkVon } from './Bauteilrezepte.js';
 import { vorgangstitel } from './ableitung/Bezuege.js';
 import { hoeheAus } from './kommando/Folgen.js';
@@ -666,6 +666,13 @@ const SETZ_OPERATIONEN = Object.freeze({
         schreibe: (s, el, werte, kontext = {}) => _verschnittSchritte(el, werte, _zweiterKoerper(el, werte, kontext)),
         warumNicht: (s, el, werte, kontext = {}) => _verschnittGrund(el, werte, _zweiterKoerper(el, werte, kontext)),
     },
+    verschnittLoesen: {
+        // EINEN VERSCHNITT LÖSEN (Teil XXXII, O1-Rest): das Ergebnis nimmt der Vorgang zurück, A und B kommen wieder
+        // zum Vorschein — die Umkehrung von „Verschneiden", als eigener Vorgang (Rückgängig bleibt daneben möglich).
+        vorbelege: () => ({}),
+        schreibe: (s, el, _werte, { kandidatenVon = null } = {}) => _verschnittLoesenSchritte(el, kandidatenVon),
+        warumNicht: (s, el, _werte, { kandidatenVon = null } = {}) => _verschnittLoesenGrund(el, kandidatenVon),
+    },
     drapieren: {
         // AUFS GELÄNDE LEGEN (Teil XXXII, O4): jeder Punkt auf die Geländehöhe darunter, plus Abstand. Die Höhen stehen
         // ABSOLUT im Kommando (je Punkt, Welt) — vorbelegt aus der Höhenabfrage (Kandidat `gelaende:hoehen`, im Viewer
@@ -1178,6 +1185,24 @@ function _knickEntfernen(el, werte) {
 
 /** Die drei Arten des Verschneidens — aus dem Rezept (Ableitungsschicht), nicht importiert. */
 const _verschnittArten = () => rezeptNach('verschnitt')?.arten ?? {};
+/** Warum sich ein Verschnitt nicht lösen lässt — oder null. */
+function _verschnittLoesenGrund(el, kandidatenVon) {
+    const plan = el?.stand?.bauplan;
+    // Ein Verschnitt ist, was das Rezept als Verschnitt-Arten kennt (W3: kein Rezeptname im Vergleich).
+    if (!plan?.ableitung || !rezeptNach(plan.rezept)?.arten) return 'Nur an einem Verschnitt (Ergebnis von „Verschneiden").';
+    if (!(kandidatenVon?.('vorgang:teile', el) ?? []).length) return 'Diesen Verschnitt gibt es nicht mehr.';
+    return null;
+}
+function _verschnittLoesenSchritte(el, kandidatenVon) {
+    if (_verschnittLoesenGrund(el, kandidatenVon)) return null;
+    const quellen = el.stand.bauplan.parameter?.quellen ?? {};
+    const teile = (kandidatenVon('vorgang:teile', el) ?? []).filter(t => t.rolle === 'teil');
+    return [
+        ...teile.map(t => zuruecknahmeEintrag(t.id)),
+        ...[quellen.a, quellen.b].filter(Boolean).map(gid => ({ art: 'geloescht', globalId: gid, nachher: null, modell: 'cde' })),
+    ];
+}
+
 /** Warum ein Bauteil sich nicht aufs Gelände legen lässt — oder null (Teil XXXII, O4). */
 function _drapierGrund(el, werte) {
     const punkte = el?.stand?.bauplan?.parameter?.punkte;
@@ -2385,6 +2410,23 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...VORLAGE_WERKZEUGE,
     // Teil XXIX, G2: alle setzbaren Eigenschaften in EINEM Formular.
     EIGENSCHAFTEN_WERKZEUG,
+    {
+        /**
+         * VERSCHNITT LÖSEN (Teil XXXII, O1-Rest): das Ergebnis weg, A und B wieder da. Bis hierher galt: wer A umbauen
+         * will, nimmt das Verschneiden mit Rückgängig zurück — nur solange danach nichts anderes geschah.
+         */
+        id: 'verschnitt-loesen',
+        titel: 'Verschnitt lösen',
+        icon: 'undo',
+        gruppe: 'lage',
+        bauform: '*',
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        nurRezept: 'verschnitt',
+        art: 'erzeugt',
+        felder: [],
+        setzt: { art: 'verschnittLoesen' },
+    },
     {
         /**
          * AUFS GELÄNDE LEGEN (Teil XXXII, O4): jeder Punkt eines eigenen Bauteils auf das Gelände darunter, mit Abstand —

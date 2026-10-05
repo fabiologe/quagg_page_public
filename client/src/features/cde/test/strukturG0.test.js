@@ -54,9 +54,9 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen);
         // G5: +1 (Baugruppe setzen — in der Palette über ihre Baugruppen, nicht als eigener Knopf).
         // Teil XXXII, K1: +2 (Knickpunkt einfügen/entfernen an Erdbau, Schicht, Raum — beide Setzer); O1: +1 Verschneiden;
-        // O4: +1 Aufs Gelände legen (Setzer); O5 erweitert „Reihe" (kein neues Werkzeug).
-        expect(kat).toHaveLength(161);
-        expect(kat.filter(b => b.setzt)).toHaveLength(92);
+        // O4: +1 Aufs Gelände legen (Setzer); O5 erweitert „Reihe" (kein neues Werkzeug); O1-Rest: +1 Verschnitt lösen (Setzer).
+        expect(kat).toHaveLength(162);
+        expect(kat.filter(b => b.setzt)).toHaveLength(93);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(22);
     });
 

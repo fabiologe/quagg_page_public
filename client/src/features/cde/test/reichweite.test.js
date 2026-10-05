@@ -69,8 +69,9 @@ const HEUTE = Object.freeze({
     // Teil XXXII, K1: +2 Knickpunkt einfügen/entfernen (Erdbau, Schicht, Raum), beide ohne Oberfläche — 159/136.
     // O1: +1 Verschneiden, ohne Oberfläche — 160/137.
     // O4: +1 Aufs Gelände legen (die Höhen stehen im Kommando) — 161/138.
-    werkzeuge: 161,
-    ausgefuehrt: 138,
+    // O1-Rest: +1 Verschnitt lösen — 162/139.
+    werkzeuge: 162,
+    ausgefuehrt: 139,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),
@@ -90,14 +91,18 @@ class Speicher {
 
 const RAHMEN = rahmenOhneBezug({ hoehenversatz: 300 });
 
-/** Ein frisches Journal mit der Probenwelt (drei Schächte, zwei Haltungen, Linie, Fläche, Platte, Pfosten, Erdbau). */
-async function frischeWelt() {
+/**
+ * Ein frisches Journal mit der Probenwelt (drei Schächte, zwei Haltungen, Linie, Fläche, Platte, Pfosten, Erdbau) —
+ * oder mit der Welt, die eine Probe selbst mitbringt (`welt: {erzeugt, geloescht}`, z. B. ein Verschnitt).
+ */
+async function frischeWelt(eigene = null) {
     repo.setBackend(new Speicher());
     setActivePinia(createPinia());
     const ae = useAenderungen();
-    await ae.eintragenVorgang(
-        [...WELT].map(([globalId, plan]) => ({ art: 'erzeugt', globalId, nachher: plan, modell: 'cde', wer: 'probe' })),
-        { vorgang: 'welt' });
+    await ae.eintragenVorgang([
+        ...[...(eigene?.erzeugt ?? WELT)].map(([globalId, plan]) => ({ art: 'erzeugt', globalId, nachher: plan, modell: 'cde', wer: 'probe' })),
+        ...[...(eigene?.geloescht ?? [])].map(([globalId, wert]) => ({ art: 'geloescht', globalId, nachher: wert, modell: 'cde', wer: 'probe' })),
+    ], { vorgang: 'welt' });
     const bearbeitung = useBearbeitung();
     // Die Bibliothek ist eine EINGABE, kein Viewer-Zustand: ohne Oberfläche
     // lädt sie `ladeProfile` mit dem Katalog (V3), hier setzt der Test sie.
@@ -107,7 +112,7 @@ async function frischeWelt() {
 
 /** Ein Werkzeug OHNE Oberfläche auslösen — das Kommando aus der Probe, das Subjekt aus dem Stand. */
 async function ohneOberflaeche(probe) {
-    const { bearbeitung } = await frischeWelt();
+    const { bearbeitung } = await frischeWelt(probe.welt ?? null);
     let n = 0;
     const kennungsgeber = (art) => (art === 'operation' ? `op-p${n++}` : `cde-p${n++}`);
     try {

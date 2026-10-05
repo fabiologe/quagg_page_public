@@ -125,3 +125,31 @@ describe('der Lauf — ein lebendes Rezept', () => {
         expect(l.ableitungen.get(plan.ableitung)?.befunde?.map(x => x.regel) ?? []).toContain('verschnitt_leer');
     });
 });
+
+describe('Verschnitt lösen (O1-Rest)', () => {
+    it('das Ergebnis weg, Wand und Sockel wieder sichtbar und wieder Kommandoziel — ein Vorgang', async () => {
+        await verschneide('vereinigung');
+        const [gid] = teil();
+        const n = ae.eintraege.length;
+        const r = await b.fuehreAus(kommando('verschnitt-loesen', { ziel: [gid], werte: {} }));
+        expect(r.ausgefuehrt, r.grund).toBe(true);
+        expect(new Set(ae.eintraege.slice(n).map(x => x.vorgang)).size).toBe(1);
+        expect(teil()).toBeUndefined();
+        const verdeckt = ae.wirksamerStand('geloescht');
+        expect(verdeckt.get('cde-W') ?? null).toBe(null);
+        expect(verdeckt.get('cde-P') ?? null).toBe(null);
+        // Der Sockel ist wieder ein Ziel (vorher E8: verborgen → abgelehnt).
+        expect((await b.fuehreAus(kommando('platte-dicke-setzen', { ziel: ['cde-P'], werte: { dicke: 0.8 } }))).ausgefuehrt).toBe(true);
+    });
+
+    it('nur an einem Verschnitt angeboten; an einer Wand abgelehnt, mit Grund', async () => {
+        await verschneide('vereinigung');
+        const [, plan] = teil();
+        const an = (rezept) => passende({ bauform: 'koerper', guete: 'gemessen' }, { eigenes: true, rezept: rezeptNach(rezept) }).map(w => w.id);
+        expect(an(plan.rezept)).toContain('verschnitt-loesen');
+        expect(an('platte')).not.toContain('verschnitt-loesen');
+        await b.fuehreAus(kommando('verschnitt-loesen', { ziel: [teil()[0]], werte: {} }));
+        const r = await b.fuehreAus(kommando('verschnitt-loesen', { ziel: ['cde-W'], werte: {} }));
+        expect(r.ausgefuehrt).toBe(false);
+    });
+});

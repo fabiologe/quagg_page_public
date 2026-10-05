@@ -158,6 +158,19 @@ export const VORLAGEN = Object.freeze([
 ]);
 const KANDIDATEN = kandidatenAus({ wirksamerStand, vorlagen: VORLAGEN });
 
+/** Eine Welt mit einem Verschnitt — W1 ∪ PL1 über das echte „Verschneiden", die Probenwelt bleibt, wie sie ist. */
+const VERSCHNITT = (() => {
+    let i = 0;
+    const schritte = mitKennungen((art) => (art === 'operation' ? `op-vs${i++}` : `cde-VS${i++}`),
+        () => nachId('verschneiden').anwenden(eigen('cde-W1'), { mit: 'cde-PL1', art: 'vereinigung' }, { kandidatenVon: KANDIDATEN }));
+    const erzeugt = new Map(WELT), geloescht = new Map();
+    for (const s of schritte) (s.art === 'geloescht' ? geloescht : erzeugt).set(s.globalId, s.nachher);
+    const stand = (art) => (art === 'erzeugt' ? erzeugt : art === 'geloescht' ? geloescht : new Map());
+    const gid = [...erzeugt].find(([, p]) => p?.parameter?.quellen?.a === 'cde-W1')?.[0];
+    return { el: subjektAusStand(gid, { wirksamerStand: stand, rahmen: rahmenOhneBezug({ hoehenversatz: HV }) }),
+             kandidaten: kandidatenAus({ wirksamerStand: stand }), welt: { erzeugt, geloescht } };
+})();
+
 /** Die Erzeugen-Subjekte: das Gezeichnete an der Stelle des angeklickten Bauteils. */
 const zug = (...punkte) => ({ punkte, hoehenversatz: HV });
 
@@ -355,6 +368,8 @@ const NEU = [
     // Teil XXXII, O4: die Haltung aufs Gelände legen — Höhen absolut, wie der Viewer sie vorbelegt.
     { id: 'aufs-gelaende-legen', el: eigen('cde-H1'), werte: [{ abstand: -1.2, hoehen: eigen('cde-H1').stand.bauplan.parameter.punkte.map((p, i) => p[1] + 2 + i) }] },
     { id: 'verschneiden', el: eigen('cde-W1'), werte: [{ mit: 'cde-PL1', art: 'vereinigung' }, { mit: 'cde-PL1', art: 'differenz' }], kandidaten: KANDIDATEN },
+    // Teil XXXII, O1-Rest: den Verschnitt aus „Verschneiden" (eigene kleine Welt, die Probenwelt bleibt unberührt) lösen.
+    { id: 'verschnitt-loesen', el: VERSCHNITT.el, werte: [{}], kandidaten: VERSCHNITT.kandidaten, welt: VERSCHNITT.welt },
 ];
 
 /**

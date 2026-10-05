@@ -94,6 +94,7 @@ import { erzeugePlanGesten } from '../composables/usePlanGesten.js';
 import { erstelleCanvasDoc } from '../services/CanvasDoc.js';
 import { fanglinienFuer, fange, rasterFuerMassstab } from '../services/Fanglinien.js';
 import { griffeFrei, griffeFuer } from '../services/Griffe.js';
+import { planGriffPx, planTrefferPx, pxInMetern } from '../services/PlanTreffer.js';
 import { drawVectorPlan, makeWorldTransform } from '../services/IfcVectorPlotter.js';
 import { styleToLegacy } from '../services/VectorStyleEngine.js';
 import { _drawTitleBlock, _drawWatermark } from '../services/IfcPdfExporter.js';
@@ -448,7 +449,7 @@ function zeichneGriffe(ctx, dpr, versatzX, versatzY) {
   }
 
   // Die ruhenden Griffe.
-  const radius = grobzeiger ? 7 : 4.5;
+  const radius = planGriffPx(grobzeiger);              // CSS-Pixel wie im Raum (K3/R3), nicht Papier-mm
   ctx.lineWidth = 1.5;
   for (const g of griffe.value) {
     if (z && g.globalId === z.globalId) continue;
@@ -660,14 +661,15 @@ function zeigerZuWelt(ev) {
 }
 
 /**
- * Was in Weltmetern noch als „getroffen" gilt.
+ * Was in Weltmetern noch als „getroffen" gilt — Griff, Planinhalt, Fang.
  *
- * Sechs Papier-Millimeter, in Weltmeter umgerechnet — was nah heißt, hängt
- * vom Maßstab ab: bei 1:1000 sind 6 mm sechs Meter, bei 1:50 dreißig
- * Zentimeter.
+ * Bis Teil XXXII waren es sechs Papier-Millimeter: auf dem Schirm hing das am
+ * Zoom (bei kleiner Lupe traf der Finger kaum, bei grosser griff er weit
+ * daneben). Jetzt die Trefferfläche des Raums in BILDSCHIRMPIXELN
+ * (`PlanTreffer.js`), in Weltmeter umgerechnet über Zoom und Massstab.
  */
 function trefferRadius() {
-  return (6 / 1000) * ansicht.massstab;
+  return pxInMetern(planTrefferPx(grobzeiger), { pxProMm: ansicht.pxProMm, massstab: ansicht.massstab });
 }
 
 /**

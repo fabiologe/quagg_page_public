@@ -214,3 +214,22 @@ Zahlen: Katalog 161, Setzer 92, Reichweite 161/138, angeboten +1 an Wand/Rohr/Pl
   - **Gefunden:** Die Vorbelegung war leer, weil `hoeheAn` nur einen fertigen Sampler liest und jeder Aufbau ihn
     verwirft. Der Viewer baut ihn jetzt nach jedem Aufbau vor (Test hält die Zeile).
   - Ohne Gelände unter dem Bauteil (erste Probe): die Ablehnung „kein Gelände gelesen", wie vorgesehen.
+
+### Nachzug — Verschnitt lösen (O1-Rest) und Lageplan-Treffer in Pixeln (K3/R3)
+
+- **Verschnitt lösen:** Daten-Setzer `verschnittLoesen`, nur am Ergebnis eines Verschneidens (`nurRezept`; erkannt am
+  Rezept mit `arten`, kein Rezeptname im Vergleich, W3). Ein Vorgang: die Teile der Ableitung zurückgenommen
+  (`zuruecknahmeEintrag`), A und B wieder sichtbar (`geloescht` → null). Damit schließt sich die Grenze aus Block 2:
+  wer A umbauen will, löst den Verschnitt, auch wenn danach anderes geschah. Rückgängig ginge nur, solange das
+  Verschneiden der letzte Schritt war.
+
+  Tests in `verschnitt.test.js`:
+  - Ergebnis weg, beide wieder sichtbar und wieder Kommandoziel (Plattendicke setzen geht), ein Vorgang.
+  - Nur am Verschnitt angeboten, an einer Wand abgelehnt.
+
+  Gegenprobe ohne das Wiederzeigen: rot. Die Probe bringt ihre eigene Welt mit (`welt` in `werkzeugProben`, gelesen
+  von `reichweite`), damit die Probenwelt anderer Tests unverändert bleibt. Katalog 162, Setzer 93, Reichweite 162/139.
+- **Lageplan-Treffer in Pixeln:** `services/PlanTreffer.js`. Griff, Planinhalt und Fang treffen im Lageplan jetzt in
+  **Bildschirmpixeln** wie im Raum: Finger `TREFFER_PX` 22 / Griff `GRIFF_PX` 12, Maus die Hälfte. Vorher waren es
+  6 Papier-mm, auf dem Schirm also 6 × Zoom. Im Browser gemessen (iPad, Maßstab 1:500):
+  **22 px bei Zoom 1, 4 und 0,3**; vorher wären es 6, 24 und 1,8 px gewesen. Test `planTreffer.test.js` (3).
