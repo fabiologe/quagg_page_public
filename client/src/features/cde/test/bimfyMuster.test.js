@@ -214,14 +214,60 @@ describe('Muster · Rohrwand', () => {
         // Kleine Nennweiten: nie unter 3,2 mm; SN 16 = SDR 27,6.
         expect(rohrwand({ dn: 0.11, material: 'PVC', sn: 'SN4' }).wanddicke).toBe(0.0032);
         expect(rohrwand({ dn: 0.4, material: 'PVC', sn: 'SN16' }).wanddicke).toBe(0.0145);
-        expect(rohrwand({ dn: 0.4, material: 'PP' }).herleitung.wanddicke.art).toBe('annahme');
+        expect(rohrwand({ dn: 0.4, material: 'PP' }).herleitung.wanddicke).toMatchObject({ art: 'norm', text: expect.stringContaining('SDR 29 (SN8, angenommen)') });
     });
-    it('Steinzeug und Beton: DN ist innen, die Wand ein gekennzeichneter Faustwert', () => {
-        const stz = rohrwand({ dn: 0.3, material: 'STZ' });
-        expect(stz).toMatchObject({ dInnen: 0.3, dnBezug: 'innen' });
-        expect(stz.herleitung.wanddicke.art).toBe('annahme');
-        expect(rohrwand({ dn: 1, material: 'SB' }).wanddicke).toBe(0.1159);
+    it('Beton (DIN V 1201): DN innen, Wand aus dem Spitzenden-Aussendurchmesser, Glockenmuffe', () => {
+        // Stützwerte der Norm (Tab. 7, unbewehrt): DN 300 → dsp 386 mm, DN 1000 → 1198 mm.
+        const b300 = rohrwand({ dn: 0.3, material: 'B' });
+        expect(b300).toMatchObject({ dInnen: 0.3, dAussen: 0.386, dnBezug: 'innen', dnFeld: 0.3, baulaenge: 2.5 });
+        expect(rohrwand({ dn: 1, material: 'SB' }).dAussen).toBe(1.198);       // vorher: 1,2318 (Faustwert)
+        expect(b300.herleitung.wanddicke).toMatchObject({ art: 'norm', beleg: { norm: 'DIN V 1201:2004-08' } });
+        // Muffe: Spalt 7,8 mm, Muffenwand 50 mm, Länge 80 mm (Tab. 3 und 7) — die Formeln treffen sie auf 1 mm.
+        expect(b300.verbindung.art).toBe('glockenmuffe');
+        expect(b300.verbindung.innen - b300.dAussen).toBeCloseTo(2 * 0.0078, 3);
+        expect(b300.verbindung.aussen - b300.verbindung.innen).toBeCloseTo(2 * 0.05, 2);
+        expect(b300.verbindung.tiefe).toBeCloseTo(0.08, 2);
+        expect(rohrwand({ dn: 0.3, material: 'B', wanddicke: 0.05 })).toMatchObject({ wanddicke: 0.05, dAussen: 0.4 });
         expect(rohrwand({ dn: 0.3, material: 'B', wanddicke: 0.05 }).herleitung.wanddicke.art).toBe('isybau');
+    });
+    it('Steinzeug (DIN EN 295-1): DN innen, Wand und Muffe als gekennzeichnete Annahme an den Verbindungsmassen', () => {
+        const stz = rohrwand({ dn: 0.15, material: 'STZ' });
+        expect(stz).toMatchObject({ dInnen: 0.15, dAussen: 0.186, dnBezug: 'innen' });  // d3 DN 150: 186 mm
+        expect(stz.herleitung.wanddicke.art).toBe('annahme');
+        expect(stz.verbindung.innen).toBeGreaterThan(stz.dAussen);
+        expect(rohrwand({ dn: 0.3, material: 'STZ' }).baulaenge).toBe(2.5);
+    });
+    it('Kunststoff der alten DN-Reihe: PP und PVC „DN 150" sind DN/OD 160, das Feld DN bekommt 160', () => {
+        for (const material of ['PP', 'PVC', 'KST']) {
+            const w = rohrwand({ dn: 0.15, material });
+            expect(w, material).toMatchObject({ dAussen: 0.16, dnBezug: 'aussen', dnFeld: 0.16 });
+            expect(w.hinweise[0]).toMatch(/DN\/OD 160/);
+        }
+        // Innen bleiben rund 150 mm — vorher war das PP-Rohr innen 140 mm.
+        expect(rohrwand({ dn: 0.15, material: 'PP' }).dInnen).toBeCloseTo(0.149, 3);
+        expect(rohrwand({ dn: 0.2, material: 'PP' }).hinweise).toEqual(['Steifigkeitsklasse fehlt in ISYBAU — SN 8 angenommen']);
+    });
+    it('PP und PE: SDR je Steifigkeitsklasse, Steckmuffe L1 = 0,4·dn + 18 mm, Baulänge 6 m aus der Norm', () => {
+        // DIN EN 1852-1, Tab. 6: DN/OD 315 → L1 144 mm; DIN EN 12666-1: SN 8 = SDR 21 → 315 mm: 15,0 mm.
+        const pp = rohrwand({ dn: 0.315, material: 'PP', sn: 'SN4' });
+        expect(pp.wanddicke).toBe(0.0096);                                       // 315/33
+        expect(pp.verbindung).toMatchObject({ art: 'steckmuffe', tiefe: 0.144 });
+        expect(pp.baulaenge).toBe(6);
+        expect(pp.herleitung.baulaenge.art).toBe('norm');
+        expect(rohrwand({ dn: 0.315, material: 'PEHD', sn: 'SN8' }).wanddicke).toBe(0.015);
+    });
+    it('Guss: DE aus der Reihe, Wand K9; ohne Norm im Bestand (GFK, Faserzement) eine Annahme mit Kupplung', () => {
+        const g = rohrwand({ dn: 0.3, material: 'GGG' });
+        expect(g.dAussen).toBeCloseTo(0.326, 2);                                  // DE 326 mm
+        expect(g.wanddicke).toBe(0.0072);                                         // 4,5 + 0,009·300
+        const gfk = rohrwand({ dn: 0.5, material: 'GFK' });
+        expect(gfk).toMatchObject({ dnBezug: 'innen', dInnen: 0.5 });
+        expect(gfk.verbindung.art).toBe('kupplung');
+        expect(gfk.herleitung.wanddicke.art).toBe('annahme');
+        // Ortbeton ist kein Rohr aus Rohren: keine Muffe, keine Baulänge.
+        expect(rohrwand({ dn: 0.8, material: 'OB' })).toMatchObject({ verbindung: null, baulaenge: null });
+        // Die Datei geht vor: Regeleinzelrohrlänge.
+        expect(rohrwand({ dn: 0.3, material: 'B', baulaenge: 2 })).toMatchObject({ baulaenge: 2 });
     });
 });
 
@@ -252,7 +298,7 @@ describe('BIMFY I6 · ISYBAU → Normschacht und Rohr mit Wand, über den Komman
         const { kommandos, fehler } = kommandosFuer(zeilen);
         expect(fehler).toEqual([]);
         const rohr = kommandos.find(k => k.kommando.werkzeug === 'rohr-zeichnen').kommando;
-        expect(rohr.werte).toMatchObject({ dn: 300, wanddicke: 27.3, dnBezug: 'innen' });
+        expect(rohr.werte).toMatchObject({ dn: 300, wanddicke: 33, dnBezug: 'innen' });
         const s1 = kommandos.find(k => k.geo.name === 'S1').kommando;
         expect(s1.werte).toMatchObject({ tiefe: 3, dn: 1, oeffnung: 0.625, abgang: 0, zulauf: -1, deckelklasse: 4, oberteil: 1 });
 
@@ -274,7 +320,7 @@ describe('BIMFY I6 · ISYBAU → Normschacht und Rohr mit Wand, über den Komman
         expect(teileVon('S2')).toEqual(['schachtunterteil', 'berme', 'schachtring', 'schachtring', 'schachthals', 'auflagering', 'auflagering',
                                         'schachtabdeckung', 'steigeisen']);
         const rohrPlan = plaene.find(p => p.rezept === 'rohr');
-        expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 27.3, dnBezug: 'innen' });
+        expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 33, dnBezug: 'innen' });
         // Die Sohle des Rohrs bleibt die Sohle aus ISYBAU — innen, nicht unter der Wand.
         expect(rezeptNach('rohr').sohlen.lies(rohrPlan.parameter).map(v => Math.round(v * 1000) / 1000)).toEqual([102, 101.7]);
     });

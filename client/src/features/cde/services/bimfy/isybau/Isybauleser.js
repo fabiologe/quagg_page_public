@@ -277,6 +277,8 @@ function _kante(obj, warn) {
         sohleZulauf: ka ? _m(ka, 'SohlhoeheZulauf') : null,
         sohleAblauf: ka ? _m(ka, 'SohlhoeheAblauf') : null,
         laenge: ka ? _m(ka, 'Laenge') : null,
+        // Die Länge EINES Rohres (AH15, Tab. A-7-15) — wo sie steht, gilt sie vor der Normannahme.
+        rohrlaenge: ka ? _m(ka, 'Regeleinzelrohrlaenge') : null,
         material: ka ? _code(ka, 'Material') : null,
         profil: pr ? {
             art: profilart,

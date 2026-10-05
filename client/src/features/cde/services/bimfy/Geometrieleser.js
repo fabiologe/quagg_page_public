@@ -476,7 +476,7 @@ export function liesIsybau(text) {
         const punkte = kantenzugMitSohle(k, (n) => nachName.get(n));
         if (!punkte) { warnungen.push(`ISYBAU: ${k.art} „${k.name}" ohne Lage und ohne bekannte Knoten übergangen`); continue; }
         const dn = k.profil?.hoehe ?? k.profil?.breite ?? null;
-        const wand = dn && (k.profil?.art === 0 || k.profil?.art === 4 || k.profil?.art === null) ? rohrwand({ dn, material: k.material }) : null;
+        const wand = dn && (k.profil?.art === 0 || k.profil?.art === 4 || k.profil?.art === null) ? rohrwand({ dn, material: k.material, baulaenge: k.rohrlaenge }) : null;
         if (k.profil && ![0, 4, null].includes(k.profil.art)) {
             warnungen.push(`ISYBAU: ${k.art} „${k.name}": Profilart ${k.profil.art} wird vorerst als Kreis gebaut`);
         }

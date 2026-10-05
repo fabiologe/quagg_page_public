@@ -31,12 +31,24 @@ export const B = Object.freeze({
     abdeckungKlasse: beleg('DIN EN 124-1:2015-09', '4.1 und 4.2'),
     abdeckungEinlegetiefe: beleg('DIN EN 124-1:2015-09', 'Anforderung Einlegetiefe'),
     pvc: beleg('DIN EN 1401-1:2019-09', '3.11 (SDR) und 3.12 (SN)'),
-    pp: beleg('DIN EN 1852-1:2018-03', '3.10 (SDR)'),
-    pe: beleg('DIN EN 12666-1:2011-11', '3.1.2.10 (SDR)'),
+    pvcMuffe: beleg('DIN EN 1401-1:2019-09', 'Tabellen 7 und 8 (Steckmuffe)'),
+    pp: beleg('DIN EN 1852-1:2018-03', '3.10 (SDR) und Tabelle 4'),
+    ppMuffe: beleg('DIN EN 1852-1:2018-03', 'Tabelle 6 (Steckmuffe, Fussnote a: Baulänge 6 m)'),
+    pe: beleg('DIN EN 12666-1:2011-11', '3.1.2.10 (SDR) und Tabelle 3'),
+    peMuffe: beleg('DIN EN 12666-1:2011-11', 'Tabelle 4 (Formeln für dn > 630, Fussnote a: Baulänge 6 m)'),
+    alteDn: beleg('DIN 19534-1', 'Tabellen 4 und 5 (alte DN-Reihe der KG-Rohre → Aussendurchmesser)'),
+    dnBezug: beleg('DWA-A 139:2019', '3.9 (DN/ID oder DN/OD)'),
     betonDn: beleg('DIN EN 1916', '3.1.16 (DN = Innendurchmesser)'),
     betonWand: beleg('DIN EN 1916', '4.3.3.1 (Wanddicke nach Werksunterlagen)'),
+    betonSpitzende: beleg('DIN V 1201:2004-08', 'Tabelle 7 (Spitzenden-Aussendurchmesser, Empfehlung)'),
+    betonMuffe: beleg('DIN V 1201:2004-08', 'Tabellen 3 und 7 (Glockenmuffe)'),
+    betonBaulaenge: beleg('DIN V 1201:2004-08', '4.3.3.1 und Tabelle 2 (Bezeichnungsbeispiele)'),
     steinzeugWand: beleg('DIN EN 295-1:2013-05', 'Anhang B.3 (Wanddicke vom Hersteller)'),
     steinzeugDi: beleg('DIN EN 295-1:2013-05', 'Tabelle 1'),
+    steinzeugVerbindung: beleg('DIN EN 295-1:2013-05', 'Tabellen 13 und 14 (Verbindungsmasse)'),
+    steinzeugBaulaenge: beleg('DIN EN 295-1:2013-05', 'Tabelle 2 (bevorzugte Baulängen)'),
+    gussWand: beleg('DWA-A 161:2014', 'Tabelle 19 (Mindest-Gusswanddicke)'),
+    gussAussen: beleg('DIN EN 545', 'Tabelle 17 (Aussendurchmesser DE, aus Herstellerkatalog)'),
 });
 
 /** Nennweiten der Schachtfertigteile (DIN 4034-1, Abschnitt 1). */
@@ -102,8 +114,18 @@ export const PVC_SDR = Object.freeze({ SN2: 51, SN4: 41, SN8: 34, SN16: 27.6 });
 /** Kleinste Wanddicke kleiner Nennweiten (DIN EN 1401-1, Tabelle 6, Fussnote b: 3,2 mm). */
 export const PVC_EMIN_UNTEN = 0.0032;
 
-/** Steinzeug: Mindest-Innendurchmesser in mm je DN (DIN EN 295-1:2013, Tabelle 1). */
-export const STEINZEUG_DI_MIN = Object.freeze({
-    100: 96, 125: 121, 150: 146, 200: 195, 225: 219, 250: 244, 300: 293, 350: 341, 400: 390, 450: 439,
-    500: 487, 600: 585, 700: 682, 800: 780, 900: 878, 1000: 975, 1200: 1170, 1400: 1365,
-});
+/** Steinzeug: Mindest-Innendurchmesser 97,5 % der Nennweite (DIN EN 295-1:2013, Tabelle 1 und Regel darunter). */
+export const STEINZEUG_DI_MIN_ANTEIL = 0.975;
+
+/** Kunststoff: Steifigkeitsklasse → SDR (DIN EN 1852-1, Tabelle 4; DIN EN 12666-1, Tabelle 3). */
+export const PP_SDR = Object.freeze({ SN4: 33, SN8: 29, SN16: 22 });
+export const PE_SDR = Object.freeze({ SN4: 26, SN8: 21, SN16: 17 });
+
+/**
+ * Alte DN-Reihe der KG-Rohre (DIN 19534) → Aussendurchmesser, nur wo sie abweicht:
+ * DN 100 → 110, 150 → 160, 300 → 315, 600 → 630 (Meter). „PVC DN 150" in Bestandsdaten ist DN/OD 160.
+ */
+export const ALTE_DN_NACH_OD = Object.freeze({ 0.1: 0.11, 0.15: 0.16, 0.3: 0.315, 0.6: 0.63 });
+
+/** Aussendurchmesser-Reihe der Kunststoff-Kanalrohre in mm (DIN EN 1401-1, 1852-1, 12666-1). */
+export const OD_REIHE_MM = Object.freeze([110, 125, 160, 200, 250, 315, 355, 400, 450, 500, 560, 630, 710, 800, 900, 1000, 1200, 1400, 1600]);

@@ -337,7 +337,12 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
             werte[profil.durchmesser] = _mass(geo.durchmesser, feldEinheit(profil.durchmesser));
         }
         // … und seine Wand (BIMFY I6): Dicke aus dem Muster `Rohrwand`, DN innen oder aussen.
+        // Das Feld DN bekommt den Durchmesser seines Bezugs (I8): Kunststoff „DN 150"
+        // der alten Reihe ist DN/OD 160 — sonst stünde die Wand 5 mm zu weit innen.
         const wand = geo.muster?.rohrwand;
+        if (form === 'zug' && wand && profil.durchmesser && _fin(wand.dnFeld)) {
+            werte[profil.durchmesser] = _mass(wand.dnFeld, feldEinheit(profil.durchmesser));
+        }
         if (form === 'zug' && wand && profil.wanddicke) {
             werte[profil.wanddicke] = Math.round(wand.wanddicke * 1000 * 10) / 10;
             if (typeof profil.bezug === 'string' && !['innen', 'aussen'].includes(profil.bezug)) werte[profil.bezug] = wand.dnBezug;
