@@ -30,6 +30,9 @@ import { normschacht } from './muster/Normschacht.js';
 import { rohrwand } from './muster/Rohrwand.js';
 import { kastenschacht } from './muster/Kastenschacht.js';
 
+/** Durchmesser eines Anschlusspunkts — ISYBAU nennt keinen; DN 150 wie der kleinste Hausanschluss (Annahme). */
+export const ANSCHLUSSPUNKT_DN_M = 0.15;
+
 /** Die Formate, die BIMFY liest — Endung → Leser. */
 export const FORMATE = Object.freeze({
     dxf:     { titel: 'DXF (CAD, Vermessungsplan)', zOben: true },
@@ -454,8 +457,11 @@ export function liesPunktliste(text, { reihenfolge = null } = {}) {
  * weiss (`isybau`) und was das Muster daraus macht (`muster`).
  */
 export function liesIsybau(text) {
-    const { schaechte, kanten, warnungen, gezaehlt } = liesIsybauDaten(text);
+    const { schaechte, kanten, anschlusspunkte = [], bauwerke = [], warnungen, gezaehlt } = liesIsybauDaten(text);
     const nachName = new Map(schaechte.map(s => [s.name, s]));
+    // Für Kanten ohne eigene Geometrie zählen alle Knoten — auch Anschlusspunkte und Bauwerke (I10).
+    const knotenNach = new Map([...nachName,
+        ...[...anschlusspunkte, ...bauwerke].map(k => [k.name, { ort: k.ort, sohle: _fin(k.sohle) ? { hoehe: k.sohle } : null }])]);
     const geometrien = [];
 
     for (const s of schaechte) {
@@ -480,7 +486,7 @@ export function liesIsybau(text) {
     }
 
     for (const k of kanten) {
-        const punkte = kantenzugMitSohle(k, (n) => nachName.get(n));
+        const punkte = kantenzugMitSohle(k, (n) => knotenNach.get(n));
         if (!punkte) { warnungen.push(`ISYBAU: ${k.art} „${k.name}" ohne Lage und ohne bekannte Knoten übergangen`); continue; }
         const dn = k.profil?.hoehe ?? k.profil?.breite ?? null;
         const wand = dn && (k.profil?.art === 0 || k.profil?.art === 4 || k.profil?.art === null) ? rohrwand({ dn, material: k.material, baulaenge: k.rohrlaenge }) : null;
@@ -489,6 +495,31 @@ export function liesIsybau(text) {
         }
         const g = _linienform(punkte, { ebene: _isyEbene(k.art[0].toUpperCase() + k.art.slice(1), k.status), name: k.name });
         if (g) geometrien.push({ ...g, ...(dn ? { durchmesser: dn } : {}), isybau: k, ...(wand ? { muster: { rohrwand: wand } } : {}) });
+    }
+
+    // DIE ANSCHLUSSPUNKTE (I10): ein kleines Formstück auf der Sohle — so hoch wie
+    // sein Durchmesser (DN 150 angenommen, die Datei nennt keinen).
+    for (const a of anschlusspunkte) {
+        if (!a.ort || !_fin(a.sohle)) { warnungen.push(`ISYBAU: Anschlusspunkt „${a.name}" ohne Lage oder Sohle übergangen`); continue; }
+        geometrien.push({
+            art: 'zug', punkte: [{ ...a.ort, hoehe: a.sohle }, { ...a.ort, hoehe: a.sohle + ANSCHLUSSPUNKT_DN_M }],
+            ebene: _isyEbene(`Anschlusspunkt${a.punktkennung ? ` ${a.punktkennung}` : ''}`, a.status), name: a.name,
+            durchmesser: ANSCHLUSSPUNKT_DN_M, dreiD: true, isybau: a,
+        });
+    }
+    // DIE BAUWERKE (I10): der vermessene Umriss auf der Sohle, so hoch wie bis zum Deckel.
+    for (const b of bauwerke) {
+        const hoch = _fin(b.sohle) && _fin(b.deckel) && b.deckel - b.sohle > 0.05 ? b.deckel - b.sohle : null;
+        if (b.umriss?.length >= 3 && hoch) {
+            geometrien.push({ art: 'umriss', punkte: b.umriss.map(p => ({ ost: p.ost, nord: p.nord, hoehe: b.sohle })),
+                              koerperhoehe: hoch, ebene: _isyEbene('Bauwerk', b.status), name: b.name, dreiD: true, isybau: b });
+        } else if (b.ort && hoch) {
+            // Ohne Umriss bleibt ein senkrechter Zug Sohle → Deckel — gebaut wie ein Schacht (Sonderform).
+            geometrien.push({ art: 'zug', punkte: [{ ...b.ort, hoehe: b.sohle }, { ...b.ort, hoehe: b.deckel }], durchmesser: 1,
+                              ebene: _isyEbene('Bauwerk', b.status, ' (ohne Umriss)'), name: b.name, dreiD: true, isybau: b });
+        } else {
+            warnungen.push(`ISYBAU: Bauwerk „${b.name}" ohne Umriss und Höhen übergangen`);
+        }
     }
 
     for (const [art, n] of Object.entries(gezaehlt)) {

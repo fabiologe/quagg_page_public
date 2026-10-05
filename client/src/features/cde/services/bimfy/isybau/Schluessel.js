@@ -73,10 +73,26 @@ export const G105_STATUS = Object.freeze({
     0: 'vorhanden', 1: 'geplant', 2: 'fiktiv', 3: 'außer Betrieb', 4: 'verdämmt/verfüllt', 5: 'sonstige', 6: 'rückgebaut',
 });
 
+/**
+ * G310 Punktkennung (Tab. A-7-218; Bedeutung nach AH15, Tab. A-1-2). Welche
+ * Rolle der Punkt im Netz hat: AP verbindet (Stutzen, Abzweig), die anderen
+ * führen dem Netz Wasser zu — Von-Punkt einer Leitung.
+ */
+export const G310_PUNKTKENNUNG = Object.freeze({
+    AP: 'Anschlusspunkt allgemein', ER: 'Zu-/Ablauf Entwässerungsrinne', GA: 'Gebäudeanschluss',
+    RR: 'Regenfallrohr', SE: 'Straßenablauf',
+});
+
+/** G400 Bauwerkstyp (Tab. A-7-219) — gelesen sind 1 bis 5, der Rest heisst nach seiner Nummer. */
+export const G400_BAUWERKSTYP = Object.freeze({
+    1: 'Pumpwerk', 2: 'Becken', 3: 'Behandlungsanlage', 4: 'Kläranlage', 5: 'Auslaufbauwerk',
+});
+
 /** V106 Punktattribut Abwasser (Tab. A-7-268) — die für die Geometrie tragenden. */
 export const V106 = Object.freeze({
     DMP: 'Schachtdeckelmittelpunkt', SMP: 'Schachtmittelpunkt', HP: 'Höhenpunkt allgemein', SBW: 'Bauwerksrandpunkt',
     KMP: 'Kreismittelpunkt', LHP: 'Leitungs-/Haltungspunkt', RAP: 'Rohranschlusspunkt', KOP: 'Koordinatenbezugspunkt',
+    GOK: 'Geländeoberkante', SBD: 'Bauwerksdeckel',
 });
 
 /** Werkstoffe, deren Rohre auf den AUSSENdurchmesser bezogen benannt sind (DN/OD) — Kunststoff. */

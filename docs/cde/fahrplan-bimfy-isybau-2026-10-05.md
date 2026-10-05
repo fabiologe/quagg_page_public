@@ -205,9 +205,30 @@ Am gezeichneten Schacht bleibt die strenge Regel (E6: 5 cm daneben ist „abweic
 | Schächte ohne Anschluss | 13 | 3 |
 | Anschluss abweichend | 0 | 23 (Sonderform‑Schächte ohne Radius) |
 
+### I10 · Anschlusspunkte und Bauwerke (gebaut)
+
+1. **Anschlusspunkt** (KnotenTyp 1): Rezept `anschlusspunkt`, IfcPipeFitting — JUNCTION für AP,
+   ENTRY für GA, RR, SE, ER (AH15, Tab. A‑1‑2). Sohle an der Lage, Gelände am GOK‑Punkt
+   (A‑1.2.2.2). DN 150 ist angenommen.
+2. **Bauwerk** (KnotenTyp 2): Rezept `sonderbauwerk`, Hülle aus dem Umriss (SBW) von der Sohle bis
+   zum Deckel, GrossVolume. Knoten am Schwerpunkt, Radius bis zum Umriss. Name nach G400.
+3. **Fuge am Symbol.** Die Haltungslänge der Datei passt zu Linie plus Lücken (Median 9 mm),
+   nicht zur Linie (68 cm): der Export kürzt die Linien am Symbol. Am Schacht sind die 0,50 m
+   genau die Innenwand DN 1000 — dort bleibt das Rohrende. Am Anschlusspunkt (kein Körper)
+   wird die Leitung bis zum Punkt verlängert (bis 0,5 m), die Höhe bleibt, die Herleitung sagt es.
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Knoten im Netz | 140 | 341 |
+| lose Rohrenden | 315 | 33 |
+| Anschluss abweichend | 23 | 23 (Sonderform‑Schächte) |
+| verlängerte Leitungen | 0 | 162 |
+| IfcPipeFitting im IFC | 0 | 198 |
+| Prüftor offen | 0 | 0 |
+
 ### Offen nach I8
 
-1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). Offen: Anschlusspunkte und Bauwerke aus ISYBAU als Knoten.
+1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). ~~Anschlusspunkte und Bauwerke~~ — gebaut (I10).
 2. ~~Kastenvorlage für die 32 eckigen Schächte~~ — gebaut (I9).
 3. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
 4. PP profiliert (DIN EN 13476), GFK, Polymerbeton, Faserzement: Normen fehlen im Bestand.

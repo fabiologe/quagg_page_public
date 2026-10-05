@@ -56,6 +56,8 @@ const REZEPT_SCHLUESSEL = Object.freeze([
     'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale',
     // BIMFY I3: ein Teil, das nur eine Vorlage baut (Schachtring …) — kein eigenes Zeichenwerkzeug.
     'nurVorlage',
+    // BIMFY I10: wie ein Knoten aus einem Umriss im Netz steht (Sonderbauwerk).
+    'knoten',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset', 'griff']);
 

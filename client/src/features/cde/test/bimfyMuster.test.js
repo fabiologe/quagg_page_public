@@ -593,3 +593,91 @@ describe('BIMFY I9 · der Normschacht ist ein Knoten im Netz', () => {
         expect(netz.ohneAnschluss).toEqual([]);
     });
 });
+
+describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
+    beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
+    afterEach(() => repo.setBackend(null));
+    // Wie die echte Datei: GA mit Sohle an der Lage und eigenem GOK-Punkt; ein Bauwerk mit Umriss (SBW), KOP unten, SBD oben.
+    const apXml = ({ name = 'GA1', kennung = 'GA', ost = 0, nord = 30, sohle = '101,20', gok = '102,50' } = {}) => `
+  <AbwassertechnischeAnlage><Objektbezeichnung>${name}</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status>
+    <Knoten><KnotenTyp>1</KnotenTyp><Anschlusspunkt><Punktkennung>${kennung}</Punktkennung></Anschlusspunkt></Knoten>
+    <Geometrie><GeoObjekttyp>P</GeoObjekttyp><Geometriedaten><Knoten>
+      <Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${sohle}</Punkthoehe><PunktattributAbwasser>${kennung}</PunktattributAbwasser></Punkt>
+      ${gok ? `<Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${gok}</Punkthoehe><PunktattributAbwasser>GOK</PunktattributAbwasser></Punkt>` : ''}
+    </Knoten></Geometriedaten></Geometrie></AbwassertechnischeAnlage>`;
+    const kante = (a, b) => `<Kante><Start><Rechtswert>${a[0]}</Rechtswert><Hochwert>${a[1]}</Hochwert><PunktattributAbwasser>SBW</PunktattributAbwasser></Start>
+        <Ende><Rechtswert>${b[0]}</Rechtswert><Hochwert>${b[1]}</Hochwert><PunktattributAbwasser>SBW</PunktattributAbwasser></Ende></Kante>`;
+    const bwXml = ({ name = 'RÜ1', typ = 2, ost = 60, nord = 0 } = {}) => {
+        const e = [[ost - 2, nord - 1.5], [ost + 2, nord - 1.5], [ost + 2, nord + 1.5], [ost - 2, nord + 1.5]];
+        return `
+  <AbwassertechnischeAnlage><Objektbezeichnung>${name}</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status>
+    <Knoten><KnotenTyp>2</KnotenTyp><Bauwerk><Bauwerkstyp>${typ}</Bauwerkstyp></Bauwerk></Knoten>
+    <Geometrie><GeoObjekttyp>P</GeoObjekttyp><Geometriedaten><Knoten>
+      <Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>99,00</Punkthoehe><PunktattributAbwasser>KOP</PunktattributAbwasser></Punkt>
+      <Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>103,00</Punkthoehe><PunktattributAbwasser>SBD</PunktattributAbwasser></Punkt>
+    </Knoten><Polygone><Polygon><Polygonart>1</Polygonart>${e.map((p, i) => kante(p, e[(i + 1) % 4])).join('')}</Polygon></Polygone></Geometriedaten></Geometrie>
+  </AbwassertechnischeAnlage>`;
+    };
+    const leitungXml = ({ name, von, bis, oben, unten, start, ende }) => haltungXml({ name, von, bis, oben, unten, dn: 150, material: 'PVC',
+        geometrie: `<Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt><Kante>
+            <Start><Rechtswert>${start[0]}</Rechtswert><Hochwert>${start[1]}</Hochwert><Punkthoehe>${oben}</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Start>
+            <Ende><Rechtswert>${ende[0]}</Rechtswert><Hochwert>${ende[1]}</Hochwert><Punkthoehe>${unten}</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Ende>
+          </Kante></Polygon></Polygone></Geometriedaten></Geometrie>` }).replace('<Haltung><HaltungsFunktion>0</HaltungsFunktion></Haltung>', '');
+
+    it('der Leser: Sohle an der Lage, Gelände am GOK; das Bauwerk mit Umriss, Sohle unten und Deckel oben', () => {
+        const d = liesIsybauDaten(datei(apXml(), bwXml()));
+        expect(d.anschlusspunkte[0]).toMatchObject({ art: 'anschlusspunkt', name: 'GA1', punktkennung: 'GA', sohle: 101.2, gelaende: 102.5, ort: { ost: 0, nord: 30 } });
+        expect(d.bauwerke[0]).toMatchObject({ art: 'bauwerk', name: 'RÜ1', bauwerkstyp: 2, sohle: 99, deckel: 103 });
+        expect(d.bauwerke[0].umriss.length).toBeGreaterThanOrEqual(4);
+        expect(d.gezaehlt).toEqual({ andere: 0 });                                  // vorher: 1 Anschlusspunkt, 1 Bauwerk übergangen
+    });
+
+    it('übersetzt und verknüpft: GA → Schacht → Bauwerk, jede Kante an beiden Enden, das Bauwerk als Hülle', async () => {
+        const text = datei(apXml(), schachtXml({ ost: 0, nord: 0 }), bwXml(),
+            leitungXml({ name: 'L1', von: 'GA1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 30], ende: [0, 0.6] }),
+            haltungXml({ name: 'H1', von: 'S1', bis: 'RÜ1', oben: '102,00', unten: '101,70', geometrie: `<Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt><Kante>
+            <Start><Rechtswert>0,6</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>102</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Start>
+            <Ende><Rechtswert>58</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>101,7</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Ende>
+          </Kante></Polygon></Polygone></Geometriedaten></Geometrie>` }));
+        const { geometrien, warnungen } = liesIsybau(text);
+        expect(warnungen.filter(w => /übergangen/.test(w))).toEqual([]);
+        const zeilen = gruppiere(geometrien);
+        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual(expect.arrayContaining([
+            ['ISYBAU Anschlusspunkt GA', 'anschlusspunkt'], ['ISYBAU Bauwerk', 'sonderbauwerk']]));
+        const { kommandos, fehler } = kommandosFuer(zeilen);
+        expect(fehler).toEqual([]);
+        const k = (name) => kommandos.find(x => x.geo.name === name).kommando;
+        expect(k('GA1').werte).toMatchObject({ predefinedType: 'ENTRY', dn: 150 });
+        expect(k('RÜ1').werte).toMatchObject({ objektTyp: 'Becken', bauwerkshoehe: 4 });
+        expect(k('L1').eingaben.zug[0].knoten).toBe(k('GA1').neu[0]);
+        expect(k('H1').eingaben.zug.at(-1).knoten).toBe(k('RÜ1').neu[0]);
+
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-i10-${++n}`, ziel: [], wer: 'test', wann: '2026-10-05T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-i10-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const stand = useAenderungen().wirksamerStand('erzeugt');
+        const { netz, knoten } = eigeneNetzauskunft(stand);
+        expect(knoten.map(x => x.name).sort()).toEqual(['GA1', 'RÜ1', 'S1']);
+        expect(netz.loseEnden).toEqual([]);
+        expect(netz.abweichend).toEqual([]);                                       // H1 endet 2 m vor der Mitte — an der Bauwerkswand
+        // Die Hülle: 4 × 3 m Umriss, 4 m hoch = 48 m³ brutto.
+        const huelle = [...stand.values()].find(p => p.rezept === 'sonderbauwerk');
+        const kp = rezeptNach('sonderbauwerk').formAus(huelle.parameter, 'koerper');
+        expect(meshVolume(kp.positions, kp.positions.length / 9).volume).toBeCloseTo(48, 6);
+    });
+
+    it('die Fuge am Gebäudeanschluss: 28 cm Zeichenkürzung werden geschlossen, die Höhe bleibt, die Herleitung sagt es', () => {
+        // Echte Datei: Leitungen enden 0,25–0,30 m vor dem GA; ISYBAU-Länge = Linie + Fugen (Median 9 mm).
+        const text = datei(apXml(), schachtXml({ ost: 0, nord: 0 }),
+            leitungXml({ name: 'L1', von: 'GA1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 29.72], ende: [0, 0.5] }));
+        const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
+        const l1 = kommandos.find(x => x.geo.name === 'L1').kommando;
+        expect(l1.eingaben.zug[0]).toMatchObject({ ost: 0, nord: 30, hoehe: 101.2 });      // vorher: nord 29,72
+        expect(l1.eingaben.zug.at(-1)).toMatchObject({ nord: 0.5 });                       // am Schacht bleibt sie an der Innenwand
+        expect(l1.werte.herleitung).toMatch(/Anfang um 0,28 m bis GA1 verlängert/);
+    });
+});

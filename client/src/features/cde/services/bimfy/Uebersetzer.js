@@ -24,6 +24,7 @@
  * Rein: kein Vue, kein Store, keine Engine.
  */
 import { herleitungText } from './muster/Herleitung.js';
+import { G400_BAUWERKSTYP } from './isybau/Schluessel.js';
 import { REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
 
@@ -41,7 +42,8 @@ const _r3 = (v) => Math.round(v * 1000) / 1000;
 export function rezeptform(rezept) {
     if (!rezept) return null;
     if (rezept.hoechstPunkte === 1) return 'ort';
-    if (rezept.netzrolle === 'knoten') return 'knoten';
+    // Ein Knoten aus einem Umriss (Sonderbauwerk, I10) wird als Umriss gezeichnet.
+    if (rezept.netzrolle === 'knoten' && !rezept.geschlossen) return 'knoten';
     return rezept.geschlossen ? 'umriss' : 'zug';
 }
 
@@ -181,6 +183,9 @@ const _vorgabeKlasse = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? 'IFCBU
 export function vorschlagFuer(geo) {
     if (_mitNormschacht(geo)) return { rezept: NORMSCHACHT_WAHL.id, kategorie: NORMSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht, Muster DIN 4034-1' };
     if (_mitKasten(geo)) return { rezept: KASTENSCHACHT_WAHL.id, kategorie: KASTENSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht rechteckig, Muster Kasten' };
+    // I10: Anschlusspunkte und Bauwerke aus ISYBAU — Knoten im Netz.
+    if (geo?.isybau?.art === 'anschlusspunkt' && rezeptNach('anschlusspunkt')) return { rezept: 'anschlusspunkt', kategorie: 'IFCPIPEFITTING', grund: 'ISYBAU-Anschlusspunkt' };
+    if (geo?.isybau?.art === 'bauwerk' && geo.art === 'umriss' && rezeptNach('sonderbauwerk')) return { rezept: 'sonderbauwerk', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', grund: 'ISYBAU-Bauwerk, Hülle aus dem Umriss' };
     const passende = rezepteFuer(geo);
     const text = `${geo?.ebene ?? ''} ${geo?.name ?? ''}`.toLowerCase();
     for (const s of STICHWORTE) {
@@ -370,6 +375,15 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
         if (form === 'zug' && wand?.herleitung) werte.herleitung = herleitungText(wand.herleitung);
     }
 
+    // I10: die Ausführung aus ISYBAU — ein AP verbindet, die anderen führen Wasser zu
+    // (AH15, Tab. A-1-2); ein Bauwerk heisst nach seinem Typ (G400).
+    const isy = geo.isybau;
+    if (isy?.art === 'anschlusspunkt' && 'predefinedType' in werte) werte.predefinedType = !isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY';
+    if (isy?.art === 'bauwerk' && 'objektTyp' in werte) {
+        werte.objektTyp = G400_BAUWERKSTYP[isy.bauwerkstyp] ?? (isy.bauwerkstyp ? `Bauwerkstyp ${isy.bauwerkstyp}` : 'Sonderbauwerk');
+    }
+    if (form === 'umriss' && _fin(geo.koerperhoehe) && g.dicke) werte[g.dicke] = _mass(geo.koerperhoehe, feldEinheit(g.dicke));
+
     if (punkte.length < (rezept.mindestPunkte ?? 1)) {
         return { fehler: `${rezept.titel}: mindestens ${rezept.mindestPunkte} Punkte, ${punkte.length} vorhanden` };
     }
@@ -409,21 +423,42 @@ export function kommandosFuer(zeilen, opt = {}) {
  * Schachtwand, nicht in der Mitte — das Netz verknüpft über die Erklärung.
  */
 function _verknuepfe(kommandos, kennung) {
-    const jeSchacht = new Map();
+    const jeKnoten = new Map();
     for (const { geo, kommando } of kommandos) {
-        if (geo?.isybau?.art !== 'schacht' || !geo.name || jeSchacht.has(geo.name)) continue;
+        if (!['schacht', 'anschlusspunkt', 'bauwerk'].includes(geo?.isybau?.art) || !geo.name || jeKnoten.has(geo.name)) continue;
         const id = kennung('bauteil');
         kommando.neu = [id];
-        jeSchacht.set(geo.name, id);
+        // Ein Anschlusspunkt hat keinen Körper, an dem ein Rohr enden könnte — seine Lage zählt.
+        const lage = geo.isybau.art === 'anschlusspunkt' ? kommando.eingaben?.zug?.[0] ?? null : null;
+        jeKnoten.set(geo.name, { id, lage });
     }
     for (const { geo, kommando } of kommandos) {
         const zug = kommando.eingaben?.zug;
-        if (!geo?.isybau || geo.isybau.art === 'schacht' || !Array.isArray(zug) || zug.length < 2) continue;
-        const von = jeSchacht.get(geo.isybau.von), bis = jeSchacht.get(geo.isybau.bis);
-        if (von) zug[0] = { ...zug[0], knoten: von };
-        if (bis) zug[zug.length - 1] = { ...zug[zug.length - 1], knoten: bis };
+        if (!['haltung', 'leitung', 'rinne', 'gerinne'].includes(geo?.isybau?.art) || !Array.isArray(zug) || zug.length < 2) continue;
+        const verlaengert = [];
+        for (const [i, ende] of [[0, 'von'], [zug.length - 1, 'bis']]) {
+            const k = jeKnoten.get(geo.isybau[ende]);
+            if (!k) continue;
+            zug[i] = { ...zug[i], knoten: k.id };
+            // DIE FUGE AM ANSCHLUSSPUNKT (I10): der CAD-Export kürzt die Linie am Symbol
+            // (echte Datei: 0,25–0,30 m); die ISYBAU-Länge zählt von Knoten zu Knoten.
+            // Das Rohr reicht bis zum Punkt — die Höhe bleibt die gemessene.
+            const l = k.lage;
+            const fuge = l ? Math.hypot(l.ost - zug[i].ost, l.nord - zug[i].nord) : 0;
+            if (l && fuge > 0.001 && fuge <= FUGE_ANSCHLUSSPUNKT_M) {
+                zug[i] = { ...zug[i], ost: l.ost, nord: l.nord };
+                verlaengert.push(`${ende === 'von' ? 'Anfang' : 'Ende'} um ${fuge.toFixed(2).replace('.', ',')} m bis ${geo.isybau[ende]}`);
+            }
+        }
+        if (verlaengert.length && 'herleitung' in (kommando.werte ?? {})) {
+            const satz = `lage: isybau — ${verlaengert.join(', ')} verlängert (Fuge am Symbol; die ISYBAU-Länge zählt von Knoten zu Knoten)`;
+            kommando.werte.herleitung = kommando.werte.herleitung ? `${kommando.werte.herleitung}; ${satz}` : satz;
+        }
     }
 }
+
+/** Bis zu dieser Fuge schliesst BIMFY eine Leitung an ihren Anschlusspunkt an (I10). */
+export const FUGE_ANSCHLUSSPUNKT_M = 0.5;
 
 /** Die Ausdehnung aller Geometrien in der Draufsicht — für Vorschau und lokalen Versatz. */
 export function ausdehnung(geometrien) {

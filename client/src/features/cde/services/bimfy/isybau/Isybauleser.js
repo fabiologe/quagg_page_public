@@ -296,8 +296,50 @@ function _kante(obj, warn) {
 }
 
 /**
+ * Ein Anschlusspunkt (Knoten, KnotenTyp 1). Die Lagekoordinate trägt die
+ * SOHLE, ein eigener Punkt (GOK) die Geländeoberkante (AH15, A-1.2.2.2).
+ */
+function _anschlusspunkt(obj) {
+    const geo = _geometrie(obj);
+    const ap = _pfad(obj, 'Knoten/Anschlusspunkt');
+    const lage = geo.punkte.find(p => p.attribut !== 'GOK' && _fin(p.ost) && _fin(p.nord)) ?? null;
+    const gok = geo.punkte.find(p => p.attribut === 'GOK');
+    return {
+        ..._kopf(obj, geo),
+        art: 'anschlusspunkt',
+        punktkennung: ap ? _code(ap, 'Punktkennung') : null,
+        uebergabepunkt: ap ? _bool(ap, 'Uebergabepunkt') : null,
+        ort: lage ? { ost: lage.ost, nord: lage.nord } : null,
+        sohle: lage && _fin(lage.hoehe) ? lage.hoehe : null,
+        gelaende: gok && _fin(gok.hoehe) ? gok.hoehe : null,
+    };
+}
+
+/**
+ * Ein Bauwerk (Knoten, KnotenTyp 2): der vermessene Umriss (SBW), der
+ * Bezugspunkt (KOP) und der Deckel (SBD). Welche Höhe die Sohle ist, sagt
+ * die Datei nicht ausdrücklich — die untere ist sie, die obere der Deckel.
+ */
+function _bauwerk(obj) {
+    const geo = _geometrie(obj);
+    const bw = _pfad(obj, 'Knoten/Bauwerk');
+    const kop = geo.punkte.find(p => p.attribut === 'KOP') ?? geo.punkte[0] ?? null;
+    const hoehen = geo.punkte.map(p => p.hoehe).filter(_fin);
+    return {
+        ..._kopf(obj, geo),
+        art: 'bauwerk',
+        bauwerkstyp: bw ? _int(bw, 'Bauwerkstyp') : null,
+        herstellerTyp: bw ? (_text(bw, 'Hersteller_Typ') || null) : null,
+        ort: kop ? { ost: kop.ost, nord: kop.nord } : null,
+        sohle: hoehen.length ? Math.min(...hoehen) : null,
+        deckel: hoehen.length > 1 ? Math.max(...hoehen) : null,
+        umriss: geo.umriss,
+    };
+}
+
+/**
  * Eine ISYBAU-XML lesen.
- * @returns {{schaechte: object[], kanten: object[], warnungen: string[], gezaehlt: object}}
+ * @returns {{schaechte: object[], kanten: object[], anschlusspunkte: object[], bauwerke: object[], warnungen: string[], gezaehlt: object}}
  */
 export function liesIsybauDaten(text) {
     if (typeof DOMParser === 'undefined') throw new Error('kein XML-Leser in dieser Umgebung');
@@ -316,15 +358,15 @@ export function liesIsybauDaten(text) {
     const warnungen = [];
     const warn = (t) => warnungen.push(`ISYBAU: ${t}`);
     if (leer) warn(`${leer} leere Elemente „<></>" entfernt — die Datei war kein gültiges XML`);
-    const schaechte = [], kanten = [];
-    const gezaehlt = { Anschlusspunkt: 0, Bauwerk: 0, andere: 0 };
+    const schaechte = [], kanten = [], anschlusspunkte = [], bauwerke = [];
+    const gezaehlt = { andere: 0 };
     for (const o of objekte) {
         const art = _int(o, 'Objektart');
         if (art === 2) {
             const typ = _int(o, 'Knoten/KnotenTyp');
             if (typ === 0) schaechte.push(_schacht(o, warn));
-            else if (typ === 1) gezaehlt.Anschlusspunkt++;
-            else if (typ === 2) gezaehlt.Bauwerk++;
+            else if (typ === 1) anschlusspunkte.push(_anschlusspunkt(o));
+            else if (typ === 2) bauwerke.push(_bauwerk(o));
             else gezaehlt.andere++;
         } else if (art === 1) {
             kanten.push(_kante(o, warn));
@@ -332,7 +374,7 @@ export function liesIsybauDaten(text) {
             gezaehlt.andere++;
         }
     }
-    return { schaechte, kanten, warnungen, gezaehlt };
+    return { schaechte, kanten, anschlusspunkte, bauwerke, warnungen, gezaehlt };
 }
 
 /**

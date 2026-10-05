@@ -79,6 +79,12 @@ function welt() {
     // Teil XXVI, Z6: ein Raum — der Hohlraum, aus einem Umriss nach oben.
     zeichne(erzeugt, 'raum-zeichnen', 'cde-RA1', { name: 'RA1', hoehe: '', raumhoehe: 2.5 },
             [P(120, 100, 0), P(124, 100, 0), P(124, 100, 3), P(120, 100, 3)]);
+    // BIMFY I10: ein Anschlusspunkt und ein Sonderbauwerk (Hülle aus dem Umriss).
+    zeichne(erzeugt, 'anschlusspunkt-zeichnen', 'cde-AP1', { name: 'AP1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' },
+            [P(130, 99, 0), P(130, 99.15, 0)]);
+    zeichne(erzeugt, 'sonderbauwerk-zeichnen', 'cde-SB1', { name: 'SB1', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', bauwerkshoehe: 3,
+                                                            predefinedType: 'USERDEFINED', objektTyp: 'Becken' },
+            [P(140, 98, 0), P(143, 98, 0), P(143, 98, 2), P(140, 98, 2)]);
     // Teil XXVI, Z5e: ein Bauwerk (Behälter ohne Körper) — die Wand W1 gehört dazu.
     erzeugt.set('cde-BW1', { rezept: 'bauwerk', kategorie: null, name: 'BW1', bauform: 'netz', parameter: { art: 'anlage' } });
     const w1 = erzeugt.get('cde-W1');
@@ -191,6 +197,12 @@ const NEU = [
     { id: 'bauwerk-aus-vorlage-kastenschacht', el: zug(P(700, 100, 0)), zug: [P(700, 100, 0)],
       werte: [{ name: 'K1', hoehe: '', tiefe: 1.8, laenge: 1, breite: 1, wand: 0, mauerwerk: 0, oberteil: 0, steighilfe: 1,
                 richtung: 30, deckelklasse: 4 }] },
+    // BIMFY I10: Anschlusspunkt und Sonderbauwerk.
+    { id: 'anschlusspunkt-zeichnen', el: zug(P(800, 100, 0), P(800, 100.15, 0)), zug: [P(800, 100, 0), P(800, 100.15, 0)],
+      werte: [{ name: 'A1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' }] },
+    { id: 'sonderbauwerk-zeichnen', el: zug(P(900, 100, 0), P(903, 100, 0), P(903, 100, 2), P(900, 100, 2)),
+      zug: [P(900, 100, 0), P(903, 100, 0), P(903, 100, 2), P(900, 100, 2)],
+      werte: [{ name: 'RÜ', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', bauwerkshoehe: 3.5, predefinedType: 'USERDEFINED', objektTyp: 'Regenüberlauf' }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },
@@ -239,6 +251,10 @@ const NEU = [
     { id: 'wand-aussen-setzen', el: eigen('cde-W1'), werte: [{ aussen: 'nein' }] },
     { id: 'streifenfundament-tragend-setzen', el: eigen('cde-FU1'), werte: [{ tragend: 'nein' }] },
     // Fund 8: die Ausführung (PredefinedType) und der Objekttyp.
+    { id: 'anschlusspunkt-predefinedType-setzen', el: eigen('cde-AP1'), werte: [{ predefinedType: 'JUNCTION' }] },
+    { id: 'anschlusspunkt-objektTyp-setzen', el: eigen('cde-AP1'), werte: [{ objektTyp: 'Stutzen' }] },
+    { id: 'sonderbauwerk-predefinedType-setzen', el: eigen('cde-SB1'), werte: [{ predefinedType: 'SUMP' }] },
+    { id: 'sonderbauwerk-objektTyp-setzen', el: eigen('cde-SB1'), werte: [{ objektTyp: 'Regenüberlauf' }] },
     { id: 'platte-predefinedType-setzen', el: eigen('cde-PL1'), werte: [{ predefinedType: 'BASESLAB' }] },
     { id: 'platte-objektTyp-setzen', el: eigen('cde-PL1'), werte: [{ objektTyp: 'Sohlplatte' }] },
     { id: 'wand-predefinedType-setzen', el: eigen('cde-W1'), werte: [{ predefinedType: 'RETAININGWALL' }] },

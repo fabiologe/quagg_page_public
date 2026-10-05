@@ -444,12 +444,26 @@ function _fachmodellKnoten(globalId, plan) {
     // bei einem eigenen Schacht IST y die Sohle, bei einem gelieferten nicht sicher.
     return { knoten: [{ globalId, name: plan.name ?? '', punkt: punktXYZ(roh[0]), hoehenbezug: 'sohle' }] };
 }
+
+/**
+ * Ein Knoten aus einem UMRISS (BIMFY I10, `knoten: {punkt: 'schwerpunkt', radius: 'umriss'}`):
+ * am Schwerpunkt auf der tiefsten Höhe, so weit wie der Umriss reicht — ein Rohr,
+ * das an der Bauwerkswand endet, sitzt am Bauwerk.
+ */
+function _fachmodellKnotenUmriss(globalId, plan) {
+    const roh = plan?.parameter?.punkte;
+    if (!Array.isArray(roh) || roh.length < 3) return {};
+    const p = roh.map(punktXYZ);
+    const mitte = { x: p.reduce((a, q) => a + q.x, 0) / p.length, y: Math.min(...p.map(q => q.y)), z: p.reduce((a, q) => a + q.z, 0) / p.length };
+    const radius = Math.max(...p.map(q => Math.hypot(q.x - mitte.x, q.z - mitte.z)));
+    return { knoten: [{ globalId, name: plan.name ?? '', punkt: mitte, hoehenbezug: 'sohle', radius }] };
+}
 const _fachmodellNichts = () => ({});
 const _fachmodellGelaende = (globalId) => ({ gelaende: [globalId] });
 
 function _fachmodell(d) {
     if (d.netzrolle === 'kante') return _fachmodellKante(d);
-    if (d.netzrolle === 'knoten') return _fachmodellKnoten;
+    if (d.netzrolle === 'knoten') return d.knoten?.punkt === 'schwerpunkt' ? _fachmodellKnotenUmriss : _fachmodellKnoten;
     if (d.gelaendeform) return _fachmodellGelaende;
     return _fachmodellNichts;
 }

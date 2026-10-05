@@ -257,6 +257,58 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         /**
+         * DER ANSCHLUSSPUNKT (BIMFY I10, ISYBAU KnotenTyp 1): ein Knoten ohne
+         * Schacht — Stutzen, Abzweig, Gebäudeanschluss, Regenfallrohr, Straßenablauf.
+         * Ein Formstück im Netz (IfcPipeFitting): JUNCTION, wo Leitungen
+         * zusammenkommen (AP), ENTRY, wo Wasser ins Netz tritt (GA, RR, SE, ER —
+         * AH15, Tab. A-1-2). Zwei Punkte wie der Schacht: Sohle und oben.
+         */
+        id: 'anschlusspunkt',
+        titel: 'Anschlusspunkt',
+        icon: 'schacht',
+        bauform: 'koerper',
+        kategorieVorgabe: 'IFCPIPEFITTING',
+        mindestPunkte: 2,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 50, max: 1000, gueltig: { ueber: 0 }, vorgabe: 150 },
+            ...ausfuehrung('JUNCTION'),
+        ],
+        netzrolle: 'knoten',
+        symbol: 'schacht',
+        geometrie: { art: 'sweep', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 12 } },
+    },
+    {
+        /**
+         * DAS SONDERBAUWERK (BIMFY I10, ISYBAU KnotenTyp 2): Regenüberlauf,
+         * Becken, Pumpwerk — vermessen ist der Umriss, dazu Sohle und Deckel.
+         * Gebaut wird der HÜLLKÖRPER: der Umriss auf der Sohle, so hoch wie bis
+         * zum Deckel. Wände und Einbauten kennt die Datei nicht. Ein Knoten im
+         * Netz am Schwerpunkt, so weit wie der Umriss reicht.
+         */
+        id: 'sonderbauwerk',
+        titel: 'Sonderbauwerk (Hülle)',
+        icon: 'building',
+        bauform: 'flaeche+dicke',
+        kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+        mindestPunkte: 3,
+        geschlossen: true,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'bauwerkshoehe', titel: 'Höhe bis zum Deckel', einheit: 'm', typ: 'zahl', min: 0.1, max: 50, gueltig: { ueber: 0 }, vorgabe: 3 },
+            ...ausfuehrung('USERDEFINED', 'Sonderbauwerk'),
+        ],
+        netzrolle: 'knoten',
+        knoten: { punkt: 'schwerpunkt', radius: 'umriss' },
+        geometrie: { art: 'platte', dicke: 'bauwerkshoehe', richtung: 'oben' },
+        // Die Hülle ist brutto: Wände und Hohlraum kennt die Datei nicht.
+        menge: { grossVolume: 'volumen' },
+    },
+    {
+        /**
          * EIN ORT, EIN STAB (A4, Befund S5): sechs Typprofile tragen die Bauform
          * `punkt`, gezeichnet werden konnte keins. Leitpfosten, Schild, Poller —
          * ein Punkt auf dem Gelände und ein senkrechtes Profil darauf. Die

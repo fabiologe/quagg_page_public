@@ -64,8 +64,9 @@ const HEUTE = Object.freeze({
     // kein Werkzeug mit (`nurVorlage`, nichts setzbar) — 149/126.
     // BIMFY I4: +1 Normschacht aus Vorlage, ohne Oberfläche ausführbar — 150/127.
     // BIMFY I9: +1 Kastenschacht aus Vorlage, ohne Oberfläche ausführbar — 151/128.
-    werkzeuge: 151,
-    ausgefuehrt: 128,
+    // BIMFY I10: +6 — Anschlusspunkt und Sonderbauwerk zeichnen, je Ausführung und Objekttyp setzen — 157/134.
+    werkzeuge: 157,
+    ausgefuehrt: 134,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

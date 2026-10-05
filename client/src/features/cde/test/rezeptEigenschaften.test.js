@@ -16,10 +16,10 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 describe('Die Eigenschaften, nach denen gefragt wird', () => {
     it('wer seine Ecken in `parameter.punkte` trägt, sagt es', () => {
         const mit = Object.values(REZEPTE).filter(r => r.punkteIn === 'parameter').map(r => r.id).sort();
-        expect(mit).toEqual(['auflagering', 'berme', 'bettung', 'drossel', 'flaeche', 'kastenabdeckung', 'kastenplatte', 'kastenunterteil',
+        expect(mit).toEqual(['anschlusspunkt', 'auflagering', 'berme', 'bettung', 'drossel', 'flaeche', 'kastenabdeckung', 'kastenplatte', 'kastenunterteil',
                              'linie', 'pfosten', 'platte', 'raum', 'rechen',
                              'rigole', 'rohr', 'sauberkeitsschicht', 'schacht', 'schachtabdeckung', 'schachthals', 'schachtplatte',
-                             'schachtring', 'schachtunterteil', 'steigeisen', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);
+                             'schachtring', 'schachtunterteil', 'sonderbauwerk', 'steigeisen', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);
         // Der Erdbau trägt sie in den Operationen — und sagt das über `punktlisten`.
         expect(typeof ABLEITUNGEN.erdbau.punktlisten).toBe('function');
     });
@@ -31,7 +31,7 @@ describe('Die Eigenschaften, nach denen gefragt wird', () => {
     });
 
     it('ein Ring ist, was `geschlossen` sagt', () => {
-        expect(Object.values(REZEPTE).filter(r => r.geschlossen).map(r => r.id)).toEqual(['flaeche', 'platte', 'raum', 'sauberkeitsschicht', 'bettung', 'rigole']);
+        expect(Object.values(REZEPTE).filter(r => r.geschlossen).map(r => r.id)).toEqual(['flaeche', 'sonderbauwerk', 'platte', 'raum', 'sauberkeitsschicht', 'bettung', 'rigole']);
     });
 
     it('Gelände im Mengen-Reiter: das alte geformte Gelände und die Anzeige', () => {
