@@ -25,6 +25,10 @@
  * Rein: kein Vue, kein Store, keine Engine.
  */
 
+import { liesIsybauDaten, kantenzugMitSohle } from './isybau/Isybauleser.js';
+import { normschacht } from './muster/Normschacht.js';
+import { rohrwand } from './muster/Rohrwand.js';
+
 /** Die Formate, die BIMFY liest — Endung → Leser. */
 export const FORMATE = Object.freeze({
     dxf:     { titel: 'DXF (CAD, Vermessungsplan)', zOben: true },
@@ -440,114 +444,70 @@ export function liesPunktliste(text, { reihenfolge = null } = {}) {
 
 // ── ISYBAU-XML ────────────────────────────────────────────────────────────
 
-/** Alle Nachfahren mit diesem lokalen Namen (Namensräume egal, `isy:` wie ohne). */
-const _alle = (el, name) => [...el.getElementsByTagName('*')].filter(e => e.localName === name);
-const _erstes = (el, name) => _alle(el, name)[0] ?? null;
-const _text = (el, name) => _erstes(el, name)?.textContent?.trim() ?? '';
-const _isyZahl = (el, name) => _zahl(_text(el, name));
-
-/** Ein Profilmass: ISYBAU schreibt Millimeter; ein Wert über 9 ist es sicher. */
-const _profilM = (v) => (Number.isFinite(v) && v > 0 ? (v > 9 ? v / 1000 : v) : NaN);
-
-/** Ein Punkt einer Geometrie: Rechtswert, Hochwert, Punkthöhe. */
-function _isyPunkt(el) {
-    const ost = _isyZahl(el, 'Rechtswert'), nord = _isyZahl(el, 'Hochwert');
-    if (!Number.isFinite(ost) || !Number.isFinite(nord)) return null;
-    return _punkt(ost, nord, _isyZahl(el, 'Punkthoehe'));
-}
-
 /**
- * Eine ISYBAU-XML (Austauschformat Abwasser, Stammdaten) lesen.
- *
- * Gelesen werden die Objektarten, aus denen ein Netz besteht — dieselbe
- * Entscheidungstabelle wie im Feature „isyifc" (`PARSING.md`), hier nach
- * BIMFY-Form neu geschrieben, weil kein Feature aus einem anderen importiert:
- *
- *   Objektart 1                    Haltung/Leitung → `zug` mit Sohlhöhen, `durchmesser`
- *   Objektart 2, KnotenTyp 0       Schacht → senkrechter `zug` Sohle → Deckel
- *   Objektart 2, KnotenTyp 1 und 2 Anschlusspunkt, Bauwerk → gezählt, gemeldet
- *
- * Eine Haltung ohne eigene Geometrie bekommt die Lage ihrer Knoten.
+ * Eine ISYBAU-XML für BIMFY: die Daten liest `isybau/Isybauleser.js` (Format
+ * 2013), die Bauteilkette jedes Schachts rechnet `muster/Normschacht.js`, die
+ * Rohrwand `muster/Rohrwand.js`. Heraus kommen die neutralen Geometrien wie
+ * bei jedem Leser — ein Schacht als senkrechter Zug Sohle → Deckel, eine
+ * Haltung als Zug auf ihrer Sohle —, und an jeder hängt, was ISYBAU über sie
+ * weiss (`isybau`) und was das Muster daraus macht (`muster`).
  */
 export function liesIsybau(text) {
-    if (typeof DOMParser === 'undefined') throw new Error('kein XML-Leser in dieser Umgebung');
-    const doc = new DOMParser().parseFromString(String(text ?? ''), 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length) throw new Error('kein gültiges XML');
-    const objekte = _alle(doc.documentElement, 'AbwassertechnischeAnlage');
-    if (!objekte.length) throw new Error('keine AbwassertechnischeAnlage — ist das eine ISYBAU-Datei?');
-
-    const warnungen = [];
+    const { schaechte, kanten, warnungen, gezaehlt } = liesIsybauDaten(text);
+    const nachName = new Map(schaechte.map(s => [s.name, s]));
     const geometrien = [];
-    const knoten = new Map();       // Bezeichnung → {ort, sohle}
-    const haltungen = [];
-    const uebergangen = { Anschlusspunkt: 0, Bauwerk: 0, andere: 0 };
 
-    for (const o of objekte) {
-        const name = _text(o, 'Objektbezeichnung');
-        const art = parseInt(_text(o, 'Objektart'), 10);
-        if (art === 2) {
-            const typ = parseInt(_text(o, 'KnotenTyp'), 10);
-            const punkte = _alle(o, 'Punkt').map(p => ({ el: p, attr: _text(p, 'PunktattributAbwasser').toUpperCase(), p: _isyPunkt(p) }))
-                .filter(x => x.p);
-            const dmp = punkte.find(x => x.attr === 'DMP')?.p ?? punkte[0]?.p ?? null;
-            const smp = punkte.find(x => x.attr === 'SMP')?.p ?? null;
-            if (!dmp) { warnungen.push(`ISYBAU: Knoten „${name}" ohne Lage übergangen`); continue; }
-            const tiefe = _isyZahl(o, 'Schachttiefe');
-            let deckel = dmp.hoehe, sohle = smp?.hoehe;
-            if (!Number.isFinite(sohle) && Number.isFinite(deckel) && Number.isFinite(tiefe)) sohle = deckel - tiefe;
-            if (!Number.isFinite(deckel) && Number.isFinite(sohle) && Number.isFinite(tiefe)) deckel = sohle + tiefe;
-            const ort = { ost: dmp.ost, nord: dmp.nord };
-            knoten.set(name, { ort, sohle });
-            if (typ === 0) {
-                const durchmesser = _profilM(_isyZahl(o, 'LaengeAufbau')) || _profilM(_isyZahl(o, 'LaengeDeckel')) || 1;
-                if (Number.isFinite(sohle) && Number.isFinite(deckel) && deckel - sohle > 0.01) {
-                    geometrien.push({ art: 'zug', punkte: [{ ...ort, hoehe: sohle }, { ...ort, hoehe: deckel }],
-                                      ebene: 'ISYBAU Schacht', name, durchmesser, dreiD: true });
-                } else {
-                    geometrien.push({ art: 'punkt', punkte: [_punkt(ort.ost, ort.nord, sohle ?? deckel)],
-                                      ebene: 'ISYBAU Schacht', name, durchmesser, dreiD: Number.isFinite(sohle ?? deckel) });
-                }
-            } else if (typ === 1) uebergangen.Anschlusspunkt++;
-            else if (typ === 2) uebergangen.Bauwerk++;
-            else uebergangen.andere++;
-        } else if (art === 1) {
-            haltungen.push(o);
-        } else {
-            uebergangen.andere++;
-        }
+    for (const s of schaechte) {
+        if (!s.ort) { warnungen.push(`ISYBAU: Schacht „${s.name}" ohne Lage übergangen`); continue; }
+        const anschluesse = anschluesseVon(s, kanten, nachName);
+        const muster = normschacht(s, { anschluesse });
+        const zDeckel = s.deckelHoehe, zSohle = s.sohle?.hoehe;
+        const durchmesser = muster.kopf?.dn ?? s.aufbau?.laenge ?? 1;
+        const zug = Number.isFinite(zDeckel) && Number.isFinite(zSohle) && zDeckel - zSohle > 0.01;
+        geometrien.push({
+            art: zug ? 'zug' : 'punkt',
+            punkte: zug ? [{ ...s.ort, hoehe: zSohle }, { ...s.ort, hoehe: zDeckel }]
+                        : [_punkt(s.ort.ost, s.ort.nord, zSohle ?? zDeckel)],
+            ebene: 'ISYBAU Schacht', name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
+        });
     }
 
-    for (const o of haltungen) {
-        const name = _text(o, 'Objektbezeichnung');
-        const von = _text(o, 'KnotenZulauf') || _text(o, 'Anfangsknoten');
-        const bis = _text(o, 'KnotenAblauf') || _text(o, 'Endknoten');
-        // Die eigene Geometrie (Start, Knickpunkte, Ende) in Dokumentreihenfolge.
-        const geo = _erstes(o, 'Geometrie');
-        let punkte = geo ? [...geo.getElementsByTagName('*')]
-            .filter(e => ['Start', 'Ende', 'Knickpunkt', 'Punkt', 'Anfangspunkt', 'Endpunkt'].includes(e.localName))
-            .map(_isyPunkt).filter(Boolean) : [];
-        if (punkte.length < 2) {
-            const a = knoten.get(von)?.ort, b = knoten.get(bis)?.ort;
-            if (!a || !b) { warnungen.push(`ISYBAU: Haltung „${name}" ohne Lage und ohne bekannte Knoten übergangen`); continue; }
-            punkte = [{ ...a }, { ...b }];
+    for (const k of kanten) {
+        const punkte = kantenzugMitSohle(k, (n) => nachName.get(n));
+        if (!punkte) { warnungen.push(`ISYBAU: ${k.art} „${k.name}" ohne Lage und ohne bekannte Knoten übergangen`); continue; }
+        const dn = k.profil?.hoehe ?? k.profil?.breite ?? null;
+        const wand = dn && (k.profil?.art === 0 || k.profil?.art === 4 || k.profil?.art === null) ? rohrwand({ dn, material: k.material }) : null;
+        if (k.profil && ![0, 4, null].includes(k.profil.art)) {
+            warnungen.push(`ISYBAU: ${k.art} „${k.name}": Profilart ${k.profil.art} wird vorerst als Kreis gebaut`);
         }
-        // Die Sohlhöhen der Haltung gelten an ihren Enden, dazwischen linear über die Länge.
-        let oben = _isyZahl(o, 'SohlhoeheZulauf'), unten = _isyZahl(o, 'SohlhoeheAblauf');
-        if (!Number.isFinite(oben)) oben = knoten.get(von)?.sohle;
-        if (!Number.isFinite(unten)) unten = knoten.get(bis)?.sohle;
-        if (Number.isFinite(oben) && Number.isFinite(unten)) {
-            const laengen = [0];
-            for (let i = 1; i < punkte.length; i++) laengen.push(laengen[i - 1] + Math.hypot(punkte[i].ost - punkte[i - 1].ost, punkte[i].nord - punkte[i - 1].nord));
-            const gesamt = laengen[laengen.length - 1] || 1;
-            punkte = punkte.map((p, i) => ({ ost: p.ost, nord: p.nord, hoehe: oben + (unten - oben) * laengen[i] / gesamt }));
-        }
-        const durchmesser = _profilM(_isyZahl(o, 'Profilbreite'));
-        const g = _linienform(punkte, { ebene: 'ISYBAU Haltung', name });
-        if (g) geometrien.push({ ...g, ...(Number.isFinite(durchmesser) ? { durchmesser } : {}) });
+        const g = _linienform(punkte, { ebene: `ISYBAU ${k.art === 'haltung' ? 'Haltung' : k.art[0].toUpperCase() + k.art.slice(1)}`, name: k.name });
+        if (g) geometrien.push({ ...g, ...(dn ? { durchmesser: dn } : {}), isybau: k, ...(wand ? { muster: { rohrwand: wand } } : {}) });
     }
 
-    for (const [art, n] of Object.entries(uebergangen)) {
+    for (const [art, n] of Object.entries(gezaehlt)) {
         if (n) warnungen.push(`ISYBAU: ${n} × ${art === 'andere' ? 'andere Objektart' : art} übergangen`);
     }
     return { geometrien, warnungen };
+}
+
+/**
+ * Die Anschlüsse eines Schachts: jede Kante, die an ihm beginnt (Ablauf) oder
+ * endet (Zulauf), mit Nennweite, Sohle am Schacht und Richtung im Grundriss
+ * (Radiant, 0 = Ost, gegen den Uhrzeigersinn).
+ */
+export function anschluesseVon(s, kanten, nachName) {
+    const aus = [];
+    for (const k of kanten) {
+        const ablauf = k.von === s.name, zulauf = k.bis === s.name;
+        if (!ablauf && !zulauf) continue;
+        const zug = kantenzugMitSohle(k, (n) => nachName.get(n));
+        const dn = k.profil?.hoehe ?? k.profil?.breite ?? null;
+        let richtung = null;
+        if (zug && zug.length >= 2) {
+            const nah = ablauf ? zug[1] : zug[zug.length - 2];
+            richtung = Math.atan2(nah.nord - s.ort.nord, nah.ost - s.ort.ost);
+        }
+        aus.push({ kante: k.name, dn, sohle: ablauf ? k.sohleZulauf : k.sohleAblauf, richtung, art: ablauf ? 'ablauf' : 'zulauf' });
+    }
+    return aus;
 }

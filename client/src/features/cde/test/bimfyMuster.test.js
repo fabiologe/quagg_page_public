@@ -1,0 +1,209 @@
+// @vitest-environment jsdom
+/**
+ * BIMFY · ISYBAU in höchster Genauigkeit, Stufe 1: Leser und Muster.
+ *
+ * ISYBAU liefert Daten, keine Körper. Geprüft wird, dass der Leser das Format
+ * 2013 so liest, wie es die Arbeitshilfen Abwasser 12/2015 beschreiben, und
+ * dass die Muster daraus eine Bauteilkette machen, deren Höhen AUFGEHEN und
+ * deren Masse jeweils sagen, woher sie stammen (Datei, Norm, Annahme).
+ */
+import { describe, expect, it } from 'vitest';
+import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bimfy/isybau/Isybauleser.js';
+import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
+import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
+import { liesIsybau } from '../services/bimfy/Geometrieleser.js';
+
+const r3 = (v) => Math.round(v * 1000) / 1000;
+
+/** Ein Schacht nach AH15 Tab. A-7-24 bis -28, mit allen Bereichen. */
+const schachtXml = ({ name = 'S1', ost = 410000, nord = 5460000, deckel = '105,00', sohle = '102,00', sohleAttr = 'SMP',
+                      aufbau = '<Aufbauform>R</Aufbauform><Konus>1</Konus><LaengeAufbau>0,63</LaengeAufbau><HoeheAufbau>2,60</HoeheAufbau><MaterialAufbau>B</MaterialAufbau>',
+                      abdeckung = '<Deckelform>R</Deckelform><Deckeltyp>1</Deckeltyp><LaengeDeckel>0,63</LaengeDeckel><Abdeckungsklasse>D</Abdeckungsklasse><MaterialAbdeckung>GGG</MaterialAbdeckung>',
+                      unterteil = '<Unterteilform>R</Unterteilform><LaengeUnterteil>1,00</LaengeUnterteil><MaterialUnterteil>B</MaterialUnterteil><Gerinneform>1</Gerinneform><MaterialGerinne>B</MaterialGerinne>',
+                      extra = '<Einstieghilfe>1</Einstieghilfe><ArtEinstieghilfe>1</ArtEinstieghilfe><MaterialSteighilfen>3</MaterialSteighilfen>' } = {}) => `
+  <AbwassertechnischeAnlage>
+    <Objektbezeichnung>${name}</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status><Entwaesserungsart>KS</Entwaesserungsart>
+    <Geometrie><GeoObjekttyp>P</GeoObjekttyp><Geometriedaten><Knoten>
+      <Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${deckel}</Punkthoehe><PunktattributAbwasser>DMP</PunktattributAbwasser></Punkt>
+      ${sohle === null ? '' : `<Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${sohle}</Punkthoehe><PunktattributAbwasser>${sohleAttr}</PunktattributAbwasser></Punkt>`}
+    </Knoten></Geometriedaten></Geometrie>
+    <Knoten><KnotenTyp>0</KnotenTyp><Schacht>
+      <SchachtFunktion>1</SchachtFunktion><Schachttiefe>3,00</Schachttiefe>${extra}
+      <Abdeckung>${abdeckung}</Abdeckung>
+      <Aufbau>${aufbau}</Aufbau>
+      <Unterteil>${unterteil}</Unterteil>
+    </Schacht></Knoten>
+  </AbwassertechnischeAnlage>`;
+
+const haltungXml = ({ name = 'H1', von = 'S1', bis = 'S2', oben = '102,00', unten = '101,70', dn = 300, material = 'STZ', geometrie = '' } = {}) => `
+  <AbwassertechnischeAnlage>
+    <Objektbezeichnung>${name}</Objektbezeichnung><Objektart>1</Objektart>
+    ${geometrie}
+    <Kante><KantenTyp>0</KantenTyp><KnotenZulauf>${von}</KnotenZulauf><KnotenAblauf>${bis}</KnotenAblauf>
+      <SohlhoeheZulauf>${oben}</SohlhoeheZulauf><SohlhoeheAblauf>${unten}</SohlhoeheAblauf><Laenge>50,00</Laenge><Material>${material}</Material>
+      <Profil><SonderprofilVorhanden>0</SonderprofilVorhanden><Profilart>0</Profilart><Profilhoehe>${dn}</Profilhoehe></Profil>
+      <Haltung><HaltungsFunktion>0</HaltungsFunktion></Haltung></Kante>
+  </AbwassertechnischeAnlage>`;
+
+const datei = (...objekte) => `<?xml version="1.0" encoding="UTF-8"?>
+<Identifikation xmlns="http://www.ofd-hannover.la/Identifikation"><Datenkollektive><Stammdatenkollektiv>
+${objekte.join('\n')}
+</Stammdatenkollektiv></Datenkollektive></Identifikation>`;
+
+describe('ISYBAU-Leser (Format 2013, AH15 Anhang A-7)', () => {
+    it('liest Abdeckung, Aufbau, Unterteil und Steighilfen unter ihren Formatnamen', () => {
+        const { schaechte, warnungen } = liesIsybauDaten(datei(schachtXml({
+            abdeckung: '<Deckelform>RV</Deckelform><Deckeltyp>2</Deckeltyp><LaengeDeckel>0,63</LaengeDeckel><Abdeckungsklasse>D</Abdeckungsklasse><MaterialAbdeckung>GGG</MaterialAbdeckung><AnzahlAuflageringe>2</AnzahlAuflageringe><HoeheAuflageringe>16</HoeheAuflageringe><Schmutzfaenger>1</Schmutzfaenger>',
+        })));
+        expect(warnungen).toEqual([]);
+        const s = schaechte[0];
+        expect(s).toMatchObject({ name: 'S1', deckelHoehe: 105, sohle: { hoehe: 102, quelle: 'SMP' }, schachttiefe: 3,
+                                  einstieghilfe: true, artEinstieghilfe: 1, materialSteighilfen: 3 });
+        // HoeheAuflageringe steht in ZENTIMETERN (Tab. A-7-25) — weiter geht es in Metern.
+        expect(s.abdeckung).toMatchObject({ deckelform: 'RV', deckeltyp: 2, laenge: 0.63, klasse: 'D', material: 'GGG',
+                                            anzahlAuflageringe: 2, hoeheAuflageringe: 0.16, schmutzfaenger: true });
+        expect(s.aufbau).toMatchObject({ form: 'R', konus: true, laenge: 0.63, hoehe: 2.6, material: 'B' });
+        expect(s.unterteil).toMatchObject({ form: 'R', laenge: 1, gerinneform: 1, materialGerinne: 'B' });
+    });
+
+    it('Sohle aus HP bei Altdaten (Tab. A-1-5), sonst Deckel − Schachttiefe — und es steht dabei, woher', () => {
+        const hp = liesIsybauDaten(datei(schachtXml({ sohleAttr: 'HP', sohle: '101,90' }))).schaechte[0];
+        expect(hp.sohle).toEqual({ hoehe: 101.9, quelle: 'HP' });
+        const ohne = liesIsybauDaten(datei(schachtXml({ sohle: null }))).schaechte[0];
+        expect(ohne.sohle).toEqual({ hoehe: 102, quelle: 'Deckelhöhe − Schachttiefe' });
+    });
+
+    it('ein Mass in Millimetern statt Metern wird umgerechnet UND gemeldet', () => {
+        const { schaechte, warnungen } = liesIsybauDaten(datei(schachtXml({ unterteil: '<LaengeUnterteil>1000</LaengeUnterteil>' })));
+        expect(schaechte[0].unterteil.laenge).toBe(1);
+        expect(warnungen[0]).toMatch(/LaengeUnterteil = 1000 als Millimeter gelesen/);
+    });
+
+    it('die Haltung: Daten aus Kante, Kreis-DN aus Profilhoehe, Bogen als kürzerer Kreisbogen', () => {
+        const geo = `<Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt>
+            <Kante><Start><Rechtswert>0</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>102</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Start>
+                   <Ende><Rechtswert>10</Rechtswert><Hochwert>10</Hochwert><Punkthoehe>101,8</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Ende>
+                   <Mitte><Rechtswert>10</Rechtswert><Hochwert>0</Hochwert><PunktattributAbwasser>KMP</PunktattributAbwasser></Mitte></Kante>
+          </Polygon></Polygone></Geometriedaten></Geometrie>`;
+        const { kanten } = liesIsybauDaten(datei(haltungXml({ geometrie: geo })));
+        const k = kanten[0];
+        expect(k).toMatchObject({ art: 'haltung', von: 'S1', bis: 'S2', sohleZulauf: 102, sohleAblauf: 101.7, material: 'STZ',
+                                  profil: { art: 0, hoehe: 0.3, breite: 0.3 } });
+        // Viertelkreis um (10, 0) mit r = 10: 90° in 10°-Schritten → 9 Teilstücke.
+        expect(k.zug).toHaveLength(10);
+        for (const p of k.zug) expect(r3(Math.hypot(p.ost - 10, p.nord))).toBe(10);
+        expect(bogenPunkte({ ost: 0, nord: 0 }, { ost: 10, nord: 10 }, { ost: 10, nord: 0 })).toHaveLength(8);
+        // Die Sohlhöhen der Kante gelten an den Enden (Tab. A-7-15).
+        const zug = kantenzugMitSohle(k, () => null);
+        expect([zug[0].hoehe, zug[zug.length - 1].hoehe]).toEqual([102, 101.7]);
+    });
+});
+
+describe('Muster · Höhen füllen', () => {
+    it('2,18 m: zwei Regelringe, der Rest in Auflageringen 100 + 80 mm', () => {
+        expect(fuelleHoehe(2.18)).toEqual({ ringe: [1, 1], auflageringe: [0.1, 0.08], rest: 0 });
+    });
+    it('Auflageringe aus ISYBAU fest: nur die Ringe füllen, der Rest wird ehrlich genannt', () => {
+        expect(fuelleHoehe(2.75, { auflageringeGegeben: 0 })).toEqual({ ringe: [1, 1, 0.75], auflageringe: [], rest: 0 });
+        expect(fuelleHoehe(2.1, { auflageringeGegeben: 0 }).rest).toBe(0.1);
+    });
+    it('Steigeisen: erstes 400 mm über der Standfläche, Abstand 250–333 mm, oberstes 250 mm unter dem Austritt', () => {
+        const { hoehen, abstand } = steigeisenHoehen(100, 103);
+        expect(hoehen[0]).toBe(100.4);
+        expect(abstand).toBeGreaterThanOrEqual(0.25);
+        expect(abstand).toBeLessThanOrEqual(0.333);
+        expect(r3(103 - hoehen[hoehen.length - 1])).toBe(0.25);
+    });
+});
+
+describe('Muster · Normschacht', () => {
+    const lies = (opt) => liesIsybauDaten(datei(schachtXml(opt))).schaechte[0];
+
+    it('Regelschacht DN 1000, 3,00 m tief: die Kette geht auf, jedes Teil sagt, woher es kommt', () => {
+        const { teile, befunde, kopf } = normschacht(lies(), { anschluesse: [{ dn: 0.3, art: 'ablauf' }] });
+        expect(befunde.filter(b => b.schwere === 'warnung')).toEqual([]);
+        expect(teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'schachtring', 'schachtring', 'schachthals', 'auflagering',
+                                                  'abdeckung', 'steigeisen']);
+        expect(kopf).toMatchObject({ dn: 1, wanddicke: 0.12, oeffnung: 0.625, oberteil: 'hals' });
+        // Lückenlos von der Bodenunterkante bis zum Deckel.
+        const koerper = teile.filter(t => Number.isFinite(t.unten));
+        for (let i = 1; i < koerper.length; i++) expect(Math.abs(koerper[i].unten - koerper[i - 1].oben)).toBeLessThanOrEqual(KETTE_TOLERANZ_M);
+        expect(koerper[koerper.length - 1].oben).toBe(105);
+        // Unterteil: DN 300 + 400 mm Wand über dem Scheitel = 0,70 m, Boden 150 mm unter der Sohle.
+        expect(teile[0]).toMatchObject({ unten: 101.85, oben: 102.7, dInnen: 1, dAussen: 1.24, boden: 0.15 });
+        expect(teile[0].gerinne).toMatchObject({ form: 1, hoehe: 0.3, auftritt: 0.3 });
+        // Herkunft: Deckel und Konus aus der Datei, Ringhöhe Norm, Rahmenhöhe Annahme.
+        expect(teile[1].herleitung.hoehe).toMatchObject({ art: 'norm', beleg: { norm: 'DIN 4034-1:2020-04' } });
+        expect(teile[3].herleitung.form.art).toBe('isybau');
+        expect(teile[5].herleitung.hoehe.art).toBe('annahme');
+        expect(teile[0].herleitung.boden.art).toBe('norm-pruefen');
+    });
+
+    it('zu flach für einen Hals: Abdeckplatte nach DIN 4034-1, und es steht als Befund da', () => {
+        const { teile, befunde } = normschacht(lies({ deckel: '103,40', aufbau: '<Aufbauform>R</Aufbauform><LaengeAufbau>1,00</LaengeAufbau>' }));
+        expect(befunde.map(b => b.regel)).toContain('zu_flach_fuer_hals');
+        expect(teile.map(t => t.rolle)).toContain('abdeckplatte');
+        expect(teile.map(t => t.rolle)).not.toContain('schachthals');
+    });
+
+    it('ISYBAU sagt „kein Konus": Abdeckplatte aus der Datei, nicht aus der Norm', () => {
+        const { teile } = normschacht(lies({ aufbau: '<Aufbauform>R</Aufbauform><Konus>0</Konus><LaengeAufbau>1,00</LaengeAufbau>' }));
+        const platte = teile.find(t => t.rolle === 'abdeckplatte');
+        expect(platte.herleitung.form.art).toBe('isybau');
+    });
+
+    it('Auflageringe aus ISYBAU (16 cm, 2 Stück) gelten — die Ringe füllen den Rest', () => {
+        const s = lies({ abdeckung: '<Deckelform>R</Deckelform><Abdeckungsklasse>D</Abdeckungsklasse><AnzahlAuflageringe>2</AnzahlAuflageringe><HoeheAuflageringe>16</HoeheAuflageringe>' });
+        const { teile } = normschacht(s, { anschluesse: [{ dn: 0.3 }] });
+        expect(teile.filter(t => t.rolle === 'auflagering').map(t => t.oben - t.unten).map(r3)).toEqual([0.08, 0.08]);
+        expect(teile.find(t => t.rolle === 'auflagering').herleitung.hoehe.art).toBe('isybau');
+    });
+
+    it('eckiger Schacht und zweiläufiger Steiggang über DN 1200 werden gemeldet, nicht still gebaut', () => {
+        const eckig = normschacht(lies({ aufbau: '<Aufbauform>E</Aufbauform>' }));
+        expect(eckig).toMatchObject({ teile: [], befunde: [{ regel: 'form_eckig', schwere: 'warnung' }] });
+        const weit = normschacht(lies({ unterteil: '<LaengeUnterteil>1,50</LaengeUnterteil>', extra: '<ArtEinstieghilfe>2</ArtEinstieghilfe>' }));
+        expect(weit.befunde.map(b => b.regel)).toContain('zweilaeufig_zu_weit');
+        expect(weit.kopf.wanddicke).toBe(0.15);
+    });
+
+    it('die Höhenkette, die nicht aufgeht, heisst so', () => {
+        const s = lies({ deckel: '104,55', abdeckung: '<Abdeckungsklasse>D</Abdeckungsklasse><HoeheAuflageringe>6</HoeheAuflageringe>' });
+        const { befunde } = normschacht(s, { anschluesse: [{ dn: 0.3 }] });
+        expect(befunde.find(b => b.regel === 'kette_offen')?.text).toMatch(/cm nicht auf/);
+    });
+});
+
+describe('Muster · Rohrwand', () => {
+    it('PVC-U DN/OD 200: Aussendurchmesser ist die Nennweite, Wand dn/SDR 34 = 5,9 mm (wie DIN EN 1401-1, Tab. 6)', () => {
+        const w = rohrwand({ dn: 0.2, material: 'PVCU' });
+        expect(w).toMatchObject({ dAussen: 0.2, wanddicke: 0.0059, dInnen: 0.1882, dnBezug: 'aussen' });
+        expect(w.herleitung.wanddicke).toMatchObject({ art: 'norm', beleg: { norm: 'DIN EN 1401-1:2019-09' } });
+        expect(w.hinweise).toEqual(['Steifigkeitsklasse fehlt in ISYBAU — SN 8 angenommen']);
+        // Kleine Nennweiten: nie unter 3,2 mm; SN 16 = SDR 27,6.
+        expect(rohrwand({ dn: 0.11, material: 'PVC', sn: 'SN4' }).wanddicke).toBe(0.0032);
+        expect(rohrwand({ dn: 0.4, material: 'PVC', sn: 'SN16' }).wanddicke).toBe(0.0145);
+        expect(rohrwand({ dn: 0.4, material: 'PP' }).herleitung.wanddicke.art).toBe('annahme');
+    });
+    it('Steinzeug und Beton: DN ist innen, die Wand ein gekennzeichneter Faustwert', () => {
+        const stz = rohrwand({ dn: 0.3, material: 'STZ' });
+        expect(stz).toMatchObject({ dInnen: 0.3, dnBezug: 'innen' });
+        expect(stz.herleitung.wanddicke.art).toBe('annahme');
+        expect(rohrwand({ dn: 1, material: 'SB' }).wanddicke).toBe(0.1159);
+        expect(rohrwand({ dn: 0.3, material: 'B', wanddicke: 0.05 }).herleitung.wanddicke.art).toBe('isybau');
+    });
+});
+
+describe('BIMFY · ISYBAU mit Muster', () => {
+    it('der Schacht trägt seine Kette, die Haltung ihre Wand — Anschlüsse mit Richtung', () => {
+        const text = datei(schachtXml(), schachtXml({ name: 'S2', ost: 410040, nord: 5460000, deckel: '104,80', sohle: '101,70' }),
+                           haltungXml());
+        const { geometrien } = liesIsybau(text);
+        const s1 = geometrien.find(g => g.name === 'S1');
+        // Vorher: ein Schacht war EIN Zylinder. Jetzt: Unterteil, Ringe, Hals, Auflagering, Abdeckung, Steigeisen.
+        expect(s1.muster.teile.length).toBe(7);
+        expect(s1.muster.teile[0].gerinne.anschluesse).toEqual([{ dn: 0.3, sohle: 102, richtung: 0, art: 'ablauf' }]);
+        const h1 = geometrien.find(g => g.name === 'H1');
+        expect(h1.muster.rohrwand).toMatchObject({ dInnen: 0.3, dnBezug: 'innen' });
+    });
+});

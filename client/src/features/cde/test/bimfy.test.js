@@ -150,7 +150,7 @@ const schachtXml = (name, ost, nord, deckel, tiefe) => `
     <Geometrie><Geometriedaten><Knoten>
       <Punkt><PunktattributAbwasser>DMP</PunktattributAbwasser><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${deckel}</Punkthoehe></Punkt>
     </Knoten></Geometriedaten></Geometrie>
-    <Knoten><KnotenTyp>0</KnotenTyp><Schacht><Schachttiefe>${tiefe}</Schachttiefe><Aufbau><LaengeAufbau>1000</LaengeAufbau></Aufbau></Schacht></Knoten>
+    <Knoten><KnotenTyp>0</KnotenTyp><Schacht><Schachttiefe>${tiefe}</Schachttiefe><Aufbau><LaengeAufbau>1,00</LaengeAufbau></Aufbau></Schacht></Knoten>
   </AbwassertechnischeAnlage>`;
 const ISYBAU = `<?xml version="1.0" encoding="UTF-8"?>
 <Identifikation xmlns="http://www.ofd-hannover.la/Identifikation"><Datenkollektive><Stammdatenkollektiv>
@@ -160,7 +160,7 @@ const ISYBAU = `<?xml version="1.0" encoding="UTF-8"?>
     <Objektbezeichnung>H1</Objektbezeichnung><Objektart>1</Objektart>
     <Kante><KnotenZulauf>S1</KnotenZulauf><KnotenAblauf>S2</KnotenAblauf>
       <SohlhoeheZulauf>102,00</SohlhoeheZulauf><SohlhoeheAblauf>101,30</SohlhoeheAblauf>
-      <Profil><Profilart>0</Profilart><Profilbreite>300</Profilbreite></Profil></Kante>
+      <Profil><Profilart>0</Profilart><Profilhoehe>300</Profilhoehe></Profil></Kante>
   </AbwassertechnischeAnlage>
   <AbwassertechnischeAnlage><Objektbezeichnung>A1</Objektbezeichnung><Objektart>2</Objektart>
     <Geometrie><Geometriedaten><Knoten><Punkt><Rechtswert>410001</Rechtswert><Hochwert>5460001</Hochwert></Punkt></Knoten></Geometriedaten></Geometrie>
