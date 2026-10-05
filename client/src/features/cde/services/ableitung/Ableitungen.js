@@ -2003,6 +2003,78 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
     },
 };
 
+/**
+ * VERSCHNEIDEN ZWEIER EIGENER KÖRPER (Teil XXXII, O1 — Fabio 2026-10-05: „zwei Objekte miteinander verschneiden";
+ * entschieden: ein LEBENDES Rezept wie die Aussparung). Vereinigung A ∪ B, Schnittmenge A ∩ B, Differenz A − B — der
+ * Server-Kernel rechnet sie (`booleVereinigung`, `booleSchnitt`, `booleDifferenz`, trimesh mit Volumenprüfung). A und B
+ * bleiben im Stand (verborgen) und sind die Quellen: ändert sich ihr Bauplan, rechnet das Ergebnis neu. Die Klasse ist
+ * die von A — ein Fundament mit angesetztem Sockel bleibt ein Fundament.
+ */
+export const VERSCHNITT_ARTEN = Object.freeze({
+    vereinigung: { op: 'booleVereinigung', zeichen: '∪', titel: 'vereinigen (A ∪ B)' },
+    schnitt:     { op: 'booleSchnitt',     zeichen: '∩', titel: 'Schnittmenge (A ∩ B)' },
+    differenz:   { op: 'booleDifferenz',   zeichen: '−', titel: 'abziehen (A − B)' },
+});
+const _verschnittOp = (parameter) => (parameter?.operationen ?? []).find(o => o?.art === 'verschnitt')?.parameter ?? {};
+
+ABLEITUNGEN_ERWEITERT.verschnitt = {
+    id: 'verschnitt',
+    gewerk: 'konstruktiv',
+    titel: 'Verschnitt zweier Körper',
+    icon: 'schnitt',
+    bauform: 'koerper',
+    kategorieVorgabe: 'IFCBUILDINGELEMENTPROXY',
+    mindestPunkte: 0,
+    geschlossen: false,
+    felder: [],
+    braucht: { a: KOERPERHAFT, b: KOERPERHAFT },
+    formen:  { a: 'koerper', b: 'koerper' },
+    /** Die drei Arten — das Werkzeug liest sie hier (kein Import der Ableitungsschicht in den Katalog). */
+    arten: VERSCHNITT_ARTEN,
+    teile: [
+        { rolle: 'koerper', bauform: 'koerper', form: 'koerper',
+          kategorie: (parameter) => String(_verschnittOp(parameter).kategorie || 'IFCBUILDINGELEMENTPROXY').toUpperCase(),
+          predefinedType: (parameter) => (_verschnittOp(parameter).predefinedType ? String(_verschnittOp(parameter).predefinedType).toUpperCase() : null),
+          name: (q) => q,
+          menge: { netVolume: 'volumen' } },
+    ],
+
+    async leite(parameter, quellen, { kernel } = {}) {
+        const a = quellen?.a, b = quellen?.b;
+        const art = VERSCHNITT_ARTEN[_verschnittOp(parameter).art] ?? null;
+        if (!art) throw new Error(`verschnitt: Art „${_verschnittOp(parameter).art ?? '—'}" unbekannt`);
+        if (!a || !b) throw new Error('verschnitt: ein Körper fehlt');
+        if (!kernel) throw new Error('verschnitt: kein Kernel');
+        if (!a.closed || !b.closed) throw new Error('verschnitt: ein Körper ist nicht geschlossen — der Server rechnet nur Volumen');
+        const r = await kernel.op(art.op, { a, b });
+        const befunde = [];
+        if (!r.ergebnis || !(r.ergebnis.volumen > 1e-9)) {
+            befunde.push({ regel: 'verschnitt_leer', schwere: 'warnung',
+                           text: art.op === 'booleSchnitt' ? 'Die Körper überschneiden sich nicht — die Schnittmenge ist leer'
+                                                           : `Kein Ergebnis: ${(r.warnungen ?? []).join('; ') || 'leer'}` });
+            if (!r.ergebnis) return { teile: { koerper: null }, kennzahlen: { volumen: 0, a: a.volumen, b: b.volumen }, befunde, warnungen: r.warnungen ?? [], bild: [] };
+        }
+        return {
+            teile: { koerper: { form: 'koerper', daten: r.ergebnis } },
+            kennzahlen: { volumen: r.ergebnis.volumen, a: a.volumen, b: b.volumen },
+            befunde, warnungen: r.warnungen ?? [], bild: [],
+        };
+    },
+
+    /** Vorschau: beide Körper gefärbt — das Ergebnis rechnet erst der Server. */
+    vorschau(parameter) {
+        const q = parameter?.quellen ?? {};
+        const art = VERSCHNITT_ARTEN[_verschnittOp(parameter).art];
+        return { primitive: [],
+                 faerbungen: [q.a && { globalId: q.a, rolle: 'ziel' }, q.b && { globalId: q.b, rolle: 'ziel' }].filter(Boolean),
+                 chips: [{ art: 'vorschau', text: `Verschneiden: ${art?.titel ?? '…'} — Ergebnis nach Übernehmen` }], hinweise: [] };
+    },
+
+    verschiebe: (parameter) => parameter,
+    fachmodell: (globalId) => ({ koerper: [globalId] }),
+    beschreibe: (nachher) => `Verschnitt · ${VERSCHNITT_ARTEN[_verschnittOp(nachher?.parameter ?? nachher).art]?.titel ?? 'zweier Körper'}`,
+};
+
 ABLEITUNGEN_ERWEITERT.aussparung = {
     id: 'aussparung',
     gewerk: 'konstruktiv',

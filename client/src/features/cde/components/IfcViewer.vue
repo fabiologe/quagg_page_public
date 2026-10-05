@@ -524,6 +524,7 @@ import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { eigeneFangkandidaten, zahlText, zeichenfang } from '../services/Zeichenhilfe.js';
 import { befundmarkenAus, markenGrundformen } from '../services/Befundmarken.js';
+import { kollisionenPruefen } from '../services/Kollisionen.js';
 import { mengenLive, mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
 import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
@@ -1277,6 +1278,25 @@ function kopierePerTaste({ still = false } = {}) {
   return true;
 }
 
+// ── Kollisionen (Teil XXXII, O2) ─────────────────────────────────────────────────────────────────────────────────
+// Eigene Körper, die sich überschneiden, ohne verbunden zu sein — „Überschneidet sich mit …: 0,120 m³". Gerechnet vom
+// Server-Kernel (Schnittmenge), deshalb nachgereicht: nach jedem Aufbau, gebündelt, die jüngste Rechnung gewinnt.
+const kollisionen = ref(new Map());
+let _kollisionLauf = 0, _kollisionTimer = null;
+watch(() => [bearbeitung.modusAn, ifc.geometrieStand, aenderungen.eintraege?.length, bearbeitung.umbauLaeuft], () => {
+  clearTimeout(_kollisionTimer);
+  if (!bearbeitung.modusAn) { kollisionen.value = new Map(); return; }
+  if (bearbeitung.umbauLaeuft) return;
+  _kollisionTimer = setTimeout(async () => {
+    const lauf = ++_kollisionLauf;
+    const kernel = engine.value?.autor?._kernel ?? null;
+    const r = await kollisionenPruefen({ stand: aenderungen.wirksamerStand('erzeugt'), rezeptNach: _rezeptNachFuerMengen,
+                                         verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')), kernel })
+      .catch(() => null);
+    if (lauf === _kollisionLauf && r) kollisionen.value = r.befunde;
+  }, 800);
+});
+
 // ── Befunde im Raum (Teil XXX, B7) ─────────────────────────────────────────────────────────────────────────────
 // Die Befunde der eigenen Bauteile als Marken (ein Stiel, ein Ring) und als Zähler in der Bearbeitungsmarke — nur im
 // Bearbeiten-Modus: dort zählt, was nicht stimmt. Gerechnet nach jedem Aufbau (Ableitungen) und jedem Eintrag (Journal).
@@ -1288,6 +1308,8 @@ const befundmarken = computed(() => {
   if (!autor) return [];
   let eigene = [];
   try { eigene = bearbeitung.pruefeEigenes?.() ?? []; } catch { eigene = []; }
+  // Kollisionen (Teil XXXII, O2) — vom Server gerechnet, nach dem Aufbau nachgereicht.
+  eigene = [...eigene, ...[...kollisionen.value].map(([globalId, befunde]) => ({ globalId, befunde }))];
   return befundmarkenAus({
     eigene, ableitungen: autor.ableitungen ?? new Map(), huellen: autor.huellen ?? new Map(),
     stand: aenderungen.wirksamerStand('erzeugt'),

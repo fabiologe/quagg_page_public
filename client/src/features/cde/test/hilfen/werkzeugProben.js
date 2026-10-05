@@ -349,6 +349,8 @@ const NEU = [
     // kommen aus dem Kontext (`vorgang:teile`).
     { id: 'vorgang-entfernen', el: eigen(AUSHUB), werte: [{}], kandidaten: KANDIDATEN },
     { id: 'aussparung-ableiten', el: { ...SCHACHT_G, koerperQuellen: [{ globalId: 'cde-PL1', name: 'PL1' }] }, werte: [{ werkzeug: 'cde-PL1' }] },
+    // Teil XXXII, O1: die Wand mit der Platte vereinigen — beide verborgen, das Ergebnis eine Ableitung.
+    { id: 'verschneiden', el: eigen('cde-W1'), werte: [{ mit: 'cde-PL1', art: 'vereinigung' }, { mit: 'cde-PL1', art: 'differenz' }], kandidaten: KANDIDATEN },
 ];
 
 /**

@@ -122,3 +122,29 @@ nicht gemittelt, Dreieck schrumpft; Loslassen ignoriert die Gleitstelle, kein Gl
 T-Partner, nur Ecken, Eckgriff ohne T. Bewusst gedreht: Eckzählungen in `eckenRest`, `eckenZiehen`, `schichtGriffe`
 („+"/„−" kommen dazu); Katalog 157 → 159 (`strukturG0`, `reichweite` 134 → 136 ohne Oberfläche, je mit Probe);
 `griffSofort` zieht den Tipp-Griff jetzt QUER zur Kante weg (das „+" gleitet längs). Suite 347 Dateien / 3 805 Tests.
+
+### Block 2 — Verschneiden und Kollision (O1, O2)
+
+| Gegen den laufenden Server-Kernel (Tabletlauf, Dev :3001 → quagg-api) | Ergebnis |
+|---|---|
+| Wand (9,64 m³) ∪ Sockel darunter (15,74 m³), per „Verschneiden" | **gebaut, 25,39 m³** (sie berühren sich nur — die Summe) |
+| Rohr DN 300 quer durch eine 30-cm-Wand | **„Überschneidet sich mit ‚Querrohr': 0,020 m³"** an der Wand, umgekehrt am Rohr; Zähler „2 Befunde" (von Hand π·0,15²·0,3 = 0,021 m³, das Rohr ist ein Zwölfeck) |
+
+- **O1 Verschneiden:** Ableitung `verschnitt` (Quellen A, B; Art vereinigung/schnitt/differenz → `booleVereinigung`/
+  `booleSchnitt`/`booleDifferenz` auf dem Server), Klasse und Ausführung von A, Menge `netVolume`. Werkzeug als
+  Daten-Setzer (`setzt: { art: 'verschnitt' }` — W5 bleibt), der zweite Körper über die Kandidaten `eigene:traeger`
+  (V3, wie „Steht auf"). A und B werden verborgen, bleiben aber Quellen: ihr Körper kommt aus dem Bauplan (`formAus`),
+  ändert er sich, rechnet das Ergebnis neu (Test: Sockel dicker → der Server bekommt den neuen). Leere Schnittmenge →
+  Befund `verschnitt_leer`, kein stiller Nullkörper.
+- **Grenze, ehrlich:** ein verborgener Körper ist kein Kommandoziel mehr (E8) — A oder B ändert man nicht direkt; sie
+  folgen Folgen (aufstellen, Knoten, Rebase) und Rückgängig. Wer A umbauen will, nimmt das Verschneiden zurück. Ein
+  Werkzeug „Verschnitt lösen" (Quellen wieder zeigen, Ergebnis weg) wäre der nächste Schritt — nicht gebaut.
+- **O2 Kollision:** `services/Kollisionen.js` — eigene, sichtbare Körper aus dem Bauplan (ohne Räume, Ableitungen,
+  Anzeigen), nur Paare mit überlappender Hülle gehen an den Server (`booleSchnitt`), bewusst Verbundenes (Knoten,
+  T-Stoss) zählt nicht; ab 0,001 m³ ein Befund `kollision` (Warnung) an beiden. Der Viewer rechnet nach jedem Aufbau im
+  Bearbeiten-Modus nach (gebündelt, die jüngste Rechnung gewinnt) und gibt sie an die Befundmarken (B7).
+
+Tests `verschnitt.test.js` (6: Katalog, Kommando — beide verborgen, Klasse von A, ein Vorgang —, Ablehnungen, Lauf mit
+Server-Attrappe, lebendes Rezept, leere Schnittmenge) und `kollisionen.test.js` (4: Rohr durch Wand, Knoten-Wände und
+ferner Pfosten nicht, Verborgenes/Raum/kein Server, Viewer-Anbindung). Gegenproben rot: Klasse von B, Quellen sichtbar,
+Art egal, leer still; nie verbunden, ohne Hüllenfilter, Raum zählt. Katalog 160, reichweite 137, `strukturG0` gezählt.

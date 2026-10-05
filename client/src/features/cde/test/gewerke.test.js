@@ -28,11 +28,11 @@ describe('Teil XXIX, G1 — der Gewerke-Katalog', () => {
         }
     });
 
-    it('jedes eingebaute Rezept (17) und jede Ableitung (7, G-T1: 8, G-T2: 9) nennt ein Gewerk aus dem Katalog', () => {
+    it('jedes eingebaute Rezept (17) und jede Ableitung (7, G-T1: 8, G-T2: 9, XXXII O1: 10) nennt ein Gewerk aus dem Katalog', () => {
         const rezepte = Object.values(REZEPTE).filter(r => !r.behaelter);
         expect(rezepte.filter(r => istGewerk(r.gewerk)).map(r => r.id)).toEqual(rezepte.map(r => r.id));
         expect(Object.values(ABLEITUNGEN).filter(r => !istGewerk(r.gewerk)).map(r => r.id)).toEqual([]);
-        expect(Object.keys(ABLEITUNGEN)).toHaveLength(9);
+        expect(Object.keys(ABLEITUNGEN)).toHaveLength(10);
     });
 
     it('die Katalogprüfung: ein Gewerk, das es nicht gibt, ist ein Fehler — ohne Gewerk ist erlaubt', () => {

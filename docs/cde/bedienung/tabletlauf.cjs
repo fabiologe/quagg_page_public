@@ -324,6 +324,50 @@ function auswerten(reihe, xVorher) {
                 zahlen.zahlAmGriff.wandhoeheNachher = await v(page, `return pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt').get(arg).parameter.wandhoehe;`, gid);
             }
         }
+
+        // Teil XXXII · O1 Verschneiden und O2 Kollision — gegen den laufenden Server-Kernel (trimesh), nicht die Attrappe.
+        const xxxii = await v(page, `
+            const b = pinia._s.get('cde-bearbeitung'), ae = pinia._s.get('cde-aenderungen');
+            b.abbrechen?.();
+            const { punktAusWelt } = await import('/src/features/cde/services/kommando/Kommando.js');
+            const { nnAusWelt } = await import('/src/features/cde/services/Hoehenbezug.js');
+            const r = b.rahmen, hv = r?.hoehenversatz ?? 0;
+            const A = ae.wirksamerStand('erzeugt').get(arg[0]).parameter.punkte;
+            const P = (x, z, y) => ({ ...punktAusWelt({ x, z }, r), hoehe: nnAusWelt(y, hv) });
+            const id = (s) => s + Date.now().toString(36);
+            const xs = A.map(p => p[0]), zs = A.map(p => p[2]), y0 = A[0][1];
+            const platte = id('cde-tablet-pl-');
+            const k1 = { schema: 1, id: id('tl-pl-'), werkzeug: 'platte-zeichnen', ziel: [], neu: [platte], wer: 'tabletlauf', wann: new Date().toISOString(),
+                eingaben: { umriss: [P(Math.min(...xs) - 1, Math.min(...zs) - 1, y0), P(Math.max(...xs) + 1, Math.min(...zs) - 1, y0), P(Math.max(...xs) + 1, Math.max(...zs) + 1, y0), P(Math.min(...xs) - 1, Math.max(...zs) + 1, y0)] },
+                werte: { name: 'Sockel', kategorie: 'IFCSLAB', hoehe: '', dicke: 0.4 } };
+            const e1 = await b.fuehreAus(k1); if (!e1.ausgefuehrt) return { fehler: 'platte: ' + e1.grund };
+            await api.wendeEintragAn?.(e1.eintraege?.[0] ?? e1);
+            const k2 = { schema: 1, id: id('tl-vs-'), werkzeug: 'verschneiden', ziel: [arg[0]], wer: 'tabletlauf', wann: new Date().toISOString(), werte: { mit: platte, art: 'vereinigung' } };
+            const e2 = await b.fuehreAus(k2, { kennungsgeber: (a) => id(a === 'operation' ? 'op-' : 'cde-tl-') });
+            if (!e2.ausgefuehrt) return { fehler: 'verschneiden: ' + e2.grund };
+            await api.wendeEintragAn?.(e2.eintraege ?? e2);
+            // Ein Rohr quer durch die zweite Wand (B).
+            const B = ae.wirksamerStand('erzeugt').get(arg[1]).parameter.punkte;
+            const m = [(B[0][0] + B[1][0]) / 2, (B[0][2] + B[1][2]) / 2], dx = B[1][0] - B[0][0], dz = B[1][2] - B[0][2], l = Math.hypot(dx, dz);
+            const n = [-dz / l * 2, dx / l * 2];
+            const k3 = { schema: 1, id: id('tl-ro-'), werkzeug: 'rohr-zeichnen', ziel: [], neu: [id('cde-tablet-ro-')], wer: 'tabletlauf', wann: new Date().toISOString(),
+                eingaben: { zug: [P(m[0] - n[0], m[1] - n[1], B[0][1] + 1), P(m[0] + n[0], m[1] + n[1], B[0][1] + 1)] },
+                werte: { name: 'Querrohr', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 300 } };
+            const e3 = await b.fuehreAus(k3); if (!e3.ausgefuehrt) return { fehler: 'rohr: ' + e3.grund };
+            await api.wendeEintragAn?.(e3.eintraege?.[0] ?? e3);
+            return { ok: true };`, [gid, gidB]).catch(err => ({ fehler: String(err) }));
+        await warte(12000);
+        zahlen.teilXxxii = { ...xxxii, ...(await v(page, `
+            const ab = [...(v.engine.autor.ableitungen?.values?.() ?? [])].find(a => a?.rezept === 'verschnitt' || a?.kennzahlen?.a != null);
+            const st = pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt');
+            const vs = [...st].find(([, p]) => p?.rezept === 'verschnitt');
+            const k = vs ? v.engine.autor.ableitungen?.get(vs[1].ableitung)?.kennzahlen : null;
+            const gebaut = vs ? !!v.engine.autor.huellen?.get(vs[0]) : false;
+            return { verschnittVolumen: k?.volumen ?? null, verschnittA: k?.a ?? null, verschnittB: k?.b ?? null, verschnittGebaut: gebaut,
+                     // Im setupState sind Refs schon ausgepackt — kollisionen IST die Map.
+                     kollisionen: [...((v.kollisionen?.value ?? v.kollisionen) ?? new Map()).entries()].map(([g, bs]) => bs.map(x => x.text)).flat(),
+                     befundZaehler: document.querySelector('.bearb-befunde')?.innerText?.trim() ?? null };`).catch(err => ({ fehler2: String(err) }))) };
+        await foto(page, 'xxxii');
     } catch (e) {
         fehler.push(`Ablauf: ${String(e.message).slice(0, 300)}`);
         await page.screenshot({ path: path.join(AUS, 'fehler.png') });

@@ -660,6 +660,12 @@ const SETZ_OPERATIONEN = Object.freeze({
             ? `${el?.name || el?.globalId || 'Das Bauteil'}: kein Ende liegt am Punkt — gesetzt wird nur, was dort anschliesst.`
             : null),
     },
+    verschnitt: {
+        // ZWEI EIGENE KÖRPER VERSCHNEIDEN (Teil XXXII, O1): A ist das Subjekt, B kommt aus der Auswahl-Geste.
+        vorbelege: () => ({ mit: '', art: 'vereinigung' }),
+        schreibe: (s, el, werte, kontext = {}) => _verschnittSchritte(el, werte, _zweiterKoerper(el, werte, kontext)),
+        warumNicht: (s, el, werte, kontext = {}) => _verschnittGrund(el, werte, _zweiterKoerper(el, werte, kontext)),
+    },
     knickpunkt: {
         // EINEN KNICKPUNKT EINFÜGEN ODER ENTFERNEN (Teil XXXII, K1) — an Erdbau, Schicht, Raum. Welche Liste und welche
         // Kante, sagt erst der Griff („+" in der Kantenmitte, „−" am Eckmenü); `aktion` sagt die Deklaration.
@@ -1158,6 +1164,48 @@ function _knickEntfernen(el, werte) {
     const { plan, treffer, geschlossen } = k;
     if (treffer.liste.length <= (geschlossen ? 3 : 2)) return null;
     return _mitListe(el, plan, treffer, treffer.liste.filter((_, m) => m !== treffer.index));
+}
+
+/** Die drei Arten des Verschneidens — aus dem Rezept (Ableitungsschicht), nicht importiert. */
+const _verschnittArten = () => rezeptNach('verschnitt')?.arten ?? {};
+/** Der Bauplan des zweiten Körpers: aus den Kandidaten (V3, wie „Steht auf"), sonst aus dem Stand. */
+function _zweiterKoerper(el, werte, { kandidatenVon = null, bauplanVon = null } = {}) {
+    const mit = String(werte?.mit ?? '');
+    if (!mit) return null;
+    return (kandidatenVon?.('eigene:traeger', el) ?? []).find(k => k.id === mit)?.bauplan ?? bauplanVon?.(mit) ?? null;
+}
+/** Warum zwei Körper sich nicht verschneiden lassen — oder null (Teil XXXII, O1). */
+function _verschnittGrund(el, werte, b) {
+    const a = el?.stand?.bauplan;
+    const mit = String(werte?.mit ?? '');
+    if (!a?.rezept) return 'Nur ein eigener Körper lässt sich verschneiden.';
+    if (!mit) return 'Den zweiten Körper im Raum antippen oder aus der Liste wählen.';
+    if (mit === el.globalId) return 'Ein Körper lässt sich nicht mit sich selbst verschneiden.';
+    if (!b?.rezept) return `„${mit}" ist kein eigener Körper.`;
+    if (!_verschnittArten()[werte?.art]) return 'Vereinigen, Schnittmenge oder Abziehen wählen.';
+    return null;
+}
+/** A und B verborgen, das Ergebnis als Ableitung mit beiden als Quellen — ein Vorgang, ein Rückgängig. */
+function _verschnittSchritte(el, werte, b) {
+    if (_verschnittGrund(el, werte, b)) return null;
+    const a = el.stand.bauplan, mit = String(werte.mit);
+    const art = _verschnittArten()[werte.art];
+    return [
+        { art: 'geloescht', globalId: el.globalId, nachher: true, modell: 'cde' },
+        { art: 'geloescht', globalId: mit, nachher: true, modell: 'cde' },
+        ...ableitungsSchritte({
+            rezept: 'verschnitt',
+            quellen: { a: el.globalId, b: mit },
+            quellBasis: {},
+            raster: {},
+            operationen: [{ art: 'verschnitt', parameter: {
+                art: werte.art,
+                kategorie: String(a.kategorie ?? el.category ?? 'IFCBUILDINGELEMENTPROXY').toUpperCase(),
+                ...(a.parameter?.predefinedType ? { predefinedType: a.parameter.predefinedType } : {}),
+            } }],
+            name: `${a.name || el.name || 'A'} ${art.zeichen} ${b.name || mit}`,
+        }),
+    ];
 }
 
 function _hatKnickpunkte(rz) {
@@ -2266,6 +2314,30 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...VORLAGE_WERKZEUGE,
     // Teil XXIX, G2: alle setzbaren Eigenschaften in EINEM Formular.
     EIGENSCHAFTEN_WERKZEUG,
+    {
+        /**
+         * VERSCHNEIDEN (Teil XXXII, O1): dieser eigene Körper mit einem zweiten — vereinigen, Schnittmenge, abziehen.
+         * Ein lebendes Rezept (Fabio 2026-10-05): beide bleiben als Quellen im Stand, verborgen; das Ergebnis trägt die
+         * Klasse dieses Körpers.
+         */
+        id: 'verschneiden',
+        titel: 'Verschneiden',
+        icon: 'schnitt',
+        gruppe: 'lage',
+        bauform: rezeptNach('verschnitt').braucht.a,
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [
+            // Die Kandidaten aus dem Stand (V3): jedes eigene Bauteil mit Körper — dieselbe Frage wie „Steht auf".
+            { name: 'mit', titel: 'mit Körper', typ: 'auswahl',
+              aus: { geste: 'auswahl', herkunft: 'cde', liefert: 'globalId' },
+              optionenAus: 'eigene:traeger' },
+            { name: 'art', titel: 'Wie', typ: 'auswahl', vorgabe: 'vereinigung',
+              optionen: Object.entries(_verschnittArten()).map(([wert, a]) => ({ wert, titel: a.titel })) },
+        ],
+        setzt: { art: 'verschnitt' },
+    },
     {
         id: 'aussparung-ableiten',
         titel: 'Aussparung ableiten',

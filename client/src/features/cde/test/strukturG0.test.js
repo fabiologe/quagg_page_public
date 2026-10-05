@@ -53,9 +53,9 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung");
         // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen);
         // G5: +1 (Baugruppe setzen — in der Palette über ihre Baugruppen, nicht als eigener Knopf).
-        // Teil XXXII, K1: +2 (Knickpunkt einfügen/entfernen an Erdbau, Schicht, Raum — beide Setzer).
-        expect(kat).toHaveLength(159);
-        expect(kat.filter(b => b.setzt)).toHaveLength(90);
+        // Teil XXXII, K1: +2 (Knickpunkt einfügen/entfernen an Erdbau, Schicht, Raum — beide Setzer); O1: +1 Verschneiden.
+        expect(kat).toHaveLength(160);
+        expect(kat.filter(b => b.setzt)).toHaveLength(91);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(22);
     });
 
@@ -65,7 +65,7 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         expect([knoepfe('wand', 'achse+profil', 'IFCWALL'), knoepfe('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 knoepfe('platte', 'flaeche+dicke', 'IFCSLAB'), knoepfe('raum', 'koerper', 'IFCSPACE'),
                 // G4: +1 am Bauwerk (Von der Vorlage lösen) — angeboten, sichtbar im Abschnitt „Vorlage".
-                knoepfe('bauwerk', 'netz', null)]).toEqual([31, 37, 25, 22, 18]);
+                knoepfe('bauwerk', 'netz', null)]).toEqual([32, 38, 26, 23, 18]);      // XXXII O1: „Verschneiden" an jedem Körper
     });
 
     it('G2: SICHTBAR in der Leiste am einzelnen Bauteil — Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11 (G4: 9)', () => {
@@ -74,9 +74,9 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         expect([sichtbar('wand', 'achse+profil', 'IFCWALL'), sichtbar('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 sichtbar('platte', 'flaeche+dicke', 'IFCSLAB'), sichtbar('raum', 'koerper', 'IFCSPACE'),
                 // G4: am Bauwerk wandern die Vorlagen-Werkzeuge (Werte, Angleichen, Lösen) in den Abschnitt „Vorlage" — 11 → 9.
-                sichtbar('bauwerk', 'netz', null)]).toEqual([20, 31, 16, 13, 9]);
+                sichtbar('bauwerk', 'netz', null)]).toEqual([21, 32, 17, 14, 9]);      // XXXII O1: +1 „Verschneiden"
         // Mehrfachauswahl: die Setzer wie bisher, kein Formular.
-        expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(30);
+        expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(31);    // XXXII O1: +1, wie Drehen auch hier
     });
 
     it('G2: Dicke und Höhe mit dem Formular — EIN Kommando, EIN Vorgang, EIN Bauplanschritt', async () => {
@@ -153,7 +153,8 @@ describe('Teil XXIX, G0 — der Retentionsteich mit den Kommandos von heute', ()
     it('die zwei Kern-Lücken — beide geschlossen: die Schicht auf dem Gelände (G-T1) und der Raum in der Mulde (G-T2)', () => {
         // Gedreht: `gelaendeschicht` (Abnahme `schichtGelaende.test.js`), `muldenraum` (`raumInMulde.test.js`: 991,83 m³
         // zwischen Gelände und 99, 1 423,83 m³ zwischen 99 und 100 — von Hand 992 / 1 424, die Eckgrate fehlen).
-        expect(Object.keys(ABLEITUNGEN).sort()).toEqual(['anzeige', 'aussparung', 'bauwerksgrube', 'durchfuehrung', 'erdbau', 'gelaendeschicht', 'kanalgraben', 'muldenraum', 'oeffnung']);
+        // Teil XXXII, O1: + `verschnitt` (zwei eigene Körper vereinigen, schneiden, abziehen).
+        expect(Object.keys(ABLEITUNGEN).sort()).toEqual(['anzeige', 'aussparung', 'bauwerksgrube', 'durchfuehrung', 'erdbau', 'gelaendeschicht', 'kanalgraben', 'muldenraum', 'oeffnung', 'verschnitt']);
         // Ein Raum ist ein senkrechtes Prisma: Grundfläche × Höhe — die Mulde 1 : 3 hätte 1 424 m³ zwischen 99 und 100,
         // ein Prisma über der Wasserfläche bei 99 (46 × 26) hat 1 196 m³.
         const prisma = rezeptNach('raum').mengen({ punkte: [[0, 99, 0], [46, 99, 0], [46, 99, 26], [0, 99, 26]], raumhoehe: 1 });
