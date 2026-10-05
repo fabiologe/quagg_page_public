@@ -80,7 +80,8 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = _toleranzAusRege
     const jeGlobalId = new Map();
     for (const k of knoten) {
         if (!k?.id || !k.punkt) continue;
-        knotenKarte.set(k.id, { id: k.id, punkt: k.punkt, kantenAn: [], kantenAb: [] });
+        knotenKarte.set(k.id, { id: k.id, punkt: k.punkt, kantenAn: [], kantenAb: [],
+                                ...(Number.isFinite(k.radius) ? { radius: k.radius } : {}) });
         if (k.globalId) jeGlobalId.set(k.globalId, k.id);
         const s = _zelle(k.punkt.x, k.punkt.z, tol);
         if (!raster.has(s)) raster.set(s, []);
@@ -118,7 +119,8 @@ export function baueNetz({ kanten = [], knoten = [], toleranz = _toleranzAusRege
             if (id) {
                 const k = knotenKarte.get(id);
                 const abstand = Math.hypot(k.punkt.x - p.x, k.punkt.z - p.z);
-                if (abstand > tol) abweichend.push({ kante: e.id, ende, knoten: id, globalId: gid, abstand });
+                // Ein Bauwerk mit Ausdehnung (BIMFY I9): wer an seiner Wand endet, sitzt an ihm.
+                if (abstand > tol + (k.radius ?? 0)) abweichend.push({ kante: e.id, ende, knoten: id, globalId: gid, abstand });
                 return id;
             }
             verwaist.push({ kante: e.id, ende, globalId: gid });

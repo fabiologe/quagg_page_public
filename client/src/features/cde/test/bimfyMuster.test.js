@@ -22,6 +22,7 @@ import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
 import { ringStoss } from '../services/bimfy/muster/Normwerte.js';
 import { kastenschacht } from '../services/bimfy/muster/Kastenschacht.js';
 import { vorschlagFuer } from '../services/bimfy/Uebersetzer.js';
+import { eigeneNetzauskunft } from '../services/CdeAchsen.js';
 import { liesIsybau } from '../services/bimfy/Geometrieleser.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 
@@ -535,5 +536,60 @@ describe('BIMFY I9 · Kastenschacht (ISYBAU Aufbauform E und Q)', () => {
         };
         expect(teileVon('K1')).toEqual(['kastenunterteil', 'kastenplatte', 'auflagering', 'schachtabdeckung', 'steigeisen']);
         expect(teileVon('K2')).toEqual(['kastenunterteil', 'kastenabdeckung']);
+    });
+});
+
+describe('BIMFY I9 · der Normschacht ist ein Knoten im Netz', () => {
+    beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
+    afterEach(() => repo.setBackend(null));
+
+    it('zwei Schächte und eine Haltung: die Haltung hängt an beiden — vorher zwei lose Enden', async () => {
+        const text = datei(schachtXml({ ost: 10, nord: 20 }), schachtXml({ name: 'S2', ost: 50, nord: 20, deckel: '104,80', sohle: '101,70' }),
+                           haltungXml());
+        const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-nk-${++n}`, ziel: [], wer: 'test', wann: '2026-10-05T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-nk-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const stand = useAenderungen().wirksamerStand('erzeugt');
+        const { netz, knoten } = eigeneNetzauskunft(stand);
+        expect(knoten.map(k => k.name).sort()).toEqual(['S1', 'S2']);
+        expect(knoten.every(k => k.hoeheFest)).toBe(true);                       // die Sohle gilt
+        const kante = [...netz.kanten.values()][0];
+        const nameVon = (id) => knoten.find(k => `cde:${k.globalId}` === id)?.name;
+        expect([nameVon(kante.von), nameVon(kante.nach)]).toEqual(['S1', 'S2']);
+        expect(netz.loseEnden).toEqual([]);                                       // vorher: 2
+        // Die Sohle des Knotens ist die Schachtsohle (102,00 m NN ohne Höhenversatz).
+        expect(knoten.find(k => k.name === 'S1').punkt.y).toBeCloseTo(102, 6);
+    });
+
+    it('wie vermessen: die Haltung endet an der Schachtwand (0,6 m neben der Mitte) — verknüpft, ohne Befund', async () => {
+        // Die echte Datei: Haltungsenden im Mittel 57 cm neben der Schachtmitte. Vorher 606 lose Enden.
+        const geo = `<Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt>
+            <Kante><Start><Rechtswert>10,6</Rechtswert><Hochwert>20</Hochwert><Punkthoehe>102</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Start>
+                   <Ende><Rechtswert>49,4</Rechtswert><Hochwert>20</Hochwert><Punkthoehe>101,7</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Ende></Kante>
+          </Polygon></Polygone></Geometriedaten></Geometrie>`;
+        const text = datei(schachtXml({ ost: 10, nord: 20 }), schachtXml({ name: 'S2', ost: 50, nord: 20, deckel: '104,80', sohle: '101,70' }),
+                           haltungXml({ geometrie: geo }));
+        const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
+        const rohr = kommandos.find(k => k.kommando.werkzeug === 'rohr-zeichnen').kommando;
+        const s1 = kommandos.find(k => k.geo.name === 'S1').kommando;
+        expect(rohr.eingaben.zug[0]).toMatchObject({ ost: 10.6, knoten: s1.neu[0] });   // Lage bleibt, der Knoten ist genannt
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-nw-${++n}`, ziel: [], wer: 'test', wann: '2026-10-05T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-nw-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const stand = useAenderungen().wirksamerStand('erzeugt');
+        expect(stand.has(s1.neu[0])).toBe(true);                                       // das Bauwerk trägt die Kennung
+        const { netz } = eigeneNetzauskunft(stand);
+        expect(netz.loseEnden).toEqual([]);
+        expect(netz.abweichend).toEqual([]);                                           // 0,6 m < DN/2 + Wand = 0,62 m
+        expect(netz.ohneAnschluss).toEqual([]);
     });
 });

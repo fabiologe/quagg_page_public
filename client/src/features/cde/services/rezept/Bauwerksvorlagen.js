@@ -17,7 +17,8 @@
  * Rein: kein Store, keine Engine. Ost = +x, Nord = −z (Welt).
  */
 import { normschacht } from '../bimfy/muster/Normschacht.js';
-import { kastenschacht } from '../bimfy/muster/Kastenschacht.js';
+import { KASTEN_ANNAHMEN, KASTEN_BEGEHBAR_M, kastenschacht } from '../bimfy/muster/Kastenschacht.js';
+import { RING_WANDDICKE } from '../bimfy/muster/Normwerte.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
 const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
@@ -187,6 +188,10 @@ const NORMSCHACHT = Object.freeze({
         wahl('deckelklasse', 'Deckelklasse (1–6 = A–F, 0 = unbekannt)', 4, { max: 6 }),
     ]),
     bauwerk: { name: 'Schacht', art: 'schacht' },
+    /** Wie weit der Schacht als Netzknoten reicht: bis zur Aussenwand (BIMFY I9). */
+    knotenRadius(w) {
+        return w.dn > 0 ? w.dn / 2 + (RING_WANDDICKE[w.dn] ?? 0.15) : null;
+    },
     pruefe(w) {
         if (w.oeffnung >= w.dn) return 'Die Einstiegsöffnung ist nicht kleiner als der Schacht.';
         if (w.anschlussDn >= w.dn) return 'Der Anschluss ist so gross wie der Schacht.';
@@ -299,6 +304,13 @@ const KASTENSCHACHT = Object.freeze({
         wahl('deckelklasse', 'Deckelklasse (1–6 = A–F, 0 = unbekannt)', 0, { max: 6 }),
     ]),
     bauwerk: { name: 'Schacht', art: 'schacht' },
+    /** Bis zur äusseren Ecke — dieselbe Wandannahme wie das Muster, ohne die Kette zu rechnen. */
+    knotenRadius(w) {
+        if (!(w.laenge > 0) || !(w.breite > 0)) return null;
+        const t = w.wand > 0 ? w.wand : Math.round(w.mauerwerk) === 1 ? KASTEN_ANNAHMEN.wandMauerwerk.wert
+            : Math.min(w.laenge, w.breite) >= KASTEN_BEGEHBAR_M ? KASTEN_ANNAHMEN.wandBegehbar.wert : KASTEN_ANNAHMEN.wandKlein.wert;
+        return Math.hypot(w.laenge / 2 + t, w.breite / 2 + t);
+    },
     pruefe(w) {
         return this.kette(w, 0).kopf ? null : 'Zu flach für Boden, Wand und Abdeckung.';
     },

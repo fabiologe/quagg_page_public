@@ -19,7 +19,8 @@
  * kommen Gelände und Körper dazu — als GlobalId-Listen fürs Fachmodell.
  */
 
-import { istEigen, modellVon, rezeptNach } from './Bauteilrezepte.js';
+import { BAUWERKSARTEN, istBehaelter, istEigen, modellVon, rezeptNach } from './Bauteilrezepte.js';
+import { vorlageNach } from './rezept/Bauwerksvorlagen.js';
 import { baueNetz } from './Netztopologie.js';
 
 /**
@@ -35,12 +36,28 @@ import { baueNetz } from './Netztopologie.js';
 export function cdeAchsenAus(erzeugtStand = new Map()) {
     const out = { kanten: [], knoten: [], gelaende: [], koerper: [] };
     for (const [globalId, plan] of erzeugtStand) {
-        const f = rezeptNach(plan?.rezept)?.fachmodell?.(globalId, plan) ?? {};
+        const f = istBehaelter(plan) ? _bauwerkKnoten(globalId, plan) : (rezeptNach(plan?.rezept)?.fachmodell?.(globalId, plan) ?? {});
         for (const k of Object.keys(out)) {
             if (Array.isArray(f[k])) out[k].push(...f[k]);
         }
     }
     return out;
+}
+
+/**
+ * DER KNOTEN EINES BAUWERKS (BIMFY I9): ein Bauwerk, dessen Art einer ist
+ * (`BAUWERKSARTEN[art].netzknoten` — der Schacht), steht im Netz an seinem
+ * Ort aus der Vorlage: Schachtmitte auf der Sohle. Der Rahmen wandert mit, wenn
+ * das Bauwerk bewegt wird. `radius` reicht bis zur Aussenwand — ein Rohr, das
+ * dort endet, sitzt am Schacht (die Vorlage sagt, wie weit: `knotenRadius`).
+ */
+function _bauwerkKnoten(globalId, plan) {
+    const p = plan?.parameter;
+    const r = p?.bauwerksvorlage?.rahmen;
+    if (!BAUWERKSARTEN[p?.art]?.netzknoten || !r || ![r.x, r.y, r.z].every(Number.isFinite)) return {};
+    const radius = vorlageNach(p.bauwerksvorlage.id)?.knotenRadius?.(p.bauwerksvorlage.werte ?? {}) ?? null;
+    return { knoten: [{ globalId, name: plan.name ?? '', punkt: { x: r.x, y: r.y, z: r.z }, hoehenbezug: 'sohle',
+                        ...(Number.isFinite(radius) && radius > 0 ? { radius } : {}) }] };
 }
 
 /**
@@ -86,7 +103,8 @@ export function netzauskunftAus(kanten = [], knoten = [], { toleranz } = {}) {
                                    achsbezug: k.achsbezug ?? 'mitte', sohlabstand: k.sohlabstand ?? null,
                                    profilhoehe: k.profilhoehe ?? null,
                                    anschluss: k.anschluss ?? null })),
-        knoten: knoten.map(k => ({ id: `cde:${k.globalId}`, punkt: k.punkt, globalId: k.globalId })),
+        knoten: knoten.map(k => ({ id: `cde:${k.globalId}`, punkt: k.punkt, globalId: k.globalId,
+                                   ...(Number.isFinite(k.radius) ? { radius: k.radius } : {}) })),
         toleranz,
     });
     return {

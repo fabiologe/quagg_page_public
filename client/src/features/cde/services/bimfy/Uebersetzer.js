@@ -24,7 +24,7 @@
  * Rein: kein Vue, kein Store, keine Engine.
  */
 import { herleitungText } from './muster/Herleitung.js';
-import { REZEPTE, rezeptNach, warumNichtSchreibbar } from '../Bauteilrezepte.js';
+import { REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
 
 /** Zwei Punkte gelten in der Draufsicht als derselbe Ort (1 cm). */
@@ -397,7 +397,32 @@ export function kommandosFuer(zeilen, opt = {}) {
             else kommandos.push({ geo, kommando: k });
         });
     }
+    _verknuepfe(kommandos, opt.kennung ?? zufallsKennung);
     return { kommandos, fehler };
+}
+
+/**
+ * DAS NETZ AUS ISYBAU (BIMFY I9): jeder Schacht bekommt seine Kennung VORAB
+ * (`neu` — die Vorlage vergibt die erste an das Bauwerk), und jede Haltung
+ * nennt an Anfang und Ende den Schacht, an dem sie hängt (`knoten` am Zugpunkt,
+ * K8). Lage und Höhe bleiben, wie vermessen: eine Haltung endet an der
+ * Schachtwand, nicht in der Mitte — das Netz verknüpft über die Erklärung.
+ */
+function _verknuepfe(kommandos, kennung) {
+    const jeSchacht = new Map();
+    for (const { geo, kommando } of kommandos) {
+        if (geo?.isybau?.art !== 'schacht' || !geo.name || jeSchacht.has(geo.name)) continue;
+        const id = kennung('bauteil');
+        kommando.neu = [id];
+        jeSchacht.set(geo.name, id);
+    }
+    for (const { geo, kommando } of kommandos) {
+        const zug = kommando.eingaben?.zug;
+        if (!geo?.isybau || geo.isybau.art === 'schacht' || !Array.isArray(zug) || zug.length < 2) continue;
+        const von = jeSchacht.get(geo.isybau.von), bis = jeSchacht.get(geo.isybau.bis);
+        if (von) zug[0] = { ...zug[0], knoten: von };
+        if (bis) zug[zug.length - 1] = { ...zug[zug.length - 1], knoten: bis };
+    }
 }
 
 /** Die Ausdehnung aller Geometrien in der Draufsicht — für Vorschau und lokalen Versatz. */

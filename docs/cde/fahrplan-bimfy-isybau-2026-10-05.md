@@ -190,9 +190,24 @@ Ergebnis: 463 Geometrien, 444 Kommandos, 100 Normschächte (5 bis 10 Teile), 40 
 | gegliederte Schächte im IFC | 100 | 125 (dazu 7 rückgebaute, abgewählt) |
 | Prüftor offen | 0 | 0 |
 
+### I9b · Der Schacht ist ein Knoten im Netz (gebaut)
+
+Ein Bauwerk der Art „schacht“ steht im Netz an seiner Sohle in der Schachtmitte (`CdeAchsen`),
+mit einem Radius bis zur Aussenwand (`knotenRadius` der Vorlage). BIMFY gibt jedem Schacht seine
+Kennung vorab, jede Haltung nennt an Anfang und Ende ihren Schacht. Lage und Höhe bleiben wie
+vermessen: die Haltungen der echten Datei enden im Mittel 57 cm neben der Mitte, an der Wand.
+Am gezeichneten Schacht bleibt die strenge Regel (E6: 5 cm daneben ist „abweichend“).
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Knoten im Netz | 15 | 140 |
+| lose Rohrenden | 606 | 315 (davon 290 an Anschlusspunkten und Bauwerken, die BIMFY noch nicht liest) |
+| Schächte ohne Anschluss | 13 | 3 |
+| Anschluss abweichend | 0 | 23 (Sonderform‑Schächte ohne Radius) |
+
 ### Offen nach I8
 
-1. Netzknoten des Normschachts (siehe oben, Punkt 1).
+1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). Offen: Anschlusspunkte und Bauwerke aus ISYBAU als Knoten.
 2. ~~Kastenvorlage für die 32 eckigen Schächte~~ — gebaut (I9).
 3. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
 4. PP profiliert (DIN EN 13476), GFK, Polymerbeton, Faserzement: Normen fehlen im Bestand.
