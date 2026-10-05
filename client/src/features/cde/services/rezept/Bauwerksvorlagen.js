@@ -19,6 +19,7 @@
 import { normschacht } from '../bimfy/muster/Normschacht.js';
 import { KASTEN_ANNAHMEN, KASTEN_BEGEHBAR_M, kastenschacht } from '../bimfy/muster/Kastenschacht.js';
 import { RING_WANDDICKE } from '../bimfy/muster/Normwerte.js';
+import { kunststoffschacht, kunststoffWand } from '../bimfy/muster/Kunststoffschacht.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
 const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
@@ -370,8 +371,72 @@ const KASTENSCHACHT = Object.freeze({
     },
 });
 
+/**
+ * DER KUNSTSTOFFSCHACHT (BIMFY I11): ein kleiner Schacht aus PP/PVC — am
+ * Gebäudeanschluss meist DI 0,8 m (Fabio). Skalierbar über DI: ab 0,8 m mit
+ * Konus auf 625 mm, darunter mit Teleskop. Die Kette rechnet
+ * `muster/Kunststoffschacht.js`; die Teile sind die des Normschachts, mit
+ * eigenem Objekttyp.
+ */
+const KUNSTSTOFFSCHACHT = Object.freeze({
+    id: 'kunststoffschacht',
+    titel: 'Kunststoffschacht',
+    ort: Object.freeze({ punkt: 'Schachtmitte', hoehe: 'Sohlhöhe' }),
+    felder: Object.freeze([
+        zahl('tiefe', 'Tiefe (Deckel über Sohle)', 1.2, { min: 0.2, max: 6 }),
+        zahl('di', 'Lichter Durchmesser', 0.8, { min: 0.2, max: 1.5 }),
+        wahl('deckelklasse', 'Deckelklasse (1–6 = A–F, 0 = unbekannt)', 0, { max: 6 }),
+    ]),
+    bauwerk: { name: 'Schacht', art: 'schacht' },
+    knotenRadius(w) {
+        return w.di > 0 ? w.di / 2 + kunststoffWand(w.di) : null;
+    },
+    pruefe(w) {
+        return this.kette(w, 0).kopf ? null : 'Zu flach für einen Kunststoffschacht.';
+    },
+    merkmale(w, rahmen = null) {
+        const { teile, kopf } = this.kette(w, 0);
+        if (!kopf) return {};
+        const sohleNn = Number.isFinite(rahmen?.y) ? rahmen.y + (rahmen.hoehenversatz ?? 0) : null;
+        return { Pset_DistributionChamberElementTypeManhole: {
+            ...(sohleNn !== null ? { InvertLevel: Math.round(sohleNn * 1000) / 1000 } : {}),
+            WallThickness: kopf.wand, HasSteps: false, IsAccessibleOnFoot: kopf.begehbar,
+            NumberOfManholeCovers: 1, AccessLengthOrRadius: kopf.oeffnung / 2,
+            ...(teile.some(t => t.rolle === 'abdeckung' && t.klasse) ? { AccessCoverLoadRating: KLASSEN[Math.round(w.deckelklasse)] } : {}),
+        } };
+    },
+    kette(w, sohle = 0) {
+        return kunststoffschacht({ name: 'Schacht', ort: { ost: 0, nord: 0 }, sohle, deckel: sohle + w.tiefe, di: w.di,
+                                   klasse: KLASSEN[Math.round(w.deckelklasse)] || null }, { quelle: 'vorlage' });
+    },
+    rollen(w, ort) {
+        const { teile, kopf } = this.kette(w, ort.y);
+        if (!kopf) return [];
+        const aus = [];
+        const teil = (rolle, rezept, name, t, parameter) => aus.push({ rolle, rezept, name, parameter: { ...parameter, herleitung: t.herleitung } });
+        const achse = (t) => [welt(0, t.unten, 0), welt(0, t.oben, 0)];
+        for (const t of teile) {
+            if (t.rolle === 'schachtunterteil') {
+                teil('unterteil', 'schachtunterteil', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, boden: t.boden,
+                                                                   objektTyp: 'Schachtunterteil Kunststoff' });
+            } else if (t.rolle === 'schachtrohr') {
+                teil('schachtrohr', 'schachtring', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, objektTyp: 'Schachtrohr Kunststoff' });
+            } else if (t.rolle === 'schachthals') {
+                teil('konus', 'schachthals', t.name, t, { punkte: achse(t), aussen: t.dUnten + 2 * t.wanddicke, innen: t.dUnten,
+                                                         aussenOben: t.dOben + 2 * t.wanddicke, innenOben: t.dOben, objektTyp: 'Konus Kunststoff' });
+            } else if (t.rolle === 'teleskop') {
+                teil('teleskop', 'schachtring', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, objektTyp: 'Teleskop Kunststoff' });
+            } else if (t.rolle === 'abdeckung') {
+                teil('abdeckung', 'schachtabdeckung', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.lichteWeite, deckel: t.deckeldicke });
+            }
+        }
+        return aus.map(a => ({ ...a, kategorie: null }));
+    },
+});
+
 export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB,
-                                                [NORMSCHACHT.id]: NORMSCHACHT, [KASTENSCHACHT.id]: KASTENSCHACHT });
+                                                [NORMSCHACHT.id]: NORMSCHACHT, [KASTENSCHACHT.id]: KASTENSCHACHT,
+                                                [KUNSTSTOFFSCHACHT.id]: KUNSTSTOFFSCHACHT });
 
 /** Was an diesen Werten nicht baubar ist — oder null. Jede Vorlage darf es sagen (`pruefe`). */
 export function vorlageGrund(vorlage, w) {

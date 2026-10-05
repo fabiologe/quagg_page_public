@@ -26,9 +26,8 @@
  */
 
 import { liesIsybauDaten, kantenzugMitSohle } from './isybau/Isybauleser.js';
-import { normschacht } from './muster/Normschacht.js';
+import { ordneKnoten } from './Knotenregeln.js';
 import { rohrwand } from './muster/Rohrwand.js';
-import { kastenschacht } from './muster/Kastenschacht.js';
 
 /** Durchmesser eines Anschlusspunkts — ISYBAU nennt keinen; DN 150 wie der kleinste Hausanschluss (Annahme). */
 export const ANSCHLUSSPUNKT_DN_M = 0.15;
@@ -464,24 +463,20 @@ export function liesIsybau(text) {
         ...[...anschlusspunkte, ...bauwerke].map(k => [k.name, { ort: k.ort, sohle: _fin(k.sohle) ? { hoehe: k.sohle } : null }])]);
     const geometrien = [];
 
+    // DIE SCHÄCHTE (I11: durch das Knotenregelwerk) — Normschacht, Kasten oder Sonderform.
     for (const s of schaechte) {
         if (!s.ort) { warnungen.push(`ISYBAU: Schacht „${s.name}" ohne Lage übergangen`); continue; }
-        const anschluesse = anschluesseVon(s, kanten, nachName);
-        let muster = normschacht(s, { anschluesse });
-        // EIN ECKIGER SCHACHT (I9) wird ein Kasten — die Befunde des Normschachts bleiben dabei.
-        if (!muster.kopf && muster.befunde.some(b => b.regel === 'form_eckig')) {
-            const kasten = kastenschacht(s, { anschluesse });
-            muster = { ...kasten, befunde: [...muster.befunde.filter(b => b.regel !== 'form_eckig'), ...kasten.befunde] };
-        }
-        const istKasten = muster.kopf?.vorlage === 'kastenschacht';
+        const e = ordneKnoten(s, { anschluesse: anschluesseVon(s, kanten, nachName) });
+        const muster = e.muster ?? { teile: [], befunde: e.befunde, kopf: null };
         const zDeckel = s.deckelHoehe, zSohle = s.sohle?.hoehe;
-        const durchmesser = (istKasten ? null : muster.kopf?.dn) ?? s.aufbau?.laenge ?? 1;
+        const durchmesser = e.bauart === 'normschacht' ? muster.kopf.dn : (s.aufbau?.laenge ?? 1);
         const zug = Number.isFinite(zDeckel) && Number.isFinite(zSohle) && zDeckel - zSohle > 0.01;
         geometrien.push({
             art: zug ? 'zug' : 'punkt',
             punkte: zug ? [{ ...s.ort, hoehe: zSohle }, { ...s.ort, hoehe: zDeckel }]
                         : [_punkt(s.ort.ost, s.ort.nord, zSohle ?? zDeckel)],
-            ebene: _isyEbene('Schacht', s.status, !muster.kopf ? ' (Sonderform)' : istKasten ? ' (rechteckig)' : ''), name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
+            ebene: _isyEbene('Schacht', s.status, ZUSATZ[e.bauart] ?? ''), name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
+            bauart: e.bauart, regel: { id: e.regel, grund: e.grund },
         });
     }
 
@@ -497,28 +492,30 @@ export function liesIsybau(text) {
         if (g) geometrien.push({ ...g, ...(dn ? { durchmesser: dn } : {}), isybau: k, ...(wand ? { muster: { rohrwand: wand } } : {}) });
     }
 
-    // DIE ANSCHLUSSPUNKTE (I10): ein kleines Formstück auf der Sohle — so hoch wie
-    // sein Durchmesser (DN 150 angenommen, die Datei nennt keinen).
-    for (const a of anschlusspunkte) {
-        if (!a.ort || !_fin(a.sohle)) { warnungen.push(`ISYBAU: Anschlusspunkt „${a.name}" ohne Lage oder Sohle übergangen`); continue; }
-        geometrien.push({
-            art: 'zug', punkte: [{ ...a.ort, hoehe: a.sohle }, { ...a.ort, hoehe: a.sohle + ANSCHLUSSPUNKT_DN_M }],
-            ebene: _isyEbene(`Anschlusspunkt${a.punktkennung ? ` ${a.punktkennung}` : ''}`, a.status), name: a.name,
-            durchmesser: ANSCHLUSSPUNKT_DN_M, dreiD: true, isybau: a,
-        });
-    }
-    // DIE BAUWERKE (I10): der vermessene Umriss auf der Sohle, so hoch wie bis zum Deckel.
-    for (const b of bauwerke) {
-        const hoch = _fin(b.sohle) && _fin(b.deckel) && b.deckel - b.sohle > 0.05 ? b.deckel - b.sohle : null;
-        if (b.umriss?.length >= 3 && hoch) {
-            geometrien.push({ art: 'umriss', punkte: b.umriss.map(p => ({ ost: p.ost, nord: p.nord, hoehe: b.sohle })),
-                              koerperhoehe: hoch, ebene: _isyEbene('Bauwerk', b.status), name: b.name, dreiD: true, isybau: b });
-        } else if (b.ort && hoch) {
-            // Ohne Umriss bleibt ein senkrechter Zug Sohle → Deckel — gebaut wie ein Schacht (Sonderform).
-            geometrien.push({ art: 'zug', punkte: [{ ...b.ort, hoehe: b.sohle }, { ...b.ort, hoehe: b.deckel }], durchmesser: 1,
-                              ebene: _isyEbene('Bauwerk', b.status, ' (ohne Umriss)'), name: b.name, dreiD: true, isybau: b });
-        } else {
-            warnungen.push(`ISYBAU: Bauwerk „${b.name}" ohne Umriss und Höhen übergangen`);
+    // DIE ANSCHLUSSPUNKTE UND BAUWERKE (I10, I11: durch das Knotenregelwerk) —
+    // Kunststoffschacht, Formstück, Hülle oder Sonderform; Fehleinträge berichtigt und gemeldet.
+    for (const roh of [...anschlusspunkte, ...bauwerke]) {
+        const e = ordneKnoten(roh);
+        const a = e.knoten;
+        const titel = a.art === 'bauwerk' ? 'Bauwerk' : `Anschlusspunkt${a.punktkennung ? ` ${a.punktkennung}` : ''}`;
+        for (const b of e.befunde.filter(b => b.schwere === 'warnung')) warnungen.push(`ISYBAU: ${b.text}`);
+        if (e.bauart === 'auslassen') continue;
+        const gemein = { ebene: _isyEbene(titel, a.status, ZUSATZ[e.bauart] ?? ''), name: a.name, dreiD: true, isybau: a,
+                         bauart: e.bauart, regel: { id: e.regel, grund: e.grund, berichtigt: e.berichtigt },
+                         muster: e.muster ?? { teile: [], befunde: e.befunde, kopf: null },
+                         ...(e.predefinedType ? { predefinedType: e.predefinedType } : {}) };
+        if (e.bauart === 'kunststoffschacht') {
+            const k = e.muster.kopf;
+            geometrien.push({ art: 'zug', punkte: [{ ...a.ort, hoehe: k.sohle }, { ...a.ort, hoehe: k.deckel }], durchmesser: k.di, ...gemein });
+        } else if (e.bauart === 'formstueck') {
+            // Ein kleines Formstück auf der Sohle — so hoch wie sein Durchmesser (DN 150 angenommen).
+            geometrien.push({ art: 'zug', punkte: [{ ...a.ort, hoehe: a.sohle }, { ...a.ort, hoehe: a.sohle + ANSCHLUSSPUNKT_DN_M }],
+                              durchmesser: ANSCHLUSSPUNKT_DN_M, ...gemein });
+        } else if (e.bauart === 'huelle') {
+            geometrien.push({ art: 'umriss', punkte: a.umriss.map(p => ({ ost: p.ost, nord: p.nord, hoehe: a.sohle })),
+                              koerperhoehe: a.deckel - a.sohle, ...gemein });
+        } else if (e.bauart === 'sonderform') {
+            geometrien.push({ art: 'zug', punkte: [{ ...a.ort, hoehe: a.sohle }, { ...a.ort, hoehe: a.deckel }], durchmesser: 1, ...gemein });
         }
     }
 
@@ -533,6 +530,11 @@ export function liesIsybau(text) {
  * „zu löschende Objekte", AH15 G105), steht auf einer eigenen Ebene, die BIMFY
  * nicht von sich aus anlegt.
  */
+/** Der Zusatz der Ebene je Bauart — so trennt die Gruppierung, was verschieden gebaut wird. */
+const ZUSATZ = Object.freeze({
+    kastenschacht: ' (rechteckig)', sonderform: ' (Sonderform)', kunststoffschacht: ' (Kunststoffschacht)',
+});
+
 function _isyEbene(art, status, zusatz = '') {
     return `ISYBAU ${art}${zusatz}${status === 6 ? ' (rückgebaut)' : ''}`;
 }

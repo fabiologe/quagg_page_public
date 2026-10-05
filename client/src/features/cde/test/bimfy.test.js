@@ -176,7 +176,7 @@ describe('BIMFY · ISYBAU und Punktdaten', () => {
         expect(geometrien[2].punkte).toEqual([{ ost: 410000, nord: 5460000, hoehe: 102 }, { ost: 410040, nord: 5460030, hoehe: 101.3 }]);
         expect(geometrien[2].durchmesser).toBe(0.3);
         // Seit I10 liest BIMFY Anschlusspunkte — dieser hat keine Sohle (Punkt ohne Höhe).
-        expect(warnungen).toEqual(['ISYBAU: Anschlusspunkt „A1" ohne Lage oder Sohle übergangen']);
+        expect(warnungen).toEqual(['ISYBAU: Anschlusspunkt „A1" ohne Lage oder Sohle.']);
         const zeilen = gruppiere(geometrien);
         // Seit BIMFY I6 wird ein ISYBAU-Schacht der Normschacht — Teil für Teil, nicht ein Zylinder.
         expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'vorlage:normschacht'], ['ISYBAU Haltung', 'rohr']]);

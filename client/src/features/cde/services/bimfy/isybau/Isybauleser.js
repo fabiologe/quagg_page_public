@@ -134,8 +134,13 @@ function _kantenzug(kanten) {
 /** Die Geometrie eines Objekts: Punkte, Kantenzug, Umriss (geschlossenes Polygon). */
 function _geometrie(obj) {
     const daten = _pfad(obj, 'Geometrie/Geometriedaten');
-    if (!daten) return { punkte: [], zug: [], umriss: null, crsLage: null };
-    const punkte = _kinder(_pfad(daten, 'Knoten'), 'Punkt').map(_punkt).filter(Boolean);
+    if (!daten) return { punkte: [], hoehenpunkte: [], zug: [], umriss: null, crsLage: null };
+    const roh = _kinder(_pfad(daten, 'Knoten'), 'Punkt');
+    const punkte = roh.map(_punkt).filter(Boolean);
+    // NUR EINE HÖHE (I11, echte Datei: 101 GOK-Punkte ohne Lage): ein eigener Höhenpunkt
+    // zur Lage des Objekts, etwa die Geländeoberkante am Anschlusspunkt (AH15, A-1.2.2.2).
+    const hoehenpunkte = roh.filter(el => !_fin(_num(el, 'Rechtswert')) && _fin(_num(el, 'Punkthoehe')))
+        .map(el => ({ hoehe: _num(el, 'Punkthoehe'), attribut: (_text(el, 'PunktattributAbwasser') || '').toUpperCase() }));
     let zug = _kantenzug(_kinder(_pfad(daten, 'Kanten'), 'Kante'));
     let umriss = null;
     for (const poly of _kinder(_pfad(daten, 'Polygone'), 'Polygon')) {
@@ -147,7 +152,7 @@ function _geometrie(obj) {
         else if (p.length >= 3) umriss = p;
     }
     // Das Lagesystem steht in der Geometrie (Format 2017) oder in den Geometriedaten (AH15).
-    return { punkte, zug, umriss, crsLage: _text(daten, 'CRSLage') || _text(_pfad(obj, 'Geometrie'), 'CRSLage') || null };
+    return { punkte, hoehenpunkte, zug, umriss, crsLage: _text(daten, 'CRSLage') || _text(_pfad(obj, 'Geometrie'), 'CRSLage') || null };
 }
 
 /** Der Kopf jedes Objekts. */
@@ -303,7 +308,7 @@ function _anschlusspunkt(obj) {
     const geo = _geometrie(obj);
     const ap = _pfad(obj, 'Knoten/Anschlusspunkt');
     const lage = geo.punkte.find(p => p.attribut !== 'GOK' && _fin(p.ost) && _fin(p.nord)) ?? null;
-    const gok = geo.punkte.find(p => p.attribut === 'GOK');
+    const gok = geo.punkte.find(p => p.attribut === 'GOK') ?? geo.hoehenpunkte.find(p => p.attribut === 'GOK');
     return {
         ..._kopf(obj, geo),
         art: 'anschlusspunkt',

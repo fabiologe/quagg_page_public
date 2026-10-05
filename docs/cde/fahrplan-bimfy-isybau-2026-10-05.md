@@ -226,6 +226,31 @@ Am gezeichneten Schacht bleibt die strenge Regel (E6: 5 cm daneben ist „abweic
 | IfcPipeFitting im IFC | 0 | 198 |
 | Prüftor offen | 0 | 0 |
 
+### I11 · Knotenregelwerk und Kunststoffschacht (gebaut)
+
+Fabio: „ein Gebäudeanschluss ist meist ein kleiner PVC‑Schacht mit DI = 0,8 m … skalierbar und
+erweiterbar, damit wir alle möglichen komischen Fehleinträge abfangen können."
+
+1. **Regelwerk** (`bimfy/Knotenregeln.js`): jeder ISYBAU‑Knoten läuft durch eine Tabelle von
+   Regeln seiner Art. Eine Regel entscheidet (Bauart), berichtigt einen Fehleintrag und gibt weiter,
+   oder passt nicht. Jede Regel trägt ein Beispiel, der Wächter (`bimfyKnotenregeln.test.js`) prüft
+   jedes. Stellschrauben stehen in `KNOTEN_VORGABEN`. Normschacht, Kasten und Sonderform ziehen mit
+   in die Tabelle.
+2. **Kunststoffschacht** (`muster/Kunststoffschacht.js`, Vorlage `kunststoffschacht`): DI skalierbar,
+   ab 0,8 m Konus auf 625 mm, sonst Teleskop; Unterteil, Schachtrohr, Abdeckung. Wand DI/40, Boden
+   und Bauhöhen sind Annahmen (DIN EN 13598‑2 nicht im Bestand), DI 0,8 ist Fabios Vorgabe.
+3. **Fehleinträge**, die die echte Datei hat: GOK‑Punkte nur mit Höhe (101, vorher nicht gelesen),
+   kein GOK (56, Tiefe 1,0 m angenommen), GOK unplausibel (5, verworfen), Höhen vertauscht (1),
+   zu flach für einen Schacht (2, Formstück).
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Gebäudeanschlüsse als Schacht | 0 | 149 (74 mit Konus, 75 mit Teleskop) |
+| abgefangene Fehleinträge | 0 | 62 berichtigt, 2 als Formstück |
+| gegliederte Schächte im IFC | 125 | 274 |
+| verlängerte Leitungen | 162 | 2 (nur noch an Formstücken) |
+| Prüftor offen | 0 | 0 |
+
 ### Offen nach I8
 
 1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). ~~Anschlusspunkte und Bauwerke~~ — gebaut (I10).

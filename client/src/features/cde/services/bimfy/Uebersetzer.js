@@ -97,14 +97,24 @@ export function formenFuer(geo) {
 export const NORMSCHACHT_WAHL = Object.freeze({
     id: 'vorlage:normschacht', titel: 'Normschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
 });
-const _mitNormschacht = (geo) => geo?.isybau?.art === 'schacht' && !!geo?.muster?.kopf && geo.muster.kopf.vorlage !== 'kastenschacht';
-
 /** DER KASTENSCHACHT ALS WAHL (BIMFY I9): ein eckiger ISYBAU-Schacht mit Kette. */
 export const KASTENSCHACHT_WAHL = Object.freeze({
     id: 'vorlage:kastenschacht', titel: 'Kastenschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
 });
-const _mitKasten = (geo) => geo?.isybau?.art === 'schacht' && geo?.muster?.kopf?.vorlage === 'kastenschacht';
-const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL];
+/** DER KUNSTSTOFFSCHACHT ALS WAHL (BIMFY I11): der Gebäudeanschluss als PVC-Schacht. */
+export const KUNSTSTOFFSCHACHT_WAHL = Object.freeze({
+    id: 'vorlage:kunststoffschacht', titel: 'Kunststoffschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+});
+const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL, KUNSTSTOFFSCHACHT_WAHL];
+/** Die Vorlage, deren Kette das Muster einer Geometrie gerechnet hat — oder null. Eine Stelle für alle (I11). */
+const _vorlageVon = (geo) => {
+    const id = geo?.isybau && geo?.muster?.kopf?.vorlage;
+    return id ? VORLAGEN_WAHLEN.find(w => w.id === `vorlage:${id}`) ?? null : null;
+};
+const _mitNormschacht = (geo) => _vorlageVon(geo) === NORMSCHACHT_WAHL;
+const _mitKasten = (geo) => _vorlageVon(geo) === KASTENSCHACHT_WAHL;
+/** Was ein Rezept aus einer Bauart des Knotenregelwerks wird (I11). */
+const REZEPT_JE_BAUART = Object.freeze({ formstueck: 'anschlusspunkt', huelle: 'sonderbauwerk', sonderform: 'schacht' });
 
 /** Die IFC-Klasse, die eine Wahl vorgibt — Rezept oder Vorlage. */
 export function klasseFuer(id) {
@@ -116,8 +126,8 @@ export function klasseFuer(id) {
 /** Die Rezepte (und Vorlagen), die zu dieser Geometrie passen. */
 export function rezepteFuer(geo) {
     const formen = formenFuer(geo);
-    return [...(_mitNormschacht(geo) ? [NORMSCHACHT_WAHL] : []), ...(_mitKasten(geo) ? [KASTENSCHACHT_WAHL] : []),
-            ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
+    const vorlage = _vorlageVon(geo);
+    return [...(vorlage ? [vorlage] : []), ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
 }
 
 // ── Vorschlag ─────────────────────────────────────────────────────────────
@@ -181,11 +191,13 @@ const _vorgabeKlasse = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? 'IFCBU
  * `grund` sagt in einem Satz, woher er kommt — Ebene, Form oder Vorgabe.
  */
 export function vorschlagFuer(geo) {
-    if (_mitNormschacht(geo)) return { rezept: NORMSCHACHT_WAHL.id, kategorie: NORMSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht, Muster DIN 4034-1' };
-    if (_mitKasten(geo)) return { rezept: KASTENSCHACHT_WAHL.id, kategorie: KASTENSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht rechteckig, Muster Kasten' };
-    // I10: Anschlusspunkte und Bauwerke aus ISYBAU — Knoten im Netz.
-    if (geo?.isybau?.art === 'anschlusspunkt' && rezeptNach('anschlusspunkt')) return { rezept: 'anschlusspunkt', kategorie: 'IFCPIPEFITTING', grund: 'ISYBAU-Anschlusspunkt' };
-    if (geo?.isybau?.art === 'bauwerk' && geo.art === 'umriss' && rezeptNach('sonderbauwerk')) return { rezept: 'sonderbauwerk', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', grund: 'ISYBAU-Bauwerk, Hülle aus dem Umriss' };
+    // DAS KNOTENREGELWERK HAT ENTSCHIEDEN (I11): eine Vorlage oder ein Rezept, mit seinem Grund.
+    const vorlage = _vorlageVon(geo);
+    if (vorlage) return { rezept: vorlage.id, kategorie: vorlage.kategorieVorgabe, grund: geo.regel?.grund ?? vorlage.titel };
+    const ausBauart = REZEPT_JE_BAUART[geo?.bauart];
+    if (geo?.isybau && ausBauart && rezeptNach(ausBauart) && rezepteFuer(geo).some(r => r.id === ausBauart)) {
+        return { rezept: ausBauart, kategorie: _vorgabeKlasse(ausBauart), grund: geo.regel?.grund ?? ausBauart };
+    }
     const passende = rezepteFuer(geo);
     const text = `${geo?.ebene ?? ''} ${geo?.name ?? ''}`.toLowerCase();
     for (const s of STICHWORTE) {
@@ -278,6 +290,7 @@ function _mass(meter, einheit) {
 export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umrechnen = null } = {}) {
     if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz, umrechnen });
     if (wahl?.rezept === KASTENSCHACHT_WAHL.id) return kastenschachtKommando(geo, wahl, { versatz, umrechnen });
+    if (wahl?.rezept === KUNSTSTOFFSCHACHT_WAHL.id) return kunststoffschachtKommando(geo, wahl, { versatz, umrechnen });
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -378,7 +391,9 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
     // I10: die Ausführung aus ISYBAU — ein AP verbindet, die anderen führen Wasser zu
     // (AH15, Tab. A-1-2); ein Bauwerk heisst nach seinem Typ (G400).
     const isy = geo.isybau;
-    if (isy?.art === 'anschlusspunkt' && 'predefinedType' in werte) werte.predefinedType = !isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY';
+    if (isy?.art === 'anschlusspunkt' && 'predefinedType' in werte) {
+        werte.predefinedType = geo.predefinedType ?? (!isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY');
+    }
     if (isy?.art === 'bauwerk' && 'objektTyp' in werte) {
         werte.objektTyp = G400_BAUWERKSTYP[isy.bauwerkstyp] ?? (isy.bauwerkstyp ? `Bauwerkstyp ${isy.bauwerkstyp}` : 'Sonderbauwerk');
     }
@@ -428,8 +443,8 @@ function _verknuepfe(kommandos, kennung) {
         if (!['schacht', 'anschlusspunkt', 'bauwerk'].includes(geo?.isybau?.art) || !geo.name || jeKnoten.has(geo.name)) continue;
         const id = kennung('bauteil');
         kommando.neu = [id];
-        // Ein Anschlusspunkt hat keinen Körper, an dem ein Rohr enden könnte — seine Lage zählt.
-        const lage = geo.isybau.art === 'anschlusspunkt' ? kommando.eingaben?.zug?.[0] ?? null : null;
+        // Nur ein Formstück hat keinen Körper, an dem ein Rohr enden könnte — dort zählt seine Lage (I11).
+        const lage = geo.bauart === 'formstueck' ? kommando.eingaben?.zug?.[0] ?? null : null;
         jeKnoten.set(geo.name, { id, lage });
     }
     for (const { geo, kommando } of kommandos) {
@@ -532,5 +547,17 @@ export function kastenschachtKommando(geo, wahl = {}, { versatz = null, umrechne
         werkzeug: 'bauwerk-aus-vorlage-kastenschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) },
+    };
+}
+
+/** Das Kommando „Kunststoffschacht aus Vorlage" (I11): die Schachtmitte auf der Sohle, DI und Tiefe aus der Kette. */
+export function kunststoffschachtKommando(geo, wahl = {}, { versatz = null, umrechnen = null } = {}) {
+    if (_vorlageVon(geo) !== KUNSTSTOFFSCHACHT_WAHL) return { fehler: 'Für diesen Knoten hat das Regelwerk keinen Kunststoffschacht gerechnet' };
+    const k = geo.muster.kopf;
+    return {
+        werkzeug: 'bauwerk-aus-vorlage-kunststoffschacht',
+        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', tiefe: k.tiefe, di: k.di,
+                 deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')) },
     };
 }

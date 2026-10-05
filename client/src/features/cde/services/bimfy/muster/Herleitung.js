@@ -2,6 +2,7 @@
  * MUSTER · Herleitung — woher ein Mass stammt, als Datum und als Satz.
  *
  *   isybau | vorlage   gegeben (Datei bzw. Werte der Vorlage)
+ *   vorgabe            eine Vorgabe des Auftraggebers (Fabio), mit Datum im Text
  *   norm               Normwert, mit Beleg {norm, stelle}
  *   norm-pruefen       Normwert, dessen Lesung am Original zu prüfen ist
  *   annahme            keine Norm im Bestand — ein Faustwert mit Grund

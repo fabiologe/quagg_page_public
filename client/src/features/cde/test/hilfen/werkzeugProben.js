@@ -197,6 +197,9 @@ const NEU = [
     { id: 'bauwerk-aus-vorlage-kastenschacht', el: zug(P(700, 100, 0)), zug: [P(700, 100, 0)],
       werte: [{ name: 'K1', hoehe: '', tiefe: 1.8, laenge: 1, breite: 1, wand: 0, mauerwerk: 0, oberteil: 0, steighilfe: 1,
                 richtung: 30, deckelklasse: 4 }] },
+    // BIMFY I11: der Kunststoffschacht — DI 0,8 m, 1,2 m tief.
+    { id: 'bauwerk-aus-vorlage-kunststoffschacht', el: zug(P(750, 100, 0)), zug: [P(750, 100, 0)],
+      werte: [{ name: 'GA1', hoehe: '', tiefe: 1.2, di: 0.8, deckelklasse: 0 }] },
     // BIMFY I10: Anschlusspunkt und Sonderbauwerk.
     { id: 'anschlusspunkt-zeichnen', el: zug(P(800, 100, 0), P(800, 100.15, 0)), zug: [P(800, 100, 0), P(800, 100.15, 0)],
       werte: [{ name: 'A1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' }] },

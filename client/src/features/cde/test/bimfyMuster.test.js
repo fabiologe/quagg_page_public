@@ -597,13 +597,13 @@ describe('BIMFY I9 · der Normschacht ist ein Knoten im Netz', () => {
 describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
     beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
     afterEach(() => repo.setBackend(null));
-    // Wie die echte Datei: GA mit Sohle an der Lage und eigenem GOK-Punkt; ein Bauwerk mit Umriss (SBW), KOP unten, SBD oben.
+    // Wie die echte Datei: GA mit Sohle an der Lage und eigenem GOK-Punkt NUR MIT HÖHE (ohne Rechts-/Hochwert); ein Bauwerk mit Umriss (SBW), KOP unten, SBD oben.
     const apXml = ({ name = 'GA1', kennung = 'GA', ost = 0, nord = 30, sohle = '101,20', gok = '102,50' } = {}) => `
   <AbwassertechnischeAnlage><Objektbezeichnung>${name}</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status>
     <Knoten><KnotenTyp>1</KnotenTyp><Anschlusspunkt><Punktkennung>${kennung}</Punktkennung></Anschlusspunkt></Knoten>
     <Geometrie><GeoObjekttyp>P</GeoObjekttyp><Geometriedaten><Knoten>
       <Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${sohle}</Punkthoehe><PunktattributAbwasser>${kennung}</PunktattributAbwasser></Punkt>
-      ${gok ? `<Punkt><Rechtswert>${ost}</Rechtswert><Hochwert>${nord}</Hochwert><Punkthoehe>${gok}</Punkthoehe><PunktattributAbwasser>GOK</PunktattributAbwasser></Punkt>` : ''}
+      ${gok ? `<Punkt><Punkthoehe>${gok}</Punkthoehe><PunktattributAbwasser>GOK</PunktattributAbwasser></Punkt>` : ''}
     </Knoten></Geometriedaten></Geometrie></AbwassertechnischeAnlage>`;
     const kante = (a, b) => `<Kante><Start><Rechtswert>${a[0]}</Rechtswert><Hochwert>${a[1]}</Hochwert><PunktattributAbwasser>SBW</PunktattributAbwasser></Start>
         <Ende><Rechtswert>${b[0]}</Rechtswert><Hochwert>${b[1]}</Hochwert><PunktattributAbwasser>SBW</PunktattributAbwasser></Ende></Kante>`;
@@ -643,11 +643,12 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         expect(warnungen.filter(w => /übergangen/.test(w))).toEqual([]);
         const zeilen = gruppiere(geometrien);
         expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual(expect.arrayContaining([
-            ['ISYBAU Anschlusspunkt GA', 'anschlusspunkt'], ['ISYBAU Bauwerk', 'sonderbauwerk']]));
+            ['ISYBAU Anschlusspunkt GA (Kunststoffschacht)', 'vorlage:kunststoffschacht'], ['ISYBAU Bauwerk', 'sonderbauwerk']]));
         const { kommandos, fehler } = kommandosFuer(zeilen);
         expect(fehler).toEqual([]);
         const k = (name) => kommandos.find(x => x.geo.name === name).kommando;
-        expect(k('GA1').werte).toMatchObject({ predefinedType: 'ENTRY', dn: 150 });
+        // Seit I11 ist ein Gebäudeanschluss ein Kunststoffschacht DI 0,8 m, so tief wie Sohle bis Gelände.
+        expect(k('GA1')).toMatchObject({ werkzeug: 'bauwerk-aus-vorlage-kunststoffschacht', werte: { di: 0.8, tiefe: 1.3 } });
         expect(k('RÜ1').werte).toMatchObject({ objektTyp: 'Becken', bauwerkshoehe: 4 });
         expect(k('L1').eingaben.zug[0].knoten).toBe(k('GA1').neu[0]);
         expect(k('H1').eingaben.zug.at(-1).knoten).toBe(k('RÜ1').neu[0]);
@@ -670,14 +671,25 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         expect(meshVolume(kp.positions, kp.positions.length / 9).volume).toBeCloseTo(48, 6);
     });
 
-    it('die Fuge am Gebäudeanschluss: 28 cm Zeichenkürzung werden geschlossen, die Höhe bleibt, die Herleitung sagt es', () => {
-        // Echte Datei: Leitungen enden 0,25–0,30 m vor dem GA; ISYBAU-Länge = Linie + Fugen (Median 9 mm).
+    it('am Gebäudeanschluss (jetzt ein Schacht) endet die Leitung an seiner Wand — verknüpft, nicht verlängert', () => {
+        // Echte Datei: Leitungen enden 0,25–0,30 m vor dem GA — innerhalb DI/2 + Wand = 0,42 m.
         const text = datei(apXml(), schachtXml({ ost: 0, nord: 0 }),
             leitungXml({ name: 'L1', von: 'GA1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 29.72], ende: [0, 0.5] }));
         const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
         const l1 = kommandos.find(x => x.geo.name === 'L1').kommando;
+        expect(l1.eingaben.zug[0]).toMatchObject({ ost: 0, nord: 29.72 });                // die Lage bleibt
+        expect(l1.eingaben.zug[0].knoten).toBe(kommandos.find(x => x.geo.name === 'GA1').kommando.neu[0]);
+        expect(l1.werte.herleitung ?? '').not.toMatch(/verlängert/);
+    });
+
+    it('an einem Formstück (Straßenablauf, kein Körper) wird die Fuge geschlossen — die Höhe bleibt, die Herleitung sagt es', () => {
+        const text = datei(apXml({ name: 'SE1', kennung: 'SE', gok: null }), schachtXml({ ost: 0, nord: 0 }),
+            leitungXml({ name: 'L1', von: 'SE1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 29.72], ende: [0, 0.5] }));
+        const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
+        const l1 = kommandos.find(x => x.geo.name === 'L1').kommando;
+        expect(kommandos.find(x => x.geo.name === 'SE1').kommando.werte.predefinedType).toBe('ENTRY');
         expect(l1.eingaben.zug[0]).toMatchObject({ ost: 0, nord: 30, hoehe: 101.2 });      // vorher: nord 29,72
         expect(l1.eingaben.zug.at(-1)).toMatchObject({ nord: 0.5 });                       // am Schacht bleibt sie an der Innenwand
-        expect(l1.werte.herleitung).toMatch(/Anfang um 0,28 m bis GA1 verlängert/);
+        expect(l1.werte.herleitung).toMatch(/Anfang um 0,28 m bis SE1 verlängert/);
     });
 });

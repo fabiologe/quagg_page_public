@@ -474,7 +474,7 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
         teile,
         befunde,
         kopf: {
-            name: s.name, ort: s.ort, deckel: zDeckel, sohle: zSohle, tiefe: _r3(tiefe), dn, wanddicke: t,
+            vorlage: 'normschacht', name: s.name, ort: s.ort, deckel: zDeckel, sohle: zSohle, tiefe: _r3(tiefe), dn, wanddicke: t,
             oeffnung: d10, oberteil, sohleQuelle: s.sohle.quelle, rest: fuell.rest,
         },
     };
