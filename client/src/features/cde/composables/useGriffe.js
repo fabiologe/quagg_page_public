@@ -32,6 +32,7 @@ import { computed, ref, watch } from 'vue';
 import { aufMasslinie, begrenze, griffZuWerten, griffeFrei, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
 import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
 import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
+import { nachId } from '../services/Bearbeitungen.js';
 import { RASTER_M, achsPassung, achsParameter, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, richtungAufSchirm, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
 import { TREFFER_PX } from '../services/IfcOverlay.js';
@@ -113,6 +114,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
      * Bedienung, kein Journal — er gilt, bis ein anderes Bauteil gewählt wird.
      */
     const geloest = ref(new Set());
+    /**
+     * DIE ZAHL AM GRIFF (Teil XXXI, T8): ein Tipp auf einen Griff (ohne Ziehen) öffnet ein Feld daneben —
+     * `{ griff, titel, x, y, felder: [{name, titel, einheit, wert, stellen}], serie }` oder null.
+     */
+    const zahl = ref(null);
     let _getroffen = null;
 
     /** Hat dieser Zug-Griff Nebengriffe, die ein Tipp zeigen könnte? */
@@ -193,8 +199,9 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // oder weniger. Ohne diese Quelle blieben Stützpunkt-, Kanten- und
     // Tipp-Griffe am Stand von vorher stehen (der Journal-Zähler feuert zu
     // früh: da ist das frische Subjekt noch nicht da).
-    // Gelöste Knoten gelten nur am Bauteil, an dem sie gelöst wurden (T7).
-    watch(() => getSubjekt?.()?.globalId ?? null, () => { if (geloest.value.size) geloest.value = new Set(); });
+    // Gelöste Knoten gelten nur am Bauteil, an dem sie gelöst wurden (T7); die Zahl am Griff nur an seinem (T8).
+    watch(() => getSubjekt?.()?.globalId ?? null, () => { if (geloest.value.size) geloest.value = new Set(); zahl.value = null; });
+    watch(() => !!bearbeitung?.modusAn, (an) => { if (!an) zahl.value = null; });
     watch(() => [bearbeitung?.modusAn, bearbeitung?.scharfId, getSubjekt?.()?.globalId, getBauform?.(), aenderungen?.anzahl,
                  getSubjekt?.()?.stand?.bauplan, bearbeitung?.eckenFuer, bearbeitung?.umbauLaeuft], () => neuBauen());
 
@@ -206,7 +213,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const key = engine?.value?.griffUnter?.(tipp.x, tipp.y);
         // Nur ein Griff, den es in DIESER Liste gibt — eine veraltete Kugel im
         // Overlay (Werkzeug gerade gewechselt) darf keinen Zug beginnen.
-        if (!key || !griffe.value.some(g => g.key === key)) { schliesseGruppe(); return false; }
+        if (!key || !griffe.value.some(g => g.key === key)) { schliesseGruppe(); zahl.value = null; return false; }
+        zahl.value = null;
         _getroffen = key;
         // SOFORT ZIEHEN, AUCH MIT DEM FINGER (Teil XXXI, T4 — E-T2): auf einem Griff ist der Griff das Ziel, nicht die
         // Kamera. Bis hierher armierte der Finger erst nach 380 ms Long-Press (`'warten'`), sonst schwenkte er die
@@ -550,6 +558,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             // auf dem Finger die einzige Art, ein Menü zu öffnen. Hat der Griff
             // Nebengriffe, stehen sie ab jetzt da (bis anderswo getippt wird).
             if (!abbruch && hatNebengriffe(z.griff.key)) offeneGruppe.value = z.griff.key;
+            // DIE ZAHL AM GRIFF (T8): derselbe Tipp öffnet das Feld für die genaue Zahl.
+            if (!abbruch) zahl.value = _zahlFuer(z.griff, z.startPx, z.serie);
             neuBauen();
             return null;
         }
@@ -591,6 +601,78 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // schreibt die Felder — und DIE VORSCHAU (Box, Versatzpfeil, Lot, Chip)
     // ist dieselbe wie beim Tippen ins Formular. Esc bricht ab (Zeiger-Stapel),
     // der Finger armiert per Long-Press, Strg erzwingt die Höhe.
+
+    // ── Die Zahl am Griff (T8) ─────────────────────────────────────────────
+
+    /**
+     * Wie eine Grösse heisst und gemessen wird: aus der Felddefinition des WERKZEUGS des Griffs — die Musterschicht
+     * kennt keine Fachwörter (W6). Stellen nach der Einheit.
+     */
+    function _feldBeschreibung(g, n) {
+        const def = (nachId(g.werkzeug)?.felder ?? []).find(f => f.name === n) ?? null;
+        const einheit = def?.einheit ?? (n === 'winkel' ? '°' : '');
+        const stellen = einheit === '°' ? 1 : einheit === 'mm' ? 0 : 3;
+        return { titel: n === 'winkel' ? 'Drehen um' : (def?.titel ?? n), einheit, stellen };
+    }
+
+    function _kontext(g) {
+        const subjekt = getSubjekt?.() ?? null;
+        return { versatz: subjekt?.versatz ?? getVersatz?.(g.modelId ?? subjekt?.modelId) ?? null,
+                 hoehenversatz: subjekt?.hoehenversatz ?? getHoehenversatz?.() ?? 0 };
+    }
+
+    /**
+     * Welche Zahlen ein Griff setzt — aus denselben Werten, die ein Zug an seiner Stelle schriebe (`griffZuWerten`):
+     * ein Feldmass seinen Wert (DN in mm), ein Mass am Vorgang seinen Wert, ein Eckpunkt Ost/Nord/Höhe, ein Höhengriff
+     * die Höhe, der Drehgriff den Winkel (0 = wie jetzt). Der Gizmo-Pfeil: der VERSATZ entlang seiner Achse — eine
+     * absolute Koordinate zu tippen, um 2 m nach Osten zu schieben, wäre Rechnen statt Planen.
+     */
+    function _zahlFuer(g, px, serie) {
+        if (!g || g.wirkung) return null;
+        const ort = px ? { x: px.x, y: px.y } : { x: 0, y: 0 };
+        if (g.form === 'pfeil' && g.richtung) {
+            return { griff: g, serie, ...ort, titel: `Verschieben · ${g.achsName ?? ''}`.trim(),
+                     felder: [{ name: 'versatz', titel: 'um', einheit: 'm', wert: 0, stellen: 2 }] };
+        }
+        if (g.form === 'quadrat') return null;                    // zwei Richtungen zugleich: das Formular
+        const jetzt = griffZuWerten(g, g.pos, _kontext(g));
+        const namen = (g.felder ?? []).filter(n => Number.isFinite(jetzt[n]) && n !== 'index' && n !== 'op');
+        const nurHoehe = g.achsen === 'Y' && namen.includes('hoehe');
+        const felder = (nurHoehe ? ['hoehe'] : namen).map((n) => {
+            if (n === 'wert' && g.mass) {
+                const winkel = g.mass.art === 'winkel';
+                return { name: n, titel: g.mass.titel ?? 'Wert', einheit: g.mass.einheit ?? (winkel ? '°' : 'm'), wert: jetzt[n], stellen: winkel ? 1 : 3 };
+            }
+            if (g.feld?.name === n) {
+                const mm = (g.feld.faktor ?? 1) >= 1000;
+                return { name: n, titel: g.titel ?? n, einheit: g.einheit ?? (mm ? 'mm' : 'm'), wert: jetzt[n], stellen: mm ? 0 : 3 };
+            }
+            return { name: n, ..._feldBeschreibung(g, n), wert: jetzt[n] };
+        });
+        if (!felder.length) return null;
+        return { griff: g, serie, ...ort, titel: g.titel ?? (g.art === 'drehung' ? 'Drehen' : 'Genau setzen'), felder };
+    }
+
+    /** Die getippten Zahlen übernehmen — über denselben Ablegeweg wie ein Zug (ein Kommando, ein Rückgängig). */
+    async function zahlUebernehmen(getippt = {}) {
+        const z = zahl.value;
+        if (!z) return null;
+        zahl.value = null;
+        const g = z.griff;
+        let werte;
+        if ('versatz' in getippt && g.richtung) {
+            const v = Number(getippt.versatz);
+            if (!Number.isFinite(v) || Math.abs(v) < 1e-9) return null;
+            const l = Math.hypot(g.richtung.x, g.richtung.y, g.richtung.z) || 1;
+            const pos = { x: g.pos.x + g.richtung.x / l * v, y: g.pos.y + g.richtung.y / l * v, z: g.pos.z + g.richtung.z / l * v };
+            werte = griffZuWerten(g, pos, _kontext(g));
+        } else {
+            werte = { ...griffZuWerten(g, g.pos, _kontext(g)), ...getippt };
+        }
+        return ablegen(g, g.pos, { werte, serie: z.serie });
+    }
+
+    function zahlSchliessen() { zahl.value = null; }
 
     // ── Ablegen: der EINE Katalogweg ───────────────────────────────────────
 
@@ -668,5 +750,5 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         engine?.value?.griffHervorheben?.(null);
     }
 
-    return { griffe, zug, pille, mengen, bereit, offeneGruppe, geloest, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
+    return { griffe, zug, pille, mengen, bereit, offeneGruppe, geloest, zahl, zahlUebernehmen, zahlSchliessen, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
 }

@@ -133,6 +133,7 @@ describe('Wächter: der Schliessfang ist im Raum verdrahtet — gezeichnet wird 
 
 describe('Wächter: beim Zeichnen steht kein Kontextmenü über der Zeichenfläche', () => {
     it('der HUD-Anker entfällt, solange der Eingabe-Motor sammelt', () => {
-        expect(lies('components/IfcViewer.vue')).toMatch(/:elementAnker="eingabe\.aktiv\.value \? null : selectionAnchor"/);
+        // Seit Teil XXXI (T8) wählt der Rest den Anker (an der Oberkante, wenn Griffe stehen) — beim Zeichnen bleibt er null.
+        expect(lies('components/IfcViewer.vue')).toMatch(/:elementAnker="eingabe\.aktiv\.value \? null : /);
     });
 });

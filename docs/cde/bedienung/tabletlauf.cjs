@@ -299,6 +299,31 @@ function auswerten(reihe, xVorher) {
             zahlen.knoten = { partner: (ecke?.mit ?? []).includes(gidB), aBewegt: !gleich(vorher.a, nachher.a),
                               bBewegt: !gleich(vorher.b, nachher.b), gleicherOrt: gleich(nachher.a, nachher.b) };
         }
+
+        // T8 · Die Zahl am Griff: den Wandhöhen-Griff antippen, „3,1" tippen, Enter.
+        await v(page, `pinia._s.get('cde-bearbeitung').abbrechen(); await v.waehleEigenes?.(arg); return 1;`, gid).catch(() => null);
+        await warte(2500);
+        const hoehe = await v(page, `const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+            const g = v.griffe.griffe.value.find(x => x.key === 'feld:' + arg + ':wandhoehe'); if (!g) return null;
+            const s = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
+            return s ? { x: c.left + s.x, y: c.top + s.y } : null;`, gid);
+        zahlen.zahlAmGriff = { griff: !!hoehe };
+        if (hoehe) {
+            await tippe(page, cdp, hoehe); await warte(800);
+            zahlen.zahlAmGriff.feld = await page.evaluate(() => { const f = document.querySelector('.gz'); if (!f) return null;
+                const i = f.querySelector('input'); const r = i.getBoundingClientRect();
+                return { titel: f.querySelector('.gz-kopf')?.innerText, wert: i.value, fokus: document.activeElement === i, hoehePx: Math.round(r.height) }; });
+            await foto(page, 'zahl_am_griff');
+            if (zahlen.zahlAmGriff.feld) {
+                // Wie auf dem iPad: ins Feld tippen (erst dann zeigt Safari die Zahlentastatur), dann tippen.
+                const feld = await page.evaluate(() => { const r = document.querySelector('.gz input').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+                await tippe(page, cdp, feld); await warte(300);
+                await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control');
+                await page.keyboard.type('3,1'); await page.keyboard.press('Enter');
+                await warte(9000);
+                zahlen.zahlAmGriff.wandhoeheNachher = await v(page, `return pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt').get(arg).parameter.wandhoehe;`, gid);
+            }
+        }
     } catch (e) {
         fehler.push(`Ablauf: ${String(e.message).slice(0, 300)}`);
         await page.screenshot({ path: path.join(AUS, 'fehler.png') });

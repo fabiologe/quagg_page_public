@@ -340,7 +340,8 @@
         <CdeHudLayer
           :measurements="ifc.messungen"
           :element="ifc.selectedElement"
-          :elementAnker="eingabe.aktiv.value ? null : selectionAnchor"
+          :elementAnker="eingabe.aktiv.value ? null : (griffe.griffe.value.length ? selectionAnchorOben : selectionAnchor)"
+          :ueberGriffen="griffe.griffe.value.length > 0"
           :projectToScreen="(p) => engine?.projectToScreen(p)"
           :getCamera="() => engine?._getWorld()?.camera?.three ?? null"
           :getCanvas="() => canvasRef"
@@ -375,6 +376,9 @@
         <!-- DER UMBAU LÄUFT (Teil XXXI, T1): vom Loslassen bis das Bild steht — die Plananimation, und die Zeichenfläche
              nimmt so lange nichts an (kein Zug an einem Stand, den es nicht mehr gibt). Durchsichtig: der Geist am
              neuen Ort bleibt zu sehen. -->
+        <!-- Die Zahl am Griff (Teil XXXI, T8): ein Tipp auf einen Griff öffnet sie daneben. -->
+        <CdeGriffZahl v-if="griffe.zahl.value && !bearbeitung.umbauLaeuft" :zahl="griffe.zahl.value"
+                      @uebernehmen="(w) => griffe.zahlUebernehmen(w)" @schliessen="griffe.zahlSchliessen()" />
         <div v-if="bearbeitung.umbauLaeuft" class="umbau-sperre" aria-busy="true"
              @pointerdown.stop.prevent @pointerup.stop.prevent @click.stop.prevent @wheel.stop.prevent @touchstart.stop.prevent>
           <CdeUmbauAnzeige klein />
@@ -526,6 +530,7 @@ import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } fro
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import CdeUmbauAnzeige from './CdeUmbauAnzeige.vue';
+import CdeGriffZahl from './CdeGriffZahl.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { ausgelasseneErdbau, satzAbgleich, satzModelle, satzUmsetzen } from '../services/SatzAnsicht.js';
@@ -1401,13 +1406,15 @@ watch(() => aenderungen.nurLesen, (nl) => {
 // Der Bildschirmpunkt wird im HUD projiziert; hier wird nur der WELT-Punkt
 // (BBox-Zentrum) nachgeführt, wenn sich die Auswahl ändert.
 const selectionAnchor = ref(null);
+/** Dieselbe Mitte, aber auf der OBERKANTE — stehen Griffe, hängt das Schild darüber (Teil XXXI, T8). */
+const selectionAnchorOben = ref(null);
 watch(() => ifc.selectedElement, async (el) => {
-  if (!el || !engine.value) { selectionAnchor.value = null; return; }
+  if (!el || !engine.value) { selectionAnchor.value = null; selectionAnchorOben.value = null; return; }
   const boxes = await engine.value.getBoxes([el.localId], el.modelId);
   const box = boxes?.[0];
-  selectionAnchor.value = (box && !box.isEmpty())
-    ? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2]
-    : null;
+  const da = box && !box.isEmpty();
+  selectionAnchor.value = da ? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2] : null;
+  selectionAnchorOben.value = da ? [(box.min.x + box.max.x) / 2, box.max.y, (box.min.z + box.max.z) / 2] : null;
 });
 
 /** Issue direkt am gewählten Bauteil anlegen (Pin sitzt auf dem HUD-Anker). */

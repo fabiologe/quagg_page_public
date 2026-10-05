@@ -47,7 +47,7 @@
     <div
       v-if="auswahlPunkt"
       class="hud-menu"
-      :class="{ 'hud-menu--zu': !aufgeklappt, 'hud-menu--scharf': !!bearbeitung.scharf }"
+      :class="{ 'hud-menu--zu': !aufgeklappt, 'hud-menu--scharf': !!bearbeitung.scharf, 'hud-menu--ueber-griffen': ueberGriffen }"
       :style="{ left: auswahlPunkt.x + 'px', top: auswahlPunkt.y + 'px' }"
     >
       <button
@@ -158,6 +158,12 @@ const props = defineProps({
   getCanvas:    { type: Function, default: null },
   /** { x, y, text, fang:{art,name}|null } in Canvas-Pixeln — oder null (Teil XVI) */
   zeigerMarke:  { type: Object, default: null },
+  /**
+   * Stehen Griffe am Bauteil (Teil XXXI, T8)? Dann hängt das Schild an der OBERKANTE (`elementAnker` gibt der Viewer
+   * so) und hält mehr Abstand als die Trefferfläche eines Griffs — gemessen im Tabletlauf: der Wandhöhen-Griff sass
+   * genau unter dem Schild, der Fingertipp öffnete dessen Menü statt der Zahl.
+   */
+  ueberGriffen: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -358,6 +364,10 @@ function formatDist(m) {
 .hud-menu {
   position: absolute;
   transform: translate(-50%, calc(-100% - 14px));
+}
+/* Über Griffen: mehr als TREFFER_PX (22 px, IfcOverlay) über dem Oberkanten-Griff. */
+.hud-menu.hud-menu--ueber-griffen { transform: translate(-50%, calc(-100% - 34px)); }
+.hud-menu {
   display: flex; flex-direction: column; gap: 0.25rem;
   padding: 0.35rem 0.4rem;
   background: var(--cde-surface-raised);

@@ -591,7 +591,9 @@ export function feldgriffeFuer(subjekt, bauplan, rezept, punkte) {
         const wert = Number(parameter[f.name] ?? f.vorgabe);
         if (!(wert > 0)) continue;
         const kopf = { key: `feld:${subjekt.globalId}:${f.name}`, globalId: subjekt.globalId, name: subjekt.name ?? '',
-                       herkunft: 'cde', art: 'feldmass', werkzeug: `${rezept.id}-${f.name}-setzen`, felder: [f.name] };
+                       herkunft: 'cde', art: 'feldmass', werkzeug: `${rezept.id}-${f.name}-setzen`, felder: [f.name],
+                       // Für die Zahl am Griff (T8): wie das Feld heisst und worin es gemessen wird.
+                       titel: f.titel ?? f.name, einheit: f.einheit ?? 'm' };
         if (f.griff.richtung === 'y') {
             const vonOben = f.griff.von === 'oberkante';
             const basisY = vonOben ? ok : uk;

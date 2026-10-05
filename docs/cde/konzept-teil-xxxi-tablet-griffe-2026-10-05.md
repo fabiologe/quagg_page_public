@@ -320,3 +320,30 @@ Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht; Ka
 nach, nur ein Ende, Kantenwerte ohne `mit`; kein gelieferter Partner, eigene doppelt, Modell nicht „geliefert", ohne
 `zieleAusMit`, Schacht nicht geladen. Tabletlauf um einen
 Knotenschritt erweitert (zweite Wand an die im Bild liegende Ecke).
+
+### T8 — Die Zahl am Griff (2026-10-05, H8)
+
+| Tabletlauf (iPad hochkant, Wand gewählt) | vorher | T8 |
+|---|---|---|
+| genaue Wandhöhe setzen | Tafel aufklappen (T5) → Werkzeug suchen → Formular | **Tipp auf den Höhengriff → Feld daneben** („Wandhöhe 2,500 m"), ins Feld tippen, „3,1", Enter |
+| Ergebnis im Journal | — | **Wandhöhe 3,1** |
+| Höhe des Eingabefelds auf dem Finger | — | 44 px |
+
+- **Ein Tipp auf einen Griff** (ohne Ziehen) öffnet `CdeGriffZahl` neben dem Griff (`useGriffe.zahl`); Nebengriffe öffnen
+  wie bisher mit. Was im Feld steht, sind die Werte, die ein Zug an der Stelle des Griffs schriebe (`griffZuWerten`):
+  ein Feldmass sein Wert (Titel und Einheit aus dem Rezeptfeld, DN in ganzen mm), ein Mass am Vorgang sein Wert, ein
+  Eckpunkt Rechtswert/Hochwert/Höhe, ein Höhengriff die Höhe, der Drehgriff „Drehen um 0°", der Gizmo-Pfeil den
+  **Versatz entlang seiner Achse**; das Ebenenquadrat keins (zwei Richtungen: das Formular).
+- **Übernehmen** geht denselben Weg wie das Loslassen eines Zugs (`ablegen` mit festen Werten) — ein Kommando, ein
+  Rückgängig, Knoten (T7) eingeschlossen. Komma oder Punkt (`liesZahl`), eine ungültige Zahl sperrt den Knopf. Ein Tipp
+  daneben, ein anderes Bauteil oder Bearbeiten aus schliesst das Feld; am rechten Bildrand geht es links vom Griff auf.
+- **Gefunden im Tabletlauf:** (1) der Wandhöhen-Griff sass GENAU unter dem Schild der Auswahl („WALL Tabletwand") — der
+  Fingertipp öffnete dessen Menü. Stehen Griffe, hängt das Schild jetzt an der Oberkante der Hülle und 34 px darüber
+  (mehr als `TREFFER_PX`). (2) Der Fokus ging an den Klick nach dem Loslassen verloren — er wird jetzt danach gesetzt.
+  Auf dem iPad zeigt Safari die Zahlentastatur trotzdem erst beim Tipp ins Feld (ein Fokus ohne Fingertipp darf es nicht).
+
+Test `griffZahl.test.js` (9: Wandhöhe, Eckpunkt im Knoten, Höhengriff und Drehen, Pfeil-Versatz, Schliessen; Feld:
+Komma/Punkt/Enter/Esc, ungültig, Rand; das Schild über Griffen). Gegenproben rot: Tipp öffnet nichts, Getipptes zählt
+nicht, Pfeil wie jeder Griff, Höhengriff zeigt alles, daneben schliesst nicht, Feld ohne Titel, kein Umklappen am Rand.
+Titel und Einheiten der übrigen Grössen kommen aus der Felddefinition des Werkzeugs (W6: die Musterschicht kennt keine
+Fachwörter — ein erster Entwurf mit eigener Titeltabelle fiel dort durch). Schliessfang-Wächter auf „beim Zeichnen null" gelockert.
