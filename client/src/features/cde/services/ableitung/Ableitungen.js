@@ -1693,6 +1693,33 @@ export function schichtUmriss(op) {
     return [...versetztePunkte(achse, b / 2), ...versetztePunkte(achse, -b / 2).reverse()];
 }
 
+/**
+ * DIE ECKEN EINER SCHICHT / EINES RAUMS IN DER MULDE (Teil XXX, B7) — für „Ecken ziehen".
+ *
+ * Der gezeichnete Umriss (oder die Achse eines Bands) ist eine LAGELISTE: seine Punkte tragen keine Höhe, die kommt
+ * aus dem Gelände (der Unterlage). Gezogen wird nur Ost/Nord — derselbe Weg wie die Achse eines Gerinnes
+ * (`erdbau-stuetzpunkt-verschieben`, `ohneHoehe`). Die Höhe, an der der Griff sitzt, rechnet der Lauf
+ * (`kennzahlen.eckhoehen`: Oberkante der Schicht, Spiegel des Raums); ohne Lauf kein Griff.
+ */
+function _lagelisteVon(parameter, art) {
+    const ops = parameter?.operationen ?? [];
+    const j = ops.findIndex(o => o?.art === art);
+    if (j < 0) return [];
+    const op = ops[j].parameter ?? {};
+    if (Array.isArray(op.umriss) && op.umriss.length >= 3) return [{ op: j, feld: 'umriss', punkte: op.umriss, ohneHoehe: true, geschlossen: true }];
+    if (Array.isArray(op.achse) && op.achse.length >= 2) return [{ op: j, feld: 'achse', punkte: op.achse, ohneHoehe: true, geschlossen: false }];
+    return [];
+}
+function _eckenVon(parameter, art, lauf) {
+    const hoehen = lauf?.kennzahlen?.eckhoehen ?? [];
+    return _lagelisteVon(parameter, art).flatMap(l => {
+        const ring = l.punkte.map(q => ({ x: Number(q?.x), z: Number(q?.z) }));
+        return ring.map((q, k) => ({ op: l.op, schluessel: `${l.feld}:${k}`, titel: `Ecke ${k + 1}`,
+                                     pos: { x: q.x, y: Number(hoehen[k]), z: q.z }, feld: l.feld, index: k,
+                                     ring, geschlossen: l.geschlossen }));
+    });
+}
+
 function _schichtBox(ring, rand) {
     if (!ring.length) return null;
     const xs = ring.map(p => p.x), zs = ring.map(p => p.z);
@@ -1771,6 +1798,9 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
 
     // Worauf sie liegt — der Lauf löst die Kette über seinen Stand auf und reicht sie als `unterlage` herein.
     unterlage: unterlageVon,
+    // Ihr Umriss lässt sich an den Ecken ziehen (Teil XXX, B7) — eine Lageliste, die Höhe kommt aus dem Gelände.
+    lagelisten: (parameter) => _lagelisteVon(parameter, 'gelaendeschicht'),
+    ecken: (parameter, { lauf = null } = {}) => _eckenVon(parameter, 'gelaendeschicht', lauf),
     // Auf ihr kann eine andere Schicht (ein Raum) liegen — die Kandidatenliste „Liegt auf" fragt das.
     traegtSchichten: true,
 
@@ -1805,10 +1835,14 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
             { umriss, dicke, abstand: Number(op.abstand) || 0, richtung: SCHICHT_RICHTUNGEN[op.richtung] ? op.richtung : 'lot' });
         if (!r.ergebnis) throw new Error(`gelaendeschicht: ${r.warnungen.join('; ') || 'kein Körper'}`);
         const e = r.ergebnis;
+        // Wo die Eckgriffe sitzen: auf der Oberkante, über jedem gespeicherten Punkt (lotrecht genähert).
+        const oberhalb = (Number(op.abstand) || 0) + (Number(dicke) || 0);
+        const eckhoehen = (_lagelisteVon(parameter, 'gelaendeschicht')[0]?.punkte ?? [])
+            .map(q => rasterAbtasten(raster, Number(q?.x), Number(q?.z)) + oberhalb);
         return {
             teile: { schicht: { form: 'koerper', daten: e } },
             kennzahlen: { volumen: e.volumen, flaeche: e.flaeche, grundflaeche: e.grundflaeche, umfang: e.umfang,
-                          dicke, ausserhalb: e.ausserhalb, zellweite: raster.cell,
+                          dicke, ausserhalb: e.ausserhalb, zellweite: raster.cell, eckhoehen,
                           gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle',
                           liegtAuf: unterlage?.glieder?.map(g => g.gid) ?? [] },
             befunde: [...(e.ausserhalb > 0.001 ? [{ regel: 'schicht_ausserhalb', schwere: 'warnung',
@@ -1869,6 +1903,9 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
     hoehenFelder: { muldenraum: ['oben', 'unten'] },
     // Ein Raum über einem Dichtungsaufbau beginnt an dessen Oberkante, nicht am Erdplanum (Teil XXIX, nach G8).
     unterlage: (parameter, planVon) => unterlageVon(parameter, planVon),
+    // Sein Umriss lässt sich an den Ecken ziehen (Teil XXX, B7); die Griffe sitzen auf dem Spiegel.
+    lagelisten: (parameter) => _lagelisteVon(parameter, 'muldenraum'),
+    ecken: (parameter, { lauf = null } = {}) => _eckenVon(parameter, 'muldenraum', lauf),
     teile: [
         { rolle: 'raum', kategorie: 'IFCSPACE', bauform: 'koerper', form: 'koerper',
           predefinedType: (parameter) => (parameter?.predefinedType ? String(parameter.predefinedType).toUpperCase() : null),
@@ -1901,6 +1938,7 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
         return {
             teile: { raum: { form: 'koerper', daten: e } },
             kennzahlen: { volumen: e.volumen, wasserflaeche: e.wasserflaeche, tiefe: weltAusNn(oben, hoehenversatz) - e.tiefster,
+                          eckhoehen: umriss.map(() => weltAusNn(oben, hoehenversatz)),
                           spiegel: oben, unten, ausserhalb: e.ausserhalb, zellweite: raster.cell,
                           gelaende: stapel ? (stapel.opsVor.length ? 'nach Erdbau' : 'Urgelände') : 'Quelle' },
             befunde: [...(r.warnungen.some(w => w.startsWith('raum_am_umriss')) ? [{ regel: 'raum_am_umriss', schwere: 'hinweis',

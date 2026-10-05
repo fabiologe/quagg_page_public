@@ -270,6 +270,15 @@
             Schritt{{ aenderungen.sitzungVorgaenge.length === 1 ? '' : 'e' }}
           </button>
           <button
+            v-if="befundmarken.length"
+            class="bearb-zahl bearb-befunde"
+            :class="{ 'bearb-befunde--warnung': befundmarken.some(m => m.schwere === 'warnung') }"
+            title="Befunde im Eigenbau — ein Klick wählt das nächste Bauteil und sagt, was nicht stimmt"
+            @click="naechsterBefund"
+          >
+            {{ befundmarken.length }} Befund{{ befundmarken.length === 1 ? '' : 'e' }}
+          </button>
+          <button
             class="bearb-abschluss"
             :class="{ gedimmt: !herkunftAn }"
             title="Herkunft färben: Geändertes orange, selbst Gebautes blau (9.6)"
@@ -502,7 +511,8 @@ import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '../services/IfcAutor.js';
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { eigeneFangkandidaten, zahlText, zeichenfang } from '../services/Zeichenhilfe.js';
-import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
+import { befundmarkenAus, markenGrundformen } from '../services/Befundmarken.js';
+import { mengenLive, mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
 import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
@@ -1050,6 +1060,9 @@ const griffe = useGriffe({
   // Eckzug am Aushub stand die neue Kubatur (354 → 519 m³) nirgends — man
   // musste das Bauteil neu anwählen, um sie zu sehen.
   nachBauen: (eintraege, werkzeugId) => nachBauenMitMeldung(eintraege, werkzeugId),
+  // DIE MASSEN LIVE (Teil XXX, B7): was der Zug schriebe, gerechnet vom selben Lauf wie der Aufbau — die Zahl, die
+  // nach dem Loslassen im Mengen-Reiter steht. Vorher sah man sie erst nach dem Neuaufbau.
+  probeMengen: () => probeMengen(),
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
   getWer: () => cde.bearbeiter || '',
   melde,
@@ -1245,6 +1258,52 @@ function kopierePerTaste({ still = false } = {}) {
   zwischenablage = eigene.map(b => b.globalId);
   if (!still) melde(`${eigene.length === 1 ? 'Kopiert' : `${eigene.length} kopiert`} — Strg+V setzt die Kopie.`);
   return true;
+}
+
+// ── Befunde im Raum (Teil XXX, B7) ─────────────────────────────────────────────────────────────────────────────
+// Die Befunde der eigenen Bauteile als Marken (ein Stiel, ein Ring) und als Zähler in der Bearbeitungsmarke — nur im
+// Bearbeiten-Modus: dort zählt, was nicht stimmt. Gerechnet nach jedem Aufbau (Ableitungen) und jedem Eintrag (Journal).
+const befundmarken = computed(() => {
+  if (!bearbeitung.modusAn) return [];
+  void ifc.geometrieStand;
+  void aenderungen.eintraege?.length;
+  const autor = engine.value?.autor;
+  if (!autor) return [];
+  let eigene = [];
+  try { eigene = bearbeitung.pruefeEigenes?.() ?? []; } catch { eigene = []; }
+  return befundmarkenAus({
+    eigene, ableitungen: autor.ableitungen ?? new Map(), huellen: autor.huellen ?? new Map(),
+    stand: aenderungen.wirksamerStand('erzeugt'),
+    verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+    ausnehmen: (plan) => istAnzeigeform(plan),
+  });
+});
+watch(befundmarken, (m) => {
+  if (!m.length) engine.value?.overlayLeere?.('befunde');
+  else engine.value?.overlayZeige?.('befunde', markenGrundformen(m, { farben: tokenFarben() }));
+});
+let _befundZeiger = -1;
+/** Der Zähler springt von Befund zu Befund: wählt das Bauteil und sagt, was nicht stimmt. */
+async function naechsterBefund() {
+  const m = befundmarken.value;
+  if (!m.length) return;
+  _befundZeiger = (_befundZeiger + 1) % m.length;
+  const b = m[_befundZeiger];
+  await waehleEigenes(b.globalId);
+  melde(`${b.name || 'Bauteil'}: ${b.texte[0] ?? 'Befund'}${b.texte.length > 1 ? ` (+${b.texte.length - 1})` : ''}`);
+}
+
+/** Die Massen eines Vorgangs, wenn die Werte des laufenden Griffzugs gälten (B7) — `null`, wenn nichts zu rechnen ist. */
+async function probeMengen() {
+  const b = bearbeitung.scharf, el = bearbeitung.bauteil;
+  const ableitung = el?.stand?.bauplan?.ableitung ?? null;
+  const autor = engine.value?.autor;
+  if (!b?.anwenden || !ableitung || !autor?.probeKennzahlen) return null;
+  let schritte = null;
+  try { schritte = b.anwenden(el, { ...bearbeitung.werte }); } catch { schritte = null; }
+  if (!Array.isArray(schritte) || !schritte.length) return null;
+  const kz = await autor.probeKennzahlen(schritte, ableitung);
+  return kz ? mengenLive(kz, autor.ableitungen?.get?.(ableitung)?.kennzahlen ?? null) : null;
 }
 
 /**
@@ -3452,6 +3511,8 @@ function onToggleNotes() { panels.toggle('issues'); }
   touch-action: manipulation;
 }
 .bearb-zahl:hover { opacity: 1; }
+/* Befunde (B7): dieselbe Schrift wie die Schritte — die Farbe der Fläche bleibt, eine Warnung wird nur fetter. */
+.bearb-befunde--warnung { font-weight: 700; opacity: 1; }
 .bearb-abschluss {
   display: inline-flex; align-items: center; gap: 0.25rem;
   padding: 0.1rem 0.45rem; cursor: pointer;

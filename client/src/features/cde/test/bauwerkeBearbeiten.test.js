@@ -105,7 +105,8 @@ describe('Teil XXVII, B0 — die Funde der Vorprüfung, wie sie HEUTE sind', () 
         // Formgerecht (E3: keine Nummern) — dann spricht die Eignung, nicht die Adresse.
         const erg = await b.fuehreAus(kommando('erdbau-stuetzpunkt-verschieben', { ziel: ['cde-R1'], werte: { hoehe: 211 } }));
         expect(erg.ausgefuehrt).toBe(false);
-        expect(erg.grund).toBe('„Knickpunkt verschieben" passt nicht zu Kammer 1: Nur an einem eigenen Erdbau-Vorgang.');
+        // Seit Teil XXX (B7) nennt der Grund auch Schicht und Raum in der Mulde — der Raum einer Kammer bleibt draussen.
+        expect(erg.grund).toBe('„Knickpunkt verschieben" passt nicht zu Kammer 1: Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.');
     });
 
     // B2 — DAS BAUWERK ALS GANZES (E24): aufgefächert auf alle Teile, ein Kommando, ein Rückgängig.

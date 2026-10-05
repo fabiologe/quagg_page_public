@@ -758,6 +758,29 @@ export class IfcAutor {
         return true;
     }
 
+    /**
+     * DIE MASSEN, BEVOR GESCHRIEBEN WIRD (Teil XXX, B7): die Kennzahlen einer Ableitung, wenn diese Schritte gälten —
+     * gerechnet vom selben Lauf wie der Aufbau, auf dem Stand des letzten Aufbaus, ohne etwas zu bauen oder zu merken.
+     * Für die Pille am gezogenen Griff: dieselbe Zahl, die nach dem Loslassen im Mengen-Reiter steht.
+     * @returns {Promise<object|null>} die Kennzahlen, oder null
+     */
+    async probeKennzahlen(eintraege, ableitung) {
+        const basis = this._letzterAufbau;
+        if (!basis || !ableitung) return null;
+        const neu = new Map((eintraege ?? []).filter(e => e?.art === 'erzeugt' && e.nachher).map(e => [e.globalId, e.nachher]));
+        const ziel = [...neu].find(([, w]) => w?.ableitung === ableitung)?.[0];
+        if (!ziel) return null;
+        const schritte = basis.schritte.map(s => (neu.has(s.globalId) ? { ...s, wert: neu.get(s.globalId) } : s));
+        for (const [globalId, wert] of neu) {
+            if (!schritte.some(s => s.globalId === globalId)) schritte.push({ globalId, art: 'erzeugt', modell: 'cde', wert });
+        }
+        try {
+            const lauf = this._neuerLauf(schritte, basis.historie);
+            await lauf.baue(ziel);
+            return lauf.ableitungen.get(ableitung)?.kennzahlen ?? null;
+        } catch { return null; }
+    }
+
     /** Das gelieferte Material hat sich geändert — kein Ableitungsergebnis gilt mehr (B4). */
     ableitungenVergessen() { this._ableitungsSpeicher = null; }
 
@@ -938,6 +961,8 @@ export class IfcAutor {
     }
 
     async baueErzeugte(schritte, modelId = CDE_MODELL_ID, { verdeckt = new Set(), historie = null } = {}) {
+        // Der Stand dieses Aufbaus — die Probe der Massen beim Ziehen (B7) rechnet auf ihm.
+        this._letzterAufbau = { schritte: schritte ?? [], historie };
         const karte = new Map();
         // WAS IM RAUM STEHT (Abnahme 2026-09-12): Pillenzähler und Abschnitt
         // „Eigenbau" zählen das, nicht den Verlauf — dort standen 14 Bauteile,
@@ -1033,9 +1058,18 @@ export class IfcAutor {
         // localId → Kanten der Geländeanzeige; `GelaendeKanten` zeichnet sie
         // statt der Dreiecksränder (Teil XXII).
         this.anzeigeKanten = new Map();
+        // DIE HÜLLE JE GEBAUTEM TEIL (Teil XXX, B7) — Welt, aus der Geometrie, die eben ins Modell ging. Daran sitzt
+        // die Befundmarke im Raum; den Worker braucht es dafür nicht.
+        this.huellen = new Map();
         ergebnisse.forEach((r, i) => {
             const { schritt, kanten } = zuErzeugen[i];
             if (r.ok) {
+                const geo = zuErzeugen[i].bauteil?.geometrie;
+                if (geo?.attributes?.position) {
+                    if (!geo.boundingBox) geo.computeBoundingBox();
+                    const b = geo.boundingBox;
+                    if (b && Number.isFinite(b.min.x)) this.huellen.set(schritt.globalId, { min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } });
+                }
                 karte.set(schritt.globalId, r.localId);
                 if (kanten?.length) this.anzeigeKanten.set(r.localId, kanten);
             } else misserfolge.push({ ...schritt, grund: r.grund });

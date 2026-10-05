@@ -90,7 +90,8 @@ describe('Das Werkzeug schreibt die VOLLE Operationsliste zurück', () => {
     it('es steht am eigenen Erdkörper und nirgends sonst', () => {
         expect(w()).toBeTruthy();
         expect(w().nurEigene).toBe(true);
-        expect(w().bauform).toEqual(['koerper']);
+        // Seit Teil XXX (B7) auch die Schicht auf dem Gelände (`flaeche+dicke`); `gilt` hält Platte und Wand draussen.
+        expect(w().bauform).toEqual(['koerper', 'flaeche+dicke']);
         // Ein Cut ist ein gemessener geschlossener Körper — genau so kommt er
         // aus der Einordnung. Ohne diesen Weg fände der Griff kein Werkzeug.
         // Mit dem Kontext, den der Store mitgibt (`passendeKontext`: das Rezept des Bauplans).

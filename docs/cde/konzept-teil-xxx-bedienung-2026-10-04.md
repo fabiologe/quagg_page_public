@@ -394,3 +394,37 @@ Tippen; `zeiger.test.js`: der Eingabe-Zustand trägt `ortho` und `mass`). Messla
 
 **Nicht gebaut:** Länge tippen im Lageplan (dort wird seit E8 nicht gezeichnet); Fang auf Kanten eigener Bauteile
 (nur Punkte); eine Höhe tippen (die Höhe kommt wie bisher aus Gelände oder Formular).
+
+### B7 — Am Objekt weiter (2026-10-05)
+
+| Gemessen | vorher | nachher |
+|---|---|---|
+| Schichten und Räume des Teichs P11 ohne Eckgriff (Test über 70 Kommandos, echter Lauf) | **11 von 11** | **0** |
+| Browser 10001, Tondichtung gewählt, „Ecken ziehen" | kein Knopf, kein Griff | Knopf da, 4 Eckgriffe |
+| Pille beim Zug an einer Ecke | Δ und Kantenlängen | dazu **„Volumen 741 m³ (−116)"** |
+| Befunde im Raum (10001, Bearbeiten an) | 0 Marken, kein Zähler | **4 Marken**, Zähler „4 Befunde" |
+
+- **Schicht und Raum in der Mulde an den Ecken ziehen:** ihr Umriss (bzw. die Achse eines Bands) ist eine LAGELISTE
+  (`lagelisten`, `ecken` am Rezept); gezogen wird nur Ost/Nord über dasselbe Werkzeug wie die Achse eines Gerinnes
+  („Knickpunkt verschieben", jetzt für jedes Rezept mit Punkt- oder Lagelisten und die Bauform `flaeche+dicke`). Die
+  Griffe sitzen auf der Oberkante der Schicht bzw. dem Spiegel des Raums (`kennzahlen.eckhoehen` aus dem Lauf).
+- **Gefunden beim Bauen:** der Schreibweg eines Eckzugs (`_vorgangMitOperationen`) gab die Felder oben im Bauplan nicht
+  weiter — eine Schicht hätte beim ersten Zug Klasse, Vorlage, Gewerk und Objekttyp verloren. Jetzt gehen sie mit (Test).
+- **Massen live:** beim Zug an einer Ecke eines Vorgangs rechnet `autor.probeKennzahlen` die Kennzahlen, als gälte der
+  Zug — im selben Ableitungslauf wie der Aufbau, auf dem Stand des letzten Aufbaus, ohne etwas zu bauen oder zu merken.
+  Gedrosselt (eine Rechnung zugleich, die jüngste Lage gewinnt). Test: die Probe ist DIESELBE Zahl, die der Aufbau nach
+  dem Schreiben rechnet (auf 1e-9).
+- **Befunde im Raum:** je Bauteil mit Befund eine Marke (Stiel + liegender Ring) über seiner Hülle (`autor.huellen`, aus
+  der gebauten Geometrie — ohne Worker), Farbe nach der stärksten Schwere; Quellen: Prüflauf über das Journal und die
+  Befunde der Ableitungen. Nur im Bearbeiten-Modus. Der **Zähler** steht in der Bearbeitungsmarke (kein neuer Knopf in
+  der Kopfleiste); ein Klick wählt das nächste betroffene Bauteil und sagt, was nicht stimmt.
+
+**Im Browser gefunden:** die Massen-Probe hing am Zeichenmotor statt an den Griffen (die Ersetzung traf die erste von
+zwei gleichen Zeilen) — Tests grün, Pille ohne Zahl. Jetzt hält ein Textwächter fest, wo sie hängt.
+
+Tests `schichtGriffe.test.js` (5, P11 über Kommandos), `befundmarken.test.js` (7); 19 Gegenproben rot. Zwei Tests
+begründet angepasst (`erdbauKnickpunkt`: Bauform `flaeche+dicke` dazu; `bauwerkeBearbeiten`: der Grund nennt Schicht
+und Raum). Browserprobe in 10001 nur lesend (Zug mit Esc abgebrochen, Journal 79 → 79). Messlauf unverändert.
+
+**Nicht gebaut:** Marken für Befunde an GELIEFERTEM (die Prüfliste der Engine braucht dafür einen eigenen Lauf);
+Antippen einer Marke selbst (Overlay ist nicht wählbar — der Zähler springt stattdessen).

@@ -69,13 +69,35 @@ const WINKEL_RASTER_GRAD = 5;
  */
 export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTypprofil, getBauform = null, getVersatz, getHoehenversatz,
                             getHoeheAn = null, holeKnotenSubjekt, holeKnotenAnschluesse = null, lieferstandVon = null,
-                            nachBauen, getModellSha = null, getWer = null, melde = null, farben = null } = {}) {
+                            nachBauen, getModellSha = null, getWer = null, melde = null, farben = null,
+                            probeMengen = null } = {}) {
     /** Die Griffe, wie zuletzt gebaut. */
     const griffe = ref([]);
     /** Der laufende Zug: { griff, achsen, ebene, start, pos, bewegt, linien, aktiv, fang } — oder null. */
     const zug = ref(null);
     /** Die Pille am gezogenen Griff — {x, y, text} in Canvas-Pixeln, oder null. */
     const pille = ref(null);
+    /**
+     * DIE MASSEN LIVE (Teil XXX, B7): beim Zug an einer Ecke eines Vorgangs (Erdbau, Schicht, Raum) die Massen, die
+     * gälten — vom Aufrufer gerechnet (`probeMengen`, derselbe Lauf wie der Aufbau). Gedrosselt: höchstens eine Rechnung
+     * zugleich, die jüngste Lage gewinnt; bis die erste Zahl da ist, steht „Massen …".
+     */
+    const mengen = ref(null);
+    let _mengenLauf = null, _mengenNochmal = false;
+    function _mengenAnstossen(z) {
+        if (typeof probeMengen !== 'function' || !(z?.griff?.ecken || z?.griff?.art === 'mass')) return;
+        if (_mengenLauf) { _mengenNochmal = true; return; }
+        _mengenLauf = Promise.resolve(probeMengen(z.griff)).catch(() => null).then((text) => {
+            _mengenLauf = null;
+            if (zug.value !== z) return;                       // der Zug ist vorbei
+            mengen.value = text || '';                         // '' = nichts zu rechnen: die Pille schweigt dazu
+            _zeigeNochmal();
+            if (_mengenNochmal) { _mengenNochmal = false; _mengenAnstossen(z); }
+        });
+    }
+    let _letzterTipp = null;
+    function _zeigeNochmal() { if (_letzterTipp) _zeige(_letzterTipp, { ohneProbe: true }); }
+
     /** Welche Nebengriff-Gruppe per TIPP offen steht (der Finger kann nicht schweben). */
     const offeneGruppe = ref(null);
     let _getroffen = null;
@@ -362,10 +384,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         _zeige(tipp);
     }
 
-    function _zeige(tipp) {
+    function _zeige(tipp, { ohneProbe = false } = {}) {
         const z = zug.value;
         const e = engine.value;
         if (!z || !e) return;
+        _letzterTipp = tipp;
+        if (!ohneProbe && z.bewegt) _mengenAnstossen(z);
         const f = (farben ?? tokenFarben)();
         const boden = getHoeheAn?.(z.pos.x, z.pos.z);
         e.zeigeZugbild?.({ pos: z.pos, boden: Number.isFinite(boden) ? boden : null, farbe: f.accent });
@@ -428,6 +452,9 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             if (k.length) teile.push(k.map(m => `${m.toFixed(2).replace('.', ',')} m`).join(' | '));
         }
         if (z.griff.forderung) teile.push('Forderung');
+        if ((z.griff.ecken || z.griff.art === 'mass') && typeof probeMengen === 'function' && z.bewegt) {
+            if (mengen.value !== '') teile.push(mengen.value ?? 'Massen …');
+        }
         pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: teile.join(' · ') } : null;
     }
 
@@ -435,6 +462,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const z = zug.value;
         zug.value = null;
         pille.value = null;
+        mengen.value = null; _mengenNochmal = false; _letzterTipp = null;
         _getroffen = null;
         const e = engine.value;
         e?.zeigeZugbild?.(null);
@@ -560,5 +588,5 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         engine?.value?.griffHervorheben?.(null);
     }
 
-    return { griffe, zug, pille, bereit, offeneGruppe, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
+    return { griffe, zug, pille, mengen, bereit, offeneGruppe, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
 }

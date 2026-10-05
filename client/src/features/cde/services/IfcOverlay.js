@@ -28,6 +28,8 @@ import { baueAusBauplan } from './Bauteilrezepte.js';
 
 /** Ebenen und ihre renderOrder — die Zahl IST die Reihenfolge, oben gewinnt. */
 export const EBENEN = Object.freeze({
+    // Die Befunde der eigenen Bauteile (Teil XXX, B7) — ganz unten: Vorschau und Griffe gehen vor.
+    befunde: 999,
     // Die Querlinie des Gerinne-Schnitts (Teil XX, Stufe D) — unter der Vorschau.
     querschnitt: 1000,
     vorschau: 1001,

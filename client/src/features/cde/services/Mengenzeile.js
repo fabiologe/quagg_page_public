@@ -37,6 +37,22 @@ export function mengenZeile(kennzahlenListe = []) {
     return teile.length ? teile.join(' · ') : 'keine Erdmassen';
 }
 
+/**
+ * Die Massen für die Pille am gezogenen Griff (Teil XXX, B7): ein Körper mit Volumen (Schicht, Raum) als
+ * „Volumen 412 m³ (+12)" gegen den Stand vor dem Zug; ein Erdbau-Vorgang wie die Zeile nach dem Übernehmen.
+ * @param {object|null} kz      die Kennzahlen, wenn der Zug gälte (`autor.probeKennzahlen`)
+ * @param {object|null} vorher  die Kennzahlen des letzten Aufbaus
+ */
+export function mengenLive(kz, vorher = null) {
+    if (!kz) return '';
+    if (Number.isFinite(kz.volumen)) {
+        const d = Number.isFinite(vorher?.volumen) ? kz.volumen - vorher.volumen : 0;
+        const delta = Math.abs(d) >= 0.05 ? ` (${d > 0 ? '+' : '−'}${m3(Math.abs(d)).replace(' m³', '')})` : '';
+        return `Volumen ${m3(kz.volumen)}${delta}`;
+    }
+    return mengenZeile([kz]);
+}
+
 /** Die Ableitungen der ERDBAU-Vorgänge, die diese Einträge geschrieben haben (die Anzeige zählt nicht). */
 export function erdbauAbleitungenAus(eintraege, istErdbau) {
     const ids = new Set();

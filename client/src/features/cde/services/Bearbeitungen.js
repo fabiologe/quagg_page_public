@@ -1032,9 +1032,14 @@ export const ADRESSEN = Object.freeze({
  * `ableitungsSchritte({bestehend})`, damit alle Teile des Vorgangs denselben
  * Parametersatz behalten.
  */
+/** Hat ein Rezept Knickpunkte in seinen Operationen — Erdbau, oder Punkt-/Lagelisten (Schicht, Mulde)? */
+function _hatKnickpunkte(rz) {
+    return !!rz && (!!rz.erdbau || typeof rz.punktlisten === 'function' || typeof rz.lagelisten === 'function');
+}
+
 function _erdbauStuetzpunktSchritte(el, werte) {
     const plan = el?.stand?.bauplan;
-    if (!el?.globalId || !plan?.ableitung || !rezeptNach(plan.rezept)?.erdbau) return null;
+    if (!el?.globalId || !plan?.ableitung || !_hatKnickpunkte(rezeptNach(plan.rezept))) return null;
     const treffer = _erdbauPunkt(plan, werte?.op, werte?.feld || null, werte?.index);
     if (!treffer) return null;
     const ost = Number(werte?.ost), nord = Number(werte?.nord), hoehe = Number(werte?.hoehe);
@@ -1103,13 +1108,15 @@ function _vorgangMitOperationen(el, plan, operationen) {
     // `vorgangTeile`, das der Viewer nie füllen konnte (er fragte nach
     // `stand`, bevor es den gab): je Zug bekam der Auftrag eine neue Kennung.
     const teile = _teileObjekt(el.stand?.teile);
+    // Was OBEN im Bauplan steht (Klasse, Ausführung, Objekttyp, Gewerk, Vorlage einer Schicht — Teil XXIX, G-T1),
+    // geht mit: sonst verlöre ein Eckzug an einer Schicht ihre IFC-Klasse (Teil XXX, B7).
+    const { quellen = {}, quellBasis = {}, raster = {}, operationen: _alt, vorgaenge: _v, auflockerung = null, ...oben } = plan.parameter ?? {};
     return _anModell(ableitungsSchritte({
         rezept: plan.rezept,
-        quellen: plan.parameter.quellen ?? {},
-        quellBasis: plan.parameter.quellBasis ?? {},
-        raster: plan.parameter.raster ?? {},
+        quellen, quellBasis, raster,
         operationen,
-        auflockerung: plan.parameter.auflockerung ?? null,
+        auflockerung,
+        oben,
         name: _vorgangsStamm(plan.name),
         bestehend: { ableitung: plan.ableitung, teile: teile ?? { [plan.rolle]: { globalId: el.globalId, bauplan: plan } } },
     }), el.modellSha);
@@ -3114,13 +3121,14 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Knickpunkt verschieben',
         icon: 'pointer',
         gruppe: 'gelaende',
-        bauform: ['koerper'],
+        // `flaeche+dicke`: die Schicht auf dem Gelände (Teil XXX, B7) — `gilt` hält Platte und Wand draussen.
+        bauform: ['koerper', 'flaeche+dicke'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
-        // Teil XXVII B1 (Fund 3): nur an einem Erdbau-Vorgang — ein Raum hat auch
-        // die Bauform `koerper`, aber keine Operationen.
-        gilt: (_e, ctx) => !!ctx?.rezept?.erdbau,
-        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang.',
+        // Teil XXVII B1 (Fund 3): nur an einem Vorgang mit Punktlisten — ein Raum hat auch die Bauform `koerper`,
+        // aber keine Operationen. Seit Teil XXX (B7) auch Schicht und Raum in der Mulde: ihr Umriss ist eine Lageliste.
+        gilt: (_e, ctx) => _hatKnickpunkte(ctx?.rezept),
+        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.',
         art: 'erzeugt',
         felder: [
             // `adresse` (Teil XXIV, E3): im KOMMANDO steht nicht die Nummer, sondern
