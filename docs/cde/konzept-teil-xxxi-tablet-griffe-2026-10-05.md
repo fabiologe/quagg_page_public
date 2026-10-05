@@ -143,7 +143,7 @@ Reihenfolge-Vorschlag: **T1 zuerst** (das ist der gemeldete Fehler, und er betri
 **E-T1 (Fabio, 2026-10-05):** Griffe sofort beim Antippen — **im Bearbeiten-Modus**. Ohne Modus wählt ein Tipp nur aus.
 (Das löst die Regel vom 18.09. „nur auf Knopfdruck" ab: der Knopf ist der Bearbeiten-Modus selbst.) Gilt ab T3.
 **Für die Wartezeit (T1):** „die Plananimation aus flood-2D, nur in passender Farbe".
-E-T2 bis E-T6: noch offen.
+E-T2 bis E-T6: noch offen — gebaut wird nach den Empfehlungen, solange Fabio nichts anderes sagt.
 
 ## 8 · Gebaut
 
@@ -189,3 +189,31 @@ Test `griffFingergross.test.js` (5: Übersicht/nah ohne Neuanzeige, Treffer übe
 fester Radius, überlappende Hülsen); Gegenproben rot: alte Wahl (vordere Hülse), kein Mitwachsen, alte Hülse 1,35;
 der alte Radius fällt in `ifcOverlay.test.js`. Tabletlauf misst jetzt das GEZEICHNETE (Halter-Massstab, Treffer über
 `griffUnter` Pixel für Pixel) statt der Formel.
+
+### T3 — Griffe beim Antippen (2026-10-05, E-T1)
+
+| Tabletlauf (iPad hochkant, Wand antippen im Bearbeiten-Modus) | T0 | T3 |
+|---|---|---|
+| Griffe nach dem Antippen | 0 | **13** |
+| Griff-Familien zugleich | 1 (die des scharfen Werkzeugs) | **5** (Verschieben, Punkte, Drehen, Wanddicke, Wandhöhe) |
+| Tipps vom gewählten Bauteil bis zum ersten Griff | 2 | **0** |
+| Griffe im Bild während der Übernahme | — | 4 (das Bild vor dem Loslassen bleibt stehen) |
+
+- **Die eine Regel** (`Griffe.griffeFrei`) kennt jetzt drei Zustände: „Ecken ziehen" (nur Ecken) · ein scharfes Werkzeug
+  (seine Familie, wie seit K5) · **kein Werkzeug → alle Griffe des gewählten Bauteils**, Ecken eingeschlossen. Ohne
+  gewähltes Bauteil steht nichts; ohne Bearbeiten-Modus wählt ein Tipp nur aus. Der Längsschnitt (Sohlgriffe ohne
+  Subjekt) braucht weiter sein Werkzeug; der Lageplan zeigt am gewählten Schacht seinen Griff.
+- **Ein Zug aus „alle Griffe"** schaltet das Werkzeug seines Griffs scharf (wie bisher), legt ab und kehrt **ohne Serie**
+  zu allen Griffen zurück (`serie` von `useGriffe` an `nachBauenMitMeldung`). Kam der Zug aus der Tafel (Werkzeug schon
+  scharf), bleibt die Serie (K5).
+- **Während der Übernahme** baut `useGriffe` nicht um, sondern erst, wenn der Umbau endet — sonst blitzten zwischen
+  „Werkzeug geräumt" und „Serie wieder scharf" alle Griffe am alten Stand auf (gemessen 4 → 13 → 4).
+- **Erdkörper:** ihre Ecken stehen jetzt beim Antippen (die Knopfpflicht vom 18.09. ist durch E-T1 abgelöst); ein Griff,
+  der den ganzen Vorgang verschiebt, weiter nicht. „Ecken ziehen" bleibt als Filter (nur Ecken).
+- **Bleibt:** in der Übersicht ballen sich die Griffe eines kleinen Bauteils (feste 24 px um eine Wand von wenigen Pixeln)
+  — heranzoomen trennt sie. Auf dem Finger braucht jeder Griff weiter den Long-Press (T4).
+
+Test `griffeBeimAntippen.test.js` (7, RÜB über Kommandos, Einordnung wie im Viewer, Zug über greifen → zugEnde ins
+Journal); Gegenproben rot: Regel ohne T3-Zweig, `bereit` ohne Bauteil, immer Serie, Viewer ohne `if (serie)`, Umbau
+ohne Sperre, Umbau ohne Auslöser. Bewusst gedreht (alte Zusage „ohne Werkzeug kein Griff", K5, und die Knopfpflicht vom
+18.09.): `achszug.test.js` (2 + Textwächter), `eckenZiehen.test.js` (2), Textwächter in `gelaendeAbschnitt`/`griffe`.

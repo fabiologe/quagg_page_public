@@ -922,7 +922,7 @@ async function waehleNeues(eintraege, warErzeugen) {
   if (ziel) await waehleEigenes(ziel.globalId);
 }
 
-async function nachBauenMitMeldung(eintraege, werkzeugId = null) {
+async function nachBauenMitMeldung(eintraege, werkzeugId = null, { serie = true } = {}) {
   const gid = bearbeitung.bauteil?.globalId ?? null;
   // Der Motor ruft ohne Kennung — `ausfuehren` hat das Werkzeug da schon geräumt; der Viewer merkt sich das letzte.
   const warErzeugen = nachId(werkzeugId ?? bearbeitung.scharfId ?? _letztesWerkzeugId ?? '')?.gruppe === 'erzeugen';
@@ -938,7 +938,10 @@ async function nachBauenMitMeldung(eintraege, werkzeugId = null) {
   // Und einen Tick SPÄTER: `ablegen` räumt sein Werkzeug erst im `finally`
   // ab, also nach diesem Aufruf. Ohne das Warten sähe die Serie ein noch
   // scharfes Werkzeug und täte nichts (auch das im Browser gemessen).
-  nextTick(() => _serieFortsetzen(werkzeugId, gid));
+  //
+  // KEINE Serie, wenn der Griff aus „alle Griffe" kam (Teil XXXI, T3): dann
+  // stehen danach wieder alle Griffe des Bauteils, nicht nur die eine Familie.
+  if (serie) nextTick(() => _serieFortsetzen(werkzeugId, gid));
   return r;
 }
 
@@ -957,7 +960,7 @@ function _serieFortsetzen(werkzeugId, gid) {
 const eingabe = useEingabe({
   bearbeitung, cde,
   getModellSha: () => ablage.geladeneModellSha?.() ?? null,
-  nachBauen: (eintraege, werkzeugId) => nachBauenMitMeldung(eintraege, werkzeugId),
+  nachBauen: (eintraege, werkzeugId, opt) => nachBauenMitMeldung(eintraege, werkzeugId, opt),
   getHoehenversatz: () => _hoehenversatzAusBezug(),
   getHoeheAn: (x, z) => engine.value?.hoeheAn?.(x, z),
   bereiteHoehenVor: () => engine.value?.gelaendeSampler?.() ?? Promise.resolve(null),
@@ -1068,7 +1071,7 @@ const griffe = useGriffe({
   // MIT RÜCKMELDUNG (K5): der Griffweg schwieg bis 2026-09-20. Nach einem
   // Eckzug am Aushub stand die neue Kubatur (354 → 519 m³) nirgends — man
   // musste das Bauteil neu anwählen, um sie zu sehen.
-  nachBauen: (eintraege, werkzeugId) => nachBauenMitMeldung(eintraege, werkzeugId),
+  nachBauen: (eintraege, werkzeugId, opt) => nachBauenMitMeldung(eintraege, werkzeugId, opt),
   // DIE MASSEN LIVE (Teil XXX, B7): was der Zug schriebe, gerechnet vom selben Lauf wie der Aufbau — die Zahl, die
   // nach dem Loslassen im Mengen-Reiter steht. Vorher sah man sie erst nach dem Neuaufbau.
   probeMengen: () => probeMengen(),

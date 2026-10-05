@@ -93,6 +93,9 @@ export function griffFamilie(werkzeug) {
  * Längsschnitt — vorher hatte jede Fläche ihre eigene (3D verengte, der Plan
  * sperrte bei scharfem Werkzeug, der Längsschnitt fragte nur den Modus).
  *
+ * Drei Zustände: „Ecken ziehen" (nur Ecken) · ein scharfes Werkzeug (seine
+ * Familie) · kein Werkzeug (alle Griffe des gewählten Bauteils, T3).
+ *
  * @param {{modusAn: boolean, scharfId: string|null, eckenFuer: string|null}} zustand
  * @param {object} griff
  * @param {{subjektGid?: string|null}} [bezug]
@@ -102,6 +105,15 @@ export function griffeFrei(zustand, griff, { subjektGid = null } = {}) {
     // „Ecken ziehen" ist der eigene Schalter dafür (Fabio 2026-09-18) und
     // zeigt AUSSCHLIESSLICH die Ecken dieses einen Bauteils.
     if (zustand.eckenFuer) return !!griff.ecken && griff.globalId === zustand.eckenFuer;
+    // GRIFFE BEIM ANTIPPEN (Teil XXXI, T3 — Fabio 2026-10-05, E-T1: „Griffe
+    // sofort beim Antippen … beim Bearbeiten"): im Bearbeiten-Modus ohne
+    // scharfes Werkzeug stehen ALLE Familien des gewählten Bauteils — Punkte,
+    // Kanten, Verschieben, Drehen, Feldmasse, Ecken. Der Knopf von damals ist
+    // der Bearbeiten-Modus selbst; ohne gewähltes Bauteil steht nichts (ein
+    // Tipp wählt nur aus). Ein Zug schaltet das Werkzeug seines Griffs scharf
+    // (`useGriffe`) und kehrt danach hierher zurück. Längsschnitt (ohne
+    // Subjekt) und Lageplan fragen dieselbe Regel.
+    if (!zustand.scharfId) return !!subjektGid && griff.globalId === subjektGid;
     if (griff.ecken) return false;
     const familie = griffFamilie(zustand.scharfId);
     if (!familie || familie !== griffFamilie(griff.werkzeug)) return false;

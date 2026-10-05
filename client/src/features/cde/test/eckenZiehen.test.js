@@ -134,7 +134,7 @@ describe('Führungslinien einer Ecke', () => {
     });
 });
 
-describe('Knopfpflicht: ohne „Ecken ziehen" trägt ein Erdkörper keine Griffe', () => {
+describe('Erdkörper: Ecken beim Antippen (T3), „Ecken ziehen" zeigt nur sie, nie ein Griff für den ganzen Vorgang', () => {
     beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); useBearbeitung().modusSetzen(true); });
 
     const PLAN = { rezept: 'erdbau', rolle: 'aushub', ableitung: 'ab-1', name: 'Ur · Ausheben · Aushub', kategorie: 'IFCEARTHWORKSCUT',
@@ -156,14 +156,17 @@ describe('Knopfpflicht: ohne „Ecken ziehen" trägt ein Erdkörper keine Griffe
         return { b, g };
     }
 
-    it('gewählt im Modus E: keine Eckgriffe, kein Bauteil-Griff am Klickpunkt', async () => {
+    it('gewählt im Modus E: die Eckgriffe stehen (T3), der Bauteil-Griff am Klickpunkt weiter nicht', async () => {
         const { b, g } = await baue();
-        // Gegenprobe: `griffeFuer` BIETET beide an — erst der Knopf lässt sie durch.
+        // Gegenprobe: `griffeFuer` BIETET beide an.
         const roh = griffeFuer({ subjekt: b.bauteil, subjektHerkunft: 'cde', bauform: 'koerper' });
         expect(roh.some(x => x.art === 'bauteil')).toBe(true);
         expect(roh.some(x => x.ecken)).toBe(true);
         g.neuBauen();
-        expect(g.griffe.value.some(x => x.ecken)).toBe(false);
+        // Bis T3 (Teil XXXI) galt die Knopfpflicht vom 18.09. — Fabio 2026-10-05 (E-T1): „Griffe sofort beim
+        // Antippen … beim Bearbeiten". Der Knopf ist jetzt der Bearbeiten-Modus selbst.
+        expect(g.griffe.value.filter(x => x.ecken)).toHaveLength(16);
+        // Was bleibt: kein Griff, der den ganzen Vorgang verschiebt — ein Zucken beim Wählen verschob sonst alles.
         expect(g.griffe.value.some(x => x.art === 'bauteil')).toBe(false);
     });
 
@@ -175,7 +178,9 @@ describe('Knopfpflicht: ohne „Ecken ziehen" trägt ein Erdkörper keine Griffe
         expect(g.griffe.value.every(x => x.ecken && x.globalId === 'cde-aushub')).toBe(true);
         b.eckenBeenden();
         g.neuBauen();
-        expect(g.griffe.value.some(x => x.ecken)).toBe(false);
+        // Nach „Fertig" stehen wieder alle Griffe des gewählten Körpers (T3) — hier dieselben Ecken.
+        expect(g.griffe.value.every(x => x.globalId === 'cde-aushub')).toBe(true);
+        expect(g.griffe.value.some(x => x.art === 'bauteil')).toBe(false);
     });
 
     it('eine andere Auswahl oder Bearbeiten aus beendet „Ecken ziehen"', async () => {

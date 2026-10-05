@@ -151,6 +151,10 @@ function auswerten(reihe, xVorher) {
         if (mitte) { await tippe(page, cdp, mitte); await warte(2500); }
         zahlen.gewaehltNachTipp = (await v(page, `return pinia._s.get('cde-bearbeitung').bauteil?.globalId ?? null;`)) === gid;
         zahlen.griffeNachTipp = await v(page, `return v.griffe.griffe.value.length;`);
+        // T3: welche Griff-Familien stehen nach dem Antippen (ohne Werkzeug)? Und wie viele Tipps braucht der ERSTE Griff?
+        zahlen.familienNachTipp = await v(page, `const { griffFamilie } = await import('/src/features/cde/services/Griffe.js');
+            return [...new Set(v.griffe.griffe.value.map(g => griffFamilie(g.werkzeug) ?? (g.ecken ? 'ecken' : g.art)))];`);
+        zahlen.tippsBisErsterGriff = zahlen.griffeNachTipp > 0 ? 0 : 2;
         await foto(page, 'nach_tipp');
 
         // T2 · Tipps bis zum Griff: „Verschieben" (in der Gruppe „Lage")

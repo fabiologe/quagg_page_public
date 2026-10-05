@@ -115,7 +115,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // gewähltes Bauteil. Was er NICHT mehr sieht, sind die Griffe aller
     // anderen Werkzeuge. Die Regel dafür steht EINMAL, in `Griffe.js`, und
     // Lageplan und Längsschnitt fragen dieselbe.
-    const bereit = computed(() => !!bearbeitung?.modusAn && (!!bearbeitung?.scharfId || !!bearbeitung?.eckenFuer));
+    //
+    // T3 (Teil XXXI, E-T1): auch OHNE Werkzeug, sobald im Bearbeiten-Modus ein
+    // Bauteil gewählt ist — dann stehen alle seine Griffe (`griffeFrei`).
+    const bereit = computed(() => !!bearbeitung?.modusAn
+        && (!!bearbeitung?.scharfId || !!bearbeitung?.eckenFuer || !!bearbeitung?.bauteil?.globalId));
 
     // ── Aufbau ─────────────────────────────────────────────────────────────
 
@@ -123,6 +127,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const e = engine?.value;
         if (!e) return;
         if (zug.value) return;                  // mitten im Zug nicht umbauen
+        // WÄHREND DER ÜBERNAHME bleibt das Bild, wie es ist (T1/T3): der gezogene Griff steht am neuen Ort, die Fläche
+        // ist gesperrt. Umgebaut wird, wenn der Umbau endet — sonst blitzten zwischen „Werkzeug geräumt" und
+        // „Serie wieder scharf" kurz alle Griffe des Bauteils am ALTEN Stand auf (Tabletlauf T3: 4 → 13 → 4).
+        if (bearbeitung?.umbauLaeuft) return;
         if (!bereit.value) { griffe.value = []; e.zeigeGriffe?.([]); return; }
         const subjekt = getSubjekt?.() ?? null;
         const schaechte = e.knotenGriffe?.() ?? [];
@@ -170,7 +178,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // Tipp-Griffe am Stand von vorher stehen (der Journal-Zähler feuert zu
     // früh: da ist das frische Subjekt noch nicht da).
     watch(() => [bearbeitung?.modusAn, bearbeitung?.scharfId, getSubjekt?.()?.globalId, getBauform?.(), aenderungen?.anzahl,
-                 getSubjekt?.()?.stand?.bauplan, bearbeitung?.eckenFuer], () => neuBauen());
+                 getSubjekt?.()?.stand?.bauplan, bearbeitung?.eckenFuer, bearbeitung?.umbauLaeuft], () => neuBauen());
 
     // ── Greifen ────────────────────────────────────────────────────────────
 
@@ -245,8 +253,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // TIPP-GRIFF: nichts zu ziehen, nichts scharf zu schalten. Der Zug
         // läuft leer mit (der Zeiger-Stapel meldet ihn ohnehin), und
         // `zugEnde` legt mit den mitgebrachten Werten ab.
+        // War schon ein Werkzeug scharf (aus der Tafel), setzt der Viewer die
+        // Serie fort (K5); kam der Griff aus „alle Griffe" (T3), kehrt das Bild
+        // nach dem Ablegen dorthin zurück.
+        const serie = !!bearbeitung?.scharfId;
         if (g.wirkung === 'tipp') {
-            zug.value = { griff: g, wirkung: 'tipp', pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null };
+            zug.value = { griff: g, wirkung: 'tipp', pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null, serie };
             e.griffHervorheben?.(g.key);
             pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: g.rolle === 'entfernen' ? 'Stützpunkt entfernen' : 'Stützpunkt einfügen' } : null;
             return;
@@ -291,7 +303,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                       schirm, startPx, meterJePixel, schirmRichtung, startT,
                       erlaubt: g.achsenErlaubt ?? [],
                       radius: g.art === 'drehung' && g.zentrum ? Math.hypot(g.pos.x - g.zentrum.x, g.pos.z - g.zentrum.z) : null,
-                      subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher, laed: w.laed ?? null };
+                      subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher, laed: w.laed ?? null, serie };
         _subjektAnbinden(zug.value);
         _geistAufstellen(zug.value);
         e.griffHervorheben?.(g.key);
@@ -475,7 +487,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // TIPP-GRIFF: der Griff selbst IST die Eingabe — die Werte bringt er mit.
         if (z.wirkung === 'tipp') {
             if (abbruch) { neuBauen(); return null; }
-            return ablegen(z.griff, z.griff.pos, { werte: z.griff.werte });
+            return ablegen(z.griff, z.griff.pos, { werte: z.griff.werte, serie: z.serie });
         }
         // Ein fremder Schacht: erst das Subjekt abwarten — ohne eins gibt es nichts abzulegen.
         if (z.laed) { z.subjekt = (await z.laed) ?? null; if (!z.subjekt) { neuBauen(); return null; } }
@@ -492,7 +504,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             neuBauen();
             return null;
         }
-        return ablegen(z.griff, z.pos, { subjekt: z.subjekt, scharf: true });
+        return ablegen(z.griff, z.pos, { subjekt: z.subjekt, scharf: true, serie: z.serie });
     }
 
     // ── Der Drehzug (S10) ──────────────────────────────────────────────────
@@ -538,7 +550,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         return bearbeitung?.imUmbau ? bearbeitung.imUmbau(() => _ablegen(griff, pos, opts)) : _ablegen(griff, pos, opts);
     }
 
-    async function _ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null } = {}) {
+    async function _ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null, serie = true } = {}) {
         try {
             const subjekt = gegeben ?? (griff.art === 'knoten'
                 ? await holeKnotenSubjekt?.(griff.globalId)
@@ -564,7 +576,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                 modell: griff.herkunft === 'cde' ? 'cde' : 'geliefert',
             });
             if (!eintraege) { melde?.(bearbeitung.letzterGrund || 'Nichts einzutragen.'); return null; }
-            await nachBauen?.(eintraege, griff.werkzeug);
+            await nachBauen?.(eintraege, griff.werkzeug, { serie });
             return eintraege;
         } catch (fehler) {
             console.error('cde: griff', fehler);

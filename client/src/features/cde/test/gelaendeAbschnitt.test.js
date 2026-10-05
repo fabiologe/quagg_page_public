@@ -194,10 +194,10 @@ describe('Die Serie und ihre Rückmeldung (K5)', () => {
     // Bis 2026-09-20 reichte der Griffweg nur `wendeEintragAn` durch: nach
     // einem Eckzug am Aushub stand die neue Kubatur (354 → 519 m³) nirgends.
     expect(viewer.match(/nachBauen: \([^)]*\) => nachBauenMitMeldung\(/g) ?? []).toHaveLength(2);
-    expect(viewer).toMatch(/async function nachBauenMitMeldung\(eintraege, werkzeugId = null\)/);
+    expect(viewer).toMatch(/async function nachBauenMitMeldung\(eintraege, werkzeugId = null(, \{ serie = true \} = \{\})?\)/);
     expect(viewer).toMatch(/_melderueck\(_mitMengen\(text, eintraege\)/);
     // Und der Griff reicht sein Werkzeug mit — sonst stünde der falsche Name dran.
-    expect(griffe).toMatch(/await nachBauen\?\.\(eintraege, griff\.werkzeug\)/);
+    expect(griffe).toMatch(/await nachBauen\?\.\(eintraege, griff\.werkzeug(, \{ serie \})?\)/);
   });
 
   it('die Serie setzt der VIEWER fort — nach Neubau und Neu-Einordnung', () => {

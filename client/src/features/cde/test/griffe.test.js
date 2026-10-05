@@ -253,7 +253,7 @@ describe('Ein Weg für Plan und Raum (Textwächter)', () => {
     it('der Raum-Griff legt über starte → setzeWert → ausfuehren → nachBauen ab', () => {
         const q = lies('composables/useGriffe.js');
         const fn = q.slice(q.indexOf('async function ablegen'));
-        for (const s of ['bearbeitung.starte(griff.werkzeug, { subjekt })', 'bearbeitung.setzeWert(feld, wert)', 'bearbeitung.ausfuehren({', 'await nachBauen?.(eintraege, griff.werkzeug)']) {
+        for (const s of ['bearbeitung.starte(griff.werkzeug, { subjekt })', 'bearbeitung.setzeWert(feld, wert)', 'bearbeitung.ausfuehren({', 'await nachBauen?.(eintraege, griff.werkzeug, { serie })']) {
             expect(fn, s).toContain(s);
         }
         expect(q).not.toMatch(/setzeAnker|eintragen\(/);

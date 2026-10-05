@@ -283,8 +283,10 @@ describe('useGriffe am echten Store — der Achszug', () => {
         const t = baue();
         await t.b.einordne(ROHR, null);
         await nextTick();
-        // OHNE Werkzeug steht seit K5 kein Griff — das ist die Zusage.
-        expect(t.g.griffe.value).toEqual([]);
+        // OHNE Werkzeug stand seit K5 kein Griff. Seit T3 (Teil XXXI, Fabio 2026-10-05, E-T1: „Griffe sofort beim
+        // Antippen … beim Bearbeiten") stehen im Bearbeiten-Modus nach dem Antippen ALLE Griffe des Bauteils —
+        // der Gizmo eingeschlossen.
+        expect(t.g.griffe.value.filter(x => x.gizmo === 'bauteil:R1')).toHaveLength(4);
 
         t.scharf();
         await nextTick();                                   // der Watcher, nicht ein Aufruf von Hand
@@ -413,7 +415,9 @@ describe('useGriffe am echten Store — der Achszug', () => {
         t.b.abbrechen();
         expect(t.b.scharfId).toBeNull();
         t.g.neuBauen();
-        expect(t.g.griffe.value).toEqual([]);
+        // Seit T3 (Teil XXXI) stehen danach wieder ALLE Griffe des gewählten Bauteils, nicht keiner.
+        expect(t.g.griffe.value.length).toBeGreaterThan(0);
+        expect(t.g.griffe.value.every(x => x.globalId === 'R1')).toBe(true);
     });
 
     it('eigenes Rohr: der Zug schreibt erzeugt mit gewandertem Bauplan', async () => {
@@ -446,8 +450,8 @@ describe('Verklebung (Textwächter)', () => {
     });
     it('EINE Regel für Raum, Lageplan und Längsschnitt — und im Zug wird nicht umgebaut (K5)', () => {
         const g = lies('composables/useGriffe.js');
-        // Griffe stehen nur mit scharfem Werkzeug (oder in „Ecken ziehen").
-        expect(g).toMatch(/const bereit = computed\(\(\) => !!bearbeitung\?\.modusAn && \(!!bearbeitung\?\.scharfId \|\| !!bearbeitung\?\.eckenFuer\)\)/);
+        // Griffe stehen mit scharfem Werkzeug, in „Ecken ziehen" — und seit T3 (Teil XXXI) an einem gewählten Bauteil.
+        expect(g).toMatch(/const bereit = computed\(\(\) => !!bearbeitung\?\.modusAn\s*&& \(!!bearbeitung\?\.scharfId \|\| !!bearbeitung\?\.eckenFuer \|\| !!bearbeitung\?\.bauteil\?\.globalId\)\)/);
         // WELCHE Griffe, sagt `griffeFrei` — und zwar allen drei Flächen.
         expect(g).toMatch(/griffeFrei\(zustand, g, \{ subjektGid: gid \}\)/);
         expect(lies('components/IfcPlanCanvas.vue')).toMatch(/griffeFrei\(zustand, g,/);
