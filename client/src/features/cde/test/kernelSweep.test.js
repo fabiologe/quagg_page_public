@@ -90,3 +90,23 @@ describe('extrudiere', () => {
         expect(extrudiere({ umriss: { ring: [{ x: 0, z: 0 }, { x: 1, z: 1 }, { x: 2, z: 2 }] } }, { von: 0, bis: 1 }).ergebnis).toBeNull();
     });
 });
+
+describe('sweep · Gehrung am Knick (BIMFY I8)', () => {
+    // Ein 12-Eck vom Radius r hat die Fläche 3·r²; Volumen = Fläche × Achslänge (Pappus).
+    const rohr = (punkte, r = 0.2) => sweep({ profil: kreisProfil(r, 12), achse: { punkte } }).ergebnis;
+    it('90°-Knick: das Volumen ist Fläche × Achslänge (vorher 15 % zu wenig)', () => {
+        const k = rohr([{ x: 0, y: 0, z: 0 }, { x: 5, y: 0, z: 0 }, { x: 5, y: 0, z: -5 }]);
+        expect(k.closed).toBe(true);
+        expect(k.volumen).toBeCloseTo(3 * 0.04 * 10, 6);
+    });
+    it('30°-Knick und Knick in der Höhe: ebenso', () => {
+        const w = Math.PI / 6;
+        const k = rohr([{ x: 0, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }, { x: 4 + 4 * Math.cos(w), y: 0, z: -4 * Math.sin(w) }]);
+        expect(k.volumen).toBeCloseTo(3 * 0.04 * 8, 6);
+        const h = rohr([{ x: 0, y: 0, z: 0 }, { x: 6, y: 0, z: 0 }, { x: 12, y: 1, z: 0 }]);
+        expect(h.volumen).toBeCloseTo(3 * 0.04 * (6 + Math.hypot(6, 1)), 6);
+    });
+    it('gerade Achsen bleiben, wie sie waren', () => {
+        expect(rohr([{ x: 0, y: 0, z: 0 }, { x: 3, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }]).volumen).toBeCloseTo(1.2, 9);
+    });
+});

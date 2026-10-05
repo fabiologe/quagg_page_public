@@ -68,6 +68,9 @@ function _yBereich(pos) {
 const hatFunktion = (v) => typeof v === 'function'
     || (v && typeof v === 'object' && Object.values(v).some(hatFunktion));
 
+// Ausnahme (BIMFY I8, Gehrung im Sweep): `rohr` Fall 0 hat einen Knick von 38°. Das Gold
+// hielt 4,3204 m³ — das Profil wurde am Knick nicht gestreckt. Neu 4,4143 m³ = Fläche × Achslänge
+// (Pappus 4,4143 m³). Gerade Rohre bleiben bitgleich (Fall 1 und 2).
 describe('1 — die alten Rezepte liefern bitgleich, was sie vorher lieferten', () => {
     for (const [id, faelle] of Object.entries(GOLD.FAELLE)) {
         it(id, () => {

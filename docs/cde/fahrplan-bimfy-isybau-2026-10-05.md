@@ -182,8 +182,7 @@ Ergebnis: 463 Geometrien, 444 Kommandos, 100 Normschächte (5 bis 10 Teile), 40 
 4. PP profiliert (DIN EN 13476), GFK, Polymerbeton, Faserzement: Normen fehlen im Bestand.
    Muffenspalt der Schachtringe (DIN V 4034‑1, Tab. 7) und Falzmasse (DIN 4034‑2, nur Bild) ebenso.
 5. Lage der Ringmuffe (oben) ist angenommen, am Original zu prüfen.
-6. Der Sweep streckt die Gehrung am Knick nicht: ein Rohr mit 90°‑Knick hat rund 15 % zu wenig
-   Volumen (gilt für alle Sweeps, nicht nur BIMFY).
+6. ~~Der Sweep streckt die Gehrung am Knick nicht~~ — behoben (I9a): Volumen = Fläche × Achslänge.
 
 ---
 

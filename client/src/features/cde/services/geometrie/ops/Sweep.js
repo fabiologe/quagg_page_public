@@ -31,6 +31,8 @@ import { meshVolume } from '../MeshOps.js';
 
 /** Ab diesem Knickwinkel (Grad) überschneiden sich die Ringe eines Sweeps wahrscheinlich. */
 export const KNICK_WARNUNG_GRAD = 60;
+/** Die Gehrung streckt höchstens um 1/cos(75°) ≈ 3,9 — spitzere Knicke ergäben Stacheln. */
+const GEHRUNG_COS_MIN = Math.cos(75 * Math.PI / 180);
 
 // ── Vektoren (kein three im Kernel) ────────────────────────────────────────
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
@@ -188,7 +190,21 @@ export function sweep({ profil, achse, loch = null } = {}, { kappen = true } = {
         const dir = k === 0 ? t[0] : k === n - 1 ? t[n - 2] : (len(add(t[k - 1], t[k])) > 1e-9 ? norm(add(t[k - 1], t[k])) : t[k]);
         const uk = norm(sub(u, mul(dir, dot(u, dir))));
         const vk = cross(dir, uk);
-        const P = (q) => add(add(punkte[k], mul(uk, q.u)), mul(vk, q.v));
+        // DIE GEHRUNG (BIMFY I8): in der Gehrungsebene ist der Querschnitt in der
+        // Knickrichtung um 1/cos(w/2) LÄNGER — sonst wird das Profil am Knick
+        // schmaler und ein Rohr mit 90°-Knick verlor rund 15 % Volumen.
+        let streck = null;
+        if (k > 0 && k < n - 1) {
+            const knick = sub(t[k], t[k - 1]);
+            const c = Math.max(-1, Math.min(1, dot(t[k - 1], t[k])));
+            const halb = Math.sqrt((1 + c) / 2);                      // cos(w/2)
+            if (len(knick) > 1e-9) streck = { m: norm(knick), f: 1 / Math.max(halb, GEHRUNG_COS_MIN) - 1 };
+        }
+        const P = (q) => {
+            let d = add(mul(uk, q.u), mul(vk, q.v));
+            if (streck) d = add(d, mul(streck.m, dot(d, streck.m) * streck.f));
+            return add(punkte[k], d);
+        };
         ringe.push({ dir, punkte: prof.map(P), innen: innen ? innen.map(P) : null });
     }
     if (knickMax * 180 / Math.PI > KNICK_WARNUNG_GRAD) {
