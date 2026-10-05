@@ -142,7 +142,7 @@ function _koerperAus(dreiecke, warnungen) {
  * @param {{kappen?: boolean}} parameter
  * @returns {{ergebnis: koerper|null, warnungen: string[]}}
  */
-export function sweep({ profil, achse } = {}, { kappen = true } = {}) {
+export function sweep({ profil, achse, loch = null } = {}, { kappen = true } = {}) {
     const warnungen = [];
     const roh = (achse?.punkte ?? []).map(p => ({ x: Number(p?.x), y: Number(p?.y), z: Number(p?.z) }));
     if (roh.some(p => !Number.isFinite(p.y))) {
@@ -160,6 +160,11 @@ export function sweep({ profil, achse } = {}, { kappen = true } = {}) {
     let prof = (profil?.punkte ?? []).map(q => ({ u: Number(q.u), v: Number(q.v) }));
     if (prof.length < 3) return { ergebnis: null, warnungen: ['sweep_profil_zu_klein'] };
     if (_flaeche2d(prof, 'u', 'v') < 0) prof = prof.slice().reverse();
+    // EIN LOCH IM PROFIL (Rohr mit Wand, BIMFY I2): im UHRZEIGERSINN — dann zeigt
+    // dieselbe Seitenformel bei ihm zur Achse hin, also aus dem Körper heraus.
+    let innen = (loch?.punkte ?? []).map(q => ({ u: Number(q.u), v: Number(q.v) }));
+    if (innen.length >= 3) { if (_flaeche2d(innen, 'u', 'v') > 0) innen = innen.slice().reverse(); }
+    else innen = null;
 
     // Tangenten je Segment, Rahmen je Stützpunkt.
     const n = punkte.length;
@@ -183,7 +188,8 @@ export function sweep({ profil, achse } = {}, { kappen = true } = {}) {
         const dir = k === 0 ? t[0] : k === n - 1 ? t[n - 2] : (len(add(t[k - 1], t[k])) > 1e-9 ? norm(add(t[k - 1], t[k])) : t[k]);
         const uk = norm(sub(u, mul(dir, dot(u, dir))));
         const vk = cross(dir, uk);
-        ringe.push({ dir, punkte: prof.map(q => add(add(punkte[k], mul(uk, q.u)), mul(vk, q.v))) });
+        const P = (q) => add(add(punkte[k], mul(uk, q.u)), mul(vk, q.v));
+        ringe.push({ dir, punkte: prof.map(P), innen: innen ? innen.map(P) : null });
     }
     if (knickMax * 180 / Math.PI > KNICK_WARNUNG_GRAD) {
         warnungen.push(`sweep_knick: ${(knickMax * 180 / Math.PI).toFixed(0)}° — Ringe überschneiden sich womöglich`);
@@ -191,21 +197,27 @@ export function sweep({ profil, achse } = {}, { kappen = true } = {}) {
 
     // Seiten: bei CCW-Profil und (u, v, dir) rechtshändig zeigt (a, b, c) nach aussen.
     const dreiecke = [];
-    const m = prof.length;
-    for (let k = 0; k + 1 < n; k++) {
-        const r0 = ringe[k].punkte, r1 = ringe[k + 1].punkte;
-        for (let j = 0; j < m; j++) {
-            const a = r0[j], b = r0[(j + 1) % m], c = r1[j], d = r1[(j + 1) % m];
-            dreiecke.push([a, b, c], [b, d, c]);
+    const mantel = (schluessel, m) => {
+        for (let k = 0; k + 1 < n; k++) {
+            const r0 = ringe[k][schluessel], r1 = ringe[k + 1][schluessel];
+            for (let j = 0; j < m; j++) {
+                const a = r0[j], b = r0[(j + 1) % m], c = r1[j], d = r1[(j + 1) % m];
+                dreiecke.push([a, b, c], [b, d, c]);
+            }
         }
-    }
+    };
+    mantel('punkte', prof.length);
+    if (innen) mantel('innen', innen.length);
     if (kappen) {
-        const idx = _deckelIndizes([prof], 'u', 'v');
+        // Mit Loch ist die Kappe ein Ring — earcut trägt das Loch.
+        const idx = _deckelIndizes(innen ? [prof, innen] : [prof], 'u', 'v');
         const anfang = ringe[0], ende = ringe[n - 1];
+        const alle = (r) => (innen ? [...r.punkte, ...r.innen] : r.punkte);
+        const a0 = alle(anfang), e0 = alle(ende);
         for (let i = 0; i < idx.length; i += 3) {
             const [ia, ib, ic] = [idx[i], idx[i + 1], idx[i + 2]];
-            dreiecke.push(_gerichtet(anfang.punkte[ia], anfang.punkte[ib], anfang.punkte[ic], mul(anfang.dir, -1)));
-            dreiecke.push(_gerichtet(ende.punkte[ia], ende.punkte[ib], ende.punkte[ic], ende.dir));
+            dreiecke.push(_gerichtet(a0[ia], a0[ib], a0[ic], mul(anfang.dir, -1)));
+            dreiecke.push(_gerichtet(e0[ia], e0[ib], e0[ic], ende.dir));
         }
     }
     const k = _koerperAus(dreiecke, warnungen);
@@ -298,6 +310,56 @@ export function platte({ umriss } = {}, { dicke, richtung = 'unten' } = {}) {
         const [ia, ib, ic] = [idx[i], idx[i + 1], idx[i + 2]];
         dreiecke.push(_gerichtet(oben[ia], oben[ib], oben[ic], { x: 0, y: 1, z: 0 }));
         dreiecke.push(_gerichtet(unten[ia], unten[ib], unten[ic], { x: 0, y: -1, z: 0 }));
+    }
+    return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
+}
+
+// ── Ringstück (BIMFY I2) ───────────────────────────────────────────────────
+
+/**
+ * Ein DREHKÖRPER um eine Achse von `unten` nach `oben`: ein Querschnitt
+ * `[{r, y}]` (Radius ab Achse, Höhe absolut) wird in `ecken` Schritten
+ * herumgeführt. Ein Schachtring ist ein Rechteck im Querschnitt, ein Konus ein
+ * Trapez, ein Unterteil ein L (Wand und Boden), eine Abdeckung ein umgedrehtes L.
+ *
+ * EXZENTRISCH heisst hier: die Achse ist geneigt. Der Kreis in der Höhe y hat
+ * seine Mitte auf der Geraden unten → oben — ein Konus, dessen Mitte oben um
+ * die Differenz der Radien versetzt ist, steht auf einer Seite senkrecht.
+ *
+ * Ein Punkt mit r = 0 liegt auf der Achse; dort laufen die Dreiecke als Fächer
+ * zusammen (entartete fallen weg) — so ist auch ein voller Boden geschlossen.
+ *
+ * @param {{achse: {unten: {x,y,z}, oben: {x,y,z}}, querschnitt: [{r, y}]}} eingaben
+ * @param {{ecken?: number}} parameter
+ * @returns {{ergebnis: koerper|null, warnungen: string[]}}
+ */
+export function ringstueck({ achse, querschnitt } = {}, { ecken = 32 } = {}) {
+    const warnungen = [];
+    const u = achse?.unten, o = achse?.oben;
+    if (!u || !o || !Number.isFinite(u.y) || !Number.isFinite(o.y) || Math.abs(o.y - u.y) < 1e-9) {
+        return { ergebnis: null, warnungen: ['ringstueck_achse_entartet'] };
+    }
+    let q = (querschnitt ?? []).map(p => ({ r: Math.max(0, Number(p.r)), y: Number(p.y) }))
+        .filter(p => Number.isFinite(p.r) && Number.isFinite(p.y));
+    if (q.length < 3) return { ergebnis: null, warnungen: ['ringstueck_querschnitt_zu_klein'] };
+    const mitte = (y) => {
+        const t = (y - u.y) / (o.y - u.y);
+        return { x: u.x + (o.x - u.x) * t, z: u.z + (o.z - u.z) * t };
+    };
+    const n = Math.max(8, Math.round(ecken));
+    const P = (p, j) => {
+        const w = (j / n) * Math.PI * 2, m = mitte(p.y);
+        return { x: m.x + Math.cos(w) * p.r, y: p.y, z: m.z - Math.sin(w) * p.r };
+    };
+    const flaeche = (a, b, c) => len(cross(sub(b, a), sub(c, a)));
+    const dreiecke = [];
+    for (let i = 0; i < q.length; i++) {
+        const a = q[i], b = q[(i + 1) % q.length];
+        for (let j = 0; j < n; j++) {
+            // Modulo statt 2π: dieselbe Ecke, bitgleich — sonst bliebe der Kreis an der Naht offen.
+            const a0 = P(a, j), a1 = P(a, (j + 1) % n), b0 = P(b, j), b1 = P(b, (j + 1) % n);
+            for (const d of [[a0, b0, a1], [a1, b0, b1]]) if (flaeche(...d) > 1e-12) dreiecke.push(d);
+        }
     }
     return { ergebnis: _koerperAus(dreiecke, warnungen), warnungen };
 }

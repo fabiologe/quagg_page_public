@@ -45,11 +45,16 @@ export const BAUFORMEN_JE_GEOMETRIE = Object.freeze({
     sweep:   ['achse+profil', 'koerper'],
     stab:    ['punkt', 'koerper'],
     platte:  ['flaeche+dicke', 'koerper'],
+    ringstueck: ['koerper'],
+    berme:   ['koerper'],
+    tritte:  ['koerper'],
 });
 
 const REZEPT_SCHLUESSEL = Object.freeze([
     'id', 'titel', 'icon', 'bauform', 'kategorieVorgabe', 'mindestPunkte', 'hoechstPunkte', 'geschlossen',
     'hoehenAus', 'felder', 'netzrolle', 'geometrie', 'symbol', 'beschreibung', 'menge', 'raum', 'lagemerkmale', 'rechenmerkmale',
+    // BIMFY I3: ein Teil, das nur eine Vorlage baut (Schachtring …) — kein eigenes Zeichenwerkzeug.
+    'nurVorlage',
 ]);
 const FELD_SCHLUESSEL = Object.freeze(['name', 'titel', 'typ', 'einheit', 'min', 'max', 'gueltig', 'vorgabe', 'leerErlaubt', 'optionen', 'setzbar', 'pset', 'griff']);
 

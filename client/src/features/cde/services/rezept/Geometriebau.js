@@ -8,7 +8,9 @@
  * (`geometrie.art`), nicht diese Datei.
  */
 import * as THREE from 'three';
-import { sweep, kreisProfil, rechteckProfil, platte } from '../geometrie/hilfen.js';
+import { sweep, kreisProfil, rechteckProfil, platte, extrudiere, ringstueck } from '../geometrie/hilfen.js';
+// Default-Import wie in Bauteilrezepte (CJS-Interop im Build).
+import polygonClipping from 'polygon-clipping';
 
 /**
  * Anzeigebreite einer Linie in Metern.
@@ -210,6 +212,23 @@ export function profilAus(dekl, parameter, vorgabe = () => null) {
         const d = massAus(parameter, dekl.durchmesser, { einheit, rueckfall: vorgabe(dekl.durchmesser) });
         return d > 0 ? versetzt(kreisProfil(d / 2, dekl.ecken ?? 12)) : null;
     }
+    // EIN KREIS MIT WAND (BIMFY I2): ohne Wanddicke ein voller Kreis — so bleibt
+    // jedes Rohr ohne Angabe bitgleich, wie es war.
+    if (dekl?.art === 'kreisring') {
+        const d = massAus(parameter, dekl.durchmesser, { einheit, rueckfall: vorgabe(dekl.durchmesser) });
+        const t = massAus(parameter, dekl.wanddicke, { einheit, rueckfall: vorgabe(dekl.wanddicke) });
+        if (!(d > 0)) return null;
+        const ecken = dekl.ecken ?? 12;
+        if (!(t > 0)) return versetzt(kreisProfil(d / 2, ecken));
+        // Der Bezug ist fest ('innen' | 'aussen') oder der Name eines Feldes.
+        const bezug = ['innen', 'aussen'].includes(dekl.bezug) ? dekl.bezug
+            : (parameter?.[dekl.bezug] || vorgabe(dekl.bezug) || 'innen');
+        const innen = bezug === 'aussen' ? d / 2 - t : d / 2;
+        const aussen = bezug === 'aussen' ? d / 2 : d / 2 + t;
+        if (!(innen > 0)) return null;
+        const voll = versetzt(kreisProfil(aussen, ecken));
+        return { ...voll, art: 'kreisring', loch: versetzt(kreisProfil(innen, ecken)) };
+    }
     if (dekl?.art === 'rechteck') {
         const b = massAus(parameter, dekl.breite, { einheit, rueckfall: vorgabe(dekl.breite) });
         const t = massAus(parameter, dekl.tiefe, { einheit, rueckfall: vorgabe(dekl.tiefe) });
@@ -261,7 +280,7 @@ function _versetze(profil, u, v) {
 /** Ein Profil entlang der Punkte — geschlossen, mit Kappen. */
 export function sweepKoerper(punkte, profil) {
     if (!Array.isArray(punkte) || punkte.length < 2 || !profil) return null;
-    const { ergebnis } = sweep({ profil, achse: { punkte: punkte.map(punktXYZ) } });
+    const { ergebnis } = sweep({ profil, achse: { punkte: punkte.map(punktXYZ) }, loch: profil.loch ?? null });
     return ergebnis ?? null;
 }
 
@@ -287,3 +306,96 @@ export function rohrKoerper(punkte, dnMm = 300, seiten = 12) {
     return sweepKoerper(punkte, kreisProfil(r, seiten));
 }
 
+
+// ── Schachtbauteile (BIMFY I2) ─────────────────────────────────────────────
+
+/** Mehrere Körper zu einem — die Dreiecke hintereinander; geschlossen, wenn jeder es ist. */
+function _vereinige(koerper) {
+    const k = koerper.filter(Boolean);
+    if (!k.length) return null;
+    if (k.length === 1) return k[0];
+    const n = k.reduce((a, b) => a + b.positions.length, 0);
+    const positions = new Float64Array(n);
+    let o = 0;
+    for (const x of k) { positions.set(x.positions, o); o += x.positions.length; }
+    return { positions, triCount: n / 9, closed: k.every(x => x.closed), volumen: k.reduce((a, b) => a + (b.volumen ?? 0), 0),
+             warnungen: k.flatMap(x => x.warnungen ?? []) };
+}
+
+/**
+ * Ein Ringstück um die Achse punkte[0] → punkte[1] (Welt, y oben). Masse als
+ * DURCHMESSER in Metern: `aussen`/`innen` unten, `aussenOben`/`innenOben` oben
+ * (0 = wie unten). `innen` = 0 heisst voll. `boden` schliesst unten (Topf),
+ * `deckel` oben (Abdeckung) — jeweils eine Platte dieser Dicke INNERHALB der Höhe.
+ */
+export function ringstueckKoerper(punkte, { aussen, innen = 0, aussenOben = 0, innenOben = 0, boden = 0, deckel = 0 } = {}, ecken = 32) {
+    if (!Array.isArray(punkte) || punkte.length < 2 || !(aussen > 0)) return null;
+    const u = punktXYZ(punkte[0]), o = punktXYZ(punkte[punkte.length - 1]);
+    if (!(o.y > u.y)) return null;
+    const raU = aussen / 2, raO = (aussenOben > 0 ? aussenOben : aussen) / 2;
+    const riU = innen / 2, riO = (innenOben > 0 ? innenOben : innen) / 2;
+    const h = o.y - u.y;
+    const lerp = (a, b, y) => a + (b - a) * ((y - u.y) / h);
+    const yB = u.y + Math.min(Math.max(0, boden), h), yD = o.y - Math.min(Math.max(0, deckel), h);
+    // Der Querschnitt gegen den Uhrzeigersinn in (r, y): aussen hoch, innen runter.
+    const q = [];
+    if (riU > 0 && boden > 0) q.push({ r: 0, y: u.y });
+    else q.push({ r: riU, y: u.y });
+    q.push({ r: raU, y: u.y }, { r: raO, y: o.y });
+    if (riO > 0 && deckel > 0) q.push({ r: 0, y: o.y }, { r: 0, y: yD }, { r: lerp(riU, riO, yD), y: yD });
+    else q.push({ r: riO, y: o.y });
+    if (riU > 0 && boden > 0) q.push({ r: lerp(riU, riO, yB), y: yB }, { r: 0, y: yB });
+    // Ohne Loch (innen = 0) fallen die Achspunkte zusammen — der Querschnitt ist ein Trapez an der Achse.
+    const sauber = q.filter((p, i) => i === 0 || Math.abs(p.r - q[i - 1].r) > 1e-9 || Math.abs(p.y - q[i - 1].y) > 1e-9);
+    const { ergebnis } = ringstueck({ achse: { unten: u, oben: o }, querschnitt: sauber }, { ecken: ecken ?? 32 });
+    return ergebnis ?? null;
+}
+
+/**
+ * Die Berme: der Innenkreis (Durchmesser) von der Sohle bis zur Auftrittshöhe,
+ * ausgespart die Gerinne — je eines von der Mitte zu jedem weiteren Punkt, so
+ * breit wie `breite`. Das Gerinne ist im Grundriss genau; seine Sohle ist eben
+ * (die Halbschale ist eine Vereinfachung und steht so in der Herleitung).
+ */
+export function bermeKoerper(punkte, { durchmesser, hoehe, breite } = {}, ecken = 32) {
+    if (!Array.isArray(punkte) || !punkte.length || !(durchmesser > 0) || !(hoehe > 0)) return null;
+    const m = punktXYZ(punkte[0]);
+    const r = durchmesser / 2;
+    const kreis = [];
+    for (let j = 0; j < ecken; j++) { const w = (j / ecken) * Math.PI * 2; kreis.push([m.x + Math.cos(w) * r, m.z + Math.sin(w) * r]); }
+    kreis.push(kreis[0]);
+    const streifen = [];
+    for (const p of punkte.slice(1).map(punktXYZ)) {
+        const dx = p.x - m.x, dz = p.z - m.z, l = Math.hypot(dx, dz);
+        if (l < 1e-6 || !(breite > 0)) continue;
+        const ux = dx / l, uz = dz / l, nx = -uz * breite / 2, nz = ux * breite / 2;
+        // Über die Mitte hinaus bis jenseits der Wand — so schliessen sich die Gerinne in der Mitte.
+        const a = { x: m.x - ux * breite / 2, z: m.z - uz * breite / 2 }, b = { x: m.x + ux * (r + 0.1), z: m.z + uz * (r + 0.1) };
+        streifen.push([[[a.x + nx, a.z + nz], [b.x + nx, b.z + nz], [b.x - nx, b.z - nz], [a.x - nx, a.z - nz], [a.x + nx, a.z + nz]]]);
+    }
+    const flaechen = streifen.length ? polygonClipping.difference([[kreis]], ...streifen) : [[kreis]];
+    const koerper = flaechen.map(([aussen, ...loecher]) => extrudiere({
+        umriss: { ring: aussen.map(([x, z]) => ({ x, z })), loecher: loecher.map(l => l.map(([x, z]) => ({ x, z }))) },
+    }, { von: m.y, bis: m.y + hoehe }).ergebnis);
+    return _vereinige(koerper);
+}
+
+/**
+ * Tritte (Steigeisen) an der Wand: Punkt 1 ist die Achse, jeder weitere die
+ * Mitte eines Tritts AN der Wand. Der Tritt ragt `tiefe` zur Achse hin, ist
+ * `breite` breit (quer) und `dicke` stark.
+ */
+export function trittKoerper(punkte, { breite, tiefe, dicke } = {}) {
+    if (!Array.isArray(punkte) || punkte.length < 2 || !(breite > 0) || !(tiefe > 0) || !(dicke > 0)) return null;
+    const a = punktXYZ(punkte[0]);
+    const koerper = punkte.slice(1).map(punktXYZ).map((p) => {
+        const dx = a.x - p.x, dz = a.z - p.z, l = Math.hypot(dx, dz) || 1;
+        const ux = dx / l, uz = dz / l, nx = -uz * breite / 2, nz = ux * breite / 2;
+        const ring = [
+            { x: p.x + nx, z: p.z + nz }, { x: p.x + ux * tiefe + nx, z: p.z + uz * tiefe + nz },
+            { x: p.x + ux * tiefe - nx, z: p.z + uz * tiefe - nz }, { x: p.x - nx, z: p.z - nz },
+        ];
+        return extrudiere({ umriss: { ring } }, { von: p.y, bis: p.y + dicke }).ergebnis;
+    });
+    return _vereinige(koerper);
+}

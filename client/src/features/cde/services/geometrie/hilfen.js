@@ -18,5 +18,5 @@ export {
 } from './ops/Raster.js';
 export { versetztePunkte, ringFlaeche } from './ops/Linien.js';
 export { umrissFlaeche, grundrissAusMesh } from './ops/Umriss.js';
-export { kreisProfil, trapezProfil, rechteckProfil, sweep, extrudiere, platte } from './ops/Sweep.js';
+export { kreisProfil, trapezProfil, rechteckProfil, sweep, extrudiere, platte, ringstueck } from './ops/Sweep.js';
 export { PROFIL_QUER, PROFIL_SCHRITT } from './ops/Profilkoerper.js';

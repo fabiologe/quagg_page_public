@@ -16,8 +16,9 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 describe('Die Eigenschaften, nach denen gefragt wird', () => {
     it('wer seine Ecken in `parameter.punkte` trägt, sagt es', () => {
         const mit = Object.values(REZEPTE).filter(r => r.punkteIn === 'parameter').map(r => r.id).sort();
-        expect(mit).toEqual(['bettung', 'drossel', 'flaeche', 'linie', 'pfosten', 'platte', 'raum', 'rechen', 'rigole', 'rohr',
-                             'sauberkeitsschicht', 'schacht', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);
+        expect(mit).toEqual(['auflagering', 'berme', 'bettung', 'drossel', 'flaeche', 'linie', 'pfosten', 'platte', 'raum', 'rechen',
+                             'rigole', 'rohr', 'sauberkeitsschicht', 'schacht', 'schachtabdeckung', 'schachthals', 'schachtplatte',
+                             'schachtring', 'schachtunterteil', 'steigeisen', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);
         // Der Erdbau trägt sie in den Operationen — und sagt das über `punktlisten`.
         expect(typeof ABLEITUNGEN.erdbau.punktlisten).toBe('function');
     });

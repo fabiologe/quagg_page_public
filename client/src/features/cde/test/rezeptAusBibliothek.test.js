@@ -110,7 +110,8 @@ describe('Registrieren: geprüft, gemeldet, nie halb', () => {
             projekt: { 'bauteil-rezepte': [LEITPFOSTEN] },
         }));
         expect(rezeptNach('leitpfosten').titel).toBe('Leitpfosten');
-        expect(rezeptNach('rohr').geometrie.profil.art).toBe('kreis');
+        // Seit BIMFY I2 ein Kreis mit (optionaler) Wand — der Büro-Rechteckkanal überschreibt ihn nicht.
+        expect(rezeptNach('rohr').geometrie.profil.art).toBe('kreisring');
         expect(b.katalogBefunde.map(x => x.id)).toEqual(['rohr']);
         expect(b.katalogBefunde[0].fehler.join(' ')).toMatch(/eingebaut/);
     });

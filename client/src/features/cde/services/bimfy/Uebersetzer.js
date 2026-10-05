@@ -58,7 +58,7 @@ function _gefuellteFelder(rezept) {
  * keine Zeichnung, also wird sie nicht angeboten.
  */
 export function istUebersetzbar(rezept) {
-    if (!rezept || typeof rezept.baue !== 'function' || rezept.behaelter) return false;
+    if (!rezept || typeof rezept.baue !== 'function' || rezept.behaelter || rezept.nurVorlage) return false;
     const gefuellt = _gefuellteFelder(rezept);
     return (rezept.felder ?? []).every(f => f.leerErlaubt || f.vorgabe !== undefined || gefuellt.has(f.name));
 }

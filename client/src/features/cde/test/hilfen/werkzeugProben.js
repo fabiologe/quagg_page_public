@@ -215,6 +215,9 @@ const NEU = [
 
     // ── Merkmale und Masse an eigenen Bauteilen ──
     { id: 'rohr-dn-setzen', el: eigen('cde-H1'), werte: [{ dn: 400 }] },
+    // BIMFY I2: die Rohrwand und worauf sich DN bezieht.
+    { id: 'rohr-wanddicke-setzen', el: eigen('cde-H1'), werte: [{ wanddicke: 40 }] },
+    { id: 'rohr-dnBezug-setzen', el: eigen('cde-H1'), werte: [{ dnBezug: 'aussen' }] },
     { id: 'schacht-dn-setzen', el: eigen('cde-S1'), werte: [{ dn: 1200 }] },
     { id: 'pfosten-laenge-setzen', el: eigen('cde-PF1'), werte: [{ laenge: 0.2 }] },
     { id: 'platte-dicke-setzen', el: eigen('cde-PL1'), werte: [{ dicke: 0.4 }] },

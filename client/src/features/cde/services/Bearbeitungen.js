@@ -1766,7 +1766,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     // Punkten), `mindestPunkte: 0` und keine Felder. Wer ihn drückte, legte
     // einen Bauplan an, den sein eigenes Rezept nicht bauen kann. Ein Gelände
     // entsteht über die Erdbau-Werkzeuge, nie über einen gezeichneten Zug.
-    ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function').map(zeichenBearbeitung),
+    // Ein Teil, das nur eine Vorlage baut (Schachtring, BIMFY I3), hat kein eigenes Zeichenwerkzeug.
+    ...Object.values(REZEPTE).filter(r => typeof r.baue === 'function' && !r.nurVorlage).map(zeichenBearbeitung),
     // Teil XXVII, B2: das Bauwerk als Ganzes — vier Werkzeuge aus EINER Fabrik.
     ...Object.keys(BAUWERK_LAGE).map(bauwerkWerkzeug),
     // Teil XXVIII, V1: je eingebauter Vorlage ein Werkzeug — ein Bauwerk, ein Kommando.

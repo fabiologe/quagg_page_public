@@ -13,8 +13,8 @@
  * `rezeptAusDeklaration`, das dann nur ergänzt, was sich ableiten lässt.
  */
 import {
-    bandGeometrie, dreiecksGeometrie, flaechenGeometrie, hoehenUeberLaenge, massAus, platteKoerper, profilAus,
-    punktXYZ, punkteAus, stabKoerper, sweepKoerper,
+    bandGeometrie, bermeKoerper, dreiecksGeometrie, flaechenGeometrie, hoehenUeberLaenge, massAus, platteKoerper, profilAus,
+    punktXYZ, punkteAus, ringstueckKoerper, stabKoerper, sweepKoerper, trittKoerper,
 } from './Geometriebau.js';
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
 import { meshVolume } from '../geometrie/MeshOps.js';
@@ -51,6 +51,15 @@ export const GEOMETRIE_ARTEN = Object.freeze({
     sweep:   { koerper: true,  profil: true,  masse: [],        weitere: ['achsbezug'] },
     stab:    { koerper: true,  profil: true,  masse: ['laenge'], weitere: [] },
     platte:  { koerper: true,  profil: false, masse: ['dicke'],  weitere: ['richtung'] },
+    // BIMFY I2 — Schachtbauteile. Die Punkte sind die ACHSE (unten, oben); ein
+    // Querschnitt aus den Massen wird um sie gedreht (`ops/Sweep.ringstueck`).
+    // `boden`/`deckel` > 0 schliessen den Ring unten (Unterteil) bzw. oben (Abdeckung).
+    ringstueck: { koerper: true, profil: false, masse: ['aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel'], weitere: ['ecken'] },
+    // Die Berme im Unterteil: der Innenkreis bis zur Auftrittshöhe, ausgespart die
+    // Gerinne. Punkt 1 ist die Mitte auf der Sohle, jeder weitere das Ende eines Gerinnes.
+    berme:   { koerper: true,  profil: false, masse: ['durchmesser', 'hoehe', 'breite'], weitere: [] },
+    // Tritte (Steigeisen): Punkt 1 ist die Achse des Schachts, jeder weitere die Mitte eines Tritts an der Wand.
+    tritte:  { koerper: true,  profil: false, masse: ['breite', 'tiefe', 'dicke'], weitere: [] },
 });
 
 /**
@@ -76,6 +85,9 @@ export const PROFIL_ARTEN = Object.freeze({
     kreis:    { masse: ['durchmesser'],     weitere: ['ecken'] },
     rechteck: { masse: ['breite', 'tiefe'], weitere: [] },
     polygon:  { masse: [],                  weitere: ['punkte'] },
+    // BIMFY I2: ein Kreis mit Wand. `bezug` sagt, ob `durchmesser` innen (Beton,
+    // Steinzeug) oder aussen (Kunststoff, DN/OD) misst; ohne Wanddicke ein voller Kreis.
+    kreisring: { masse: ['durchmesser', 'wanddicke'], weitere: ['ecken', 'bezug'] },
 });
 
 /** Was jedes Profil tragen darf, gleich welcher Art. */
@@ -185,8 +197,13 @@ function _vorgabeIn(felder) {
  */
 function _sohlen(geo, vorgabe) {
     if (geo?.art !== 'sweep') return undefined;
-    const abstand = (parameter) => {
+    // Mit Wand (kreisring) ist die Sohle die Innenseite — das Loch, nicht der Aussenkreis.
+    const lichtesProfil = (parameter) => {
         const p = profilAus(geo.profil, parameter, vorgabe);
+        return p?.loch?.punkte?.length ? p.loch : p;
+    };
+    const abstand = (parameter) => {
+        const p = lichtesProfil(parameter);
         return p?.punkte?.length ? Math.max(0, -Math.min(...p.punkte.map(q => q.v))) : 0;
     };
     // DIE PROFILHOEHE (Teil XXV, V2): Sohle bis Scheitel, aus dem Profil.
@@ -196,7 +213,7 @@ function _sohlen(geo, vorgabe) {
     // ist es das nicht mehr, und ein Eiprofil laege mit seinem Scheitel
     // daneben (die Ueberdeckung waere zu gross gerechnet).
     const hoehe = (parameter) => {
-        const p = profilAus(geo.profil, parameter, vorgabe);
+        const p = lichtesProfil(parameter);
         if (!p?.punkte?.length) return 0;
         const v = p.punkte.map(q => q.v);
         return Math.max(0, Math.max(...v) - Math.min(...v));
@@ -259,6 +276,13 @@ function _koerper(geo, parameter, vorgabe) {
     if (geo.art === 'platte') {
         return platteKoerper(punkte, massAus(parameter, geo.dicke, { rueckfall: vorgabe(geo.dicke) }), geo.richtung ?? 'unten');
     }
+    const mass = (feld) => massAus(parameter, geo[feld], { rueckfall: vorgabe(geo[feld]) });
+    if (geo.art === 'ringstueck') {
+        return ringstueckKoerper(punkte, { aussen: mass('aussen'), innen: mass('innen'), aussenOben: mass('aussenOben'),
+                                           innenOben: mass('innenOben'), boden: mass('boden'), deckel: mass('deckel') }, geo.ecken);
+    }
+    if (geo.art === 'berme') return bermeKoerper(punkte, { durchmesser: mass('durchmesser'), hoehe: mass('hoehe'), breite: mass('breite') });
+    if (geo.art === 'tritte') return trittKoerper(punkte, { breite: mass('breite'), tiefe: mass('tiefe'), dicke: mass('dicke') });
     return null;
 }
 

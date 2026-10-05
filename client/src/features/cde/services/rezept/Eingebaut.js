@@ -90,6 +90,54 @@ const schicht = (id, titel, objektTyp, dicke) => ({
     menge: { depth: 'dicke', netArea: 'grundflaeche', perimeter: 'umfang', netVolume: 'volumen' },
 });
 
+/**
+ * SCHACHTTEILE (BIMFY I3): was die Vorlage „Normschacht" baut — Unterteil,
+ * Ringe, Konus, Platten, Auflageringe, Abdeckung, Berme, Steigeisen. Jedes
+ * Teil ist ein eigenes IFC-Element mit USERDEFINED und Objekttyp, weil keine
+ * Klasse einen passenden PredefinedType kennt (IFC4X3_ADD2, nachgesehen).
+ * `nurVorlage`: kein eigenes Zeichenwerkzeug — ein Ring entsteht im Schacht.
+ *
+ * Die Masse sind DURCHMESSER in Metern; die Punkte sind die Achse (unten, oben).
+ */
+const mass = (name, titel, vorgabe = 0, mehr = {}) => Object.freeze({ name, titel, einheit: 'm', typ: 'zahl', min: 0, max: 10,
+                                                                     leerErlaubt: true, vorgabe, ...mehr });
+const RINGMASSE = [
+    mass('aussen', 'Aussendurchmesser unten', 1.24, { gueltig: { ueber: 0 }, leerErlaubt: false }),
+    mass('innen', 'Innendurchmesser unten (0 = voll)', 1.0),
+    mass('aussenOben', 'Aussendurchmesser oben (0 = wie unten)'),
+    mass('innenOben', 'Innendurchmesser oben (0 = wie unten)'),
+    mass('boden', 'Bodendicke (0 = offen)'),
+    mass('deckel', 'Deckeldicke (0 = offen)'),
+];
+const RINGSTUECK = Object.freeze({ art: 'ringstueck', aussen: 'aussen', innen: 'innen', aussenOben: 'aussenOben',
+                                   innenOben: 'innenOben', boden: 'boden', deckel: 'deckel', ecken: 32 });
+const schachtteil = (id, titel, klasse, objektTyp, geometrie = RINGSTUECK, felder = RINGMASSE) => ({
+    id, titel, icon: 'schacht', bauform: 'koerper', kategorieVorgabe: klasse, nurVorlage: true,
+    mindestPunkte: 2, geschlossen: false,
+    // Ausführung und Objekttyp stehen fest — kein Werkzeug „… setzen" (die Vorlage steuert das Teil).
+    felder: [NAME, TYP, ...felder, ...ausfuehrung('USERDEFINED', objektTyp).map(({ setzbar: _s, ...f }) => f)],
+    geometrie,
+});
+
+export const SCHACHTTEILE = Object.freeze([
+    schachtteil('schachtunterteil', 'Schachtunterteil', 'IFCBUILDINGELEMENTPART', 'Schachtunterteil'),
+    schachtteil('schachtring', 'Schachtring', 'IFCBUILDINGELEMENTPART', 'Schachtring'),
+    schachtteil('schachthals', 'Schachthals (Konus)', 'IFCBUILDINGELEMENTPART', 'Konus'),
+    schachtteil('schachtplatte', 'Schachtplatte', 'IFCBUILDINGELEMENTPART', 'Abdeckplatte'),
+    schachtteil('auflagering', 'Auflagering', 'IFCBUILDINGELEMENTPART', 'Auflagering'),
+    schachtteil('schachtabdeckung', 'Schachtabdeckung', 'IFCDISCRETEACCESSORY', 'Schachtabdeckung'),
+    schachtteil('berme', 'Berme mit Gerinne', 'IFCBUILDINGELEMENTPART', 'Berme mit Gerinne',
+        { art: 'berme', durchmesser: 'durchmesser', hoehe: 'auftritt', breite: 'gerinnebreite' },
+        [mass('durchmesser', 'Innendurchmesser des Unterteils', 1.0, { gueltig: { ueber: 0 }, leerErlaubt: false }),
+         mass('auftritt', 'Auftrittshöhe über der Sohle', 0.3, { gueltig: { ueber: 0 }, leerErlaubt: false }),
+         mass('gerinnebreite', 'Gerinnebreite', 0.3)]),
+    schachtteil('steigeisen', 'Steigeisengang', 'IFCDISCRETEACCESSORY', 'Steigeisen',
+        { art: 'tritte', breite: 'trittbreite', tiefe: 'trittiefe', dicke: 'trittdicke' },
+        [mass('trittbreite', 'Auftrittsbreite', 0.3, { gueltig: { ueber: 0 } }),
+         mass('trittiefe', 'Fussfreiraum (Wand bis Vorderkante)', 0.16, { gueltig: { ueber: 0 } }),
+         mass('trittdicke', 'Stärke', 0.025, { gueltig: { ueber: 0 } })]),
+]);
+
 export const EINGEBAUTE_REZEPTE = Object.freeze([
     {
         id: 'linie',
@@ -140,6 +188,12 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             // „Rohrleitungen — Nennweite" verfehlte jedes eigene Rohr).
             { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, vorgabe: 300, setzbar: true,
               pset: 'Pset_PipeSegmentTypeCommon.NominalDiameter' },
+            // DIE WAND (BIMFY I2): leer = ein voller Kreis wie bisher. Der Bezug sagt,
+            // ob DN innen misst (Beton, Steinzeug) oder aussen (Kunststoff, DN/OD).
+            { name: 'wanddicke', titel: 'Wanddicke (leer = ohne Wand)', einheit: 'mm', typ: 'zahl', min: 1, max: 500,
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true },
+            { name: 'dnBezug', titel: 'DN misst (leer = innen)', typ: 'auswahl', leerErlaubt: true, setzbar: true, vorgabe: 'innen',
+              optionen: [{ wert: 'innen', titel: 'innen (Beton, Steinzeug)' }, { wert: 'aussen', titel: 'aussen (Kunststoff, DN/OD)' }] },
         ],
         // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
         // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
@@ -147,7 +201,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         // Warum kein Band wie die Linie: eine geteilte Haltung besteht aus zwei
         // HALTUNGEN, nicht aus zwei flachen Streifen — und die Bauform wäre
         // `linie` statt `achse+profil`, womit alle Werkzeuge dieser Form ausfielen.
-        geometrie: { art: 'sweep', profil: { art: 'kreis', durchmesser: 'dn', einheit: 'mm', ecken: 12 } },
+        geometrie: { art: 'sweep', profil: { art: 'kreisring', durchmesser: 'dn', wanddicke: 'wanddicke', bezug: 'dnBezug', einheit: 'mm', ecken: 12 } },
     },
     {
         id: 'schacht',
@@ -514,4 +568,5 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         menge: { thickness: 'dicke', volume: 'volumen' },
         rechenmerkmale: { 'Quagg_Versickerung.NutzbaresVolumen': { menge: 'volume', mal: 'hohlraumanteil' } },
     },
+    ...SCHACHTTEILE,
 ]);

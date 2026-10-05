@@ -110,7 +110,8 @@ describe('ausGruppe — der Einstieg über die Werkzeugleiste', () => {
         // dasselbe meinen, laufen auseinander. Aber abgeleitet heisst nicht
         // „alle": `gelaende` baut mit Quellraster (`baue: null`), nicht aus
         // Punkten — als Zeichenwerkzeug war es ein toter Knopf (2026-09-17).
-        const ausZug = Object.entries(REZEPTE).filter(([, r]) => typeof r.baue === 'function').map(([id]) => id);
+        // BIMFY I3: ein Teil, das nur eine Vorlage baut (`nurVorlage`), zeichnet niemand von Hand.
+        const ausZug = Object.entries(REZEPTE).filter(([, r]) => typeof r.baue === 'function' && !r.nurVorlage).map(([id]) => id);
         // Teil XXVIII: dazu je Bauwerk-Vorlage eines — es nennt die Vorlage, kein Rezept.
         expect(ausGruppe('erzeugen').filter(b => !b.ausVorlage).map(b => b.rezept)).toEqual(ausZug);
         expect(ausZug).not.toContain('gelaende');

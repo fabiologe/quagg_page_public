@@ -98,6 +98,15 @@ describe('2 — es sind Daten', () => {
             sauberkeitsschicht: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.1 },
             bettung: { punkte: [[0, 0, 0], [5, 0, 0], [5, 0, 4], [0, 0, 4]], dicke: 0.2 },
             rigole: { punkte: [[0, 0, 0], [20, 0, 0], [20, 0, 2], [0, 0, 2]], dicke: 1.2, hohlraumanteil: 30 },
+            // BIMFY I3: die Teile des Normschachts (Achse unten → oben, Durchmesser in m).
+            schachtunterteil: { punkte: [[0, 0, 0], [0, 0.85, 0]], aussen: 1.24, innen: 1, boden: 0.15 },
+            schachtring: { punkte: [[0, 0.85, 0], [0, 1.85, 0]], aussen: 1.24, innen: 1 },
+            schachthals: { punkte: [[0, 1.85, 0], [0.1875, 2.45, 0]], aussen: 1.24, innen: 1, aussenOben: 0.865, innenOben: 0.625 },
+            schachtplatte: { punkte: [[0, 0, 0], [0, 0.2, 0]], aussen: 1.24, innen: 0.625 },
+            auflagering: { punkte: [[0, 0, 0], [0, 0.08, 0]], aussen: 0.795, innen: 0.625 },
+            schachtabdeckung: { punkte: [[0, 0, 0], [0, 0.16, 0]], aussen: 0.785, innen: 0.625, deckel: 0.06 },
+            berme: { punkte: [[0, 0, 0], [1, 0, 0], [-1, 0, 0]], durchmesser: 1, auftritt: 0.3, gerinnebreite: 0.3 },
+            steigeisen: { punkte: [[0, 0, 0], [0.5, 0.4, 0], [0.5, 0.7, 0]], trittbreite: 0.3, trittiefe: 0.16, trittdicke: 0.025 },
         };
         for (const d of kopie) {
             expect(ausgabe(rezeptAusDeklaration(d), probe[d.id]), d.id).toEqual(ausgabe(REZEPTE[d.id], probe[d.id]));
