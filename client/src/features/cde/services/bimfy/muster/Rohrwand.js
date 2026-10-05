@@ -20,8 +20,9 @@ import { DN_OD_WERKSTOFFE } from '../isybau/Schluessel.js';
 const BETON = new Set(['B', 'SB', 'SFB', 'SPB', 'OB', 'PCC', 'BS']);
 const KUNSTSTOFF_SDR_VORGABE = 33;
 
-/** Die Herleitung eines Masses. */
-export const herleitung = (art, text, belegt = null) => Object.freeze({ art, text, ...(belegt ? { beleg: belegt } : {}) });
+import { herleitung } from './Herleitung.js';
+// Die Herleitung wohnt in `Herleitung.js`; hier weitergereicht für bestehende Aufrufer.
+export { herleitung };
 
 /** Der nächste Tabellenschlüssel (mm) zu einem Wert, wenn er höchstens 2 % daneben liegt. */
 function _zeile(tabelle, dnMm) {

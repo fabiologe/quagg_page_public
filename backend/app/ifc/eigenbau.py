@@ -475,7 +475,12 @@ def _quellen_json(b: dict) -> str | None:
 # Teil zu seinem Bauwerk hat, ist SCHEMAWISSEN und steht deshalb hier, nicht im
 # Client: in einer Anlage (Raumelement) wird ein Teil ENTHALTEN, in einer
 # Baugruppe (Element) wird es ZERLEGT. Beides zugleich zaehlte es doppelt.
-BAUWERKSARTEN = ("anlage", "baugruppe")
+BAUWERKSARTEN = ("anlage", "baugruppe", "schacht")
+# DER SCHACHT (BIMFY I5): ein Element wie die Baugruppe — seine Teile werden
+# ZERLEGT, er selbst wird eingeordnet —, aber als IfcDistributionChamberElement
+# MANHOLE: nur dort gelten Pset_DistributionChamberElementTypeManhole und das Qto.
+# Die ElementAssembly kennt keinen Schacht (IFC4X3_ADD2, nachgesehen).
+SCHACHTKLASSE = ("IfcDistributionChamberElement", "MANHOLE")
 # DER RAUM (Teil XXVI, Z6): das einzige Raumelement, das als Paket-Bauteil kommt —
 # es hat einen Koerper (den Hohlraum) und Mengen (das Speichervolumen). Es wird
 # ZERLEGT unter seiner Anlage oder der Site (WR41), nie enthalten (WR31). Alle
@@ -494,13 +499,15 @@ def _platz(f, bezug):
 def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> dict:
     """Die Behaelter eines Pakets: Bauwerke, in denen Bauteile stehen (Teil XXVI, Z5a).
 
-    `bauwerke: [{cdeId, art: 'anlage'|'baugruppe', name, teilVon?, predefinedType?}]`
+    `bauwerke: [{cdeId, art: 'anlage'|'baugruppe'|'schacht', name, teilVon?, predefinedType?, merkmale?}]`
 
       anlage, ohne Eltern      -> IfcFacility, unter der Site ZERLEGT (WR41)
       anlage in einer Anlage   -> IfcFacilityPartCommon, unter ihr ZERLEGT;
                                   UsageType ist Pflicht (NOTDEFINED)
       baugruppe                -> IfcElementAssembly/USERDEFINED mit ObjectType;
                                   sie selbst wird spaeter wie ein Bauteil eingeordnet
+      schacht                  -> IfcDistributionChamberElement/MANHOLE, sonst wie die
+                                  Baugruppe; `merkmale` (bSI) gegen seine Vorlagen geprueft
 
     Eltern vor Kindern; eine unbekannte Elternkennung, ein Kreis oder eine Anlage
     in einer Baugruppe werden GENANNT und das Bauwerk an die Site gehaengt — nie
@@ -542,7 +549,11 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
         bezug = (eltern["inst"] if eltern else site).ObjectPlacement
         attrs = dict(GlobalId=guids.guid_aus_cde_id(cid), OwnerHistory=besitz, Name=w.get("name") or None,
                      ObjectPlacement=_platz(f, bezug))
-        if w["art"] == "baugruppe":
+        if w["art"] == "schacht":
+            inst = f.create_entity(SCHACHTKLASSE[0], **attrs, PredefinedType=SCHACHTKLASSE[1],
+                                   ObjectType=w.get("objectType") or None)
+            rolle = "baugruppe"
+        elif w["art"] == "baugruppe":
             inst = f.create_entity("IfcElementAssembly", **attrs, PredefinedType="USERDEFINED",
                                    ObjectType=w.get("objectType") or "Baugruppe")
             rolle = "baugruppe"
@@ -566,6 +577,9 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
                   schluessel=f"{satz}|{cid}")
         if w.get("klassifikation") is not None:
             _klassifizieren(f, besitz, inst, w.get("klassifikation"), f"{satz}|{cid}", klassen, warnungen, cid)
+        if w["art"] == "schacht" and w.get("merkmale"):
+            _bsi_merkmale(f, besitz, inst, SCHACHTKLASSE[0], SCHACHTKLASSE[1], w.get("merkmale"),
+                          f"{satz}|{cid}", warnungen, cid)
         behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None}
         return behaelter[cid]
 
@@ -738,6 +752,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             "Hinweis": b.get("hinweis"),
             # Die Vorlage (A1/A9b) — auch an Klassen ohne Typobjekt lesbar.
             "Vorlage": (b.get("typ") or {}).get("id") if isinstance(b.get("typ"), dict) else None,
+            # WOHER JEDES MASS STAMMT (BIMFY I2): Datei, Norm mit Stelle oder Annahme.
+            "Herleitung": b.get("herleitung"),
         }, schluessel=f"{satz}|{cde_id}")
         if _mengen(f, besitz, el, b.get("mengen") or {}, f"{satz}|{cde_id}", warnungen, cde_id,
                    methode=b.get("mengenMethode")):

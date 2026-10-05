@@ -136,7 +136,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { rezeptNach, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
 import { ANNAHME, FORMATE, endungVon, liesGeometrien } from '../services/bimfy/Geometrieleser.js';
-import { ausdehnung, gruppiere, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
+import { ausdehnung, gruppiere, klasseFuer, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
 
 const ARTEN = Object.freeze({ punkt: 'Punkt', zug: 'Zug', umriss: 'Umriss', koerper: 'Körper' });
 const formatListe = [...new Set(Object.keys(FORMATE).map(e => e.toUpperCase()))].join(' · ');
@@ -207,7 +207,7 @@ function verwerfen() {
   geometrien.value = []; warnungen.value = []; zeilen.value = []; meldung.value = null;
 }
 
-const klasseVon = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? '').toUpperCase();
+const klasseVon = (id) => klasseFuer(id);
 const klasseFalsch = (z) => warumNichtSchreibbar(z.kategorie, { raum: !!rezeptNach(z.rezept)?.raum });
 
 /** Versatz und Grundhöhe — was die Zeichnung nicht selbst weiss. */

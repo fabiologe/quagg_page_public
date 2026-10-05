@@ -7,7 +7,15 @@
  * dass die Muster daraus eine Bauteilkette machen, deren Höhen AUFGEHEN und
  * deren Masse jeweils sagen, woher sie stammen (Datei, Norm, Annahme).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { repo } from '../services/RepoFacade.js';
+import { useAenderungen } from '../stores/useAenderungen.js';
+import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
+import { gruppiere, kommandosFuer } from '../services/bimfy/Uebersetzer.js';
+import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { Speicher } from './hilfen/vorlagenKommandos.js';
 import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bimfy/isybau/Isybauleser.js';
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
@@ -205,5 +213,46 @@ describe('BIMFY · ISYBAU mit Muster', () => {
         expect(s1.muster.teile[0].gerinne.anschluesse).toEqual([{ dn: 0.3, sohle: 102, richtung: 0, art: 'ablauf' }]);
         const h1 = geometrien.find(g => g.name === 'H1');
         expect(h1.muster.rohrwand).toMatchObject({ dInnen: 0.3, dnBezug: 'innen' });
+    });
+});
+
+describe('BIMFY I6 · ISYBAU → Normschacht und Rohr mit Wand, über den Kommandoweg', () => {
+    beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
+    afterEach(() => repo.setBackend(null));
+
+    it('zwei Schächte werden je ein Normschacht, die Haltung ein Steinzeugrohr mit Wand', async () => {
+        // Nahe am Ursprung (Float32 der Anzeige), sonst dieselbe Datei wie oben.
+        const text = datei(schachtXml({ ost: 10, nord: 20 }), schachtXml({ name: 'S2', ost: 50, nord: 20, deckel: '104,80', sohle: '101,70' }),
+                           haltungXml());
+        const zeilen = gruppiere(liesIsybau(text).geometrien);
+        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'vorlage:normschacht'], ['ISYBAU Haltung', 'rohr']]);
+        const { kommandos, fehler } = kommandosFuer(zeilen);
+        expect(fehler).toEqual([]);
+        const rohr = kommandos.find(k => k.kommando.werkzeug === 'rohr-zeichnen').kommando;
+        expect(rohr.werte).toMatchObject({ dn: 300, wanddicke: 27.3, dnBezug: 'innen' });
+        const s1 = kommandos.find(k => k.geo.name === 'S1').kommando;
+        expect(s1.werte).toMatchObject({ tiefe: 3, dn: 1, oeffnung: 0.625, abgang: 0, zulauf: -1, deckelklasse: 4, oberteil: 1 });
+
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-i6-${++n}`, ziel: [], wer: 'test', wann: '2026-10-05T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-i6-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const plaene = [...useAenderungen().wirksamerStand('erzeugt').values()];
+        expect(plaene.filter(p => p.rezept === 'bauwerk' && p.parameter.art === 'schacht').map(p => p.name).sort()).toEqual(['S1', 'S2']);
+        // Vorher: zwei Schachtzylinder. Jetzt Teil für Teil — S2 ist 10 cm tiefer und hat einen Auflagering mehr.
+        const teileVon = (name) => {
+            const gid = [...useAenderungen().wirksamerStand('erzeugt')].find(([, p]) => p.rezept === 'bauwerk' && p.name === name)[0];
+            return plaene.filter(p => p.parameter?.teilVon === gid).map(p => p.rezept);
+        };
+        expect(teileVon('S1')).toEqual(['schachtunterteil', 'berme', 'schachtring', 'schachtring', 'schachthals', 'auflagering', 'schachtabdeckung', 'steigeisen']);
+        expect(teileVon('S2')).toEqual(['schachtunterteil', 'berme', 'schachtring', 'schachtring', 'schachthals', 'auflagering', 'auflagering',
+                                        'schachtabdeckung', 'steigeisen']);
+        const rohrPlan = plaene.find(p => p.rezept === 'rohr');
+        expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 27.3, dnBezug: 'innen' });
+        // Die Sohle des Rohrs bleibt die Sohle aus ISYBAU — innen, nicht unter der Wand.
+        expect(rezeptNach('rohr').sohlen.lies(rohrPlan.parameter).map(v => Math.round(v * 1000) / 1000)).toEqual([102, 101.7]);
     });
 });

@@ -918,3 +918,50 @@ def test_abnahme_p7_im_ifc(tmp_path):
     wirte = sorted(r.RelatingBuildingElement.Name for r in datei.by_type("IfcRelVoidsElement"))
     assert wirte == ["Stirnwand Ost", "Stirnwand West"]
     assert {e.is_a() for e in datei.by_type("IfcElement")} >= {"IfcFilter", "IfcValve", "IfcPipeSegment", "IfcSlab", "IfcWall"}
+
+
+# ── BIMFY I5: der Normschacht, Teil fuer Teil ───────────────────────────────
+
+NORMSCHACHT = DATEN / "paket_normschacht.json"
+
+
+@pytest.fixture(scope="module")
+def normschacht(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(NORMSCHACHT.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("normschacht") / "normschacht.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="normschacht")
+    return {"ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def test_normschacht_im_ifc(normschacht):
+    """Das Paket aus `bimfyNormschacht.test.js` (nur `fuehreAus`): ein DN-1000-Schacht aus der
+    Vorlage. Der Schacht ist IfcDistributionChamberElement/MANHOLE und das GANZE seiner acht
+    Teile (IfcRelAggregates); er selbst steht in der Site. Pset_..TypeManhole getypt, jedes Teil
+    nennt seine Herleitung. Prueftor ohne offenen Befund, IDS ohne Verfehlung."""
+    from app.ifc.pruefe import offen
+    b = normschacht["bericht"]
+    assert b["bauteile"] == 8 and b["uebersprungen"] == []
+    assert [w for w in b["warnungen"] if "Merkmalssatz" in w or "nicht geschrieben" in w or "unbekannt" in w] == []
+    assert [x for x in normschacht["pruefung"]["befunde"] if offen(x)] == []
+    assert _verfehlt(normschacht["ziel"]) == []
+    datei = ifcopenshell.open(str(normschacht["ziel"]))
+    (schacht,) = datei.by_type("IfcDistributionChamberElement")
+    assert (schacht.PredefinedType, schacht.Name) == ("MANHOLE", "S1")
+    (zerlegt,) = schacht.IsDecomposedBy
+    teile = sorted((t.is_a(), t.ObjectType) for t in zerlegt.RelatedObjects)
+    assert teile == sorted([("IfcBuildingElementPart", "Schachtunterteil"), ("IfcBuildingElementPart", "Berme mit Gerinne"),
+                            ("IfcBuildingElementPart", "Schachtring"), ("IfcBuildingElementPart", "Schachtring"),
+                            ("IfcBuildingElementPart", "Konus"), ("IfcBuildingElementPart", "Auflagering"),
+                            ("IfcDiscreteAccessory", "Schachtabdeckung"), ("IfcDiscreteAccessory", "Steigeisen")])
+    assert all(t.PredefinedType == "USERDEFINED" for t in zerlegt.RelatedObjects)
+    # Die Teile sind zerlegt, nicht zusaetzlich enthalten — der Schacht selbst steht in der Site.
+    assert all(not t.ContainedInStructure for t in zerlegt.RelatedObjects)
+    assert schacht.ContainedInStructure and schacht.ContainedInStructure[0].RelatingStructure.is_a("IfcSite")
+    m = _saetze(schacht)["Pset_DistributionChamberElementTypeManhole"]
+    assert m["InvertLevel"] == (102.0, "IfcLengthMeasure")
+    assert m["WallThickness"] == (0.12, "IfcPositiveLengthMeasure")
+    assert m["HasSteps"] == (True, "IfcBoolean")
+    assert m["AccessCoverLoadRating"] == ("D 400", "IfcText")
+    ring = next(t for t in zerlegt.RelatedObjects if t.ObjectType == "Schachtring")
+    assert _saetze(ring)["Quagg_CDE"]["Herleitung"][0].startswith("hoehe: norm — Regelbauhöhe 1000 mm (DIN 4034-1:2020-04")

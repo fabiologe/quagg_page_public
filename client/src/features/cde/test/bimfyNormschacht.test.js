@@ -20,6 +20,14 @@ import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
 import { geometrieAusTeil } from '../services/Bauteilrezepte.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 import { vorlageNach, vorlagenWerte } from '../services/rezept/Bauwerksvorlagen.js';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { paketAus } from './hilfen/vorlagenKommandos.js';
+import { k, e } from './hilfen/kammerKommandos.js';
+
+const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../backend/app/ifc/tests/daten/paket_normschacht.json');
+const KENNUNGEN = ['cde-S1', 'cde-UT', 'cde-BE', 'cde-R1', 'cde-R2', 'cde-HA', 'cde-AR1', 'cde-AB', 'cde-ST'];
 
 class Speicher {
     constructor() { this.daten = new Map(); }
@@ -111,5 +119,21 @@ describe('BIMFY I4 · Normschacht aus der Vorlage', () => {
         expect(flach.teile.map(t => t.rolle)).toContain('abdeckplatte');
         const r = v.rollen({ ...vorlagenWerte(v) }, { x: 0, y: 0, z: 0 });
         expect(r.map(t => t.rolle)).toEqual(['unterteil', 'berme', 'ring1', 'ring2', 'hals', 'auflagering1', 'abdeckung', 'steigeisen']);
+    });
+
+    it('der Vertrag mit dem Schreiber: das Paket des Normschachts (Fixture für test_bauwerke.py)', async () => {
+        const erg = await useBearbeitung().fuehreAus(k('bauwerk-aus-vorlage-normschacht', {
+            neu: KENNUNGEN, eingaben: { zug: [e(5, -5, 102)] }, werte: { name: 'S1', hoehe: '', ...WERTE } }));
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        const p = await paketAus(useAenderungen());
+        expect(p.bauwerke).toEqual([expect.objectContaining({ cdeId: 'cde-S1', art: 'schacht',
+            merkmale: { Pset_DistributionChamberElementTypeManhole: expect.objectContaining({
+                InvertLevel: 102, WallThickness: 0.12, BaseThickness: 0.15, HasSteps: true, AccessCoverLoadRating: 'D 400' }) } })]);
+        expect(p.bauteile.find(t => t.cdeId === 'cde-R1').herleitung).toMatch(/^hoehe: norm — Regelbauhöhe 1000 mm \(DIN 4034-1:2020-04, 4\.3\.3\.8\.4\)/);
+        if (process.env.NORMSCHACHT_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(p));
+        expect(existsSync(FIXTURE), 'Fixture fehlt: NORMSCHACHT_VERTRAG_SCHREIBEN=1 …').toBe(true);
+        const alt = JSON.parse(readFileSync(FIXTURE, 'utf8'));
+        expect(alt.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]))
+            .toEqual(p.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]));
     });
 });

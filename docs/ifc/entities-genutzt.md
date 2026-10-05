@@ -160,11 +160,13 @@ classDiagram
   style IfcValve fill:#dcedc8,stroke:#558b2f
 ```
 
-### IfcElementComponent — 5 genutzt
+### IfcElementComponent — 7 genutzt
 
 ```mermaid
 classDiagram
   direction LR
+  IfcElementComponent <|-- IfcBuildingElementPart
+  IfcElementComponent <|-- IfcDiscreteAccessory
   IfcElementComponent <|-- IfcReinforcingElement
   IfcElementComponent <|-- IfcSign
   IfcReinforcingElement <|-- IfcReinforcingBar
@@ -172,6 +174,8 @@ classDiagram
   IfcReinforcingElement <|-- IfcTendon
   <<abstract>> IfcElementComponent
   <<abstract>> IfcReinforcingElement
+  style IfcBuildingElementPart fill:#dcedc8,stroke:#558b2f
+  style IfcDiscreteAccessory fill:#dcedc8,stroke:#558b2f
   style IfcElementComponent fill:#dcedc8,stroke:#558b2f
   style IfcReinforcingBar fill:#dcedc8,stroke:#558b2f
   style IfcReinforcingMesh fill:#dcedc8,stroke:#558b2f
@@ -302,6 +306,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcAnnotation](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcAnnotation.htm) | Bauteilrezepte, Eigenbau, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBeam](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBeam.htm) | Kategorien, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBorehole](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBorehole.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcBuildingElementPart](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBuildingElementPart.htm) | Bauteilrezepte | nein | IFC4X3_ADD2 |
 | [IfcBuildingElementProxy](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBuildingElementProxy.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBuiltElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBuiltElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcBuiltSystem](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcBuiltSystem.htm) | Eigenbau | nein | IFC4X3_ADD2 |
@@ -311,7 +316,8 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcCourse](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCourse.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcCovering](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCovering.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcCurtainWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcCurtainWall.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcDistributionChamberElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionChamberElement.htm) | Bauteilrezepte, Kategorien, Typprofile | nein | IFC4X3_ADD2 |
+| [IfcDiscreteAccessory](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDiscreteAccessory.htm) | Bauteilrezepte | nein | IFC4X3_ADD2 |
+| [IfcDistributionChamberElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionChamberElement.htm) | Bauteilrezepte, Eigenbau, Kategorien, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcDistributionControlElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionControlElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcDistributionFlowElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionFlowElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcDistributionPort](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcDistributionPort.htm) | Typprofile | nein | IFC4X3_ADD2 |

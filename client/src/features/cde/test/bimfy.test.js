@@ -177,19 +177,21 @@ describe('BIMFY · ISYBAU und Punktdaten', () => {
         expect(geometrien[2].durchmesser).toBe(0.3);
         expect(warnungen).toEqual(['ISYBAU: 1 × Anschlusspunkt übergangen']);
         const zeilen = gruppiere(geometrien);
-        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'schacht'], ['ISYBAU Haltung', 'rohr']]);
+        // Seit BIMFY I6 wird ein ISYBAU-Schacht der Normschacht — Teil für Teil, nicht ein Zylinder.
+        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'vorlage:normschacht'], ['ISYBAU Haltung', 'rohr']]);
     });
 
-    it('ISYBAU durch den Kommandoweg: Rohr DN 300 mit 50 m Länge, zwei Schächte DN 1000', async () => {
+    it('ISYBAU durch den Kommandoweg: Rohr DN 300 mit Wand, zwei Normschächte DN 1000', async () => {
         const { geometrien } = liesIsybau(ISYBAU);
         const { fehler, ergebnisse, kommandos } = await uebersetzeUndSchreibe(geometrien);
         expect(fehler).toEqual([]);
         for (const e of ergebnisse) expect(e.ausgefuehrt, e.grund ?? '').toBe(true);
         expect(kommandos.find(k => k.geo.name === 'H1').kommando.werte.dn).toBe(300);
-        expect(kommandos.find(k => k.geo.name === 'S1').kommando.werte.dn).toBe(1000);
+        expect(kommandos.find(k => k.geo.name === 'S1').kommando).toMatchObject({ werkzeug: 'bauwerk-aus-vorlage-normschacht', werte: { dn: 1 } });
         const paket = await paketAus(useAenderungen());
-        expect(paket.bauteile.map(t => t.klasse).sort()).toEqual(['IFCDISTRIBUTIONCHAMBERELEMENT', 'IFCDISTRIBUTIONCHAMBERELEMENT', 'IFCPIPESEGMENT']);
-        expect(paket.bauteile.map(t => t.name).sort()).toEqual(['H1', 'S1', 'S2']);
+        expect(paket.bauwerke.map(w => [w.art, w.name]).sort()).toEqual([['schacht', 'S1'], ['schacht', 'S2']]);
+        expect(paket.bauteile.filter(t => t.klasse === 'IFCPIPESEGMENT').map(t => t.name)).toEqual(['H1']);
+        expect(paket.bauteile.filter(t => t.objektTyp === 'Schachtring').length).toBeGreaterThanOrEqual(4);
     });
 
     it('XYZ: Nr X Y Z Code mit Dezimalkomma — der Code wird die Ebene', () => {

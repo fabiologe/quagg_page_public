@@ -48,6 +48,8 @@ import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
 import { lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
+import { vorlageNach } from './rezept/Bauwerksvorlagen.js';
+import { herleitungText } from './bimfy/muster/Herleitung.js';
 
 export const PAKET_VERSION = 2;
 /** Auf diesem Raster werden Ecken zusammengelegt (Meter). */
@@ -223,6 +225,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         // OPTIONAL (Teil XXVI, Z3): bSI-Merkmale aus Rezeptfeldern. Nur wenn es welche
         // gibt — ein Paket ohne sie bleibt Byte für Byte, was es war.
         ...(Object.keys(merkmale).length ? { merkmale } : {}),
+        // OPTIONAL (BIMFY I2): woher jedes Mass stammt — nur wenn der Bauplan es sagt.
+        ...(herleitungText(plan?.parameter?.herleitung) ? { herleitung: herleitungText(plan.parameter.herleitung) } : {}),
         // OPTIONAL (Teil XXVI, Z5d): das Bauwerk, zu dem dieses Teil gehört (E17: EIN Wert).
         ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
@@ -342,5 +346,16 @@ export function bauwerkFuersPaket({ globalId, wert }) {
         ...(p.teilVon ? { teilVon: p.teilVon } : {}),
         // Der Bauwerkstyp als Klassifizierung (Z7) — aus dem Katalog, samt Quelle.
         ...(klassifikation ? { klassifikation } : {}),
+        // OPTIONAL (BIMFY I5): die bSI-Merkmale, die eine Vorlage für ihr Bauwerk kennt (der Schacht).
+        ...(_bauwerkMerkmale(p) ? { merkmale: _bauwerkMerkmale(p) } : {}),
     };
+}
+
+/** Die bSI-Merkmale eines Bauwerks aus seiner Vorlage — oder null. */
+function _bauwerkMerkmale(p) {
+    const bv = p?.bauwerksvorlage;
+    const vorlage = bv ? vorlageNach(bv.id) : null;
+    if (typeof vorlage?.merkmale !== 'function') return null;
+    const m = vorlage.merkmale(bv.werte ?? {}, bv.rahmen ?? null);
+    return Object.keys(m).length ? m : null;
 }

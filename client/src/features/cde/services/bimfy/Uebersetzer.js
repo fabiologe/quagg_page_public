@@ -86,10 +86,26 @@ export function formenFuer(geo) {
     }
 }
 
-/** Die Rezepte, die zu dieser Geometrie passen. */
+/**
+ * DER NORMSCHACHT ALS WAHL (BIMFY I6): ein ISYBAU-Schacht, für den das Muster
+ * eine Kette gerechnet hat, wird kein einzelnes Rezept, sondern die Vorlage
+ * „Normschacht" — Teil für Teil. Kein Rezept, deshalb ein eigener Eintrag.
+ */
+export const NORMSCHACHT_WAHL = Object.freeze({
+    id: 'vorlage:normschacht', titel: 'Normschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+});
+const _mitNormschacht = (geo) => geo?.isybau?.art === 'schacht' && !!geo?.muster?.kopf;
+
+/** Die IFC-Klasse, die eine Wahl vorgibt — Rezept oder Vorlage. */
+export function klasseFuer(id) {
+    if (id === NORMSCHACHT_WAHL.id) return NORMSCHACHT_WAHL.kategorieVorgabe;
+    return String(rezeptNach(id)?.kategorieVorgabe ?? '').toUpperCase();
+}
+
+/** Die Rezepte (und Vorlagen), die zu dieser Geometrie passen. */
 export function rezepteFuer(geo) {
     const formen = formenFuer(geo);
-    return bimfyRezepte().filter(r => formen.includes(rezeptform(r)));
+    return [...(_mitNormschacht(geo) ? [NORMSCHACHT_WAHL] : []), ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
 }
 
 // ── Vorschlag ─────────────────────────────────────────────────────────────
@@ -153,6 +169,7 @@ const _vorgabeKlasse = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? 'IFCBU
  * `grund` sagt in einem Satz, woher er kommt — Ebene, Form oder Vorgabe.
  */
 export function vorschlagFuer(geo) {
+    if (_mitNormschacht(geo)) return { rezept: NORMSCHACHT_WAHL.id, kategorie: NORMSCHACHT_WAHL.kategorieVorgabe, grund: 'ISYBAU-Schacht, Muster DIN 4034-1' };
     const passende = rezepteFuer(geo);
     const text = `${geo?.ebene ?? ''} ${geo?.name ?? ''}`.toLowerCase();
     for (const s of STICHWORTE) {
@@ -205,7 +222,7 @@ export function gruppiere(geometrien) {
 /** Die Rezepte, die ALLEN Geometrien einer Zeile passen. */
 export function rezepteFuerZeile(zeile) {
     const listen = zeile.geometrien.map(g => new Set(rezepteFuer(g).map(r => r.id)));
-    return bimfyRezepte().filter(r => listen.every(s => s.has(r.id)));
+    return [NORMSCHACHT_WAHL, ...bimfyRezepte()].filter(r => listen.every(s => s.has(r.id)));
 }
 
 // ── Kommando ──────────────────────────────────────────────────────────────
@@ -241,6 +258,7 @@ function _mass(meter, einheit) {
  * @returns {{werkzeug, eingaben, werte}|{fehler: string}}
  */
 export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null } = {}) {
+    if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz });
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -316,6 +334,12 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null } = 
         if (form === 'zug' && _fin(geo.durchmesser) && geo.durchmesser > 0 && profil.durchmesser) {
             werte[profil.durchmesser] = _mass(geo.durchmesser, feldEinheit(profil.durchmesser));
         }
+        // … und seine Wand (BIMFY I6): Dicke aus dem Muster `Rohrwand`, DN innen oder aussen.
+        const wand = geo.muster?.rohrwand;
+        if (form === 'zug' && wand && profil.wanddicke) {
+            werte[profil.wanddicke] = Math.round(wand.wanddicke * 1000 * 10) / 10;
+            if (typeof profil.bezug === 'string' && !['innen', 'aussen'].includes(profil.bezug)) werte[profil.bezug] = wand.dnBezug;
+        }
     }
 
     if (punkte.length < (rezept.mindestPunkte ?? 1)) {
@@ -356,4 +380,45 @@ export function ausdehnung(geometrien) {
         minN = Math.min(minN, p.nord); maxN = Math.max(maxN, p.nord);
     }
     return Number.isFinite(minO) ? { minO, minN, maxO, maxN } : null;
+}
+
+// ── Der Normschacht aus ISYBAU (BIMFY I6) ─────────────────────────────────
+
+const KLASSEN = ['', 'A', 'B', 'C', 'D', 'E', 'F'];
+const _grad = (w) => (_fin(w) ? ((Math.round((w * 180) / Math.PI) % 360) + 360) % 360 : null);
+
+/**
+ * Die Werte der Vorlage „Normschacht" aus einem ISYBAU-Schacht und seiner Kette.
+ * Was die Kette schon entschieden hat (Nennweite, Öffnung, Oberteil), geht als
+ * Wert hinein; die Vorlage rechnet dieselbe Kette daraus noch einmal.
+ */
+export function normschachtWerte(geo) {
+    const s = geo.isybau, k = geo.muster.kopf;
+    const anschluesse = geo.muster.teile[0]?.gerinne?.anschluesse ?? [];
+    const ablauf = anschluesse.find(a => a.art === 'ablauf'), zulauf = anschluesse.find(a => a.art === 'zulauf');
+    const dns = anschluesse.map(a => a.dn).filter(_fin);
+    return {
+        tiefe: k.tiefe, dn: k.dn, oeffnung: k.oeffnung,
+        anschlussDn: dns.length ? Math.max(...dns) : 0.3,
+        unterteilHoehe: s.unterteil?.hoehe ?? 0,
+        auflageringe: s.abdeckung?.hoeheAuflageringe ?? 0,
+        oberteil: k.oberteil === 'hals' ? 1 : 2,
+        steighilfe: s.einstieghilfe === false ? 5 : (s.artEinstieghilfe ?? 1),
+        gerinneform: s.unterteil?.gerinneform ?? 0,
+        abgang: _grad(ablauf?.richtung) ?? 0,
+        zulauf: _grad(zulauf?.richtung) ?? -1,
+        steigRichtung: 90,
+        deckelklasse: Math.max(0, KLASSEN.indexOf(s.abdeckung?.klasse ?? '')),
+    };
+}
+
+/** Das Kommando „Normschacht aus Vorlage" für einen ISYBAU-Schacht: ein Punkt, die Schachtmitte auf der Sohle. */
+export function normschachtKommando(geo, wahl = {}, { versatz = null } = {}) {
+    if (!_mitNormschacht(geo)) return { fehler: 'Für diesen Schacht hat das Muster keine Kette (siehe Befunde)' };
+    const k = geo.muster.kopf;
+    return {
+        werkzeug: 'bauwerk-aus-vorlage-normschacht',
+        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle })] },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) },
+    };
 }

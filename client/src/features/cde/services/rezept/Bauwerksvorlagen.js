@@ -187,6 +187,28 @@ const NORMSCHACHT = Object.freeze({
         if (w.anschlussDn >= w.dn) return 'Der Anschluss ist so gross wie der Schacht.';
         return null;
     },
+    /**
+     * Die bSI-Merkmale des Schachts selbst (Pset_DistributionChamberElementTypeManhole) —
+     * aus derselben Kette. Die Sohle in m NN: Höhe des Rahmens plus Höhenversatz.
+     */
+    merkmale(w, rahmen = null) {
+        const { teile, kopf } = this.kette(w, 0);
+        if (!kopf) return {};
+        const sohleNn = Number.isFinite(rahmen?.y) ? rahmen.y + (rahmen.hoehenversatz ?? 0) : null;
+        const unterteil = teile.find(t => t.rolle === 'schachtunterteil');
+        const abdeckung = teile.find(t => t.rolle === 'abdeckung');
+        const m = {
+            ...(sohleNn !== null ? { InvertLevel: Math.round(sohleNn * 1000) / 1000 } : {}),
+            WallThickness: kopf.wanddicke,
+            ...(unterteil?.boden ? { BaseThickness: unterteil.boden } : {}),
+            HasSteps: teile.some(t => t.rolle === 'steigeisen' || t.rolle === 'leiter'),
+            IsAccessibleOnFoot: w.dn >= 1.0,
+            NumberOfManholeCovers: 1,
+            AccessLengthOrRadius: kopf.oeffnung / 2,
+            ...(abdeckung?.klasse ? { AccessCoverLoadRating: abdeckung.name.replace(/^Schachtabdeckung\s*/, '') } : {}),
+        };
+        return { Pset_DistributionChamberElementTypeManhole: m };
+    },
     /** Die Kette als Daten (für Befunde und Herleitung) — dieselbe, aus der die Rollen entstehen. */
     kette(w, sohle = 0) {
         const klasse = KLASSEN[Math.round(w.deckelklasse)] || null;
