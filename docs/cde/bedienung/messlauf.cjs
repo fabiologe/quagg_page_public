@@ -21,6 +21,21 @@ fs.mkdirSync(AUS, { recursive: true });
 
 const zahlen = {};
 const warte = (ms) => new Promise(z => setTimeout(z, ms));
+/**
+ * Warten, bis keine Übernahme mehr läuft (Teil XXXI, T1: solange nimmt die Zeichenfläche bewusst nichts an). Feste
+ * Wartezeiten reichten unter Last nicht — gemessen bei der Abnahme T9: der Neuaufbau nach Strg+Z dauerte bis zu 14 s,
+ * der Klick zum Absetzen der Kopie fiel in die Sperre und wurde (richtig) geschluckt; der Lauf meldete „Strg+C/V kaputt".
+ */
+async function ruhig(page, { mindestens = 400, hoechstens = 40000 } = {}) {
+    await warte(mindestens);
+    const bis = Date.now() + hoechstens;
+    while (Date.now() < bis) {
+        const laeuft = await page.evaluate(() => !!document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('cde-bearbeitung')?.umbauLaeuft);
+        if (!laeuft) return true;
+        await warte(200);
+    }
+    return false;
+}
 let bild = 0;
 async function foto(page, name) { await page.screenshot({ path: path.join(AUS, `${String(++bild).padStart(2, '0')}_${name}.png`) }); }
 
@@ -116,9 +131,10 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         await foto(page, 'wand_scharf');
         zahlen.zeichnenVerdeckt = await verdeckt(page);
         const L = await leinwand(page);
+        await ruhig(page);
         await page.mouse.click(L.x + L.w * 0.42, L.y + L.h * 0.5); await warte(900);
         await page.mouse.click(L.x + L.w * 0.58, L.y + L.h * 0.5); await warte(900);
-        await page.keyboard.press('Enter'); await warte(5000);
+        await page.keyboard.press('Enter'); await warte(1500); await ruhig(page); await warte(1500);
         await foto(page, 'nach_enter');
         const nachJ = await journal(page), nachE = await eigene(page);
         const neu = nachE.filter(g => !vorE.includes(g));
@@ -147,28 +163,31 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
                 const e = await b.fuehreAus(k);
                 return e.ausgefuehrt ? gid : null;`);
             zahlen.wandPerKommando = !!ziel;
-            await warte(5000);
+            await warte(1500); await ruhig(page);
         }
         if (ziel) { await api(page, `await api.waehleEigenes(arg); return true;`, ziel); await warte(1500); }
         // M5 · Entf löscht die Auswahl.
         let j0 = await journal(page);
-        await page.keyboard.press('Delete'); await warte(3000);
+        await page.keyboard.press('Delete'); await ruhig(page);
         zahlen.entfLoescht = !!ziel && (await journal(page)) > j0 && !(await eigene(page)).includes(ziel);
         await foto(page, 'entf');
         // M6 · Strg+Z holt es zurück.
-        if (zahlen.entfLoescht) { await strg(page, 'KeyZ'); await warte(3000); }
+        if (zahlen.entfLoescht) { await strg(page, 'KeyZ'); await ruhig(page); }
         zahlen.strgZ = !!ziel && (await eigene(page)).includes(ziel);
         // M7 · Strg+C, Strg+V, ein Klick setzt die Kopie.
         if (ziel) { await api(page, `await api.waehleEigenes(arg); return true;`, ziel); await warte(1500); }
         j0 = await journal(page); const e0 = await eigene(page);
-        await strg(page, 'KeyC'); await strg(page, 'KeyV');
+        await ruhig(page);
+        await strg(page, 'KeyC'); await strg(page, 'KeyV'); await ruhig(page);
         // Die Kopie hängt am Zeiger — bewegen, dann ein Klick aufs Gelände nahe der Bildmitte setzt sie.
         await page.mouse.move(L.x + L.w * 0.56, L.y + L.h * 0.56); await warte(800);
-        await page.mouse.click(L.x + L.w * 0.56, L.y + L.h * 0.56); await warte(5000);
+        await page.mouse.click(L.x + L.w * 0.56, L.y + L.h * 0.56); await ruhig(page); await warte(1000);
         await foto(page, 'strg_v');
         zahlen.strgCVKopie = (await journal(page)) > j0 && (await eigene(page)).length === e0.length + 1;
         // M8 · Strg+A wählt alles Eigene.
         await page.keyboard.press('Escape'); await warte(800);
+        // Die Übernahme der Kopie beginnt erst eine Weile nach dem Klick — vorher wählte Strg+A nur, was schon gebaut war.
+        await ruhig(page, { mindestens: 1500 });
         await strg(page, 'KeyA'); await warte(1500);
         zahlen.strgAWaehlt = await api(page, `return pinia._s.get('cde-bearbeitung').bauteile?.length ?? 0;`);
         zahlen.eigeneBauteile = (await eigene(page)).length;

@@ -347,3 +347,33 @@ Komma/Punkt/Enter/Esc, ungültig, Rand; das Schild über Griffen). Gegenproben r
 nicht, Pfeil wie jeder Griff, Höhengriff zeigt alles, daneben schliesst nicht, Feld ohne Titel, kein Umklappen am Rand.
 Titel und Einheiten der übrigen Grössen kommen aus der Felddefinition des Werkzeugs (W6: die Musterschicht kennt keine
 Fachwörter — ein erster Entwurf mit eigener Titeltabelle fiel dort durch). Schliessfang-Wächter auf „beim Zeichnen null" gelockert.
+
+### T9 — Abnahme (2026-10-05)
+
+**Tabletlauf T0 → nach T8** (iPad hochkant 820 × 1180, Touch über CDP, dasselbe Skript, Dev-Server):
+
+| Zahl | T0 | nach T8 |
+|---|---|---|
+| Griffe nach dem Antippen der Wand (Bearbeiten an) | 0 | **13** (5 Familien) |
+| Tipps bis zum ersten Griff | 2 | **0** |
+| Griff auf dem Schirm, Übersicht · gezoomt | 3 px · 14 px | **24 px · 24 px** (Treffer 44 px) |
+| Zeichenfläche beim Formen | 44 % | **81 %** |
+| Pfeil ohne Halten gezogen: schreibt · Kamera dreht | nein · ja | **ja · nein** |
+| Tipp auf einen Griff schreibt | — | nein |
+| Nach dem Loslassen: Geist · „beschäftigt" · Tafelfolge | nein · nein · Werkzeug→Liste→Werkzeug | **ja · ja · Werkzeug→Umbau→Werkzeug** |
+| Zweite Wand an der Ecke, Ecke gezogen: beide gehen mit | (riss ab) | **ja, an denselben Ort** |
+| Wandhöhe per Tipp auf den Griff und „3,1" | (nur Formular) | **3,1 im Journal** |
+| Bedienelemente unter 40 px (Tafel offen) | 43 von 65 | 43 von 70 — **nicht angefasst** (H7 nicht gebaut) |
+
+**Bedien-Messlauf (Maus/Tastatur, Teil XXX):** 19 von 19 Werten wie nach T1. Auf dem Weg dahin meldete er „Strg+C/V
+kaputt", „Neues nicht gewählt", „Strg+A wählt 1 von 2" — gegen einen Arbeitsbaum auf T1 (`acf0d9e`, eigener Vite auf
+:3017) verglichen und mit einer Zeitreihe belegt: **kein Rückschritt im Code, sondern feste Wartezeiten im Messlauf.**
+Unter Last (load ≈ 7) dauerte ein Neuaufbau bis zu 14 s; der Lauf klickte nach 3 s in die Übernahme-Sperre (T1, gewollt)
+bzw. drückte Strg+A, bevor die Kopie gebaut war. Der Messlauf wartet jetzt auf das Ende der Übernahme (`ruhig`).
+Zwei Läufe danach: alle Werte wie nach T1.
+
+**Bleibt offen (benannt):** Bedienelemente unter 40 px (H7, die untere Leiste Mass · Rückgängig · Fertig); der
+gelieferte Schacht im Knoten nur im Test; Nord-Pfeil und Ebenenquadrat des Gizmos bei flachem Blick; Lageplan-Griffe in
+Papier-mm; Knoten Punkt-an-Kante (T-Stoss); Griffe kleiner Bauteile ballen sich in der Übersicht.
+
+Testliste für Fabio: [testliste-teil-xxxi-tablet-2026-10-05.md](testliste-teil-xxxi-tablet-2026-10-05.md).
