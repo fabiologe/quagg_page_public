@@ -37,7 +37,7 @@
       </label>
       <label>
         <span>Koordinaten</span>
-        <select v-model="lage">
+        <select v-model="lageModus">
           <option value="projekt">Projektkoordinaten (Ost/Nord)</option>
           <option value="lokal">lokal, am Modellursprung</option>
         </select>
@@ -47,6 +47,10 @@
         <input v-model="grundhoehe" type="text" inputmode="decimal" placeholder="m NN, leer = Modellnull" />
       </label>
     </div>
+
+    <p v-if="lage.text" class="bf-lage" :class="{ warn: lage.warn }">
+      <CdeIcon :name="lage.warn ? 'warn' : 'coords'" :size="12" /> {{ lage.text }}
+    </p>
 
     <ul v-if="warnungen.length" class="bf-warnungen">
       <li v-for="(w, i) in warnungen" :key="i"><CdeIcon name="warn" :size="12" /> {{ w }}</li>
@@ -137,6 +141,8 @@ import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { rezeptNach, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
 import { ANNAHME, FORMATE, endungVon, liesGeometrien } from '../services/bimfy/Geometrieleser.js';
 import { ausdehnung, gruppiere, klasseFuer, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
+import { lagesystemVon, umrechner } from '../services/bimfy/Lagebezug.js';
+import { erkenneSystem, systemNach } from '../services/Koordinatensysteme.js';
 
 const ARTEN = Object.freeze({ punkt: 'Punkt', zug: 'Zug', umriss: 'Umriss', koerper: 'Körper' });
 const formatListe = [...new Set(Object.keys(FORMATE).map(e => e.toUpperCase()))].join(' · ');
@@ -151,7 +157,7 @@ const dateiText = ref('');
 const format = ref('');
 const zOben = ref(true);
 const reihenfolge = ref('');
-const lage = ref('projekt');
+const lageModus = ref('projekt');
 const grundhoehe = ref('');
 const ziehtDarueber = ref(false);
 
@@ -210,6 +216,27 @@ function verwerfen() {
 const klasseVon = (id) => klasseFuer(id);
 const klasseFalsch = (z) => warumNichtSchreibbar(z.kategorie, { raum: !!rezeptNach(z.rezept)?.raum });
 
+/**
+ * DAS LAGESYSTEM (Abnahme I7): Datei und Projekt können verschieden sein —
+ * eine ISYBAU-Datei in Gauss-Krüger 2, ein Projekt in UTM 32. Umgerechnet wird
+ * nur, wenn beide sicher erkannt sind; sonst steht es als Warnung da.
+ */
+const lage = computed(() => {
+  // Eine lokale Zeichnung hat kein Lagesystem — dann gilt der Versatz am Modellursprung.
+  if (!geometrien.value.length || lageModus.value === 'lokal') return { text: '', warn: false, umrechnen: null };
+  const daten = lagesystemVon(geometrien.value);
+  const rahmen = bearbeitung.rahmen ?? rahmenOhneBezug();
+  const ursprung = rahmen.nachProjekt({ x: 0, y: 0, z: 0 });
+  const projekt = Math.abs(ursprung.ost) > 1000 ? erkenneSystem(ursprung.ost) : null;
+  const name = (e) => systemNach(e)?.name ?? e;
+  if (!daten) return { text: 'Lagesystem der Datei nicht erkennbar — die Koordinaten gelten, wie sie sind.', warn: true, umrechnen: null };
+  if (!projekt) return { text: `Datei in ${name(daten.epsg)} (${daten.quelle}). Das Projekt hat kein erkennbares System — nicht umgerechnet.`, warn: true, umrechnen: null };
+  const gleich = daten.epsg === projekt.epsg || (projekt.mehrdeutig ?? []).includes(daten.epsg);
+  if (gleich) return { text: `Datei und Projekt in ${name(daten.epsg)}.`, warn: false, umrechnen: null };
+  return { text: `Datei in ${name(daten.epsg)}, Projekt in ${name(projekt.epsg)} — die Lage wird umgerechnet (Höhen bleiben).`,
+           warn: false, umrechnen: umrechner(daten.epsg, projekt.epsg) };
+});
+
 /** Versatz und Grundhöhe — was die Zeichnung nicht selbst weiss. */
 const optionen = computed(() => {
   const h = Number(String(grundhoehe.value).replace(',', '.'));
@@ -217,7 +244,8 @@ const optionen = computed(() => {
   const ursprung = rahmen.nachProjekt({ x: 0, y: 0, z: 0 });
   return {
     basisHoehe: String(grundhoehe.value).trim() && Number.isFinite(h) ? h : null,
-    versatz: lage.value === 'lokal' ? { ost: ursprung.ost, nord: ursprung.nord } : null,
+    versatz: lageModus.value === 'lokal' ? { ost: ursprung.ost, nord: ursprung.nord } : null,
+    umrechnen: lage.value.umrechnen,
   };
 });
 
@@ -305,6 +333,8 @@ async function anlegen() {
 }
 .bf-zeilen input.falsch { border-color: var(--cde-danger); }
 
+.bf-lage { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.bf-lage.warn { color: var(--cde-warn); }
 .bf-warnungen { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: var(--cde-font-xs); color: var(--cde-warn); }
 
 .bf-vorschau { width: 100%; height: 180px; background: var(--cde-sunken); border-radius: var(--cde-radius-sm); }

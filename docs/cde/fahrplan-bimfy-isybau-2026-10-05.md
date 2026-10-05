@@ -125,10 +125,39 @@ am Schacht (K8). Die Tafel zeigt je Schacht die Befunde und wie viel Norm und An
 5. **Gerinne** im Grundriss genau, die Sohle eben (Halbschale vereinfacht). Loch der Abdeckplatte zentrisch.
 6. **Annahmen** bis zu Fabios Normen: Rahmenhöhe 160 mm, Rahmenbreite 80 mm, Deckel 60 mm, Konus exzentrisch, Steiggang nach Norden, Wand Beton/Steinzeug als Faustwert.
 
-### I7 · Abnahme
+### I7 · Abnahme (gemacht, echte Datei Format 2017)
 
-Mit einer echten ISYBAU‑Datei von Fabio: Anzahl Schächte, Teile je Schacht, offene Ketten,
-Prüftor ohne Fehler.
+Fabios Datei bleibt ausserhalb des Repos. Ihre Eigenheiten sind in `bimfyMuster.test.js`
+nachgestellt (Block „Abnahme I7“).
+
+Funde und Kur:
+
+- `<></>` macht die Datei unlesbar → wird repariert und gemeldet.
+- Polygonart klein, `Knoten/Abdeckungen/Deckel`, Profilart „DN“, HoeheAuflageringe in cm,
+  Sohle in mm → Leser kennt beides, Einheiten werden gemeldet.
+- HoeheAufbau 0 heisst unbekannt. Konus und Platte beide „nein“ → Regelaufbau mit Hals, Befund.
+- Formen Q, Z, VORFL → Sonderform (Ebene „(Sonderform)“), kein Normschacht.
+- Status 6 → Ebene „(rückgebaut)“, beim Import abgewählt.
+- Flachschächte → Unterteil gekürzt bis DN + 0,1 m, sonst Befund `zu_flach`.
+- Lage in GK2 → `Lagebezug.js` erkennt das System und rechnet auf Wunsch ins Projektsystem um.
+
+| Messgrösse | vorher | nachher |
+|---|---|---|
+| offene Ketten | 52 | 0 |
+| abgelehnte Kommandos | 2 | 0 |
+| Fehler im Steigmass | 7 | 0 |
+| Lesezeit | 13,6 s | 0,7 s |
+
+Ergebnis: 463 Geometrien, 444 Kommandos, 100 Normschächte (5 bis 10 Teile), 40 Sonderformen,
+304 Rohre, 1090 Bauteile. Schreiber 2,3 s ohne Warnung, Prüftor 0 offen.
+
+### Offen nach I7
+
+1. Netzknoten des Normschachts (siehe oben, Punkt 1).
+2. Rechteck‑ und Kastenvorlage für die 32 eckigen Schächte.
+3. Sammelvorgang: Der Import legt je Bauteil einen Vorgang an (41 s im Testlauf), Rückgängig
+   sollte den ganzen Import auf einmal nehmen.
+4. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
 
 ---
 

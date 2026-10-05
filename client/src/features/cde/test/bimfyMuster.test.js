@@ -115,12 +115,17 @@ describe('Muster · Höhen füllen', () => {
         expect(fuelleHoehe(2.75, { auflageringeGegeben: 0 })).toEqual({ ringe: [1, 1, 0.75], auflageringe: [], rest: 0 });
         expect(fuelleHoehe(2.1, { auflageringeGegeben: 0 }).rest).toBe(0.1);
     });
-    it('Steigeisen: erstes 400 mm über der Standfläche, Abstand 250–333 mm, oberstes 250 mm unter dem Austritt', () => {
-        const { hoehen, abstand } = steigeisenHoehen(100, 103);
-        expect(hoehen[0]).toBe(100.4);
-        expect(abstand).toBeGreaterThanOrEqual(0.25);
-        expect(abstand).toBeLessThanOrEqual(0.333);
-        expect(r3(103 - hoehen[hoehen.length - 1])).toBe(0.25);
+    it('Steigeisen: erstes 400 mm über der Standfläche, Abstand 250–333 mm, oberstes höchstens ein Steigmass unter dem Austritt', () => {
+        // Auch bei kurzen Höhen, an denen ein starrer Abstand oben scheiterte (Abnahme I7: 7 Schächte).
+        for (const h of [3, 1.13, 0.9, 2.47, 0.62]) {
+            const { hoehen, abstand } = steigeisenHoehen(100, 100 + h);
+            expect(hoehen[0], `h = ${h}`).toBe(100.4);
+            if (abstand !== null) {
+                expect(abstand, `h = ${h}`).toBeGreaterThanOrEqual(0.25);
+                expect(abstand, `h = ${h}`).toBeLessThanOrEqual(0.333);
+            }
+            expect(r3(100 + h - hoehen[hoehen.length - 1]), `h = ${h}`).toBeLessThanOrEqual(0.333);
+        }
     });
 });
 
@@ -175,10 +180,28 @@ describe('Muster · Normschacht', () => {
         expect(weit.kopf.wanddicke).toBe(0.15);
     });
 
-    it('die Höhenkette, die nicht aufgeht, heisst so', () => {
-        const s = lies({ deckel: '104,55', abdeckung: '<Abdeckungsklasse>D</Abdeckungsklasse><HoeheAuflageringe>6</HoeheAuflageringe>' });
-        const { befunde } = normschacht(s, { anschluesse: [{ dn: 0.3 }] });
-        expect(befunde.find(b => b.regel === 'kette_offen')?.text).toMatch(/cm nicht auf/);
+    it('eine Lücke nimmt das Unterteil auf — ausser ISYBAU legt seine Höhe fest, dann heisst sie so', () => {
+        const ab = '<Abdeckungsklasse>D</Abdeckungsklasse><HoeheAuflageringe>6</HoeheAuflageringe>';
+        const frei = normschacht(lies({ deckel: '104,55', abdeckung: ab }), { anschluesse: [{ dn: 0.3 }] });
+        expect(frei.befunde.map(b => b.regel)).not.toContain('kette_offen');
+        const ut = frei.teile[0];
+        expect(ut.herleitung.hoehe.text).toMatch(/damit die Kette aufgeht/);
+        const koerper = frei.teile.filter(t => Number.isFinite(t.unten));
+        for (let i = 1; i < koerper.length; i++) expect(Math.abs(koerper[i].unten - koerper[i - 1].oben)).toBeLessThanOrEqual(KETTE_TOLERANZ_M);
+        const fest = normschacht(lies({ deckel: '104,55', abdeckung: ab, unterteil: '<LaengeUnterteil>1,00</LaengeUnterteil><HoeheUnterteil>0,70</HoeheUnterteil>' }),
+                                 { anschluesse: [{ dn: 0.3 }] });
+        expect(fest.befunde.find(b => b.regel === 'kette_offen')?.text).toMatch(/cm nicht auf/);
+    });
+
+    it('Abnahme I7: was die echte Datei zeigte — Konus und Platte beide nein, Höhe 0, Q-Form, zu klein, Anschluss so gross wie der Schacht', () => {
+        const beide = normschacht(lies({ aufbau: '<Aufbauform>R</Aufbauform><Abdeckplatte>0</Abdeckplatte><Konus>0</Konus><LaengeAufbau>1.00</LaengeAufbau><HoeheAufbau>0.00</HoeheAufbau>' }),
+                                  { anschluesse: [{ dn: 0.3 }] });
+        expect(beide.befunde.map(b => b.regel)).toEqual(['konus_und_platte_nein']);
+        expect(beide.kopf.oberteil).toBe('hals');
+        expect(normschacht(lies({ aufbau: '<Aufbauform>Q</Aufbauform>' })).befunde[0].regel).toBe('form_eckig');
+        expect(normschacht(lies({ aufbau: '<Aufbauform>VORFL</Aufbauform>' })).befunde[0].regel).toBe('form_andere');
+        expect(normschacht(lies({ unterteil: '<LaengeUnterteil>0.10</LaengeUnterteil>' })).befunde[0].regel).toBe('zu_klein');
+        expect(normschacht(lies(), { anschluesse: [{ dn: 1.0 }] }).befunde.map(b => b.regel)).toContain('anschluss_zu_gross');
     });
 });
 
@@ -254,5 +277,69 @@ describe('BIMFY I6 · ISYBAU → Normschacht und Rohr mit Wand, über den Komman
         expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 27.3, dnBezug: 'innen' });
         // Die Sohle des Rohrs bleibt die Sohle aus ISYBAU — innen, nicht unter der Wand.
         expect(rezeptNach('rohr').sohlen.lies(rohrPlan.parameter).map(v => Math.round(v * 1000) / 1000)).toEqual([102, 101.7]);
+    });
+});
+
+describe('Abnahme I7 · Format 2017, wie es echte Dateien schreiben (nachgestellt, nicht die Datei)', () => {
+    const XML2017 = `<?xml version="1.0" encoding="ISO-8859-1" standalone="yes" ?>
+<Identifikation xmlns="http://www.bfr-abwasser.de"><Version>2017-07</Version><Datenkollektive><Stammdatenkollektiv>
+  <AbwassertechnischeAnlage><Objektbezeichnung>S1</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status>
+    <Knoten><KnotenTyp>0</KnotenTyp><Schacht><SchachtFunktion>1</SchachtFunktion><Schachttiefe>2.50</Schachttiefe>
+      <Aufbau><Aufbauform>R</Aufbauform><Abdeckplatte>0</Abdeckplatte><Konus>0</Konus><LaengeAufbau>1.00</LaengeAufbau><HoeheAufbau>0.00</HoeheAufbau></Aufbau>
+      <UntereSchachtzone></UntereSchachtzone><Unterteil></Unterteil></Schacht>
+      <Abdeckungen><Deckel><Index>1</Index><Deckelform>R</Deckelform></Deckel></Abdeckungen></Knoten>
+    <Geometrie><GeoObjekttyp>P</GeoObjekttyp><Geometriedaten><Knoten>
+      <Punkt><Rechtswert>2564686.715</Rechtswert><Hochwert>5461937.015</Hochwert><Punkthoehe>208.500</Punkthoehe><PunktattributAbwasser>SMP</PunktattributAbwasser></Punkt>
+      <Punkt><Rechtswert>2564686.715</Rechtswert><Hochwert>5461937.015</Hochwert><Punkthoehe>211.000</Punkthoehe><PunktattributAbwasser>DMP</PunktattributAbwasser><Index>1</Index></Punkt>
+    </Knoten></Geometriedaten><CRSLage>DE_DHDN_3GK2</CRSLage></Geometrie>
+  </AbwassertechnischeAnlage>
+  <AbwassertechnischeAnlage><Objektbezeichnung>RUE</Objektbezeichnung><Objektart>2</Objektart><Status>6</Status>
+    <Knoten><KnotenTyp>2</KnotenTyp><Bauwerk><></></Bauwerk></Knoten></AbwassertechnischeAnlage>
+  <AbwassertechnischeAnlage><Objektbezeichnung>H1</Objektbezeichnung><Objektart>1</Objektart><Status>6</Status>
+    <Kante><KantenTyp>0</KantenTyp><KnotenZulauf>S1</KnotenZulauf><KnotenAblauf>X</KnotenAblauf>
+      <SohlhoeheZulauf>208.500</SohlhoeheZulauf><SohlhoeheAblauf>208.300</SohlhoeheAblauf><Material>PP</Material>
+      <Profil><SonderprofilVorhanden>0</SonderprofilVorhanden><Profilart>DN</Profilart><Profilhoehe>300</Profilhoehe></Profil>
+      <Haltung><Rohrlaenge>9.80</Rohrlaenge></Haltung></Kante>
+    <Geometrie><Geometriedaten><Polygone><Polygon><Polygonart>3</Polygonart><Kante>
+      <Start><Rechtswert>2564686.715</Rechtswert><Hochwert>5461937.015</Hochwert><Punkthoehe>208.500</Punkthoehe><PunktattributAbwasser>RAP</PunktattributAbwasser></Start>
+      <Ende><Rechtswert>2564696.715</Rechtswert><Hochwert>5461937.015</Hochwert><Punkthoehe>208.300</Punkthoehe><PunktattributAbwasser>RAP</PunktattributAbwasser></Ende>
+    </Kante></Polygon></Polygone></Geometriedaten><CRSLage>DE_DHDN_3GK2</CRSLage></Geometrie>
+  </AbwassertechnischeAnlage>
+</Stammdatenkollektiv></Datenkollektive></Identifikation>`;
+
+    it('repariert <></>, liest Polygonart, Abdeckungen/Deckel, Profilart DN und das Lagesystem', () => {
+        const d = liesIsybauDaten(XML2017);
+        expect(d.warnungen[0]).toMatch(/1 leere Elemente „<><\/>" entfernt/);
+        const [s] = d.schaechte;
+        expect(s).toMatchObject({ crsLage: 'DE_DHDN_3GK2', deckelHoehe: 211, sohle: { hoehe: 208.5, quelle: 'SMP' } });
+        expect(s.abdeckung).toMatchObject({ deckelform: 'R' });
+        const [k] = d.kanten;
+        expect(k.profil).toMatchObject({ art: 0, hoehe: 0.3 });
+        expect(k.zug).toHaveLength(2);
+        expect(k.zug[1]).toMatchObject({ ost: 2564696.715, hoehe: 208.3 });
+    });
+
+    it('HoeheAufbau 0 ist unbekannt, Konus 0 + Platte 0 auch — es wird ein Regelschacht mit Hals; Rückgebautes ist abgewählt', () => {
+        const { geometrien } = liesIsybau(XML2017);
+        const s1 = geometrien.find(g => g.name === 'S1');
+        expect(s1.muster.kopf.oberteil).toBe('hals');
+        expect(s1.muster.befunde.map(b => b.regel)).toEqual(['konus_und_platte_nein']);
+        const zeilen = gruppiere(geometrien);
+        expect(zeilen.map(z => [z.ebene, z.aktiv])).toEqual([['ISYBAU Schacht', true], ['ISYBAU Haltung (rückgebaut)', false]]);
+    });
+
+    it('Lagebezug: CRSLage → EPSG, Gauss-Krüger 2 ↔ UTM 32 hin und zurück auf den Millimeter', async () => {
+        const { epsgAusCrsLage, lagesystemVon, umrechner } = await import('../services/bimfy/Lagebezug.js');
+        expect(epsgAusCrsLage('DE_DHDN_3GK2')).toBe('EPSG:31466');
+        expect(epsgAusCrsLage('DE_ETRS89_UTM32')).toBe('EPSG:25832');
+        expect(lagesystemVon(liesIsybau(XML2017).geometrien)).toMatchObject({ epsg: 'EPSG:31466' });
+        const hin = umrechner('EPSG:31466', 'EPSG:25832'), zurueck = umrechner('EPSG:25832', 'EPSG:31466');
+        const u = hin(2564686.715, 5461937.015);
+        expect(u.ost).toBeGreaterThan(166000);
+        expect(u.ost).toBeLessThan(834000);
+        const g = zurueck(u.ost, u.nord);
+        expect(Math.abs(g.ost - 2564686.715)).toBeLessThan(0.001);
+        expect(Math.abs(g.nord - 5461937.015)).toBeLessThan(0.001);
+        expect(umrechner('EPSG:31466', 'EPSG:31466')).toBeNull();
     });
 });

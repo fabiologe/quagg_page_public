@@ -468,7 +468,7 @@ export function liesIsybau(text) {
             art: zug ? 'zug' : 'punkt',
             punkte: zug ? [{ ...s.ort, hoehe: zSohle }, { ...s.ort, hoehe: zDeckel }]
                         : [_punkt(s.ort.ost, s.ort.nord, zSohle ?? zDeckel)],
-            ebene: 'ISYBAU Schacht', name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
+            ebene: _isyEbene('Schacht', s.status, muster.kopf ? '' : ' (Sonderform)'), name: s.name, durchmesser, dreiD: zug, isybau: s, muster,
         });
     }
 
@@ -480,7 +480,7 @@ export function liesIsybau(text) {
         if (k.profil && ![0, 4, null].includes(k.profil.art)) {
             warnungen.push(`ISYBAU: ${k.art} „${k.name}": Profilart ${k.profil.art} wird vorerst als Kreis gebaut`);
         }
-        const g = _linienform(punkte, { ebene: `ISYBAU ${k.art === 'haltung' ? 'Haltung' : k.art[0].toUpperCase() + k.art.slice(1)}`, name: k.name });
+        const g = _linienform(punkte, { ebene: _isyEbene(k.art[0].toUpperCase() + k.art.slice(1), k.status), name: k.name });
         if (g) geometrien.push({ ...g, ...(dn ? { durchmesser: dn } : {}), isybau: k, ...(wand ? { muster: { rohrwand: wand } } : {}) });
     }
 
@@ -488,6 +488,15 @@ export function liesIsybau(text) {
         if (n) warnungen.push(`ISYBAU: ${n} × ${art === 'andere' ? 'andere Objektart' : art} übergangen`);
     }
     return { geometrien, warnungen };
+}
+
+/**
+ * Die Ebene eines ISYBAU-Objekts: nach Art, und was rückgebaut ist (Status 6 —
+ * „zu löschende Objekte", AH15 G105), steht auf einer eigenen Ebene, die BIMFY
+ * nicht von sich aus anlegt.
+ */
+function _isyEbene(art, status, zusatz = '') {
+    return `ISYBAU ${art}${zusatz}${status === 6 ? ' (rückgebaut)' : ''}`;
 }
 
 /**

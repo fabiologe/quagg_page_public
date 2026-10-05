@@ -45,6 +45,8 @@ export const ANNAHMEN = Object.freeze({
     obersterAbstand: Object.freeze({ wert: 0.25, text: 'unter einem Steigabstand' }),
     // Lage des Steiggangs im Grundriss — die Norm legt sie nicht fest (Radiant, 0 = Ost).
     steigRichtung: Object.freeze({ wert: Math.PI / 2, text: 'Steiggang nach Norden (Richtung nicht in ISYBAU)' }),
+    // Flachschacht: die Wand über dem Scheitel darf mit Statik unterschritten werden — wie weit, sagt keine Norm im Bestand.
+    flachschachtWand: Object.freeze({ wert: 0.1, text: 'Flachschacht: mindestens 10 cm Wand über dem Scheitel' }),
     // Rahmen und Deckel der Abdeckung: ohne DIN 19584 nicht belegt.
     rahmenbreite: Object.freeze({ wert: 0.08, text: 'Rahmenbreite 80 mm: DIN 19584 fehlt im Bestand' }),
     deckeldicke: Object.freeze({ wert: 0.06, text: 'Deckeldicke 60 mm: DIN 19584 fehlt im Bestand' }),
@@ -65,7 +67,7 @@ export function normNennweite(d) {
  *
  * @returns {{ringe: number[], auflageringe: number[], rest: number}}
  */
-export function fuelleHoehe(R, { auflageringeGegeben = null } = {}) {
+export function fuelleHoehe(R, { auflageringeGegeben = null, ohneUeberstand = false } = {}) {
     const arListen = auflageringeGegeben !== null ? [[]] : _auflageringListen();
     const arFest = auflageringeGegeben ?? 0;
     let beste = null;
@@ -77,13 +79,30 @@ export function fuelleHoehe(R, { auflageringeGegeben = null } = {}) {
                     const summe = k1 * RING_HOEHEN.regel + k75 * 0.75 + k50 * 0.5 + ar.reduce((a, b) => a + b, 0) + arFest;
                     const rest = R - summe;
                     const kandidat = { k1, k75, k50, ar, rest };
-                    if (!beste || _besser(kandidat, beste)) beste = kandidat;
+                    // Ohne Überstand (über die Fugentoleranz hinaus): eine Lücke nimmt das Unterteil auf.
+                    const zaehlt = !ohneUeberstand || rest >= -KETTE_TOLERANZ_M - 1e-9;
+                    if (zaehlt && (!beste || (ohneUeberstand ? _billiger(kandidat, beste) : _besser(kandidat, beste)))) beste = kandidat;
                 }
             }
         }
     }
+    // Zu flach selbst für einen Auflagering: dann eben mit Überstand, und er wird gemeldet.
+    if (!beste) return fuelleHoehe(R, { auflageringeGegeben });
     const ringe = [...Array(beste.k1).fill(1.0), ...Array(beste.k75).fill(0.75), ...Array(beste.k50).fill(0.5)];
     return { ringe, auflageringe: beste.ar, rest: _r3(beste.rest) };
+}
+
+/**
+ * Wenn das Unterteil eine Lücke aufnimmt, zählt nicht der kleinste Rest, sondern
+ * die schlichteste Kette: jede Lücke verlängert das Unterteil (1 m = 1), jeder
+ * Ausgleichsring kostet 5 cm, jeder Auflagering 3 cm — und ein Überstand in der
+ * Fugentoleranz nichts. So bleibt es bei Ring 1000 + 500 und einem Auflagering,
+ * statt drei Teile zu stapeln, um 4 cm zu sparen.
+ */
+function _billiger(a, b) {
+    const kosten = (k) => Math.max(0, k.rest) + 0.05 * (k.k75 + k.k50) + 0.03 * k.ar.length;
+    const ka = kosten(a), kb = kosten(b);
+    return Math.abs(ka - kb) > 1e-9 ? ka < kb : _besser(a, b);
 }
 
 function _besser(a, b) {
@@ -110,14 +129,28 @@ function _auflageringListen() {
 /** Positionen der Steigeisen zwischen Standfläche und Austritt (DIN 4034-1, Anhang C). */
 export function steigeisenHoehen(zStand, zAustritt) {
     const hoehe = zAustritt - zStand;
-    const erster = Math.min(ANNAHMEN.ersterAuftritt.wert, Math.max(STEIG.ersterMin, hoehe - ANNAHMEN.obersterAbstand.wert));
-    const spanne = hoehe - erster - ANNAHMEN.obersterAbstand.wert;
-    if (hoehe < STEIG.ersterMin || spanne < 0) return { hoehen: [], abstand: null };
-    const n = Math.ceil(spanne / STEIG.abstandMax - 1e-9);
-    const abstand = n > 0 ? spanne / n : null;
+    if (hoehe < STEIG.ersterMin) return { hoehen: [], abstand: null };
+    // Gesucht: erster Auftritt e (250–500 mm), Steigmass a (250–333 mm, gleich), n Abstände und
+    // ein oberster Abstand g zum Austritt von höchstens einem Steigmass (DWA-A 157, 5.2.6.10).
+    // Vorzug: e = 400 mm, a so nah an 300 mm wie möglich. Ein Raster von 1 mm genügt.
+    let beste = null;
+    for (let e = STEIG.ersterMin; e <= STEIG.ersterMax + 1e-9; e += 0.01) {
+        const rest = hoehe - e;
+        if (rest < 0) break;
+        for (let n = 0; n <= 40; n++) {
+            for (let a = STEIG.abstandMin; a <= STEIG.abstandMax + 1e-9; a += 0.001) {
+                const g = rest - n * a;
+                if (g < -1e-9 || g > STEIG.abstandMax + 1e-9) continue;
+                const guete = Math.abs(e - ANNAHMEN.ersterAuftritt.wert) + Math.abs(a - 0.3) + (n === 0 ? 0 : 0);
+                if (!beste || guete < beste.guete - 1e-9) beste = { e, a, n, guete };
+                if (n === 0) break;
+            }
+        }
+    }
+    if (!beste) return { hoehen: [], abstand: null };
     const hoehen = [];
-    for (let i = 0; i <= n; i++) hoehen.push(_r3(zStand + erster + i * (abstand ?? 0)));
-    return { hoehen, abstand: abstand === null ? null : _r3(abstand) };
+    for (let i = 0; i <= beste.n; i++) hoehen.push(_r3(zStand + beste.e + i * beste.a));
+    return { hoehen, abstand: beste.n > 0 ? _r3(beste.a) : null };
 }
 
 /**
@@ -134,11 +167,30 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
     const Q = quelle;
     const befunde = [];
     const befund = (regel, text, schwere = 'hinweis') => befunde.push({ regel, schwere, text });
-    const ab = s.abdeckung ?? {}, au = s.aufbau ?? {}, uz = s.untereZone ?? null, ut = s.unterteil ?? {};
+    const ab = s.abdeckung ?? {}, ut = s.unterteil ?? {}, uz = s.untereZone ?? null;
+    // EINE 0 IST KEIN MASS (Abnahme I7, echte Datei): `HoeheAufbau` stand bei 156 von
+    // 156 Schächten auf 0,00 — gemeint ist „unbekannt", nicht „kein Aufbau".
+    const au = { ...(s.aufbau ?? {}) };
+    if (!(au.hoehe > 0)) au.hoehe = null;
+    // KEIN KONUS UND KEINE PLATTE gibt es bei einem Fertigteilschacht nicht — einer
+    // von beiden schliesst ihn oben. Steht beides auf 0 (60 von 156 in der echten
+    // Datei), ist es die Vorgabe des Exports, keine Aussage: unbekannt.
+    if (au.konus === false && au.abdeckplatte === false) {
+        befund('konus_und_platte_nein', 'Konus und Abdeckplatte beide „nein" — widersprüchlich, als unbekannt gelesen (Regelaufbau mit Konus).');
+        au.konus = null; au.abdeckplatte = null;
+    }
 
     // ── Form und Ort ──
-    if ([au.form, ut.form, uz?.form].some(f => f === 'E')) {
+    // Rund (R) oder ohne Angabe ist ein Normschacht; eckig (E, im Format 2017 auch Q) und
+    // jede andere Form braucht eine andere Vorlage — gesagt, nicht falsch gebaut.
+    const formen = [au.form, ut.form, uz?.form].filter(f => f !== null && f !== undefined && f !== '');
+    if (formen.some(f => f === 'E' || f === 'Q')) {
         befund('form_eckig', 'Eckiger Schacht — das Muster „Normschacht" ist rund; ein Rechteckschacht braucht die Kastenvorlage.', 'warnung');
+        return { teile: [], befunde, kopf: null };
+    }
+    const fremd = formen.find(f => !['R', 'O'].includes(f));
+    if (fremd) {
+        befund('form_andere', `Schachtform „${fremd}" — kein runder Fertigteilschacht, das Muster baut ihn nicht.`, 'warnung');
         return { teile: [], befunde, kopf: null };
     }
     if (ut.form === 'O') befund('ohne_unterteil', 'Schacht ohne Unterteil (Tangentialschacht) — das Unterteil wird trotzdem als Topf gebaut.');
@@ -164,7 +216,11 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
     let dn = normNennweite(dnRoh);
     let hDn;
     if (dn !== null) hDn = H(Q, `DN ${Math.round(dn * 1000)} aus ${laengeAufbauIstOeffnung ? 'LaengeUnterteil' : (au.laenge ? 'LaengeAufbau' : 'LaengeUnterteil')}`);
-    else if (_fin(dnRoh)) {
+    else if (_fin(dnRoh) && dnRoh < SCHACHT_NENNWEITEN[0] - 0.02) {
+        // Kleiner als DN 800 ist kein Fertigteilschacht nach DIN 4034-1 (Inspektionsöffnung, Hausanschlussschacht).
+        befund('zu_klein', `Ø ${dnRoh.toFixed(2)} m — kleiner als DN 800, kein Fertigteilschacht nach DIN 4034-1.`, 'warnung');
+        return { teile: [], befunde, kopf: null };
+    } else if (_fin(dnRoh)) {
         dn = dnRoh;
         hDn = H(Q, `Ø ${dnRoh.toFixed(2)} m — keine Normnennweite`);
         befund('keine_normnennweite', `Ø ${dnRoh.toFixed(2)} m ist keine Nennweite nach DIN 4034-1 — Wanddicke der nächsten Nennweite.`);
@@ -193,6 +249,11 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
 
     // ── Unten: Unterteil mit Gerinne ──
     const dR = Math.max(0, ...anschluesse.map(a => a.dn).filter(_fin));
+    if (dR >= dn - 1e-9) {
+        // Ein Anschluss so gross wie der Schacht: ein Sonderbauwerk, kein Fertigteilschacht.
+        befund('anschluss_zu_gross', `Anschluss DN ${Math.round(dR * 1000)} im Schacht DN ${Math.round(dn * 1000)} — ein Sonderbauwerk, kein Normschacht.`, 'warnung');
+        return { teile: [], befunde, kopf: null };
+    }
     const dRwert = dR > 0 ? dR : ANNAHMEN.anschlussDn.wert;
     const hDr = dR > 0 ? H(Q, `grösster Anschluss DN ${Math.round(dR * 1000)}`) : H('annahme', ANNAHMEN.anschlussDn.text);
     const boden = UNTERTEIL_BODEN[dnTab];
@@ -204,7 +265,7 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
         hUnterteil = dRwert + (dRwert <= 0.25 ? WAND_UEBER_SCHEITEL.bisDn250 : WAND_UEBER_SCHEITEL.abDn300);
         hHu = H('norm', `Wand über dem höchsten Scheitel (${dRwert <= 0.25 ? 350 : 400} mm)`, B.wandUeberScheitel);
     }
-    const zUnterteilOben = zSohle + hUnterteil;
+    let zUnterteilOben = zSohle + hUnterteil;
     const zUnterteilUnten = zSohle - boden;
     const auftritt = dRwert <= AUFTRITT.grenzeDn ? dRwert : AUFTRITT.mindestHoehe;
 
@@ -220,7 +281,7 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
 
     // ── Die Ringe dazwischen ──
     const hHals = oberteil === 'hals' ? HALS.hoehe : ABDECKPLATTE.hoehe;
-    const zZoneOben = zone ? zUnterteilOben + zone.hoehe : zUnterteilOben;
+    let zZoneOben = zone ? zUnterteilOben + zone.hoehe : zUnterteilOben;
     const arGegeben = _fin(ab.hoeheAuflageringe) ? ab.hoeheAuflageringe : null;
     let R = zRahmenUnten - hHals - zZoneOben;
     if (R < -KETTE_TOLERANZ_M && oberteil === 'hals') {
@@ -228,7 +289,37 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
         oberteil = 'abdeckplatte';
         R = zRahmenUnten - ABDECKPLATTE.hoehe - zZoneOben;
     }
-    const fuell = fuelleHoehe(R, { auflageringeGegeben: arGegeben });
+    // DAS UNTERTEIL NIMMT DEN REST (Abnahme I7: 52 von 113 Ketten blieben offen). Fertigteil-
+    // Unterteile gibt es in jeder Höhe ab der Mindesthöhe; nennt ISYBAU keine, wird es so
+    // hoch, dass die Kette aufgeht — nie niedriger als die Norm verlangt.
+    const utFrei = !(_fin(ut.hoehe) && ut.hoehe > 0);
+    const fuell = fuelleHoehe(R, { auflageringeGegeben: arGegeben, ohneUeberstand: utFrei });
+    if (utFrei && fuell.rest > 1e-6) {
+        hUnterteil += fuell.rest;
+        zUnterteilOben += fuell.rest;
+        zZoneOben += fuell.rest;
+        hHu = H('norm', `${hHu.text} — dazu ${(fuell.rest * 100).toFixed(1)} cm, damit die Kette aufgeht (Herstellerhöhe)`, B.wandUeberScheitel);
+        fuell.rest = 0;
+    }
+    // DER FLACHSCHACHT (Abnahme I7: 16 Schächte zwischen 0,5 und 1,5 m Tiefe): ist die Kette
+    // schon ohne Ringe zu hoch, darf das Unterteil unter seine Mindesthöhe — mit Bewehrung
+    // und Einzelstatik (DWA-A 157, 5.2.7; DIN 4034-1, Tabelle 4, Fussnote d). Nie aber
+    // niedriger als der Anschluss plus 10 cm Wand: dann ist es kein Fertigteilschacht mehr.
+    if (utFrei && fuell.rest < -KETTE_TOLERANZ_M) {
+        const untergrenze = dRwert + ANNAHMEN.flachschachtWand.wert;
+        const weg = Math.min(-fuell.rest, Math.max(0, hUnterteil - untergrenze));
+        if (weg > 1e-6) {
+            hUnterteil -= weg; zUnterteilOben -= weg; zZoneOben -= weg; fuell.rest = _r3(fuell.rest + weg);
+            hHu = H('norm', `Flachschacht: Unterteil um ${(weg * 100).toFixed(1)} cm unter der Mindesthöhe — Bewehrung und Einzelstatik nötig`, B.wandUeberScheitel);
+            befund('unterteil_unter_mindesthoehe', `Flachschacht: Unterteil ${(weg * 100).toFixed(0)} cm unter der Mindesthöhe — Bewehrung und Einzelstatik (DWA-A 157, 5.2.7).`);
+        }
+    }
+    if (utFrei && fuell.rest < -KETTE_TOLERANZ_M) {
+        // Selbst mit dem niedrigsten Unterteil zu hoch: kein Fertigteilschacht. Überlappende
+        // Teile zu bauen hiesse, einen Schacht zu zeigen, den es so nicht geben kann.
+        befund('zu_flach', `Zu flach für einen Fertigteilschacht: die Teile stehen ${(-fuell.rest * 100).toFixed(0)} cm über dem Deckel — kein Normschacht.`, 'warnung');
+        return { teile: [], befunde, kopf: null };
+    }
     if (Math.abs(fuell.rest) > KETTE_TOLERANZ_M) {
         befund('kette_offen', `Die Höhenkette geht um ${(fuell.rest * 100).toFixed(1)} cm nicht auf (${fuell.rest > 0 ? 'Lücke' : 'Überstand'}).`, 'warnung');
     }

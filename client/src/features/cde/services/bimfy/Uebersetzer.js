@@ -211,7 +211,8 @@ export function gruppiere(geometrien) {
             const v = vorschlagFuer(g);
             zeilen.set(schluessel, {
                 schluessel, ebene: g.ebene ?? '', art: g.art, geometrien: [],
-                rezept: v.rezept, kategorie: v.kategorie, grund: v.grund, aktiv: !!v.rezept,
+                // Rückgebautes (ISYBAU Status 6) bietet BIMFY an, legt es aber nicht von sich aus an.
+                rezept: v.rezept, kategorie: v.kategorie, grund: v.grund, aktiv: !!v.rezept && !/rückgebaut/.test(g.ebene ?? ''),
             });
         }
         zeilen.get(schluessel).geometrien.push(g);
@@ -232,12 +233,13 @@ function _vorgaben(rezept) {
     return Object.fromEntries((rezept.felder ?? []).filter(f => f.vorgabe !== undefined).map(f => [f.name, f.vorgabe]));
 }
 
-/** Ein Projektpunkt mit Versatz und (für 2D) der Grundhöhe. */
-function _punkt(p, { versatz, basisHoehe, hoehe } = {}) {
+/** Ein Projektpunkt mit Umrechnung des Lagesystems, Versatz und (für 2D) der Grundhöhe. */
+function _punkt(p, { versatz, basisHoehe, hoehe, umrechnen = null } = {}) {
     const h = _fin(hoehe) ? hoehe : (_fin(p.hoehe) ? p.hoehe : (_fin(basisHoehe) ? basisHoehe : undefined));
+    const q = umrechnen ? umrechnen(p.ost, p.nord) : p;
     return {
-        ost: _r3(p.ost + (versatz?.ost ?? 0)),
-        nord: _r3(p.nord + (versatz?.nord ?? 0)),
+        ost: _r3(q.ost + (versatz?.ost ?? 0)),
+        nord: _r3(q.nord + (versatz?.nord ?? 0)),
         ...(_fin(h) ? { hoehe: _r3(h) } : {}),
     };
 }
@@ -257,8 +259,8 @@ function _mass(meter, einheit) {
  *                              `basisHoehe` m NN für Punkte ohne Höhe
  * @returns {{werkzeug, eingaben, werte}|{fehler: string}}
  */
-export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null } = {}) {
-    if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz });
+export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umrechnen = null } = {}) {
+    if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz, umrechnen });
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -284,7 +286,7 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null } = 
     const g = rezept.geometrie ?? {};
     const profil = g.profil ?? {};
     const feldEinheit = (name) => (rezept.felder ?? []).find(f => f.name === name)?.einheit ?? profil.einheit;
-    const P = (p, hoehe) => _punkt(p, { versatz, basisHoehe, hoehe });
+    const P = (p, hoehe) => _punkt(p, { versatz, basisHoehe, hoehe, umrechnen });
     let punkte;
 
     if (geo.art === 'koerper') {
@@ -413,12 +415,12 @@ export function normschachtWerte(geo) {
 }
 
 /** Das Kommando „Normschacht aus Vorlage" für einen ISYBAU-Schacht: ein Punkt, die Schachtmitte auf der Sohle. */
-export function normschachtKommando(geo, wahl = {}, { versatz = null } = {}) {
+export function normschachtKommando(geo, wahl = {}, { versatz = null, umrechnen = null } = {}) {
     if (!_mitNormschacht(geo)) return { fehler: 'Für diesen Schacht hat das Muster keine Kette (siehe Befunde)' };
     const k = geo.muster.kopf;
     return {
         werkzeug: 'bauwerk-aus-vorlage-normschacht',
-        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle })] },
+        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) },
     };
 }

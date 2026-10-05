@@ -35,8 +35,25 @@ function _zahl(t) {
     return Number(/^-?\d+,\d+$/.test(s) ? s.replace(',', '.') : s);
 }
 
-/** Direkte Kinder mit diesem lokalen Namen. */
-const _kinder = (el, name) => (el ? [...el.children].filter(e => e.localName === name) : []);
+/**
+ * Direkte Kinder mit diesem lokalen Namen — ohne Rücksicht auf Gross/klein:
+ * die Arbeitshilfen schreiben `PolygonArt`, echte Dateien (Format 2017) `Polygonart`.
+ */
+const _kinder = (el, name) => {
+    const n = name.toLowerCase();
+    return el ? el.c.filter(e => e.n === n) : [];
+};
+
+/**
+ * Der XML-Baum EINMAL in schlichte Knoten `{n, c, t}` (Name klein, Kinder, Text).
+ * Abnahme I7: über den DOM gefragt dauerte eine echte Datei mit 670 Objekten
+ * 13,6 s — jede Feldabfrage las die Kinderliste neu.
+ */
+function _baum(el) {
+    const kinder = [];
+    for (let k = el.firstElementChild; k; k = k.nextElementSibling) kinder.push(_baum(k));
+    return { n: el.localName.toLowerCase(), c: kinder, t: kinder.length ? '' : (el.textContent ?? '') };
+}
 /** Ein Pfad aus direkten Kindern, `a/b/c` — das erste Element oder null. */
 function _pfad(el, pfad) {
     let aktuell = el;
@@ -46,7 +63,7 @@ function _pfad(el, pfad) {
     }
     return aktuell;
 }
-const _text = (el, pfad) => _pfad(el, pfad)?.textContent?.trim() ?? '';
+const _text = (el, pfad) => _pfad(el, pfad)?.t?.trim() ?? '';
 const _num = (el, pfad) => _zahl(_text(el, pfad));
 const _int = (el, pfad) => { const v = parseInt(_text(el, pfad), 10); return Number.isNaN(v) ? null : v; };
 const _bool = (el, pfad) => {
@@ -122,21 +139,23 @@ function _geometrie(obj) {
     let zug = _kantenzug(_kinder(_pfad(daten, 'Kanten'), 'Kante'));
     let umriss = null;
     for (const poly of _kinder(_pfad(daten, 'Polygone'), 'Polygon')) {
-        const art = _int(poly, 'PolygonArt');
+        const art = _int(poly, 'Polygonart');
         const p = _kantenzug(_kinder(poly, 'Kante'));
         // 1 und 2 sind geschlossen (die Quelle nennt für Schächte „1", V105 übersetzt
         // 1 als inneren Ring — beides heisst hier: Umriss). 3 ist ein offener Zug.
         if (art === 3) { if (p.length > zug.length) zug = p; }
         else if (p.length >= 3) umriss = p;
     }
-    return { punkte, zug, umriss, crsLage: _text(daten, 'CRSLage') || null };
+    // Das Lagesystem steht in der Geometrie (Format 2017) oder in den Geometriedaten (AH15).
+    return { punkte, zug, umriss, crsLage: _text(daten, 'CRSLage') || _text(_pfad(obj, 'Geometrie'), 'CRSLage') || null };
 }
 
 /** Der Kopf jedes Objekts. */
-function _kopf(obj) {
+function _kopf(obj, geo) {
     return {
         name: _text(obj, 'Objektbezeichnung'),
         status: _int(obj, 'Status'),
+        crsLage: geo.crsLage,
         baujahr: _int(obj, 'Baujahr'),
         entwaesserungsart: _code(obj, 'Entwaesserungsart'),
         kommentar: _text(obj, 'Kommentar') || null,
@@ -145,9 +164,9 @@ function _kopf(obj) {
 
 /** Ein Schacht (Knoten, KnotenTyp 0). */
 function _schacht(obj, warn) {
-    const k = _kopf(obj);
-    const s = _pfad(obj, 'Knoten/Schacht');
     const geo = _geometrie(obj);
+    const k = _kopf(obj, geo);
+    const s = _pfad(obj, 'Knoten/Schacht');
     const deckel = geo.punkte.filter(p => p.attribut === 'DMP');
     const smp = geo.punkte.find(p => p.attribut === 'SMP');
     const hp = geo.punkte.find(p => p.attribut === 'HP');
@@ -164,7 +183,9 @@ function _schacht(obj, warn) {
     // Der Ort: der Schachtmittelpunkt (SMP, beim flächenförmigen Schacht der
     // Schwerpunkt des Unterteils), sonst der erste Deckel, sonst irgendein Punkt.
     const ortPunkt = smp ?? deckel[0] ?? geo.punkte[0] ?? null;
-    const ab = s && _pfad(s, 'Abdeckung'), au = s && _pfad(s, 'Aufbau');
+    // Der Deckel: `Schacht/Abdeckung` (AH15, Format 2013) oder `Knoten/Abdeckungen/Deckel` (Format 2017, je Deckel ein Index).
+    const ab = (s && _pfad(s, 'Abdeckung')) || _pfad(obj, 'Knoten/Abdeckungen/Deckel');
+    const au = s && _pfad(s, 'Aufbau');
     const uz = s && _pfad(s, 'UntereSchachtzone'), ut = s && _pfad(s, 'Unterteil');
     const hoeheRingeCm = ab ? _m(ab, 'HoeheAuflageringe') : null;
 
@@ -232,16 +253,18 @@ const _profilM = (v) => (_fin(v) && v > 0 ? v / 1000 : null);
 
 /** Eine Kante (Haltung, Leitung, Rinne, Gerinne). */
 function _kante(obj, warn) {
-    const k = _kopf(obj);
+    const geo = _geometrie(obj);
+    const k = _kopf(obj, geo);
     const ka = _pfad(obj, 'Kante');
     // Ohne Unterscheidung (nicht formatgerecht) gilt sie als Haltung.
     const art = ['Haltung', 'Leitung', 'Rinne', 'Gerinne'].find(a => ka && _pfad(ka, a)) ?? 'Haltung';
     const unter = ka ? _pfad(ka, art) : null;
     const pr = ka ? _pfad(ka, 'Profil') : null;
-    const profilart = pr ? _int(pr, 'Profilart') : null;
+    // Die Profilart ist eine Zahl (G205) — echte Dateien schreiben auch „DN" (Kreis mit Nennweite).
+    const profilartText = pr ? _text(pr, 'Profilart').toUpperCase() : '';
+    const profilart = profilartText === 'DN' ? 0 : (pr ? _int(pr, 'Profilart') : null);
     const breite = pr ? _profilM(_num(pr, 'Profilbreite')) : null;
     const hoehe = pr ? _profilM(_num(pr, 'Profilhoehe')) : null;
-    const geo = _geometrie(obj);
     if (pr && profilart === 0 && hoehe === null && breite !== null) {
         warn(`Haltung „${k.name}": Kreisprofil ohne Profilhoehe — Profilbreite als Durchmesser genommen`);
     }
@@ -276,13 +299,21 @@ function _kante(obj, warn) {
  */
 export function liesIsybauDaten(text) {
     if (typeof DOMParser === 'undefined') throw new Error('kein XML-Leser in dieser Umgebung');
-    const doc = new DOMParser().parseFromString(String(text ?? ''), 'application/xml');
+    // REPARATUR (Abnahme I7, echte Datei): ein leeres Element ohne Namen `<></>` macht
+    // die ganze Datei ungültig — kein Leser nähme sie an. Es trägt nichts; es fällt
+    // weg und wird gezählt.
+    const roh = String(text ?? '');
+    const leer = (roh.match(/<\s*>\s*<\/\s*>/g) ?? []).length;
+    const doc = new DOMParser().parseFromString(leer ? roh.replace(/<\s*>\s*<\/\s*>/g, '') : roh, 'application/xml');
     if (doc.getElementsByTagName('parsererror').length) throw new Error('kein gültiges XML');
-    const objekte = [...doc.getElementsByTagName('*')].filter(e => e.localName === 'AbwassertechnischeAnlage');
+    const objekte = [];
+    const sammle = (k) => { if (k.n === 'abwassertechnischeanlage') objekte.push(k); else k.c.forEach(sammle); };
+    sammle(_baum(doc.documentElement));
     if (!objekte.length) throw new Error('keine AbwassertechnischeAnlage — ist das eine ISYBAU-Datei?');
 
     const warnungen = [];
     const warn = (t) => warnungen.push(`ISYBAU: ${t}`);
+    if (leer) warn(`${leer} leere Elemente „<></>" entfernt — die Datei war kein gültiges XML`);
     const schaechte = [], kanten = [];
     const gezaehlt = { Anschlusspunkt: 0, Bauwerk: 0, andere: 0 };
     for (const o of objekte) {
