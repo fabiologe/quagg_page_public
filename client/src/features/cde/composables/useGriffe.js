@@ -31,7 +31,7 @@
 import { computed, ref, watch } from 'vue';
 import { aufMasslinie, begrenze, griffZuWerten, griffeFrei, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
 import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
-import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { RASTER_M, achsPassung, achsParameter, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, richtungAufSchirm, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
 import { TREFFER_PX } from '../services/IfcOverlay.js';
@@ -617,12 +617,21 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                 hoehenversatz: subjekt.hoehenversatz ?? getHoehenversatz?.() ?? 0,
             });
             for (const [feld, wert] of Object.entries(werte)) bearbeitung.setzeWert(feld, wert);
+            // Gelieferte Schächte im Knoten (T7) — weitere Ziele desselben Kommandos, je mit ihrem Lieferstand.
+            const geliefert = (Array.isArray(werte.mit) ? werte.mit : []).filter(g => modellVon(g) !== 'cde');
+            const mitziel = (await Promise.all(geliefert.map(g => Promise.resolve(holeKnotenSubjekt?.(g)).catch(() => null)))).filter(Boolean);
             const eintraege = await bearbeitung.ausfuehren({
                 wer: getWer?.() ?? '',
                 modellSha: getModellSha?.() ?? null,
                 subjekt,
                 basis: lieferstandVon?.(griff.globalId) ?? undefined,
                 modell: griff.herkunft === 'cde' ? 'cde' : 'geliefert',
+                ...(mitziel.length ? {
+                    mitziel,
+                    jeEintrag: (g) => (geliefert.includes(g)
+                        ? { basis: lieferstandVon?.(g) ?? undefined, modell: 'geliefert', modellSha: mitziel.find(m => m.globalId === g)?.modellSha ?? null }
+                        : {}),
+                } : {}),
             });
             if (!eintraege) { melde?.(bearbeitung.letzterGrund || 'Nichts einzutragen.'); return null; }
             await nachBauen?.(eintraege, griff.werkzeug, { serie });

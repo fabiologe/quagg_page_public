@@ -263,7 +263,11 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
     } else if (b) {
         if (istErzeugen(b) && k.ziel.length) fehler.push(`„${b.id}" erzeugt — es hat kein Ziel`);
         if (!istErzeugen(b) && !k.ziel.length) fehler.push('Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.');
-        if (!istErzeugen(b) && k.ziel.length > 1 && !b.mehrfach) fehler.push(`„${b.id}" wirkt auf ein Bauteil, nicht auf ${k.ziel.length}`);
+        // Weitere Ziele nur, wo das Werkzeug sie erklärt: `mehrfach` (dieselbe Bearbeitung auf jedes), oder
+        // `zieleAusMit` (Teil XXXI, T7) — jedes weitere Ziel steht im Knoten des ersten (`werte.mit`).
+        const knoten = Array.isArray(k.werte?.mit) ? k.werte.mit : [];
+        const ausMit = !!b.zieleAusMit && k.ziel.slice(1).every(z => knoten.includes(z));
+        if (!istErzeugen(b) && k.ziel.length > 1 && !b.mehrfach && !ausMit) fehler.push(`„${b.id}" wirkt auf ein Bauteil, nicht auf ${k.ziel.length}`);
         if (new Set(k.ziel).size !== k.ziel.length) fehler.push('ziel nennt ein Bauteil doppelt');
     }
 

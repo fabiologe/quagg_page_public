@@ -143,3 +143,94 @@ describe('der Knoten am Griff', () => {
         expect(t.g.geloest.value.size).toBe(0);
     });
 });
+
+describe('der Kantengriff nimmt die Knoten an beiden Enden mit (T7, Fabio: „lets go")', () => {
+    it('Wandkante 1 m nach Süden: beide Enden von A wandern, B folgt an seinem Ende — ein Vorgang', async () => {
+        const t = aufbau();
+        b.modusSetzen(true);
+        await tippeAn('cde-A');
+        t.g.neuBauen();
+        const kante = t.g.griffe.value.find(x => x.key === 'kante:cde-A:0');
+        expect(kante.werte).toEqual({ mit: ['cde-B'] });
+        const n = ae.eintraege.length;
+        await zug(t, kante, { x: kante.pos.x, z: kante.pos.z + 1 });
+        expect(punkt('cde-A', 0)).toEqual([0, 100, 1]);
+        expect(punkt('cde-A', 1)).toEqual([10, 100, 1]);
+        expect(punkt('cde-B', 0)).toEqual([10, 100, 1]);
+        expect(punkt('cde-B', 1)).toEqual([10, 100, -8]);
+        const neu = ae.eintraege.slice(n);
+        expect(neu.map(x => x.globalId).sort()).toEqual(['cde-A', 'cde-B']);
+        expect(new Set(neu.map(x => x.vorgang)).size).toBe(1);
+    });
+
+    it('zwei Platten mit gemeinsamer Kante: die Nachbarplatte zieht BEIDE Ecken mit, in einem Eintrag', async () => {
+        const platte = (gid, x0) => kommando('platte-zeichnen', { neu: [gid], werte: { name: gid, kategorie: 'IFCSLAB', hoehe: '', dicke: 0.3 },
+            eingaben: { umriss: [e(x0, 20, 100), e(x0 + 5, 20, 100), e(x0 + 5, 15, 100), e(x0, 15, 100)] } });
+        for (const k of [platte('cde-P1', 0), platte('cde-P2', 5)]) expect((await b.fuehreAus(k)).ausgefuehrt).toBe(true);
+        const t = aufbau();
+        b.modusSetzen(true);
+        const s = subjektAusStand('cde-P1', { wirksamerStand: ae.wirksamerStand });
+        await b.einordne({ ...s, modelId: CDE_MODELL_ID, localId: 8, category: 'IFCSLAB', type: 'IFCSLAB' }, null);
+        t.g.neuBauen();
+        // Die gemeinsame Kante von P1 ist die von (5|20) nach (5|15) — die zweite.
+        const kante = t.g.griffe.value.find(x => x.art === 'kante' && Math.abs(x.pos.x - 5) < 1e-9);
+        expect(kante.werte).toEqual({ mit: ['cde-P2'] });
+        expect(kante).toBeTruthy();
+        const vorher = plan('cde-P2').parameter.punkte.map(p => [...p]);
+        const n = ae.eintraege.length;
+        await zug(t, kante, { x: kante.pos.x + 1, z: kante.pos.z });
+        const p2 = plan('cde-P2').parameter.punkte;
+        const gewandert = p2.filter((q, i) => Math.abs(q[0] - vorher[i][0] - 1) < 1e-9);
+        expect(gewandert).toHaveLength(2);                                  // beide Ecken der gemeinsamen Kante
+        expect(ae.eintraege.slice(n).filter(x => x.globalId === 'cde-P2')).toHaveLength(1);
+    });
+});
+
+
+describe('ein GELIEFERTER Schacht im Knoten — wie „Schacht verschieben" (Fabio 2026-10-05)', () => {
+    /** Ein gelieferter Schacht bei (30 | −5) — Platzierung 98, also tiefer als das Rohrende —, eine gelieferte Haltung daran. */
+    const SG = { globalId: 'S-G', name: 'S 12', modelId: 'm1', localId: 41, herkunft: 'geliefert', punkt: { x: 30, y: 98, z: 5 } };
+    const SUBJEKT = { globalId: 'S-G', name: 'S 12', modelId: 'm1', localId: 41, category: 'IFCDISTRIBUTIONCHAMBERELEMENT',
+                      anker: { x: 30, y: 98, z: 5 }, versatz: { x: 0, y: 0, z: 0 }, lage: { ost: 30, nord: -5 }, lageUmkehrbar: true,
+                      modellSha: 'sha-lieferung',
+                      // Wie die Engine es meldet: auch das EIGENE Rohr hängt am Schacht (sein Ende liegt dort).
+                      anschluesse: [{ globalId: 'H-G', name: 'H 7', ende: 'anfang', kategorie: 'IFCPIPESEGMENT',
+                                      anfang: { x: 30, y: 98.2, z: 5 }, ende_: { x: 50, y: 98, z: 5 } },
+                                    { globalId: 'cde-R', name: 'Zulauf', ende: 'ende', kategorie: 'IFCPIPESEGMENT',
+                                      anfang: { x: 10, y: 100, z: 5 }, ende_: { x: 30, y: 99.8, z: 5 } }] };
+
+    it('das Rohrende am Schacht: Partner ist der Schacht; der Zug schreibt Rohr, Schachtlage und Forderung — ein Vorgang', async () => {
+        expect((await b.fuehreAus(kommando('rohr-zeichnen', { neu: ['cde-R'], werte: { name: 'Zulauf', kategorie: 'IFCPIPESEGMENT', hoehe: '', dn: 300 },
+            eingaben: { zug: [e(10, -5, 100), e(30, -5, 99.8)] } }))).ausgefuehrt).toBe(true);
+        const t = aufbau();
+        t.engine.knotenGriffe = () => [SG];
+        const lieferstand = vi.fn((g) => (g === 'S-G' ? { x: 30, y: 98, z: 5 } : undefined));
+        const g = useGriffe({
+            engine: ref(t.engine), bearbeitung: b, aenderungen: ae,
+            getSubjekt: () => b.bauteil, getTypprofil: () => b.typprofil, getBauform: () => b.einordnung?.bauform ?? null,
+            getVersatz: () => ({ x: 0, y: 0, z: 0 }), getHoehenversatz: () => 0,
+            holeKnotenSubjekt: async (gid) => (gid === 'S-G' ? SUBJEKT : null), lieferstandVon: lieferstand,
+            nachBauen: t.nachBauen, getWer: () => 'Fabio', melde: vi.fn(),
+            farben: () => ({ accent: '#0af', warn: '#fa0', ok: '#0f0', danger: '#f00' }),
+        });
+        b.modusSetzen(true);
+        const s = subjektAusStand('cde-R', { wirksamerStand: ae.wirksamerStand });
+        await b.einordne({ ...s, modelId: CDE_MODELL_ID, localId: 9, category: 'IFCPIPESEGMENT', type: 'IFCPIPESEGMENT' }, null);
+        g.neuBauen();
+        const ende = g.griffe.value.find(x => x.key === 'stuetz:cde-R:1');
+        expect(ende.werte).toEqual({ mit: ['S-G'] });                          // Grundriss gleich, Höhe nicht — zählt
+        const n = ae.eintraege.length;
+        await zug({ ...t, g }, ende, { x: 32, z: 5 });
+        const neu = ae.eintraege.slice(n);
+        expect(new Set(neu.map(x => x.vorgang)).size).toBe(1);
+        const rohr = neu.find(x => x.globalId === 'cde-R');
+        expect(rohr.nachher.parameter.punkte[1][0]).toBeCloseTo(32, 9);
+        const lage = neu.find(x => x.globalId === 'S-G');
+        expect(lage).toMatchObject({ art: 'lage', modell: 'geliefert', modellSha: 'sha-lieferung' });
+        expect(lage.nachher).toMatchObject({ x: 32, y: 98, z: 5 });             // im Grundriss mit, die Höhe bleibt
+        expect(lage.basis).toEqual({ x: 30, y: 98, z: 5 });                   // der Lieferstand — der Drei-Wege-Vergleich
+        const forderung = neu.find(x => x.globalId === 'H-G');
+        expect(forderung).toMatchObject({ art: 'parametrik', nachher: { anschlusspunkt: { ende: 'anfang', ost: 32, nord: -5 } } });
+        expect(neu.filter(x => x.globalId === 'cde-R')).toHaveLength(1);       // das eigene Rohr nur EINMAL
+    });
+});

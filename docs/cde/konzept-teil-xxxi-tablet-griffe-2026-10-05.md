@@ -301,32 +301,22 @@ Bewusst gedreht: B7-Zählung (Ecken ohne den neuen Massgriff).
 - **Lösen:** Nebengriff „Knoten lösen (n)" (Würfel, wie die Tipp-Griffe) — ein Schalter der Bedienung, schreibt nichts;
   danach zieht nur das eigene Bauteil, der Knopf heisst „Knoten verbinden". Gilt bis ein anderes Bauteil gewählt wird.
 - **Pille:** „Knoten · 2 Bauteile" beim Zug.
-- **Nicht in T7:** Kantenzug (Mitte einer Kante) nimmt Knoten an ihren Enden nicht mit; Knoten mit GELIEFERTEN Bauteilen
-  (dort gilt K8: Anschluss deklariert / Koinzidenz); Knoten zwischen Punkt und Kante (T-Stoss).
+- **Nachgezogen (Fabio „lets go" zu beiden Resten):**
+  - **Der Kantengriff** nimmt die Knoten an BEIDEN Enden mit (`_knotenNachziehen` mit Punktpaaren); ein Partner, der
+    beide Enden teilt (zwei Platten mit gemeinsamer Kante), zieht beide Ecken in EINEM Eintrag.
+  - **Ein gelieferter Schacht im Knoten** — Fabio 2026-10-05 (Rückfrage, drei Möglichkeiten): „wie Schacht verschieben".
+    Steht ein gelieferter Schacht im Grundriss auf dem eigenen Punkt (die Höhe zählt nicht: Platzierung gegen Sohle), ist
+    er Partner; der Zug macht ihn zum weiteren Ziel desselben Kommandos (`zieleAusMit`: weitere Ziele nur, wenn `mit` sie
+    nennt — `mehrfach` hätte jedes markierte Bauteil seinen Punkt Nr. i verschieben lassen). Er wandert im Grundriss
+    (`lage`, Modell „geliefert", Basis = Lieferstand), seine gelieferten Haltungen gehen als Forderung mit; eigene
+    Haltungen lässt dieser Weg weg — die zieht der Knoten (sonst zwei Einträge, der zweite überschriebe die Höhe).
+- **Bleibt:** am Kantengriff nur eigene Partner (ein gelieferter Schacht bräuchte dort ein eigenes Ziel je Ende);
+  gelieferte Wände, Platten usw. sind nie Partner (nur Netzknoten haben einen Ort im Grundriss); Knoten zwischen Punkt
+  und Kante (T-Stoss). Im Browser geprüft ist der eigene Knoten (Tabletlauf), der gelieferte Schacht nur im Test.
 
-Test `knoten.test.js` (4: wer im Knoten liegt, Griff mit Partnern, Zug ins Journal als ein Vorgang, Lösen ohne Schreiben);
-Gegenproben rot: keine Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht. Tabletlauf um einen
+Test `knoten.test.js` (7: wer im Knoten liegt, Griff mit Partnern, Zug ins Journal als ein Vorgang, Lösen ohne Schreiben;
+Kante an Wand und an zwei Platten; gelieferter Schacht mit gelieferter und eigener Haltung). Gegenproben rot: keine
+Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht; Kantengriff ohne Partner, Kante zieht nicht
+nach, nur ein Ende, Kantenwerte ohne `mit`; kein gelieferter Partner, eigene doppelt, Modell nicht „geliefert", ohne
+`zieleAusMit`, Schacht nicht geladen. Tabletlauf um einen
 Knotenschritt erweitert (zweite Wand an die im Bild liegende Ecke).
-
-### T7 — Knoten: zusammenfallende Punkte ziehen gemeinsam (2026-10-05, E-T3)
-
-| Tabletlauf: zweite Wand an die Ecke der ersten, Ecke mit dem Finger gezogen | vorher [gelesen] | T7 [gemessen] |
-|---|---|---|
-| der Eckgriff kennt die andere Wand | nein | **ja** (grün) |
-| beide Punkte wandern | nein — die Ecke riss ab | **ja, an denselben Ort** |
-| Einträge des Zugs | 1 | 2, in **einem** Vorgang (ein Rückgängig) |
-
-- **Wer im Knoten liegt** (`Griffe.knotenPartner`): andere EIGENE Bauteile mit einem Punkt ihres Bauplans an derselben
-  Stelle — auf die Netztoleranz des Regelwerks genau (`netzToleranzM`, 1 mm), in allen drei Richtungen; Vorgänge
-  (Operationen) bleiben draussen. Der Eckgriff trägt sie als `werte.mit` (Kennungen, keine Nummern) und ist grün.
-- **Das Kommando:** „Stützpunkt verschieben" hat das verborgene Listenfeld `mit`; jeder genannte Partner bewegt seinen
-  Punkt am ALTEN Ort an denselben neuen (`_knotenNachziehen` über `bauplanVon`). Ein Partner ohne Punkt dort bleibt.
-- **Lösen:** ein Nebengriff am Knoten („Knoten lösen (n)", Würfel) — ein Tipp schaltet, geschrieben wird nichts; der
-  gelöste Griff zieht allein, der Nebengriff heisst dann „Knoten verbinden". Gilt, bis ein anderes Bauteil gewählt wird.
-- **Bleibt:** der Kantengriff (Kantenmitte, beide Enden) nimmt keine Knoten mit; Geliefertes ist nie Partner (es hat
-  keinen Bauplan); ein Rohr an einem gelieferten Schacht folgt weiter über `anschluss` (K8), nicht über den Knoten.
-
-Test `knoten.test.js` (4: wer im Knoten liegt — 2 mm daneben und 2,5 m darüber nicht; Griff mit Partner und
-Lösen-Knopf; Zug bewegt A und B in einem Vorgang, C und D bleiben; Lösen schreibt nichts, danach zieht nur A).
-Gegenproben rot: keine Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht. Tabletlauf um den
-Knotenschritt erweitert (Ecke im Bild — der erste Versuch lag am Bildrand, der Zug lief aus der Fläche).

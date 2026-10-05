@@ -281,7 +281,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
             const key = `stuetz:${gid}:${i}`;
             // KNOTEN (Teil XXXI, T7 — E-T3): liegt hier auch ein Punkt eines anderen eigenen Bauteils, ziehen beide
             // gemeinsam — Wand an Wand, Rohr am Schacht. „Lösen" (Nebengriff) nimmt sie für diesen Griff heraus.
-            const partner = knotenPartner(p, gid, eigene);
+            // Ein GELIEFERTER Schacht unter dem Punkt gehört dazu (Fabio 2026-10-05: „wie Schacht verschieben").
+            const partner = [...knotenPartner(p, gid, eigene), ...gelieferteKnoten(p, schaechte, lageStand)];
             const geloestHier = !!geloest?.has?.(key);
             const mit = partner.length && !geloestHier ? partner : null;
             const knoten = mit ? { werte: { mit }, farbrolle: 'ok', knoten: mit.length } : {};
@@ -332,11 +333,15 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         const kanten = kantenVon(punkte, ring);
         for (const k of kanten) {
             const key = `kante:${gid}:${k.i}`;
+            // Die Knoten an BEIDEN Enden (T7) — ohne die gelösten Ecken.
+            const kmit = [...new Set([k.i, k.j].flatMap(idx => (geloest?.has?.(`stuetz:${gid}:${idx}`) || !punkte[idx])
+                ? [] : knotenPartner(punkte[idx], gid, eigene)))].sort();
             aus.push({
                 key, globalId: gid, name: subjekt.name ?? '',
                 herkunft: 'cde', art: 'kante', index: k.i, index2: k.j,
                 pos: k.mitte, achsen: 'XZ', alternativ: 'Y',
-                werkzeug: 'kante-verschieben', felder: ['index', 'ost', 'nord', 'hoehe'],
+                werkzeug: 'kante-verschieben', felder: ['index', 'ost', 'nord', 'hoehe', 'mit'],
+                ...(kmit.length ? { werte: { mit: kmit }, farbrolle: 'ok', knoten: kmit.length } : {}),
             });
             aus.push({
                 key: `kante-plus:${gid}:${k.i}`, globalId: gid, name: subjekt.name ?? '',
@@ -534,6 +539,26 @@ export function knotenPartner(p, selbst, eigene) {
 }
 
 /**
+ * GELIEFERTE SCHÄCHTE IM KNOTEN (Teil XXXI, T7 — Fabio 2026-10-05: „wie Schacht verschieben"): ein gelieferter Knoten,
+ * der im GRUNDRISS auf dem Punkt steht (Netztoleranz) — die Höhe zählt hier nicht: ein Schacht ist senkrecht, seine
+ * Lage ist die Platzierung, das Rohrende liegt auf der Sohle. An der WIRKSAMEN Lage (ein schon verschobener Schacht
+ * steht im Journal).
+ * @returns {string[]}  GlobalIds, sortiert
+ */
+export function gelieferteKnoten(p, schaechte, lageStand = null) {
+    if (!Array.isArray(p) || !schaechte?.length) return [];
+    const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
+    const aus = [];
+    for (const s of schaechte) {
+        if (s?.herkunft !== 'geliefert' || !s.globalId || !_endlich(s.punkt)) continue;
+        const l = lageStand?.get?.(s.globalId);
+        const x = Number.isFinite(l?.x) ? l.x : s.punkt.x, z = Number.isFinite(l?.z) ? l.z : s.punkt.z;
+        if (Math.abs(x - p[0]) <= tol && Math.abs(z - p[2]) <= tol) aus.push(s.globalId);
+    }
+    return aus.sort();
+}
+
+/**
  * GRIFFE AUS FELDERN (Teil XXVII, B6 — Fabios E29): ein setzbares Mass, dessen
  * Feld seinen Griff erklärt (`griff: { richtung, von }`), bekommt ihn hier — ohne
  * eine Zeile je Rezept. Gezogen wird der vorhandene Setzer des Feldes
@@ -639,7 +664,7 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
             // Der Griff SITZT auf der Kantenmitte — die neue Lage IST der
             // Zielwert. `anwenden` rechnet daraus das Delta beider Endpunkte,
             // also bleibt der Wert absolut und die Anwendung idempotent.
-            return { index: griff.index, ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)), hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
+            return { ...(griff.werte ?? {}), index: griff.index, ost: r3(pos.x + v.x), nord: r3(-(pos.z + v.z)), hoehe: r3(nnAusWelt(pos.y, hoehenversatz)) };
         case 'mass': {
             // EINE ECKE, DIE EIN MASS IST (Teil XXII, Rest): gemessen wird quer —
             // auf der Linie, auf der die Ecke mit ihrem Mass wandert —, die Höhe

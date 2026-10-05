@@ -667,7 +667,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      * derselben Sache, und einer davon war falsch.
      */
     async function ausfuehren({ wer = '', modellSha = null, subjekt = null,
-                                basis = undefined, modell = undefined, zug = null } = {}) {
+                                basis = undefined, modell = undefined, zug = null,
+                                mitziel = [], jeEintrag = null } = {}) {
         letzterGrund.value = '';
         if (!modusAn.value) {
             // Zweite Sperre, nicht nur die erste: `starte` und `ausfuehren`
@@ -695,9 +696,11 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         // übereinander, und fünf Haltungen dieselbe Sohlhöhe zu geben ebnet den
         // Strang ein. Ein stillschweigendes „gilt für alle" wäre der
         // gefährlichste Vorgabewert, den dieses Feature haben könnte.
-        const gegenstaende = (b.mehrfach && !subjekt && bauteile.value.length > 1)
+        // ZUSATZZIELE (Teil XXXI, T7): ein gelieferter Schacht im Knoten des Griffs — er wandert im SELBEN
+        // Kommando mit (Fabio 2026-10-05: „wie Schacht verschieben"). Das erste Ziel bleibt das gegriffene Bauteil.
+        const gegenstaende = [...((b.mehrfach && !subjekt && bauteile.value.length > 1)
             ? bauteile.value
-            : [gegenstand];
+            : [gegenstand]), ...(Array.isArray(mitziel) ? mitziel.filter(Boolean) : [])];
 
         // DAS KOMMANDO (Teil XXIV, K1). Was die Oberfläche hält — scharfes
         // Werkzeug, Formularwerte, Subjekte, gezeichnete Punkte —, wird EIN
@@ -733,7 +736,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             // Feldern, die das Formular zeigt. Keine zweite mit anderem Profil.
             pruefeWerte: () => fehler.value,
             felder: felder.value,
-            basis, modell, modellSha,
+            basis, modell, modellSha, jeEintrag,
             hauptSubjekt: gegenstand,
             befunde: befunde.value,
             uebersprungenVorab: ohneKennung.length,

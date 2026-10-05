@@ -1042,9 +1042,12 @@ function _hatMasse(rz) {
 }
 const MASS_GRUND = 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.';
 
-/** Die Punkte der Knotenpartner am alten Ort nach `neu` (Teil XXXI, T7) — je Partner ein `erzeugt`-Eintrag. */
-function _knotenNachziehen(mit, alt, neu, selbst, bauplanVon) {
-    if (!mit.length || !Array.isArray(alt) || typeof bauplanVon !== 'function') return [];
+/**
+ * Die Punkte der Knotenpartner nachziehen (Teil XXXI, T7) — `paare` = [[alter Ort, neuer Ort], …]: ein Eckzug hat eines,
+ * ein Kantenzug zwei. Je Partner EIN `erzeugt`-Eintrag, auch wenn er beide Enden der Kante teilt.
+ */
+function _knotenNachziehen(mit, paare, selbst, bauplanVon) {
+    if (!mit.length || !paare.length || typeof bauplanVon !== 'function') return [];
     const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
     const aus = [];
     for (const gid of new Set(mit.map(String))) {
@@ -1054,17 +1057,30 @@ function _knotenNachziehen(mit, alt, neu, selbst, bauplanVon) {
         if (!plan?.rezept || plan.ableitung || !Array.isArray(pkt)) continue;
         let bewegt = false;
         const punkte = pkt.map((q) => {
-            if (Array.isArray(q) && Math.abs(q[0] - alt[0]) <= tol && Math.abs(q[1] - alt[1]) <= tol && Math.abs(q[2] - alt[2]) <= tol) {
-                bewegt = true;
-                return [...neu];
-            }
-            return q;
+            const paar = Array.isArray(q) && paare.find(([alt]) => Array.isArray(alt)
+                && Math.abs(q[0] - alt[0]) <= tol && Math.abs(q[1] - alt[1]) <= tol && Math.abs(q[2] - alt[2]) <= tol);
+            if (!paar) return q;
+            bewegt = true;
+            return [...paar[1]];
         });
         if (!bewegt) continue;
         aus.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: gid,
                                   parameter: { ...plan.parameter, punkte } }));
     }
     return aus;
+}
+
+/**
+ * DER GELIEFERTE SCHACHT IM KNOTEN (Teil XXXI, T7 — Fabio 2026-10-05: „wie Schacht verschieben"): er wandert auf den
+ * neuen Ort des Punkts (im Grundriss; seine Höhe bleibt), seine gelieferten Haltungen gehen als FORDERUNG mit — genau
+ * „Schacht verschieben" mit der Vorgabe des Reglers. Eigene Haltungen lässt dieser Weg weg: am selben Punkt zieht sie
+ * der Knoten selbst, ein zweiter Eintrag überschriebe dessen Höhe.
+ */
+function _gelieferterKnoten(el, werte, bauplanVon) {
+    const sv = nachId('schacht-verschieben');
+    const roh = sv?.anwenden?.(el, { ost: werte?.ost, nord: werte?.nord, mitfuehren: 'forderung' }, { bauplanVon }) ?? null;
+    return (Array.isArray(roh) ? roh : roh ? [roh] : []).filter(e => modellVon(e.globalId) !== 'cde')
+        .map(e => ({ modell: 'geliefert', ...e }));
 }
 
 function _hatKnickpunkte(rz) {
@@ -3244,6 +3260,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: ['linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        // Ein gelieferter Schacht im Knoten ist ein weiteres Ziel (Teil XXXI, T7) — nur, wenn `mit` ihn nennt.
+        zieleAusMit: true,
         art: 'erzeugt',
         felder: [
             { name: 'index', titel: 'Stützpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'stuetzpunkt' },
@@ -3265,6 +3283,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             };
         },
         anwenden: (el, werte, { bauplanVon = null } = {}) => {
+            // Ein GELIEFERTER Schacht im Knoten (T7) ist ein weiteres Ziel desselben Kommandos.
+            if (!el?.stand?.bauplan && el?.globalId && (werte?.mit ?? []).includes?.(el.globalId)) return _gelieferterKnoten(el, werte, bauplanVon);
             const plan = el?.stand?.bauplan;
             const punkte = plan?.parameter?.punkte;
             if (!el?.globalId || !plan?.rezept || !Array.isArray(punkte)) return null;
@@ -3287,7 +3307,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             });
             // DER KNOTEN (T7): jeder genannte Partner bewegt seinen Punkt am ALTEN Ort an denselben neuen — im selben
             // Kommando, ein Rückgängig. Ein Partner ohne Punkt dort (inzwischen gelöst, gelöscht) bleibt, wie er ist.
-            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], alt, neu, el.globalId, bauplanVon);
+            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], [[alt, neu]], el.globalId, bauplanVon);
             return partner.length ? [eigen, ...partner] : eigen;
         },
     },
@@ -3992,6 +4012,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'ost', titel: 'Kantenmitte Rechtswert', einheit: 'm', typ: 'zahl' },
             { name: 'nord', titel: 'Kantenmitte Hochwert', einheit: 'm', typ: 'zahl' },
             { name: 'hoehe', titel: 'Kantenmitte Höhe', einheit: 'm NN', typ: 'zahl' },
+            // Die Knoten an beiden Enden ziehen mit (Teil XXXI, T7) — wie am Eckgriff.
+            { name: 'mit', titel: 'Knoten mit', typ: 'liste', leerErlaubt: true, verborgen: true },
         ],
         vorbelegung: (el) => {
             const punkte = el?.stand?.bauplan?.parameter?.punkte;
@@ -4004,7 +4026,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 hoehe: _rundeM(nnAusWelt((a[1] + b[1]) / 2, el?.hoehenversatz ?? 0)),
             };
         },
-        anwenden: (el, werte) => {
+        anwenden: (el, werte, { bauplanVon = null } = {}) => {
             const plan = el?.stand?.bauplan;
             const punkte = plan?.parameter?.punkte;
             if (!el?.globalId || !plan?.rezept || !Array.isArray(punkte) || punkte.length < 2) return null;
@@ -4027,10 +4049,12 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 (k === i || k === j) && Array.isArray(p) && p.length >= 3
                     ? [p[0] + d[0], p[1] + d[1], p[2] + d[2]]
                     : p));
-            return erzeugtEintrag({
+            const eigen = erzeugtEintrag({
                 rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
                 globalId: el.globalId, parameter: { ...plan.parameter, punkte: neu },
             });
+            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], [[a, neu[i]], [b, neu[j]]], el.globalId, bauplanVon);
+            return partner.length ? [eigen, ...partner] : eigen;
         },
     },
     {
