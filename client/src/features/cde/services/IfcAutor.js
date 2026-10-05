@@ -47,6 +47,7 @@ import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAn
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
 import { verdeckteAus } from './CdeAchsen.js';
+import { regelwerkStand } from './regeln/Regelwerk.js';
 import { huelleAusGrenzen } from './geometrie/Huelle.js';
 
 // ── Reine Helfer ────────────────────────────────────────────────────────────
@@ -156,6 +157,19 @@ export function modellTagText(modell, anzahlErzeugt = 0) {
  * statt still zu verschwinden.
  */
 export const ANWENDBARE_ARTEN = new Set(['lage', 'erzeugt', 'geloescht', 'pset']);
+
+/**
+ * Eine Karte, die mitschreibt, welche Kennungen gelesen wurden (Teil XXX, B4).
+ * Der Ableitungslauf liest den Stand über `get`/`has`; was er dabei las,
+ * entscheidet beim nächsten Aufbau, ob sein Ergebnis noch gilt.
+ */
+class LeseKarte extends Map {
+    constructor(eintraege, gelesen) { super(eintraege); this._gelesen = gelesen; }
+    get(k) { this._gelesen?.add(k); return super.get(k); }
+    has(k) { this._gelesen?.add(k); return super.has(k); }
+}
+
+const _json = (w) => JSON.stringify(w ?? null);
 
 export class IfcAutor {
     /**
@@ -706,13 +720,60 @@ export class IfcAutor {
      *   gelieferten Modells.
      */
     /** EIN Ableitungslauf je Durchgang (Teil XIV) — für den Raum wie für den Export. */
-    _neuerLauf(schritte, historie = null) {
-        const stand = new Map((schritte ?? []).map(s => [s.globalId, s.wert]));
+    /**
+     * WAS EIN ABLEITUNGSERGEBNIS TRÄGT (Teil XXX, B4).
+     *
+     * Gemessen in 10001 (43 Teile): der Lauf rechnete bei JEDEM Kommando alle
+     * Ableitungen neu — Geländeanzeige, Schichten, Mulden, rund 2–2,7 s —,
+     * auch wenn das Kommando nur eine Wand setzte. Ein Ergebnis gilt weiter,
+     * solange alles gleich ist, wovon es abhängt:
+     *   - die Baupläne ALLER Ableitungsteile (der Erdbau-Stapel läuft über den
+     *     ganzen Stand, er findet seine Vorgänge selbst),
+     *   - jeder Eintrag aus Stand und Historie, den der Lauf GELESEN hat
+     *     (Quellen, Unterlagen, die Kette zum Ur),
+     *   - die Bauform jedes gelieferten Bauteils, nach der er fragte,
+     *   - Höhenversatz und Regelwerk,
+     *   - das gelieferte Material selbst — das vergisst die Engine
+     *     (`ableitungenVergessen`), wenn ein Modell kommt, geht oder sich ändert.
+     */
+    _ableitungsKopf(schritte) {
+        const teile = (schritte ?? [])
+            .filter(s => s.wert?.ableitung || istAbleitung(rezeptNach(s.wert?.rezept)))
+            .map(s => [s.globalId, s.wert]);
+        return _json({ teile, hoehenversatz: this._getHoehenversatz() ?? 0, regelwerk: regelwerkStand() });
+    }
+
+    async _ableitungenGelten(alt, kopf, stand, historie) {
+        if (!alt || alt.kopf !== kopf) return false;
+        for (const [gid, j] of alt.stand) if (_json(stand.get(gid)) !== j) return false;
+        for (const [gid, j] of alt.historie) if (_json(historie?.get?.(gid)) !== j) return false;
+        for (const [gid, b] of alt.bauform) {
+            let jetzt = null;
+            try { jetzt = (await this._holeQuellBauform?.(gid)) ?? null; } catch { jetzt = null; }
+            if (jetzt !== b) return false;
+        }
+        return true;
+    }
+
+    /** Das gelieferte Material hat sich geändert — kein Ableitungsergebnis gilt mehr (B4). */
+    ableitungenVergessen() { this._ableitungsSpeicher = null; }
+
+    _neuerLauf(schritte, historie = null, { protokoll = null } = {}) {
+        const eintraege = (schritte ?? []).map(s => [s.globalId, s.wert]);
+        // Mit PROTOKOLL (B4) schreibt der Lauf mit, was er aus Stand, Historie
+        // und über geliefertes Material las — `_ableitungenGelten` prüft es
+        // beim nächsten Aufbau nach.
+        const stand = protokoll ? new LeseKarte(eintraege, protokoll.stand) : new Map(eintraege);
+        const hist = protokoll && historie instanceof Map ? new LeseKarte(historie, protokoll.historie) : historie;
+        const bauformRoh = this._holeQuellBauform;
+        const holeQuellBauform = protokoll && typeof bauformRoh === 'function'
+            ? async (gid) => { const b = await bauformRoh(gid); protokoll.bauform.set(gid, b ?? null); return b; }
+            : bauformRoh;
         return neuerAbleitungslauf({
             // `historie` nur für die Kette zum Ur (Fahrplan Erdbau-Container, Stufe 1).
-            stand, rezeptNach, historie,
+            stand, rezeptNach, historie: hist,
             holeQuellForm: this._holeQuellForm,
-            holeQuellBauform: this._holeQuellBauform,
+            holeQuellBauform,
             kernel: this._kernel,
             hoehenversatz: this._getHoehenversatz() ?? 0,
         });
@@ -895,7 +956,14 @@ export class IfcAutor {
         // EIN Ableitungslauf für den ganzen Aufbau (Teil XIV): Quellen lösen
         // sich lazy auf, `leite` läuft einmal je Ableitung, der Cache stirbt
         // mit diesem Durchlauf.
-        const lauf = this._neuerLauf(schritte, historie);
+        const protokoll = { stand: new Set(), historie: new Set(), bauform: new Map() };
+        const lauf = this._neuerLauf(schritte, historie, { protokoll });
+        // Gilt das letzte Ableitungsergebnis noch (B4)? Dann baut dieser Aufbau
+        // nur die einfachen Bauteile neu.
+        const standJetzt = new Map(schritte.map(s => [s.globalId, s.wert]));
+        const kopf = this._ableitungsKopf(schritte);
+        const alt = this._ableitungsSpeicher ?? null;
+        let wieder = await this._ableitungenGelten(alt, kopf, standJetzt, historie);
         const leer = [];
         const verborgen = [];
         // EINE ANZEIGE JE GELÄNDE (Fahrplan Erdbau-Container, Stufe 1): wird eine
@@ -911,6 +979,12 @@ export class IfcAutor {
         const zuErzeugen = [];
         const bauwerke = new Map();
         this.bauwerke = bauwerke;
+        const istAbleitungsteil = (schritt) => istAbleitung(rezeptNach(schritt.wert?.rezept));
+        const zuBauen = (schritt) => !verdraengtVon.has(schritt.globalId) && !ueberholtVon.has(schritt.globalId)
+            && !verdeckt.has(schritt.globalId) && !istBehaelter(schritt.wert);
+        // Wiederverwenden nur, wenn JEDES zu bauende Ableitungsteil ein Ergebnis hat — kein gemischter Lauf.
+        if (wieder && !schritte.every(s => !zuBauen(s) || !istAbleitungsteil(s) || alt.gebaut.has(s.globalId))) wieder = false;
+        const gebautJe = new Map();
 
         for (const schritt of schritte) {
             if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
@@ -927,7 +1001,11 @@ export class IfcAutor {
             // Der Bauplan steht im Journal, die Geometrie entsteht hier. Ein
             // Netz ins Journal zu legen, hätte genau diesen Neuaufbau unmöglich
             // gemacht — siehe Kopf von Bauteilrezepte.js.
-            const gebaut = await this._baueSchritt(lauf, schritt, { fuerRaum: true });
+            const ableitungsteil = istAbleitungsteil(schritt);
+            const gebaut = wieder && ableitungsteil
+                ? alt.gebaut.get(schritt.globalId)
+                : await this._baueSchritt(lauf, schritt, { fuerRaum: true });
+            if (ableitungsteil) gebautJe.set(schritt.globalId, gebaut);
             // Ein leeres Teil (kein Auftrag beim reinen Gerinne) ist kein
             // Fehler: es entsteht kein Bauteil, die Kennzahl sagt null.
             if (gebaut.leer) { leer.push(schritt.globalId); continue; }
@@ -959,7 +1037,7 @@ export class IfcAutor {
                 if (kanten?.length) this.anzeigeKanten.set(r.localId, kanten);
             } else misserfolge.push({ ...schritt, grund: r.grund });
         });
-        this.ableitungen = lauf.ableitungen;
+        this.ableitungen = wieder ? alt.ableitungen : lauf.ableitungen;
         // Leer ist kein Fehlschlag (der Auftrag eines reinen Aushubs) — die Struktur
         // sagt „leer“, nicht „nicht gebaut“ (Abnahme 2026-09-12, M2).
         this.leer = new Set(leer);
@@ -967,7 +1045,15 @@ export class IfcAutor {
         // geleitet sind, steht der ganze Stapel. Die Kennzahl `verdecktVon`
         // wandert damit in `this.ableitungen`; welche BAUTEILE dazugehören,
         // weiss nur dieser Aufbau — deshalb die Karte daneben.
-        await lauf.verdeckungen();
+        if (!wieder) {
+            await lauf.verdeckungen();
+            this._ableitungsSpeicher = {
+                kopf, gebaut: gebautJe, ableitungen: lauf.ableitungen,
+                stand: new Map([...protokoll.stand].map(gid => [gid, _json(standJetzt.get(gid))])),
+                historie: new Map([...protokoll.historie].map(gid => [gid, _json(historie?.get?.(gid))])),
+                bauform: protokoll.bauform,
+            };
+        }
         this.erdkoerper = new Map();
         for (const { schritt, bauteil } of zuErzeugen) {
             const w = schritt.wert ?? {};
@@ -982,7 +1068,7 @@ export class IfcAutor {
             });
         }
         await this._neuZeichnen();
-        return { karte, misserfolge, ableitungen: lauf.ableitungen, leer, verborgen, verdraengt, ueberholt };
+        return { karte, misserfolge, ableitungen: this.ableitungen, leer, verborgen, verdraengt, ueberholt, wiederverwendet: wieder };
     }
 
     /**

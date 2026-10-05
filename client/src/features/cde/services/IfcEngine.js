@@ -603,7 +603,7 @@ export class IfcEngine {
      *   Die Originalbytes bleiben unberührt (Prüfsumme, Ablage, Register).
      */
     /** Den Netz-Speicher der Quellformen leeren (Teil XXX, B4) — ein Modell kam, ging oder Geliefertes änderte sich. */
-    quellNetzeVergessen() { this._quellNetze = new Map(); this._guidSpeicher = new Map(); }
+    quellNetzeVergessen() { this._quellNetze = new Map(); this._guidSpeicher = new Map(); this.autor?.ableitungenVergessen?.(); }
 
     /**
      * Das GlobalId-Nachschlagen ohne den Worker, wo die Antwort feststeht

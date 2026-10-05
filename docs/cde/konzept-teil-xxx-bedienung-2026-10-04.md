@@ -313,12 +313,51 @@ Test `tempoNeuaufbau.test.js` (20); 11 Gegenproben (je Kur abgeschaltet) rot.
 
 **Ziel nicht erreicht — ehrlich:** geschätzt war „< 1 s". Was bleibt, ist der Neuaufbau selbst: fragments erzeugt alle 43
 Teile neu (`createElements` + `applyChanges` 2,4–3,2 s), die Ableitungen rechnen neu (1,9–2,0 s), Neuzeichnen 0,8–1,8 s,
-Gelände-Sampler 0,4–0,7 s, Modell verwerfen und anlegen 0,6 s. Unter 1 s kommt nur ein Aufbau, der **nur baut, was das
-Kommando betrifft** (das Bauteil, seine Ableitungen und Abhängigen) — das ist der eigentliche Umbau von B4 und noch nicht
-gebaut.
+Gelände-Sampler 0,4–0,7 s, Modell verwerfen und anlegen 0,6 s.
 
 **Gefunden beim Messen (nicht behoben):** der Beziehungsindex gibt eigenen Körpern **nie eine Hülle**. Er nimmt nur Treffer
 mit `modelId === 'cde-eigenbau'`; die Kennungen des Eigenbaus stehen aber im Delta-Modell (`cde-eigenbau-DELTA-MODEL-…`),
 die Basis kennt keine (gemessen, siehe oben). Eigene Körper gehen deshalb nur über Achse und Knoten in den Index —
 Kollisionen und Nähe eines eigenen Körpers fehlen. Die Kur ist eine Zeile (`basisModelId`), ändert aber, was der Index
 findet; sie ist ein eigener Schritt.
+
+### B4, Schritt 2 — „nur bauen, was betroffen ist": was fragments erlaubt (2026-10-05)
+
+**Gemessen, bevor gebaut wurde** (10001, Headless-Chrome):
+
+| fragments-Editor | Zeit |
+|---|---|
+| ein kleines Element (12 Dreiecke) ins bestehende Eigenbau-Modell (43 Teile) legen | 2,6 s |
+| dasselbe Element wieder löschen | 2,2 s |
+| alle 43 Teile in ein frisches Modell legen | 2,4–3,2 s |
+| frisches Modell mit EINEM Element: anlegen · erzeugen · neu zeichnen | 3,8 s · 4,2 s · 5,8 s (unter Last) |
+
+Ein Editor-Aufruf schreibt das ganze Delta neu und kostet mehrere Sekunden, **gleich wie klein die Änderung ist**. Einzelne
+Elemente gezielt zu ersetzen spart also nichts; ein zweites, kleines Eigenbau-Modell auch nicht (und es bräche 162
+Stellen in 52 Dateien, die `cde-eigenbau` als das eine Modell kennen). **Unter 1 s kommt man nicht, solange der Eigenbau über
+den fragments-Editor gezeichnet wird.** Das ist eine Grenze der Bibliothek, kein offener Schritt dieses Plans.
+
+**Gebaut — der Hebel, der bleibt: Ableitungen nur neu rechnen, wenn sich etwas geändert hat, wovon sie abhängen.** Der Lauf
+schreibt mit, was er liest (`LeseKarte` über Stand und Historie, die Bauform-Antworten für Geliefertes). Das letzte
+Ergebnis gilt weiter, solange gleich sind: die Baupläne aller Ableitungsteile (der Erdbau-Stapel findet seine Vorgänge
+durch Durchlaufen des Stands, nicht über `get`), jeder gelesene Eintrag, jede gefragte Bauform, Höhenversatz und
+Regelwerk (`regelwerkStand`). Die Engine lässt es vergessen, wenn Geliefertes kommt, geht oder sich ändert
+(`quellNetzeVergessen` → `ableitungenVergessen`). Fehlt für ein zu bauendes Ableitungsteil ein Ergebnis, rechnet der
+ganze Lauf neu — nie gemischt.
+
+| Messung (10001, abwechselnd im selben Lauf, Maschine unter Last durch interFoam) | ohne | mit |
+|---|---|---|
+| Neuaufbau, Ableitungen unverändert | 6,9–7,4 s | **4,0–5,6 s** |
+| Ableitungslauf darin | ≈ 2 s | 17 ms (72 Aufrufe) |
+
+Ändert ein Kommando eine Ableitung selbst (Schicht, Mulde, Graben), rechnet der Lauf wie bisher. Abnahme
+`ableitungenWiederverwenden.test.js` (11): nach jedem Schritt liefert der Autor mit Speicher dieselbe Geometrie wie ein
+frischer — unbeteiligtes Bauteil (wiederverwendet), Quelle des Grabens, die Ableitung selbst, neues Bauteil/neue Ableitung,
+ein früherer Vorgang fällt weg, ein verborgener kommt in den Stapel, Regelwerk (mit den Befunden des Büros), Höhenversatz,
+Bauform, Vergessen, wieder auftauchende Teile. 8 Gegenproben rot. Bild nach einem Neuaufbau gegen den Stand vor B4: 0
+abweichende Pixel; Messlauf Bedienung unverändert.
+
+**Nicht abgedeckt:** ein Rezept aus der Bibliothek, das mitten in der Sitzung neu geladen wird und dabei seine Form
+ändert (etwa das Profil eines Rechteckkanals, den ein Kanalgraben liest). Der Schlüssel kennt den Katalog nicht; erst
+der nächste Wechsel an Geliefertem oder an einer Ableitung rechnet neu. Bauform-Antworten für Geliefertes sind gedeckt
+(sie werden nachgefragt und verglichen).
