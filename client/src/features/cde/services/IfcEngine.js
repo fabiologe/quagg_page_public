@@ -29,7 +29,7 @@ import { gelaendeElemente, GELAENDE_VORBELEGUNG } from './GelaendeQuelle.js';
 import { bauformAusNetz } from './bauform/Formsignatur.js';
 import { achsGuete } from './bauform/Bauformen.js';
 import { makeHeightSampler } from './TerrainMesh.js';
-import { GelaendeKanten } from './GelaendeKanten.js';
+import { GelaendeKanten, netzAusGeometrie } from './GelaendeKanten.js';
 import { ErdbauUmrisse } from './ErdbauUmrisse.js';
 import { IfcQuelle } from './IfcQuelle.js';
 import { importBefund, zaehltAlsBauteil } from './ImportBefund.js';
@@ -602,7 +602,45 @@ export class IfcEngine {
      *   wird HIER und nur hier; alles dahinter weiss von Einheiten nichts.
      *   Die Originalbytes bleiben unberührt (Prüfsumme, Ablage, Register).
      */
+    /** Den Netz-Speicher der Quellformen leeren (Teil XXX, B4) — ein Modell kam, ging oder Geliefertes änderte sich. */
+    quellNetzeVergessen() { this._quellNetze = new Map(); this._guidSpeicher = new Map(); }
+
+    /**
+     * Das GlobalId-Nachschlagen ohne den Worker, wo die Antwort feststeht
+     * (B4): GELIEFERTE Basismodelle ändern ihren GUID-Index nicht, solange
+     * sie geladen sind — ihre Antworten werden gemerkt. Der Eigenbau entsteht
+     * bei jedem Aufbau neu; was er kennt, weiss der Autor (`bekannt`).
+     * Delta-Modelle gelieferter Bauteile fragt `baueGlobalIdKarte` immer.
+     */
+    guidSpeicher() {
+        return {
+            speicher: (this._guidSpeicher ??= new Map()),
+            fest: (modelId) => !istDeltaModell(modelId) && basisModelId(modelId) !== CDE_MODELL_ID,
+            bekannt: (modelId) => this._eigeneGuidKarte(modelId),
+        };
+    }
+
+    /**
+     * Was ein Eigenbau-Modell kennt — aus der Bauinfo des Autors statt aus dem
+     * Worker. Gemessen (B4, 2026-10-05, 10001, 39 Teile): das Delta-Modell des
+     * Editors kennt genau `autor.gebaut` (dieselben localIds), die Basis
+     * nichts; jede Frage an den Worker kostete trotzdem rund 290 ms. Nur mit
+     * GENAU einem Delta — sonst (mitten im Aufbau, unerwartete Gestalt) `null`,
+     * und der Worker wird gefragt wie bisher.
+     */
+    _eigeneGuidKarte(modelId) {
+        if (basisModelId(modelId) !== CDE_MODELL_ID) return null;
+        const gebaut = this.autor?.gebaut;
+        if (!(gebaut instanceof Map) || !gebaut.size) return null;
+        const liste = this.components?.get?.(OBC.FragmentsManager)?.list;
+        const deltas = [...(liste?.keys?.() ?? [])].filter(id => basisModelId(id) === CDE_MODELL_ID && istDeltaModell(id));
+        if (deltas.length !== 1) return null;
+        if (!istDeltaModell(modelId)) return new Map();
+        return modelId === deltas[0] ? gebaut : null;
+    }
+
     async loadIfc(data, name = 'model', { inMeter = false, meterBytes = null, frag = null } = {}) {
+        this.quellNetzeVergessen();
         const fragments = this.components.get(OBC.FragmentsManager);
         const world     = this._getWorld();
 
@@ -809,6 +847,7 @@ export class IfcEngine {
     }
 
     async unloadModel(modelId) {
+        this.quellNetzeVergessen();
         const fragments = this.components.get(OBC.FragmentsManager);
         const model = fragments.list.get(modelId);
         if (!model) return;
@@ -1011,8 +1050,13 @@ export class IfcEngine {
      * Die Regel auf den aktuellen Aufbau anwenden — nach jedem Neuaufbau, nach
      * `showAll` und nach jedem „Kategorie an". Ohne gebaute Erdkörper ist es
      * ein No-op.
+     *
+     * `nachAufbau`: das Eigenbau-Modell ist eben neu entstanden, alles darin
+     * ist sichtbar. Dann wird nur verborgen — und nur neu gezeichnet, wenn
+     * sich etwas geändert hat (B4: Zeigen und `update` kosteten zusammen
+     * rund 2,5 s je Neuaufbau, ohne dass sich im Bild etwas tat).
      */
-    async erdkoerperSichtbarkeitAnwenden() {
+    async erdkoerperSichtbarkeitAnwenden({ nachAufbau = false } = {}) {
         const koerper = this.autor?.erdkoerper;
         if (!koerper?.size) return;
         const zeigen = [], verbergen = [];
@@ -1020,11 +1064,13 @@ export class IfcEngine {
             if (k.localId == null) continue;
             (this.vorgangSichtbar(k.ableitung).sichtbar ? zeigen : verbergen).push(k.localId);
         }
-        if (zeigen.length)     await this._hiderSet(true,  { [CDE_MODELL_ID]: zeigen });
-        if (verbergen.length)  await this._hiderSet(false, { [CDE_MODELL_ID]: verbergen });
+        let geaendert = false;
+        if (zeigen.length && !nachAufbau) { await this._hiderSet(true, { [CDE_MODELL_ID]: zeigen }); geaendert = true; }
+        if (verbergen.length) { await this._hiderSet(false, { [CDE_MODELL_ID]: verbergen }); geaendert = true; }
         // Ein zurückgeholter Vorgang hat noch keinen Umriss — er wurde beim
         // letzten Nachziehen ausgelassen (E2).
         await this._erdbauUmrisseNachziehen().catch(e => console.warn('[CDE] Erdbau-Umrisse:', e?.message ?? e));
+        if (!geaendert) return;
         try { await this.components.get(OBC.FragmentsManager).core?.update?.(true); }
         catch { /* Anzeige */ }
     }
@@ -1911,6 +1957,8 @@ export class IfcEngine {
      * nur, WAS verborgen werden soll.
      */
     async wendeFestlegungenAn(plan, opts) {
+        // Eine Festlegung an GELIEFERTEM (Lage, Form) ändert sein Netz — der Speicher gilt nicht mehr.
+        if ((plan?.anzuwenden ?? []).some(a => a?.modell !== 'cde' && a?.art !== 'erzeugt')) this.quellNetzeVergessen();
         const r = await this.autor.wendeAn(plan, opts);
         await this._sichtbarkeitSetzen(r.auszublenden, false);
         await this._sichtbarkeitSetzen(r.einzublenden, true);
@@ -2716,10 +2764,14 @@ export class IfcEngine {
             if (k.localId == null || !this.vorgangSichtbar(k.ableitung).sichtbar) continue;
             const farbe = farbeFuer(k.kategorie)?.farbe;
             if (farbe == null) continue;
-            const ort = { modelId: CDE_MODELL_ID, localId: k.localId };
-            let d = null;
-            try { d = (await this.makeGeometryResolver()?.forElements([ort])?.getForm('mesh'))?.data ?? null; }
-            catch { d = null; }
+            // Das Netz, das der Autor gebaut hat (B4: gleiche Dreiecke, gleiche Hülle wie die Antwort
+            // des Workers, gemessen in 10001) — der Worker nur, wenn es fehlt.
+            let d = netzAusGeometrie(k.geometrie);
+            if (!d) {
+                const ort = { modelId: CDE_MODELL_ID, localId: k.localId };
+                try { d = (await this.makeGeometryResolver()?.forElements([ort])?.getForm('mesh'))?.data ?? null; }
+                catch { d = null; }
+            }
             if ((this._gelaendeGeneration ?? 0) !== generation) return false;
             if (d?.positions?.length && d.triCount > 0) {
                 aus.set(`${CDE_MODELL_ID}|${k.localId}`, { netz: { positions: d.positions, triCount: d.triCount }, farbe });
@@ -2918,6 +2970,7 @@ export class IfcEngine {
             leseKontext: (m, l) => this._gelaendeKontext(m, l),
             istGelaende: this._istGelaende,
             bauformAusGeometrie: (m, l) => this.formsignaturVon({ modelId: m, localId: l }).then(r => r?.bauform ?? null),
+            guidSpeicher: this.guidSpeicher(),
         };
     }
 

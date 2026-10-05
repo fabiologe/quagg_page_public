@@ -111,7 +111,7 @@ export function kandidatKategorien({ regeln = [], profilSatz = {}, vorbelegung =
 export async function gelaendeElemente({
     categoryGroups = [], fragmentsList = new Map(), verdeckt = new Set(),
     cdeGelaende = new Set(), cdeModelId = 'cde-eigenbau', kategorien = GELAENDE_VORBELEGUNG,
-    leseKontext = null, istGelaende = null, bauformAusGeometrie = null,
+    leseKontext = null, istGelaende = null, bauformAusGeometrie = null, guidSpeicher = null,
 } = {}) {
     const modelle = fragmentsList instanceof Map ? [...fragmentsList.values()] : [...(fragmentsList ?? [])];
     // Nur GELADENE Modelle: eine Kategoriengruppe kann ein entladenes noch
@@ -122,7 +122,7 @@ export async function gelaendeElemente({
 
     // Verdecktes als (modelId, localId)-Paare — über denselben GUID-Index wie
     // das Nachspielen, nicht über eine zweite Zuordnung.
-    const { karte: verdecktKarte } = await baueGlobalIdKarte({ modelle, gesuchte: verdeckt });
+    const { karte: verdecktKarte } = await baueGlobalIdKarte({ modelle, gesuchte: verdeckt, ...(guidSpeicher ?? {}) });
     const gesperrt = new Set([...verdecktKarte.values()].map(t => `${t.modelId}|${t.localId}`));
 
     const out = [];
@@ -177,7 +177,7 @@ export async function gelaendeElemente({
     // nur an einer zweiten Stelle — deshalb steht sie hier ausgeschrieben.
     const cdeModelle = modelle.filter(m => basisModelId(m?.modelId) === cdeModelId);
     if (cdeModelle.length && cdeGelaende.size) {
-        const { karte } = await baueGlobalIdKarte({ modelle: cdeModelle, gesuchte: cdeGelaende });
+        const { karte } = await baueGlobalIdKarte({ modelle: cdeModelle, gesuchte: cdeGelaende, ...(guidSpeicher ?? {}) });
         for (const gid of cdeGelaende) {
             if (verdeckt.has(gid)) continue;
             const t = karte.get(gid);

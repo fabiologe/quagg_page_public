@@ -969,13 +969,16 @@ export class IfcAutor {
         // weiss nur dieser Aufbau — deshalb die Karte daneben.
         await lauf.verdeckungen();
         this.erdkoerper = new Map();
-        for (const { schritt } of zuErzeugen) {
+        for (const { schritt, bauteil } of zuErzeugen) {
             const w = schritt.wert ?? {};
             if (!rezeptNach(w.rezept)?.erdbau || !w.ableitung) continue;
             const localId = karte.get(schritt.globalId);
             if (localId == null) continue;
             this.erdkoerper.set(schritt.globalId, {
                 ableitung: w.ableitung, rolle: w.rolle ?? null, kategorie: w.kategorie ?? null, localId,
+                // Das Netz, so wie es ins Modell ging (Welt, im Raum abgesenkt) — für den Umriss,
+                // ohne den Worker zu fragen (B4). Nur gelesen, nie verändert.
+                geometrie: bauteil?.geometrie ?? null,
             });
         }
         await this._neuZeichnen();

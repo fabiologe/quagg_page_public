@@ -1815,7 +1815,7 @@ async function baueErzeugteNeu() {
     // Der Aufbau verwirft das Eigenbau-Modell und baut es neu — der
     // Hider-Zustand stirbt mit ihm. Das Auge je Vorgang lebt in der Engine
     // und wird hier wieder aufgetragen (Teil XXI, E3).
-    await engine.value.erdkoerperSichtbarkeitAnwenden?.();
+    await engine.value.erdkoerperSichtbarkeitAnwenden?.({ nachAufbau: true });
     if (r.misserfolge.length) {
       // NIE STILL (Abnahme 2026-09-12): der Aufbau übersprang Unbaubares, und
       // nur die Konsole wusste es. Die Namen sagen, WAS fehlt; der Grund

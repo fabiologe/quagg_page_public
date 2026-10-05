@@ -40,14 +40,14 @@ export async function _quellFormVon(engine, globalId, form = 'raster', { cell = 
     // Neuaufbau nach F5 und jeder Erdmassen-Auszug (Teil XIV, Stufe 0;
     // der Test gelaendeFormen prüfte nur mit Attrappe an dieser Stelle
     // vorbei — quellrasterVerdrahtung.test.js ruft den echten Körper).
+    // Wo das Bauteil steht — das Nachschlagen merkt sich die Engine selbst (`guidSpeicher`, B4).
     const { karte } = await karteMitEngine(engine, [globalId]);
     const treffer = karte.get(globalId);
     if (!treffer) return null;
-    const res = await engine.makeGeometryResolver()
-        ?.forElements([treffer])?.getForm('mesh');
-    const d = res?.data;
+    const d = await _netzVon(engine, globalId, treffer);
     if (!d?.positions?.length) return null;
-    if (form === 'mesh') return { positions: d.positions, triCount: d.triCount };
+    // Kopien: das Netz liegt im Speicher (B4) — wer es verändert, darf es den anderen nicht verändern.
+    if (form === 'mesh') return { positions: d.positions.slice(), triCount: d.triCount };
     if (form === 'umriss') {
         // DER GRUNDRISS eines Bauteils (E1b): die umschliessende Form im
         // Lageplan, samt Unter- und Oberkante. Daran richtet sich eine
@@ -62,7 +62,7 @@ export async function _quellFormVon(engine, globalId, form = 'raster', { cell = 
     if (form === 'koerper') {
         // Ein gelieferter Körper mit Attest — die Aussparung (G7) braucht
         // ihn geschlossen; `closed` sagt ehrlich, ob er es ist.
-        const positions = d.positions instanceof Float64Array ? d.positions : Float64Array.from(d.positions);
+        const positions = Float64Array.from(d.positions);
         const att = meshVolume(positions, d.triCount);
         return { positions, triCount: d.triCount, closed: !!att.closed, volumen: Math.abs(att.volume ?? 0), warnungen: att.warnings ?? [] };
     }
@@ -73,6 +73,24 @@ export async function _quellFormVon(engine, globalId, form = 'raster', { cell = 
     // sonst zeigen Erdkörper und Geländeanzeige zwei fast gleiche Flächen
     // (Teil XXI).
     return heightfieldRaster(d.positions, d.triCount, cell ?? null, [], { bereich, gitter });
+}
+
+/**
+ * DAS NETZ EINES GELIEFERTEN BAUTEILS — zwischengespeichert (Teil XXX, B4).
+ *
+ * Gemessen im Projekt 10001 (43 Teile): ein Neuaufbau wartete 5,2 s auf 31 Netze des gelieferten Geländes aus dem
+ * fragments-Worker — bei JEDEM Kommando dieselben. Eine Lieferung ändert sich zwischen zwei Kommandos nicht; der
+ * Speicher gilt, bis ein Modell kommt oder geht oder eine Änderung an Geliefertem angewandt wird
+ * (`engine.quellNetzeVergessen`). Das EIGENE Modell wird bei jedem Aufbau neu gebaut — seine Netze nie.
+ */
+async function _netzVon(engine, globalId, treffer) {
+    const eigen = basisModelId(treffer.modelId) === CDE_MODELL_ID;
+    const schluessel = `${treffer.modelId}|${treffer.localId}|${globalId}`;
+    if (!eigen && engine._quellNetze?.has(schluessel)) return engine._quellNetze.get(schluessel);
+    const res = await engine.makeGeometryResolver()?.forElements([treffer])?.getForm('mesh');
+    const d = res?.data ?? null;
+    if (!eigen && d?.positions?.length) (engine._quellNetze ??= new Map()).set(schluessel, d);
+    return d;
 }
 
 /** Kernel-Form `linie` einer gelieferten Achse: {punkte:[{x,y,z}], dn} oder null. */

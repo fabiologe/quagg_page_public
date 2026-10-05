@@ -278,3 +278,47 @@ nach dem Laden schon ein — `zoomToFit` über die geladenen Modelle, das Modell
 und der Leitfaden-Satz (die Karte sagt beim Zeichnen schon „Punkte ins Gelände setzen — Enter schliesst ab, Esc bricht
 ab"). Die verdeckte Fläche beim Start steigt 4,3 → 5,2 %: dieselben Leisten auf einer schmaleren Zeichenfläche.
 
+
+### B4 — Tempo, erster Schritt: nicht mehr auf feste Antworten warten (2026-10-05)
+
+Gemessen im Projekt 10001 (43 Teile, nur lesend: `wendeEintragAn` mit einem vorhandenen Eintrag, Journal danach
+unverändert): ein Neuaufbau nach jedem Kommando dauerte **rund 20 s**. Zeitmarken je Phase zeigten: der grösste Teil war
+Warten auf den fragments-Worker, mit Fragen, deren Antwort schon feststand. Jede Frage an den Worker kostet rund 290 ms,
+auch im Leerlauf.
+
+| Phase (je Neuaufbau) | vorher | nachher | Kur |
+|---|---|---|---|
+| Netze des gelieferten Geländes für die Ableitungen | 5,2 s | 0,2 s | Netz-Speicher je geliefertem Bauteil (`_netzVon`), Herausgabe als Kopie |
+| Geometrie der Ableitungen (davon GlobalId-Nachschlagen) | 3,4–3,8 s | 1,9–2,0 s | GUID-Speicher (unten) |
+| Geländeorte: Verdecktes und eigene Geländeteile nachschlagen | 1,9 s | 0 s | GUID-Speicher je geliefertem Basismodell; Eigenbau aus `autor.gebaut` |
+| Beziehungsindex: Eigenbau-Kennungen nachschlagen | 0,9–1,3 s | 0 s | ebenso |
+| Erdkörper zeigen (Hider) | 1,5–2,5 s | 0 s | ein frisch gebautes Modell ist ganz sichtbar: nur verbergen (`nachAufbau`) |
+| Umriss der Erdkörper | 0,8–1,1 s | nicht einzeln gemessen (fällt in die Gesamtzeit) | das Netz, das der Autor gebaut hat (`netzAusGeometrie`), statt es beim Worker zu holen |
+| `core.update` nach der Sichtbarkeit | 1,2–2,1 s | 0 s | nur, wenn wirklich etwas verborgen oder gezeigt wurde |
+| **Neuaufbau gesamt** | **≈ 20 s** | **7,8–8,5 s** | |
+
+**Was feststeht und warum:**
+- Ein **geliefertes Basismodell** ändert seinen GUID-Index nicht, solange es geladen ist. Seine Antworten, auch „kenne ich
+  nicht", merkt sich die Engine (`guidSpeicher`). Vergessen wird beim Laden, beim Entladen und bei einer Festlegung an
+  Geliefertem (`quellNetzeVergessen`). Delta-Modelle gelieferter Bauteile werden weiter jedes Mal gefragt.
+- Der **Eigenbau** enthält nur, was der Autor gebaut hat. Gemessen: sein Delta-Modell kennt genau `autor.gebaut` (39 von 39
+  Kennungen, dieselben localIds), die Basis keine. Die Engine antwortet daraus (`_eigeneGuidKarte`), aber nur bei genau einem
+  Delta; sonst fragt sie den Worker wie bisher.
+- Das **Netz eines Erdkörpers** für den Umriss: gleiche Dreieckszahl (27 296) und gleiche Hülle auf den Millimeter wie die
+  Antwort des Workers.
+
+**Bild unverändert:** Bildschirmfoto nach einem Neuaufbau, Stand vor B4 gegen Stand nach B4: **0 von 1,6 Mio. Pixeln**
+weichen ab (Schwelle 24/255); Umrisse 3 = 3. Messlauf Bedienung danach unverändert (alle Zahlen wie bei B6, keine Fehler).
+Test `tempoNeuaufbau.test.js` (20); 11 Gegenproben (je Kur abgeschaltet) rot.
+
+**Ziel nicht erreicht — ehrlich:** geschätzt war „< 1 s". Was bleibt, ist der Neuaufbau selbst: fragments erzeugt alle 43
+Teile neu (`createElements` + `applyChanges` 2,4–3,2 s), die Ableitungen rechnen neu (1,9–2,0 s), Neuzeichnen 0,8–1,8 s,
+Gelände-Sampler 0,4–0,7 s, Modell verwerfen und anlegen 0,6 s. Unter 1 s kommt nur ein Aufbau, der **nur baut, was das
+Kommando betrifft** (das Bauteil, seine Ableitungen und Abhängigen) — das ist der eigentliche Umbau von B4 und noch nicht
+gebaut.
+
+**Gefunden beim Messen (nicht behoben):** der Beziehungsindex gibt eigenen Körpern **nie eine Hülle**. Er nimmt nur Treffer
+mit `modelId === 'cde-eigenbau'`; die Kennungen des Eigenbaus stehen aber im Delta-Modell (`cde-eigenbau-DELTA-MODEL-…`),
+die Basis kennt keine (gemessen, siehe oben). Eigene Körper gehen deshalb nur über Achse und Knoten in den Index —
+Kollisionen und Nähe eines eigenen Körpers fehlen. Die Kur ist eine Zeile (`basisModelId`), ändert aber, was der Index
+findet; sie ist ein eigener Schritt.

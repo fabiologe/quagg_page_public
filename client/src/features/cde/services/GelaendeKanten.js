@@ -117,6 +117,26 @@ export function laengenAus(kanten) {
  * unindiziert; Punkte werden auf Millimeter verschweisst.
  * @returns {Float32Array}  6 Werte je Strecke, um `lift` angehoben
  */
+/**
+ * Ein three-Netz als Dreiecksliste `{positions, triCount}` — die Gestalt, die
+ * `umrissAusNetz` liest (je Dreieck drei eigene Ecken). Für die Netze, die
+ * der Autor selbst gebaut hat (B4): sie liegen schon im Speicher, die Frage
+ * an den Worker kostete je Körper rund eine Sekunde.
+ */
+export function netzAusGeometrie(geometrie) {
+    const pos = geometrie?.attributes?.position?.array;
+    if (!pos?.length) return null;
+    const index = geometrie.index?.array ?? null;
+    if (!index) return { positions: pos, triCount: Math.floor(pos.length / 9) };
+    const triCount = Math.floor(index.length / 3);
+    const positions = new Float32Array(triCount * 9);
+    for (let i = 0; i < triCount * 3; i++) {
+        const q = index[i] * 3;
+        positions[i * 3] = pos[q]; positions[i * 3 + 1] = pos[q + 1]; positions[i * 3 + 2] = pos[q + 2];
+    }
+    return { positions, triCount };
+}
+
 export function umrissAusNetz({ positions, triCount } = {}, { lift = 0 } = {}) {
     const n = Math.max(0, Math.min(triCount | 0, Math.floor((positions?.length ?? 0) / 9)));
     if (!n || n > MAX_UMRISS_DREIECKE) return new Float32Array(0);
