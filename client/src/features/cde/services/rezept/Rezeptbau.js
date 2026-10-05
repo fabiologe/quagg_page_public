@@ -55,7 +55,9 @@ export const GEOMETRIE_ARTEN = Object.freeze({
     // BIMFY I2 — Schachtbauteile. Die Punkte sind die ACHSE (unten, oben); ein
     // Querschnitt aus den Massen wird um sie gedreht (`ops/Sweep.ringstueck`).
     // `boden`/`deckel` > 0 schliessen den Ring unten (Unterteil) bzw. oben (Abdeckung).
-    ringstueck: { koerper: true, profil: false, masse: ['aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel'], weitere: ['ecken'] },
+    // `spitzende`/`muffe` (I8): der Stoss — unten aussen eingezogen, oben innen erweitert, je mit Höhe.
+    ringstueck: { koerper: true, profil: false, masse: ['aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
+                                                         'spitzende', 'spitzendeHoehe', 'muffe', 'muffeTiefe'], weitere: ['ecken'] },
     // Die Berme im Unterteil: der Innenkreis bis zur Auftrittshöhe, ausgespart die
     // Gerinne. Punkt 1 ist die Mitte auf der Sohle, jeder weitere das Ende eines Gerinnes.
     berme:   { koerper: true,  profil: false, masse: ['durchmesser', 'hoehe', 'breite'], weitere: [] },
@@ -295,7 +297,9 @@ function _koerper(geo, parameter, vorgabe) {
     const mass = (feld) => massAus(parameter, geo[feld], { rueckfall: vorgabe(geo[feld]) });
     if (geo.art === 'ringstueck') {
         return ringstueckKoerper(punkte, { aussen: mass('aussen'), innen: mass('innen'), aussenOben: mass('aussenOben'),
-                                           innenOben: mass('innenOben'), boden: mass('boden'), deckel: mass('deckel') }, geo.ecken);
+                                           innenOben: mass('innenOben'), boden: mass('boden'), deckel: mass('deckel'),
+                                           spitzende: mass('spitzende'), spitzendeHoehe: mass('spitzendeHoehe'),
+                                           muffe: mass('muffe'), muffeTiefe: mass('muffeTiefe') }, geo.ecken);
     }
     if (geo.art === 'berme') return bermeKoerper(punkte, { durchmesser: mass('durchmesser'), hoehe: mass('hoehe'), breite: mass('breite') });
     if (geo.art === 'tritte') return trittKoerper(punkte, { breite: mass('breite'), tiefe: mass('tiefe'), dicke: mass('dicke') });

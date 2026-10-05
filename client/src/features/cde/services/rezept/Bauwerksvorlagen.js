@@ -19,7 +19,8 @@
 import { normschacht } from '../bimfy/muster/Normschacht.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
-const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel']);
+const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
+                                      'spitzende', 'spitzendeHoehe', 'muffe', 'muffeTiefe']);
 export const GESTEUERT = Object.freeze({
     // BIMFY I4: die Teile des Normschachts.
     schachtunterteil: RING_GESTEUERT, schachtring: RING_GESTEUERT, schachthals: RING_GESTEUERT,
@@ -234,14 +235,15 @@ const NORMSCHACHT = Object.freeze({
         for (const t of teile) {
             if (t.rolle === 'schachtunterteil') {
                 teil('unterteil', 'schachtunterteil', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
-                     aussen: t.dAussen, innen: t.dInnen, boden: t.boden });
+                     aussen: t.dAussen, innen: t.dInnen, boden: t.boden, ...(t.stoss ?? {}) });
                 const g = t.gerinne;
                 teil('berme', 'berme', 'Berme mit Gerinne', { herleitung: { auftritt: t.herleitung.auftritt, gerinne: t.herleitung.gerinne } }, {
                     punkte: [welt(0, y0, 0), ...g.anschluesse.map(a => inRichtung(a.richtung ?? 0, t.dInnen / 2, y0))],
                     durchmesser: t.dInnen, auftritt: g.auftritt, gerinnebreite: g.breite });
             } else if (t.rolle === 'schachtring') {
                 ringe++;
-                teil(`ring${ringe}`, 'schachtring', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)], aussen: t.dAussen, innen: t.dInnen });
+                teil(`ring${ringe}`, 'schachtring', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)], aussen: t.dAussen, innen: t.dInnen,
+                                                                 ...(t.stoss ?? {}) });
             } else if (t.rolle === 'uebergangsplatte') {
                 teil('uebergangsplatte', 'schachtplatte', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
                      aussen: t.dAussen, innen: t.dOeffnung, objektTyp: 'Übergangsplatte' });
@@ -249,7 +251,8 @@ const NORMSCHACHT = Object.freeze({
                 const v = (t.dUnten - t.dOben) / 2;
                 oben = [Math.cos(steig) * v, Math.sin(steig) * v];
                 teil('hals', 'schachthals', t.name, t, { punkte: [welt(0, t.unten, 0), welt(oben[0], t.oben, oben[1])],
-                     aussen: t.dUnten + 2 * t.wanddicke, innen: t.dUnten, aussenOben: t.dOben + 2 * t.wanddicke, innenOben: t.dOben });
+                     aussen: t.dUnten + 2 * t.wanddicke, innen: t.dUnten, aussenOben: t.dOben + 2 * t.wanddicke, innenOben: t.dOben,
+                     ...(t.stoss ?? {}) });
             } else if (t.rolle === 'abdeckplatte') {
                 teil('abdeckplatte', 'schachtplatte', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
                      aussen: t.dAussen, innen: t.dOeffnung });

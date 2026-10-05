@@ -108,9 +108,15 @@ const RINGMASSE = [
     mass('innenOben', 'Innendurchmesser oben (0 = wie unten)'),
     mass('boden', 'Bodendicke (0 = offen)'),
     mass('deckel', 'Deckeldicke (0 = offen)'),
+    // DER STOSS (BIMFY I8): unten das Spitzende (aussen eingezogen), oben die Muffe (innen erweitert).
+    mass('spitzende', 'Spitzende aussen unten (0 = ohne)'),
+    mass('spitzendeHoehe', 'Spitzende Höhe'),
+    mass('muffe', 'Muffe innen oben (0 = ohne)'),
+    mass('muffeTiefe', 'Muffe Tiefe'),
 ];
 const RINGSTUECK = Object.freeze({ art: 'ringstueck', aussen: 'aussen', innen: 'innen', aussenOben: 'aussenOben',
-                                   innenOben: 'innenOben', boden: 'boden', deckel: 'deckel', ecken: 32 });
+                                   innenOben: 'innenOben', boden: 'boden', deckel: 'deckel',
+                                   spitzende: 'spitzende', spitzendeHoehe: 'spitzendeHoehe', muffe: 'muffe', muffeTiefe: 'muffeTiefe', ecken: 32 });
 const schachtteil = (id, titel, klasse, objektTyp, geometrie = RINGSTUECK, felder = RINGMASSE) => ({
     id, titel, icon: 'schacht', bauform: 'koerper', kategorieVorgabe: klasse, nurVorlage: true,
     mindestPunkte: 2, geschlossen: false,

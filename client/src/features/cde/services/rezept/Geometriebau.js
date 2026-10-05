@@ -391,7 +391,8 @@ function _vereinige(koerper) {
  * (0 = wie unten). `innen` = 0 heisst voll. `boden` schliesst unten (Topf),
  * `deckel` oben (Abdeckung) — jeweils eine Platte dieser Dicke INNERHALB der Höhe.
  */
-export function ringstueckKoerper(punkte, { aussen, innen = 0, aussenOben = 0, innenOben = 0, boden = 0, deckel = 0 } = {}, ecken = 32) {
+export function ringstueckKoerper(punkte, { aussen, innen = 0, aussenOben = 0, innenOben = 0, boden = 0, deckel = 0,
+                                            spitzende = 0, spitzendeHoehe = 0, muffe = 0, muffeTiefe = 0 } = {}, ecken = 32) {
     if (!Array.isArray(punkte) || punkte.length < 2 || !(aussen > 0)) return null;
     const u = punktXYZ(punkte[0]), o = punktXYZ(punkte[punkte.length - 1]);
     if (!(o.y > u.y)) return null;
@@ -400,14 +401,25 @@ export function ringstueckKoerper(punkte, { aussen, innen = 0, aussenOben = 0, i
     const h = o.y - u.y;
     const lerp = (a, b, y) => a + (b - a) * ((y - u.y) / h);
     const yB = u.y + Math.min(Math.max(0, boden), h), yD = o.y - Math.min(Math.max(0, deckel), h);
+    // DER STOSS (BIMFY I8): das Spitzende ragt UNTER die Bauhöhe — es greift in
+    // die Muffe des Teils darunter, die oben INNERHALB der Bauhöhe liegt. So
+    // stehen die Teile mit ihren Bauhöhen aufeinander und greifen ineinander.
+    const ySp = u.y - spitzendeHoehe;
+    const sp = spitzende > 0 && spitzendeHoehe > 0 && spitzende / 2 > riU && spitzende / 2 < raU && !(boden > 0);
+    const yMu = o.y - muffeTiefe;
+    const mu = muffe > 0 && muffeTiefe > 0 && muffe / 2 > riO && muffe / 2 < raO && !(deckel > 0) && yMu > u.y;
     // Der Querschnitt gegen den Uhrzeigersinn in (r, y): aussen hoch, innen runter.
     const q = [];
     if (riU > 0 && boden > 0) q.push({ r: 0, y: u.y });
+    else if (sp) q.push({ r: riU, y: ySp }, { r: spitzende / 2, y: ySp }, { r: spitzende / 2, y: u.y });
     else q.push({ r: riU, y: u.y });
-    q.push({ r: raU, y: u.y }, { r: raO, y: o.y });
+    q.push({ r: raU, y: u.y });
+    q.push({ r: raO, y: o.y });
     if (riO > 0 && deckel > 0) q.push({ r: 0, y: o.y }, { r: 0, y: yD }, { r: lerp(riU, riO, yD), y: yD });
+    else if (mu) q.push({ r: muffe / 2, y: o.y }, { r: muffe / 2, y: yMu }, { r: lerp(riU, riO, yMu), y: yMu });
     else q.push({ r: riO, y: o.y });
     if (riU > 0 && boden > 0) q.push({ r: lerp(riU, riO, yB), y: yB }, { r: 0, y: yB });
+    else if (sp) q.push({ r: riU, y: u.y });                    // innen senkrecht bis unter die Bauhöhe
     // Ohne Loch (innen = 0) fallen die Achspunkte zusammen — der Querschnitt ist ein Trapez an der Achse.
     const sauber = q.filter((p, i) => i === 0 || Math.abs(p.r - q[i - 1].r) > 1e-9 || Math.abs(p.y - q[i - 1].y) > 1e-9);
     const { ergebnis } = ringstueck({ achse: { unten: u, oben: o }, querschnitt: sauber }, { ecken: ecken ?? 32 });

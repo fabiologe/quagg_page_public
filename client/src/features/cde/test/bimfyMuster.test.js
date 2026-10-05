@@ -19,6 +19,7 @@ import { Speicher } from './hilfen/vorlagenKommandos.js';
 import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bimfy/isybau/Isybauleser.js';
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
+import { ringStoss } from '../services/bimfy/muster/Normwerte.js';
 import { liesIsybau } from '../services/bimfy/Geometrieleser.js';
 import { meshVolume } from '../services/geometrie/MeshOps.js';
 
@@ -203,6 +204,39 @@ describe('Muster · Normschacht', () => {
         expect(normschacht(lies({ aufbau: '<Aufbauform>VORFL</Aufbauform>' })).befunde[0].regel).toBe('form_andere');
         expect(normschacht(lies({ unterteil: '<LaengeUnterteil>0.10</LaengeUnterteil>' })).befunde[0].regel).toBe('zu_klein');
         expect(normschacht(lies(), { anschluesse: [{ dn: 1.0 }] }).befunde.map(b => b.regel)).toContain('anschluss_zu_gross');
+    });
+});
+
+describe('Schachtringe mit Muffe (I8, DIN V 4034-1 Tab. 5)', () => {
+    const lies = () => liesIsybauDaten(datei(schachtXml())).schaechte[0];
+    it('die Formeln treffen die Stützwerte: DN 1000 / 1200 / 1500', () => {
+        expect(ringStoss(1.0, 0.12)).toEqual({ spitzende: 1.09, spitzendeHoehe: 0.065, muffe: 1.11, muffeTiefe: 0.07 });
+        expect(ringStoss(1.2, 0.135).spitzende).toBeCloseTo(1.3, 2);                 // 1302 statt 1300 mm
+        expect(ringStoss(1.2, 0.135).spitzendeHoehe).toBeCloseTo(0.075, 2);
+        expect(ringStoss(1.5, 0.15)).toMatchObject({ spitzende: 1.62, spitzendeHoehe: 0.085, muffeTiefe: 0.09 });
+    });
+    it('Unterteil Muffe oben, Ring beides, Konus Spitzende unten — jedes mit Herleitung', () => {
+        const { teile } = normschacht(lies());
+        const nach = (rolle) => teile.filter(t => t.rolle === rolle);
+        expect(Object.keys(nach('schachtunterteil')[0].stoss)).toEqual(['muffe', 'muffeTiefe']);
+        for (const r of nach('schachtring')) expect(Object.keys(r.stoss).sort()).toEqual(['muffe', 'muffeTiefe', 'spitzende', 'spitzendeHoehe']);
+        expect(Object.keys(nach('schachthals')[0].stoss)).toEqual(['spitzende', 'spitzendeHoehe']);
+        expect(nach('schachthals')[0].herleitung.stoss.text).toMatch(/^Spitzende unten Ø 1090 × 65 mm — /);
+        expect(nach('schachtunterteil')[0].herleitung.stoss.text).toMatch(/^Muffe oben Ø 1110 × 70 mm — /);
+        // Das Spitzende passt in die Muffe darunter: enger und kürzer.
+        const st = nach('schachtring')[0].stoss;
+        expect(st.spitzende).toBeLessThan(st.muffe);
+        expect(st.spitzendeHoehe).toBeLessThan(st.muffeTiefe);
+    });
+    it('der Ring DN 1000 × 1000 mit Stoss: Volumen rechnet nach, der Körper ist geschlossen', () => {
+        const rz = rezeptNach('schachtring');
+        const P = { punkte: [[0, 0, 0], [0, 1, 0]], aussen: 1.24, innen: 1.0 };
+        const k = 16 * Math.sin(2 * Math.PI / 32);                          // 32-Eck: Fläche k·r²
+        const v = (x) => meshVolume(x.positions, x.positions.length / 9);
+        expect(v(rz.formAus(P, 'koerper')).volume).toBeCloseTo(k * (0.62 ** 2 - 0.5 ** 2), 6);
+        const mit = v(rz.formAus({ ...P, ...ringStoss(1.0, 0.12) }, 'koerper'));
+        expect(mit.closed).toBe(true);
+        expect(mit.volume).toBeCloseTo(k * ((0.62 ** 2 - 0.5 ** 2) + (0.545 ** 2 - 0.5 ** 2) * 0.065 - (0.555 ** 2 - 0.5 ** 2) * 0.07), 6);
     });
 });
 

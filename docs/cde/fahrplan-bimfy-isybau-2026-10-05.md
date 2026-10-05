@@ -151,13 +151,39 @@ Funde und Kur:
 Ergebnis: 463 Geometrien, 444 Kommandos, 100 Normschächte (5 bis 10 Teile), 40 Sonderformen,
 304 Rohre, 1090 Bauteile. Schreiber 2,3 s ohne Warnung, Prüftor 0 offen.
 
-### Offen nach I7
+### I8 · Ein Vorgang, Rohre aller Werkstoffe, Muffen und Ringstösse (gebaut)
+
+1. **Sammlung.** Neues Kommando `sammlung` aus Erzeugen‑Teilen. Ein Import ist ein Vorgang mit
+   einem Beleg und einem Rückgängig. Nebenbei behoben: Die Tafel gab ihren Kommandos keine
+   Kennungen, jedes Bauteil wäre abgelehnt worden.
+2. **Rohrwand je Werkstoff** (`muster/Rohrwand.js`). Formeln statt Normtabellen, je mit Stützwert:
+   Beton und Stahlbeton aus dem Spitzenden‑Aussendurchmesser (DIN V 1201, Tab. 7, DN 300 → 386 mm)
+   mit Glockenmuffe, Steinzeug (d3 DN 150 → 186 mm), PVC, PP und PE über SDR mit Steckmuffe
+   (PP/PE L1 = 0,4·dn + 18 mm, Baulänge 6 m), Guss (DE, Wand K9). GFK, Polymerbeton, Faserzement
+   sind Annahmen (Normen nicht im Bestand). Kunststoff der alten DN‑Reihe (DN 150) ist DN/OD 160.
+3. **Muffen am Rohr.** Felder Baulänge, Muffe aussen, Muffe Tiefe. Die Geometrie setzt je Stoss
+   eine Muffe, am Knick rückt sie hinter ihn. Herleitung am Rohr im IFC.
+4. **Ringstösse.** Spitzende unten, Muffe oben (DIN V 4034‑1:2004, Tab. 5, als Formeln: DN 1000 →
+   1090/65/70 mm). Unterteil hat die Muffe, der Konus das Spitzende; an anderem DN entfällt der Stoss.
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Vorgänge beim Import | 463 | 1 |
+| Zeit für den Import | 46,3 s | 1,5 s |
+| Muffen an Rohren | 0 | 1252 an 284 Rohren |
+| Schachtteile mit Stoss | 0 | 248 |
+| Prüftor offen | 0 | 0 |
+
+### Offen nach I8
 
 1. Netzknoten des Normschachts (siehe oben, Punkt 1).
 2. Rechteck‑ und Kastenvorlage für die 32 eckigen Schächte.
-3. Sammelvorgang: Der Import legt je Bauteil einen Vorgang an (41 s im Testlauf), Rückgängig
-   sollte den ganzen Import auf einmal nehmen.
-4. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
+3. Anschlusspunkte am Bauwerk, Gerinne als Halbschale, Untere Schachtzone in der Vorlage.
+4. PP profiliert (DIN EN 13476), GFK, Polymerbeton, Faserzement: Normen fehlen im Bestand.
+   Muffenspalt der Schachtringe (DIN V 4034‑1, Tab. 7) und Falzmasse (DIN 4034‑2, nur Bild) ebenso.
+5. Lage der Ringmuffe (oben) ist angenommen, am Original zu prüfen.
+6. Der Sweep streckt die Gehrung am Knick nicht: ein Rohr mit 90°‑Knick hat rund 15 % zu wenig
+   Volumen (gilt für alle Sweeps, nicht nur BIMFY).
 
 ---
 

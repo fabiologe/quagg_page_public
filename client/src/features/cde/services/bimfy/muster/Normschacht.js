@@ -25,7 +25,7 @@
 import {
     ABDECKPLATTE, ABDECKUNGSKLASSEN, AUFLAGERINGE, AUFTRITT, B, HALS, RING_HOEHEN, RING_WANDDICKE,
     SCHACHT_NENNWEITEN, STEIG, UEBERGANGSPLATTE, UNTERTEIL_BODEN, WAND_UEBER_SCHEITEL,
-} from './Normwerte.js';
+ringStoss, } from './Normwerte.js';
 import { herleitung as H } from './Rohrwand.js';
 
 const _fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -162,6 +162,39 @@ export function steigeisenHoehen(zStand, zAustritt) {
  *        die Haltungen am Schacht (DN in m; Richtung in Radiant, 0 = Ost, gegen den Uhrzeigersinn)
  * @returns {{teile: object[], befunde: object[], kopf: object}|{teile: [], befunde: object[], kopf: null}}
  */
+/**
+ * Ein Stoss gilt nur zwischen Teilen GLEICHER Nennweite, die ihn beide haben:
+ * Muffe unten am Unterteil oder Ring, Spitzende oben am Ring oder Konus. An der
+ * Übergangsplatte (anderer DN) oder unter der Abdeckplatte entfällt er.
+ */
+function _stoesseAbgleichen(teile) {
+    const dnUnten = (t) => t.dInnen ?? t.dUnten ?? null;
+    const dnOben = (t) => t.dInnen ?? t.dOben ?? null;
+    const glatt = (t, schluessel) => {
+        if (!t?.stoss) return;
+        for (const k of schluessel) delete t.stoss[k];
+        if (!Object.keys(t.stoss).length) delete t.stoss;
+    };
+    for (let i = 0; i < teile.length; i++) {
+        const t = teile[i], unten = teile[i - 1], oben = teile[i + 1];
+        const passtOben = oben && ['schachtring', 'schachthals'].includes(oben.rolle) && Math.abs(dnUnten(oben) - dnOben(t)) < 1e-6;
+        const passtUnten = unten && ['schachtring', 'schachtunterteil'].includes(unten.rolle) && Math.abs(dnOben(unten) - dnUnten(t)) < 1e-6;
+        if (t.stoss?.muffe && !passtOben) glatt(t, ['muffe', 'muffeTiefe']);
+        if (t.stoss?.spitzende && !passtUnten) glatt(t, ['spitzende', 'spitzendeHoehe']);
+    }
+    // Die Herleitung nennt, was am Teil BLEIBT.
+    for (const t of teile) {
+        if (!t.stoss) continue;
+        const mm = (v) => Math.round(v * 1000);
+        const teil = [
+            t.stoss.spitzende ? `Spitzende unten Ø ${mm(t.stoss.spitzende)} × ${mm(t.stoss.spitzendeHoehe)} mm` : null,
+            t.stoss.muffe ? `Muffe oben Ø ${mm(t.stoss.muffe)} × ${mm(t.stoss.muffeTiefe)} mm` : null,
+        ].filter(Boolean).join(', ');
+        t.herleitung = { ...(t.herleitung ?? {}),
+                         stoss: H('norm', `${teil} — Formeln an Tab. 5; Muffenspalt 10 mm und Lage (Spitzende unten) angenommen`, B.ringStoss) };
+    }
+}
+
 export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
     // Woher die gegebenen Werte stammen: aus der Datei (ISYBAU) oder aus den Werten einer Vorlage.
     const Q = quelle;
@@ -330,13 +363,20 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
 
     // ── Teile, von unten nach oben ──
     const teile = [];
-    const ring = (z0, h, d, name, herk) => ({
-        rolle: 'schachtring', name, unten: _r3(z0), oben: _r3(z0 + h), dInnen: d, dAussen: _r3(d + 2 * RING_WANDDICKE[normNennweite(d) ?? dnTab]),
-        material: au.material ?? null, herleitung: { hoehe: herk, dInnen: hDn, wanddicke: hT },
-    });
+    // DER STOSS (I8): Spitzende unten, Muffe oben — wie Unterteil (Muffe oben) und Konus (Spitzende unten).
+    const ring = (z0, h, d, name, herk) => {
+        const tR = RING_WANDDICKE[normNennweite(d) ?? dnTab];
+        const stoss = ringStoss(d, tR);
+        return {
+            rolle: 'schachtring', name, unten: _r3(z0), oben: _r3(z0 + h), dInnen: d, dAussen: _r3(d + 2 * tR), stoss,
+            material: au.material ?? null, herleitung: { hoehe: herk, dInnen: hDn, wanddicke: hT },
+        };
+    };
     teile.push({
         rolle: 'schachtunterteil', name: `Schachtunterteil DN ${Math.round(dn * 1000)}`,
         unten: _r3(zUnterteilUnten), oben: _r3(zUnterteilOben), dInnen: dn, dAussen: _r3(dn + 2 * t), boden,
+        // Oben die Muffe, in die der erste Ring (oder der Konus) mit seinem Spitzende greift.
+        stoss: { muffe: ringStoss(dn, t).muffe, muffeTiefe: ringStoss(dn, t).muffeTiefe },
         material: ut.material ?? au.material ?? null,
         gerinne: {
             form: ut.gerinneform ?? 0, breite: dRwert,
@@ -373,6 +413,7 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
     if (oberteil === 'hals') {
         teile.push({ rolle: 'schachthals', name: `Schachthals DN ${Math.round(dn * 1000)}/${Math.round(d10 * 1000)}`,
             unten: _r3(z), oben: _r3(z + HALS.hoehe), dUnten: dn, dOben: d10, wanddicke: t,
+            stoss: { spitzende: ringStoss(dn, t).spitzende, spitzendeHoehe: ringStoss(dn, t).spitzendeHoehe },
             // Zentrisch oder exzentrisch regelt keine Norm — exzentrisch ist im Bestand üblich (Annahme).
             exzentrisch: true, steigRichtung: ANNAHMEN.steigRichtung.wert,
             material: au.material ?? null,
@@ -428,6 +469,7 @@ export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
         }
     }
 
+    _stoesseAbgleichen(teile);
     return {
         teile,
         befunde,

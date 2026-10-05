@@ -14,6 +14,7 @@ const beleg = (norm, stelle, pruefen = false) => Object.freeze({ norm, stelle, .
 
 export const B = Object.freeze({
     ring: beleg('DIN 4034-1:2020-04', '4.3.3.8.4'),
+    ringStoss: beleg('DIN V 4034-1:2004-08', 'Tabelle 5 (Schachtring mit Muffe SR-M)'),
     ringWand: beleg('DIN 4034-1:2020-04', 'Tabelle 10'),
     nennweiten: beleg('DIN 4034-1:2020-04', 'Abschnitt 1'),
     hals: beleg('DIN 4034-1:2020-04', '4.3.3.8.6 und Tabelle 8'),
@@ -56,6 +57,24 @@ export const SCHACHT_NENNWEITEN = Object.freeze([0.8, 1.0, 1.2, 1.5, 2.0]);
 
 /** Mindestwanddicke der Schachtringe je DN (DIN 4034-1, Tabelle 10). */
 export const RING_WANDDICKE = Object.freeze({ 0.8: 0.12, 1.0: 0.12, 1.2: 0.135, 1.5: 0.15, 2.0: 0.15 });
+
+/**
+ * DER STOSS DER SCHACHTRINGE (Muffe SR-M, DIN V 4034-1:2004, Tabelle 5) als Formeln,
+ * die die Stützwerte treffen — DN 1000: Spitzende aussen 1090 mm, 65 mm hoch,
+ * Muffe 70 mm tief; DN 1200: 1300/75/80; DN 1500: 1620/85/90.
+ * Wand am Spitzende 0,03·DN + 15 mm, Spitzende hoch 0,04·DN + 25 mm, Muffe 5 mm tiefer.
+ * NICHT im Bestand: die Muffenspaltweite (Tabelle 7) — 10 mm angenommen.
+ * @returns {{spitzende, spitzendeHoehe, muffe, muffeTiefe}} Durchmesser und Höhen in m
+ */
+export function ringStoss(dn, wanddicke) {
+    const wandSp = Math.min(0.03 * dn + 0.015, wanddicke - 0.03);
+    const spitzende = dn + 2 * wandSp;
+    const spitzendeHoehe = 0.04 * dn + 0.025;
+    const r = (v) => Math.round(v * 10000) / 10000;
+    return { spitzende: r(spitzende), spitzendeHoehe: r(spitzendeHoehe), muffe: r(spitzende + 2 * RING_MUFFENSPALT), muffeTiefe: r(spitzendeHoehe + 0.005) };
+}
+/** Muffenspalt der Schachtringe — Annahme (DIN V 4034-1, Tabelle 7 nicht im Bestand). */
+export const RING_MUFFENSPALT = 0.01;
 
 /** Bauhöhen der Schachtringe: Regel 1000 mm, Ausgleich 750 und 500 mm (DIN 4034-1, 4.3.3.8.4). */
 export const RING_HOEHEN = Object.freeze({ regel: 1.0, ausgleich: Object.freeze([0.75, 0.5]) });
