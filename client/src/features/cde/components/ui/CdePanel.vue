@@ -2,12 +2,19 @@
   <!-- Die Breite als CSS-Variable, NICHT als Inline-width: ein Inline-Stil
        schlüge jede Media Query — genau die Falle, an der das Hochkant-Layout
        in flood-3D zweimal gescheitert ist (T5). -->
-  <section class="cde-panel" :class="`side-${seite}`" :style="{ '--cp-breite': breite + 'px' }">
-    <header class="cp-head">
+  <section class="cde-panel" :class="[`side-${seite}`, { eingeklappt }]" :style="{ '--cp-breite': breite + 'px' }">
+    <!-- Hochkant eingeklappt (Teil XXXI, T5): der ganze Kopf ist das Ziel zum Aufklappen. -->
+    <header class="cp-head" @click="eingeklappt && $emit('aufklappen')">
       <CdeIcon :name="icon" :size="15" />
       <span class="cp-title">{{ titel }}</span>
       <slot name="head-actions" />
-      <button class="cp-close" :title="`${titel} schließen`" @click="$emit('close')">
+      <!-- Nur hochkant sichtbar: Blatt ein- und aufklappen. -->
+      <button class="cp-klapp" :aria-expanded="!eingeklappt"
+              :title="eingeklappt ? `${titel} aufklappen` : `${titel} einklappen`"
+              @click.stop="$emit(eingeklappt ? 'aufklappen' : 'einklappen')">
+        <CdeIcon :name="eingeklappt ? 'chevron-up' : 'chevron-down'" :size="14" />
+      </button>
+      <button class="cp-close" :title="`${titel} schließen`" @click.stop="$emit('close')">
         <CdeIcon name="close" :size="14" />
       </button>
     </header>
@@ -37,8 +44,10 @@ const props = defineProps({
   icon:   { type: String, default: 'info' },
   seite:  { type: String, default: 'right' },   // 'left' | 'right'
   breite: { type: Number, default: 330 },
+  /** Hochkant beim Formen nur der Kopf (Teil XXXI, T5) — quer ohne Wirkung. */
+  eingeklappt: { type: Boolean, default: false },
 });
-const emit = defineEmits(['close', 'resize']);
+const emit = defineEmits(['close', 'resize', 'aufklappen', 'einklappen']);
 
 function onGripDown(e) {
   e.preventDefault();
@@ -88,6 +97,14 @@ function onGripDown(e) {
 }
 .cp-close:hover { color: var(--cde-danger); background: var(--cde-fill); }
 
+/* Quer gibt es nichts einzuklappen — die Leiste dockt seitlich an. */
+.cp-klapp {
+  display: none; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer;
+  color: var(--cde-text-mute); border-radius: var(--cde-radius-sm);
+}
+.cp-klapp:hover { color: var(--cde-accent); background: var(--cde-fill); }
+
 .cp-body {
   flex: 1;
   min-height: 0;
@@ -121,5 +138,9 @@ function onGripDown(e) {
   .side-left, .side-right { border-top: 1px solid var(--cde-line); }
   .cp-grip { display: none; }
   .cp-close { padding: 0.5rem; }        /* Fingerziel im Blattkopf */
+  /* T5 (Teil XXXI): beim Formen nur der Kopf — die Zeichenfläche bekommt den Platz. Kopf und Knöpfe ≥ 44 px. */
+  .cp-klapp { display: flex; min-width: 44px; min-height: 44px; }
+  .eingeklappt .cp-body { display: none; }
+  .eingeklappt .cp-head { cursor: pointer; border-bottom: 0; min-height: 44px; }
 }
 </style>

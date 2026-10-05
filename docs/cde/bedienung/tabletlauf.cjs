@@ -155,10 +155,19 @@ function auswerten(reihe, xVorher) {
         zahlen.familienNachTipp = await v(page, `const { griffFamilie } = await import('/src/features/cde/services/Griffe.js');
             return [...new Set(v.griffe.griffe.value.map(g => griffFamilie(g.werkzeug) ?? (g.ecken ? 'ecken' : g.art)))];`);
         zahlen.tippsBisErsterGriff = zahlen.griffeNachTipp > 0 ? 0 : 2;
+        // T5: wie viel Schirm hat die Zeichenfläche beim Formen (Wand gewählt, Bearbeiten an)?
+        zahlen.leinwandNachTipp = await page.evaluate(() => { const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+            return { breite: Math.round(c.width), hoehe: Math.round(c.height), anteil: +(c.width * c.height / (innerWidth * innerHeight)).toFixed(2) }; });
+        zahlen.blaetterEingeklappt = await page.evaluate(() => document.querySelectorAll('.cde-panel.eingeklappt').length);
+        await foto(page, 'formen');
         await foto(page, 'nach_tipp');
 
         // T2 · Tipps bis zum Griff: „Verschieben" (in der Gruppe „Lage")
         let tipps = 0;
+        // Eingeklappt (T5)? Dann zuerst das Blatt „Bauteil" aufklappen — ein Tipp auf seinen Kopf.
+        const kopf = await page.evaluate(() => { const h = document.querySelector('.cde-panel.side-right.eingeklappt .cp-head'); if (!h) return null;
+            const r = h.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+        if (kopf) { await tippe(page, cdp, kopf); await warte(1200); tipps++; }
         if (await knopf(page, cdp, 'Lage')) tipps++;
         if (await knopf(page, cdp, 'Verschieben')) tipps++;
         await warte(1500);

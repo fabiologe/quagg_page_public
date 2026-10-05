@@ -170,6 +170,9 @@
         :icon="panels.aktivLinks.icon"
         seite="left"
         :breite="panels.breiten[panels.aktivLinks.id]"
+        :eingeklappt="tafeln.eingeklappt.value"
+        @aufklappen="tafeln.aufklappen()"
+        @einklappen="tafeln.einklappen()"
         @close="panels.close(panels.aktivLinks.id)"
         @resize="(w) => panels.setBreite(panels.aktivLinks.id, w)"
       >
@@ -448,6 +451,9 @@
         :icon="panels.aktivRechts.icon"
         seite="right"
         :breite="panels.breiten[panels.aktivRechts.id]"
+        :eingeklappt="tafeln.eingeklappt.value"
+        @aufklappen="tafeln.aufklappen()"
+        @einklappen="tafeln.einklappen()"
         @close="panels.close(panels.aktivRechts.id)"
         @resize="(w) => panels.setBreite(panels.aktivRechts.id, w)"
       >
@@ -574,6 +580,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 import { MERKMALSFELDER, abdeckung, istUnbestaetigt } from '../services/bauform/Bauformregeln.js';
 import { usePanels } from '../stores/usePanels.js';
+import { useTafelnHochkant } from '../composables/useTafelnHochkant.js';
 import { useAnsicht } from '../stores/useAnsicht.js';
 import { useIfcStore } from '../stores/useIfcStore.js';
 import { usePaletteCommands } from '../stores/useCommands.js';
@@ -627,6 +634,8 @@ const auftragsFehler = ref('');
 /** Was die einmalige Übernahme alter Client-Projekte ergeben hat (Stufe 11.5). */
 const migrationsBericht = ref('');
 const panels = usePanels();
+// Hochkant beim Formen nur die Blattköpfe (Teil XXXI, T5) — die Regel steht in `useTafelnHochkant`.
+const tafeln = useTafelnHochkant(useBearbeitung());
 const ansicht = useAnsicht();
 const ifc = useIfcStore();
 /** Die Projektauswahl über einem geladenen Modell — zugeklappt, bis man sie öffnet (Teil XXX, B1). */
@@ -1714,6 +1723,7 @@ function fmtDate(ts) {
   }
   .cde-viewer-host { grid-row: 1; grid-column: 1 / -1; }
   .cde-workspace > .cde-panel { grid-row: 2; height: 42dvh; min-height: 0; }
+  .cde-workspace > .cde-panel.eingeklappt { height: auto; }   /* T5: nur der Kopf, die Zeichenfläche wächst */
   .cde-workspace > .side-left  { grid-column: 1; }
   .cde-workspace > .side-right { grid-column: 2; }
   .cde-workspace:not(:has(> .side-right)) > .side-left  { grid-column: 1 / -1; }

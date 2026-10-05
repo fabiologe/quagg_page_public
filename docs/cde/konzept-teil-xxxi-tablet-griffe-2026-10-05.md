@@ -238,3 +238,24 @@ ohne Sperre, Umbau ohne Auslöser. Bewusst gedreht (alte Zusage „ohne Werkzeug
 Test `griffSofort.test.js` (4, Zeiger-Ereignisse in den echten Zeiger-Stapel, verdrahtet wie im Viewer, ins Journal);
 Gegenproben rot: Finger wartet wieder, keine Pixel-Schwelle, Tipp-Griff ohne Grenze. Bewusst gedreht: `griffe.test.js`
 und `tabletRezept.test.js` („der Finger armiert erst").
+
+### T5 — Hochkant klappen die Blätter beim Formen ein (2026-10-05, E-T5)
+
+| Tabletlauf (iPad hochkant, Wand angetippt im Bearbeiten-Modus) | T0 | T5 |
+|---|---|---|
+| Zeichenfläche | 820 × 519 px = **44 %** | 820 × 955 px = **81 %** |
+| Blätter | zwei zu 42dvh | beide nur der Kopf (44 px) |
+| Tipps bis zu einem Werkzeug der Tafel („Verschieben") | 2 | 3 (+1: Blatt aufklappen) |
+
+- **Die Regel** (`composables/useTafelnHochkant.js`): eingeklappt im Bearbeiten-Modus mit gewähltem Bauteil — dem Zustand,
+  in dem seit T3 alle Griffe stehen. Ein Tipp auf einen Blattkopf (oder den Pfeil darin) klappt auf; das gilt, bis ein
+  ANDERES Bauteil gewählt oder der Modus verlassen wird. Ein scharf geschaltetes Werkzeug klappt bewusst NICHT auf:
+  ein Griffzug schaltet sein Werkzeug scharf, und das Bild spränge mitten im Zug um ein Blatt.
+- `CdePanel` bekommt `eingeklappt` und einen Klappknopf (nur hochkant, 44 × 44 px); `CdeView` gibt die Regel beiden
+  Blättern, das eingeklappte Blatt gibt seine Zeilenhöhe frei. Quer ändert sich nichts. Die Zeichenfläche folgt ihrem
+  Behälter selbst (ResizeObserver im Renderer).
+- **Preis:** ein Werkzeug aus der Tafel kostet hochkant einen Tipp mehr. Die Leiste aus H7 (Mass · Rückgängig · Fertig)
+  ist nicht gebaut — Rückgängig und Sichern stehen weiter oben in der Bearbeitungsmarke.
+
+Test `tafelnHochkant.test.js` (5: Regel am echten Store, Blatt montiert, Verdrahtung in der Ansicht); Gegenproben rot:
+nie eingeklappt, Aufklappen vergisst nie, Zeile bleibt 42dvh, Kopf klappt nicht auf.
