@@ -21,7 +21,7 @@
  */
 import { normschacht } from './muster/Normschacht.js';
 import { kastenschacht } from './muster/Kastenschacht.js';
-import { kunststoffschacht } from './muster/Kunststoffschacht.js';
+import { KONUS_AB_TIEFE, kunststoffschacht } from './muster/Kunststoffschacht.js';
 import { herleitung as H } from './muster/Herleitung.js';
 import { B, GRUNDSTUECK_SCHACHT } from './muster/Normwerte.js';
 
@@ -34,6 +34,7 @@ export const KNOTEN_VORGABEN = Object.freeze({
     gaDurchmesser: Object.freeze({ wert: 0.8, text: 'Gebäudeanschluss: meist ein PVC-Schacht DI 0,8 m (Fabio, 2026-10-05)' }),
     gaTiefeOhneGelaende: Object.freeze({ wert: 1.0, text: 'kein Geländepunkt (GOK) — Tiefe 1,0 m angenommen' }),
     gaTiefeMin: Object.freeze({ wert: 0.3, text: 'flacher als 0,3 m ist kein Schacht — ein Formstück' }),
+    gaInspektionDi: Object.freeze({ wert: 0.4, text: 'flacher als die Konustiefe: nicht besteigbare Inspektionsöffnung DN/ID 400 (DIN 1986-100, Tab. 3: 400 bis < 800 mm bis 3,0 m)' }),
     gaTiefeMax: Object.freeze({ wert: 6, text: 'tiefer als 6 m ist an einem Gebäudeanschluss unplausibel' }),
 });
 
@@ -139,6 +140,18 @@ export const KNOTENREGELN = Object.freeze([
             return { korrektur: { ...a, di: GRUNDSTUECK_SCHACHT.besteigbarDi,
                                   diHerleitung: H('norm', `DN/ID 800 nur bis 3,0 m Tiefe — tiefer DN/ID 1000`, B.grundstueckSchacht) },
                      befund: befund('ga_tiefer_als_3m', `„${a.name}": ${(a.gelaende - a.sohle).toFixed(2)} m tief — DI 0,8 m ist nur bis 3,0 m zulässig, DI 1,0 m gebaut.`) };
+        },
+    },
+    {
+        id: 'ga-inspektionsoeffnung', fuer: 'anschlusspunkt', titel: 'Flacher als 1,0 m → Inspektionsöffnung DI 0,4 m (DIN 1986-100, Tab. 3)',
+        beispiel: { ...GA_BEISPIEL, gelaende: 102.0 },
+        versuche: (a) => {
+            if (!V('kunststoffschachtFuer').includes(a.punktkennung) || _fin(a.di)) return null;
+            const t = a.gelaende - a.sohle;
+            if (!(t < KONUS_AB_TIEFE.wert - 1e-9)) return null;
+            return { korrektur: { ...a, di: V('gaInspektionDi'),
+                                  diHerleitung: H('norm', 'nicht besteigbare Inspektionsöffnung DN/ID 400 — flacher als die Konustiefe 1,0 m', B.grundstueckSchacht) },
+                     befund: befund('ga_inspektionsoeffnung', `„${a.name}": ${t.toFixed(2)} m tief — ${KNOTEN_VORGABEN.gaInspektionDi.text}.`) };
         },
     },
     {

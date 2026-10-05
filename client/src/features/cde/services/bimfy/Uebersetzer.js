@@ -25,6 +25,7 @@
  */
 import { herleitungText } from './muster/Herleitung.js';
 import { G400_BAUWERKSTYP } from './isybau/Schluessel.js';
+import { vorlageNach } from '../rezept/Bauwerksvorlagen.js';
 import { REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
 
@@ -443,9 +444,12 @@ function _verknuepfe(kommandos, kennung) {
         if (!['schacht', 'anschlusspunkt', 'bauwerk'].includes(geo?.isybau?.art) || !geo.name || jeKnoten.has(geo.name)) continue;
         const id = kennung('bauteil');
         kommando.neu = [id];
-        // Nur ein Formstück hat keinen Körper, an dem ein Rohr enden könnte — dort zählt seine Lage (I11).
-        const lage = geo.bauart === 'formstueck' ? kommando.eingaben?.zug?.[0] ?? null : null;
-        jeKnoten.set(geo.name, { id, lage });
+        // Wie weit der Knoten reicht: ein Formstück hat keinen Körper (0), ein Schacht aus
+        // einer Vorlage bis zur Aussenwand; die anderen sagen es nicht — dort bleibt die Lage.
+        const vorlage = kommando.werkzeug?.startsWith('bauwerk-aus-vorlage-') ? vorlageNach(kommando.werkzeug.slice('bauwerk-aus-vorlage-'.length)) : null;
+        const radius = geo.bauart === 'formstueck' ? 0 : (vorlage?.knotenRadius?.(kommando.werte ?? {}) ?? null);
+        const lage = Number.isFinite(radius) ? kommando.eingaben?.zug?.[0] ?? null : null;
+        jeKnoten.set(geo.name, { id, lage, radius });
     }
     for (const { geo, kommando } of kommandos) {
         const zug = kommando.eingaben?.zug;
@@ -455,15 +459,19 @@ function _verknuepfe(kommandos, kennung) {
             const k = jeKnoten.get(geo.isybau[ende]);
             if (!k) continue;
             zug[i] = { ...zug[i], knoten: k.id };
-            // DIE FUGE AM ANSCHLUSSPUNKT (I10): der CAD-Export kürzt die Linie am Symbol
-            // (echte Datei: 0,25–0,30 m); die ISYBAU-Länge zählt von Knoten zu Knoten.
-            // Das Rohr reicht bis zum Punkt — die Höhe bleibt die gemessene.
+            // DIE FUGE AM SYMBOL (I10, I11): der CAD-Export kürzt die Linie am Symbol
+            // (echte Datei: 0,25–0,30 m am GA); die ISYBAU-Länge zählt von Knoten zu Knoten.
+            // Endet die Leitung ausserhalb des Knotens, reicht sie bis an seine Wand —
+            // beim Formstück bis zum Punkt. Die Höhe bleibt die gemessene.
             const l = k.lage;
-            const fuge = l ? Math.hypot(l.ost - zug[i].ost, l.nord - zug[i].nord) : 0;
-            if (l && fuge > 0.001 && fuge <= FUGE_ANSCHLUSSPUNKT_M) {
-                zug[i] = { ...zug[i], ost: l.ost, nord: l.nord };
-                verlaengert.push(`${ende === 'von' ? 'Anfang' : 'Ende'} um ${fuge.toFixed(2).replace('.', ',')} m bis ${geo.isybau[ende]}`);
-            }
+            if (!l) continue;
+            const fuge = Math.hypot(zug[i].ost - l.ost, zug[i].nord - l.nord);
+            if (fuge <= k.radius + 0.001 || fuge > FUGE_ANSCHLUSSPUNKT_M) continue;
+            const f = k.radius / fuge;
+            const neu = { ost: Math.round((l.ost + (zug[i].ost - l.ost) * f) * 1000) / 1000, nord: Math.round((l.nord + (zug[i].nord - l.nord) * f) * 1000) / 1000 };
+            const um = fuge - k.radius;
+            zug[i] = { ...zug[i], ...neu };
+            verlaengert.push(`${ende === 'von' ? 'Anfang' : 'Ende'} um ${um.toFixed(2).replace('.', ',')} m bis ${k.radius > 0 ? 'an die Wand von ' : ''}${geo.isybau[ende]}`);
         }
         if (verlaengert.length && 'herleitung' in (kommando.werte ?? {})) {
             const satz = `lage: isybau — ${verlaengert.join(', ')} verlängert (Fuge am Symbol; die ISYBAU-Länge zählt von Knoten zu Knoten)`;

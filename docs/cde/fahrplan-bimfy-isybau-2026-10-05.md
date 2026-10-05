@@ -266,6 +266,20 @@ erweiterbar, damit wir alle möglichen komischen Fehleinträge abfangen können.
 | auf DI 1,0 m gehoben (tiefer als 3 m) | 0 | 6 |
 | Prüftor offen | 0 | 0 |
 
+### I11c · Inspektionsöffnung unter 1 m, Fuge bis an die Wand (gebaut)
+
+1. **Flacher als 1,0 m** wird der Gebäudeanschluss eine nicht besteigbare Inspektionsöffnung
+   DI 0,4 m mit Teleskop (DIN 1986‑100, Tab. 3; Regel `ga-inspektionsoeffnung`).
+2. **Die Fuge am Symbol** schliesst BIMFY jetzt bis an die Wand des Knotens (Radius aus der Vorlage),
+   beim Formstück bis zum Punkt — bis 0,5 m, die Höhe bleibt, die Herleitung sagt es.
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Inspektionsöffnungen DI 0,4 m | 0 | 17 |
+| verlängerte Leitungen (bis Wand oder Punkt) | 2 | 18 |
+| Anschluss abweichend | 23 | 23 (Sonderform‑Schächte) |
+| Prüftor offen | 0 | 0 |
+
 ### Offen nach I8
 
 1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). ~~Anschlusspunkte und Bauwerke~~ — gebaut (I10).

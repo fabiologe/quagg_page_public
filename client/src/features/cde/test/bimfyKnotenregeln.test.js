@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * BIMFY I11 — das Knotenregelwerk und der Kunststoffschacht.
  *
@@ -107,6 +108,16 @@ describe('Muster · Kunststoffschacht', () => {
         expect(genau.teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'schachthals', 'abdeckung']);   // kein Schachtrohr nötig
         expect(genau.teile[1].herleitung.konus).toMatchObject({ art: 'vorgabe' });
     });
+    it('flacher als 1,0 m: Inspektionsöffnung DI 0,4 m mit Teleskop, nicht besteigbar (DIN 1986-100, Tab. 3)', () => {
+        const e = ordneKnoten({ art: 'anschlusspunkt', name: 'GA8', punktkennung: 'GA', ort: { ost: 0, nord: 0 }, sohle: 100, gelaende: 100.8 });
+        expect(e.berichtigt).toEqual(['ga-inspektionsoeffnung']);
+        expect(e.muster.kopf).toMatchObject({ di: 0.4, begehbar: false });
+        // 0,8 m: Unterteil 0,5 + Teleskop 0,2 + Abdeckung 0,1 — für ein Schachtrohr bleibt nichts.
+        expect(e.muster.teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'teleskop', 'abdeckung']);
+        expect(e.muster.teile[0].herleitung.dInnen).toMatchObject({ art: 'norm', beleg: { norm: 'DIN 1986-100:2016-12' } });
+        // Genau 1,0 m bleibt beim Schacht DI 0,8 mit Konus.
+        expect(ordneKnoten({ art: 'anschlusspunkt', name: 'GA7', punktkennung: 'GA', ort: { ost: 0, nord: 0 }, sohle: 100, gelaende: 101 }).muster.kopf.di).toBe(0.8);
+    });
     it('tiefer als 3 m: DI 0,8 ist nur bis 3,0 m zulässig — DI 1,0 m (DIN 1986-100, Tab. 3)', () => {
         const e = ordneKnoten({ art: 'anschlusspunkt', name: 'GA9', punktkennung: 'GA', ort: { ost: 0, nord: 0 }, sohle: 100, gelaende: 103.4 });
         expect(e.berichtigt).toEqual(['ga-tiefer-als-3m']);
@@ -147,5 +158,31 @@ describe('Kunststoffschacht über den Kommandoweg — ein Knoten im Netz', () =>
         const { netz } = eigeneNetzauskunft(stand);
         expect(netz.abweichend).toEqual([]);                                           // 0,28 m < 0,42 m
         expect([...netz.kanten.values()][0].von).toBe('cde:cde-ga1');
+    });
+});
+
+describe('Die Fuge am Symbol bis an die Wand (I11)', () => {
+    it('Leitung endet 0,28 m vor einem GA, der eine Inspektionsöffnung DI 0,4 m ist: bis an die Wand verlängert', async () => {
+        const { liesIsybau } = await import('../services/bimfy/Geometrieleser.js');
+        const { gruppiere, kommandosFuer } = await import('../services/bimfy/Uebersetzer.js');
+        const ga = `<AbwassertechnischeAnlage><Objektbezeichnung>GA1</Objektbezeichnung><Objektart>2</Objektart><Status>0</Status>
+    <Knoten><KnotenTyp>1</KnotenTyp><Anschlusspunkt><Punktkennung>GA</Punktkennung></Anschlusspunkt></Knoten>
+    <Geometrie><Geometriedaten><Knoten><Punkt><Rechtswert>0</Rechtswert><Hochwert>30</Hochwert><Punkthoehe>101,20</Punkthoehe><PunktattributAbwasser>GA</PunktattributAbwasser></Punkt>
+      <Punkt><Punkthoehe>102,00</Punkthoehe><PunktattributAbwasser>GOK</PunktattributAbwasser></Punkt></Knoten></Geometriedaten></Geometrie></AbwassertechnischeAnlage>`;
+        const leitung = `<AbwassertechnischeAnlage><Objektbezeichnung>L1</Objektbezeichnung><Objektart>1</Objektart>
+    <Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt><Kante>
+      <Start><Rechtswert>0</Rechtswert><Hochwert>29,72</Hochwert><Punkthoehe>101,2</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Start>
+      <Ende><Rechtswert>0</Rechtswert><Hochwert>10</Hochwert><Punkthoehe>101</Punkthoehe><PunktattributAbwasser>LHP</PunktattributAbwasser></Ende></Kante></Polygon></Polygone></Geometriedaten></Geometrie>
+    <Kante><KantenTyp>1</KantenTyp><KnotenZulauf>GA1</KnotenZulauf><KnotenAblauf>X</KnotenAblauf><SohlhoeheZulauf>101,2</SohlhoeheZulauf><SohlhoeheAblauf>101</SohlhoeheAblauf>
+      <Material>PVC</Material><Profil><Profilart>0</Profilart><Profilhoehe>150</Profilhoehe></Profil><Leitung></Leitung></Kante></AbwassertechnischeAnlage>`;
+        const text = `<?xml version="1.0" encoding="UTF-8"?><Identifikation><Datenkollektive><Stammdatenkollektiv>${ga}${leitung}</Stammdatenkollektiv></Datenkollektive></Identifikation>`;
+        const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
+        const gaK = kommandos.find(x => x.geo.name === 'GA1').kommando;
+        expect(gaK.werte).toMatchObject({ di: 0.4 });                                 // 0,8 m tief → Inspektionsöffnung
+        const l1 = kommandos.find(x => x.geo.name === 'L1').kommando;
+        const r = 0.2 + kunststoffWand(0.4);
+        expect(l1.eingaben.zug[0].nord).toBeCloseTo(30 - r, 3);                        // an der Aussenwand, nicht in der Mitte
+        expect(l1.eingaben.zug[0].hoehe).toBe(101.2);
+        expect(l1.werte.herleitung).toMatch(/bis an die Wand von GA1 verlängert/);
     });
 });
