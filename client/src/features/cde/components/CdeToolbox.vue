@@ -147,8 +147,17 @@
     <template v-else>
       <!-- Kopf: was ist das hier? -->
       <div class="tb-titel">
-        <strong>{{ bearbeitung.bauteil.name || '(ohne Namen)' }}</strong>
-        <code>{{ herleitung.kategorie }}</code>
+        <div class="tb-titel-text">
+          <strong>{{ bearbeitung.bauteil.name || '(ohne Namen)' }}</strong>
+          <span class="tb-klasse" :title="herleitung.kategorie">{{ klasseText }}</span>
+        </div>
+        <!-- MEHRERE WÄHLEN (Teil XXX, B3) — ein kleiner Schalter im Kopf statt einer ganzen Zeile. -->
+        <button class="tb-mehrere" type="button" :aria-pressed="mehrereAn ? 'true' : 'false'"
+                :class="{ 'tb-mehrere--an': mehrereAn }"
+                :title="mehrereAn ? 'Wieder einzeln wählen' : 'Mehrere wählen — jeder Tipp nimmt ein Bauteil dazu oder heraus, wie Umschalt-Klick'"
+                @click="api.mehrereWaehlen?.(!mehrereAn)">
+          <CdeIcon name="layers" :size="12" /> <span>{{ mehrereAn ? 'Mehrere: an' : 'Mehrere' }}</span>
+        </button>
       </div>
       <!-- DIE FACETTEN (Teil XXIX, G4): Gewerk, Ausführung, das Bauwerk mit Pfad, die Vorlage — kein Baum, Eigenschaften
            des Bauteils. Ein Bauwerk im Pfad ist ein Sprung dorthin. -->
@@ -188,13 +197,6 @@
       <!-- WORAUF SICH DER KLICK BEZIEHT. Bei einer Rahmenauswahl ändert eine
            Bearbeitung womöglich fünfzehn Bauteile — das muss dastehen, bevor
            man klickt, nicht danach im Verlauf. -->
-      <!-- MEHRERE WÄHLEN (Teil XXX, B3): jeder Tipp nimmt dazu oder heraus — der Weg ohne Umschalt/Strg (Tablet). -->
-      <button class="tb-btn tb-mehrere" type="button" :aria-pressed="mehrereAn ? 'true' : 'false'"
-              :class="{ 'tb-mehrere--an': mehrereAn }"
-              :title="mehrereAn ? 'Wieder einzeln wählen' : 'Jeder Tipp nimmt ein Bauteil dazu oder heraus — wie Umschalt-Klick'"
-              @click="api.mehrereWaehlen?.(!mehrereAn)">
-        <CdeIcon name="layers" :size="13" /> <span>{{ mehrereAn ? 'Mehrere wählen: an' : 'Mehrere wählen' }}</span>
-      </button>
       <p v-if="mehrfach" class="tb-mehrfach">
         <CdeIcon name="layers" :size="12" />
         <span>
@@ -202,6 +204,52 @@
           {{ mehrfach.text }}
         </span>
       </p>
+
+      <!-- WAS DIE ACHSE SAGT (Stufe 14.2): Sohlhöhen, Gefälle, Länge und DN —
+           beim reinen Ansehen die interessantesten Zahlen an einer Haltung. -->
+      <!-- DIE KENNWERTE (Teil XXX, Übersicht): was das Bauteil IST, bevor man etwas ändert — Achse, Mengen. -->
+      <dl v-if="kennwerte.length" class="tb-kette tb-kennwerte">
+        <template v-for="k in kennwerte" :key="k.feld">
+          <dt>{{ k.titel }}</dt><dd>{{ k.wert }}</dd>
+        </template>
+      </dl>
+      <dl v-if="achse" class="tb-kette tb-achse">
+        <dt>Sohle</dt>
+        <dd>
+          <b>{{ achse.anfangNn }}</b> → <b>{{ achse.endeNn }}</b> m NN
+          <span class="tb-dim">({{ achse.gefaelle }})</span>
+        </dd>
+        <dt>Länge</dt>
+        <dd class="tb-dim">
+          {{ achse.laenge }} m<template v-if="achse.dn"> · DN {{ achse.dn }}</template>
+          <span class="tb-dim"> — {{ achse.herkunft }}</span>
+          <template v-if="achse.umgekehrt"><br>Fliessrichtung umgekehrt festgelegt</template>
+        </dd>
+      </dl>
+
+      <!-- BEFUNDE (Stufe 14.4). Sie beraten; wo einer seine Kur kennt, genügt
+           ein Klick — aus der Liste wird eine Arbeitsliste. -->
+      <ul v-if="bearbeitung.befunde.length" class="tb-befunde">
+        <li v-for="(b, i) in bearbeitung.befunde" :key="i" :class="'tb-b--' + b.schwere">
+          <CdeIcon :name="b.schwere === 'warnung' ? 'warn' : 'info'" :size="12" />
+          <span>
+            {{ b.text }}
+            <em class="tb-dim">
+              {{ b.wert }}<template v-if="b.grenze"> · {{ b.grenze }}</template>
+              <template v-if="b.quelle"> · {{ b.quelle }}</template>
+            </em>
+            <button
+              v-if="b.kur && kurTitel(b)"
+              class="tb-kur"
+              :disabled="!!sperrgrund"
+              :title="sperrgrund || 'Diese Bearbeitung starten'"
+              @click="kur(b)"
+            >
+              <CdeIcon name="edit" :size="11" /> {{ kurTitel(b) }}
+            </button>
+          </span>
+        </li>
+      </ul>
 
       <!-- Die scharfe Bearbeitung verdrängt die Liste — ihr FORMULAR steht nur
            in der Kontextleiste unter dem Bild (Teil XVI, S6). Hier bleibt, was
@@ -279,121 +327,69 @@
             </button>
           </div>
         </section>
-        <!-- „WIE DIESES" (Teil XXIX, G8 — Pipette, W4): ein neues Bauteil mit den Werten des gewählten, ohne Bibliothek.
-             Das Zeichenwerkzeug, das es gemacht hat, mit seinen Feldern vorbelegt; die Punkte zeichnet man neu. -->
-        <section v-if="wieDiesesPlan" class="tb-gruppe">
-          <h4 class="tb-kopf" title="Ein neues Bauteil mit den Werten des gewählten — Klasse, Ausführung, Maße, Gewerk, Vorlage">Wie dieses</h4>
+        <!-- SCHNELL (Teil XXX, Übersicht): Wie dieses, Ecken ziehen, Querschnitt — eine Zeile statt drei Abschnitte. -->
+        <div v-if="wieDiesesPlan || eckenMoeglich || querschnittMoeglich" class="tb-schnell">
+          <!-- „WIE DIESES" (Teil XXIX, G8 — Pipette, W4): ein neues Bauteil mit den Werten des gewählten. -->
+          <button v-if="wieDiesesPlan" class="tb-btn tb-btn--chip" :disabled="!!sperrgrund"
+                  :title="sperrgrund || `Neu zeichnen mit: ${Object.keys(wieDiesesPlan.vorgaben).join(', ') || 'den Vorgaben des Werkzeugs'}`"
+                  @click="wieDiesesZeichnen">
+            <CdeIcon name="copy" :size="12" /> <span>Wie dieses zeichnen</span>
+          </button>
+          <!-- ECKEN ZIEHEN (Teil XXII): nur über diesen Knopf trägt ein Körper Eckgriffe. -->
+          <button v-if="eckenMoeglich && !eckenAktiv" class="tb-btn tb-btn--chip" :disabled="!!sperrgrund"
+                  :title="sperrgrund || 'Griffe an allen Ecken dieses Körpers — mit Führungslinien'" @click="eckenZiehen">
+            <CdeIcon name="pointer" :size="12" /> <span>Ecken ziehen</span>
+          </button>
+          <button v-else-if="eckenMoeglich" class="tb-btn tb-btn--chip tb-btn--aus" type="button" @click="bearbeitung.eckenBeenden()">
+            <CdeIcon name="check" :size="12" /> <span>Fertig</span>
+          </button>
+          <!-- DER GERINNE-SCHNITT (Teil XX, Stufe D): nur auf Wunsch gerechnet. -->
+          <button v-if="querschnittMoeglich && !querschnittOffen" class="tb-btn tb-btn--chip" type="button"
+                  title="Urgelände, Gelände jetzt und Soll-Trapez quer zur Achse, an einer Station" @click="querschnittOffen = true">
+            <CdeIcon name="gerinne" :size="12" /> <span>Querschnitt zeigen</span>
+          </button>
+        </div>
+        <p v-if="eckenAktiv" class="tb-warum">
+          Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper. Sohlkante, Oberkante und Fuß gleiten quer und setzen ein Maß des Ganzen: Sohlbreite, Böschung, Arbeitsraum.
+        </p>
+        <template v-if="querschnittMoeglich && querschnittOffen">
+          <CdeQuerschnitt :subjekt="bearbeitung.bauteil" />
           <div class="tb-liste">
-            <button class="tb-btn" :disabled="!!sperrgrund"
-                    :title="sperrgrund || `Neu zeichnen mit: ${Object.keys(wieDiesesPlan.vorgaben).join(', ') || 'den Vorgaben des Werkzeugs'}`"
-                    @click="wieDiesesZeichnen">
-              <CdeIcon name="copy" :size="13" /> <span>Wie dieses zeichnen</span>
+            <button class="tb-btn tb-btn--aus" type="button" @click="querschnittOffen = false">
+              <CdeIcon name="close" :size="13" /> <span>Schliessen</span>
             </button>
           </div>
-        </section>
-        <!-- ECKEN ZIEHEN (Teil XXII, Fabio 2026-09-18: „nur in der Bearbeitung,
-             nur als Knopf, dann an allen Ecken"): ohne diesen Knopf trägt ein
-             Erdkörper keine Griffe. -->
-        <section v-if="eckenMoeglich" class="tb-gruppe">
-          <h4 class="tb-kopf" title="Oberkante, Sohle bzw. Fuss und Krone — jede Ecke mit Führungslinien">Ecken</h4>
-          <div class="tb-liste">
-            <button v-if="!eckenAktiv" class="tb-btn" :disabled="!!sperrgrund" :title="sperrgrund || 'Griffe an allen Ecken dieses Körpers'"
-                    @click="eckenZiehen">
-              <CdeIcon name="pointer" :size="13" /> <span>Ecken ziehen</span>
-            </button>
-            <button v-else class="tb-btn tb-btn--aus" type="button" @click="bearbeitung.eckenBeenden()">
-              <CdeIcon name="check" :size="13" /> <span>Fertig</span>
-            </button>
-          </div>
-          <p v-if="eckenAktiv" class="tb-warum">
-            Jede Ecke im Bild ziehen — die Linien fangen an Kanten, rechten Winkeln und Fluchten. Der kleine Griff daneben ändert die Höhe; an der Sohle (Krone) gilt sie für den ganzen Körper. Sohlkante, Oberkante und Fuß gleiten quer und setzen ein Maß des Ganzen: Sohlbreite, Böschung, Arbeitsraum.
-          </p>
-        </section>
-        <!-- DER GERINNE-SCHNITT (Teil XX, Stufe D): an einer Station quer zur
-             Achse — Urgelände, Gelände jetzt, Soll. Nur auf Wunsch gerechnet. -->
-        <section v-if="querschnittMoeglich" class="tb-gruppe">
-          <h4 class="tb-kopf" title="Urgelände, Gelände jetzt und Soll-Trapez quer zur Achse">Querschnitt</h4>
-          <div v-if="!querschnittOffen" class="tb-liste">
-            <button class="tb-btn" type="button" title="Den Schnitt an einer Station zeigen" @click="querschnittOffen = true">
-              <CdeIcon name="gerinne" :size="13" /> <span>Querschnitt zeigen</span>
-            </button>
-          </div>
-          <template v-else>
-            <CdeQuerschnitt :subjekt="bearbeitung.bauteil" />
-            <div class="tb-liste">
-              <button class="tb-btn tb-btn--aus" type="button" @click="querschnittOffen = false">
-                <CdeIcon name="close" :size="13" /> <span>Schliessen</span>
-              </button>
-            </div>
-          </template>
-        </section>
-        <section v-for="g in herleitung.gruppen" :key="g.art" class="tb-gruppe">
-          <h4 class="tb-kopf" :title="g.warum">{{ g.titel }}</h4>
+        </template>
+        <!-- DIE WERKZEUGE NACH AUFGABE (Teil XXX, Übersicht): Maße, Lage, Gelände, Bauwerk, Merkmale — aufklappbar, eine
+             Zeile je Werkzeug. Welche Felder es setzt, steht im Tooltip; WARUM es hier steht, unten unter „Warum?". -->
+        <input v-if="aufgabenAnzahl > 10" v-model="werkzeugSuche" class="tb-suche tb-werkzeugsuche" type="search"
+               placeholder="Werkzeug suchen …" aria-label="Werkzeug suchen" />
+        <details v-for="g in aufgaben" :key="g.id" class="tb-gruppe tb-aufgabe"
+                 :open="!!werkzeugSuche.trim() || aufgaben.length === 1 || offeneAufgaben.has(g.id)"
+                 @toggle="aufgabeUmgeschaltet(g.id, $event)">
+          <summary class="tb-kopf tb-aufgabe-kopf">
+            <CdeIcon :name="g.icon" :size="12" /> {{ g.titel }} <span class="tb-anzahl">{{ g.eintraege.length }}</span>
+          </summary>
           <div class="tb-liste">
             <button
               v-for="b in g.eintraege"
               :key="b.id"
               class="tb-btn"
               :disabled="!!sperrgrund"
-              :title="sperrgrund || (b.nurFestlegung ? 'Geht als Forderung an den Planer — die Geometrie bleibt bei ihm' : b.titel)"
+              :title="sperrgrund || werkzeugTitel(b)"
               @click="werkzeug(b.id)"
             >
               <CdeIcon :name="b.icon" :size="13" />
               <span>{{ b.titel }}</span>
-              <!-- Die Beschriftung, die DIESER Typ dem Feld gibt: „DN“ am Rohr,
-                   „Profilreihe“ am Träger — das Vokabular kommt aus Daten. -->
-              <em v-if="b.felder.some(f => !f.verborgen)" class="tb-feld">{{ b.felder.filter(f => !f.verborgen).map(f => f.label).join(', ') }}</em>
-              <!-- IM BILD ZIEHBAR (K5): seit Griffe nur noch mit scharfem
-                   Werkzeug stehen, muss dastehen, welcher Knopf einen bringt —
-                   sonst ist der Weg unentdeckbar, auf dem Finger erst recht
-                   (dort gibt es kein Schweben). Die Liste kommt aus Griffe.js. -->
+              <!-- IM BILD ZIEHBAR (K5) — welcher Knopf einen Griff bringt; die Liste kommt aus Griffe.js. -->
               <CdeIcon v-if="GRIFF_WERKZEUGE.includes(b.id)" name="pointer" :size="11" class="tb-ziehbar"
                        title="Im Bild ziehbar — der Griff erscheint, sobald dieses Werkzeug läuft" />
               <CdeIcon v-if="b.nurFestlegung" name="documents" :size="11" class="tb-nurfest" />
             </button>
           </div>
-        </section>
+        </details>
+        <p v-if="werkzeugSuche.trim() && !aufgaben.length" class="tb-warum">Kein Werkzeug „{{ werkzeugSuche.trim() }}" an diesem Bauteil.</p>
       </template>
-
-      <!-- WAS DIE ACHSE SAGT (Stufe 14.2): Sohlhöhen, Gefälle, Länge und DN —
-           beim reinen Ansehen die interessantesten Zahlen an einer Haltung. -->
-      <dl v-if="achse" class="tb-kette tb-achse">
-        <dt>Sohle</dt>
-        <dd>
-          <b>{{ achse.anfangNn }}</b> → <b>{{ achse.endeNn }}</b> m NN
-          <span class="tb-dim">({{ achse.gefaelle }})</span>
-        </dd>
-        <dt>Länge</dt>
-        <dd class="tb-dim">
-          {{ achse.laenge }} m<template v-if="achse.dn"> · DN {{ achse.dn }}</template>
-          <span class="tb-dim"> — {{ achse.herkunft }}</span>
-          <template v-if="achse.umgekehrt"><br>Fliessrichtung umgekehrt festgelegt</template>
-        </dd>
-      </dl>
-
-      <!-- BEFUNDE (Stufe 14.4). Sie beraten; wo einer seine Kur kennt, genügt
-           ein Klick — aus der Liste wird eine Arbeitsliste. -->
-      <ul v-if="bearbeitung.befunde.length" class="tb-befunde">
-        <li v-for="(b, i) in bearbeitung.befunde" :key="i" :class="'tb-b--' + b.schwere">
-          <CdeIcon :name="b.schwere === 'warnung' ? 'warn' : 'info'" :size="12" />
-          <span>
-            {{ b.text }}
-            <em class="tb-dim">
-              {{ b.wert }}<template v-if="b.grenze"> · {{ b.grenze }}</template>
-              <template v-if="b.quelle"> · {{ b.quelle }}</template>
-            </em>
-            <button
-              v-if="b.kur && kurTitel(b)"
-              class="tb-kur"
-              :disabled="!!sperrgrund"
-              :title="sperrgrund || 'Diese Bearbeitung starten'"
-              @click="kur(b)"
-            >
-              <CdeIcon name="edit" :size="11" /> {{ kurTitel(b) }}
-            </button>
-          </span>
-        </li>
-      </ul>
 
       <!-- MERKMALE — vorher eine eigene Tafel („Eigenschaften“). -->
       <details class="tb-merkmale" open>
@@ -548,7 +544,9 @@ import { repo } from '../services/RepoFacade.js';
 import { ladeVorlagen, speichereVorlage, loescheVorlage } from '../services/Bibliothek.js';
 import { entwurfFuer } from '../services/bauform/Typprofilentwurf.js';
 import { herleite } from '../services/Herleitung.js';
-import { ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog, wieDieses } from '../services/Bearbeitungen.js';
+import { GRUPPEN, ausGruppe, nachId, eingabeArt, vorbelegtesGelaende, werkzeugKatalog, wieDieses } from '../services/Bearbeitungen.js';
+import { kennwerteVon } from '../services/Mengenzeile.js';
+import { getEntityInfo } from '../data/entity-schema.js';
 import { palette, suchePalette } from '../services/Palette.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { facettenVon, rollenTabelle } from '../services/Facetten.js';
@@ -764,6 +762,66 @@ async function entwurfUebernehmen() {
   }
 }
 
+// ── Übersicht der Tafel (Teil XXX) ──────────────────────────────────────────────────────────────────────────────
+
+/** Die Klasse lesbar: das Rezept („Rohr") und die IFC-Klasse in ihrer Schreibweise („IfcPipeSegment"). */
+const klasseText = computed(() => {
+  const kat = herleitung.value?.kategorie ?? '';
+  const ifcName = getEntityInfo(kat)?.name ?? kat;
+  const rz = rezeptNach(bearbeitung.bauteil?.stand?.bauplan?.rezept);
+  return rz?.titel && rz.titel !== ifcName ? `${rz.titel} · ${ifcName}` : ifcName;
+});
+
+/** Die Kennwerte eines eigenen Bauteils — dieselben Zahlen wie im IFC und im Mengen-Reiter, oben in der Tafel. */
+const kennwerte = computed(() => {
+  void ifc.geometrieStand;
+  const gid = bearbeitung.bauteil?.globalId;
+  const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
+  if (!plan) return [];
+  const z = kennwerteVon(plan, plan.ableitung ? (api.kennzahlenVon?.(plan.ableitung) ?? null) : null);
+  // Die Länge einer Achse steht schon in der Achszeile darunter (mit DN und Sohlen) — nicht zweimal.
+  return achse.value ? z.filter(k => k.feld !== 'length') : z;
+});
+
+/**
+ * DIE WERKZEUGE NACH AUFGABE: was will ich tun (Maße, Lage, …) statt warum es hier steht. Die Herkunft bleibt die
+ * Antwort auf „Warum?" (zugeklappt unten); die Reihenfolge der Aufgaben ist fest, die erste steht offen.
+ */
+const AUFGABEN_FOLGE = ['parametrik', 'lage', 'gelaende', 'bauwerk', 'merkmale'];
+const werkzeugSuche = ref('');
+// Offen stehen Maße und das Allgemeine (Eigenschaften, Umbenennen, Löschen) — das Gebrauchte; Lage und Gelände sind lang.
+const offeneAufgaben = ref(new Set(['parametrik', 'merkmale']));
+// In der Tafel heisst die Gruppe der Merkmal-Werkzeuge „Allgemein" — „Merkmale" ist der Abschnitt darunter (IFC).
+const AUFGABEN_TITEL = { merkmale: 'Allgemein' };
+// Werkzeuge, die im Katalog anders stehen, als man sie sucht: „Löschen" ist dort Lage — gesucht wird es beim Allgemeinen.
+const AUFGABE_FUER = { loeschen: 'merkmale' };
+const _alleWerkzeuge = computed(() => (herleitung.value?.gruppen ?? []).flatMap(g => g.eintraege.map(e => ({ ...e, warum: g.titel }))));
+const aufgabenAnzahl = computed(() => _alleWerkzeuge.value.length);
+const aufgaben = computed(() => {
+  const q = werkzeugSuche.value.trim().toLowerCase();
+  const passt = (e) => !q || e.titel.toLowerCase().includes(q) || e.felder.some(f => String(f.label ?? '').toLowerCase().includes(q));
+  const je = new Map();
+  for (const e of _alleWerkzeuge.value.filter(passt)) {
+    const k = AUFGABE_FUER[e.id] ?? (AUFGABEN_FOLGE.includes(e.gruppe) ? e.gruppe : 'merkmale');
+    if (!je.has(k)) je.set(k, []);
+    je.get(k).push(e);
+  }
+  return AUFGABEN_FOLGE.filter(k => je.has(k))
+    .map(k => ({ id: k, titel: AUFGABEN_TITEL[k] ?? GRUPPEN[k]?.titel ?? k, icon: GRUPPEN[k]?.icon ?? 'edit', eintraege: je.get(k) }));
+});
+function aufgabeUmgeschaltet(id, ev) {
+  if (werkzeugSuche.value.trim()) return;                 // beim Suchen steht alles offen — das merkt sich nichts
+  const s = new Set(offeneAufgaben.value);
+  if (ev?.target?.open) s.add(id); else s.delete(id);
+  offeneAufgaben.value = s;
+}
+/** Der Tooltip eines Werkzeugs: was es setzt (das Vokabular dieses Typs) und warum es hier steht. */
+function werkzeugTitel(b) {
+  if (b.nurFestlegung) return 'Geht als Forderung an den Planer — die Geometrie bleibt bei ihm';
+  const felder = b.felder.filter(f => !f.verborgen).map(f => f.label);
+  return [b.titel, felder.length ? `setzt: ${felder.join(', ')}` : '', b.warum ? `(${b.warum})` : ''].filter(Boolean).join(' — ');
+}
+
 const herleitung = computed(() => herleite({
   el: bearbeitung.bauteil,
   einordnung: bearbeitung.einordnung,
@@ -966,7 +1024,13 @@ async function vorlageEntfernen(v) {
    eine Bearbeitung. */
 /* Die Mehrfach-Auskunft steht dicht am Kopf und ist ruhig — sie warnt nicht,
    sie sagt Bescheid. */
-.tb-mehrere { width: 100%; justify-content: flex-start; }
+/* Mehrere wählen: ein kleiner Schalter im Kopf (Teil XXX, Übersicht). */
+.tb-mehrere {
+  display: inline-flex; align-items: center; gap: 0.25rem; flex: none; padding: 0.15rem 0.45rem; cursor: pointer;
+  background: var(--cde-fill); color: var(--cde-text-dim); border: 1px solid var(--cde-line); border-radius: 999px;
+  font: inherit; font-size: var(--cde-font-xs); touch-action: manipulation;
+}
+.tb-mehrere:hover { color: var(--cde-accent); border-color: var(--cde-accent-line); }
 .tb-mehrere--an { background: var(--cde-accent-fill-hi); color: var(--cde-accent); border-color: var(--cde-accent-line); }
 .tb-mehrfach {
   display: flex; gap: 0.35rem; align-items: flex-start; margin: 0;
@@ -1001,8 +1065,24 @@ async function vorlageEntfernen(v) {
 .tb-kur:disabled { opacity: 0.5; cursor: not-allowed; }
 .tb-bestaetigen { margin-top: 0.25rem; }
 
-.tb-titel { display: flex; flex-direction: column; gap: 0.1rem; }
-.tb-titel code { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.tb-titel { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+.tb-titel-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.tb-titel-text strong { overflow-wrap: anywhere; }
+.tb-klasse { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+/* Kennwerte: zwei Spalten, Zahl rechtsbündig — was das Bauteil IST, vor den Werkzeugen. */
+.tb-kennwerte dd { justify-content: flex-end; font-variant-numeric: tabular-nums; color: var(--cde-text); }
+/* Schnellaktionen in einer Zeile. */
+.tb-schnell { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.tb-btn--chip { border-radius: 999px; padding: 0.2rem 0.55rem; }
+/* Werkzeuge nach Aufgabe: aufklappbar, die Anzahl daneben. */
+/* Ohne Grossschreibung: aus „Maße" würde „MASSE" — und das liest sich als Masse. */
+.tb-aufgabe > summary.tb-kopf { text-transform: none; letter-spacing: 0.02em; font-weight: 600; color: var(--cde-text-dim); }
+.tb-aufgabe > summary { list-style: none; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0; }
+.tb-aufgabe > summary::-webkit-details-marker { display: none; }
+.tb-aufgabe > summary::before { content: '▸'; font-size: 0.7rem; color: var(--cde-text-dim); }
+.tb-aufgabe[open] > summary::before { content: '▾'; }
+.tb-anzahl { margin-left: auto; font-size: 0.66rem; color: var(--cde-text-dim); text-transform: none; letter-spacing: 0; }
+.tb-werkzeugsuche { margin-top: 0.1rem; }
 
 .tb-leer, .tb-fuss { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
 
@@ -1134,7 +1214,6 @@ async function vorlageEntfernen(v) {
 .tb-gelaende-wahl { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0 0.35rem; font-size: 0.78rem; color: var(--cde-text-dim); }
 .tb-gelaende-wahl select { flex: 1; min-width: 0; }
 .tb-btn--aus:hover { border-color: var(--cde-line); color: var(--cde-text); }
-.tb-feld { margin-left: auto; font-style: normal; color: var(--cde-text-dim); font-size: 0.68rem; }
 .tb-nurfest { color: var(--cde-text-dim); }
 
 .tb-gesperrt > summary {
@@ -1152,6 +1231,7 @@ async function vorlageEntfernen(v) {
 .tb-btn, .tb-kur, .tb-modus { touch-action: manipulation; }
 @media (pointer: coarse) {
   .tb-btn { padding: 0.6rem 0.5rem; }
+  .tb-mehrere, .tb-aufgabe > summary { min-height: 40px; }
   .tb-kur { padding: 0.45rem 0.6rem; }
 }
 </style>

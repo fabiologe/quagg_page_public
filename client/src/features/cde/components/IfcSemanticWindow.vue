@@ -59,19 +59,7 @@
             </span>
           </div>
 
-          <!-- Mengen eines EIGENEN Cut/Fill (Teil XX, Fabio: „es fehlen die
-               Volumen in m³"): dieselben Zahlen, die ins IFC gehen
-               (Qto_Earthworks…) und im Mengen-Reiter stehen — aus dem
-               letzten Aufbau, keine zweite Rechnung. -->
-          <div v-if="mengen.length" class="mengen-block">
-            <div class="mengen-kopf">
-              <CdeIcon name="volume" :size="12" /> Mengen <span class="mengen-quelle">wie im IFC</span>
-            </div>
-            <div v-for="m in mengen" :key="m.feld" class="mengen-zeile">
-              <span>{{ m.titel }}</span><b>{{ m.wert }}</b>
-            </div>
-          </div>
-
+          <!-- Die Mengen eines eigenen Bauteils stehen seit Teil XXX oben in der Tafel („Kennwerte", `kennwerteVon`). -->
           <IfcSidebar
             :element="ifc.selectedElement"
             :psetError="ifc.psetError"
@@ -93,8 +81,7 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { useKommandoweg } from '../composables/useKommandoweg.js';
-import { istAnzeigeform, mengenVon, rezeptNach } from '../services/Bauteilrezepte.js';
-import { m3 } from '../services/Mengenzeile.js';
+import { istAnzeigeform } from '../services/Bauteilrezepte.js';
 import { vorlagenbezugVon } from '../services/Bibliothek.js';
 
 /** In der Tafel „Bauteil“ (Kassensturz H2) steht die Komponente im Fluss, nicht als eigene Tafel. */
@@ -144,42 +131,6 @@ const vorlagenbezugTitel = computed(() => {
   const b = vorlagenbezug.value;
   if (!b?.abweichend?.length) return b?.fehlt ? 'Das Bauteil behält seine Werte; nur der Bezug zeigt ins Leere.' : 'Entspricht der Vorlage.';
   return b.abweichend.map(a => `${a.feld}: Vorlage ${a.soll}, hier ${a.ist ?? '—'}`).join('\n');
-});
-
-/** Die Qto-Felder mit deutschem Namen — was ein Planer liest, nicht was im Schema steht. */
-const MENGEN_TITEL = { undisturbedVolume: 'Aushub (gewachsen)', looseVolume: 'Aushub (lose, abzufahren)',
-                       compactedVolume: 'Auftrag (verdichtet)', length: 'Länge' };
-
-/**
- * Die Mengen eines eigenen Cut/Fill (Teil XX) — `mengenVon` wie der IFC-Export,
- * aus den Kennzahlen des letzten Aufbaus. Nach jedem Neuaufbau neu.
- */
-const mengen = computed(() => {
-  void ifc.geometrieStand;
-  const gid = ifc.selectedElement?.globalId;
-  const plan = gid ? aenderungen.wirksamerStand('erzeugt').get(gid) : null;
-  if (!plan?.ableitung || !rezeptNach(plan.rezept)?.erdbau) return [];
-  const k = api.kennzahlenVon?.(plan.ableitung);
-  const zeilen = Object.entries(mengenVon(plan, k)).map(([feld, v]) => ({
-    feld,
-    titel: MENGEN_TITEL[feld] ?? feld,
-    wert: feld === 'length' ? `${v.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m` : m3(v),
-  }));
-  if (!zeilen.length) return zeilen;
-  // DER FAKTOR, MIT DEM GERECHNET WURDE (Teil XXI, P4): ohne ihn steht die
-  // lose Masse als Zahl da, die niemand nachrechnen kann.
-  if (Number.isFinite(k?.auflockerung) && zeilen.some(z => z.feld === 'looseVolume')) {
-    zeilen.push({ feld: 'auflockerung', titel: 'Auflockerung',
-                  wert: `× ${k.auflockerung.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` });
-  }
-  // DIE GEGENPROBE (Teil XXI, P4): Körper gegen Raster. Sie sprach bisher nur,
-  // wenn sie ausschlug — jetzt sieht man auch, wie gut sie stimmt.
-  const abw = plan.rolle === 'auftrag' ? k?.gegenprobeAuftrag : k?.gegenprobeAushub;
-  if (Number.isFinite(abw)) {
-    zeilen.push({ feld: 'gegenprobe', titel: 'Gegenprobe Körper ↔ Raster',
-                  wert: `${(abw * 100).toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` });
-  }
-  return zeilen;
 });
 
 async function clearSelection() {

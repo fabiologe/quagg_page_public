@@ -41,8 +41,10 @@ describe('Wächter: die m³ stehen nach dem Übernehmen und am Cut/Fill', () => 
         const v = lies('components/IfcViewer.vue');
         expect((v.match(/_mitMengen\(/g) ?? []).length).toBeGreaterThanOrEqual(3);   // Definition + Motor + Formular
         expect(v).toMatch(/kennzahlenVon:/);
-        const w = lies('components/IfcSemanticWindow.vue');
-        expect(w).toMatch(/mengenVon\(plan, k\)/);
-        expect(w).toMatch(/api\.kennzahlenVon/);
+        // Seit Teil XXX (Übersicht) stehen die Mengen oben in der Tafel, für JEDES eigene Bauteil (`kennwerteVon` →
+        // `mengenVon`), nicht mehr unten im Eigenschaftsfenster und nur am Erdbau.
+        const t = lies('components/CdeToolbox.vue');
+        expect(t).toMatch(/kennwerteVon\(plan, plan\.ableitung \? \(api\.kennzahlenVon/);
+        expect(lies('services/Mengenzeile.js')).toMatch(/const m = mengenVon\(plan, kennzahlen\);/);
     });
 });

@@ -126,7 +126,8 @@
             <span class="kv-value">{{ element.description }}</span>
           </div>
           <!-- Alle weiteren skalaren IFC-Attribute aus der Datei -->
-          <div v-for="attr in element.attrs" :key="attr.name" class="kv-row">
+          <!-- Ohne die Felder der Bibliothek (`_localId`, `_guid`, …): sie sind Interna, die GlobalId steht unten einmal. -->
+          <div v-for="attr in sichtbareAttrs" :key="attr.name" class="kv-row">
             <span class="kv-label">{{ attr.name }}</span>
             <span class="kv-value">{{ attr.value }}</span>
           </div>
@@ -214,6 +215,8 @@ watch(
 
 // ── derived ─────────────────────────────────────────────────────────────────
 const entityInfo = computed(() => getEntityInfo(props.element.type));
+/** Die Attribute aus der Datei ohne die Interna der Bibliothek (Felder mit führendem Unterstrich). */
+const sichtbareAttrs = computed(() => (props.element?.attrs ?? []).filter(a => !String(a?.name ?? '').startsWith('_')));
 // Anzeige-Etikett aus dem Baum (data/fachbereiche.js) — kein Schemawissen.
 const fachbereich = computed(() => fachbereichVon(entityInfo.value?.hierarchy));
 
