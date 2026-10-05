@@ -1613,7 +1613,7 @@ function vorlageWerkzeug(vorlage) {
         eingaben: [{ schlitz: 'zug', anzahl: { min: 1, max: 1 } }],
         felder: [
             { name: 'name', titel: 'Bezeichnung', typ: 'text' },
-            { name: 'hoehe', titel: 'Oberkante Bodenplatte (leer = Höhe des Punkts)', einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
+            { name: 'hoehe', titel: `${vorlage.ort?.hoehe ?? 'Oberkante Bodenplatte'} (leer = Höhe des Punkts)`, einheit: 'm NN', typ: 'zahl', leerErlaubt: true },
             ...vorlage.felder,
         ],
         vorbelegung: () => ({ name: vorlage.bauwerk.name, hoehe: '',
@@ -1645,7 +1645,7 @@ function vorlageWerkzeug(vorlage) {
             return schritte;
         },
         warumNicht: (el, werte) => {
-            if ((el?.punkte ?? []).length !== 1) return 'Ein Punkt: die Aussenecke Nordwest.';
+            if ((el?.punkte ?? []).length !== 1) return `Ein Punkt: ${vorlage.ort?.punkt ?? 'die Aussenecke Nordwest'}.`;
             if (!String(werte?.name ?? '').trim()) return 'Das Bauwerk braucht eine Bezeichnung.';
             return vorlageGrund(vorlage, vorlagenWerte(vorlage, werte));
         },

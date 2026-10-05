@@ -16,9 +16,16 @@
  *
  * Rein: kein Store, keine Engine. Ost = +x, Nord = −z (Welt).
  */
+import { normschacht } from '../bimfy/muster/Normschacht.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
+const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel']);
 export const GESTEUERT = Object.freeze({
+    // BIMFY I4: die Teile des Normschachts.
+    schachtunterteil: RING_GESTEUERT, schachtring: RING_GESTEUERT, schachthals: RING_GESTEUERT,
+    schachtplatte: RING_GESTEUERT, auflagering: RING_GESTEUERT, schachtabdeckung: RING_GESTEUERT,
+    berme: Object.freeze(['punkte', 'durchmesser', 'auftritt', 'gerinnebreite']),
+    steigeisen: Object.freeze(['punkte']),
     platte: Object.freeze(['punkte', 'dicke']),
     wand: Object.freeze(['punkte', 'dicke', 'wandhoehe']),
     raum: Object.freeze(['punkte', 'raumhoehe', 'betriebswasser']),
@@ -130,11 +137,132 @@ const ZWEIKAMMER_RUEB = Object.freeze({
     },
 });
 
-export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB });
+/** Ein Feld, das auch 0 sein darf (Richtung, „0 = nach Norm"). */
+const wahl = (name, titel, vorgabe, { min = 0, max = 360, einheit = undefined } = {}) =>
+    Object.freeze({ name, titel, typ: 'zahl', min, max, vorgabe, ...(einheit ? { einheit } : {}) });
+
+const KLASSEN = ['', 'A', 'B', 'C', 'D', 'E', 'F'];
+const grad = (g) => (Number(g) * Math.PI) / 180;
+/** Ein Punkt der Vorlage aus Ost/Nord (m) und Höhe — Welt: x = Ost, z = −Nord. */
+const welt = (ost, y, nord) => [ost, y, -nord];
+/** Ein Punkt in Richtung `w` (Radiant, 0 = Ost, gegen den Uhrzeigersinn) im Abstand `d`. */
+const inRichtung = (w, d, y) => welt(Math.cos(w) * d, y, Math.sin(w) * d);
+
+/**
+ * DER NORMSCHACHT (BIMFY I4): ein runder Fertigteilschacht nach DIN 4034-1,
+ * Teil für Teil — Unterteil mit Berme und Gerinne, Ringe, Hals oder Platte,
+ * Auflageringe, Abdeckung, Steigeisen. Die Kette rechnet `muster/Normschacht`
+ * (dieselbe Rechnung wie beim ISYBAU-Import), hier wird sie in Teile gesetzt.
+ *
+ * Der Ort ist die SCHACHTMITTE auf der SOHLE. Der Hals ist exzentrisch zur
+ * Steigseite: dort steht die Wand von unten bis oben senkrecht, und die
+ * Steigeisen sitzen in einer Flucht.
+ *
+ * Wie viele Ringe es sind, folgt aus der Tiefe. Ändert ein neuer Wert ihre
+ * ANZAHL, fehlen Rollen — das meldet das Neuauswerten (eine Grenze der
+ * Vorlagen mit festen Rollen, Teil XXVIII).
+ */
+const NORMSCHACHT = Object.freeze({
+    id: 'normschacht',
+    titel: 'Normschacht',
+    ort: Object.freeze({ punkt: 'Schachtmitte', hoehe: 'Sohlhöhe' }),
+    felder: Object.freeze([
+        zahl('tiefe', 'Tiefe (Deckel über Sohle)', 3, { min: 0.5, max: 15 }),
+        zahl('dn', 'Nennweite (lichter Durchmesser)', 1.0, { min: 0.8, max: 3 }),
+        zahl('oeffnung', 'Einstiegsöffnung', 0.625, { min: 0.6, max: 1 }),
+        zahl('anschlussDn', 'Grösster Anschluss DN', 0.3, { min: 0.1, max: 2 }),
+        wahl('unterteilHoehe', 'Höhe des Unterteils (0 = nach Norm)', 0, { max: 5, einheit: 'm' }),
+        wahl('auflageringe', 'Auflageringe zusammen (0 = nach Norm)', 0, { max: 0.3, einheit: 'm' }),
+        wahl('oberteil', 'Oberteil (1 = Konus, 2 = Abdeckplatte)', 1, { min: 1, max: 2 }),
+        wahl('steighilfe', 'Steighilfe (ISYBAU G306: 1 einläufig, 2 zweiläufig, 5 keine)', 1, { min: 1, max: 5 }),
+        wahl('gerinneform', 'Gerinneform (ISYBAU G309)', 0, { max: 9 }),
+        wahl('abgang', 'Richtung des Abgangs (Grad, 0 = Ost)', 0),
+        wahl('zulauf', 'Richtung des Zulaufs (Grad, −1 = keiner)', 180, { min: -1 }),
+        wahl('steigRichtung', 'Richtung des Steiggangs (Grad, 0 = Ost)', 90),
+        wahl('deckelklasse', 'Deckelklasse (1–6 = A–F, 0 = unbekannt)', 4, { max: 6 }),
+    ]),
+    bauwerk: { name: 'Schacht', art: 'schacht' },
+    pruefe(w) {
+        if (w.oeffnung >= w.dn) return 'Die Einstiegsöffnung ist nicht kleiner als der Schacht.';
+        if (w.anschlussDn >= w.dn) return 'Der Anschluss ist so gross wie der Schacht.';
+        return null;
+    },
+    /** Die Kette als Daten (für Befunde und Herleitung) — dieselbe, aus der die Rollen entstehen. */
+    kette(w, sohle = 0) {
+        const klasse = KLASSEN[Math.round(w.deckelklasse)] || null;
+        const anschluesse = [{ dn: w.anschlussDn, richtung: grad(w.abgang), art: 'ablauf' },
+                             ...(w.zulauf >= 0 ? [{ dn: w.anschlussDn, richtung: grad(w.zulauf), art: 'zulauf' }] : [])];
+        return normschacht({
+            name: 'Schacht', ort: { ost: 0, nord: 0 }, deckelHoehe: sohle + w.tiefe, sohle: { hoehe: sohle, quelle: 'Vorlage' },
+            abdeckung: { klasse, laenge: w.oeffnung, ...(w.auflageringe > 0 ? { hoeheAuflageringe: w.auflageringe } : {}) },
+            aufbau: { form: 'R', konus: Math.round(w.oberteil) !== 2, abdeckplatte: Math.round(w.oberteil) === 2 },
+            unterteil: { form: 'R', laenge: w.dn, ...(w.unterteilHoehe > 0 ? { hoehe: w.unterteilHoehe } : {}), gerinneform: Math.round(w.gerinneform) },
+            einstieghilfe: Math.round(w.steighilfe) !== 5, artEinstieghilfe: Math.round(w.steighilfe),
+        }, { anschluesse, quelle: 'vorlage' });
+    },
+    rollen(w, ort) {
+        const y0 = ort.y;
+        const { teile } = this.kette(w, y0);
+        const steig = grad(w.steigRichtung);
+        const aus = [];
+        let ringe = 0, auflageringe = 0;
+        // Die Achse oberhalb des Halses ist zur Steigseite versetzt (exzentrisch).
+        let oben = [0, 0];
+        const teil = (rolle, rezept, name, t, parameter) => aus.push({ rolle, rezept, name, parameter: { ...parameter, herleitung: t.herleitung } });
+        for (const t of teile) {
+            if (t.rolle === 'schachtunterteil') {
+                teil('unterteil', 'schachtunterteil', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
+                     aussen: t.dAussen, innen: t.dInnen, boden: t.boden });
+                const g = t.gerinne;
+                teil('berme', 'berme', 'Berme mit Gerinne', { herleitung: { auftritt: t.herleitung.auftritt, gerinne: t.herleitung.gerinne } }, {
+                    punkte: [welt(0, y0, 0), ...g.anschluesse.map(a => inRichtung(a.richtung ?? 0, t.dInnen / 2, y0))],
+                    durchmesser: t.dInnen, auftritt: g.auftritt, gerinnebreite: g.breite });
+            } else if (t.rolle === 'schachtring') {
+                ringe++;
+                teil(`ring${ringe}`, 'schachtring', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)], aussen: t.dAussen, innen: t.dInnen });
+            } else if (t.rolle === 'uebergangsplatte') {
+                teil('uebergangsplatte', 'schachtplatte', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
+                     aussen: t.dAussen, innen: t.dOeffnung, objektTyp: 'Übergangsplatte' });
+            } else if (t.rolle === 'schachthals') {
+                const v = (t.dUnten - t.dOben) / 2;
+                oben = [Math.cos(steig) * v, Math.sin(steig) * v];
+                teil('hals', 'schachthals', t.name, t, { punkte: [welt(0, t.unten, 0), welt(oben[0], t.oben, oben[1])],
+                     aussen: t.dUnten + 2 * t.wanddicke, innen: t.dUnten, aussenOben: t.dOben + 2 * t.wanddicke, innenOben: t.dOben });
+            } else if (t.rolle === 'abdeckplatte') {
+                teil('abdeckplatte', 'schachtplatte', t.name, t, { punkte: [welt(0, t.unten, 0), welt(0, t.oben, 0)],
+                     aussen: t.dAussen, innen: t.dOeffnung });
+            } else if (t.rolle === 'auflagering') {
+                auflageringe++;
+                teil(`auflagering${auflageringe}`, 'auflagering', t.name, t, {
+                    punkte: [welt(oben[0], t.unten, oben[1]), welt(oben[0], t.oben, oben[1])], aussen: t.dAussen, innen: t.dInnen });
+            } else if (t.rolle === 'abdeckung') {
+                teil('abdeckung', 'schachtabdeckung', t.name, t, {
+                    punkte: [welt(oben[0], t.unten, oben[1]), welt(oben[0], t.oben, oben[1])],
+                    aussen: t.dAussen, innen: t.lichteWeite, deckel: t.deckeldicke });
+            } else if (t.rolle === 'steigeisen' && t.hoehen.length) {
+                const r = w.dn / 2;
+                teil('steigeisen', 'steigeisen', t.name, t, { punkte: [welt(0, y0, 0), ...t.hoehen.map(h => inRichtung(steig, r, h))] });
+            }
+        }
+        return aus.map(a => ({ ...a, kategorie: null }));
+    },
+});
+
+export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB,
+                                                [NORMSCHACHT.id]: NORMSCHACHT });
 
 /** Was an diesen Werten nicht baubar ist — oder null. Jede Vorlage darf es sagen (`pruefe`). */
 export function vorlageGrund(vorlage, w) {
-    if (!vorlage.felder.every(f => Number.isFinite(w[f.name]) && w[f.name] > 0)) return 'Ein Wert der Vorlage fehlt oder ist nicht grösser als 0.';
+    // Ein Wert muss grösser als 0 sein — ausser das Feld sagt ausdrücklich, was es darf
+    // (`gueltig.ueber` oder ohne `gueltig` sein `min`: eine Richtung darf 0 sein, BIMFY I4).
+    const ok = (f) => {
+        const v = w[f.name];
+        if (!Number.isFinite(v)) return false;
+        if (f.gueltig?.ueber !== undefined) return v > f.gueltig.ueber;
+        if (f.min !== undefined) return v >= f.min;
+        return v > 0;
+    };
+    if (!vorlage.felder.every(ok)) return 'Ein Wert der Vorlage fehlt oder liegt ausserhalb seines Bereichs.';
     return vorlage.pruefe?.(w) ?? null;
 }
 

@@ -183,6 +183,10 @@ const NEU = [
     { id: 'bauwerk-aus-vorlage-zweikammer-rueb', el: zug(P(300, 100, 0)), zug: [P(300, 100, 0)],
       werte: [{ name: 'RÜB', hoehe: '', laenge: 4, breite: 3, lichteHoehe: 2.5, wand: 0.3, boden: 0.4, decke: 0.25,
                 ueberlaufhoehe: 2.4, schwelle: 0.5 }] },
+    // BIMFY I4: der Normschacht — Schachtmitte auf der Sohle, die Vorgaben der Vorlage.
+    { id: 'bauwerk-aus-vorlage-normschacht', el: zug(P(600, 100, 0)), zug: [P(600, 100, 0)],
+      werte: [{ name: 'S1', hoehe: '', tiefe: 3, dn: 1, oeffnung: 0.625, anschlussDn: 0.3, unterteilHoehe: 0, auflageringe: 0,
+                oberteil: 1, steighilfe: 1, gerinneform: 0, abgang: 0, zulauf: 180, steigRichtung: 90, deckelklasse: 4 }] },
     { id: 'raum-zeichnen', el: zug(P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)),
       zug: [P(0, 100, 0), P(4, 100, 0), P(4, 100, 3), P(0, 100, 3)], werte: [{ name: 'R', hoehe: '', raumhoehe: 2.5 }] },
     { id: 'raum-raumhoehe-setzen', el: eigen('cde-RA1'), werte: [{ raumhoehe: 3 }] },

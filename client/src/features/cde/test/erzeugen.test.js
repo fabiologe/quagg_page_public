@@ -81,6 +81,8 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       'ueberlaufschwelle-zeichnen',
                       // Teil XXVIII, V1: ein Bauwerk aus einer Vorlage — ein Punkt, viele Rezepte.
                       'bauwerk-aus-vorlage-rechteckkammer', 'bauwerk-aus-vorlage-zweikammer-rueb',
+                      // BIMFY I4: der Normschacht — Teil für Teil aus einer Vorlage.
+                      'bauwerk-aus-vorlage-normschacht',
                       // V5: die Einbauten — aus den vorhandenen Bausteinen.
                       'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen',
                       // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.

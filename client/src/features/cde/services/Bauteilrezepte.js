@@ -358,6 +358,8 @@ const GELAENDE_REZEPT = Object.freeze({
 export const BAUWERKSARTEN = Object.freeze({
     anlage: Object.freeze({ titel: 'Anlage', text: 'ein Bauwerk, in dem Bauteile stehen (IfcFacility)' }),
     baugruppe: Object.freeze({ titel: 'Baugruppe', text: 'Bauteile, die als Einheit geliefert oder montiert werden (IfcElementAssembly)' }),
+    // BIMFY I4: der Schacht ist selbst das Ganze — seine Teile zerlegen ihn (IfcRelAggregates).
+    schacht: Object.freeze({ titel: 'Schacht', text: 'ein Schacht aus Fertigteilen (IfcDistributionChamberElement, MANHOLE)' }),
 });
 
 const BAUWERK_REZEPT = Object.freeze({

@@ -43,8 +43,11 @@ export const ANNAHMEN = Object.freeze({
     ersterAuftritt: Object.freeze({ wert: 0.4, text: 'Mitte des Bereichs 250–500 mm' }),
     // Abstand des obersten Steigeisens unter dem Austritt.
     obersterAbstand: Object.freeze({ wert: 0.25, text: 'unter einem Steigabstand' }),
-    // Lage des Steiggangs im Grundriss — die Norm legt sie nicht fest.
-    steigRichtung: Object.freeze({ wert: 0, text: 'Steiggang nach Norden (Richtung nicht in ISYBAU)' }),
+    // Lage des Steiggangs im Grundriss — die Norm legt sie nicht fest (Radiant, 0 = Ost).
+    steigRichtung: Object.freeze({ wert: Math.PI / 2, text: 'Steiggang nach Norden (Richtung nicht in ISYBAU)' }),
+    // Rahmen und Deckel der Abdeckung: ohne DIN 19584 nicht belegt.
+    rahmenbreite: Object.freeze({ wert: 0.08, text: 'Rahmenbreite 80 mm: DIN 19584 fehlt im Bestand' }),
+    deckeldicke: Object.freeze({ wert: 0.06, text: 'Deckeldicke 60 mm: DIN 19584 fehlt im Bestand' }),
 });
 
 /** Die Normnennweite zu einem Mass, wenn es höchstens 2 cm daneben liegt — sonst null. */
@@ -126,7 +129,9 @@ export function steigeisenHoehen(zStand, zAustritt) {
  *        die Haltungen am Schacht (DN in m; Richtung in Radiant, 0 = Ost, gegen den Uhrzeigersinn)
  * @returns {{teile: object[], befunde: object[], kopf: object}|{teile: [], befunde: object[], kopf: null}}
  */
-export function normschacht(s, { anschluesse = [] } = {}) {
+export function normschacht(s, { anschluesse = [], quelle = 'isybau' } = {}) {
+    // Woher die gegebenen Werte stammen: aus der Datei (ISYBAU) oder aus den Werten einer Vorlage.
+    const Q = quelle;
     const befunde = [];
     const befund = (regel, text, schwere = 'hinweis') => befunde.push({ regel, schwere, text });
     const ab = s.abdeckung ?? {}, au = s.aufbau ?? {}, uz = s.untereZone ?? null, ut = s.unterteil ?? {};
@@ -158,10 +163,10 @@ export function normschacht(s, { anschluesse = [] } = {}) {
     const dnRoh = laengeAufbauIstOeffnung ? (ut.laenge ?? null) : (au.laenge ?? ut.laenge ?? null);
     let dn = normNennweite(dnRoh);
     let hDn;
-    if (dn !== null) hDn = H('isybau', `DN ${Math.round(dn * 1000)} aus ${laengeAufbauIstOeffnung ? 'LaengeUnterteil' : (au.laenge ? 'LaengeAufbau' : 'LaengeUnterteil')}`);
+    if (dn !== null) hDn = H(Q, `DN ${Math.round(dn * 1000)} aus ${laengeAufbauIstOeffnung ? 'LaengeUnterteil' : (au.laenge ? 'LaengeAufbau' : 'LaengeUnterteil')}`);
     else if (_fin(dnRoh)) {
         dn = dnRoh;
-        hDn = H('isybau', `Ø ${dnRoh.toFixed(2)} m — keine Normnennweite`);
+        hDn = H(Q, `Ø ${dnRoh.toFixed(2)} m — keine Normnennweite`);
         befund('keine_normnennweite', `Ø ${dnRoh.toFixed(2)} m ist keine Nennweite nach DIN 4034-1 — Wanddicke der nächsten Nennweite.`);
     } else {
         dn = 1.0;
@@ -177,24 +182,24 @@ export function normschacht(s, { anschluesse = [] } = {}) {
     const hRahmen = leicht ? ANNAHMEN.rahmenhoehe.leicht : ANNAHMEN.rahmenhoehe.schwer;
     const oeffnungIsy = laengeAufbauIstOeffnung ? au.laenge : (_fin(ab.laenge) ? ab.laenge : null);
     const d10 = HALS.oeffnungen.find(o => _fin(oeffnungIsy) && Math.abs(o - oeffnungIsy) <= 0.03) ?? HALS.oeffnungen[0];
-    const hD10 = _fin(oeffnungIsy) ? H('isybau', `Öffnung ${Math.round(d10 * 1000)} mm`) : H('norm', 'Öffnung 625 mm (Regel)', B.hals);
+    const hD10 = _fin(oeffnungIsy) ? H(Q, `Öffnung ${Math.round(d10 * 1000)} mm`) : H('norm', 'Öffnung 625 mm (Regel)', B.hals);
     const zRahmenUnten = zDeckel - hRahmen;
 
     // Hals oder Abdeckplatte: ISYBAU sagt es, sonst der Regelaufbau mit Hals (DIN 4034-1, Bild 1).
     let oberteil = au.abdeckplatte === true || au.konus === false ? 'abdeckplatte' : 'hals';
     const hOberteil = oberteil === 'hals'
-        ? (au.konus === true ? H('isybau', 'Konus vorhanden') : H('norm', 'Regelaufbau mit Schachthals', B.hals))
-        : H('isybau', au.abdeckplatte ? 'Abdeckplatte vorhanden' : 'kein Konus — Abdeckplatte');
+        ? (au.konus === true ? H(Q, 'Konus vorhanden') : H('norm', 'Regelaufbau mit Schachthals', B.hals))
+        : H(Q, au.abdeckplatte ? 'Abdeckplatte vorhanden' : 'kein Konus — Abdeckplatte');
 
     // ── Unten: Unterteil mit Gerinne ──
     const dR = Math.max(0, ...anschluesse.map(a => a.dn).filter(_fin));
     const dRwert = dR > 0 ? dR : ANNAHMEN.anschlussDn.wert;
-    const hDr = dR > 0 ? H('isybau', `grösster Anschluss DN ${Math.round(dR * 1000)}`) : H('annahme', ANNAHMEN.anschlussDn.text);
+    const hDr = dR > 0 ? H(Q, `grösster Anschluss DN ${Math.round(dR * 1000)}`) : H('annahme', ANNAHMEN.anschlussDn.text);
     const boden = UNTERTEIL_BODEN[dnTab];
     let hUnterteil, hHu;
     if (_fin(ut.hoehe) && ut.hoehe > 0) {
         hUnterteil = ut.hoehe;
-        hHu = H('isybau', 'HoeheUnterteil (Sohle bis zum ersten Bauteilwechsel)');
+        hHu = H(Q, 'HoeheUnterteil (Sohle bis zum ersten Bauteilwechsel)');
     } else {
         hUnterteil = dRwert + (dRwert <= 0.25 ? WAND_UEBER_SCHEITEL.bisDn250 : WAND_UEBER_SCHEITEL.abDn300);
         hHu = H('norm', `Wand über dem höchsten Scheitel (${dRwert <= 0.25 ? 350 : 400} mm)`, B.wandUeberScheitel);
@@ -251,7 +256,7 @@ export function normschacht(s, { anschluesse = [] } = {}) {
         },
         herleitung: {
             hoehe: hHu, boden: H('norm-pruefen', `Bodendicke t3 DN ${Math.round(dnTab * 1000)}`, B.unterteil),
-            dInnen: hDn, wanddicke: hT, gerinne: ut.gerinneform !== undefined && ut.gerinneform !== null ? H('isybau', 'Gerinneform G309') : H('annahme', 'Gerinneform fehlt — Kreis bis Kämpfer'),
+            dInnen: hDn, wanddicke: hT, gerinne: ut.gerinneform !== undefined && ut.gerinneform !== null ? H(Q, 'Gerinneform G309') : H('annahme', 'Gerinneform fehlt — Kreis bis Kämpfer'),
             auftritt: H('norm', dRwert <= AUFTRITT.grenzeDn ? 'Auftritt auf Scheitelhöhe' : 'Auftritt 500 mm über Sohle', B.auftritt),
             anschluss: hDr,
         },
@@ -292,7 +297,7 @@ export function normschacht(s, { anschluesse = [] } = {}) {
     for (const h of ars) {
         teile.push({ rolle: 'auflagering', name: `Auflagering ${Math.round(h * 1000)} mm`, unten: _r3(z), oben: _r3(z + h),
             dInnen: d10, dAussen: _r3(d10 + 0.17),
-            herleitung: { hoehe: arGegeben !== null ? H('isybau', 'HoeheAuflageringe (cm)') : H('norm', 'Auflageringe 60/80/100 mm, ≤ 240 mm', B.auflageringSumme),
+            herleitung: { hoehe: arGegeben !== null ? H(Q, 'HoeheAuflageringe (cm)') : H('norm', 'Auflageringe 60/80/100 mm, ≤ 240 mm', B.auflageringSumme),
                           dAussen: H('annahme', 'Ringbreite 85 mm') } });
         z += h;
     }
@@ -302,10 +307,12 @@ export function normschacht(s, { anschluesse = [] } = {}) {
         rolle: 'abdeckung', name: `Schachtabdeckung${klasse ? ` ${ABDECKUNGSKLASSEN[klasse].titel}` : ''}`,
         unten: _r3(zRahmenUnten), oben: _r3(zDeckel),
         lichteWeite: _fin(ab.laenge) ? ab.laenge : d10, eckig: ab.deckelform === 'E' || ab.deckelform === 'EV',
+        dAussen: _r3((_fin(ab.laenge) ? ab.laenge : d10) + 2 * ANNAHMEN.rahmenbreite.wert), deckeldicke: ANNAHMEN.deckeldicke.wert,
         breite: ab.breite ?? null, klasse, lueftung: ab.deckeltyp === 1 ? true : ab.deckeltyp === 2 ? false : null,
         verschraubt: ab.deckelform === 'RV' || ab.deckelform === 'EV', material: ab.material ?? null, schmutzfaenger: ab.schmutzfaenger ?? null,
-        herleitung: { hoehe: H('annahme', ANNAHMEN.rahmenhoehe.text), lichteWeite: _fin(ab.laenge) ? H('isybau', 'LaengeDeckel') : hD10,
-                      klasse: klasse ? H('isybau', 'Abdeckungsklasse G304', B.abdeckungKlasse) : H('annahme', 'Klasse fehlt') },
+        herleitung: { hoehe: H('annahme', ANNAHMEN.rahmenhoehe.text), lichteWeite: _fin(ab.laenge) ? H(Q, 'LaengeDeckel') : hD10,
+                      dAussen: H('annahme', ANNAHMEN.rahmenbreite.text), deckeldicke: H('annahme', ANNAHMEN.deckeldicke.text),
+                      klasse: klasse ? H(Q, 'Abdeckungsklasse G304', B.abdeckungKlasse) : H('annahme', 'Klasse fehlt') },
     });
 
     // ── Steighilfen ──
@@ -325,7 +332,7 @@ export function normschacht(s, { anschluesse = [] } = {}) {
             teile.push({ rolle: 'steigeisen', name: zweilaeufig ? 'Steigeisengang zweiläufig' : 'Steigeisengang einläufig',
                 hoehen, abstand, zweilaeufig, richtung: ANNAHMEN.steigRichtung.wert, material: s.materialSteighilfen ?? null,
                 herleitung: { hoehen: H('norm', 'Steigmass 250–333 mm, erster Auftritt 250–500 mm', B.steig),
-                              art: art ? H('isybau', 'ArtEinstieghilfe G306') : H('annahme', 'Steighilfe angenommen (keine Angabe)'),
+                              art: art ? H(Q, 'ArtEinstieghilfe G306') : H('annahme', 'Steighilfe angenommen (keine Angabe)'),
                               lage: H('annahme', ANNAHMEN.steigRichtung.text) } });
         }
     }
