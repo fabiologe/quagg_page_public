@@ -99,6 +99,20 @@ describe('Muster · Kunststoffschacht', () => {
         expect(k.at(-1).oben).toBe(102.5);
         expect(teile[0].unten).toBeCloseTo(101.2 - 0.03, 6);                                // Boden unter der Sohle
     });
+    it('Konus erst ab 1,0 m Tiefe (Vorgabe Fabio): 0,99 m → Teleskop mit Befund, 1,00 m → Konus', () => {
+        const flach = kunststoffschacht({ name: 'A', ort: { ost: 0, nord: 0 }, sohle: 100, deckel: 100.99, di: 0.8 });
+        expect(flach.teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'schachtrohr', 'teleskop', 'abdeckung']);
+        expect(flach.befunde.map(b => b.regel)).toContain('unter_konustiefe');
+        const genau = kunststoffschacht({ name: 'B', ort: { ost: 0, nord: 0 }, sohle: 100, deckel: 101, di: 0.8 });
+        expect(genau.teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'schachthals', 'abdeckung']);   // kein Schachtrohr nötig
+        expect(genau.teile[1].herleitung.konus).toMatchObject({ art: 'vorgabe' });
+    });
+    it('tiefer als 3 m: DI 0,8 ist nur bis 3,0 m zulässig — DI 1,0 m (DIN 1986-100, Tab. 3)', () => {
+        const e = ordneKnoten({ art: 'anschlusspunkt', name: 'GA9', punktkennung: 'GA', ort: { ost: 0, nord: 0 }, sohle: 100, gelaende: 103.4 });
+        expect(e.berichtigt).toEqual(['ga-tiefer-als-3m']);
+        expect(e.muster.kopf.di).toBe(1);
+        expect(e.muster.teile[0].herleitung.dInnen).toMatchObject({ art: 'norm', beleg: { norm: 'DIN 1986-100:2016-12' } });
+    });
     it('DI 0,4 m: Teleskop statt Konus, nicht begehbar; zu flach: kein Schacht', () => {
         const klein = kunststoffschacht({ name: 'X', ort: { ost: 0, nord: 0 }, sohle: 100, deckel: 101, di: 0.4 });
         expect(klein.teile.map(t => t.rolle)).toEqual(['schachtunterteil', 'schachtrohr', 'teleskop', 'abdeckung']);

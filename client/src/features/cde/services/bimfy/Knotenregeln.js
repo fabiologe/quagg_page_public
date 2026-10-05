@@ -23,6 +23,7 @@ import { normschacht } from './muster/Normschacht.js';
 import { kastenschacht } from './muster/Kastenschacht.js';
 import { kunststoffschacht } from './muster/Kunststoffschacht.js';
 import { herleitung as H } from './muster/Herleitung.js';
+import { B, GRUNDSTUECK_SCHACHT } from './muster/Normwerte.js';
 
 const _fin = Number.isFinite;
 const _r3 = (v) => Math.round(v * 1000) / 1000;
@@ -129,13 +130,25 @@ export const KNOTENREGELN = Object.freeze([
             : null),
     },
     {
+        id: 'ga-tiefer-als-3m', fuer: 'anschlusspunkt', titel: 'DI 0,8 m tiefer als 3 m → DI 1,0 m (DIN 1986-100, Tab. 3)',
+        beispiel: { ...GA_BEISPIEL, gelaende: 104.6 },
+        versuche: (a) => {
+            const di = a.di ?? V('gaDurchmesser');
+            if (!V('kunststoffschachtFuer').includes(a.punktkennung) || di >= GRUNDSTUECK_SCHACHT.besteigbarDi) return null;
+            if (!(a.gelaende - a.sohle > GRUNDSTUECK_SCHACHT.ausnahmeBisTiefe)) return null;
+            return { korrektur: { ...a, di: GRUNDSTUECK_SCHACHT.besteigbarDi,
+                                  diHerleitung: H('norm', `DN/ID 800 nur bis 3,0 m Tiefe — tiefer DN/ID 1000`, B.grundstueckSchacht) },
+                     befund: befund('ga_tiefer_als_3m', `„${a.name}": ${(a.gelaende - a.sohle).toFixed(2)} m tief — DI 0,8 m ist nur bis 3,0 m zulässig, DI 1,0 m gebaut.`) };
+        },
+    },
+    {
         id: 'ga-kunststoffschacht', fuer: 'anschlusspunkt', titel: 'Gebäudeanschluss → Kunststoffschacht DI 0,8 m',
         beispiel: GA_BEISPIEL,
         versuche: (a) => {
             if (!V('kunststoffschachtFuer').includes(a.punktkennung)) return null;
             const m = kunststoffschacht({
-                name: a.name, ort: a.ort, sohle: a.sohle, deckel: a.gelaende, di: V('gaDurchmesser'),
-                herkunft: { di: H('vorgabe', KNOTEN_VORGABEN.gaDurchmesser.text),
+                name: a.name, ort: a.ort, sohle: a.sohle, deckel: a.gelaende, di: a.di ?? V('gaDurchmesser'),
+                herkunft: { di: a.diHerleitung ?? H('vorgabe', KNOTEN_VORGABEN.gaDurchmesser.text),
                             deckel: a.gelaendeAngenommen ? H('annahme', KNOTEN_VORGABEN.gaTiefeOhneGelaende.text) : H('isybau', 'Geländeoberkante (GOK)') },
             });
             if (!m.kopf) return { befunde: m.befunde };

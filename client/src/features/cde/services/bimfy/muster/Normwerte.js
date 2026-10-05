@@ -14,6 +14,7 @@ const beleg = (norm, stelle, pruefen = false) => Object.freeze({ norm, stelle, .
 
 export const B = Object.freeze({
     ring: beleg('DIN 4034-1:2020-04', '4.3.3.8.4'),
+    grundstueckSchacht: beleg('DIN 1986-100:2016-12', 'Tabelle 3 (Einsteigschächte und Inspektionsöffnungen)'),
     ringStoss: beleg('DIN V 4034-1:2004-08', 'Tabelle 5 (Schachtring mit Muffe SR-M)'),
     ringWand: beleg('DIN 4034-1:2020-04', 'Tabelle 10'),
     nennweiten: beleg('DIN 4034-1:2020-04', 'Abschnitt 1'),
@@ -75,6 +76,14 @@ export function ringStoss(dn, wanddicke) {
 }
 /** Muffenspalt der Schachtringe — Annahme (DIN V 4034-1, Tabelle 7 nicht im Bestand). */
 export const RING_MUFFENSPALT = 0.01;
+
+/**
+ * Schächte der Grundstücksentwässerung (DIN 1986-100:2016, Tab. 3): besteigbar in der Regel
+ * ab DN/ID 1000, DN/ID 800 nur „in Ausnahmesituationen … bis 3 000 mm Tiefe"; nicht besteigbare
+ * Inspektionsöffnungen DN/ID 300–<400 bis 1,5 m, 400–<800 bis 3,0 m tief.
+ */
+export const GRUNDSTUECK_SCHACHT = Object.freeze({ besteigbarDi: 1.0, ausnahmeDi: 0.8, ausnahmeBisTiefe: 3.0,
+                                                   inspektion: Object.freeze([{ diAb: 0.3, bisTiefe: 1.5 }, { diAb: 0.4, bisTiefe: 3.0 }]) });
 
 /** Bauhöhen der Schachtringe: Regel 1000 mm, Ausgleich 750 und 500 mm (DIN 4034-1, 4.3.3.8.4). */
 export const RING_HOEHEN = Object.freeze({ regel: 1.0, ausgleich: Object.freeze([0.75, 0.5]) });

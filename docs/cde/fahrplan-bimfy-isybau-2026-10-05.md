@@ -251,6 +251,21 @@ erweiterbar, damit wir alle möglichen komischen Fehleinträge abfangen können.
 | verlängerte Leitungen | 162 | 2 (nur noch an Formstücken) |
 | Prüftor offen | 0 | 0 |
 
+### I11b · Konus erst ab 1 m, DI nach DIN 1986‑100 (gebaut)
+
+1. **Konus erst ab 1,0 m Tiefe** (Vorgabe Fabio — Fundstelle offen; DIN 1986‑100, DWA‑A 157 und
+   DIN 4034‑1 im Bestand nennen sie nicht wörtlich). Darunter Teleskop unter der Abdeckung. Das
+   Schachtrohr darf entfallen (Abdeckung, Konus, Unterteil sind ein Schacht).
+2. **DIN 1986‑100:2016, Tab. 3**: besteigbar in der Regel DN/ID 1000; DN/ID 800 nur in Ausnahmen bis
+   3,0 m Tiefe — tiefer wird DI 1,0 m gebaut (Regel `ga-tiefer-als-3m`).
+
+| Messgrösse (echte Datei) | vorher | nachher |
+|---|---|---|
+| Kunststoffschächte mit Konus | 74 | 132 |
+| ohne Konus (unter 1 m) | 75 | 17 |
+| auf DI 1,0 m gehoben (tiefer als 3 m) | 0 | 6 |
+| Prüftor offen | 0 | 0 |
+
 ### Offen nach I8
 
 1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). ~~Anschlusspunkte und Bauwerke~~ — gebaut (I10).

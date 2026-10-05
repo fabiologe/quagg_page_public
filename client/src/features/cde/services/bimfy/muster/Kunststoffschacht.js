@@ -29,6 +29,13 @@ export const KUNSTSTOFF_ANNAHMEN = Object.freeze({
     begehbar: Object.freeze({ wert: 0.8, text: 'ab DI 800 mm begehbar — Konus statt Teleskop' }),
 });
 
+/**
+ * KONUS ERST AB 1,0 m TIEFE (Fabio, 2026-10-05: „irgendwo eine Regel") — darunter
+ * Teleskop unter der Abdeckung. Die Fundstelle ist offen; DIN 1986-100, DWA-A 157
+ * und DIN 4034-1 im Bestand nennen sie nicht wörtlich.
+ */
+export const KONUS_AB_TIEFE = Object.freeze({ wert: 1.0, text: 'Konus erst ab 1,0 m Tiefe (Vorgabe Fabio, 2026-10-05 — Fundstelle offen)' });
+
 /** Die Wanddicke eines Kunststoffschachts zu seinem Durchmesser (Annahme). */
 export const kunststoffWand = (di) => Math.max(KUNSTSTOFF_ANNAHMEN.wand.min, _r3(di * KUNSTSTOFF_ANNAHMEN.wand.faktor));
 
@@ -67,13 +74,17 @@ export function kunststoffschacht(s, { quelle = 'isybau' } = {}) {
                 herleitung: { hoehe: H('annahme', ANNAHMEN.rahmenhoehe.text), deckel: s.herkunft?.deckel ?? H(quelle, 'Deckelhöhe gegeben') } });
     z -= hRahmen;
     const rest = () => z - zSohle - A.unterteil.wert;
-    if (begehbar && rest() >= A.konus.wert + 0.05) {
+    const tiefe = zDeckel - zSohle;
+    const konusErlaubt = tiefe >= KONUS_AB_TIEFE.wert - 1e-9;
+    // Das Schachtrohr darf entfallen: Abdeckung, Konus und Unterteil allein sind ein Schacht.
+    if (begehbar && konusErlaubt && rest() >= A.konus.wert - 1e-9) {
         oben.push({ rolle: 'schachthals', name: `Konus DI ${Math.round(di * 1000)}/${Math.round(oeffnung * 1000)}`,
                     unten: _r3(z - A.konus.wert), oben: _r3(z), dUnten: di, dOben: oeffnung, wanddicke: wand,
-                    herleitung: { hoehe: H('annahme', A.konus.text), wanddicke: hWand } });
+                    herleitung: { hoehe: H('annahme', A.konus.text), wanddicke: hWand, konus: H('vorgabe', KONUS_AB_TIEFE.text) } });
         z -= A.konus.wert;
     } else {
-        if (begehbar) befund('zu_flach_fuer_konus', 'Zu flach für einen Konus — Teleskop direkt unter der Abdeckung.');
+        if (begehbar && !konusErlaubt) befund('unter_konustiefe', `${Math.round(tiefe * 100) / 100} m tief — ${KONUS_AB_TIEFE.text}: Teleskop unter der Abdeckung.`);
+        else if (begehbar) befund('zu_flach_fuer_konus', 'Zu flach für einen Konus — Teleskop direkt unter der Abdeckung.');
         const h = Math.min(A.teleskop.wert, Math.max(0, rest()));
         if (h > 0.01) {
             oben.push({ rolle: 'teleskop', name: `Teleskop DI ${Math.round(oeffnung * 1000)}`, unten: _r3(z - h), oben: _r3(z),
