@@ -34,6 +34,7 @@ import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { RASTER_M, achsPassung, achsParameter, achsenAufSchirm, deltaFuer, deltaXZAusSchirm, ebeneBrauchbar, rasterFang, richtungAufSchirm, zugText } from '../services/Achszug.js';
 import { tokenFarben } from './useZeiger.js';
+import { TREFFER_PX } from '../services/IfcOverlay.js';
 
 /** Hat dieses Rezept einen Griff am Klickpunkt? Das Rezept sagt es (`bauteilGriff`, A3). */
 const ohneBauteilGriff = (id) => !!(id && rezeptNach(id)?.bauteilGriff === false);
@@ -43,6 +44,13 @@ const ACHSLINIE_M = 120;
 
 /** Fangradius im Raum (m) — grob zwei Fingerbreiten in üblicher Nähe. */
 const FANG_RADIUS_M = 0.6;
+
+/**
+ * Ab wie vielen BILDSCHIRMPIXELN ein Zug als Zug zählt (Teil XXXI, T4). Bis dahin ist er ein Tipp und schreibt nichts
+ * (Tablet-Rezept, Regel 4). Die 1 cm von `MINDEST_ZUG_M` allein genügten nicht: in der Übersicht ist 1 cm weniger als
+ * ein Pixel, ein zitternder Finger hätte geschrieben. Der Finger zittert mehr als die Maus.
+ */
+export const ZUG_SCHWELLE_PX = Object.freeze({ touch: 10, sonst: 3 });
 
 /** Winkelraster beim Drehen (Grad) — Alt lässt frei, wie beim Längenraster. */
 const WINKEL_RASTER_GRAD = 5;
@@ -190,7 +198,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Overlay (Werkzeug gerade gewechselt) darf keinen Zug beginnen.
         if (!key || !griffe.value.some(g => g.key === key)) { schliesseGruppe(); return false; }
         _getroffen = key;
-        return tipp.typ === 'touch' ? 'warten' : true;
+        // SOFORT ZIEHEN, AUCH MIT DEM FINGER (Teil XXXI, T4 — E-T2): auf einem Griff ist der Griff das Ziel, nicht die
+        // Kamera. Bis hierher armierte der Finger erst nach 380 ms Long-Press (`'warten'`), sonst schwenkte er die
+        // Kamera. Griffe stehen nur im Bearbeiten-Modus; daneben bleibt der Finger Kamera. Ein Tipp auf den Griff
+        // schreibt trotzdem nicht: erst ab `ZUG_SCHWELLE_PX` ist es ein Zug.
+        return true;
     }
 
     /**
@@ -257,8 +269,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Serie fort (K5); kam der Griff aus „alle Griffe" (T3), kehrt das Bild
         // nach dem Ablegen dorthin zurück.
         const serie = !!bearbeitung?.scharfId;
+        const schwellePx = tipp?.typ === 'touch' ? ZUG_SCHWELLE_PX.touch : ZUG_SCHWELLE_PX.sonst;
         if (g.wirkung === 'tipp') {
-            zug.value = { griff: g, wirkung: 'tipp', pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null, serie };
+            zug.value = { griff: g, wirkung: 'tipp', pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null, serie,
+                          startPx: tipp?.px ? { x: tipp.px.x, y: tipp.px.y } : null, schwellePx, weg: false };
             e.griffHervorheben?.(g.key);
             pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: g.rolle === 'entfernen' ? 'Stützpunkt entfernen' : 'Stützpunkt einfügen' } : null;
             return;
@@ -303,7 +317,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
                       schirm, startPx, meterJePixel, schirmRichtung, startT,
                       erlaubt: g.achsenErlaubt ?? [],
                       radius: g.art === 'drehung' && g.zentrum ? Math.hypot(g.pos.x - g.zentrum.x, g.pos.z - g.zentrum.z) : null,
-                      subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher, laed: w.laed ?? null, serie };
+                      subjekt: w.subjekt, warScharf: w.warScharf, werteVorher: w.werteVorher, laed: w.laed ?? null, serie, schwellePx };
         _subjektAnbinden(zug.value);
         _geistAufstellen(zug.value);
         e.griffHervorheben?.(g.key);
@@ -330,6 +344,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         }).catch(() => false);
     }
 
+    /** Hat sich der Zeiger seit dem Aufnehmen um mindestens die Zug-Schwelle bewegt (Bildschirmpixel)? */
+    const _ueberSchwelle = (z, tipp) => !z.startPx || !tipp?.px || !(z.schwellePx > 0)
+        || Math.hypot(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y) >= z.schwellePx;
+
     const _delta = (z) => ({ x: z.pos.x - z.griff.pos.x, y: z.pos.y - z.griff.pos.y, z: z.pos.z - z.griff.pos.z });
 
     /** Rasterfang im Raum — Alt lässt frei (flood-3D-Muster). */
@@ -339,7 +357,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const z = zug.value;
         if (!z) return;
         const e = engine.value;
-        if (z.wirkung === 'tipp') return;                  // ein Tipp bewegt nichts
+        // Ein Tipp-Griff bewegt nichts. Er gilt wie ein Knopf, solange man ÜBER ihm loslässt (seine Trefferfläche,
+        // TREFFER_PX); wer den Finger weiter wegzieht, meinte ihn nicht — jetzt, wo der Finger nicht mehr erst armiert (T4).
+        if (z.wirkung === 'tipp') {
+            if (z.startPx && tipp?.px && Math.hypot(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y) > TREFFER_PX) z.weg = true;
+            return;
+        }
         if (z.griff.art === 'drehung') { _drehZugBewegt(z, tipp); return; }
         const strahl = e.strahl?.(tipp.x, tipp.y);
         let d;
@@ -389,7 +412,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             z.fang = r.aktiv[0]?.name ?? null;
         }
         z.pos = pos;
-        if (!z.bewegt && Math.hypot(pos.x - z.griff.pos.x, pos.y - z.griff.pos.y, pos.z - z.griff.pos.z) > MINDEST_ZUG_M) z.bewegt = true;
+        if (!z.bewegt && _ueberSchwelle(z, tipp)
+            && Math.hypot(pos.x - z.griff.pos.x, pos.y - z.griff.pos.y, pos.z - z.griff.pos.z) > MINDEST_ZUG_M) z.bewegt = true;
         e.griffVersetzen?.(z.griff.key, pos);
         e.geistVersetzen?.(_delta(z));
         _werteLive(z, pos);                       // die Vorschau liest die Felder
@@ -481,12 +505,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         e?.griffHervorheben?.(null);
         // DER GEIST BLEIBT AM NEUEN ORT, bis das Bild ihn eingeholt hat (Teil XXXI, T1) — `ablegen` räumt ihn nach dem
         // Neuaufbau. Vorher verschwand er beim Loslassen, und 1–6 s stand nur der alte Zustand da (Tabletlauf T0).
-        const legtAb = !!z && !abbruch && (z.wirkung === 'tipp' || z.bewegt);
+        const legtAb = !!z && !abbruch && ((z.wirkung === 'tipp' && !z.weg) || z.bewegt);
         if (!legtAb) { e?.zeigeZugbild?.(null); e?.geistLeeren?.(); }
         if (!z) return null;
         // TIPP-GRIFF: der Griff selbst IST die Eingabe — die Werte bringt er mit.
         if (z.wirkung === 'tipp') {
-            if (abbruch) { neuBauen(); return null; }
+            if (abbruch || z.weg) { neuBauen(); return null; }
             return ablegen(z.griff, z.griff.pos, { werte: z.griff.werte, serie: z.serie });
         }
         // Ein fremder Schacht: erst das Subjekt abwarten — ohne eins gibt es nichts abzulegen.
@@ -527,7 +551,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const a = a0 + (grad * Math.PI) / 180;
         z.pos = { x: c.x + Math.cos(a) * z.radius, y: z.griff.pos.y, z: c.z + Math.sin(a) * z.radius };
         z.winkel = grad;
-        if (!z.bewegt && Math.abs(grad) >= (raster || 0.5)) z.bewegt = true;
+        if (!z.bewegt && _ueberSchwelle(z, tipp) && Math.abs(grad) >= (raster || 0.5)) z.bewegt = true;
         e.griffVersetzen?.(z.griff.key, z.pos);
         _werteLive(z, z.pos);
         _zeige(tipp);

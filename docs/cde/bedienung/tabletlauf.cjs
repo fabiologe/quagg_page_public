@@ -221,6 +221,32 @@ function auswerten(reihe, xVorher) {
         zahlen.journalNachher = await v(page, `return pinia._s.get('cde-aenderungen').eintraege.length;`);
         zahlen.nachDemZug = await v(page, `const b = pinia._s.get('cde-bearbeitung'); return { gewaehlt: b.bauteil?.globalId === arg, scharf: b.scharfId, griffe: v.griffe.griffe.value.length };`, gid);
 
+        // T4 · Derselbe Pfeil, OHNE Halten gezogen (Teil XXXI, E-T2): schreibt der Zug — oder dreht er die Kamera?
+        await warte(8000);
+        const kameraOrt = `const c = v.engine.overlay._getWorld().camera.three.position; return [c.x, c.y, c.z].map(x => +x.toFixed(3));`;
+        const pfeil2 = (await v(page, `const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+            return v.griffe.griffe.value.filter(g => g.form === 'pfeil').map(g => { const s = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
+                return { achse: g.achsName ?? null, x: s ? c.left + s.x : null, y: s ? c.top + s.y : null }; });`)).find(g => /ost/i.test(g.achse ?? '')) ?? null;
+        if (pfeil2?.x != null) {
+            const j0 = await v(page, `return pinia._s.get('cde-aenderungen').eintraege.length;`);
+            const k0 = await v(page, kameraOrt);
+            await finger(page, cdp, { x: pfeil2.x, y: pfeil2.y }, { x: pfeil2.x + 80, y: pfeil2.y + 6 }, { halten: 0, schritte: 8 });
+            await warte(9000);
+            const j1 = await v(page, `return pinia._s.get('cde-aenderungen').eintraege.length;`);
+            const k1 = await v(page, kameraOrt);
+            zahlen.sofortZug = { geschrieben: j1 > j0, kameraBewegt: k0.some((x, i) => Math.abs(x - k1[i]) > 1e-3) };
+        }
+        // Und ein Tipp auf den Pfeil (aufsetzen, loslassen): schreibt nichts (Regel 4).
+        const pfeil3 = (await v(page, `const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+            return v.griffe.griffe.value.filter(g => g.form === 'pfeil').map(g => { const s = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
+                return { x: s ? c.left + s.x : null, y: s ? c.top + s.y : null }; });`))[0] ?? null;
+        if (pfeil3?.x != null) {
+            const j0 = await v(page, `return pinia._s.get('cde-aenderungen').eintraege.length;`);
+            await tippe(page, cdp, pfeil3);
+            await warte(4000);
+            zahlen.tippAufGriffSchreibt = (await v(page, `return pinia._s.get('cde-aenderungen').eintraege.length;`)) > j0;
+        }
+
         // T4 · Ziele unter 40 px auf dem Bildschirm (Bedienelemente der Tafel und der Leisten)
         zahlen.zieleUnter40 = await page.evaluate(() => [...document.querySelectorAll('button, summary, input, select')]
             .filter(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && (r.height < 40 || r.width < 40); }).length);

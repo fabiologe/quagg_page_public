@@ -192,11 +192,11 @@ describe('useGriffe am echten Store — der Drop geht den EINEN Weg', () => {
         expect(t.g.griffe.value).toEqual([]);
     });
 
-    it('Maus greift sofort, Finger wartet; ohne Griff unter dem Zeiger nichts', () => {
+    it('Maus UND Finger greifen sofort (T4, E-T2 — vorher wartete der Finger 380 ms); ohne Griff unter dem Zeiger nichts', () => {
         const t = baue();
         t.g.neuBauen();
         expect(t.g.greifen({ x: 0, y: 0, typ: 'mouse' })).toBe(true);
-        expect(t.g.greifen({ x: 0, y: 0, typ: 'touch' })).toBe('warten');
+        expect(t.g.greifen({ x: 0, y: 0, typ: 'touch' })).toBe(true);
         t.e.griffUnter.mockReturnValueOnce(null);
         expect(t.g.greifen({ x: 0, y: 0, typ: 'mouse' })).toBe(false);
     });

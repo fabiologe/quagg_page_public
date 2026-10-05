@@ -217,3 +217,24 @@ Test `griffeBeimAntippen.test.js` (7, RÜB über Kommandos, Einordnung wie im Vi
 Journal); Gegenproben rot: Regel ohne T3-Zweig, `bereit` ohne Bauteil, immer Serie, Viewer ohne `if (serie)`, Umbau
 ohne Sperre, Umbau ohne Auslöser. Bewusst gedreht (alte Zusage „ohne Werkzeug kein Griff", K5, und die Knopfpflicht vom
 18.09.): `achszug.test.js` (2 + Textwächter), `eckenZiehen.test.js` (2), Textwächter in `gelaendeAbschnitt`/`griffe`.
+
+### T4 — Auf einem Griff zieht der Finger sofort (2026-10-05, E-T2)
+
+| Tabletlauf, Ost-Pfeil ohne Halten 80 px gezogen (selber Stand, nur `greifen` umgeschaltet) | vorher | T4 |
+|---|---|---|
+| der Zug schreibt | **nein** | **ja** |
+| die Kamera dreht sich dabei | **ja** | **nein** |
+| ein Tipp auf den Griff schreibt (Regel 4) | nein | nein |
+
+- `useGriffe.greifen` antwortet auch dem Finger mit `true` (statt `'warten'` = 380 ms Long-Press): der Zeiger-Stapel
+  sperrt die Kamera beim Aufsetzen, der Zug beginnt sofort. Griffe stehen nur im Bearbeiten-Modus; daneben bleibt der
+  Finger Kamera. Der Stapel kennt `'warten'` weiter (kein Verbraucher nutzt es mehr).
+- **Ein Tipp schreibt trotzdem nicht:** ein Zug zählt erst ab `ZUG_SCHWELLE_PX` (Finger 10 px, Maus 3 px) UND 1 cm —
+  vorher nur 1 cm, in der Übersicht weniger als ein Pixel. Ein **Tipp-Griff** (Stützpunkt einfügen/entfernen) gilt wie
+  ein Knopf nur, wenn man über ihm loslässt (`TREFFER_PX`); weggezogen gilt er nicht.
+- **Preis:** wer nahe am gewählten Bauteil die Kamera drehen will und einen Griff trifft (44 px), zieht den Griff. Abbruch:
+  zurückziehen unter die Schwelle oder Rückgängig; abwählen (Tipp ins Leere) räumt die Griffe.
+
+Test `griffSofort.test.js` (4, Zeiger-Ereignisse in den echten Zeiger-Stapel, verdrahtet wie im Viewer, ins Journal);
+Gegenproben rot: Finger wartet wieder, keine Pixel-Schwelle, Tipp-Griff ohne Grenze. Bewusst gedreht: `griffe.test.js`
+und `tabletRezept.test.js` („der Finger armiert erst").

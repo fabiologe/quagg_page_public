@@ -74,7 +74,9 @@ describe('R1 — der Finger kann nicht schweben, also öffnet ein TIPP die Grupp
     it('Aufsetzen und Loslassen OHNE Zug öffnet die Nebengriffe — und schreibt nichts (R4)', async () => {
         const t = baue();
         t.g.neuBauen();
-        expect(t.g.greifen({ x: 0, y: 0, typ: 'touch' })).toBe('warten');   // der Finger armiert erst
+        // Bis T4 (Teil XXXI, E-T2) armierte der Finger erst nach dem Long-Press ('warten'); jetzt greift er auf einem
+        // Griff sofort — und ein Tipp schreibt trotzdem nicht (Regel 4), weil erst ab ZUG_SCHWELLE_PX gezogen wird.
+        expect(t.g.greifen({ x: 0, y: 0, typ: 'touch' })).toBe(true);
         t.g.zugStart({ x: 0, y: 0, px: { x: 0, y: 0 }, typ: 'touch' });
         expect(await t.g.zugEnde({})).toBeNull();
         expect(t.nachBauen).not.toHaveBeenCalled();
