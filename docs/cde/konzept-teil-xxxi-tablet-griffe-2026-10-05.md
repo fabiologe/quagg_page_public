@@ -135,3 +135,35 @@ Reihenfolge-Vorschlag: **T1 zuerst** (das ist der gemeldete Fehler, und er betri
 - Neue Werkzeuge. Jeder Griff bedient ein vorhandenes Werkzeug über den Kommandoweg (Kommando, Beleg, Rückgängig).
 - Fachliche Werte ohne Geometrie (Drosselabfluss, Überfallbeiwert) an einen Griff hängen — dafür ist das Formular richtig.
 - Mehrfingergesten ausser dem vorhandenen Pinch (Kamera).
+
+---
+
+## 7 · Entschieden
+
+**E-T1 (Fabio, 2026-10-05):** Griffe sofort beim Antippen — **im Bearbeiten-Modus**. Ohne Modus wählt ein Tipp nur aus.
+(Das löst die Regel vom 18.09. „nur auf Knopfdruck" ab: der Knopf ist der Bearbeiten-Modus selbst.) Gilt ab T3.
+**Für die Wartezeit (T1):** „die Plananimation aus flood-2D, nur in passender Farbe".
+E-T2 bis E-T6: noch offen.
+
+## 8 · Gebaut
+
+### T1 — Die Übernahme sichtbar (2026-10-05)
+
+| Tabletlauf, nach dem Loslassen eines Griffs | vorher | nachher |
+|---|---|---|
+| Geist am neuen Ort, bis das Bild steht | nein | **ja, durchgehend** |
+| Zeichen, dass gerechnet wird | nein | **„Wird übernommen …" mit Plananimation** (Zeichenfläche unten mittig + Tafel) |
+| Tafel | Werkzeug → **Liste** → Werkzeug | Werkzeug → **Umbau** → Werkzeug |
+| Griffe am alten Stand greifbar | ja (4) | **nein** — die Zeichenfläche nimmt so lange nichts an (E-T4 vorweg) |
+
+- **Ein Zähler „Umbau läuft"** im Store (`bearbeitung.imUmbau`/`umbauLaeuft`): `useGriffe.ablegen` (vom Loslassen an —
+  das Schreiben selbst dauert schon ≈ 1 s) und `IfcViewer.wendeEintragAn` (jeder Anwende-Weg: Formular, Löschen,
+  Rückgängig) laufen darin.
+- **Der Geist bleibt:** `zugEnde` räumt Geist und Zugbild nur noch beim Abbruch; sonst `ablegen` nach dem Neuaufbau.
+- **Die Anzeige:** `CdeUmbauAnzeige` mit `assets/plan-laden.svg` — Kopie der flood-2D-Animation (`public/construction
+  animations/Loading Icon - Plan.svg`) mit `currentColor` statt Limettengrün; Farbe `--cde-accent`. Kein Import aus
+  flood-2D. Über der Zeichenfläche eine durchsichtige Sperre (`aria-busy`), die Kontextleiste ist so lange ausgeblendet.
+- **Nicht schneller:** die Lücke selbst bleibt (Neuaufbau im fragments-Editor) — sie ist jetzt sichtbar und sicher.
+
+Test `uebernahmeSichtbar.test.js` (6: Zähler, Griffzug mit Neuaufbau, Abbruch, Tafel, Animation, Viewer); 6
+Gegenproben rot. Tabletlauf ohne/mit T1 im selben Stand gemessen; Messlauf Bedienung unverändert.

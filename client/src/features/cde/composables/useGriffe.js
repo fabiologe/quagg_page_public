@@ -465,10 +465,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         mengen.value = null; _mengenNochmal = false; _letzterTipp = null;
         _getroffen = null;
         const e = engine.value;
-        e?.zeigeZugbild?.(null);
         e?.overlayLeere?.('fang');
         e?.griffHervorheben?.(null);
-        e?.geistLeeren?.();
+        // DER GEIST BLEIBT AM NEUEN ORT, bis das Bild ihn eingeholt hat (Teil XXXI, T1) — `ablegen` räumt ihn nach dem
+        // Neuaufbau. Vorher verschwand er beim Loslassen, und 1–6 s stand nur der alte Zustand da (Tabletlauf T0).
+        const legtAb = !!z && !abbruch && (z.wirkung === 'tipp' || z.bewegt);
+        if (!legtAb) { e?.zeigeZugbild?.(null); e?.geistLeeren?.(); }
         if (!z) return null;
         // TIPP-GRIFF: der Griff selbst IST die Eingabe — die Werte bringt er mit.
         if (z.wirkung === 'tipp') {
@@ -531,7 +533,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
 
     // ── Ablegen: der EINE Katalogweg ───────────────────────────────────────
 
-    async function ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null } = {}) {
+    async function ablegen(griff, pos, opts = {}) {
+        // Bis das Bild steht, läuft „der Umbau" (T1): die Zeichenfläche zeigt es und nimmt keine Griffe an.
+        return bearbeitung?.imUmbau ? bearbeitung.imUmbau(() => _ablegen(griff, pos, opts)) : _ablegen(griff, pos, opts);
+    }
+
+    async function _ablegen(griff, pos, { subjekt: gegeben = null, scharf = false, werte: fest = null } = {}) {
         try {
             const subjekt = gegeben ?? (griff.art === 'knoten'
                 ? await holeKnotenSubjekt?.(griff.globalId)
@@ -569,6 +576,9 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             // scharf zu schalten verlor gegen das `abbrechen()`, mit dem
             // `einordne` beginnt — im Browser gemessen.
             bearbeitung.abbrechen();
+            // Jetzt steht das Bild (oder es gab nichts zu bauen) — der Geist hat seinen Dienst getan.
+            engine.value?.zeigeZugbild?.(null);
+            engine.value?.geistLeeren?.();
             neuBauen();
         }
     }

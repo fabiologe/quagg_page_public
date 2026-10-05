@@ -7,7 +7,9 @@
     <!-- OHNE AUSWAHL: was man ohne Subjekt tun kann. Eine leere Tafel sähe kaputt aus. -->
     <template v-if="!bearbeitung.bauteil">
       <!-- Ein Zeichenwerkzeug läuft ohne Auswahl: was es tut, und der Ausgang. -->
-      <div v-if="bearbeitung.scharf" class="tb-scharf">
+      <!-- DER UMBAU LÄUFT (Teil XXXI, T1): eine Zeile, bis das Bild steht — statt kurz die Liste und dann wieder das Werkzeug. -->
+      <CdeUmbauAnzeige v-if="bearbeitung.umbauLaeuft" klein class="tb-umbau" />
+      <div v-else-if="bearbeitung.scharf" class="tb-scharf">
         <p class="tb-scharf-titel">
           <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
         </p>
@@ -254,7 +256,9 @@
       <!-- Die scharfe Bearbeitung verdrängt die Liste — ihr FORMULAR steht nur
            in der Kontextleiste unter dem Bild (Teil XVI, S6). Hier bleibt, was
            die Tafel weiss: was die Bearbeitung bewirkt, und der Ausgang. -->
-      <div v-if="bearbeitung.scharf" class="tb-scharf">
+      <!-- DER UMBAU LÄUFT (Teil XXXI, T1): eine Zeile, bis das Bild steht — statt kurz die Liste und dann wieder das Werkzeug. -->
+      <CdeUmbauAnzeige v-if="bearbeitung.umbauLaeuft" klein class="tb-umbau" />
+      <div v-else-if="bearbeitung.scharf" class="tb-scharf">
         <p class="tb-scharf-titel">
           <CdeIcon :name="bearbeitung.scharf.icon || 'edit'" :size="13" /> {{ bearbeitung.scharf.titel }}
           <span v-if="bearbeitung.bauteil?.name" class="tb-scharf-subjekt">{{ bearbeitung.bauteil.name }}</span>
@@ -554,6 +558,7 @@ import { baugruppeAus } from '../services/rezept/Baugruppe.js';
 import { verdeckteAus } from '../services/CdeAchsen.js';
 import { bauwerkImIfc } from '../services/EigenbauPaket.js';
 import CdeWerkzeugKarte from './CdeWerkzeugKarte.vue';
+import CdeUmbauAnzeige from './CdeUmbauAnzeige.vue';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { hatHoehenbezug } from '../services/Hoehenbezug.js';

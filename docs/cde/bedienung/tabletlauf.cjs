@@ -83,7 +83,8 @@ async function zeitreihe(page, gid, dauer = 12000) {
             return { journalX: p.length ? Math.min(...p) : null, bildX: h ? h.min.x : null, geist,
                      griffe: v.griffe.griffe.value.length, zug: !!v.griffe.zug.value,
                      meldung: document.querySelector('.kl-rueckmeldung, .cde-meldung, .tb-rueckmeldung')?.innerText?.trim() ?? '',
-                     beschaeftigt: !!document.querySelector('.cde-busy, .is-busy, [aria-busy=true]'), scharf: pinia._s.get('cde-bearbeitung').scharfId };`, gid);
+                     beschaeftigt: !!document.querySelector('.cde-busy, .is-busy, [aria-busy=true]'), scharf: pinia._s.get('cde-bearbeitung').scharfId,
+                     tafel: document.querySelector('.tb-umbau') ? 'umbau' : document.querySelector('.tb-scharf') ? 'werkzeug' : document.querySelector('.tb-aufgabe, .tb-gruppe') ? 'liste' : '' };`, gid);
         reihe.push({ t: Date.now() - t0, ...z });
         await warte(250);
     }
@@ -100,6 +101,9 @@ function auswerten(reihe, xVorher) {
         dazwischenGeist: zwischen.some(r => r.geist > 0), dazwischenGriffe: Math.max(0, ...zwischen.map(r => r.griffe)),
         dazwischenMeldungen: [...new Set(zwischen.map(r => r.meldung).filter(Boolean))],
         dazwischenBeschaeftigt: zwischen.some(r => r.beschaeftigt),
+        // Wie oft die Tafel nach dem Loslassen wechselte (Werkzeug → Liste → Werkzeug = 2) — und was sie zeigte.
+        tafelFolge: reihe.map(r => r.tafel).filter((t, i, a) => t && t !== a[i - 1]),
+        geistBisBild: !!neuImBild && reihe.filter(r => r.t < neuImBild.t && r.t >= (neuImJournal?.t ?? 0)).every(r => r.geist > 0),
     };
 }
 

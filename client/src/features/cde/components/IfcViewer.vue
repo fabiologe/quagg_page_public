@@ -372,9 +372,17 @@
              (Fertig), eine scharfe Bearbeitung ihr Formular, die Chips der
              Vorschau und Übernehmen/Abbrechen — unten in der Mitte, EIN Ort für „was tue ich
              gerade". Auf dem Tablet gibt es weder Hover noch Esc. -->
+        <!-- DER UMBAU LÄUFT (Teil XXXI, T1): vom Loslassen bis das Bild steht — die Plananimation, und die Zeichenfläche
+             nimmt so lange nichts an (kein Zug an einem Stand, den es nicht mehr gibt). Durchsichtig: der Geist am
+             neuen Ort bleibt zu sehen. -->
+        <div v-if="bearbeitung.umbauLaeuft" class="umbau-sperre" aria-busy="true"
+             @pointerdown.stop.prevent @pointerup.stop.prevent @click.stop.prevent @wheel.stop.prevent @touchstart.stop.prevent>
+          <CdeUmbauAnzeige klein />
+        </div>
         <Transition name="fade">
           <CdeKontextleiste
             v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung || bearbeitung.eckenFuer"
+            v-show="!bearbeitung.umbauLaeuft"
             :tipp="tippWerkzeug"
             :chips="vorschau.stand.value?.chips ?? []"
             :profile="vorschau.stand.value?.profile ?? []"
@@ -517,6 +525,7 @@ import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.
 import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
+import CdeUmbauAnzeige from './CdeUmbauAnzeige.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useFarbmodus } from '../stores/useFarbmodus.js';
 import { ausgelasseneErdbau, satzAbgleich, satzModelle, satzUmsetzen } from '../services/SatzAnsicht.js';
@@ -2416,6 +2425,10 @@ async function entwerteNach(arten) {
  * Aufrufer (Toolbox, HUD, Leiste, Lageplan) laufen hier durch.
  */
 async function wendeEintragAn(eintragOderListe) {
+  // Bis das Bild steht, läuft „der Umbau" (T1) — über jeden Weg: Griff, Formular, Löschen, Rückgängig.
+  return bearbeitung.imUmbau ? bearbeitung.imUmbau(() => _wendeEintragAn(eintragOderListe)) : _wendeEintragAn(eintragOderListe);
+}
+async function _wendeEintragAn(eintragOderListe) {
   let r;
   if (Array.isArray(eintragOderListe)) {
     r = await wendeVorgangAn(eintragOderListe);
@@ -3511,6 +3524,12 @@ function onToggleNotes() { panels.toggle('issues'); }
   touch-action: manipulation;
 }
 .bearb-zahl:hover { opacity: 1; }
+/* Der Umbau (T1): über der Zeichenfläche, durchsichtig — die Anzeige unten mittig, am Platz der Kontextleiste (die in
+   der Zeit ausgeblendet ist): dort steht „was tue ich gerade", und der Geist in der Bildmitte bleibt frei. */
+.umbau-sperre {
+  position: absolute; inset: 0; z-index: 30; display: flex; justify-content: center; align-items: flex-end;
+  padding-bottom: 1rem; background: transparent; cursor: progress; touch-action: none;
+}
 /* Befunde (B7): dieselbe Schrift wie die Schritte — die Farbe der Fläche bleibt, eine Warnung wird nur fetter. */
 .bearb-befunde--warnung { font-weight: 700; opacity: 1; }
 .bearb-abschluss {

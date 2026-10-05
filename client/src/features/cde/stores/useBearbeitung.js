@@ -763,6 +763,18 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         return pruefeEigenes().find(z => z.globalId === globalId)?.befunde ?? [];
     }
 
+    /**
+     * DER UMBAU LÄUFT (Teil XXXI, T1): vom Loslassen eines Griffs (oder Übernehmen) bis das Bild den neuen Stand zeigt.
+     * Gemessen im Tabletlauf T0: 1–6 s, in denen der alte Zustand ohne jedes Zeichen dastand. Ein Zähler, weil Griff,
+     * Formular, Löschen und Rückgängig sich überlappen dürfen; `umbauLaeuft` ist wahr, solange einer läuft.
+     */
+    const umbau = ref(0);
+    const umbauLaeuft = computed(() => umbau.value > 0);
+    async function imUmbau(fn) {
+        umbau.value++;
+        try { return await fn(); } finally { umbau.value = Math.max(0, umbau.value - 1); }
+    }
+
     /** Der Rahmen Welt ↔ Projektkoordinaten — der Viewer setzt ihn, wenn ein Modell seinen Bezug hat. */
     const rahmen = ref(null);
     function setzeRahmen(r) { rahmen.value = r ?? null; }
@@ -1004,5 +1016,6 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         fuehreAus, rahmen, setzeRahmen, setzeGelaende,
         // Teil XXIV, K6: die Markierung ohne Oberfläche.
         pruefeEigenes, befundeVon,
+        umbauLaeuft, imUmbau,
     };
 });
