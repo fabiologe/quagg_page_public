@@ -68,8 +68,9 @@ const HEUTE = Object.freeze({
     // G5: +1 Baugruppe setzen — 157/134.
     // Teil XXXII, K1: +2 Knickpunkt einfügen/entfernen (Erdbau, Schicht, Raum), beide ohne Oberfläche — 159/136.
     // O1: +1 Verschneiden, ohne Oberfläche — 160/137.
-    werkzeuge: 160,
-    ausgefuehrt: 137,
+    // O4: +1 Aufs Gelände legen (die Höhen stehen im Kommando) — 161/138.
+    werkzeuge: 161,
+    ausgefuehrt: 138,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

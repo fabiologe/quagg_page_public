@@ -385,8 +385,10 @@ export class IfcOverlay {
                 for (const k of teil.objekte) { k.renderOrder = EBENEN.griffe; k.traverse?.(x => { x.renderOrder = EBENEN.griffe; }); halter.add(k); }
                 if (radius === 'auto') _haeltPixel(halter, teil.sichtbar);
                 halter.updateMatrixWorld(true);
-                this._griffe.set(gr.key, { halter, kugel: teil.sichtbar, hitbox: teil.hitbox, zeigtBei: null,
-                                           versteckt: false, strecke: teil.strecke ?? null });
+                const eintrag = { halter, kugel: teil.sichtbar, hitbox: teil.hitbox, zeigtBei: null,
+                                  versteckt: false, strecke: teil.strecke ?? null };
+                _folgtDemBlick(eintrag, gr.form === 'pfeil' ? lokal.richtung : null, teil);
+                this._griffe.set(gr.key, eintrag);
                 continue;
             }
             // TIPP-GRIFFE sind WÜRFEL (S10): sie werden angetippt, nicht gezogen,
@@ -642,6 +644,72 @@ function _quadrat(gr, r, farbe, overlay) {
     hitbox.position.copy(mitte);
     hitbox.userData.griffKey = gr.key;
     return { objekte: [gruppe, hitbox], sichtbar: gruppe, hitbox };
+}
+
+/**
+ * DER GIZMO BEI FLACHEM BLICK (Teil XXXII, R2 — Tabletlauf T9: der Nord-Pfeil und das Ebenenquadrat schrumpfen fast
+ * auf null, sobald man von der Seite schaut). Rein: aus der Blickrichtung (Einheitsvektor) und der Achse eines Pfeils.
+ *
+ * - Ein PFEIL, der fast in die Tiefe zeigt (sichtbarer Anteil unter `PFEIL_SICHTBAR_AB`), wird ausgeblendet — er wäre
+ *   ein Punkt, den man trifft, ohne zu sehen, wohin er zieht. Die beiden anderen Achsen bleiben.
+ * - Das QUADRAT liegt waagerecht; ist der Blick flacher als `QUADRAT_KIPPT_AB`, stellt es sich zur Kamera. Es zieht
+ *   weiter in der Waagerechten (der Zug rechnet dann aus dem Bildschirm, `deltaXZAusSchirm`) — nur das Bild kippt.
+ */
+export const PFEIL_SICHTBAR_AB = 0.3;
+export const QUADRAT_KIPPT_AB = 0.35;
+export function gizmoImBlick(blick, richtung = null) {
+    const l = Math.hypot(blick?.x ?? 0, blick?.y ?? 0, blick?.z ?? 0) || 1;
+    if (richtung) {
+        const r = Math.hypot(richtung.x, richtung.y, richtung.z) || 1;
+        const c = (blick.x * richtung.x + blick.y * richtung.y + blick.z * richtung.z) / (l * r);
+        return { sichtbar: Math.sqrt(Math.max(0, 1 - c * c)) >= PFEIL_SICHTBAR_AB, flach: false };
+    }
+    return { sichtbar: true, flach: Math.abs((blick?.y ?? 0) / l) < QUADRAT_KIPPT_AB };
+}
+
+const _blick = new THREE.Vector3();
+const _rechts = new THREE.Vector3();
+const _OBEN = new THREE.Vector3(0, 1, 0);
+const _gekippt = new THREE.Quaternion();
+const _nachKamera = new THREE.Vector3();
+/**
+ * Je Bild: Pfeil zeigen oder verbergen, Quadrat legen oder stellen. Ein verborgener Pfeil schrumpft (statt
+ * `visible = false`), damit sein `onBeforeRender` weiterläuft und ihn wieder zeigt, sobald sich der Blick dreht;
+ * `versteckt` nimmt ihn aus der Trefferprüfung.
+ */
+function _folgtDemBlick(eintrag, richtung, teil) {
+    const gruppe = teil.sichtbar;
+    const lage = { position: gruppe.position.clone(), quaternion: gruppe.quaternion.clone() };
+    const vorher = halte => {
+        const alt = gruppe.children[0]?.onBeforeRender;
+        return (renderer, scene, camera, ...rest) => {
+            alt?.call(gruppe.children[0], renderer, scene, camera, ...rest);
+            halte(camera);
+        };
+    };
+    const folge = vorher((camera) => {
+        camera.getWorldDirection(_blick);
+        const { sichtbar, flach } = gizmoImBlick(_blick, richtung);
+        if (richtung) {
+            eintrag.versteckt = !sichtbar;
+            gruppe.scale.setScalar(sichtbar ? 1 : 1e-3);
+            return;
+        }
+        if (!flach) {
+            gruppe.position.copy(lage.position); gruppe.quaternion.copy(lage.quaternion);
+            teil.hitbox.position.copy(lage.position); teil.hitbox.quaternion.copy(_gekippt.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)));
+            return;
+        }
+        // Gestellt: in der Ebene aus „rechts im Bild" (waagerecht) und „oben" — beide Kanten bleiben sichtbar.
+        _rechts.crossVectors(_blick, _OBEN).normalize();
+        const ab = Math.hypot(lage.position.x, lage.position.z) / Math.SQRT2;
+        gruppe.position.copy(_rechts).multiplyScalar(ab).addScaledVector(_OBEN, ab);
+        _nachKamera.copy(_blick).negate();
+        gruppe.quaternion.setFromUnitVectors(_OBEN, _nachKamera);
+        teil.hitbox.position.copy(gruppe.position);
+        teil.hitbox.quaternion.copy(gruppe.quaternion).multiply(_gekippt.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)));
+    });
+    gruppe.children[0].onBeforeRender = folge;
 }
 
 /** Wie lang ein Gizmo-Pfeil im Verhältnis zum Griffradius ist. */

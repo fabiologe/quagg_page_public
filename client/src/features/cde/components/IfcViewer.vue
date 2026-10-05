@@ -387,6 +387,7 @@
           <CdeKontextleiste
             v-if="messen.aktiv.value || annotationActive || bearbeitung.scharf || rueckmeldung || bearbeitung.eckenFuer"
             v-show="!bearbeitung.umbauLaeuft"
+            :class="{ 'ueber-formleiste': formleisteZeigen }"
             :tipp="tippWerkzeug"
             :chips="vorschau.stand.value?.chips ?? []"
             :profile="vorschau.stand.value?.profile ?? []"
@@ -402,6 +403,9 @@
             @rueckmeldung-zu="rueckmeldung = null"
           />
         </Transition>
+        <CdeFormleiste v-if="formleisteZeigen" v-show="!bearbeitung.umbauLaeuft"
+                       :text="formleisteText" :zug-laeuft="!!griffe.pille.value" :kann-zurueck="aenderungen.kannZurueck"
+                       @rueckgaengig="formleisteZurueck" @fertig="formleisteFertig" />
         <!-- Wegwerf (K9): Kommandos ohne Werkzeug absetzen — nur im Entwicklungsmodus. -->
         <template v-if="KommandoKonsole">
           <KommandoKonsole v-if="konsoleOffen" :wende-an="wendeEintragAn" @zu="konsoleOffen = false" />
@@ -530,6 +534,7 @@ import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.
 import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
+import CdeFormleiste from './CdeFormleiste.vue';
 import CdeUmbauAnzeige from './CdeUmbauAnzeige.vue';
 import CdeGriffZahl from './CdeGriffZahl.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -1091,6 +1096,11 @@ watch(() => ifc.geometrieStand, () => griffe.neuBauen());
 // `optionenAus: 'gelaende'` fragt den Kandidaten-Auflöser — die gelieferten kennt nur die Engine. Nachgezogen,
 // wann immer sich die Geometrie rührt — auch ein Kommando ohne Formular (Konsole) braucht die Liste.
 watch(() => ifc.geometrieStand, async () => {
+  // Die Höhenabfrage fürs Formular (Teil XXXII, O4 „Aufs Gelände legen") — derselbe Sampler wie beim Zeichnen.
+  // `hoeheAn` ist synchron und liest nur den GEBAUTEN Sampler — nach jedem Aufbau ist er verworfen; hier wird er
+  // vorgebaut, damit die Vorbelegung beim nächsten Tipp auf das Werkzeug Höhen findet (Browserprobe: sonst leer).
+  bearbeitung.setzeHoehenquelle((x, z) => engine.value?.hoeheAn?.(x, z));
+  engine.value?.gelaendeSampler?.()?.catch?.(() => null);
   try { bearbeitung.setzeGelaende(await engine.value?.gelaendeKandidaten?.() ?? []); }
   catch (fehler) { console.warn('cde: gelaende-kandidaten', fehler?.message ?? fehler); }
 });
@@ -1225,6 +1235,28 @@ async function rueckgaengigPerTaste(wieder) {
     console.error('cde: rückgängig per Taste', fehler);
     melde(`Fehler: ${fehler?.message ?? fehler}`);
   }
+}
+
+/**
+ * DIE FORMLEISTE (Teil XXXII, R1): beim Formen — Bearbeiten an, ein Bauteil gewählt, kein Zeichnen, kein Messen.
+ * Dieselbe Bedingung, unter der hochkant die Blätter einklappen (`useTafelnHochkant`), aus demselben Store gelesen;
+ * sichtbar macht sie nur das Hochkant-Layout (CSS).
+ */
+const formleisteZeigen = computed(() => !!bearbeitung.modusAn && !!bearbeitung.bauteil?.globalId
+  && !eingabe.aktiv.value && !messen.aktiv.value && !annotationActive.value);
+const formleisteText = computed(() => griffe.pille.value?.text || rueckmeldung.value?.text
+  || bearbeitung.bauteil?.name || bearbeitung.bauteil?.globalId || '');
+/** Rückgängig beim Formen: ein Griffzug lässt sein Werkzeug scharf (Serie) — das gibt erst den Platz frei. */
+async function formleisteZurueck() {
+  if (bearbeitung.scharf && !eingabe.aktiv.value) bearbeitung.abbrechen();
+  rueckmeldung.value = null;
+  await rueckgaengigPerTaste(false);
+}
+/** Fertig: das Werkzeug ab, die Auswahl leer — die Blätter klappen wieder auf. */
+function formleisteFertig() {
+  if (bearbeitung.scharf) bearbeitung.abbrechen();
+  if (bearbeitung.eckenFuer) bearbeitung.eckenBeenden();
+  auswahlLeeren();
 }
 
 function melde(text) {

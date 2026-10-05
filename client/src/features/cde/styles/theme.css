@@ -531,6 +531,20 @@
     .cde-card-btn::after { content: ''; position: absolute; inset: -7px; }
 }
 
+/* ── Teil XXXII, R1: hochkant auf dem Finger jedes Ziel 44 × 44 (Tablet-Rezept Regel 3) ─────────────────
+   Tabletlauf T9 (iPad hochkant, Werkzeug offen): 43 von 69 Zielen unter 40 px, verteilt auf zwanzig Komponenten —
+   Baum-Augen 12 px, Blattköpfe 20 px, Formularfelder 21 px, Übernehmen 22 px. Eine Regel statt zwanzig: hier in der
+   LAYOUTGRÖSSE (nicht als unsichtbare Hülle wie oben), damit die Messung dieselbe Grösse sieht wie der Finger.
+   Quer und mit der Maus bleibt alles, wie es ist. Ausgenommen: Kästchen/Knöpfe zum Ankreuzen und Unsichtbares. */
+@media (pointer: coarse) and (max-width: 900px) {
+    :is(.cde-view, .cde-dialog) :is(button, summary, select, input:not([type="checkbox"], [type="radio"], [type="hidden"])):not(.sr-only) {
+        min-height: 44px;
+    }
+    :is(.cde-view, .cde-dialog) :is(button, summary):not(.sr-only) {
+        min-width: 44px;
+    }
+}
+
 /* ── Auswahllisten (Abnahme 2026-09-12, F1): EIN Stil für jedes <select> ──
    Firefox malt das aufgeklappte Popup nach `color-scheme` und den Farben der
    Optionen. Ohne beides war es hell — und der Text der Liste auch: unlesbar

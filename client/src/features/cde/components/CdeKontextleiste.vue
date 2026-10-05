@@ -197,6 +197,10 @@ const subjektName = computed(() => {
   padding: 0.2rem; touch-action: manipulation;
 }
 .kl-zu:hover { color: var(--cde-danger); }
+/* Hochkant beim Formen steht darunter die Formleiste (Teil XXXII, R1). */
+@media (max-width: 900px) {
+  .modus-leiste.ueber-formleiste { bottom: calc(0.5rem + 56px); }
+}
 @media (pointer: coarse) {
   .modus-fertig { min-height: 40px; padding: 0.4rem 0.9rem; }
   .kl-geste { min-height: 40px; padding: 0.4rem 0.8rem; }

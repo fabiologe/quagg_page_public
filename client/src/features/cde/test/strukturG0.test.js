@@ -53,9 +53,10 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         // G2: +1 Formular; G3: +4 Setzer (Ausführung, Objekttyp an Pfosten und Schacht — die vier „ohne Ausführung");
         // G-T1: +2 Zeichenwerkzeuge (Schicht und Band auf dem Gelände); G-T2: +1 (Raum in der Mulde); G4: +1 (Von der Vorlage lösen);
         // G5: +1 (Baugruppe setzen — in der Palette über ihre Baugruppen, nicht als eigener Knopf).
-        // Teil XXXII, K1: +2 (Knickpunkt einfügen/entfernen an Erdbau, Schicht, Raum — beide Setzer); O1: +1 Verschneiden.
-        expect(kat).toHaveLength(160);
-        expect(kat.filter(b => b.setzt)).toHaveLength(91);
+        // Teil XXXII, K1: +2 (Knickpunkt einfügen/entfernen an Erdbau, Schicht, Raum — beide Setzer); O1: +1 Verschneiden;
+        // O4: +1 Aufs Gelände legen (Setzer); O5 erweitert „Reihe" (kein neues Werkzeug).
+        expect(kat).toHaveLength(161);
+        expect(kat.filter(b => b.setzt)).toHaveLength(92);
         expect(kat.filter(b => b.gruppe === 'erzeugen')).toHaveLength(22);
     });
 
@@ -65,7 +66,7 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         expect([knoepfe('wand', 'achse+profil', 'IFCWALL'), knoepfe('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 knoepfe('platte', 'flaeche+dicke', 'IFCSLAB'), knoepfe('raum', 'koerper', 'IFCSPACE'),
                 // G4: +1 am Bauwerk (Von der Vorlage lösen) — angeboten, sichtbar im Abschnitt „Vorlage".
-                knoepfe('bauwerk', 'netz', null)]).toEqual([32, 38, 26, 23, 18]);      // XXXII O1: „Verschneiden" an jedem Körper
+                knoepfe('bauwerk', 'netz', null)]).toEqual([33, 39, 27, 23, 18]);      // XXXII O1: „Verschneiden" an jedem Körper; O4: „Aufs Gelände legen" (kein Raum, kein Bauwerk)
     });
 
     it('G2: SICHTBAR in der Leiste am einzelnen Bauteil — Wand 30 → 20, Rohr 36 → 31, Platte 24 → 16, Raum 21 → 13, Bauwerk 16 → 11 (G4: 9)', () => {
@@ -74,9 +75,9 @@ describe('Teil XXIX, G0 — die Werkzeugleiste von heute', () => {
         expect([sichtbar('wand', 'achse+profil', 'IFCWALL'), sichtbar('rohr', 'achse+profil', 'IFCPIPESEGMENT'),
                 sichtbar('platte', 'flaeche+dicke', 'IFCSLAB'), sichtbar('raum', 'koerper', 'IFCSPACE'),
                 // G4: am Bauwerk wandern die Vorlagen-Werkzeuge (Werte, Angleichen, Lösen) in den Abschnitt „Vorlage" — 11 → 9.
-                sichtbar('bauwerk', 'netz', null)]).toEqual([21, 32, 17, 14, 9]);      // XXXII O1: +1 „Verschneiden"
+                sichtbar('bauwerk', 'netz', null)]).toEqual([22, 33, 18, 14, 9]);      // XXXII O1: +1 „Verschneiden"; O4: +1 „Aufs Gelände legen"
         // Mehrfachauswahl: die Setzer wie bisher, kein Formular.
-        expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(31);    // XXXII O1: +1, wie Drehen auch hier
+        expect(sichtbar('wand', 'achse+profil', 'IFCWALL', false)).toBe(32);    // XXXII O1: +1, wie Drehen auch hier; O4: +1 (ohne `mehrfach` — das Kommando nimmt ein Ziel)
     });
 
     it('G2: Dicke und Höhe mit dem Formular — EIN Kommando, EIN Vorgang, EIN Bauplanschritt', async () => {

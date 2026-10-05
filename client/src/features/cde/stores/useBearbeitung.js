@@ -179,8 +179,11 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      */
     function kandidatenVon(art, el) {
         return kandidatenAus({ wirksamerStand: useAenderungen().wirksamerStand, vorlagen: vorlagen.value,
-                               gelaende: gelaendeListe.value })(art, el);
+                               gelaende: gelaendeListe.value, hoeheAn })(art, el);
     }
+    /** Die Höhenabfrage des Geländes (Teil XXXII, O4) — der Viewer reicht sie herein, ohne Viewer gibt es keine. */
+    let hoeheAn = null;
+    function setzeHoehenquelle(fn) { hoeheAn = typeof fn === 'function' ? fn : null; }
     /** Die gelieferten Gelände, die die Engine kennt (Teil XXIX, G-T1) — der Viewer reicht sie herein. */
     const gelaendeListe = ref([]);
     function setzeGelaende(liste) { gelaendeListe.value = Array.isArray(liste) ? liste : []; }
@@ -1013,7 +1016,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         modusAn, werkzeug, belegeWerkzeug, gebeWerkzeugFrei, slotAus, commitDialogOffen, modusSetzen, modusUm,
         eckenFuer, eckenStarten, eckenBeenden,
         eingabe, setzeEingabe, leereEingabe,
-        ladeProfile, vorlagen, kandidatenVon, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
+        ladeProfile, vorlagen, kandidatenVon, setzeHoehenquelle, entwurfUebernehmen, einordne, starte, starteMitVorschlag, starteMitModus, setzeWert, vorbelegeAusVorlage, abbrechen, ausfuehren,
         vorschlaege, ordneZu,
         // Teil XXIV, K1: der Kommandoweg — auch ohne Oberfläche.
         fuehreAus, rahmen, setzeRahmen, setzeGelaende,

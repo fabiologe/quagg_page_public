@@ -43,6 +43,8 @@ export const KANDIDATENARTEN = Object.freeze({
     'bauwerk:teile': 'die Teile eines Bauwerks — auch die seiner Anlagenteile und Baugruppen',
     'eigene:wirt': 'ein eigenes Bauteil mit Rechteckprofil, das eine Öffnung tragen kann (Wand, Fundament, Schwelle)',
     'eigene:traeger': 'ein eigenes Bauteil mit Körper, auf dem das Subjekt stehen kann',
+    'eigene:achse': 'ein eigenes Bauteil mit einer Linie aus Punkten (Linie, Rohr, Wand, Fundament) — die Achse einer Reihe',
+    'gelaende:hoehen': 'die Geländehöhe unter jedem Punkt des Subjekts — aus der Höhenabfrage, die der Aufrufer kennt',
     'gelaende': 'ein Gelände, auf dem etwas liegen kann — ein Ur-Gelände aus dem Journal oder ein geliefertes',
     'vorlage:baugruppe': 'eine Baugruppe der Bibliothek — ein fertiges Bauwerk zum Setzen',
     'eigene:schicht': 'eine eigene Schicht auf dem Gelände, auf der eine weitere Schicht (ein Raum) liegen kann',
@@ -56,8 +58,9 @@ export const KANDIDATENARTEN = Object.freeze({
  * @param {Array} [quellen.vorlagen]  die geladene Bibliothek
  * @returns {function(string, object): Array<{id: string, titel: string}>}
  */
-export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende = [] } = {}) {
+export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende = [], hoeheAn = null } = {}) {
     return (art, el) => {
+        if (art === 'gelaende:hoehen') return _gelaendeHoehen(wirksamerStand, el, hoeheAn);
         if (art === 'gelaende') return _gelaende(wirksamerStand, gelaende);
         if (art === 'eigene:flaeche') return _eigeneFlaechen(wirksamerStand, el);
         if (art === 'vorlage:gleichesRezept') return _vorlagen(vorlagen, el);
@@ -69,6 +72,7 @@ export function kandidatenAus({ wirksamerStand = null, vorlagen = [], gelaende =
         if (art === 'bauwerk:teile') return _bauwerksteile(wirksamerStand, el);
         if (art === 'eigene:wirt') return _eigeneWirte(wirksamerStand, el);
         if (art === 'eigene:traeger') return _eigeneTraeger(wirksamerStand, el);
+        if (art === 'eigene:achse') return _eigeneAchsen(wirksamerStand, el);
         return [];
     };
 }
@@ -96,6 +100,24 @@ function _gelaende(wirksamerStand, gelaende) {
                               cell: g.cell ?? null, pruefmass: g.pruefmass ?? null });
     }
     return [...aus.values()];
+}
+
+/**
+ * DIE GELÄNDEHÖHEN UNTER DEM SUBJEKT (Teil XXXII, O4): je Punkt des Bauplans die Höhe der Abfrage, die der
+ * Aufrufer hereinreicht (im Viewer: der Gelände-Sampler, der nie das Bauteil selbst trifft). Ohne Abfrage, ohne
+ * Punkte oder ohne eine einzige Höhe: nichts — das Werkzeug nennt dann den Grund.
+ */
+function _gelaendeHoehen(wirksamerStand, el, hoeheAn) {
+    if (typeof hoeheAn !== 'function') return [];
+    const plan = el?.stand?.bauplan
+        ?? (typeof wirksamerStand === 'function' ? wirksamerStand('erzeugt').get(el?.globalId) : null);
+    const punkte = plan?.parameter?.punkte;
+    if (!Array.isArray(punkte) || !punkte.length) return [];
+    const hoehen = punkte.map(p => {
+        const h = Array.isArray(p) ? hoeheAn(p[0], p[2]) : null;
+        return Number.isFinite(h) ? h : null;
+    });
+    return hoehen.some(h => h != null) ? [{ id: 'hoehen', titel: 'Geländehöhen', hoehen }] : [];
 }
 
 /** Die eigenen Flächen aus dem Journal — ohne das Subjekt und ohne Ausgeblendetes. */
@@ -216,6 +238,24 @@ function _eigeneWirte(wirksamerStand, el) {
  * — über `hoeheVon` — schon auf dem Subjekt steht; sonst stünde die Wand auf der
  * Decke, die auf der Wand steht.
  */
+/**
+ * DIE ACHSEN einer Reihe (Teil XXXII, O5): eigene, sichtbare Bauteile, deren Bauplan eine OFFENE Punktliste trägt —
+ * Linie, Rohr, Wand, Fundament, Schwelle. Eine Fläche ist keine Achse (ihr Umriss ist ein Ring).
+ */
+function _eigeneAchsen(wirksamerStand, el) {
+    if (typeof wirksamerStand !== 'function') return [];
+    const verdeckt = verdeckteAus(wirksamerStand('geloescht'));
+    const aus = [];
+    for (const [globalId, plan] of wirksamerStand('erzeugt')) {
+        if (globalId === el?.globalId || verdeckt.has(globalId) || plan?.ableitung) continue;
+        const r = rezeptNach(plan?.rezept);
+        const punkte = plan?.parameter?.punkte;
+        if (!r || r.geschlossen || !Array.isArray(punkte) || punkte.length < 2) continue;
+        aus.push({ id: globalId, titel: plan.name || globalId, rezept: plan.rezept, bauplan: plan });
+    }
+    return aus;
+}
+
 function _eigeneTraeger(wirksamerStand, el) {
     if (typeof wirksamerStand !== 'function') return [];
     const erzeugt = wirksamerStand('erzeugt');

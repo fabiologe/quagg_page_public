@@ -666,6 +666,16 @@ const SETZ_OPERATIONEN = Object.freeze({
         schreibe: (s, el, werte, kontext = {}) => _verschnittSchritte(el, werte, _zweiterKoerper(el, werte, kontext)),
         warumNicht: (s, el, werte, kontext = {}) => _verschnittGrund(el, werte, _zweiterKoerper(el, werte, kontext)),
     },
+    drapieren: {
+        // AUFS GELÄNDE LEGEN (Teil XXXII, O4): jeder Punkt auf die Geländehöhe darunter, plus Abstand. Die Höhen stehen
+        // ABSOLUT im Kommando (je Punkt, Welt) — vorbelegt aus der Höhenabfrage (Kandidat `gelaende:hoehen`, im Viewer
+        // der Gelände-Sampler); ein Skript nennt sie selbst. So bleibt das Kommando wiederholbar, auch wenn sich das
+        // Gelände später ändert.
+        vorbelege: (s, el, { kandidatenVon = null } = {}) =>
+            ({ abstand: 0, hoehen: [...(kandidatenVon?.('gelaende:hoehen', el)?.[0]?.hoehen ?? [])] }),
+        schreibe: (s, el, werte) => _drapiertSchritt(el, werte),
+        warumNicht: (s, el, werte) => _drapierGrund(el, werte),
+    },
     knickpunkt: {
         // EINEN KNICKPUNKT EINFÜGEN ODER ENTFERNEN (Teil XXXII, K1) — an Erdbau, Schicht, Raum. Welche Liste und welche
         // Kante, sagt erst der Griff („+" in der Kantenmitte, „−" am Eckmenü); `aktion` sagt die Deklaration.
@@ -1168,6 +1178,67 @@ function _knickEntfernen(el, werte) {
 
 /** Die drei Arten des Verschneidens — aus dem Rezept (Ableitungsschicht), nicht importiert. */
 const _verschnittArten = () => rezeptNach('verschnitt')?.arten ?? {};
+/** Warum ein Bauteil sich nicht aufs Gelände legen lässt — oder null (Teil XXXII, O4). */
+function _drapierGrund(el, werte) {
+    const punkte = el?.stand?.bauplan?.parameter?.punkte;
+    if (!Array.isArray(punkte) || !punkte.length) return 'Nur ein eigenes Bauteil mit Punkten lässt sich aufs Gelände legen.';
+    const h = werte?.hoehen;
+    if (!Array.isArray(h) || h.length !== punkte.length || !h.every(v => v !== null && v !== '' && Number.isFinite(Number(v)))) {
+        return 'Unter dem Bauteil ist (noch) kein Gelände gelesen — ein Gelände laden oder gleich noch einmal.';
+    }
+    if (!Number.isFinite(Number(werte?.abstand ?? 0))) return 'Der Abstand ist keine Zahl.';
+    return null;
+}
+function _drapiertSchritt(el, werte) {
+    if (_drapierGrund(el, werte)) return null;
+    const plan = el.stand.bauplan;
+    const d = Number(werte.abstand ?? 0);
+    const punkte = plan.parameter.punkte.map((p, i) => (Array.isArray(p) ? [p[0], Number(werte.hoehen[i]) + d, p[2]] : p));
+    if (punkte.every((p, i) => !Array.isArray(p) || Math.abs(p[1] - plan.parameter.punkte[i][1]) < 1e-6)) return null;
+    return erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: el.globalId,
+                            parameter: { ...plan.parameter, punkte } });
+}
+
+/**
+ * EINE REIHE ENTLANG EINER ACHSE (Teil XXXII, O5): die Kopien stehen in festem Abstand auf der Achse — gemessen ab der
+ * Stelle, an der das Original auf ihr steht (sein Schwerpunkt, aufs Lot gebracht), solange die Achse reicht. Der seitliche
+ * Abstand des Originals bleibt; „ausrichten" dreht jede Kopie um ihren Lotpunkt mit der Richtung der Achse (ein Leitpfosten steht quer zur
+ * Strasse, auch in der Kurve). Die Höhe folgt der Achse.
+ */
+function _reiheEntlang(plan, rezept, werte, achse) {
+    const ap = (achse?.parameter?.punkte ?? []).filter(Array.isArray).map(p => ({ x: p[0], y: p[1], z: p[2] }));
+    const abstand = Number(werte.abstand), anzahl = Math.round(Number(werte.anzahl));
+    if (ap.length < 2 || !(abstand > 1e-3) || !Number.isInteger(anzahl) || anzahl < 1 || anzahl > 200) return null;
+    const ref = schwerpunktXZ(plan.parameter?.punkte);
+    if (!ref) return null;
+    const st = stationiere(ap);
+    // Das Lot des Originals auf die Achse: die nächste Stelle im Grundriss.
+    let s0 = 0, best = Infinity;
+    for (let i = 0; i + 1 < ap.length; i++) {
+        const a = ap[i], b = ap[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz;
+        const t = l2 > 0 ? Math.min(1, Math.max(0, ((ref.x - a.x) * dx + (ref.z - a.z) * dz) / l2)) : 0;
+        const d = Math.hypot(a.x + t * dx - ref.x, a.z + t * dz - ref.z);
+        if (d < best) { best = d; s0 = st.kum[i] + t * Math.sqrt(l2); }
+    }
+    const o0 = ortBei(st, s0);
+    const winkel0 = Math.atan2(o0.richtung.z, o0.richtung.x);
+    const aus = [];
+    for (let k = 1; k <= anzahl; k++) {
+        const s = s0 + k * abstand;
+        if (s > st.laenge + 1e-6) break;                       // die Achse ist zu Ende
+        const o = ortBei(st, s);
+        let parameter = plan.parameter;
+        if (werte.ausrichten !== 'nein') {
+            const grad = ((Math.atan2(o.richtung.z, o.richtung.x) - winkel0) * 180) / Math.PI;
+            if (Math.abs(grad) > 1e-9) parameter = drehePunktliste(parameter, grad, { x: o0.x, z: o0.z });
+        }
+        parameter = rezept.verschiebe(parameter, { x: o.x - o0.x, y: o.y - o0.y, z: o.z - o0.z });
+        aus.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie,
+                                  name: plan.name ? `${plan.name} (${k + 1})` : '', parameter: _ohneAnschluss(parameter) }));
+    }
+    return aus.length ? aus : null;
+}
+
 /** Der Bauplan des zweiten Körpers: aus den Kandidaten (V3, wie „Steht auf"), sonst aus dem Stand. */
 function _zweiterKoerper(el, werte, { kandidatenVon = null, bauplanVon = null } = {}) {
     const mit = String(werte?.mit ?? '');
@@ -2314,6 +2385,25 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
     ...VORLAGE_WERKZEUGE,
     // Teil XXIX, G2: alle setzbaren Eigenschaften in EINEM Formular.
     EIGENSCHAFTEN_WERKZEUG,
+    {
+        /**
+         * AUFS GELÄNDE LEGEN (Teil XXXII, O4): jeder Punkt eines eigenen Bauteils auf das Gelände darunter, mit Abstand —
+         * eine Linie, ein Pfosten, ein Belag folgt der Oberfläche. Die Höhen kommen absolut ins Kommando.
+         */
+        id: 'aufs-gelaende-legen',
+        titel: 'Aufs Gelände legen',
+        icon: 'terrain',
+        gruppe: 'lage',
+        bauform: ['punkt', 'linie', 'achse+profil', 'flaeche', 'flaeche+dicke'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        art: 'erzeugt',
+        felder: [
+            { name: 'abstand', titel: 'Abstand über dem Gelände', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+            { name: 'hoehen', titel: 'Geländehöhen je Punkt', typ: 'liste', verborgen: true },
+        ],
+        setzt: { art: 'drapieren' },
+    },
     {
         /**
          * VERSCHNEIDEN (Teil XXXII, O1): dieser eigene Körper mit einem zweiten — vereinigen, Schnittmenge, abziehen.
@@ -3693,12 +3783,23 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'anzahl', titel: 'Anzahl Kopien', typ: 'zahl', min: 1, max: 200, gueltig: { min: 1 }, vorgabe: 3 },
             { name: 'ost', titel: 'Abstand Ost', einheit: 'm', typ: 'zahl', vorgabe: 5 },
             { name: 'nord', titel: 'Abstand Nord', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+            // ENTLANG EINER ACHSE (Teil XXXII, O5): dann zählen Abstand und Ausrichten, nicht Ost/Nord.
+            // Ohne Zeigegeste (`aus`): leer ist ein gültiger Wert, eine Geste verlangte eine GlobalId.
+            { name: 'entlang', titel: 'Entlang (leer = gerade)', typ: 'auswahl', leerErlaubt: true, optionenAus: 'eigene:achse' },
+            { name: 'abstand', titel: 'Abstand auf der Achse', einheit: 'm', typ: 'zahl', vorgabe: 10, leerErlaubt: true },
+            { name: 'ausrichten', titel: 'Zur Achse ausrichten', typ: 'auswahl', vorgabe: 'ja', leerErlaubt: true,
+              optionen: [{ wert: 'ja', titel: 'ja' }, { wert: 'nein', titel: 'nein' }] },
         ],
-        vorbelegung: () => ({ anzahl: 3, ost: 5, nord: 0 }),
-        anwenden: (el, werte) => {
+        vorbelegung: () => ({ anzahl: 3, ost: 5, nord: 0, entlang: '', abstand: 10, ausrichten: 'ja' }),
+        anwenden: (el, werte, { kandidatenVon = null, bauplanVon = null } = {}) => {
             const plan = el?.stand?.bauplan;
             const rezept = plan?.rezept ? rezeptNach(plan.rezept) : null;
             if (!plan?.rezept || typeof rezept?.verschiebe !== 'function') return null;
+            if (werte?.entlang) {
+                const achse = (kandidatenVon?.('eigene:achse', el) ?? []).find(k => k.id === werte.entlang)?.bauplan
+                    ?? bauplanVon?.(werte.entlang) ?? null;
+                return _reiheEntlang(plan, rezept, werte, achse);
+            }
             const anzahl = Math.round(Number(werte.anzahl));
             const ost = Number(werte.ost), nord = Number(werte.nord);
             if (!Number.isInteger(anzahl) || anzahl < 1 || anzahl > 200) return null;

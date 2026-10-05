@@ -294,7 +294,9 @@ const NEU = [
     { id: 'stuetzpunkt-einfuegen', el: eigen('cde-L1'), werte: [{ station: 5 }] },
     { id: 'stuetzpunkt-entfernen', el: eigen('cde-L1'), werte: [{ index: 1 }] },
     { id: 'kopieren', el: eigen('cde-PF1'), werte: [{ ost: 2, nord: 0, hoehe: 0 }] },
-    { id: 'reihe', el: eigen('cde-PF1'), werte: [{ anzahl: 3, ost: 5, nord: 0 }] },
+    { id: 'reihe', el: eigen('cde-PF1'), werte: [{ anzahl: 3, ost: 5, nord: 0 },
+        // Teil XXXII, O5: entlang der Haltung H1, alle 5 m, zur Achse gedreht.
+        { anzahl: 3, ost: 5, nord: 0, entlang: 'cde-H1', abstand: 5, ausrichten: 'ja' }], kandidaten: KANDIDATEN },
     { id: 'drehen', el: eigen('cde-F1'), werte: [{ winkel: 30 }] },
     { id: 'spiegeln', el: eigen('cde-F1'), werte: [{ achse: 45, kopie: 'nein' }, { achse: 0, kopie: 'ja' }] },
     { id: 'linie-teilen', el: eigen('cde-L1'), werte: [{ station: 12 }] },
@@ -350,6 +352,8 @@ const NEU = [
     { id: 'vorgang-entfernen', el: eigen(AUSHUB), werte: [{}], kandidaten: KANDIDATEN },
     { id: 'aussparung-ableiten', el: { ...SCHACHT_G, koerperQuellen: [{ globalId: 'cde-PL1', name: 'PL1' }] }, werte: [{ werkzeug: 'cde-PL1' }] },
     // Teil XXXII, O1: die Wand mit der Platte vereinigen — beide verborgen, das Ergebnis eine Ableitung.
+    // Teil XXXII, O4: die Haltung aufs Gelände legen — Höhen absolut, wie der Viewer sie vorbelegt.
+    { id: 'aufs-gelaende-legen', el: eigen('cde-H1'), werte: [{ abstand: -1.2, hoehen: eigen('cde-H1').stand.bauplan.parameter.punkte.map((p, i) => p[1] + 2 + i) }] },
     { id: 'verschneiden', el: eigen('cde-W1'), werte: [{ mit: 'cde-PL1', art: 'vereinigung' }, { mit: 'cde-PL1', art: 'differenz' }], kandidaten: KANDIDATEN },
 ];
 

@@ -148,3 +148,69 @@ Tests `verschnitt.test.js` (6: Katalog, Kommando — beide verborgen, Klasse von
 Server-Attrappe, lebendes Rezept, leere Schnittmenge) und `kollisionen.test.js` (4: Rohr durch Wand, Knoten-Wände und
 ferner Pfosten nicht, Verborgenes/Raum/kein Server, Viewer-Anbindung). Gegenproben rot: Klasse von B, Quellen sichtbar,
 Art egal, leer still; nie verbunden, ohne Hüllenfilter, Raum zählt. Katalog 160, reichweite 137, `strukturG0` gezählt.
+
+### Block 3 — Aufs Gelände legen und Reihe entlang einer Achse (O4, O5)
+
+- **O4 Aufs Gelände legen:** Daten-Setzer `drapieren` (W5 bleibt) an eigenen Punkt-, Linien-, Achs- und
+  Flächenbauteilen. Jeder Punkt kommt auf die Geländehöhe darunter, plus Abstand (negativ = darunter, etwa die Sohle
+  einer Leitung). Die Lage bleibt, die Kennung bleibt. **Die Höhen stehen absolut im Kommando** (verborgenes Feld
+  `hoehen`). Ein Skript nennt sie selbst; das Formular belegt sie aus dem Kandidaten `gelaende:hoehen` vor. Den
+  speist der Viewer mit derselben Höhenabfrage wie beim Zeichnen (`setzeHoehenquelle` → `engine.hoeheAn`; der
+  Sampler kennt nur Gelände, nie das Bauteil selbst). Damit lässt sich das Kommando wiederholen, auch wenn sich das
+  Gelände später ändert, und Wächter W9 bleibt grün: das Werkzeug liest kein Viewer-Feld am Subjekt. Fehlt die
+  Höhe unter einem Punkt, wird das Kommando abgelehnt: „kein Gelände gelesen". Liegt das Bauteil schon dort, gibt es
+  keinen Schritt. Das Werkzeug wirkt auf ein Ziel (ohne `mehrfach`), weil die Höhen zu genau einem Bauteil gehören.
+- **O5 Reihe entlang einer Achse:** Das vorhandene Werkzeug „Reihe" hat drei neue Felder: `entlang` (Kandidat
+  `eigene:achse`: eigene, sichtbare Baupläne mit offener Punktliste, also nicht das Subjekt und keine Fläche),
+  `abstand` und `ausrichten`. Gemessen wird ab dem Lotpunkt des Originals auf der Achse (Schwerpunkt im Grundriss).
+  Die Kopien stehen bei `s₀ + k·Abstand`, solange die Achse reicht (`stationiere`/`ortBei` aus dem Kern). Mit
+  „ausrichten" wird jede Kopie **um ihren Lotpunkt** mit der Achsrichtung gedreht. Dadurch bleibt ein Leitpfosten
+  rechts der Fahrtrichtung auch nach einem Knick rechts davon. Die Höhe folgt der Achse. Ohne `entlang` bleibt die
+  Reihe gerade wie bisher (Ost/Nord). Kein neues Werkzeug.
+
+Test `drapierenReihe.test.js` (8):
+- O4: Höhen + Abstand, Lage und Kennung bleiben; fehlende Höhe wird abgelehnt, nichts geschrieben; schon dort heißt
+  kein Schritt; Katalog und Vorbelegung aus einer schiefen Ebene.
+- O5: Achskandidaten; L-Achse 40 + 30 m mit Abstand 25 m: Station 25 bei (25 | +2), Höhe 101,25; Station 50 nach dem
+  Knick bei (42 | −10), gedreht; ohne Ausrichten bei (40 | −8); gerade Reihe unverändert.
+- Viewer-Anbindung.
+
+Gegenproben rot:
+- Drehung um den Schwerpunkt statt um den Lotpunkt: der Pfosten dreht sich auf der Stelle, die Kopie nach dem Knick
+  liegt links statt rechts.
+- `null` als Höhe 0.
+
+Zahlen: Katalog 161, Setzer 92, Reichweite 161/138, angeboten +1 an Wand/Rohr/Platte.
+
+### Block 4 — Bedienreste hochkant (R1, R2)
+
+- **R2 Gizmo bei flachem Blick:** In jedem Bild (`onBeforeRender`) prüft der Gizmo die Blickrichtung (`gizmoImBlick`,
+  rein):
+  - Ein Pfeil, dessen sichtbarer Anteil unter 0,3 fällt (er zeigt fast in die Tiefe), schrumpft und ist nicht mehr zu
+    treffen. Er schrumpft statt `visible = false`, damit er zurückkommt, sobald sich der Blick dreht. Von der Seite
+    bleiben Ost und Höhe, von oben Ost und Nord, schräg alle drei.
+  - Das Ebenenquadrat stellt sich zur Kamera, sobald der Blick flacher als ~20° ist. Es zieht weiter in der
+    Waagerechten (der Zug rechnet dann aus dem Bildschirm, wie bisher). Nur das Bild kippt.
+
+  Gemessen (`gizmoFlach.test.js`, Hochkant-Fläche 820 × 955, Blick 4° nach Norden): Quadrat **40 px² → 603 px²**
+  (von oben 597); Nord-Pfeil ausgeblendet, ein Tipp auf den Ursprung trifft ihn nicht. Gegenprobe ohne die Kur: beide
+  Tests rot.
+- **R1 Formleiste und Fingerziele hochkant:**
+  - `components/CdeFormleiste.vue` zeigt beim Formen (Bearbeiten an, Bauteil gewählt, kein Zeichnen, kein Messen;
+    dieselbe Bedingung, unter der die Blätter einklappen) unten die Pille mit dem Maß. Das ist, was der Finger gerade
+    zieht, sonst die letzte Rückmeldung, sonst der Name. Daneben **Rückgängig** (gibt erst das Serien-Werkzeug frei)
+    und **Fertig** (Werkzeug ab, Auswahl leer, die Blätter klappen auf). Sichtbar nur bis 900 px Breite; die
+    Kontextleiste rückt dann darüber.
+  - Dazu eine Regel in `styles/theme.css`: Bei grobem Zeiger und bis 900 px hat jedes Ziel in der CDE seine
+    **Layoutgröße** 44 × 44 (nicht eine unsichtbare Hülle, damit die Messung dieselbe Größe sieht wie der Finger).
+    Ausgenommen sind Kästchen, Radioknöpfe und Unsichtbares. Quer und mit der Maus ändert sich nichts.
+
+  Gemessen (Browserprobe iPad hochkant 820 × 1180, ohne Projekt, Wand gewählt, „Verschieben" offen): Ziele unter
+  40 px **43 von 69 → 0 von 63** (übrig nur das unsichtbare Datei-Eingabefeld, `sr-only`). Beim Formen mit
+  eingeklappten Blättern: 10 → 0. Bilder ohne Layoutbruch: Tafel mit 44-px-Zeilen, Kontextleiste über der
+  Formleiste. Test `formleiste.test.js` (5).
+- **O4 im Browser nachgeprüft:** Wand mitten auf dem Gelände, „Aufs Gelände legen" mit Abstand 0,5 m. Vorbelegte
+  Höhen [0,03 | 0,15], danach Punkthöhen [0,53 | 0,65], gleich der Kontrolle aus dem Sampler.
+  - **Gefunden:** Die Vorbelegung war leer, weil `hoeheAn` nur einen fertigen Sampler liest und jeder Aufbau ihn
+    verwirft. Der Viewer baut ihn jetzt nach jedem Aufbau vor (Test hält die Zeile).
+  - Ohne Gelände unter dem Bauteil (erste Probe): die Ablehnung „kein Gelände gelesen", wie vorgesehen.
