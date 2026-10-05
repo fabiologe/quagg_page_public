@@ -501,6 +501,7 @@ import { useGriffe } from '../composables/useGriffe.js';
 import { GRIFF_WERKZEUGE } from '../services/Griffe.js';
 import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '../services/IfcAutor.js';
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
+import { eigeneFangkandidaten, zahlText, zeichenfang } from '../services/Zeichenhilfe.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
 import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
@@ -804,8 +805,25 @@ const zeigerMarke = computed(() => {
   if (g) return { x: g.x, y: g.y, fang: null, text: g.text };
   const m = zeiger.marke.value;
   if (!m) return null;
-  return { x: m.x, y: m.y, fang: m.fang, text: koordText(m.punkt, m.modelId) };
+  return { x: m.x, y: m.y, fang: m.fang, text: zeichenText() || koordText(m.punkt, m.modelId) };
 });
+
+/**
+ * Beim Zeichnen sagt die Pille die Strecke vom letzten Punkt (B5): „L 5,00 m · 90,0°" — und was getippt wird
+ * („Länge 5,2▌"). Vorher stand dort nur der Ort; eine Länge sah man erst nach dem Übernehmen.
+ */
+function zeichenText() {
+  const s = eingabe.strecke.value;
+  const m = eingabe.mass.value;
+  const teile = [];
+  if (s) teile.push(`L ${zahlText(s.laenge)} m${s.winkel != null ? ` · ${zahlText(s.winkel, 1)}°` : ''}`);
+  if (eingabe.massAktiv.value) {
+    const cursor = (feld) => (m.feld === feld ? '▌' : '');
+    teile.push(`Länge ${m.laenge}${cursor('laenge')}${m.winkel || m.feld === 'winkel' ? ` · Winkel ${m.winkel}${cursor('winkel')}` : ''}`);
+  }
+  if ((umschaltGedrueckt.value || eingabe.orthoAn.value) && s) teile.push('rechtwinklig');
+  return teile.join(' · ');
+}
 
 /**
  * DER AUSWAHL-MODUS, abgeleitet aus allen Werkzeug-Zuständen — eine Stelle.
@@ -929,6 +947,36 @@ const eingabe = useEingabe({
   getKnoten: () => engine.value?.netzAuskunft?.()?.knoten ?? [],
 });
 
+// ── Präzise zeichnen (Teil XXX, B5) ─────────────────────────────────────────────────────────────────────────────
+// Der FANG auf eigene Bauteile: ihre Punkte aus dem Journalstand (Welt) — Knoten, Achsenden, Stützpunkte, Ecken einer
+// Wand. Messlauf vorher: ein Klick 6 px neben das Ende einer Wand lag 469 mm daneben (`Fangpunkte.js` hatte keinen
+// Aufrufer). Geliefertes fängt weiter die Bibliothek; beide Kandidaten treten gegeneinander an, der nähere gewinnt,
+// bei Gleichstand der fachliche.
+const eigeneFangpunkte = computed(() => eigeneFangkandidaten(aenderungen.wirksamerStand('erzeugt'), {
+  verdeckt: verdeckteAus(aenderungen.wirksamerStand('geloescht')),
+  rezeptNach: _rezeptNachFuerMengen,
+  ausnehmen: (plan) => istBehaelter(plan) || istAnzeigeform(plan),
+}));
+/** Umschalt gedrückt = rechte Winkel, solange gedrückt (Tablet: der Schalter in der Tafel). */
+const umschaltGedrueckt = ref(false);
+function _umschalt(e) { umschaltGedrueckt.value = !!e?.shiftKey; }
+function _umschaltLos() { umschaltGedrueckt.value = false; }
+
+/**
+ * Ein Treffer, so wie der Zeichenmotor ihn sieht: auf einen eigenen Punkt gefangen (wenn einer näher liegt als der
+ * Fang der Bibliothek), sonst — bei Ortho — rechtwinklig ausgerichtet. Derselbe Weg fürs Schweben (Marke, Pille,
+ * Gummiband) und fürs Tippen, damit der gesetzte Punkt der gezeigte ist.
+ */
+function zeichenTreffer(t, { ortho = umschaltGedrueckt.value } = {}) {
+  if (!t?.point || !eingabe.aktiv.value || eingabe.geste.value) return t;
+  const projiziere = (p) => engine.value?.projectToScreen?.([p.x, p.y, p.z]) ?? null;
+  const fang = zeichenfang({ punkt: t.point, bibliothek: t.fang, eigene: eigeneFangpunkte.value, projiziere,
+                            ortho: ortho || eingabe.orthoAn.value });
+  if (fang) return { ...t, fang };
+  const p = eingabe.ausrichten(t.point, { ortho });
+  return p === t.point ? { ...t, fang: null, ortho } : { ...t, point: p, normal: null, fang: null, ortho };
+}
+
 /**
  * Ein Tipp im Raum, solange der Motor läuft: der Treffer auf dem Subjekt wird
  * zum Zug-Punkt oder füllt ein Feld per Geste. Gefangen wird über die
@@ -948,7 +996,10 @@ async function tippFuerMotor(tipp) {
     return Math.hypot(s.x - tipp.px.x, s.y - tipp.px.y) <= (SCHLIESS_RADIUS_PX[tipp.typ] ?? SCHLIESS_RADIUS_PX.mouse);
   };
   if (!eingabe.geste.value && eingabe.schliesseWennNahe(nahe)) return true;
-  const t = await engine.value?.probeTreffer?.(tipp.x, tipp.y, { fang: true });
+  // Umschalt im MOMENT des Tipps — der Strahl im Worker dauert, und wer die Taste nach dem Klick loslässt, hätte
+  // sonst keinen rechten Winkel bekommen (Messlauf: Pille „rechtwinklig", Wand 22,45° daneben).
+  const ortho = !!tipp.shiftKey || umschaltGedrueckt.value;
+  const t = zeichenTreffer(await engine.value?.probeTreffer?.(tipp.x, tipp.y, { fang: true }), { ortho });
   let globalId = null;
   if (t && eingabe.geste.value?.art === 'auswahl') {
     globalId = (await engine.value?.elementDatenVon?.(t.modelId, t.localId))?.globalId ?? null;
@@ -2442,6 +2493,8 @@ async function wendeEinenAn(eintrag) {
 // ── lifecycle ────────────────────────────────────────────────────────────────
 onMounted(async () => {
   document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', _umschalt);
+  window.addEventListener('blur', _umschaltLos);
 
   engine.value = new IfcEngine();
   await engine.value.init(canvasRef.value);
@@ -2492,10 +2545,12 @@ onMounted(async () => {
       : null;
     // EIN Treffer, drei Verbraucher: Zeiger (Klasse, Marke, Pille), Koordinaten-
     // leiste, Mess-Hovermarker — kein zweiter Raycast für dieselbe Antwort.
+    // Beim Zeichnen sieht der Zeiger, was gesetzt würde: gefangen oder rechtwinklig (B5).
+    const zt = eingabe.aktiv.value ? zeichenTreffer(treffer) : treffer;
     if (px === null && treffer === null) zeiger.verlassen();
-    else zeiger.aufHover(treffer, px);
+    else zeiger.aufHover(zt, px);
     if (messen.aktiv.value) messen.bewegungAn(treffer?.point ?? null);
-    if (eingabe.aktiv.value) eingabe.bewegeZeiger(treffer ? (treffer.fang?.punkt ?? treffer.point) : null);
+    if (eingabe.aktiv.value) eingabe.bewegeZeiger(zt ? (zt.fang?.punkt ?? zt.point) : null, { gefangen: !!zt?.fang, ortho: !!zt?.ortho });
     // Ein Griff unter dem Zeiger wächst — die Hand weiss, dass hier gezogen werden kann.
     if (griffe.bereit.value && px && canvasRef.value) {
       const r = canvasRef.value.getBoundingClientRect();
@@ -2605,6 +2660,8 @@ onBeforeUnmount(() => {
   cmds.unregister('viewer');
   cmds.unregister('viewer-werkzeuge');
   document.removeEventListener('keydown', onKeyDown);
+  document.removeEventListener('keyup', _umschalt);
+  window.removeEventListener('blur', _umschaltLos);
   _selection?.detach();
   _selection = null;
   engine.value?.dispose();
@@ -3090,6 +3147,7 @@ async function ansichtAufsBlatt() {
 
 // SC-3: Keyboard shortcuts for section cut
 function onKeyDown(e) {
+  if (e.key === 'Shift') _umschalt(e);
   // Cmd/Ctrl+F → open search overlay
   // Strg+K = Befehls-Palette, Strg+F = dieselbe Liste, nur Elemente
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
@@ -3148,6 +3206,8 @@ function onKeyDown(e) {
   // Ein laufender Griff-Zug zuerst (S7): Esc verwirft ihn wie ein
   // pointercancel — sonst schaltet `slotAus` nur das Werkzeug ab, der Zug
   // schriebe beim Loslassen trotzdem (Headless 2026-09-08).
+  // Esc beim Tippen einer Länge (B5) nimmt erst das Getippte zurück, nicht das Werkzeug.
+  if (e.key === 'Escape' && eingabe.massAktiv.value) { eingabe.massLeeren(); return; }
   if (e.key === 'Escape' && _selection?.ziehtGerade?.()) { _selection.zugAbbrechen(); return; }
   // „Ecken ziehen" ist kein Slot-Werkzeug (jeder Zug belegt den Slot kurz
   // selbst) — Esc beendet es trotzdem, sobald kein Werkzeug läuft.
@@ -3160,7 +3220,17 @@ function onKeyDown(e) {
     return;
   }
   // Der Motor im Raum: Enter schliesst ab (oder prüft), Rücktaste nimmt den letzten Punkt.
+  // LÄNGE TIPPEN (B5, wie im CAD): steht ein Punkt, gehen Ziffern in die Länge, Tab wechselt zum Winkel, Enter setzt
+  // den Punkt, Rücktaste/Esc korrigieren das Getippte — erst danach gelten Enter und Rücktaste wie bisher.
   if (eingabe.aktiv.value) {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && eingabe.massMoeglich.value) {
+      if (/^[0-9.,-]$/.test(e.key) && eingabe.tippeMass(e.key)) { e.preventDefault(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); eingabe.massFeld(); return; }
+      if (eingabe.massAktiv.value) {
+        if (e.key === 'Enter') { e.preventDefault(); if (!eingabe.setzeMassPunkt() && eingabe.grund.value) melde(eingabe.grund.value); return; }
+        if (e.key === 'Backspace') { e.preventDefault(); eingabe.massZurueck(); return; }
+      }
+    }
     if (e.key === 'Enter') { e.preventDefault(); eingabe.enter(); return; }
     if (e.key === 'Backspace') { e.preventDefault(); eingabe.entferneLetzten(); return; }
   }

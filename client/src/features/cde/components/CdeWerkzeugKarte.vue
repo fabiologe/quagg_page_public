@@ -20,6 +20,27 @@
       @uebernehmen="$emit('uebernehmen')"
       @abbrechen="bearbeitung.abbrechen()"
     />
+    <!-- PRÄZISE OHNE FORMULAR (Teil XXX, B5): rechte Winkel und die getippte Strecke — fürs Tablet als Knöpfe, mit
+         der Tastatur geht dasselbe im Bild (Umschalt, Ziffern, Tab, Enter). -->
+    <div v-if="zug" class="wk-zeichnen">
+      <button class="wk-ortho" :class="{ 'wk-ortho--an': motor.orthoAn.value }" :aria-pressed="motor.orthoAn.value"
+              title="Rechte Winkel zur vorigen Strecke, die erste in Ost/Nord (Umschalt hält es für einen Punkt)"
+              @click="motor.setzeOrtho(!motor.orthoAn.value)">
+        Rechtwinklig
+      </button>
+      <template v-if="motor.massMoeglich.value">
+        <label class="wk-mass">Länge [m]
+          <input :value="motor.mass.value.laenge" inputmode="decimal" placeholder="z. B. 5,00"
+                 @input="motor.setzeMass('laenge', $event.target.value)" @keydown.enter.prevent="punktSetzen" />
+        </label>
+        <label class="wk-mass">Winkel [°]
+          <input :value="motor.mass.value.winkel" inputmode="decimal" placeholder="Zeiger"
+                 title="0 = Ost, 90 = Nord; leer = Richtung des Zeigers"
+                 @input="motor.setzeMass('winkel', $event.target.value)" @keydown.enter.prevent="punktSetzen" />
+        </label>
+        <button class="wk-setzen" :disabled="!motor.massAktiv.value" @click="punktSetzen">Punkt setzen</button>
+      </template>
+    </div>
     <!-- Felder, die sich ZEIGEN lassen (S3): Station auf der Achse, Gelände im Raum -->
     <div v-if="!k.geste.value && k.gesten.value.length" class="kl-gesten">
       <button v-for="g in k.gesten.value" :key="g.name" class="kl-geste" :title="g.titel" @click="$emit('geste', g.name)">
@@ -43,6 +64,7 @@
  * Steht in der Tafel „Bauteil" rechts, wenn sie offen ist (Fabios E-B1: das Bild gehört dem Zeichnen), sonst in der
  * Kontextleiste unter dem Bild wie bisher. Gerechnet wird in `useWerkzeugKarte` — die schmale Leiste liest dasselbe.
  */
+import { computed } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeBearbeitungForm from './ui/CdeBearbeitungForm.vue';
 import CdeQuerprofilSkizze from './CdeQuerprofilSkizze.vue';
@@ -61,6 +83,9 @@ defineEmits(['uebernehmen', 'geste', 'geste-ab']);
 
 const bearbeitung = useBearbeitung();
 const k = useWerkzeugKarte(() => props.motor);
+/** Ein Zug läuft — dann gibt es Rechtwinklig und die getippte Strecke. */
+const zug = computed(() => !!props.motor?.setzeOrtho && k.zugLaeuft.value);
+function punktSetzen() { props.motor?.setzeMassPunkt?.(); }
 </script>
 
 <style scoped>
@@ -96,7 +121,21 @@ const k = useWerkzeugKarte(() => props.motor);
 .kl-chip--forderung, .kl-chip--warnung { background: color-mix(in srgb, var(--cde-warn) 16%, transparent); color: var(--cde-warn-soft); border-color: color-mix(in srgb, var(--cde-warn) 45%, transparent); }
 .kl-chip--festlegung, .kl-chip--einfach { background: var(--cde-fill); color: var(--cde-text-dim); border-color: var(--cde-line); }
 .kl-chip--ableitung, .kl-chip--neu { background: color-mix(in srgb, var(--cde-success-strong) 16%, transparent); color: var(--cde-success); border-color: color-mix(in srgb, var(--cde-success-strong) 40%, transparent); }
+.wk-zeichnen { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.35rem; }
+.wk-ortho, .wk-setzen {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.55rem; cursor: pointer;
+  background: var(--cde-fill); border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm);
+  color: var(--cde-text); font-size: var(--cde-font-xs); touch-action: manipulation;
+}
+.wk-ortho--an { background: var(--cde-accent-fill-hi); border-color: var(--cde-accent-line); color: var(--cde-accent); }
+.wk-setzen:disabled { opacity: 0.5; cursor: default; }
+.wk-mass { display: flex; flex-direction: column; gap: 0.1rem; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.wk-mass input {
+  width: 6.5rem; padding: 0.2rem 0.35rem; background: var(--cde-fill); color: var(--cde-text);
+  border: 1px solid var(--cde-line); border-radius: var(--cde-radius-sm); font-size: var(--cde-font-xs);
+}
 @media (pointer: coarse) {
+  .wk-ortho, .wk-setzen, .wk-mass input { min-height: 40px; }
   .kl-geste { min-height: 40px; padding: 0.4rem 0.8rem; }
   .kl-zu { position: relative; }
   .kl-zu::after { content: ''; position: absolute; inset: -10px; }

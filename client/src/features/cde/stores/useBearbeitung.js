@@ -43,10 +43,14 @@ import { pruefeStandAusJournal } from '../services/Prueflauf.js';
 import { cdeAchsenAus, verdeckteAus } from '../services/CdeAchsen.js';
 
 /** Der leere Eingabe-Zustand — je Aufruf ein frisches Objekt, nie geteilt. */
+function _massLeer() { return { laenge: '', winkel: '', feld: 'laenge' }; }
+
 function _eingabeLeer() {
     // `auto`: welche Formularwerte der Zug vorbelegt hat (nachZug) — geteilt,
     // damit Plan und Raum dieselben Werte als „unberührt" ansehen.
-    return { phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} };
+    // `ortho` (Teil XXX, B5) ist ein Schalter der Sitzung — er überlebt das Ende eines Zugs; `mass` ist die
+    // getippte Länge/Winkel des nächsten Punkts.
+    return { phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {}, ortho: false, mass: _massLeer() };
 }
 
 export const useBearbeitung = defineStore('cde-bearbeitung', () => {
@@ -595,7 +599,8 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
     }
 
     function leereEingabe() {
-        eingabe.value = _eingabeLeer();
+        // Rechtwinklig ist ein Schalter der Sitzung (B5) — er überlebt das Ende eines Zugs.
+        eingabe.value = { ..._eingabeLeer(), ortho: !!eingabe.value?.ortho };
     }
 
     /**

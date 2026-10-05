@@ -177,7 +177,8 @@ describe('Verklebung im Raum (Textwächter)', () => {
         expect(a).toBeLessThan(b);
     });
     it('Enter und Rücktaste gehen an den Motor, Esc bricht erst die Geste ab', () => {
-        expect(viewer).toMatch(/if \(eingabe\.aktiv\.value\) \{\s*if \(e\.key === 'Enter'\)/);
+        // Seit Teil XXX (B5) steht davor das Tippen einer Länge: Enter setzt dann den getippten Punkt, sonst wie bisher.
+        expect(viewer).toMatch(/if \(eingabe\.aktiv\.value\) \{[\s\S]{0,1500}?eingabe\.setzeMassPunkt\(\)[\s\S]{0,400}?if \(e\.key === 'Enter'\) \{ e\.preventDefault\(\); eingabe\.enter\(\);/);
         expect(viewer).toMatch(/eingabe\.entferneLetzten\(\)/);
         expect(viewer).toMatch(/if \(eingabe\.brichGesteAb\(\)\) return;/);
     });

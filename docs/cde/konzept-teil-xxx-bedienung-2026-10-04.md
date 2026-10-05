@@ -361,3 +361,36 @@ abweichende Pixel; Messlauf Bedienung unverändert.
 (`registerStand`) — ein Rezept kann dabei seine Form ändern, etwa das Profil eines Kanals, den ein Graben liest. Jedes
 Neuladen rechnet neu (vorsichtig, und selten). Test dazu, Gegenprobe rot. Bauform-Antworten für Geliefertes werden ohnehin
 nachgefragt und verglichen.
+
+### B5 — Präzise ohne Formular (2026-10-05)
+
+| Messlauf (ohne Projekt, echte Maus und Tasten) | vorher | nachher |
+|---|---|---|
+| Klick 6 px neben das Ende einer eigenen Wand — wie weit liegt der Punkt daneben? | 469 mm | **0 mm** |
+| „5", Enter nach dem ersten Punkt — Länge der Wand | nicht möglich (Klick: 33,44 m) | **5,000 m** |
+| Pille beim Zeichnen | nur der Ort („E … · N … · H …") | **„L 33,09 m · 182,6°"** |
+| Umschalt beim zweiten Punkt — Abweichung von Ost/Nord | 22–42° | **0°** |
+
+- **Fang auf eigene Bauteile** (`Zeichenhilfe.eigeneFangkandidaten` → `Fangpunkte.fangePunkt`, das bis dahin keinen
+  Aufrufer hatte): Punkte von Wand, Platte, Pfosten; Achsenden und Stützpunkte von Kanten; Knoten. Ableitungen nicht
+  (ihre Ecken sind Rasterknoten). Gegen den Fang der Bibliothek an Geliefertem: der nähere gewinnt, bei Gleichstand der
+  fachliche (`zeichenfang`). Derselbe Weg fürs Schweben (Marke, Pille, Gummiband) und fürs Tippen.
+- **Länge und Winkel tippen** wie im CAD: steht ein Punkt, gehen Ziffern in die Länge, Tab wechselt zum Winkel (0° = Ost,
+  90° = Nord), Enter setzt den Punkt, Rücktaste und Esc korrigieren erst das Getippte. Ohne Winkel gilt die Richtung des
+  Zeigers. Ein getippter Punkt bleibt, wo die Zahl ihn hinsetzt — kein Knotenfang zieht ihn weg.
+- **Rechte Winkel:** Umschalt für einen Punkt, der Schalter „Rechtwinklig" in der Tafel für die Sitzung (er überlebt das
+  Ende eines Zugs). Rechtwinklig zur vorigen Strecke, die erste in Ost/Nord.
+- **Tablet:** in der Tafel „Rechtwinklig", die Felder Länge und Winkel und „Punkt setzen" (40 px hoch).
+- **Die Pille** sagt Länge und Winkel der Strecke vom letzten Punkt, das Getippte und „rechtwinklig".
+
+**Zwei Fehler, die nur der Browser zeigte:** (1) der Tipp las Umschalt erst NACH dem Strahl im Worker (≈ 290 ms) — wer
+die Taste nach dem Klick losliess, bekam keinen rechten Winkel; die Pille sagte trotzdem „rechtwinklig" (22,45°). Jetzt
+gilt der Zustand im Moment des Tipps. (2) Auf dem Gelände-TIN fand der Kantenfang der Bibliothek fast überall eine
+Dreieckskante, und ein Fang ging vor Ortho. Jetzt gewinnt bei rechten Winkeln nur ein PUNKT, keine Kante.
+
+Test `zeichnenPraezise.test.js` (18: Rechnung, Fang, Motor am echten Store, Bauplan mit 7,25 m, Tafel montiert,
+Reihenfolge im Viewer); 11 Gegenproben rot. Zwei Tests begründet angepasst (`eingabe.test.js`: vor Enter steht das
+Tippen; `zeiger.test.js`: der Eingabe-Zustand trägt `ortho` und `mass`). Messlauf um M9–M12 erweitert.
+
+**Nicht gebaut:** Länge tippen im Lageplan (dort wird seit E8 nicht gezeichnet); Fang auf Kanten eigener Bauteile
+(nur Punkte); eine Höhe tippen (die Höhe kommt wie bisher aus Gelände oder Formular).

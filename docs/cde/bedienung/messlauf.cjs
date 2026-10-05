@@ -1,5 +1,5 @@
 /**
- * MESSLAUF BEDIENUNG (Teil XXX, B0) — der Durchlauf eines Planers am ersten Tag, mit echter Maus und Tastatur, als
+ * MESSLAUF BEDIENUNG (Teil XXX, B0; B5: Fang, Länge tippen, Pille, Ortho) — der Durchlauf eines Planers am ersten Tag, mit echter Maus und Tastatur, als
  * Zahlen. Jede Stufe B1 … B7 misst vorher und nachher mit genau diesem Lauf (Konzept § 5).
  *
  * Läuft OHNE Projekt (lokale IndexedDB des Wegwerfprofils — schreibt in kein Projekt-Repo), gegen einen laufenden
@@ -172,6 +172,81 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         await strg(page, 'KeyA'); await warte(1500);
         zahlen.strgAWaehlt = await api(page, `return pinia._s.get('cde-bearbeitung').bauteile?.length ?? 0;`);
         zahlen.eigeneBauteile = (await eigene(page)).length;
+
+        // ── B5 · Präzise ohne Formular ──────────────────────────────────────────────────────────────────────────
+        await page.keyboard.press('Escape'); await warte(800);
+        await api(page, `pinia._s.get('cde-bearbeitung').abbrechen?.(); return true;`);
+        // Auswahl aufheben wie ein Planer: ein Klick in den leeren Himmel oben links.
+        await page.mouse.click(L.x + 30, L.y + 30); await warte(1500);
+        /** Welt → Seitenpixel, über die Engine des Viewers. */
+        const aufBild = (p) => page.evaluate((p) => {
+            for (const el of document.querySelectorAll('*')) {
+                const st = el.__vueParentComponent?.setupState;
+                if (st?.engine?.projectToScreen) {
+                    const s = st.engine.projectToScreen([p[0], p[1], p[2]]);
+                    const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+                    return s ? { x: c.left + s.x, y: c.top + s.y } : null;
+                }
+            }
+            return null;
+        }, p);
+        const plan = (gid) => api(page, `return pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt').get(arg)?.parameter?.punkte ?? null;`, gid);
+        const zeichneWand = async (schritte) => {
+            const vorE = await eigene(page);
+            // Nach dem Zeichnen ist das Neue gewählt (B2) — dann steht in der Tafel nicht die Palette. Erst abwählen.
+            await page.keyboard.press('Escape'); await warte(500);
+            await page.mouse.click(L.x + 30, L.y + 30); await warte(1500);
+            await page.evaluate(() => [...document.querySelectorAll('.tb button')].find(x => x.innerText.trim() === 'Wand' && x.getBoundingClientRect().width > 0)?.click());
+            await warte(2500);
+            for (const s of schritte) await s();
+            await page.keyboard.press('Enter'); await warte(5000);
+            const neu = (await eigene(page)).filter(g => !vorE.includes(g));
+            return neu.length === 1 ? await plan(neu[0]) : null;
+        };
+        const grund = (a, b) => Math.hypot(b[0] - a[0], b[2] - a[2]);
+        const zielPunkte = ziel ? await plan(ziel) : null;
+        // M9 · Fang auf das Ende einer eigenen Wand: Klick 6 px daneben — wo liegt der Punkt?
+        // M10 · Länge tippen: „5" und Enter setzt den zweiten Punkt 5 m weit in Zeigerrichtung.
+        // M11 · Die Pille sagt beim Zeichnen die Länge der Strecke.
+        if (zielPunkte?.length >= 2) {
+            const ende = zielPunkte[zielPunkte.length - 1];
+            let pille = '', sp = null;
+            const p = await zeichneWand([
+                // Erst JETZT projizieren: beim Start des Zeichnens geht die Kamera in die Draufsicht.
+                async () => { sp = await aufBild(ende); if (!sp) return;
+                              // Die Zeigerrichtung zur Bildmitte (dort liegt das Gelände), 150 px weit.
+                              { const dx = L.x + L.w / 2 - sp.x, dy = L.y + L.h / 2 - sp.y, d = Math.hypot(dx, dy) || 1; sp.zx = sp.x + 150 * dx / d; sp.zy = sp.y + 150 * dy / d; }
+                              await page.mouse.move(sp.x + 6, sp.y + 3); await warte(700); await page.mouse.click(sp.x + 6, sp.y + 3); await warte(900); },
+                async () => { if (!sp) return; await page.mouse.move(sp.zx, sp.zy); await warte(900);
+                              pille = await page.evaluate(() => document.querySelector('.hud-zeiger')?.innerText ?? '');
+                              await page.keyboard.type('5'); await warte(300); await page.keyboard.press('Enter'); await warte(900);
+                              // Ohne getippte Länge (vorher) setzt ein Klick den zweiten Punkt — damit der Fang trotzdem messbar bleibt.
+                              const n = await api(page, `return pinia._s.get('cde-bearbeitung').eingabe?.punkte?.length ?? 0;`);
+                              if (n < 2) { await page.mouse.click(sp.zx, sp.zy); await warte(900); } },
+            ]);
+            await foto(page, 'b5_fang_laenge');
+            zahlen.fangAbstandMm = p ? Math.round(grund(p[0], ende) * 1000) : null;
+            zahlen.laengeGetipptM = p && p.length >= 2 ? +grund(p[0], p[1]).toFixed(3) : null;
+            zahlen.pilleZeigtLaenge = /\bL\s*[\d,.]+\s*m/.test(pille);
+            zahlen.pilleText = pille.replace(/\s+/g, ' ').trim();
+        }
+        // M12 · Rechter Winkel mit Umschalt: der zweite Punkt schräg daneben — wie weit weicht die Wand von Ost/Nord ab?
+        {
+            // In der Draufsicht (beim Zeichnen) liegt das Gelände im mittleren Bildbereich.
+            const a = { x: L.x + L.w * 0.42, y: L.y + L.h * 0.36 }, b = { x: L.x + L.w * 0.54, y: L.y + L.h * 0.41 };
+            const p = await zeichneWand([
+                async () => { await page.mouse.move(a.x, a.y); await warte(500); await page.mouse.click(a.x, a.y); await warte(900); },
+                async () => { await page.keyboard.down('Shift'); await page.mouse.move(b.x, b.y); await warte(700);
+                              zahlen.orthoPille = (await page.evaluate(() => document.querySelector('.hud-zeiger')?.innerText ?? '')).replace(/\s+/g, ' ').trim();
+                              await page.mouse.click(b.x, b.y); await page.keyboard.up('Shift'); await warte(900); },
+            ]);
+            await foto(page, 'b5_ortho');
+            if (p?.length >= 2) {
+                const w = Math.atan2(-(p[1][2] - p[0][2]), p[1][0] - p[0][0]) * 180 / Math.PI;
+                const ab = Math.abs(((w % 90) + 90) % 90);
+                zahlen.orthoAbweichungGrad = +Math.min(ab, 90 - ab).toFixed(2);
+            } else zahlen.orthoAbweichungGrad = null;
+        }
     } catch (e) {
         fehler.push(`Ablauf: ${String(e.message).slice(0, 300)}`);
         await page.screenshot({ path: path.join(AUS, 'fehler.png') });

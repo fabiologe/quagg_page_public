@@ -26,11 +26,14 @@ import { nachId, eingabeArt } from '../services/Bearbeitungen.js';
 import { pruefeBauplan } from '../services/Bauteilrezepte.js';
 import { eingabenFuer, enterRegel, naechsterSchritt, schliesstUmriss } from '../services/Eingaben.js';
 import { stationAuf } from '../services/Fangpunkte.js';
+import { liesZahl, orthoPunkt, punktNachMass, streckeMass, tippeInZahl } from '../services/Zeichenhilfe.js';
 import { regelwert } from '../services/regeln/Regelwerk.js';
 
 // Der Fangradius auf Knoten beim Zug (Anschliessen) steht im REGELWERK
 // (`fangKnotenM`, Teil XXIII AR) — derselbe, den „An Schacht anschliessen"
 // in `anwenden` prüft; ein Büro kann ihn ändern.
+
+const MASS_LEER = Object.freeze({ laenge: '', winkel: '', feld: 'laenge' });
 
 export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
                              getHoehenversatz, getHoeheAn = null, bereiteHoehenVor = null, getKnoten = null } = {}) {
@@ -40,7 +43,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
 
     const imStore = () => typeof bearbeitung?.setzeEingabe === 'function' && !!bearbeitung.eingabe;
     /** Lokaler Rückfall für Attrappen ohne Eingabe-Zustand. */
-    const _lokal = ref({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} });
+    const _lokal = ref({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {}, ortho: false, mass: MASS_LEER });
     const zustand = () => (imStore() ? bearbeitung.eingabe : _lokal.value);
     function schreibe(patch) {
         if (imStore()) bearbeitung.setzeEingabe(patch);
@@ -110,7 +113,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
 
     function _beginne(b) {
         grund.value = '';
-        schreibe({ phase: 'sammeln', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} });
+        schreibe({ phase: 'sammeln', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {}, mass: MASS_LEER });
         hoehenBereit = (b.hoehenAus === 'gelaende' && bereiteHoehenVor)
             ? Promise.resolve(bereiteHoehenVor()).catch(() => null)
             : null;
@@ -214,23 +217,109 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
      * `nahe(p0)` (optional) sagt, ob der Tipp beim ersten Punkt liegt: dann
      * schliesst er den Umriss statt einen Punkt anzuhängen.
      */
-    function setzePunkt(p, { nahe = null } = {}) {
+    function setzePunkt(p, { nahe = null, ortho = false, gefangen = false, exakt = false } = {}) {
         if (!aktiv.value || !p || !zugSchlitz.value) return false;
         if (schliesseWennNahe(nahe)) return true;
         // Schon geschlossen und wieder auf den ersten Punkt getippt: bleibt zu.
         if (zustand().zugGeschlossen && typeof nahe === 'function' && punkte.value[0] && nahe(punkte.value[0])) return true;
         if (zustand().zugGeschlossen) oeffneZug();
         if (punkte.value.length >= hoechstPunkte.value) return false;
-        punkte.value = [...punkte.value, _gefangen(_mitHoehe(p))];
+        // Ein GETIPPTER Punkt (`exakt`) bleibt, wo die Zahl ihn hinsetzt — kein Knotenfang zieht ihn weg.
+        const q = _mitHoehe(ausrichten(p, { ortho, gefangen: gefangen || exakt }));
+        punkte.value = [...punkte.value, exakt ? q : _gefangen(q)];
+        if (massAktiv.value) massLeeren();
         _nachZug();
         // Ein Zug mit Höchstzahl (Anschliessen: 1) ist fertig, sobald sie erreicht ist.
         if (punkte.value.length >= hoechstPunkte.value) schreibe({ zugGeschlossen: true, phase: 'pruefen', zeiger: null });
         return true;
     }
 
-    function bewegeZeiger(p) {
+    function bewegeZeiger(p, { ortho = false, gefangen = false } = {}) {
         if (!aktiv.value) return;
-        zeiger.value = p ? { x: p.x, ...(Number.isFinite(p.y) ? { y: p.y } : {}), z: p.z } : null;
+        const q = p ? ausrichten(p, { ortho, gefangen }) : null;
+        zeiger.value = q ? { x: q.x, ...(Number.isFinite(q.y) ? { y: q.y } : {}), z: q.z } : null;
+    }
+
+    // ── Präzise ohne Formular (Teil XXX, B5) ─────────────────────────────
+
+    /** Rechte Winkel als Schalter der Sitzung (Tablet: Knopf); die Umschalt-Taste gilt, solange sie gedrückt ist. */
+    const orthoAn = computed(() => !!zustand().ortho);
+    function setzeOrtho(an) { schreibe({ ortho: !!an }); }
+
+    /**
+     * Den Punkt so ausrichten, wie er gesetzt würde: rechtwinklig zur vorigen Strecke (die erste in Ost/Nord), wenn
+     * Ortho gilt — nie, wenn er gefangen ist (der Fang ist genauer als jede Richtung) oder noch kein Punkt steht.
+     */
+    function ausrichten(p, { ortho = false, gefangen = false } = {}) {
+        if (!p || gefangen || !(ortho || orthoAn.value)) return p;
+        const n = punkte.value.length;
+        if (!n || zustand().zugGeschlossen) return p;
+        return orthoPunkt(p, punkte.value[n - 1], n > 1 ? punkte.value[n - 2] : null);
+    }
+
+    /** Länge und Winkel der Strecke vom letzten Punkt zum Zeiger — für die Pille. */
+    const strecke = computed(() => {
+        const n = punkte.value.length;
+        if (!aktiv.value || !n || !zeiger.value || zustand().zugGeschlossen) return null;
+        return streckeMass(punkte.value[n - 1], zeiger.value);
+    });
+
+    /** Die getippte Länge/Winkel des nächsten Punkts: `{laenge, winkel, feld}` als Text. */
+    const mass = computed(() => zustand().mass ?? MASS_LEER);
+    const massAktiv = computed(() => !!(mass.value.laenge || mass.value.winkel));
+    /** Tippen geht, sobald ein Punkt steht und der Zug offen ist. */
+    const massMoeglich = computed(() => aktiv.value && !!zugSchlitz.value && punkte.value.length > 0
+        && !zustand().zugGeschlossen && punkte.value.length < hoechstPunkte.value);
+
+    /** Eine Taste in das gerade getippte Feld. @returns {boolean} verbraucht? */
+    function tippeMass(taste) {
+        if (!massMoeglich.value) return false;
+        const m = mass.value;
+        const neu = tippeInZahl(m[m.feld], taste);
+        if (neu === null) return false;
+        schreibe({ mass: { ...m, [m.feld]: neu } });
+        return true;
+    }
+    /** Ein Feld direkt setzen (die Karte in der Tafel, fürs Tablet). */
+    function setzeMass(feld, text) {
+        if (feld !== 'laenge' && feld !== 'winkel') return;
+        schreibe({ mass: { ...mass.value, [feld]: String(text ?? '') } });
+    }
+    /** Tab: zwischen Länge und Winkel wechseln. */
+    function massFeld() {
+        const m = mass.value;
+        schreibe({ mass: { ...m, feld: m.feld === 'laenge' ? 'winkel' : 'laenge' } });
+    }
+    /** Rücktaste im getippten Feld. @returns {boolean} verbraucht? */
+    function massZurueck() {
+        if (!massAktiv.value) return false;
+        const m = mass.value;
+        const feld = m[m.feld] ? m.feld : (m.feld === 'laenge' ? 'winkel' : 'laenge');
+        schreibe({ mass: { ...m, feld, [feld]: m[feld].slice(0, -1) } });
+        return true;
+    }
+    function massLeeren() { schreibe({ mass: MASS_LEER }); }
+
+    /**
+     * Den nächsten Punkt aus der getippten Länge setzen — in Richtung des getippten Winkels, sonst in Richtung des
+     * Zeigers (schon rechtwinklig, wenn Ortho gilt), sonst weiter wie die vorige Strecke, sonst nach Ost.
+     * @returns {boolean} gesetzt?
+     */
+    function setzeMassPunkt() {
+        if (!massMoeglich.value) return false;
+        const laenge = liesZahl(mass.value.laenge);
+        const winkel = mass.value.winkel ? liesZahl(mass.value.winkel) : null;
+        if (!(laenge > 0)) { grund.value = 'Länge in m tippen — eine Zahl grösser 0'; return false; }
+        if (mass.value.winkel && winkel === null) { grund.value = 'Winkel in Grad tippen — 0 = Ost, 90 = Nord'; return false; }
+        const n = punkte.value.length;
+        const letzter = punkte.value[n - 1];
+        const richtung = streckeMass(letzter, zeiger.value ?? null)?.winkel
+            ?? (n > 1 ? streckeMass(punkte.value[n - 2], letzter)?.winkel : null) ?? 0;
+        const p = punktNachMass(letzter, { laenge, winkel, richtung });
+        if (!p) return false;
+        grund.value = '';
+        // Die Richtung steht schon fest — kein zweites Ausrichten.
+        return setzePunkt({ ...p, y: Number.isFinite(letzter.y) ? letzter.y : p.y }, { exakt: true });
     }
 
     /** Den letzten Punkt zurücknehmen — der Radiergummi beim Zeichnen. */
@@ -328,7 +417,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
             return true;
         }
         if (aktiv.value && zugSchlitz.value && t?.point) {
-            setzePunkt({ x: t.point.x, y: t.point.y, z: t.point.z }, { nahe: t.nahe ?? null });
+            setzePunkt({ x: t.point.x, y: t.point.y, z: t.point.z }, { nahe: t.nahe ?? null, ortho: !!t.ortho, gefangen: !!t.fang });
             // Ein Zug mit HÖCHSTZAHL (Anschliessen: 1 Punkt) ist mit dem Tipp
             // fertig und wird übernommen, wie bisher. Nach dem SCHLIESSFANG nie:
             // ein Tipp schreibt nicht (Teil XX — sonst hätte das Schliessen
@@ -390,7 +479,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
     }
 
     function beenden() {
-        schreibe({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} });
+        schreibe({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {}, mass: MASS_LEER });
     }
 
     return {
@@ -398,5 +487,7 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
         phase, eingaben, gestenFelder, schritt, geste,
         starte, setzePunkt, bewegeZeiger, entferneLetzten, abschliessen, abbrechen,
         enter, schliesseZug, oeffneZug, schliesseWennNahe, starteGeste, brichGesteAb, aufTreffer,
+        orthoAn, setzeOrtho, ausrichten, strecke, mass, massAktiv, massMoeglich,
+        tippeMass, setzeMass, massFeld, massZurueck, massLeeren, setzeMassPunkt,
     };
 }

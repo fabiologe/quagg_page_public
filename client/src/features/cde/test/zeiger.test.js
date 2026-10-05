@@ -188,7 +188,9 @@ describe('Der Eingabe-Zustand im Store', () => {
         b.setzeEingabe({ phase: 'sammeln', punkte: [{ x: 1, z: 2 }] });
         expect(b.eingabe.punkte).toHaveLength(1);
         b.abbrechen();
-        expect(b.eingabe).toEqual({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {} });
+        // Seit Teil XXX (B5) mit dem Ortho-Schalter (bleibt) und der getippten Strecke (leer).
+        expect(b.eingabe).toEqual({ phase: 'aus', punkte: [], zeiger: null, geste: null, zugGeschlossen: false, auto: {},
+                                    ortho: false, mass: { laenge: '', winkel: '', feld: 'laenge' } });
 
         const aus = vi.fn();
         b.belegeWerkzeug('messen', aus);
