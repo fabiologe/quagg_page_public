@@ -14,6 +14,7 @@ export const herleitung = (art, text, belegt = null) => Object.freeze({ art, tex
 
 /** Alle Herleitungen eines Teils als ein Satz je Mass: „hoehe: norm — Regelbauhöhe 1000 mm (DIN 4034-1:2020-04, 4.3.3.8.4)". */
 export function herleitungText(h) {
+    if (typeof h === 'string') return h.trim() || null;     // schon ein Satz (Feld am Rohr)
     if (!h || typeof h !== 'object') return null;
     const zeilen = Object.entries(h)
         .filter(([, w]) => w && typeof w === 'object' && w.art)

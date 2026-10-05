@@ -194,6 +194,14 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
               gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true },
             { name: 'dnBezug', titel: 'DN misst (leer = innen)', typ: 'auswahl', leerErlaubt: true, setzbar: true, vorgabe: 'innen',
               optionen: [{ wert: 'innen', titel: 'innen (Beton, Steinzeug)' }, { wert: 'aussen', titel: 'aussen (Kunststoff, DN/OD)' }] },
+            // DIE STÖSSE (BIMFY I8): leer = ein Rohr ohne Muffen wie bisher. Sonst je
+            // Baulänge eine Muffe — aussen und tief wie hier, innen am Rohr anliegend.
+            { name: 'baulaenge', titel: 'Baulänge (leer = ohne Muffen)', einheit: 'm', typ: 'zahl', min: 0.5, max: 20,
+              gueltig: { ueber: 0 }, leerErlaubt: true },
+            { name: 'muffeAussen', titel: 'Muffe aussen', einheit: 'mm', typ: 'zahl', min: 10, max: 5000, gueltig: { ueber: 0 }, leerErlaubt: true },
+            { name: 'muffeTiefe', titel: 'Muffe Tiefe', einheit: 'mm', typ: 'zahl', min: 10, max: 1000, gueltig: { ueber: 0 }, leerErlaubt: true },
+            // Woher die Masse stammen (BIMFY): steht im IFC als `Quagg_CDE.Herleitung`.
+            { name: 'herleitung', titel: 'Herleitung der Masse', typ: 'text', leerErlaubt: true },
         ],
         // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
         // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
@@ -201,7 +209,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         // Warum kein Band wie die Linie: eine geteilte Haltung besteht aus zwei
         // HALTUNGEN, nicht aus zwei flachen Streifen — und die Bauform wäre
         // `linie` statt `achse+profil`, womit alle Werkzeuge dieser Form ausfielen.
-        geometrie: { art: 'sweep', profil: { art: 'kreisring', durchmesser: 'dn', wanddicke: 'wanddicke', bezug: 'dnBezug', einheit: 'mm', ecken: 12 } },
+        geometrie: { art: 'sweep', profil: { art: 'kreisring', durchmesser: 'dn', wanddicke: 'wanddicke', bezug: 'dnBezug', einheit: 'mm', ecken: 12 },
+                     muffen: { baulaenge: 'baulaenge', aussen: 'muffeAussen', tiefe: 'muffeTiefe', einheit: 'mm' } },
     },
     {
         id: 'schacht',

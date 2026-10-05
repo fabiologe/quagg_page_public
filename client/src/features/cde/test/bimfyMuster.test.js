@@ -20,6 +20,7 @@ import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bim
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
 import { liesIsybau } from '../services/bimfy/Geometrieleser.js';
+import { meshVolume } from '../services/geometrie/MeshOps.js';
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
@@ -271,6 +272,47 @@ describe('Muster · Rohrwand', () => {
     });
 });
 
+describe('Rohr mit Muffen (I8)', () => {
+    const vol = (k) => meshVolume(k.positions, k.positions.length / 9);
+    const ROHR = { punkte: [[0, 0, 0], [10, 0, 0]], dn: 300, wanddicke: 43, dnBezug: 'innen' };
+    // Ein 12-Eck vom Radius r hat die Fläche 3·r².
+    const ring = (ra, ri, l) => 3 * (ra * ra - ri * ri) * l;
+
+    it('10 m Beton DN 300 mit 2,5 m Baulänge: drei Stösse, je eine Glockenmuffe — das Volumen rechnet nach', () => {
+        const rz = rezeptNach('rohr');
+        const ohne = rz.formAus(ROHR, 'koerper');
+        expect(vol(ohne).volume).toBeCloseTo(ring(0.193, 0.15, 10), 6);
+        const mit = rz.formAus({ ...ROHR, baulaenge: 2.5, muffeAussen: 499, muffeTiefe: 80 }, 'koerper');
+        expect(vol(mit).closed).toBe(true);
+        expect(vol(mit).volume).toBeCloseTo(ring(0.193, 0.15, 10) + 3 * ring(0.2495, 0.193, 0.08), 6);
+        // Ohne Baulänge bleibt das Rohr bitgleich.
+        expect(rz.formAus({ ...ROHR, muffeAussen: 499, muffeTiefe: 80 }, 'koerper').positions).toEqual(ohne.positions);
+    });
+
+    it('ein Stoss vor dem Knick: die Muffe rückt hinter ihn, der Körper bleibt geschlossen', () => {
+        const rz = rezeptNach('rohr');
+        const knie = { ...ROHR, punkte: [[0, 0, 0], [2.46, 0, 0], [2.46, 0, -5]] };
+        const ohne = vol(rz.formAus(knie, 'koerper'));
+        // Stoss bei 2,44 m, Muffe 80 mm — sie reichte über den Knick bei 2,46 m.
+        const mit = vol(rz.formAus({ ...knie, baulaenge: 2.44, muffeAussen: 499, muffeTiefe: 80 }, 'koerper'));
+        expect(mit.closed).toBe(true);                                              // vorher: 10 Kanten nicht mannigfaltig
+        // Drei Stösse (2,44, 4,88 und 7,32 m), alle Muffen ganz auf geraden Schenkeln.
+        expect(mit.volume - ohne.volume).toBeCloseTo(3 * ring(0.2495, 0.193, 0.08), 6);
+    });
+
+    it('ISYBAU → Kommando: Baulänge und Muffe kommen aus dem Muster', () => {
+        const text = datei(schachtXml(), schachtXml({ name: 'S2', ost: 410040, nord: 5460000, deckel: '104,80', sohle: '101,70' }),
+                           haltungXml());
+        const { geometrien } = liesIsybau(text);
+        const zeilen = gruppiere(geometrien);
+        const { kommandos } = kommandosFuer(zeilen, {});
+        const rohr = kommandos.find(k => k.kommando.werkzeug === 'rohr-zeichnen').kommando;
+        const w = geometrien.find(g => g.name === 'H1').muster.rohrwand;
+        expect(rohr.werte).toMatchObject({ baulaenge: w.baulaenge, muffeAussen: Math.round(w.verbindung.aussen * 1000),
+                                           muffeTiefe: Math.round(w.verbindung.tiefe * 1000) });
+    });
+});
+
 describe('BIMFY · ISYBAU mit Muster', () => {
     it('der Schacht trägt seine Kette, die Haltung ihre Wand — Anschlüsse mit Richtung', () => {
         const text = datei(schachtXml(), schachtXml({ name: 'S2', ost: 410040, nord: 5460000, deckel: '104,80', sohle: '101,70' }),
@@ -320,7 +362,8 @@ describe('BIMFY I6 · ISYBAU → Normschacht und Rohr mit Wand, über den Komman
         expect(teileVon('S2')).toEqual(['schachtunterteil', 'berme', 'schachtring', 'schachtring', 'schachthals', 'auflagering', 'auflagering',
                                         'schachtabdeckung', 'steigeisen']);
         const rohrPlan = plaene.find(p => p.rezept === 'rohr');
-        expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 33, dnBezug: 'innen' });
+        expect(rohrPlan.parameter).toMatchObject({ dn: 300, wanddicke: 33, dnBezug: 'innen', baulaenge: 2.5 });
+        expect(rohrPlan.parameter.herleitung).toMatch(/wanddicke: annahme — Steinzeug/);
         // Die Sohle des Rohrs bleibt die Sohle aus ISYBAU — innen, nicht unter der Wand.
         expect(rezeptNach('rohr').sohlen.lies(rohrPlan.parameter).map(v => Math.round(v * 1000) / 1000)).toEqual([102, 101.7]);
     });

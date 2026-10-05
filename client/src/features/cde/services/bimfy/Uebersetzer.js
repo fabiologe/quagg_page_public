@@ -23,6 +23,7 @@
  *
  * Rein: kein Vue, kein Store, keine Engine.
  */
+import { herleitungText } from './muster/Herleitung.js';
 import { REZEPTE, rezeptNach, warumNichtSchreibbar } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
 
@@ -347,6 +348,15 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
             werte[profil.wanddicke] = Math.round(wand.wanddicke * 1000 * 10) / 10;
             if (typeof profil.bezug === 'string' && !['innen', 'aussen'].includes(profil.bezug)) werte[profil.bezug] = wand.dnBezug;
         }
+        // … und seine Stösse (I8): Baulänge und Muffe aus dem Muster, wo das Rezept sie kennt.
+        const muffen = rezept.geometrie?.muffen;
+        if (form === 'zug' && wand?.verbindung && wand.baulaenge > 0 && muffen) {
+            werte[muffen.baulaenge] = wand.baulaenge;
+            werte[muffen.aussen] = Math.round(wand.verbindung.aussen * 1000);
+            werte[muffen.tiefe] = Math.round(wand.verbindung.tiefe * 1000);
+        }
+        // Woher jedes Mass stammt (I5) — für `Quagg_CDE.Herleitung` am Rohr.
+        if (form === 'zug' && wand?.herleitung) werte.herleitung = herleitungText(wand.herleitung);
     }
 
     if (punkte.length < (rezept.mindestPunkte ?? 1)) {

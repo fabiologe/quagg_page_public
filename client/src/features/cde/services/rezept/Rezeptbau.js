@@ -14,7 +14,7 @@
  */
 import {
     bandGeometrie, bermeKoerper, dreiecksGeometrie, flaechenGeometrie, hoehenUeberLaenge, massAus, platteKoerper, profilAus,
-    punktXYZ, punkteAus, ringstueckKoerper, stabKoerper, sweepKoerper, trittKoerper,
+    punktXYZ, punkteAus, ringstueckKoerper, rohrMitMuffen, stabKoerper, sweepKoerper, trittKoerper,
 } from './Geometriebau.js';
 import { eigenschaftenVon } from '../eigenschaften/Eigenschaftsarten.js';
 import { meshVolume } from '../geometrie/MeshOps.js';
@@ -48,7 +48,8 @@ import { bezugOder } from '../Achsbezug.js';
 export const GEOMETRIE_ARTEN = Object.freeze({
     band:    { koerper: false, profil: false, masse: [],        weitere: [] },
     flaeche: { koerper: false, profil: false, masse: [],        weitere: [] },
-    sweep:   { koerper: true,  profil: true,  masse: [],        weitere: ['achsbezug'] },
+    // `muffen` (BIMFY I8): {baulaenge, aussen, tiefe, einheit} — Feldnamen; innen ist das Profil aussen.
+    sweep:   { koerper: true,  profil: true,  masse: [],        weitere: ['achsbezug', 'muffen'] },
     stab:    { koerper: true,  profil: true,  masse: ['laenge'], weitere: [] },
     platte:  { koerper: true,  profil: false, masse: ['dicke'],  weitere: ['richtung'] },
     // BIMFY I2 — Schachtbauteile. Die Punkte sind die ACHSE (unten, oben); ein
@@ -268,7 +269,22 @@ function _koerper(geo, parameter, vorgabe) {
         const d = sohlen.abstand(parameter);
         punkte = punkte.map(p => [p[0], p[1] + d, p[2]]);
     }
-    if (geo.art === 'sweep') return sweepKoerper(punkte, profilAus(geo.profil, parameter, vorgabe));
+    if (geo.art === 'sweep') {
+        const profil = profilAus(geo.profil, parameter, vorgabe);
+        const rohr = sweepKoerper(punkte, profil);
+        if (!geo.muffen || !rohr) return rohr;
+        // DIE MUFFEN (BIMFY I8): innen liegt die Muffe am Profil an, aussen und
+        // lang wie die Felder sagen; ohne Baulänge bleibt das Rohr bitgleich.
+        const m = geo.muffen;
+        const einheit = m.einheit ?? 'mm';
+        const innen = 2 * Math.max(...profil.punkte.map(q => Math.hypot(q.u, q.v)));
+        return rohrMitMuffen(rohr, punkte, {
+            baulaenge: massAus(parameter, m.baulaenge, { einheit: 'm', rueckfall: vorgabe(m.baulaenge) }),
+            aussen: massAus(parameter, m.aussen, { einheit, rueckfall: vorgabe(m.aussen) }),
+            tiefe: massAus(parameter, m.tiefe, { einheit, rueckfall: vorgabe(m.tiefe) }),
+            innen,
+        }, geo.profil?.ecken ?? 12);
+    }
     if (geo.art === 'stab') {
         return stabKoerper(punkte, profilAus(geo.profil, parameter, vorgabe),
                            massAus(parameter, geo.laenge, { rueckfall: vorgabe(geo.laenge) }));

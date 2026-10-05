@@ -307,6 +307,69 @@ export function rohrKoerper(punkte, dnMm = 300, seiten = 12) {
 }
 
 
+// ── Muffen (BIMFY I8) ───────────────────────────────────────────────────────
+
+/** Die Punkte der Achse zwischen den Stationen a und e (Meter ab dem ersten Punkt). */
+function _achsstueck(xyz, a, e) {
+    const aus = [];
+    let s0 = 0;
+    for (let i = 0; i + 1 < xyz.length; i++) {
+        const p = xyz[i], q = xyz[i + 1];
+        const l = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+        const s1 = s0 + l;
+        const bei = (s) => { const f = l > 0 ? (s - s0) / l : 0; return { x: p.x + f * (q.x - p.x), y: p.y + f * (q.y - p.y), z: p.z + f * (q.z - p.z) }; };
+        if (s1 >= a && s0 <= e) {
+            if (!aus.length) aus.push(bei(Math.max(a, s0)));
+            if (s1 < e) aus.push(q);
+            else { aus.push(bei(e)); break; }
+        }
+        s0 = s1;
+    }
+    return aus;
+}
+
+/**
+ * Das Rohr MIT SEINEN MUFFEN: an jedem Stoss (alle `baulaenge` Meter ab dem
+ * ersten Punkt) ein Ring von `innen` bis `aussen` (Durchmesser, m), `tiefe`
+ * lang. Die Muffe zeigt gegen die Fliessrichtung — sie sitzt am oberen Ende
+ * des Rohres, das am Stoss beginnt; die Punkte laufen vom Zulauf zum Ablauf.
+ * Ohne Baulänge oder mit einer Muffe, die nicht über das Rohr ragt: das Rohr allein.
+ */
+export function rohrMitMuffen(rohr, punkte, { baulaenge, aussen, innen, tiefe } = {}, ecken = 12) {
+    if (!rohr || !(baulaenge > 0) || !(tiefe > 0) || !(aussen > innen) || !(innen > 0)) return rohr;
+    const xyz = punkte.map(punktXYZ);
+    // Die Stationen der Knicke: eine Muffe bricht nicht um die Ecke (dort sässe
+    // ein Formstück) — reicht sie über einen Knick, rückt sie hinter ihn.
+    const knicke = [];
+    let laenge = 0;
+    for (let i = 0; i + 1 < xyz.length; i++) {
+        laenge += Math.hypot(xyz[i + 1].x - xyz[i].x, xyz[i + 1].y - xyz[i].y, xyz[i + 1].z - xyz[i].z);
+        if (i + 2 < xyz.length) knicke.push(laenge);
+    }
+    const ring = { ...kreisProfil(aussen / 2, ecken), loch: kreisProfil(innen / 2, ecken) };
+    const muffen = [];
+    for (let stoss = baulaenge; stoss < laenge - 1e-6; stoss += baulaenge) {
+        let s = stoss;
+        const knick = knicke.find(k => k > s + 1e-6 && k < s + tiefe - 1e-6);
+        if (knick !== undefined) s = knick;
+        const e = Math.min(s + tiefe, laenge);
+        if (knicke.some(k => k > s + 1e-6 && k < e - 1e-6)) continue;   // Schenkel kürzer als die Muffe
+        const stueck = _achsstueck(xyz, s, e);
+        if (stueck.length >= 2) muffen.push(sweepKoerper(stueck, ring));
+    }
+    return muffen.length ? _vereinige([rohr, ...muffen]) : rohr;
+}
+
+/** Wie viele Stösse ein Rohr dieser Achse bei dieser Baulänge hat. */
+export function stossZahl(punkte, baulaenge) {
+    if (!(baulaenge > 0)) return 0;
+    const xyz = punkte.map(punktXYZ);
+    let laenge = 0;
+    for (let i = 0; i + 1 < xyz.length; i++) laenge += Math.hypot(xyz[i + 1].x - xyz[i].x, xyz[i + 1].y - xyz[i].y, xyz[i + 1].z - xyz[i].z);
+    return Math.max(0, Math.ceil(laenge / baulaenge - 1e-9) - 1);
+}
+
+
 // ── Schachtbauteile (BIMFY I2) ─────────────────────────────────────────────
 
 /** Mehrere Körper zu einem — die Dreiecke hintereinander; geschlossen, wenn jeder es ist. */
