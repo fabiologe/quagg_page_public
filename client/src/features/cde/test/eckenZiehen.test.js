@@ -165,7 +165,11 @@ describe('Erdkörper: Ecken beim Antippen (T3), „Ecken ziehen" zeigt nur sie, 
         g.neuBauen();
         // Bis T3 (Teil XXXI) galt die Knopfpflicht vom 18.09. — Fabio 2026-10-05 (E-T1): „Griffe sofort beim
         // Antippen … beim Bearbeiten". Der Knopf ist jetzt der Bearbeiten-Modus selbst.
-        expect(g.griffe.value.filter(x => x.ecken)).toHaveLength(16);
+        // 16 Ecken (Oberkante und Sohle); seit Teil XXXII (K1) dazu je Kante ein „+" und je Ecke ein „−" (4 + 4).
+        const ecken = g.griffe.value.filter(x => x.ecken && !/^knickpunkt-/.test(x.art));
+        expect(ecken).toHaveLength(16);
+        expect(g.griffe.value.filter(x => x.art === 'knickpunkt-plus')).toHaveLength(4);
+        expect(g.griffe.value.filter(x => x.art === 'knickpunkt-weg')).toHaveLength(4);
         // Was bleibt: kein Griff, der den ganzen Vorgang verschiebt — ein Zucken beim Wählen verschob sonst alles.
         expect(g.griffe.value.some(x => x.art === 'bauteil')).toBe(false);
     });
@@ -174,7 +178,7 @@ describe('Erdkörper: Ecken beim Antippen (T3), „Ecken ziehen" zeigt nur sie, 
         const { b, g } = await baue();
         expect(b.eckenStarten('cde-aushub')).toBe(true);
         g.neuBauen();
-        expect(g.griffe.value).toHaveLength(16);
+        expect(g.griffe.value.filter(x => !/^knickpunkt-/.test(x.art))).toHaveLength(16);   // + „+"/„−" (Teil XXXII, K1)
         expect(g.griffe.value.every(x => x.ecken && x.globalId === 'cde-aushub')).toBe(true);
         b.eckenBeenden();
         g.neuBauen();

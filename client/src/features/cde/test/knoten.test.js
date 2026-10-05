@@ -234,3 +234,43 @@ describe('ein GELIEFERTER Schacht im Knoten — wie „Schacht verschieben" (Fab
         expect(neu.filter(x => x.globalId === 'cde-R')).toHaveLength(1);       // das eigene Rohr nur EINMAL
     });
 });
+
+describe('Teil XXXII, K5 — T-Stoss: ein Punkt auf der Kante bleibt an seiner Stelle der Kante', () => {
+    beforeEach(async () => {
+        // T stösst mit seinem Anfang gegen die Mitte von A (10 | 0 … 0 | 0 → bei 5 | 0).
+        const r = await b.fuehreAus(kommando('wand-zeichnen', { neu: ['cde-T'], werte: { name: 'T', ...WAND }, eingaben: { zug: [e(5, 0, 100), e(5, -6, 100)] } }));
+        if (!r.ausgefuehrt) throw new Error(r.grund);
+    });
+
+    it('A erkennt T auf seiner Kante — als T-Stoss, nicht als Knoten an einer Ecke', async () => {
+        const { tStossPartner } = await import('../services/Griffe.js');
+        const t = tStossPartner(plan('cde-A').parameter.punkte, false, 'cde-A', ae.wirksamerStand('erzeugt'));
+        expect(t.get(0)).toEqual(['cde-T']);
+        expect(knotenPartner(punkt('cde-A', 0), 'cde-A', ae.wirksamerStand('erzeugt'))).toEqual([]);
+    });
+
+    it('die Ecke von A 2 m nach Süden: T bleibt in der Mitte der neuen Kante — sein anderes Ende bleibt', async () => {
+        const t = aufbau();
+        b.modusSetzen(true);
+        await tippeAn('cde-A');
+        t.g.neuBauen();
+        const ecke = t.g.griffe.value.find(x => x.key === 'stuetz:cde-A:0');
+        expect(ecke.werte.mit).toContain('cde-T');
+        await zug(t, ecke, { x: ecke.pos.x, z: ecke.pos.z + 2 });
+        expect(punkt('cde-A', 0)).toEqual([0, 100, 2]);
+        expect(punkt('cde-T', 0)).toEqual([5, 100, 1]);                    // die Mitte der neuen Kante
+        expect(punkt('cde-T', 1)).toEqual([5, 100, 6]);
+    });
+
+    it('die Kante von A 1 m nach Süden: T folgt mit seinem Anfang (und B an der Ecke)', async () => {
+        const t = aufbau();
+        b.modusSetzen(true);
+        await tippeAn('cde-A');
+        t.g.neuBauen();
+        const kante = t.g.griffe.value.find(x => x.key === 'kante:cde-A:0');
+        expect(kante.werte.mit).toEqual(['cde-B', 'cde-T']);
+        await zug(t, kante, { x: kante.pos.x, z: kante.pos.z + 1 });
+        expect(punkt('cde-T', 0)).toEqual([5, 100, 1]);
+        expect(punkt('cde-B', 0)).toEqual([10, 100, 1]);
+    });
+});

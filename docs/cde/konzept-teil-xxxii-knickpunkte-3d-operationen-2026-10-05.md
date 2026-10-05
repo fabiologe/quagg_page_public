@@ -90,3 +90,35 @@ Verweisen (wie die Aussparung), kein eingefrorenes Netz. Ändert sich A oder B, 
   Achse · Bedienreste hochkant.
 - **E-X1:** das Ergebnis eines Verschneidens ist ein **lebendes Rezept** (wie die Aussparung); **E-X2** damit: A und B
   verborgen, das Ergebnis trägt die Klasse von A.
+
+## 8 · Gebaut
+
+### Block 1 — Knickpunkte überall (K1, K2, K5)
+
+| | vorher | jetzt |
+|---|---|---|
+| Grube, Schüttung, Planum, Böschung, Gerinneachse, Schicht, Raum: Ecke einfügen | — (nur verschieben) | **„+" je Kante** (Tipp: Mitte) |
+| … Ecke entfernen | — | **„−" am Eckmenü** (ein Ring behält 3, eine Linie 2) |
+| Knick an beliebiger Stelle der Kante | nur Kantenmitte („+") oder Formular | **das „+" entlang der Kante schieben** — eingefügt, wo man loslässt; die Pille sagt „Station 3,00 m" / „ab Ecke 2 …" |
+| Wand stösst gegen die Mitte einer anderen (T-Stoss) | riss beim Ziehen ab | **zieht mit**, an derselben relativen Stelle der Kante |
+
+- **K1:** zwei Werkzeuge als DATEN (`setzt: { art: 'knickpunkt', aktion }`, allgemeine Operation bei den Setzern) — die
+  Ratsche W5 (eigene `anwenden`) blieb bei 45, W7 ordnet sie über `setzt` ein; Formular ist der Griff
+  (`eigeneOberflaeche`). Eingefügt wird hinter Ecke i, `abstand` Meter entlang der Kante; jede Zahl, die beide Nachbarn
+  tragen (Höhe m NN, Geländeverweis, Sohlbreite), wird gemittelt — der Punkt liegt AUF der Kante, der Körper ändert
+  sich erst beim Ziehen (gemessen: Aushub gleich). Die Griffe entstehen in einem Nachlauf über alle Erdbau-Eckgriffe
+  (`Griffe.knickpunktGriffe`) — Punktlisten mit Höhe und Lagelisten ohne Höhe gleich.
+- **K2:** „+"-Griffe tragen eine Gleitbahn (`gleiten`: Kante, Feld, Wert am Anfang); `useGriffe` lässt sie über der
+  Zug-Schwelle auf der Kante gleiten (`Griffe.gleitpunkt`: Strahl → Ebene in Kantenhöhe → auf die Kante, 2 … 98 %).
+  Weiter als drei Trefferflächen von der Kante losgelassen: nichts.
+- **K5:** `Griffe.tStossPartner` (Punkt auf einer Kante, nicht an ihren Enden, auf die Netztoleranz, auch in der Höhe)
+  → Partner der Ecken dieser Kante und der Kantengriffe daneben; EINE Regel für Ecke und T-Stoss
+  (`_partnerNachziehen`: auf altem Eckpunkt → neuer Eckpunkt, auf alter Kante → dieselbe Stelle der neuen Kante).
+
+Tests: `schichtGriffe.test.js` (+4: Griffe an Grube und Schicht, Einfügen in der Mitte mit gemittelter Höhe und
+gleichem Aushub, Entfernen bis zum Dreieck, Geltung), `griffZahl.test.js` (+2: Gleiten auf Station 3,00; weit weg
+nichts), `knoten.test.js` (+3: T-Stoss erkannt, Ecke und Kante gezogen). Gegenproben rot: keine „+/−"-Griffe, Höhe
+nicht gemittelt, Dreieck schrumpft; Loslassen ignoriert die Gleitstelle, kein Gleiten, weit weg gilt; keine
+T-Partner, nur Ecken, Eckgriff ohne T. Bewusst gedreht: Eckzählungen in `eckenRest`, `eckenZiehen`, `schichtGriffe`
+(„+"/„−" kommen dazu); Katalog 157 → 159 (`strukturG0`, `reichweite` 134 → 136 ohne Oberfläche, je mit Probe);
+`griffSofort` zieht den Tipp-Griff jetzt QUER zur Kante weg (das „+" gleitet längs). Suite 347 Dateien / 3 805 Tests.

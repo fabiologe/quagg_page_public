@@ -660,6 +660,15 @@ const SETZ_OPERATIONEN = Object.freeze({
             ? `${el?.name || el?.globalId || 'Das Bauteil'}: kein Ende liegt am Punkt — gesetzt wird nur, was dort anschliesst.`
             : null),
     },
+    knickpunkt: {
+        // EINEN KNICKPUNKT EINFÜGEN ODER ENTFERNEN (Teil XXXII, K1) — an Erdbau, Schicht, Raum. Welche Liste und welche
+        // Kante, sagt erst der Griff („+" in der Kantenmitte, „−" am Eckmenü); `aktion` sagt die Deklaration.
+        vorbelege: (s, el) => {
+            const p = _erdbauPunkt(el?.stand?.bauplan, 0, null, 0);
+            return p ? { op: p.op, feld: p.feld, index: 0 } : { op: 0, feld: '', index: 0 };
+        },
+        schreibe: (s, el, werte) => (s.aktion === 'einfuegen' ? _knickEinfuegen(el, werte) : _knickEntfernen(el, werte)),
+    },
     vorgangsmass: {
         // EIN MASS AM ERDBAU-VORGANG (Teil XXII, Rest): welche Operation und
         // welches Mass, sagt erst der Griff — leer vorbelegt.
@@ -1043,12 +1052,34 @@ function _hatMasse(rz) {
 const MASS_GRUND = 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.';
 
 /**
- * Die Punkte der Knotenpartner nachziehen (Teil XXXI, T7) — `paare` = [[alter Ort, neuer Ort], …]: ein Eckzug hat eines,
- * ein Kantenzug zwei. Je Partner EIN `erzeugt`-Eintrag, auch wenn er beide Enden der Kante teilt.
+ * DIE PARTNER NACHZIEHEN (Teil XXXI, T7; Teil XXXII, K5) — EINE Regel für den Knoten an der Ecke und den T-Stoss:
+ * ein Punkt eines Partners, der am ALTEN Ort einer Ecke lag, kommt an deren neuen Ort; einer, der AUF einer alten Kante
+ * lag (eine Wand stösst gegen die Mitte der anderen), bleibt an derselben relativen Stelle der neuen Kante. `alt` und
+ * `neu` sind die Punktlisten des gezogenen Bauteils vorher und nachher. Je Partner EIN `erzeugt`-Eintrag; ein Partner
+ * ohne Punkt dort (inzwischen gelöst, gelöscht) bleibt, wie er ist.
  */
-function _knotenNachziehen(mit, paare, selbst, bauplanVon) {
-    if (!mit.length || !paare.length || typeof bauplanVon !== 'function') return [];
+function _partnerNachziehen(mit, alt, neu, geschlossen, selbst, bauplanVon) {
+    if (!mit.length || !Array.isArray(alt) || !Array.isArray(neu) || alt.length !== neu.length || typeof bauplanVon !== 'function') return [];
     const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
+    const gleich = (p, q) => Math.abs(p[0] - q[0]) <= tol && Math.abs(p[1] - q[1]) <= tol && Math.abs(p[2] - q[2]) <= tol;
+    const n = alt.length;
+    const kanten = geschlossen ? n : n - 1;
+    const ziel = (q) => {
+        for (let k = 0; k < n; k++) if (Array.isArray(alt[k]) && gleich(q, alt[k])) return [...neu[k]];
+        for (let k = 0; k < kanten; k++) {
+            const a = alt[k], b = alt[(k + 1) % n];
+            if (!Array.isArray(a) || !Array.isArray(b)) continue;
+            const dx = b[0] - a[0], dz = b[2] - a[2], l2 = dx * dx + dz * dz;
+            if (!(l2 > 1e-12)) continue;
+            const t = ((q[0] - a[0]) * dx + (q[2] - a[2]) * dz) / l2;
+            if (!(t > 0) || !(t < 1)) continue;
+            const auf = [a[0] + t * dx, a[1] + t * (b[1] - a[1]), a[2] + t * dz];
+            if (!gleich(q, auf)) continue;
+            const na = neu[k], nb = neu[(k + 1) % n];
+            return [na[0] + t * (nb[0] - na[0]), na[1] + t * (nb[1] - na[1]), na[2] + t * (nb[2] - na[2])];
+        }
+        return null;
+    };
     const aus = [];
     for (const gid of new Set(mit.map(String))) {
         if (gid === selbst) continue;
@@ -1057,11 +1088,11 @@ function _knotenNachziehen(mit, paare, selbst, bauplanVon) {
         if (!plan?.rezept || plan.ableitung || !Array.isArray(pkt)) continue;
         let bewegt = false;
         const punkte = pkt.map((q) => {
-            const paar = Array.isArray(q) && paare.find(([alt]) => Array.isArray(alt)
-                && Math.abs(q[0] - alt[0]) <= tol && Math.abs(q[1] - alt[1]) <= tol && Math.abs(q[2] - alt[2]) <= tol);
-            if (!paar) return q;
+            if (!Array.isArray(q)) return q;
+            const z = ziel(q);
+            if (!z || gleich(q, z)) return q;
             bewegt = true;
-            return [...paar[1]];
+            return z;
         });
         if (!bewegt) continue;
         aus.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: gid,
@@ -1081,6 +1112,52 @@ function _gelieferterKnoten(el, werte, bauplanVon) {
     const roh = sv?.anwenden?.(el, { ost: werte?.ost, nord: werte?.nord, mitfuehren: 'forderung' }, { bauplanVon }) ?? null;
     return (Array.isArray(roh) ? roh : roh ? [roh] : []).filter(e => modellVon(e.globalId) !== 'cde')
         .map(e => ({ modell: 'geliefert', ...e }));
+}
+
+/**
+ * EINEN KNICKPUNKT EINFÜGEN / ENTFERNEN an einem Erdbau-Vorgang, einer Schicht, einem Raum (Teil XXXII, K1).
+ * Eingefügt wird hinter Ecke `index`, `abstand` Meter entlang der Kante (im Grundriss); jede Zahl, die beide Nachbarn
+ * tragen (Höhe in m NN, Geländeverweis, Sohlbreite …), wird linear gemittelt — der neue Punkt liegt auf der Kante, der
+ * Körper ändert sich nicht, bis er gezogen wird. Entfernt wird nur, solange ein Ring drei, eine Linie zwei Ecken behält.
+ */
+function _knickListe(el, werte) {
+    const plan = el?.stand?.bauplan;
+    if (!el?.globalId || !plan?.ableitung || !_hatKnickpunkte(rezeptNach(plan.rezept))) return null;
+    const treffer = _erdbauPunkt(plan, werte?.op, werte?.feld || null, werte?.index);
+    if (!treffer) return null;
+    return { plan, treffer, geschlossen: treffer.feld === 'umriss' };
+}
+function _mitListe(el, plan, treffer, liste) {
+    const operationen = plan.parameter.operationen.map((o, j) => (j !== treffer.op ? o
+        : { ...o, parameter: { ...o.parameter, [treffer.feld]: liste } }));
+    return _vorgangMitOperationen(el, plan, operationen);
+}
+function _knickEinfuegen(el, werte) {
+    const k = _knickListe(el, werte);
+    if (!k) return null;
+    const { plan, treffer, geschlossen } = k;
+    const liste = treffer.liste, n = liste.length, i = treffer.index;
+    const j = i + 1 < n ? i + 1 : (geschlossen ? 0 : -1);
+    if (j < 0) return null;                                   // hinter dem letzten Punkt einer Linie ist keine Kante
+    const a = liste[i], b = liste[j];
+    const laenge = Math.hypot(Number(b.x) - Number(a.x), Number(b.z) - Number(a.z));
+    const abstand = Number(werte?.abstand);
+    if (!(laenge > 1e-6) || !Number.isFinite(abstand) || !(abstand > 1e-3) || !(abstand < laenge - 1e-3)) return null;
+    const t = abstand / laenge;
+    const neu = {};
+    for (const [feld, va] of Object.entries(a)) {
+        const vb = b[feld];
+        if (typeof va === 'number' && typeof vb === 'number' && Number.isFinite(va) && Number.isFinite(vb)) neu[feld] = va + t * (vb - va);
+    }
+    const punkte = [...liste.slice(0, i + 1), neu, ...liste.slice(i + 1)];
+    return _mitListe(el, plan, treffer, punkte);
+}
+function _knickEntfernen(el, werte) {
+    const k = _knickListe(el, werte);
+    if (!k) return null;
+    const { plan, treffer, geschlossen } = k;
+    if (treffer.liste.length <= (geschlossen ? 3 : 2)) return null;
+    return _mitListe(el, plan, treffer, treffer.liste.filter((_, m) => m !== treffer.index));
 }
 
 function _hatKnickpunkte(rz) {
@@ -3201,6 +3278,47 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         anwenden: (el, werte) => _erdbauStuetzpunktSchritte(el, werte),
     },
     {
+        /** Knickpunkt einfügen an Erdbau, Schicht, Raum (Teil XXXII, K1) — der Griff ist das „+" in der Kantenmitte. */
+        id: 'erdbau-stuetzpunkt-einfuegen',
+        titel: 'Knickpunkt einfügen',
+        icon: 'plus',
+        gruppe: 'gelaende',
+        bauform: ['koerper', 'flaeche+dicke'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => _hatKnickpunkte(ctx?.rezept),
+        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.',
+        art: 'erzeugt',
+        felder: [
+            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'operation' },
+            { name: 'feld', titel: 'Punktliste', typ: 'text' },
+            { name: 'index', titel: 'Kante ab Knickpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, adresse: 'knickpunkt' },
+            { name: 'abstand', titel: 'Abstand ab dieser Ecke', einheit: 'm', typ: 'zahl', gueltig: { ueber: 0 } },
+        ],
+        setzt: { art: 'knickpunkt', aktion: 'einfuegen' },
+        eigeneOberflaeche: 'griffe',
+    },
+    {
+        /** Knickpunkt entfernen (Teil XXXII, K1) — der Griff ist das „−" am Eckmenü. */
+        id: 'erdbau-stuetzpunkt-entfernen',
+        titel: 'Knickpunkt entfernen',
+        icon: 'delete',
+        gruppe: 'gelaende',
+        bauform: ['koerper', 'flaeche+dicke'],
+        mindestGuete: 'unbekannt',
+        nurEigene: true,
+        gilt: (_e, ctx) => _hatKnickpunkte(ctx?.rezept),
+        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.',
+        art: 'erzeugt',
+        felder: [
+            { name: 'op', titel: 'Operation Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, aus: { geste: 'griff' }, adresse: 'operation' },
+            { name: 'feld', titel: 'Punktliste', typ: 'text' },
+            { name: 'index', titel: 'Knickpunkt Nr.', typ: 'zahl', min: 0, gueltig: { min: 0 }, adresse: 'knickpunkt' },
+        ],
+        setzt: { art: 'knickpunkt', aktion: 'entfernen' },
+        eigeneOberflaeche: 'griffe',
+    },
+    {
         /**
          * EIN MASS AM VORGANG SETZEN (Teil XXII, Rest — „Ecken ziehen" an
          * Gerinne, Böschung an Kante, Kanalgraben, Baugrube ums Bauwerk).
@@ -3307,7 +3425,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             });
             // DER KNOTEN (T7): jeder genannte Partner bewegt seinen Punkt am ALTEN Ort an denselben neuen — im selben
             // Kommando, ein Rückgängig. Ein Partner ohne Punkt dort (inzwischen gelöst, gelöscht) bleibt, wie er ist.
-            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], [[alt, neu]], el.globalId, bauplanVon);
+            const partner = _partnerNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], punkte, punkte.map((p, k) => (k === i ? neu : p)),
+                                               !!REZEPTE[plan.rezept]?.geschlossen, el.globalId, bauplanVon);
             return partner.length ? [eigen, ...partner] : eigen;
         },
     },
@@ -4053,7 +4172,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '',
                 globalId: el.globalId, parameter: { ...plan.parameter, punkte: neu },
             });
-            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], [[a, neu[i]], [b, neu[j]]], el.globalId, bauplanVon);
+            const partner = _partnerNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], punkte, neu, geschlossen, el.globalId, bauplanVon);
             return partner.length ? [eigen, ...partner] : eigen;
         },
     },

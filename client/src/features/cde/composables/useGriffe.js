@@ -29,7 +29,7 @@
  */
 
 import { computed, ref, watch } from 'vue';
-import { aufMasslinie, begrenze, griffZuWerten, griffeFrei, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
+import { aufMasslinie, begrenze, gleitpunkt, griffZuWerten, griffeFrei, griffeFuer, schnittStrahlEbene, winkelGrad, ziehebene, MINDEST_ZUG_M } from '../services/Griffe.js';
 import { eckFanglinien, fanglinienFuer, fange, kantenAnEcke } from '../services/Fanglinien.js';
 import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { nachId } from '../services/Bearbeitungen.js';
@@ -379,7 +379,25 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // Ein Tipp-Griff bewegt nichts. Er gilt wie ein Knopf, solange man ÜBER ihm loslässt (seine Trefferfläche,
         // TREFFER_PX); wer den Finger weiter wegzieht, meinte ihn nicht — jetzt, wo der Finger nicht mehr erst armiert (T4).
         if (z.wirkung === 'tipp' || z.wirkung === 'loesen') {
-            if (z.startPx && tipp?.px && Math.hypot(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y) > TREFFER_PX) z.weg = true;
+            const weit = z.startPx && tipp?.px ? Math.hypot(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y) : 0;
+            // EIN „+" MIT GLEITBAHN (Teil XXXII, K2): über die Zug-Schwelle hinaus gleitet er auf seiner Kante; beim
+            // Loslassen wird DORT eingefügt. Weg von der Kante (weiter als drei Trefferflächen) gilt er nicht mehr.
+            if (z.griff.gleiten && weit >= (z.schwellePx ?? 0)) {
+                const g = gleitpunkt(z.griff.gleiten, e.strahl?.(tipp.x, tipp.y));
+                if (!g) return;
+                const s = e.projectToScreen?.([g.pos.x, g.pos.y, g.pos.z]);
+                const r = s && tipp?.px ? Math.hypot(tipp.px.x - s.x, tipp.px.y - s.y) : 0;
+                z.weg = r > 3 * TREFFER_PX;
+                z.gleit = z.weg ? null : g;
+                if (z.gleit) {
+                    z.pos = g.pos;
+                    e.griffVersetzen?.(z.griff.key, g.pos);
+                    pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y,
+                        text: `Knickpunkt · ${z.griff.gleiten.titel ?? ''} ${String(g.wert.toFixed(2)).replace('.', ',')} m`.replace('  ', ' ') } : null;
+                }
+                return;
+            }
+            if (weit > TREFFER_PX) z.weg = true;
             return;
         }
         if (z.griff.art === 'drehung') { _drehZugBewegt(z, tipp); return; }
@@ -544,6 +562,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // TIPP-GRIFF: der Griff selbst IST die Eingabe — die Werte bringt er mit.
         if (z.wirkung === 'tipp') {
             if (abbruch || z.weg) { neuBauen(); return null; }
+            // Geglitten (K2): die Stelle, an der losgelassen wurde, statt der Kantenmitte.
+            if (z.gleit) {
+                return ablegen(z.griff, z.gleit.pos, { werte: { ...z.griff.werte, [z.griff.gleiten.feld]: z.gleit.wert }, serie: z.serie });
+            }
             return ablegen(z.griff, z.griff.pos, { werte: z.griff.werte, serie: z.serie });
         }
         // Ein fremder Schacht: erst das Subjekt abwarten — ohne eins gibt es nichts abzulegen.

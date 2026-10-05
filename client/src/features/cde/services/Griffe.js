@@ -70,7 +70,7 @@ export const GRIFF_FAMILIEN = Object.freeze({
     sohlen:        ['sohlhoehen-setzen'],
     deckel:        ['deckelhoehe-setzen'],
     bezug:         ['bezugshoehe-setzen'],
-    ecken:         ['erdbau-stuetzpunkt-verschieben', 'erdbau-mass-setzen'],
+    ecken:         ['erdbau-stuetzpunkt-verschieben', 'erdbau-mass-setzen', 'erdbau-stuetzpunkt-einfuegen', 'erdbau-stuetzpunkt-entfernen'],
     laengsschnitt: ['sohle-ziehen'],
     // Teil XXVII (B2/B6): das Bauwerk als Ganzes — Versatz und Drehung am gemeinsamen Schwerpunkt.
     bauwerk:       ['bauwerk-verschieben', 'bauwerk-drehen'],
@@ -276,13 +276,19 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         const mindest = ring ? 3 : 2;
         const gueltige = punkte.filter(Boolean).length;
 
+        // T-STOSS (Teil XXXII, K5): wer mit einem Punkt AUF einer Kante sitzt, zieht mit, wenn sich die Kante ändert —
+        // an den beiden Ecken der Kante und an den Kantengriffen daneben.
+        const tStoss = tStossPartner(punkte, ring, gid, eigene);
+        const nP = punkte.length;
+        const kantenAn = (i) => [ring || i > 0 ? (i - 1 + nP) % nP : null, ring || i < nP - 1 ? i : null].filter(k => k != null);
         punkte.forEach((p, i) => {
             if (!p) return;
             const key = `stuetz:${gid}:${i}`;
             // KNOTEN (Teil XXXI, T7 — E-T3): liegt hier auch ein Punkt eines anderen eigenen Bauteils, ziehen beide
             // gemeinsam — Wand an Wand, Rohr am Schacht. „Lösen" (Nebengriff) nimmt sie für diesen Griff heraus.
             // Ein GELIEFERTER Schacht unter dem Punkt gehört dazu (Fabio 2026-10-05: „wie Schacht verschieben").
-            const partner = [...knotenPartner(p, gid, eigene), ...gelieferteKnoten(p, schaechte, lageStand)];
+            const partner = [...new Set([...knotenPartner(p, gid, eigene), ...gelieferteKnoten(p, schaechte, lageStand),
+                                         ...kantenAn(i).flatMap(k => tStoss.get(k) ?? [])])].sort();
             const geloestHier = !!geloest?.has?.(key);
             const mit = partner.length && !geloestHier ? partner : null;
             const knoten = mit ? { werte: { mit }, farbrolle: 'ok', knoten: mit.length } : {};
@@ -334,8 +340,10 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         for (const k of kanten) {
             const key = `kante:${gid}:${k.i}`;
             // Die Knoten an BEIDEN Enden (T7) — ohne die gelösten Ecken.
-            const kmit = [...new Set([k.i, k.j].flatMap(idx => (geloest?.has?.(`stuetz:${gid}:${idx}`) || !punkte[idx])
-                ? [] : knotenPartner(punkte[idx], gid, eigene)))].sort();
+            const kmit = [...new Set([...[k.i, k.j].flatMap(idx => (geloest?.has?.(`stuetz:${gid}:${idx}`) || !punkte[idx])
+                ? [] : knotenPartner(punkte[idx], gid, eigene)),
+                // T-Stoss (K5): die Kante selbst und ihre beiden Nachbarn ändern sich.
+                ...[k.i - 1, k.i, k.i + 1].map(m => (ring ? (m + nP) % nP : m)).flatMap(m => tStoss.get(m) ?? [])])].sort();
             aus.push({
                 key, globalId: gid, name: subjekt.name ?? '',
                 herkunft: 'cde', art: 'kante', index: k.i, index2: k.j,
@@ -349,6 +357,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                 pos: k.mitte, achsen: 'XZ',
                 wirkung: 'tipp', rolle: 'einfuegen', zeigtBei: key, nebenVersatz: { x: 0, y: 2.2 },
                 werkzeug: 'stuetzpunkt-einfuegen', felder: ['station'], werte: { station: _runde(k.station) },
+                // K2 (Teil XXXII): entlang der Kante geschoben fügt das „+" dort ein, wo man loslässt.
+                gleiten: _gleitbahn(punkte[k.i], punkte[k.j], 'station', k.station),
             });
         }
 
@@ -478,6 +488,7 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                            werkzeug: 'erdbau-mass-setzen', felder: ['op', 'feld', 'wert'], werte: { op: e.op, feld: e.hoehe.feld } });
             }
         }
+        aus.push(...knickpunktGriffe(aus, gid, subjekt.name ?? ''));
         return aus;
     }
 
@@ -515,6 +526,58 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
 }
 
 /**
+ * KNICKPUNKTE EINFÜGEN UND ENTFERNEN an Erdbau, Schicht, Raum (Teil XXXII, K1 — Fabio 2026-10-05: „ein wichtiges
+ * feature wäre es knickpunkte hinzu fügen zu können"). Bis hierher liessen sich ihre Ecken nur verschieben; eine Grube
+ * mit vier Ecken blieb ein Viereck. Aus den Eckgriffen, die schon da sind (Punktlisten mit Höhe UND Lagelisten ohne —
+ * Gerinneachse, Umriss einer Schicht), entstehen je Kante ein „+" (Tipp: Knickpunkt in der Kantenmitte, als Abstand ab
+ * der Ecke) und je Ecke ein „−" (Tipp: entfernen) — dasselbe Muster wie an Wand und Platte. Ein Ring behält drei
+ * Ecken, eine Linie zwei.
+ */
+export function knickpunktGriffe(griffe, gid, name = '') {
+    const gruppen = new Map();
+    for (const g of griffe) {
+        if (g.art !== 'stuetzpunkt' || !g.ecken || g.rolle || g.werkzeug !== 'erdbau-stuetzpunkt-verschieben') continue;
+        if (g.werte?.bezug === 'innen' || !Number.isInteger(g.index) || g.op == null || !g.feld) continue;
+        const k = `${g.op}:${g.feld}`;
+        if (!gruppen.has(k)) gruppen.set(k, []);
+        gruppen.get(k).push(g);
+    }
+    const aus = [];
+    for (const liste of gruppen.values()) {
+        liste.sort((a, b) => a.index - b.index);
+        const geschlossen = !!liste[0].geschlossen || liste[0].feld === 'umriss';
+        const n = liste.length;
+        if (n < 2) continue;
+        const kanten = geschlossen ? n : n - 1;
+        for (let k = 0; k < kanten; k++) {
+            const a = liste[k], b = liste[(k + 1) % n];
+            const laenge = Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z);
+            if (!(laenge > 1e-3)) continue;
+            aus.push({
+                key: `erdbau-plus:${gid}:${a.op}:${a.feld}:${a.index}`, globalId: gid, name, herkunft: 'cde', art: 'knickpunkt-plus',
+                pos: { x: (a.pos.x + b.pos.x) / 2, y: (a.pos.y + b.pos.y) / 2, z: (a.pos.z + b.pos.z) / 2 }, achsen: 'XZ',
+                wirkung: 'tipp', rolle: 'einfuegen', ecken: true, titel: `Knickpunkt einfügen (Kante ${a.index + 1})`,
+                werkzeug: 'erdbau-stuetzpunkt-einfuegen', felder: ['op', 'feld', 'index', 'abstand'],
+                werte: { op: a.op, feld: a.feld, index: a.index, abstand: Math.round(laenge / 2 * 1000) / 1000 },
+                gleiten: { von: { ...a.pos }, bis: { ...b.pos }, feld: 'abstand', basis: 0, titel: `ab Ecke ${a.index + 1}` },
+            });
+        }
+        if (n > (geschlossen ? 3 : 2)) {
+            for (const e of liste) {
+                aus.push({
+                    key: `erdbau-weg:${gid}:${e.op}:${e.feld}:${e.index}`, globalId: gid, name, herkunft: 'cde', art: 'knickpunkt-weg',
+                    pos: { ...e.pos }, achsen: 'XZ', wirkung: 'tipp', rolle: 'entfernen', ecken: true, zeigtBei: e.key,
+                    nebenVersatz: { x: -1.7, y: 2.2 }, titel: `${e.titel ?? 'Ecke'} entfernen`,
+                    werkzeug: 'erdbau-stuetzpunkt-entfernen', felder: ['op', 'feld', 'index'],
+                    werte: { op: e.op, feld: e.feld, index: e.index },
+                });
+            }
+        }
+    }
+    return aus;
+}
+
+/**
  * DIE KNOTENPARTNER eines Punkts (Teil XXXI, T7): andere EIGENE Bauteile, die einen Punkt ihres Bauplans an derselben
  * Stelle haben — auf die Netztoleranz des Regelwerks genau, in allen drei Richtungen (eine Wand auf einer Platte
  * steht nicht im Knoten mit deren Ecke, wenn sie höher beginnt). Nur Rezepte mit Punkten im Bauplan; Vorgänge
@@ -536,6 +599,42 @@ export function knotenPartner(p, selbst, eigene) {
         if (pkt.some(q => Array.isArray(q) && Math.abs(q[0] - p[0]) <= tol && Math.abs(q[1] - p[1]) <= tol && Math.abs(q[2] - p[2]) <= tol)) aus.push(gid);
     }
     return aus.sort();
+}
+
+/**
+ * T-STOSS-PARTNER (Teil XXXII, K5): je Kante des Subjekts die anderen EIGENEN Bauteile, die einen Punkt ihres Bauplans
+ * AUF dieser Kante haben (nicht an ihren Enden — das ist der Knoten an der Ecke), auf die Netztoleranz genau, auch in
+ * der Höhe. Eine Wand, die gegen die Mitte einer anderen stösst.
+ * @returns {Map<number, string[]>}  Kantenindex → GlobalIds
+ */
+export function tStossPartner(punkte, ring, selbst, eigene) {
+    const aus = new Map();
+    if (!eigene?.entries || !Array.isArray(punkte) || punkte.length < 2) return aus;
+    const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
+    const n = punkte.length;
+    const kanten = ring ? n : n - 1;
+    for (const [gid, plan] of eigene.entries()) {
+        if (gid === selbst || !plan?.parameter || plan.ableitung) continue;
+        if (rezeptNach(plan.rezept)?.punkteIn !== 'parameter') continue;
+        const pkt = plan.parameter.punkte;
+        if (!Array.isArray(pkt)) continue;
+        for (let k = 0; k < kanten; k++) {
+            const a = punkte[k], b = punkte[(k + 1) % n];
+            if (!a || !b) continue;
+            const dx = b[0] - a[0], dz = b[2] - a[2], l2 = dx * dx + dz * dz;
+            if (!(l2 > 1e-12)) continue;
+            const l = Math.sqrt(l2);
+            const trifft = pkt.some((q) => {
+                if (!Array.isArray(q)) return false;
+                const t = ((q[0] - a[0]) * dx + (q[2] - a[2]) * dz) / l2;
+                if (!(t * l > tol) || !((1 - t) * l > tol)) return false;      // an den Enden: Knoten, nicht T-Stoss
+                return Math.abs(q[0] - (a[0] + t * dx)) <= tol && Math.abs(q[2] - (a[2] + t * dz)) <= tol
+                    && Math.abs(q[1] - (a[1] + t * (b[1] - a[1]))) <= tol;
+            });
+            if (trifft) aus.set(k, [...(aus.get(k) ?? []), gid]);
+        }
+    }
+    return aus;
 }
 
 /**
@@ -778,6 +877,40 @@ export function kantenVon(punkte, ring = false) {
         gelaufen += d2;
     }
     return aus;
+}
+
+/**
+ * DIE GLEITBAHN eines „+"-Griffs (Teil XXXII, K2): die Kante von `a` nach `b` (Welt, [x,y,z]); der Wert am Anfang
+ * (`basis`) ist die Station des Punkts `a` — aus der Station der Kantenmitte zurückgerechnet.
+ */
+function _gleitbahn(a, b, feld, stationMitte) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return null;
+    const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+    return { von: { x: a[0], y: a[1], z: a[2] }, bis: { x: b[0], y: b[1], z: b[2] }, feld, basis: stationMitte - l / 2, titel: 'Station' };
+}
+
+/**
+ * Wo auf der Gleitbahn ein Strahl landet — `{t, pos, wert}` (t auf 2 … 98 % geklemmt: ein Knick genau auf einer Ecke
+ * wäre kein Knick), oder null. Gemessen im Grundriss; die Höhe wird zwischen den Enden gemittelt.
+ */
+export function gleitpunkt(bahn, strahl) {
+    if (!bahn || !strahl?.origin || !strahl?.direction) return null;
+    const { von, bis } = bahn;
+    const dx = bis.x - von.x, dz = bis.z - von.z;
+    const l2 = dx * dx + dz * dz;
+    if (!(l2 > 1e-12)) return null;
+    // Der Strahl trifft die waagerechte Ebene in Höhe der Kantenmitte.
+    const yE = (von.y + bis.y) / 2;
+    const d = strahl.direction;
+    let hx = strahl.origin.x, hz = strahl.origin.z;
+    if (Math.abs(d.y) > 1e-9) {
+        const s = (yE - strahl.origin.y) / d.y;
+        hx = strahl.origin.x + d.x * s; hz = strahl.origin.z + d.z * s;
+    }
+    const t = Math.min(0.98, Math.max(0.02, ((hx - von.x) * dx + (hz - von.z) * dz) / l2));
+    const l = Math.sqrt(l2);
+    return { t, pos: { x: von.x + t * dx, y: von.y + t * (bis.y - von.y), z: von.z + t * dz },
+             wert: Math.round((bahn.basis + t * l) * 1000) / 1000 };
 }
 
 /** Zentrum (Schwerpunkt XZ, mittlere Höhe) und Griffort des Drehgriffs — oder null. */

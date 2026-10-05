@@ -66,8 +66,9 @@ const HEUTE = Object.freeze({
     // G-T2: +1 Raum in der Mulde — 155/132.
     // G4: +1 Von der Vorlage lösen — 156/133.
     // G5: +1 Baugruppe setzen — 157/134.
-    werkzeuge: 157,
-    ausgefuehrt: 134,
+    // Teil XXXII, K1: +2 Knickpunkt einfügen/entfernen (Erdbau, Schicht, Raum), beide ohne Oberfläche — 159/136.
+    werkzeuge: 159,
+    ausgefuehrt: 136,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

@@ -78,7 +78,8 @@ describe('B7 — Ecken an Schichten und Räumen (P11)', () => {
             expect(hatErdbauEcken(plan), gid).toBe(true);           // der Knopf „Ecken ziehen" steht da
             const alle = eckgriffe(gid, plan, kz(gid));
             // Seit Teil XXXI (T6) steht daneben EIN Massgriff (Dicke bzw. Spiegel) — gezählt werden hier die Ecken.
-            const g = alle.filter(x => x.art !== 'mass');
+            // Seit Teil XXXII (K1) dazu „+" je Kante und „−" je Ecke — auch die nicht.
+            const g = alle.filter(x => x.art !== 'mass' && !/^knickpunkt-/.test(x.art));
             const op = plan.parameter.operationen[0].parameter;
             const n = (op.umriss ?? op.achse ?? []).length;
             if (g.length !== n) ohne.push(`${gid}: ${g.length} von ${n}`);
@@ -155,6 +156,75 @@ describe('B7 — Ecken an Schichten und Räumen (P11)', () => {
         const w = nachId('erdbau-stuetzpunkt-verschieben');
         for (const r of ['gelaendeschicht', 'muldenraum', 'erdbau']) expect(w.gilt(null, { rezept: rezeptNach(r) }), r).toBe(true);
         for (const r of ['rohr', 'wand', 'platte']) expect(w.gilt(null, { rezept: rezeptNach(r) }), r).toBe(false);
+    });
+});
+
+describe('Teil XXXII, K1 — Knickpunkte einfügen und entfernen an Grube, Schicht, Raum', () => {
+    const kom = (id, werkzeug, gid, werte) => ({ schema: 1, id, werkzeug, ziel: [gid], wer: 'test', wann: '2026-10-05T18:00:00Z', werte });
+    const adresse = (p, mitHoehe) => (mitHoehe ? { ost: p.x, nord: -p.z, hoehe: p.y } : { ost: p.x, nord: -p.z });
+
+    it('je Kante ein „+" (Abstand = halbe Kante), je Ecke ein „−" — an der Grube und an jeder Schicht', async () => {
+        const { ae } = await teich();
+        const { stand, kz } = await gebaut(ae);
+        const [ggid, gplan] = [...stand].find(([, p]) => p.rezept === 'erdbau' && p.parameter.operationen.some(o => Array.isArray(o.parameter?.umriss)));
+        const [sgid, splan] = [...stand].find(([, p]) => p.rezept === 'gelaendeschicht' && p.parameter.operationen[0].parameter.umriss);
+        for (const [gid, plan] of [[ggid, gplan], [sgid, splan]]) {
+            const alle = eckgriffe(gid, plan, kz(gid));
+            const ecken = alle.filter(x => x.art === 'stuetzpunkt' && !x.rolle && x.werte?.bezug !== 'innen');
+            const plus = alle.filter(x => x.art === 'knickpunkt-plus');
+            expect(plus.length, gid).toBe(ecken.length);                       // ein Ring: so viele Kanten wie Ecken
+            expect(alle.filter(x => x.art === 'knickpunkt-weg').length, gid).toBe(ecken.length > 3 ? ecken.length : 0);
+            const p0 = plus.find(x => x.werte.index === 0);
+            const [a, b] = [ecken.find(x => x.index === 0), ecken.find(x => x.index === 1)];
+            expect(p0.werte.abstand).toBeCloseTo(Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z) / 2, 3);
+            expect(p0).toMatchObject({ wirkung: 'tipp', werkzeug: 'erdbau-stuetzpunkt-einfuegen' });
+        }
+    }, 90000);
+
+    it('Grube: ein Knick in der Kantenmitte — die Liste wird länger, der Punkt liegt AUF der Kante (Höhe gemittelt), Aushub bleibt', async () => {
+        const { b, ae, kennungsgeber } = await teich();
+        const { kz } = await gebaut(ae);
+        const [gid, plan] = [...ae.wirksamerStand('erzeugt')].find(([, p]) => p.rezept === 'erdbau' && p.parameter.operationen.some(o => Array.isArray(o.parameter?.umriss)));
+        const j = plan.parameter.operationen.findIndex(o => Array.isArray(o.parameter?.umriss));
+        const op = plan.parameter.operationen[j];
+        const [a, c] = op.parameter.umriss;
+        const halb = Math.hypot(c.x - a.x, c.z - a.z) / 2;
+        const vorher = kz(gid);
+        const r = await b.fuehreAus(kom('k1-1', 'erdbau-stuetzpunkt-einfuegen', gid,
+            { op: { operation: op.id }, feld: 'umriss', index: adresse(a, true), abstand: halb }), { subjektVon, kennungsgeber });
+        expect(r.ausgefuehrt, r.grund).toBe(true);
+        const neu = ae.wirksamerStand('erzeugt').get(gid).parameter.operationen[j].parameter.umriss;
+        expect(neu).toHaveLength(op.parameter.umriss.length + 1);
+        expect(neu[1].x).toBeCloseTo((a.x + c.x) / 2, 9);
+        expect(neu[1].z).toBeCloseTo((a.z + c.z) / 2, 9);
+        expect(neu[1].y).toBeCloseTo((a.y + c.y) / 2, 9);
+        expect(neu.filter((_, k) => k !== 1)).toEqual(op.parameter.umriss);
+        // Ein Punkt AUF der Kante ändert den Körper nicht.
+        const nachher = (await gebaut(ae)).kz(gid);
+        expect(nachher.aushubRaster ?? nachher.volumen).toBeCloseTo(vorher.aushubRaster ?? vorher.volumen, 1);
+    }, 90000);
+
+    it('Schicht: Ecke entfernen — vier werden drei; ein Dreieck gibt keine mehr her (mit Grund)', async () => {
+        const { b, ae, kennungsgeber } = await teich();
+        const [gid, plan] = [...ae.wirksamerStand('erzeugt')].find(([, p]) => p.rezept === 'gelaendeschicht' && p.parameter.operationen[0].parameter.umriss?.length === 4);
+        const op = plan.parameter.operationen[0];
+        const r = await b.fuehreAus(kom('k1-2', 'erdbau-stuetzpunkt-entfernen', gid,
+            { op: { operation: op.id }, feld: 'umriss', index: adresse(op.parameter.umriss[2], false) }), { subjektVon, kennungsgeber });
+        expect(r.ausgefuehrt, r.grund).toBe(true);
+        const drei = ae.wirksamerStand('erzeugt').get(gid).parameter.operationen[0].parameter.umriss;
+        expect(drei).toEqual(op.parameter.umriss.filter((_, k) => k !== 2));
+        const r2 = await b.fuehreAus(kom('k1-3', 'erdbau-stuetzpunkt-entfernen', gid,
+            { op: { operation: op.id }, feld: 'umriss', index: adresse(drei[0], false) }), { subjektVon, kennungsgeber });
+        expect(r2.ausgefuehrt).toBe(false);
+    }, 90000);
+
+    it('die beiden Werkzeuge gelten an Erdbau, Schicht und Raum — nicht an Rohr, Wand, Platte; ihr Formular ist der Griff', () => {
+        for (const id of ['erdbau-stuetzpunkt-einfuegen', 'erdbau-stuetzpunkt-entfernen']) {
+            const w = nachId(id);
+            for (const r of ['gelaendeschicht', 'muldenraum', 'erdbau']) expect(w.gilt(null, { rezept: rezeptNach(r) }), `${id} ${r}`).toBe(true);
+            for (const r of ['rohr', 'wand', 'platte']) expect(w.gilt(null, { rezept: rezeptNach(r) }), `${id} ${r}`).toBe(false);
+            expect(w.eigeneOberflaeche).toBe('griffe');
+        }
     });
 });
 

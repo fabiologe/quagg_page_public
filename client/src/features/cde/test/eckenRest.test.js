@@ -128,7 +128,10 @@ describe('Gerinne: Achse, Sohlkanten, Oberkanten', () => {
         expect(hatErdbauEcken(t.schritte[0].nachher)).toBe(true);
         const g = griffe(t);
         expect(g.every(x => x.ecken)).toBe(true);
-        expect(g.filter(x => /:achse:\d$/.test(x.key))).toHaveLength(3);
+        // Seit Teil XXXII (K1) je Kante ein „+" und je Ecke ein „−" — gezählt werden hier die Eckgriffe selbst.
+        expect(g.filter(x => x.art === 'stuetzpunkt' && /:achse:\d$/.test(x.key))).toHaveLength(3);
+        expect(g.filter(x => x.art === 'knickpunkt-plus' && x.feld === undefined && x.werte?.feld === 'achse')).toHaveLength(2);
+        expect(g.filter(x => x.art === 'knickpunkt-weg' && x.werte?.feld === 'achse')).toHaveLength(3);
         expect(g.filter(x => /:achse:\d:hoch$/.test(x.key))).toHaveLength(2);       // Anfang und Ende
         expect(g.filter(x => x.key.includes(':sohlkante:'))).toHaveLength(4);
         expect(g.filter(x => x.key.includes(':oberkante:'))).toHaveLength(4);

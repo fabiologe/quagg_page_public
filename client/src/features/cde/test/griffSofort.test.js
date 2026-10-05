@@ -58,6 +58,7 @@ async function aufbau() {
         zeigeZugbild: vi.fn(), overlayZeige: vi.fn(), overlayLeere: vi.fn(), geistLeeren: vi.fn(),
         blickrichtung: () => ({ x: 0, y: -1, z: 0 }),
         strahl: (x, y) => ({ origin: { x: x / PX_JE_M, y: 500, z: y / PX_JE_M }, direction: { x: 0, y: -1, z: 0 } }),
+        projectToScreen: ([x, , z]) => ({ x: x * PX_JE_M, y: z * PX_JE_M }),
     };
     const nachBauen = vi.fn(async () => ({ angewandt: true }));
     const g = useGriffe({
@@ -137,14 +138,16 @@ describe('ein Tipp schreibt nicht (Regel 4)', () => {
 
     it('ein Tipp-Griff gilt nur, wenn man über ihm loslässt — weggezogen gilt er nicht', async () => {
         const t = await aufbau();
+        // Das „+" der Kante: seit Teil XXXII (K2) gleitet es AUF der Kante — weggezogen heisst hier QUER zur Kante (die
+        // Wand liegt in Ost-West, quer ist die Bildschirm-y), weiter als drei Trefferflächen: gemeint war die Kamera.
         const tippGriff = t.g.griffe.value.find(x => x.wirkung === 'tipp');
         expect(tippGriff).toBeTruthy();
         const p = t.aufSchirm(tippGriff.pos);
         const n = ae.eintraege.length;
         t.zeigeAuf(tippGriff.key);
         t.h._onPointerDown(t.finger(p.x, p.y));
-        t.h._onPointerMove(t.finger(p.x + TREFFER_PX + 20, p.y));
-        await t.h._onPointerUp(t.finger(p.x + TREFFER_PX + 20, p.y));
+        t.h._onPointerMove(t.finger(p.x, p.y + 3 * TREFFER_PX + 20));
+        await t.h._onPointerUp(t.finger(p.x, p.y + 3 * TREFFER_PX + 20));
         await Promise.all(t.enden);
         expect(ae.eintraege.length).toBe(n);                                       // weggezogen: nichts
         t.h._onPointerDown(t.finger(p.x, p.y));

@@ -206,3 +206,34 @@ describe('das Schild der Auswahl weicht den Griffen aus (gefunden im Tabletlauf 
     });
 });
 
+
+describe('Teil XXXII, K2 — das „+" gleitet auf seiner Kante: eingefügt wird, wo man loslässt', () => {
+    /** Ein Zug am Griff: aufsetzen, nach (x, z) in Welt ziehen (der Strahl ist senkrecht), loslassen. */
+    async function gleite(t, griff, nach, px = { x: 60, y: 0 }) {
+        t.engine.griffUnter.mockReturnValue(griff.key);
+        t.g.greifen({ x: griff.pos.x, y: griff.pos.z, typ: 'touch' });
+        t.g.zugStart({ x: griff.pos.x, y: griff.pos.z, px: { x: 0, y: 0 }, typ: 'touch' });
+        t.g.zugBewegt({ x: nach.x, y: nach.z, px, typ: 'touch' });
+        const pille = t.g.pille.value?.text ?? null;
+        await t.g.zugEnde({ abbruch: false });
+        return pille;
+    }
+
+    it('Wand 10 m: das „+" (Mitte, Station 5) bis Station 3 geschoben → Knick bei 3,00 m; ein Tipp bleibt die Mitte', async () => {
+        const t = await aufbau();
+        const plus = t.g.griffe.value.find(x => x.key === 'kante-plus:cde-A:0');
+        expect(plus.gleiten).toMatchObject({ feld: 'station', basis: 0 });
+        const pille = await gleite(t, plus, { x: 3, z: 0.4 });                  // etwas neben der Kante: projiziert
+        expect(pille).toBe('Knickpunkt · Station 3,00 m');
+        expect(plan('cde-A').parameter.punkte.map(p => p[0])).toEqual([0, 3, 10]);
+    });
+
+    it('weit weg von der Kante losgelassen: nichts wird eingefügt', async () => {
+        const t = await aufbau();
+        t.engine.projectToScreen = () => ({ x: 0, y: 0 });                       // die Kante liegt am Schirm weit weg vom Finger
+        const plus = t.g.griffe.value.find(x => x.key === 'kante-plus:cde-A:0');
+        const n = ae.eintraege.length;
+        await gleite(t, plus, { x: 3, z: 0 }, { x: 400, y: 300 });
+        expect(ae.eintraege.length).toBe(n);
+    });
+});
