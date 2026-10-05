@@ -47,7 +47,9 @@ const kamera = (page) => page.evaluate(() => {
     return null;
 });
 const journal = (page) => api(page, `return (pinia._s.get('cde-aenderungen').eintraege ?? []).length;`);
-const eigene = (page) => api(page, `return [...pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt')].filter(([, p]) => p).map(([g]) => g);`);
+// Eigene Bauteile, die STEHEN — ein gelöschter Eigenbau ist ein Eintrag „gelöscht", sein Bauplan bleibt im Stand.
+const eigene = (page) => api(page, `const ae = pinia._s.get('cde-aenderungen'); const weg = ae.wirksamerStand('geloescht');
+    return [...ae.wirksamerStand('erzeugt')].filter(([g, p]) => p && !weg.get(g)).map(([g]) => g);`);
 
 /** Die Zeichenfläche (die grösste Leinwand) in Seitenpixeln. */
 const leinwand = (page) => page.evaluate(() => {
@@ -160,7 +162,9 @@ async function strg(page, taste) { await page.keyboard.down('Control'); await pa
         if (ziel) { await api(page, `await api.waehleEigenes(arg); return true;`, ziel); await warte(1500); }
         j0 = await journal(page); const e0 = await eigene(page);
         await strg(page, 'KeyC'); await strg(page, 'KeyV');
-        await page.mouse.click(L.x + L.w * 0.5, L.y + L.h * 0.35); await warte(4000);
+        // Die Kopie hängt am Zeiger — bewegen, dann ein Klick aufs Gelände nahe der Bildmitte setzt sie.
+        await page.mouse.move(L.x + L.w * 0.56, L.y + L.h * 0.56); await warte(800);
+        await page.mouse.click(L.x + L.w * 0.56, L.y + L.h * 0.56); await warte(5000);
         await foto(page, 'strg_v');
         zahlen.strgCVKopie = (await journal(page)) > j0 && (await eigene(page)).length === e0.length + 1;
         // M8 · Strg+A wählt alles Eigene.

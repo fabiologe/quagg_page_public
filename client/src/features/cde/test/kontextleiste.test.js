@@ -40,8 +40,9 @@ describe('Verklebung (Textwächter)', () => {
         const fn = viewer.slice(viewer.indexOf('async function wendeEintragAn'));
         expect(fn.slice(0, 700)).toMatch(/nachAusfuehrenEinordnen\(eintragOderListe\)/);
         const neu = viewer.slice(viewer.indexOf('async function nachAusfuehrenEinordnen'));
-        expect(neu.slice(0, 1600)).toMatch(/waehleOrt/);
-        expect(neu.slice(0, 1600)).toMatch(/_einordnenMitHuelle\(frisch\)/);
+        // 1800 seit Teil XXX (B3): die Unterscheidung „ersetzt oder gelöscht" kam vor dem Neueinordnen dazu.
+        expect(neu.slice(0, 1800)).toMatch(/waehleOrt/);
+        expect(neu.slice(0, 1800)).toMatch(/_einordnenMitHuelle\(frisch\)/);
         expect(neu.slice(0, 1600)).not.toMatch(/zoomToElement|fitTo|waehleBauteil/);
         // Ersetzt (geloescht) ⇒ Auswahl leer + Meldung, kein stilles Weiterzeigen.
         expect(neu.slice(0, 1600)).toMatch(/geloescht/);

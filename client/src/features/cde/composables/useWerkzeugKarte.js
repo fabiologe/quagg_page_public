@@ -25,7 +25,8 @@ export function useWerkzeugKarte(motorVon) {
         if (!g) return '';
         return g.art === 'auswahl' ? 'Bauteil im Raum antippen — Esc bricht die Geste ab'
             : g.auf === 'achse' ? 'Ort auf der Achse antippen — Esc bricht die Geste ab'
-            : 'Ort auf dem Bauteil antippen — Esc bricht die Geste ab';
+            : g.auf ? 'Ort auf dem Bauteil antippen — Esc bricht die Geste ab'
+            : 'Ort im Raum antippen — Esc bricht die Geste ab';
     });
     function feldTitel(name) {
         const f = (bearbeitung.felder ?? []).find(x => x.name === name);
@@ -34,7 +35,8 @@ export function useWerkzeugKarte(motorVon) {
     // Aus `gestenFelder` (scharfe Bearbeitung, auch ohne laufenden Zug) — der Knopf beginnt das Sammeln.
     const gesten = computed(() => (motor()?.gestenFelder?.value ?? motor()?.eingaben?.value?.felderMitGeste ?? []).map(g => ({
         name: g.name,
-        text: g.geste === 'auswahl' ? `${feldTitel(g.name)}: im Raum antippen` : `${feldTitel(g.name)}: auf der Achse zeigen`,
+        text: g.geste === 'auswahl' ? `${feldTitel(g.name)}: im Raum antippen`
+            : g.auf === 'achse' ? `${feldTitel(g.name)}: auf der Achse zeigen` : `${feldTitel(g.name)}: im Raum zeigen`,
         titel: `Das Feld „${feldTitel(g.name)}" per Tipp füllen`,
     })));
     const bereit = computed(() => (zugLaeuft.value ? bearbeitung.bereit && !!motor().genug.value : bearbeitung.bereit));

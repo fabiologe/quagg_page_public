@@ -1446,6 +1446,44 @@ export class IfcEngine {
         return { items, count };
     }
 
+    /**
+     * MEHRERE MARKIEREN (Teil XXX, B3): Strg+A und das Ergänzen per Klick — dieselbe Hervorhebung wie der Rahmen.
+     * @param {Object<string, number[]>} items  modelId → localIds
+     */
+    async markiereMehrere(items) {
+        if (this._selectedItems) {
+            try { await this._resetHighlight(this._selectedItems); } catch { /* */ }
+        }
+        this._selectedItems = null;
+        this._selectedKey   = null;
+        const count = Object.values(items ?? {}).reduce((n, ids) => n + ids.length, 0);
+        if (count) {
+            try { await this._highlight(MARQUEE_STYLE, items); this._selectedItems = items; }
+            catch (e) { console.warn('[Selection] mehrere markieren:', e); }
+        }
+        return { items: items ?? {}, count };
+    }
+
+    /**
+     * DIE AUSWAHL ERGÄNZEN (Teil XXX, B3): das Bauteil unter dem Zeiger kommt dazu — oder fällt heraus, wenn es schon
+     * gewählt war. Das Gelände nie (K3: es ist nicht anklickbar). Gibt die neue Auswahl, oder null ohne Treffer.
+     */
+    async ergaenzeAuswahl(clientX, clientY) {
+        const t = await this.probeTreffer(clientX, clientY);
+        if (t?.modelId == null || t.localId == null) return null;
+        try {
+            const { rest } = await this._ohneGelaende({ [t.modelId]: [t.localId] });
+            if (!Object.keys(rest ?? {}).length) return null;
+        } catch { /* ohne Geländeliste: der Treffer gilt */ }
+        const items = {};
+        for (const [m, ids] of Object.entries(this._selectedItems ?? {})) items[m] = [...ids];
+        const liste = items[t.modelId] ?? (items[t.modelId] = []);
+        const i = liste.indexOf(t.localId);
+        if (i >= 0) liste.splice(i, 1); else liste.push(t.localId);
+        for (const m of Object.keys(items)) if (!items[m].length) delete items[m];
+        return this.markiereMehrere(items);
+    }
+
     // ── Overlay: Zeiger, Vorschau, Griffe, Fang (Teil XVI) ─────────────────
     // 1:1-Delegationen — Vue fasst `engine.overlay` nie selbst an.
 

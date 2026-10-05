@@ -74,6 +74,9 @@ export class IfcSelectionHandler {
         this._onMarqueeCbs     = [];
         this._onTippCbs        = [];
         this._onGesperrtCbs    = [];
+        this._onErgaenzenCbs   = [];
+        /** Jeder Tipp ergänzt die Auswahl (Schalter „Mehrere wählen", Teil XXX B3 — für das Tablet). */
+        this.ergaenzen = false;
         this._onGreifenCbs     = [];
         this._onZugStartCbs    = [];
         this._onZugBewegtCbs   = [];
@@ -149,6 +152,8 @@ export class IfcSelectionHandler {
     onTipp(cb)          { this._onTippCbs.push(cb); }
     /** (tipp) — ein Tipp im gesperrten Modus, der das Subjekt gewechselt hätte. */
     onGesperrt(cb)      { this._onGesperrtCbs.push(cb); }
+    /** Ein Tipp, der die Auswahl ergänzt (Umschalt/Strg/Cmd oder Schalter) — Teil XXX, B3. */
+    onErgaenzen(cb)     { this._onErgaenzenCbs.push(cb); }
     /** (tipp) => true | 'warten' | false — beim Aufsetzen: den Zeiger beanspruchen? */
     onGreifen(cb)       { this._onGreifenCbs.push(cb); }
     onZugStart(cb)      { this._onZugStartCbs.push(cb); }
@@ -294,6 +299,12 @@ export class IfcSelectionHandler {
         if (this._mode === 'werkzeug') return;
         if (this._mode === 'gesperrt') { this._emit(this._onGesperrtCbs, tipp); return; }
 
+        // ERGÄNZEN (Teil XXX, B3): Umschalt-, Strg- oder Cmd-Klick nimmt dazu oder heraus — auf dem Tablet der Schalter
+        // „Mehrere wählen" (Tablet-Regel: keine Pflicht-Modifikatortaste).
+        if (this._mode === 'single' && (this.ergaenzen || ((e.shiftKey || e.ctrlKey || e.metaKey) && down.typ !== 'touch'))) {
+            this._emit(this._onErgaenzenCbs, tipp);
+            return;
+        }
         const result = await this._engine?.pickElement(down.x, down.y);
         if (result?.gleich) return;                      // dasselbe Bauteil: nichts passiert
         if (result) {

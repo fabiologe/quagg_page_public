@@ -1,6 +1,6 @@
 <template>
   <form class="bearb-form" @submit.prevent="$emit('uebernehmen')">
-    <label v-for="f in felder" :key="f.name" class="bearb-feld">
+    <label v-for="f in felder.filter(x => !x.verborgen)" :key="f.name" class="bearb-feld">
       <span>{{ f.label || f.titel || f.name }}<template v-if="f.einheit"> [{{ f.einheit }}]</template></span>
       <select
         v-if="f.typ === 'auswahl'"

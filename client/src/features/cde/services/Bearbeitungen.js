@@ -3310,6 +3310,8 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: '*',
         mindestGuete: 'unbekannt',
         art: 'geloescht',
+        // Teil XXX, B3: Entf löscht die ganze Auswahl in EINEM Vorgang (vorher behauptete nur ein Kommentar es).
+        mehrfach: true,
         felder: [],
         setzt: { art: 'merkmal', journal: 'geloescht', wert: true },
     },
@@ -3329,11 +3331,16 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         bauform: ['punkt', 'linie', 'achse+profil', 'flaeche', 'flaeche+dicke', 'koerper'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
+        // Teil XXX, B3: Strg+V kopiert die ganze Zwischenablage — jedes Teil um denselben Versatz.
+        mehrfach: true,
         art: 'erzeugt',
         felder: [
             { name: 'ost', titel: 'Versatz Ost', einheit: 'm', typ: 'zahl', vorgabe: 2 },
             { name: 'nord', titel: 'Versatz Nord', einheit: 'm', typ: 'zahl', vorgabe: 0 },
             { name: 'hoehe', titel: 'Versatz Höhe', einheit: 'm', typ: 'zahl', vorgabe: 0 },
+            // DIE KOPIE AM ZEIGER (Teil XXX, B3 — Fabios E-B4): ein Tipp im Raum zeigt, wohin. Der Viewer rechnet daraus
+            // Ost/Nord (vom ersten Teil aus) — das Feld selbst trägt nur den Punkt der Geste und steht nicht im Formular.
+            { name: 'ziel', titel: 'Ziel', typ: 'punkt', leerErlaubt: true, verborgen: true, aus: { geste: 'punkt' } },
         ],
         vorbelegung: () => ({ ost: 2, nord: 0, hoehe: 0 }),
         anwenden: (el, werte) => {

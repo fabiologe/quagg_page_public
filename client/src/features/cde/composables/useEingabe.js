@@ -297,7 +297,11 @@ export function useEingabe({ bearbeitung, cde, getModellSha, nachBauen,
     function aufTreffer(t) {
         const g = geste.value;
         if (g) {
-            if (!t?.point) { grund.value = 'Kein Treffer — ein Bauteil antippen'; return true; }
+            if (!t?.point) {
+                grund.value = g.art === 'punkt' && !g.auf ? 'Kein Treffer — einen Ort auf Gelände oder Bauteil antippen'
+                    : 'Kein Treffer — ein Bauteil antippen';
+                return true;
+            }
             if (g.art === 'punkt') {
                 if (g.auf === 'achse') {
                     const a = bearbeitung?.bauteil?.achse ?? null;

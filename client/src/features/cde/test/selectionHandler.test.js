@@ -370,3 +370,31 @@ describe('Greifen und Zug (S4)', () => {
         expect(t.ereignisse.pick).toHaveLength(1);
     });
 });
+
+describe('Teil XXX, B3 — Ergänzen statt neu wählen', () => {
+    it('Umschalt-, Strg- und Cmd-Klick melden „ergänzen" — keine neue Einzelauswahl', async () => {
+        for (const taste of ['shiftKey', 'ctrlKey', 'metaKey']) {
+            const t = baue({ pick: { modelId: 'm', localId: 7, globalId: 'g7' } });
+            const erg = [];
+            t.h.onErgaenzen(x => erg.push(x));
+            await tipp(t.h, 300, 200, { [taste]: true });
+            expect(erg, taste).toHaveLength(1);
+            expect(t.engine.pickElement, taste).not.toHaveBeenCalled();
+            expect(t.ereignisse.pick, taste).toHaveLength(0);
+        }
+    });
+
+    it('auf dem Tablet ohne Taste: der Schalter „Mehrere wählen" — jeder Tipp ergänzt', async () => {
+        const t = baue({ pick: { modelId: 'm', localId: 7, globalId: 'g7' } });
+        const erg = [];
+        t.h.onErgaenzen(x => erg.push(x));
+        t.h.ergaenzen = true;
+        await tipp(t.h, 300, 200, { pointerType: 'touch' });
+        expect(erg).toHaveLength(1);
+        t.h.ergaenzen = false;
+        await tipp(t.h, 300, 200, { pointerType: 'touch' });
+        expect(erg).toHaveLength(1);
+        expect(t.ereignisse.pick).toHaveLength(1);
+    });
+});
+

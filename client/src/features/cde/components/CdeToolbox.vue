@@ -188,6 +188,13 @@
       <!-- WORAUF SICH DER KLICK BEZIEHT. Bei einer Rahmenauswahl ändert eine
            Bearbeitung womöglich fünfzehn Bauteile — das muss dastehen, bevor
            man klickt, nicht danach im Verlauf. -->
+      <!-- MEHRERE WÄHLEN (Teil XXX, B3): jeder Tipp nimmt dazu oder heraus — der Weg ohne Umschalt/Strg (Tablet). -->
+      <button class="tb-btn tb-mehrere" type="button" :aria-pressed="mehrereAn ? 'true' : 'false'"
+              :class="{ 'tb-mehrere--an': mehrereAn }"
+              :title="mehrereAn ? 'Wieder einzeln wählen' : 'Jeder Tipp nimmt ein Bauteil dazu oder heraus — wie Umschalt-Klick'"
+              @click="api.mehrereWaehlen?.(!mehrereAn)">
+        <CdeIcon name="layers" :size="13" /> <span>{{ mehrereAn ? 'Mehrere wählen: an' : 'Mehrere wählen' }}</span>
+      </button>
       <p v-if="mehrfach" class="tb-mehrfach">
         <CdeIcon name="layers" :size="12" />
         <span>
@@ -335,7 +342,7 @@
               <span>{{ b.titel }}</span>
               <!-- Die Beschriftung, die DIESER Typ dem Feld gibt: „DN“ am Rohr,
                    „Profilreihe“ am Träger — das Vokabular kommt aus Daten. -->
-              <em v-if="b.felder.length" class="tb-feld">{{ b.felder.map(f => f.label).join(', ') }}</em>
+              <em v-if="b.felder.some(f => !f.verborgen)" class="tb-feld">{{ b.felder.filter(f => !f.verborgen).map(f => f.label).join(', ') }}</em>
               <!-- IM BILD ZIEHBAR (K5): seit Griffe nur noch mit scharfem
                    Werkzeug stehen, muss dastehen, welcher Knopf einen bringt —
                    sonst ist der Weg unentdeckbar, auf dem Finger erst recht
@@ -563,6 +570,8 @@ const ifc = useIfcStore();
 const api = useViewerApi();
 /** Formular, Gesten, Chips der scharfen Bearbeitung — vom Viewer (Teil XXX, B1); ohne ihn bleibt es bei der Leiste. */
 const werkzeugKarte = (typeof api.werkzeugKarte === 'object' && api.werkzeugKarte?.inTafel) ? api.werkzeugKarte : null;
+/** Der Schalter „Mehrere wählen" (B3) — der Viewer führt ihn. */
+const mehrereAn = computed(() => api.mehrereAn?.() === true);
 // Die Tafel meldet sich an: erst dann wird die Leiste unter dem Bild schmal (das Formular steht dann HIER).
 onMounted(() => { if (werkzeugKarte?.inTafel) werkzeugKarte.inTafel.value++; });
 onBeforeUnmount(() => { if (werkzeugKarte?.inTafel) werkzeugKarte.inTafel.value--; });
@@ -957,6 +966,8 @@ async function vorlageEntfernen(v) {
    eine Bearbeitung. */
 /* Die Mehrfach-Auskunft steht dicht am Kopf und ist ruhig — sie warnt nicht,
    sie sagt Bescheid. */
+.tb-mehrere { width: 100%; justify-content: flex-start; }
+.tb-mehrere--an { background: var(--cde-accent-fill-hi); color: var(--cde-accent); border-color: var(--cde-accent-line); }
 .tb-mehrfach {
   display: flex; gap: 0.35rem; align-items: flex-start; margin: 0;
   padding: 0.3rem 0.45rem; border-radius: var(--cde-radius-sm);

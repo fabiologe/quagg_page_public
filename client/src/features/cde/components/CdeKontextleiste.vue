@@ -44,7 +44,10 @@
     <template v-else-if="rueckmeldung">
       <CdeIcon name="check" :size="14" />
       <span>{{ rueckmeldung.text }}</span>
-      <button v-if="rueckmeldung.werkzeugId" class="modus-fertig" title="Dasselbe Werkzeug noch einmal"
+      <button v-if="rueckmeldung.rueckgaengig" class="modus-fertig" title="Zurücknehmen (Strg+Z)" @click="$emit('rueckgaengig')">
+        Rückgängig
+      </button>
+      <button v-else-if="rueckmeldung.werkzeugId" class="modus-fertig" title="Dasselbe Werkzeug noch einmal"
               @click="$emit('nochmal', rueckmeldung.werkzeugId)">
         Nochmal
       </button>
@@ -94,7 +97,7 @@ const props = defineProps({
   /** Steht die Werkzeugkarte in der Tafel? Dann hier nur eine Zeile (Teil XXX, B1). */
   kompakt:      { type: Boolean, default: false },
 });
-defineEmits(['fertig', 'uebernehmen', 'nochmal', 'rueckmeldung-zu', 'geste', 'geste-ab']);
+defineEmits(['fertig', 'uebernehmen', 'nochmal', 'rueckgaengig', 'rueckmeldung-zu', 'geste', 'geste-ab']);
 
 const bearbeitung = useBearbeitung();
 

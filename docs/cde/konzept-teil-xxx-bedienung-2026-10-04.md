@@ -243,3 +243,30 @@ Werkzeug da schon geräumt — „war es ein Erzeugen?" kam ohne den gemerkten l
 Schlüssel `kameraZustand` an der Viewer-Schnittstelle nur für den Messlauf hätte die Hausregel gebrochen (jeder Schlüssel
 hat einen Nutzer in der App) — der Messlauf liest die Kamera über `captureViewpoint` (gespeicherte Ansichten).
 
+### B3 — Tasten und Auswahl wie überall (2026-10-04)
+
+- **Entf** löscht die Auswahl — ein Kommando, ohne Rückfrage (E-B3); die Rückmeldung sagt „Gelöscht." bzw. „n Bauteile
+  gelöscht." mit dem Knopf **Rückgängig**. „Löschen" ist jetzt `mehrfach`.
+- **Strg+C** merkt die gewählten Eigenbau-Teile; **Strg+V** setzt sie als Kopie AM ZEIGER (E-B4): „Kopieren" läuft mit der
+  Geste „Ziel", die Vorschau folgt dem Zeiger, ein Klick setzt sie — alle Teile um denselben Versatz, die Kopie ist danach
+  gewählt. **Strg+D** = Strg+C + Strg+V. Derselbe Weg über „Kopieren" in der Tafel („Ziel: im Raum zeigen") — fürs Tablet.
+- **Strg+A** wählt den ganzen Eigenbau (ohne Bauwerke, Geländeanzeige, Verborgenes).
+- **Umschalt-/Strg-/Cmd-Klick** nimmt dazu oder heraus (Engine `ergaenzeAuswahl`, Gelände nie); auf dem Tablet der Schalter
+  **„Mehrere wählen"** in der Tafel (keine Pflicht-Modifikatortaste).
+
+| Messlauf | B2 | B3 |
+|---|---|---|
+| Entf löscht · Strg+Z holt zurück | nein · ja | **ja · ja** |
+| Strg+C/V legt eine Kopie ab | nein | **ja** (an der Klickstelle, danach gewählt) |
+| Strg+A wählt (von 2 eigenen) | 0 | **2** |
+
+**Gefunden beim Bauen — ein alter Fehler:** ein GELÖSCHTER Eigenbau blieb im Bild stehen — auch über den Knopf „Löschen"
+in der Tafel. Der Eintrag wurde „einzeln" angewandt, das Eigenbau-Modell entsteht aber als Ganzes aus dem Journal; ein
+gelöschtes Teil fällt nur beim Neuaufbau heraus. Jetzt nimmt ein Lösch-Eintrag an Eigenbau den Weg Neuaufbau (`wegVon`).
+Dazu: die Meldung „Das Bauteil wurde ersetzt" nur noch, wenn wirklich ein neues kam; „Kein Treffer — ein Bauteil antippen"
+bei einer Ortsgeste heisst jetzt „einen Ort auf Gelände oder Bauteil antippen".
+
+**Nicht gebaut, mit Grund:** „Verschieben" für mehrere — seine Felder sind ABSOLUTE Koordinaten, mehrere Teile landeten auf
+demselben Punkt; ein relativer Weg gehört zum Griff (Gizmo) und kommt mit B5/B7. Gegenproben: ohne `mehrfach` an „Löschen"
+und ohne den Ergänzen-Zweig im Auswahl-Handler — rot.
+

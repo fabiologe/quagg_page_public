@@ -377,6 +377,7 @@
             @geste="(feld) => eingabe.starteGeste(feld)"
             @geste-ab="eingabe.brichGesteAb()"
             @nochmal="nochmalStarten"
+            @rueckgaengig="rueckmeldung = null; rueckgaengigPerTaste(false)"
             @rueckmeldung-zu="rueckmeldung = null"
           />
         </Transition>
@@ -502,7 +503,7 @@ import { CDE_MODELL_ID, modellHerkunft, modellTagText, vorgangstitelAus } from '
 import { SCHLIESS_RADIUS_PX } from '../services/Eingaben.js';
 import { mengenZeile, erdbauAbleitungenAus } from '../services/Mengenzeile.js';
 import { rezeptNach as _rezeptNachFuerMengen } from '../services/Bauteilrezepte.js';
-import { erdbauStandVon, istAnzeigeform, istBehaelter } from '../services/Bauteilrezepte.js';
+import { erdbauStandVon, istAnzeigeform, istBehaelter, istEigen, punkteAus } from '../services/Bauteilrezepte.js';
 import { AUSWAHL_ARTNAME } from '../services/Auswahlrang.js';
 import CdeKontextleiste from './CdeKontextleiste.vue';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
@@ -859,6 +860,8 @@ watch(() => bearbeitung.scharfId, (id) => { if (id) _letztesWerkzeugId = id; });
  * erneutem Anwählen). Jetzt geht jeder Weg hier durch, und die Mengen stehen
  * in derselben Zeile.
  */
+/** Der Schalter „Mehrere wählen" (B3). */
+const mehrereAn = ref(false);
 /** Die Ansicht vor dem Zeichnen (B2) — null, solange keins läuft. */
 let kameraVorZeichnen = null;
 watch(() => bearbeitung.scharfId, (id) => {
@@ -1033,6 +1036,21 @@ const werkzeugKarte = Object.freeze({
   gesteAb: () => eingabe.brichGesteAb(),
 });
 watch(() => bearbeitung.scharfId, (id) => { if (id && !panels.isOpen('bauteil')) panels.open('bauteil'); });
+// Die Kopie folgt dem Zeiger (B3), solange die Geste „Ziel" läuft — über Strg+V wie über „Kopieren" in der Tafel
+// (Tablet: „Ziel: im Raum zeigen"): Ost/Nord aus dem Punkt unter dem Zeiger, die Vorschau zeigt sie dort.
+watch(() => zeiger.treffer.value?.point, (p) => {
+  if (bearbeitung.scharfId !== 'kopieren' || eingabe.geste.value?.feld !== 'ziel' || !p) return;
+  const v = _versatzZu(p);
+  if (v) { bearbeitung.setzeWert('ost', v.ost); bearbeitung.setzeWert('nord', v.nord); }
+});
+// Der Tipp (die Geste „Ziel") setzt sie: Ost/Nord aus dem Punkt, dann übernehmen; danach ist die Kopie gewählt.
+watch(() => bearbeitung.werte?.ziel, async (z) => {
+  if (bearbeitung.scharfId !== 'kopieren' || !z || typeof z !== 'object') return;
+  const v = _versatzZu(z);
+  if (!v) { melde('Kein Ort für die Kopie.'); return; }
+  bearbeitung.setzeWert('ost', v.ost); bearbeitung.setzeWert('nord', v.nord); bearbeitung.setzeWert('ziel', '');
+  await uebernehmeScharf();
+});
 
 /** Was der nächste Tipp tut — für die Kontextleiste, wenn ein Tipp-Werkzeug läuft. */
 const tippWerkzeug = computed(() => {
@@ -1089,7 +1107,7 @@ async function uebernehmeScharf() {
     });
     if (!eintrag) { melde(bearbeitung.letzterGrund || 'Nichts eingetragen.'); return; }
     const r = await wendeEintragAn(eintrag);
-    if (r?.angewandt) await waehleNeues(eintrag, b.gruppe === 'erzeugen');
+    if (r?.angewandt) await waehleNeues(eintrag, b.gruppe === 'erzeugen' || b.id === 'kopieren');
     _melderueck(!r ? 'Eingetragen.'
       : r.auslegung ? 'Ausgelegt — so liest die CDE dieses Bauteil ab jetzt.'
       : r.angewandt ? _mitMengen('Übernommen.', eintrag)
@@ -1130,6 +1148,84 @@ async function rueckgaengigPerTaste(wieder) {
 function melde(text) {
   modusMeldung.value = text;
   setTimeout(() => { if (modusMeldung.value === text) modusMeldung.value = ''; }, 4000);
+}
+
+// ── DIE GEWOHNTEN TASTEN (Teil XXX, B3 — Messlauf B0: Entf, Strg+C/V, Strg+A taten nichts) ──────────────────────
+
+/** Was gerade gewählt ist — mehrere (Rahmen, Strg+A, Ergänzen) oder eines. */
+function _gewaehlt() {
+  return (bearbeitung.bauteile?.length ? bearbeitung.bauteile : [bearbeitung.bauteil]).filter(b => b?.globalId);
+}
+
+/**
+ * Bauteile nach GlobalId wählen — eines wie ein Klick, mehrere wie der Rahmen (hervorgehoben, gemeinsam eingeordnet).
+ * @returns {Promise<number>} wie viele gewählt sind
+ */
+async function _waehleGids(gids) {
+  if (!engine.value || !gids?.length) return 0;
+  const { karte } = await karteMitEngine(engine.value, new Set(gids));
+  const da = gids.filter(g => karte.get(g));
+  if (!da.length) return 0;
+  if (da.length === 1) { await waehleEigenes(da[0]); return 1; }
+  const items = {};
+  for (const g of da) { const o = karte.get(g); (items[o.modelId] ??= []).push(o.localId); }
+  await engine.value.markiereMehrere?.(items);
+  await _mehrfachEinordnen(items);
+  return da.length;
+}
+
+/** Entf — die Auswahl löschen: EIN Kommando, ein Vorgang, Strg+Z holt es zurück (Fabios E-B3: ohne Rückfrage). */
+async function loeschePerTaste() {
+  const n = _gewaehlt().length;
+  if (!n) return;
+  if (!werkzeugStarten('loeschen')) { melde(bearbeitung.letzterGrund || 'Löschen geht hier nicht.'); return; }
+  await uebernehmeScharf();
+  if (rueckmeldung.value?.werkzeugId === 'loeschen') {
+    rueckmeldung.value = { text: n > 1 ? `${n} Bauteile gelöscht.` : 'Gelöscht.', rueckgaengig: true };
+    auswahlLeeren();
+  }
+}
+
+/** Die Zwischenablage — GlobalIds EIGENER Bauteile (ein geliefertes hat keinen Bauplan, aus dem eine Kopie entstünde). */
+let zwischenablage = [];
+function kopierePerTaste({ still = false } = {}) {
+  const eigene = _gewaehlt().filter(b => b.stand?.bauplan && !istBehaelter(b.stand.bauplan));
+  if (!eigene.length) { melde('Nur Eigenbau lässt sich kopieren — erst ein Bauteil daraus wählen.'); return false; }
+  zwischenablage = eigene.map(b => b.globalId);
+  if (!still) melde(`${eigene.length === 1 ? 'Kopiert' : `${eigene.length} kopiert`} — Strg+V setzt die Kopie.`);
+  return true;
+}
+
+/**
+ * Strg+V — DIE KOPIE AM ZEIGER (Fabios E-B4): die Zwischenablage wird die Auswahl, „Kopieren" läuft mit der Geste
+ * „Ziel"; die Vorschau folgt dem Zeiger, ein Klick setzt sie (alle Teile um denselben Versatz, vom ersten aus).
+ */
+async function einfuegenPerTaste() {
+  if (!zwischenablage.length) { melde('Nichts kopiert — ein eigenes Bauteil wählen, Strg+C.'); return; }
+  if (!(await _waehleGids(zwischenablage))) { zwischenablage = []; melde('Die kopierten Bauteile gibt es nicht mehr.'); return; }
+  if (!werkzeugStarten('kopieren')) { melde(bearbeitung.letzterGrund || 'Kopieren geht hier nicht.'); return; }
+  eingabe.starteGeste('ziel');
+  melde('Die Kopie hängt am Zeiger — ein Klick setzt sie, Esc bricht ab.');
+}
+/** Versatz Ost/Nord vom Grundriss-Mittelpunkt des ERSTEN gewählten Teils zum Punkt. */
+function _versatzZu(p) {
+  const pkt = punkteAus(bearbeitung.bauteil?.stand?.bauplan?.parameter ?? {})
+    .map(q => (Array.isArray(q) ? { x: q[0], z: q[2] } : q)).filter(q => Number.isFinite(q?.x) && Number.isFinite(q?.z));
+  if (!pkt.length || !Number.isFinite(p?.x) || !Number.isFinite(p?.z)) return null;
+  const xs = pkt.map(q => q.x), zs = pkt.map(q => q.z);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const r = (v) => Math.round(v * 100) / 100;
+  return { ost: r(p.x - cx), nord: r(-(p.z - cz)) };
+}
+
+/** Strg+A — alle eigenen Bauteile (ohne Bauwerke, ohne die Geländeanzeige, ohne Verborgenes). */
+async function alleEigenenWaehlen() {
+  const verdeckt = verdeckteAus(aenderungen.wirksamerStand('geloescht'));
+  const gids = [...aenderungen.wirksamerStand('erzeugt')]
+    .filter(([g, p]) => p && !verdeckt.has(g) && !istBehaelter(p) && !istAnzeigeform(p)).map(([g]) => g);
+  if (!gids.length) { melde('Noch kein Eigenbau.'); return; }
+  const n = await _waehleGids(gids);
+  melde(n ? `${n} Bauteile aus dem Eigenbau gewählt.` : 'Der Eigenbau ist noch nicht gebaut.');
 }
 
 // Multi-model list
@@ -1819,6 +1915,9 @@ watch(() => [ifc.geometrieStand, ifc.sichtbarkeitStand], () => _eigenbauAbschnit
 provideViewerApi({
   /** Die Werkzeugkarte für die Tafel (Teil XXX, B1). */
   werkzeugKarte,
+  /** „Mehrere wählen" (Teil XXX, B3): jeder Tipp ergänzt die Auswahl — der Weg ohne Modifikatortaste (Tablet). */
+  mehrereWaehlen: (an) => { mehrereAn.value = !!an; if (_selection) _selection.ergaenzen = !!an; },
+  mehrereAn: () => mehrereAn.value,
   // Snapshots & Ansichten
   saveRenderState:      () => engine.value?.saveRenderState(),
   restoreRenderState:   (s) => engine.value?.restoreRenderState(s),
@@ -2239,11 +2338,11 @@ async function nachAusfuehrenEinordnen(eintraege) {
     await engine.value.clearSelection?.();
     ifc.clearElement();
     await bearbeitung.einordne(null, null);
-    melde('Das Bauteil wurde ersetzt — die Auswahl ist leer.');
+    if (liste.some(e => e.art === 'erzeugt' && e.nachher)) melde('Das Bauteil wurde ersetzt — die Auswahl ist leer.');   // sonst: gelöscht (B3)
     return;
   }
   let ort = { modelId: el.modelId, localId: el.localId };
-  if (el.globalId && liste.some(e => anwendungsweg(e) === 'neuaufbau')) {
+  if (el.globalId && liste.some(e => wegVon(e) === 'neuaufbau')) {
     const { karte } = await karteMitEngine(engine.value, new Set([el.globalId]));
     const o = karte.get(el.globalId);
     if (o && (o.modelId !== ort.modelId || o.localId !== ort.localId)) {
@@ -2286,7 +2385,7 @@ async function wendeVorgangAn(eintraege) {
   for (const e of eintraege) {
     // Der Neuaufbau ist TOTAL — er baut den ganzen Stand. Ihn je
     // `erzeugt`-Eintrag zu wiederholen wäre dreimal dieselbe Arbeit.
-    if (anwendungsweg(e) === 'neuaufbau') {
+    if (wegVon(e) === 'neuaufbau') {
       if (neuaufbauGelaufen) continue;
       neuaufbauGelaufen = true;
     }
@@ -2299,8 +2398,17 @@ async function wendeVorgangAn(eintraege) {
   return { weg: 'vorgang', angewandt, nurFestlegung, grund };
 }
 
+/**
+ * EIN GELÖSCHTER EIGENBAU (Teil XXX, B3 — gefunden mit Entf): das Eigenbau-Modell entsteht als Ganzes aus dem Journal,
+ * ein gelöschtes Teil fällt nur beim NEUAUFBAU heraus. „Einzeln" angewandt blieb es im Bild stehen (auch über den Knopf
+ * „Löschen" in der Tafel), bis irgendein anderer Schritt neu baute.
+ */
+function wegVon(eintrag) {
+  return eintrag?.art === 'geloescht' && istEigen(eintrag) ? 'neuaufbau' : anwendungsweg(eintrag);
+}
+
 async function wendeEinenAn(eintrag) {
-    const weg = anwendungsweg(eintrag);
+    const weg = wegVon(eintrag);
     if (weg === 'neuaufbau') {
       // Erzeugtes NIE einzeln: `baueErzeugte` verwirft das Modell und baut nur,
       // was es bekommt — ein Ein-Schritt-Plan löschte alles andere Erzeugte mit.
@@ -2408,6 +2516,13 @@ onMounted(async () => {
   // Subjekt nicht — und sagt, warum (die 3D-Fassung von `griffBereit`).
   _selection.onGesperrt(() => melde('Bearbeitung läuft — „Übernehmen" schliesst sie ab, Esc bricht ab. Das Bauteil bleibt gewählt.'));
   auswahlModusNachziehen();
+  // ERGÄNZEN (Teil XXX, B3): Umschalt-/Strg-Klick oder der Schalter „Mehrere wählen" nimmt dazu oder heraus.
+  _selection.onErgaenzen(async (tipp) => {
+    const r = await engine.value?.ergaenzeAuswahl?.(tipp.x, tipp.y);
+    if (!r) return;
+    if (!r.count) { auswahlLeeren(); return; }
+    await _mehrfachEinordnen(r.items);
+  });
   _selection.onMarqueeSelect(({ items, count }) => {
     if (!count) return;
     // DER RAHMEN ERREICHT JETZT DIE BEARBEITUNG (Stufe 14.10).
@@ -3002,6 +3117,20 @@ function onKeyDown(e) {
     rueckgaengigPerTaste(/^y$/i.test(e.key) || e.shiftKey);
     return;
   }
+
+  // DIE GEWOHNTEN TASTEN (Teil XXX, B3): Strg+C/V/D/A und Entf — nur, wenn kein Werkzeug läuft (dort gehören Tasten
+  // dem Werkzeug: Rücktaste nimmt den letzten Punkt, Enter schliesst ab).
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[cvda]$/i.test(e.key) && !e.target.isContentEditable) {
+    if (bearbeitung.werkzeug || eingabe.aktiv.value) return;
+    e.preventDefault();
+    const k = e.key.toLowerCase();
+    if (k === 'c') kopierePerTaste();
+    else if (k === 'v') einfuegenPerTaste();
+    else if (k === 'd') { if (kopierePerTaste({ still: true })) einfuegenPerTaste(); }
+    else alleEigenenWaehlen();
+    return;
+  }
+  if (e.key === 'Delete' && !bearbeitung.werkzeug && !eingabe.aktiv.value) { e.preventDefault(); loeschePerTaste(); return; }
 
   // ? toggles the shortcut overlay
   if (e.key === '?') { e.preventDefault(); showShortcuts.value = !showShortcuts.value; return; }
