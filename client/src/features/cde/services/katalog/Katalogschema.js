@@ -155,7 +155,7 @@ function _felder(liste, fehler) {
         // setzbares Zahlenfeld, und `y` sagt, von welcher Kante aus gemessen wird.
         if (f.griff !== undefined) {
             const g = f.griff;
-            if (!_istObjekt(g) || !['y', 'quer'].includes(g.richtung)) fehler.push(`Feld „${f.name}": \`griff.richtung\` ist „y" oder „quer".`);
+            if (!_istObjekt(g) || !['y', 'quer', 'radial'].includes(g.richtung)) fehler.push(`Feld „${f.name}": \`griff.richtung\` ist „y", „quer" oder „radial".`);
             else if (g.richtung === 'y' && !['unterkante', 'oberkante'].includes(g.von)) fehler.push(`Feld „${f.name}": ein Höhengriff nennt \`von\` („unterkante" oder „oberkante").`);
             if (f.typ !== 'zahl' || !f.setzbar) fehler.push(`Feld „${f.name}": einen Griff hat nur ein setzbares Zahlenfeld.`);
         }

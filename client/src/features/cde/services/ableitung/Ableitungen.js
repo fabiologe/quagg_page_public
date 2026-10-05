@@ -1710,14 +1710,46 @@ function _lagelisteVon(parameter, art) {
     if (Array.isArray(op.achse) && op.achse.length >= 2) return [{ op: j, feld: 'achse', punkte: op.achse, ohneHoehe: true, geschlossen: false }];
     return [];
 }
-function _eckenVon(parameter, art, lauf) {
+function _eckenVon(parameter, art, lauf, welt = (v) => v) {
     const hoehen = lauf?.kennzahlen?.eckhoehen ?? [];
-    return _lagelisteVon(parameter, art).flatMap(l => {
+    const ecken = _lagelisteVon(parameter, art).flatMap(l => {
         const ring = l.punkte.map(q => ({ x: Number(q?.x), z: Number(q?.z) }));
         return ring.map((q, k) => ({ op: l.op, schluessel: `${l.feld}:${k}`, titel: `Ecke ${k + 1}`,
                                      pos: { x: q.x, y: Number(hoehen[k]), z: q.z }, feld: l.feld, index: k,
                                      ring, geschlossen: l.geschlossen }));
     });
+    return [...ecken, ..._massgriffVon(parameter, art, ecken, welt)];
+}
+
+/**
+ * DAS MASS DES GANZEN AM GRIFF (Teil XXXI, T6): die Dicke einer Schicht, der Spiegel eines Raums — vorher nur im
+ * Zeichenformular. Ein Höhengriff über der Mitte der Ecken; gezogen wird „Mass am Vorgang setzen" (`setzbar`).
+ *   Dicke    um so viel, wie der Griff steigt (lotrecht gemessen — nur an einer lotrechten Schicht; senkrecht zur
+ *            Fläche wäre die Zahl am Hang falsch, dort bleibt das Formular)
+ *   Spiegel  absolut in m NN, wie das Formular
+ * Ohne Lauf (keine Eckhöhen) kein Griff — wie die Ecken.
+ */
+function _massgriffVon(parameter, art, ecken, welt) {
+    const ops = parameter?.operationen ?? [];
+    const j = ops.findIndex(o => o?.art === art);
+    const ys = ecken.map(e => e.pos.y).filter(Number.isFinite);
+    if (j < 0 || !ys.length || ys.length !== ecken.length) return [];
+    const op = ops[j].parameter ?? {};
+    const mitte = { x: ecken.reduce((s, e) => s + e.pos.x, 0) / ecken.length, z: ecken.reduce((s, e) => s + e.pos.z, 0) / ecken.length };
+    if (art === 'gelaendeschicht') {
+        const dicke = Number(op.dicke);
+        if (!(dicke > 0) || (op.richtung ?? 'lot') !== 'lot') return [];
+        const y = ys.reduce((s, v) => s + v, 0) / ys.length;
+        return [{ op: j, schluessel: 'dicke', titel: 'Dicke', pos: { x: mitte.x, y, z: mitte.z },
+                  mass: { art: 'ueber', feld: 'dicke', basisY: y - dicke, titel: 'Dicke', einheit: 'm' } }];
+    }
+    if (art === 'muldenraum') {
+        const oben = Number(op.oben);
+        if (!Number.isFinite(oben)) return [];
+        return [{ op: j, schluessel: 'spiegel', titel: 'Spiegel', pos: { x: mitte.x, y: welt(oben), z: mitte.z },
+                  mass: { art: 'hoehe', feld: 'oben', titel: 'Spiegel', einheit: 'm NN' } }];
+    }
+    return [];
 }
 
 function _schichtBox(ring, rand) {
@@ -1800,7 +1832,9 @@ ABLEITUNGEN_ERWEITERT.gelaendeschicht = {
     unterlage: unterlageVon,
     // Ihr Umriss lässt sich an den Ecken ziehen (Teil XXX, B7) — eine Lageliste, die Höhe kommt aus dem Gelände.
     lagelisten: (parameter) => _lagelisteVon(parameter, 'gelaendeschicht'),
-    ecken: (parameter, { lauf = null } = {}) => _eckenVon(parameter, 'gelaendeschicht', lauf),
+    ecken: (parameter, { lauf = null, welt } = {}) => _eckenVon(parameter, 'gelaendeschicht', lauf, welt),
+    // Die Dicke am Griff (Teil XXXI, T6) — technisch gültig: grösser als 0 (Fachgrenzen beraten, E5).
+    setzbar: (parameter, j) => (parameter?.operationen?.[j]?.art === 'gelaendeschicht' ? { dicke: { ueber: 0 } } : null),
     // Auf ihr kann eine andere Schicht (ein Raum) liegen — die Kandidatenliste „Liegt auf" fragt das.
     traegtSchichten: true,
 
@@ -1905,7 +1939,9 @@ ABLEITUNGEN_ERWEITERT.muldenraum = {
     unterlage: (parameter, planVon) => unterlageVon(parameter, planVon),
     // Sein Umriss lässt sich an den Ecken ziehen (Teil XXX, B7); die Griffe sitzen auf dem Spiegel.
     lagelisten: (parameter) => _lagelisteVon(parameter, 'muldenraum'),
-    ecken: (parameter, { lauf = null } = {}) => _eckenVon(parameter, 'muldenraum', lauf),
+    ecken: (parameter, { lauf = null, welt } = {}) => _eckenVon(parameter, 'muldenraum', lauf, welt),
+    // Der Spiegel am Griff (Teil XXXI, T6) — eine Höhe in m NN.
+    setzbar: (parameter, j) => (parameter?.operationen?.[j]?.art === 'muldenraum' ? { oben: {} } : null),
     teile: [
         { rolle: 'raum', kategorie: 'IFCSPACE', bauform: 'koerper', form: 'koerper',
           predefinedType: (parameter) => (parameter?.predefinedType ? String(parameter.predefinedType).toUpperCase() : null),

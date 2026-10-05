@@ -145,7 +145,7 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
             // Die Nennweite ist zugleich das bSI-Merkmal (Teil XXVII, Fund 14: die IDS-Regel
             // „Rohrleitungen — Nennweite" verfehlte jedes eigene Rohr).
             { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, vorgabe: 300, setzbar: true,
-              pset: 'Pset_PipeSegmentTypeCommon.NominalDiameter' },
+              pset: 'Pset_PipeSegmentTypeCommon.NominalDiameter', griff: { richtung: 'radial' } },
         ],
         // DIE ROLLE IM NETZ (Teil XXIII, A3): eine Kante — sie verbindet zwei
         // Knoten und hat ein Gefälle. Der Längsschnitt fragt das, nicht „rohr".
@@ -173,7 +173,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, gueltig: { ueber: 0 }, vorgabe: 1000, setzbar: true },
+            { name: 'dn', titel: 'Durchmesser', einheit: 'mm', typ: 'zahl', min: 300, max: 4000, gueltig: { ueber: 0 }, vorgabe: 1000, setzbar: true,
+              griff: { richtung: 'radial' } },
             // Teil XXIX, G3: die Ausführung (MANHOLE, INSPECTIONCHAMBER …) — ohne Vorgabe, wie bisher NOTDEFINED.
             ...ausfuehrung(),
         ],
@@ -206,7 +207,8 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
         felder: [
             NAME, TYP,
             { name: 'hoehe', titel: 'Fusshöhe (leer = auf dem Gelände)', einheit: 'm', typ: 'zahl', leerErlaubt: true },
-            { name: 'laenge', titel: 'Höhe des Pfostens', einheit: 'm', typ: 'zahl', min: 0.05, max: 30, gueltig: { ueber: 0 }, vorgabe: 1, setzbar: true },
+            { name: 'laenge', titel: 'Höhe des Pfostens', einheit: 'm', typ: 'zahl', min: 0.05, max: 30, gueltig: { ueber: 0 }, vorgabe: 1, setzbar: true,
+              griff: { richtung: 'y', von: 'unterkante' } },
             { name: 'breite', titel: 'Breite', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.12 },
             { name: 'tiefe', titel: 'Tiefe', einheit: 'm', typ: 'zahl', min: 0.01, max: 5, gueltig: { ueber: 0 }, vorgabe: 0.12 },
             // Teil XXIX, G3: der Stab ist auch Pfahl (IfcPile/DRIVEN), Pegel (IfcSensor/LEVELSENSOR), Schild (PICTORAL).

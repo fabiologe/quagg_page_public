@@ -17,7 +17,7 @@ import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { rasterAusMesh } from '../services/geometrie/ops/Raster.js';
 import { IfcAutor } from '../services/IfcAutor.js';
-import { griffeFuer, hatErdbauEcken } from '../services/Griffe.js';
+import { griffeFuer, griffZuWerten, hatErdbauEcken } from '../services/Griffe.js';
 import { nachId } from '../services/Bearbeitungen.js';
 import { Speicher } from './hilfen/vorlagenKommandos.js';
 import { CDE_MODELL_ID } from '../services/IfcAutor.js';
@@ -76,11 +76,15 @@ describe('B7 — Ecken an Schichten und Räumen (P11)', () => {
         const ohne = [];
         for (const [gid, plan] of schichten) {
             expect(hatErdbauEcken(plan), gid).toBe(true);           // der Knopf „Ecken ziehen" steht da
-            const g = eckgriffe(gid, plan, kz(gid));
+            const alle = eckgriffe(gid, plan, kz(gid));
+            // Seit Teil XXXI (T6) steht daneben EIN Massgriff (Dicke bzw. Spiegel) — gezählt werden hier die Ecken.
+            const g = alle.filter(x => x.art !== 'mass');
             const op = plan.parameter.operationen[0].parameter;
             const n = (op.umriss ?? op.achse ?? []).length;
             if (g.length !== n) ohne.push(`${gid}: ${g.length} von ${n}`);
-            for (const x of g) expect(Number.isFinite(x.pos.y), gid).toBe(true);
+            const lotrecht = plan.rezept === 'muldenraum' || (op.richtung ?? 'lot') === 'lot';
+            expect(alle.filter(x => x.art === 'mass'), gid).toHaveLength(lotrecht ? 1 : 0);
+            for (const x of alle) expect(Number.isFinite(x.pos.y), gid).toBe(true);
         }
         expect(ohne).toEqual([]);                                   // vorher: alle 9+ ohne einen Griff
         // Die Griffe des Wasserkörpers sitzen auf dem Spiegel, die der Tondichtung auf ihrer Oberkante.
@@ -115,6 +119,37 @@ describe('B7 — Ecken an Schichten und Räumen (P11)', () => {
         const { kz } = await gebaut(ae);
         expect(kz(gid)?.volumen).toBeGreaterThan(0);
     }, 60000);                                                      // der ganze Teich
+
+    it('T6 (Teil XXXI): Dicke und Spiegel am Griff — 0,20 m höher gezogen, über „Mass am Vorgang setzen" ins Journal', async () => {
+        const { b, ae, kennungsgeber } = await teich();
+        const { stand, kz } = await gebaut(ae);
+        const [sgid, splan] = [...stand].find(([, p]) => p.rezept === 'gelaendeschicht' && (p.parameter.operationen[0].parameter.richtung ?? 'lot') === 'lot');
+        const [rgid, rplan] = [...stand].find(([, p]) => p.rezept === 'muldenraum');
+        const ziehe = async (gid, plan, hoeher) => {
+            const g = eckgriffe(gid, plan, kz(gid)).find(x => x.art === 'mass');
+            expect(g, gid).toMatchObject({ werkzeug: 'erdbau-mass-setzen', achsen: 'Y' });
+            const w = griffZuWerten(g, { ...g.pos, y: g.pos.y + hoeher });
+            const r = await b.fuehreAus({ schema: 1, id: `mass-${gid}`, werkzeug: 'erdbau-mass-setzen', ziel: [gid], wer: 'test',
+                                          wann: '2026-10-05T10:00:00Z',
+                                          werte: { op: { operation: plan.parameter.operationen[w.op].id }, feld: w.feld, wert: w.wert } },
+                                        { subjektVon, kennungsgeber });
+            expect(r.ausgefuehrt, r.grund).toBe(true);
+            return ae.wirksamerStand('erzeugt').get(gid).parameter.operationen[0].parameter;
+        };
+        const dicke = Number(splan.parameter.operationen[0].parameter.dicke);
+        expect((await ziehe(sgid, splan, 0.2)).dicke).toBeCloseTo(dicke + 0.2, 9);
+        const oben = Number(rplan.parameter.operationen[0].parameter.oben);
+        expect((await ziehe(rgid, rplan, 0.2)).oben).toBeCloseTo(oben + 0.2, 9);        // absolut in m NN
+        // Und es baut — die dickere Schicht hat mehr Volumen.
+        const neu = await gebaut(ae);
+        expect(neu.kz(sgid).volumen).toBeGreaterThan(kz(sgid).volumen);
+    }, 90000);
+
+    it('„Mass am Vorgang setzen" gilt an Erdbau, Schicht und Raum in der Mulde — nicht an Rohr, Wand, Platte, Raum einer Kammer', () => {
+        const w = nachId('erdbau-mass-setzen');
+        for (const r of ['gelaendeschicht', 'muldenraum', 'erdbau']) expect(w.gilt(null, { rezept: rezeptNach(r) }), r).toBe(true);
+        for (const r of ['rohr', 'wand', 'platte', 'raum']) expect(w.gilt(null, { rezept: rezeptNach(r) }), r).toBe(false);
+    });
 
     it('das Werkzeug gilt an Schicht und Raum, nicht an einem Rohr oder einer Wand', () => {
         const w = nachId('erdbau-stuetzpunkt-verschieben');

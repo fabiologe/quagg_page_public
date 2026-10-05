@@ -1033,6 +1033,15 @@ export const ADRESSEN = Object.freeze({
  * Parametersatz behalten.
  */
 /** Hat ein Rezept Knickpunkte in seinen Operationen — Erdbau, oder Punkt-/Lagelisten (Schicht, Mulde)? */
+/**
+ * Hat das Rezept Masse an seinen Operationen? Erdbau-Vorgänge — und seit Teil XXXI (T6) Schicht (Dicke) und Raum in der
+ * Mulde (Spiegel): dieselbe Frage wie die Knickpunkte, beantwortet von `setzbar` am Rezept.
+ */
+function _hatMasse(rz) {
+    return !!rz && (!!rz.erdbau || typeof rz.setzbar === 'function');
+}
+const MASS_GRUND = 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.';
+
 function _hatKnickpunkte(rz) {
     return !!rz && (!!rz.erdbau || typeof rz.punktlisten === 'function' || typeof rz.lagelisten === 'function');
 }
@@ -1129,7 +1138,7 @@ function _vorgangMitOperationen(el, plan, operationen) {
 function _massZiel(el, werte) {
     const plan = el?.stand?.bauplan;
     const rz = rezeptNach(plan?.rezept);
-    if (!el?.globalId || !plan?.ableitung || !rz?.erdbau) return { grund: 'Nur an einem eigenen Erdbau-Vorgang.' };
+    if (!el?.globalId || !plan?.ableitung || !_hatMasse(rz)) return { grund: MASS_GRUND };
     const j = Number(werte?.op);
     const op = Number.isInteger(j) ? plan.parameter?.operationen?.[j] : null;
     if (!op) return { grund: 'Diese Operation gibt es am Vorgang nicht.' };
@@ -3171,13 +3180,14 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
         titel: 'Mass am Vorgang setzen',
         icon: 'pointer',
         gruppe: 'gelaende',
-        bauform: ['koerper'],
+        // `flaeche+dicke`: die Schicht (Teil XXXI, T6 — ihre Dicke am Griff).
+        bauform: ['koerper', 'flaeche+dicke'],
         mindestGuete: 'unbekannt',
         nurEigene: true,
-        // Teil XXVII B1 (Fund 3): nur an einem Erdbau-Vorgang — ein Raum hat auch
-        // die Bauform `koerper`, aber keine Operationen.
-        gilt: (_e, ctx) => !!ctx?.rezept?.erdbau,
-        giltGrund: 'Nur an einem eigenen Erdbau-Vorgang.',
+        // Teil XXVII B1 (Fund 3): nur an einem Vorgang mit Massen — ein Raum einer Kammer hat auch die Bauform
+        // `koerper`, aber keine Operationen. Seit Teil XXXI (T6) auch Schicht (Dicke) und Raum in der Mulde (Spiegel).
+        gilt: (_e, ctx) => _hatMasse(ctx?.rezept),
+        giltGrund: MASS_GRUND,
         eigeneOberflaeche: 'griffe',
         art: 'erzeugt',
         felder: [

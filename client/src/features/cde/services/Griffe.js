@@ -435,7 +435,9 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
             const key = `erdbau-ecke:${gid}:${e.op}:${e.schluessel}`;
             const basis = { globalId: gid, name: subjekt.name ?? '', herkunft: 'cde', ecken: true, titel: e.titel, op: e.op };
             if (e.mass) {
-                aus.push({ ...basis, key, art: 'mass', pos: e.pos, achsen: 'XZ', mass: e.mass,
+                // Höhe und Dicke (Teil XXXI, T6) gehen senkrecht, die übrigen Masse quer.
+                const senkrecht = e.mass.art === 'hoehe' || e.mass.art === 'ueber';
+                aus.push({ ...basis, key, art: 'mass', pos: e.pos, achsen: senkrecht ? 'Y' : 'XZ', mass: e.mass,
                            werkzeug: 'erdbau-mass-setzen', felder: ['op', 'feld', 'wert'], werte: { op: e.op, feld: e.mass.feld } });
             } else {
                 // Eine Ecke mit LAGE ohne eigene Höhe (Achse des Gerinnes):
@@ -494,16 +496,24 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
  * eine Zeile je Rezept. Gezogen wird der vorhandene Setzer des Feldes
  * (`<rezept>-<feld>-setzen`); ein Rezept aus der Bibliothek bekommt seine Griffe
  * mit seinen Daten.
- *   y, von unterkante   Höhe über der Unterkante (Wandhöhe, lichte Höhe)
+ *   y, von unterkante   Höhe über der Unterkante (Wandhöhe, lichte Höhe, Pfostenlänge)
  *   y, von oberkante    Tiefe unter der Oberkante (Plattendicke)
  *   quer                Breite quer zur ersten Kante (Wanddicke)
+ *   radial              Durchmesser eines Profils (DN von Rohr und Schacht, Teil XXXI T6) — der Griff sitzt am
+ *                       Profilrand quer zur Achse in Achshöhe; an einer senkrechten Achse (Schacht) nach Osten.
+ *                       `einheit: 'mm'` des Feldes rechnet um.
+ *
+ * Ohne `stand` (Stab, Rohr, Schacht) ist die Unterkante der tiefste Punkt — ein Pfosten steht auf seinem Fusspunkt
+ * (Teil XXXI, T6: vorher bekam ein Rezept ohne `stand` gar keinen Feldgriff).
  */
 export function feldgriffeFuer(subjekt, bauplan, rezept, punkte) {
     const aus = [];
-    const stand = rezept?.stand;
-    if (!stand || !punkte?.length) return aus;
+    const stand = rezept?.stand ?? null;
+    if (!punkte?.length) return aus;
     const parameter = bauplan.parameter ?? {};
-    const uk = stand.lies(parameter), ok = stand.oberkante?.(parameter);
+    const ys = punkte.map(p => p[1]).filter(Number.isFinite);
+    const uk = stand ? stand.lies(parameter) : (ys.length ? Math.min(...ys) : NaN);
+    const ok = stand?.oberkante?.(parameter);
     if (!Number.isFinite(uk)) return aus;
     let cx = 0, cz = 0;
     for (const p of punkte) { cx += p[0]; cz += p[2]; }
@@ -529,6 +539,26 @@ export function feldgriffeFuer(subjekt, bauplan, rezept, punkte) {
             const y = Number.isFinite(ok) ? (uk + ok) / 2 : uk;
             aus.push({ ...kopf, pos: { x: m.x + n.x * wert / 2, y, z: m.z + n.z * wert / 2 }, achsen: 'XZ',
                        feld: { name: f.name, richtung: 'quer', mitte: m, normal: n } });
+        } else if (f.griff.richtung === 'radial') {
+            const faktor = f.einheit === 'mm' ? 1000 : 1;
+            const r = wert / faktor / 2;
+            const [a, b] = punkte;
+            const l = b ? Math.hypot(b[0] - a[0], b[2] - a[2]) : 0;
+            let m, n, y;
+            if (l > 1e-9) {
+                // Liegende Achse (Rohr): an der Mitte der ersten Strecke, quer; die Achse liegt in der Rohrmitte —
+                // mit Sohlbezug (K4) einen Radius über den Punkten.
+                n = { x: -(b[2] - a[2]) / l, z: (b[0] - a[0]) / l };
+                m = { x: (a[0] + b[0]) / 2, z: (a[2] + b[2]) / 2 };
+                y = (a[1] + b[1]) / 2 + (parameter.achsbezug === 'sohle' ? r : 0);
+            } else {
+                // Stehende Achse (Schacht: Sohle und Deckel übereinander): halbe Höhe, nach Osten.
+                n = { x: 1, z: 0 };
+                m = { x: a[0], z: a[2] };
+                y = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : a[1];
+            }
+            aus.push({ ...kopf, pos: { x: m.x + n.x * r, y, z: m.z + n.z * r }, achsen: 'XZ',
+                       feld: { name: f.name, richtung: 'quer', mitte: m, normal: n, faktor } });
         }
     }
     return aus;
@@ -572,7 +602,9 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
             // auf der Linie, auf der die Ecke mit ihrem Mass wandert —, die Höhe
             // senkrecht. Daraus der neue Wert; absolut, wie jedes Formularfeld.
             const m = griff.mass ?? {};
-            const wert = m.art === 'hoehe' ? nnAusWelt(pos.y, hoehenversatz) : massWert(m, querlage(m, pos));
+            const wert = m.art === 'hoehe' ? nnAusWelt(pos.y, hoehenversatz)
+                : m.art === 'ueber' ? pos.y - m.basisY                           // Dicke: über ihrer Unterseite (T6)
+                : massWert(m, querlage(m, pos));
             if (!Number.isFinite(wert)) return {};
             return { ...(griff.werte ?? {}), wert: m.art === 'winkel' ? Math.round(wert * 10) / 10 : r3(wert) };
         }
@@ -590,8 +622,10 @@ export function griffZuWerten(griff, pos, { versatz = null, hoehenversatz = 0 } 
             const f = griff.feld ?? {};
             let wert = NaN;
             if (f.richtung === 'y') wert = f.von === 'oberkante' ? f.basisY - pos.y : pos.y - f.basisY;
-            else if (f.richtung === 'quer') wert = 2 * Math.abs((pos.x - f.mitte.x) * f.normal.x + (pos.z - f.mitte.z) * f.normal.z);
-            return Number.isFinite(wert) && wert > 0 ? { [f.name]: r3(wert) } : {};
+            else if (f.richtung === 'quer') wert = 2 * Math.abs((pos.x - f.mitte.x) * f.normal.x + (pos.z - f.mitte.z) * f.normal.z) * (f.faktor ?? 1);
+            // In mm (DN) ganze Zahlen — ein Rohr DN 412,734 gibt es nicht.
+            const rund = (f.faktor ?? 1) >= 1000 ? Math.round(wert) : r3(wert);
+            return Number.isFinite(wert) && rund > 0 ? { [f.name]: rund } : {};
         }
         case 'bauwerk-versatz':
             // Ein VERSATZ (Teil XXVII, B2): um so viel, wie der Griff gewandert ist.

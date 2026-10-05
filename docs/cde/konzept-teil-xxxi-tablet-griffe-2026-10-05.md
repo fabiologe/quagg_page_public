@@ -259,3 +259,28 @@ und `tabletRezept.test.js` („der Finger armiert erst").
 
 Test `tafelnHochkant.test.js` (5: Regel am echten Store, Blatt montiert, Verdrahtung in der Ansicht); Gegenproben rot:
 nie eingeklappt, Aufklappen vergisst nie, Zeile bleibt 42dvh, Kopf klappt nicht auf.
+
+### T6 — Die fehlenden Griffe (2026-10-05)
+
+| Setzbare Zahl mit Griff (Bestand § 2) | vorher | T6 |
+|---|---|---|
+| Rohr: DN | 0 von 1 | **1 von 1** — am Profilrand quer zur Achse, in Rohrmitte |
+| Schacht: DN | 0 von 1 | **1 von 1** — in halber Tiefe, nach Osten |
+| Pfosten: Länge | 0 von 1 | **1 von 1** — auf dem Kopf |
+| Schicht: Dicke | 0 (nur Zeichenformular) | **1** — Höhengriff über der Mitte (nur lotrechte Schichten) |
+| Raum in der Mulde: Spiegel | 0 (nur Zeichenformular) | **1** — Höhengriff auf dem Spiegel, absolut in m NN |
+
+- **Felder erklären ihren Griff** (B6-Muster, keine Zeile je Rezept): neu `griff: { richtung: 'radial' }` — Durchmesser
+  eines Profils, `einheit: 'mm'` rechnet um, DN in ganzen mm; das Katalogschema kennt es (ein Bibliotheksrezept darf es
+  erklären). Feldgriffe brauchen keinen `stand` mehr: ohne ihn ist die Unterkante der tiefste Punkt (Pfosten).
+- **Schicht und Raum:** „Mass am Vorgang setzen" gilt jetzt an jedem Rezept mit `setzbar` (wie seit B7 das
+  Ecken-Werkzeug an Schicht und Raum); `gelaendeschicht.setzbar` = Dicke (> 0), `muldenraum.setzbar` = Spiegel.
+  Der Griff kommt aus `ecken` (Art `mass`, senkrecht); die Dicke misst lotrecht, wie weit der Griff steigt.
+- **Bleibt ohne Griff:** Drossel (DN, Abfluss, Stauhöhe — fachliche Werte, das Formular bleibt richtig), Länge und
+  Beiwert der Überlaufschwelle, Stababstand des Rechens; Dicke einer Schicht „senkrecht zur Fläche" (die lotrechte
+  Messung wäre am Hang falsch); der untere Spiegel eines Rückhalteraums.
+
+Tests `fehlendeGriffe.test.js` (4: Rohr, Schacht, Pfosten über Kommandos und `griffZuWerten`, Katalogschema) und
+`schichtGriffe.test.js` (+2: Dicke und Spiegel am Teich P11 ins Journal, Volumen wächst; wo der Setzer gilt). Gegenproben
+rot: kein radial, Feldgriffe nur mit `stand`, kein Massgriff, Setzer nur Erdbau, Dicke ohne `ueber`, Massgriff quer.
+Bewusst gedreht: B7-Zählung (Ecken ohne den neuen Massgriff).
