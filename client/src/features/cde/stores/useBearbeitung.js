@@ -33,7 +33,7 @@ import { useAenderungen } from './useAenderungen.js';
 import { istAnzeigeform, modellVon, operationenMitKennung, rezeptNach, zufallsKennung } from '../services/Bauteilrezepte.js';
 import { pruefeBezuege } from '../services/ableitung/Bezuege.js';
 import { befundeFuer, befundeFuerWerte } from '../services/Befunde.js';
-import { KOMMANDO_SCHEMA, istErzeugen, kommandoAusZustand, mitHoehenversatz, neueKommandoId, pruefeKommando, rahmenOhneBezug } from '../services/kommando/Kommando.js';
+import { KOMMANDO_SCHEMA, SAMMLUNG, istErzeugen, kommandoAusZustand, mitHoehenversatz, neueKommandoId, pruefeKommando, rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { werteAus } from '../services/kommando/Auswertung.js';
 import { systemBeleg } from '../services/kommando/Beleg.js';
 import { standVon, subjektAusStand } from '../services/kommando/Subjekt.js';
@@ -778,14 +778,64 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
      *          `kommando` ist das AUSGEWERTETE — mit den verwendeten Kennungen in `neu`;
      *          `hinweise` die überschrittenen Fachgrenzen (K10) — ausgeführt trotzdem.
      */
-    async function fuehreAus(kommando, { subjektVon = null, knotenVon = null, rahmen: rahmenK = null, kennungsgeber = null,
-                                        pruefeWerte = null, felder: felderVorgabe = null, basis = undefined,
-                                        modell = undefined, modellSha = null, jeEintrag = null,
-                                        hauptSubjekt = null, befunde: moment = [], uebersprungenVorab = 0 } = {}) {
+    async function fuehreAus(kommando, kontext = {}) {
+        // EINE SAMMLUNG (BIMFY, I8) ist ein Kommando aus Kommandos — ein Vorgang, ein Rückgängig.
+        if (kommando?.werkzeug === SAMMLUNG) return _fuehreSammlungAus(kommando, kontext);
         const abgelehnt = (grund) => ({ ausgefuehrt: false, grund, eintraege: [], mehrteilig: false, kommando });
         const fehlerKommando = pruefeKommando(kommando);
         if (fehlerKommando.length) return abgelehnt(fehlerKommando.join(' · '));
+        const v = _bereite(kommando, kontext);
+        if (v.grund) return abgelehnt(v.grund);
+        const { beschreibungen, ausgewertet, b, uebersprungen, hinweise } = v;
 
+        const aenderungen = useAenderungen();
+        // EINE BEARBEITUNG DARF MEHRERE EINTRÄGE SCHREIBEN (Stufe 14.3).
+        //
+        // „Haltung teilen" ist ein Löschen und zwei Erzeugen. Ein Eintrag hat
+        // trotzdem weiterhin GENAU EIN Subjekt — daran hängen fünfzehn Stellen
+        // im Journal, vom Faltmechanismus bis zum Drei-Wege-Vergleich. Die
+        // Klammer ist ein `vorgang`, kein Bauteil-Array.
+        const mehrteilig = beschreibungen.length > 1;
+        // Was nicht ging, wird GEZÄHLT und gemeldet. „Auf 12 von 15 angewandt"
+        // ist eine Auskunft; ein stilles Überspringen wäre eine Behauptung.
+        const uebersprungenText = uebersprungen
+            ? ` — ${uebersprungen} übersprungen (Bezug fehlt)` : '';
+        // EIN KOMMANDO IST EIN VORGANG (Teil XXIV, K2 — Fabios E1): die
+        // Vorgangskennung IST die Kommandokennung, auch bei einem einzigen
+        // Eintrag. Der Titel bleibt, wie er war: nur mehrteilige Vorgänge
+        // heissen nach dem Werkzeug, ein einzelner Eintrag nach seiner Art.
+        const { ok, eintraege: geschrieben, grund: grundVorgang } = await aenderungen.eintragenVorgang(
+            beschreibungen.map(beschreibung => _eintragAus(beschreibung, v, kontext)),
+            {
+                vorgang: kommando.id,
+                // Ein Werkzeug darf seinen Vorgang nach den Werten nennen („Radieren").
+                ...(mehrteilig ? { vorgangTitel: b.vorgangstitel?.(kommando.werte ?? {}) || b.titel } : {}),
+                // Der Beleg: die Absicht, wie sie ausgewertet wurde (mit `neu`).
+                kommando: ausgewertet,
+                ...(kommando.ebene ? { ebene: kommando.ebene } : {}),
+            });
+        if (!ok) return abgelehnt(grundVorgang);
+        let grund = null;
+        if (!geschrieben.length) {
+            grund = beschreibungen[0].globalId
+                ? `Der Wert galt schon — nichts einzutragen.${uebersprungenText}`
+                : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.';
+        } else if (uebersprungen) {
+            grund = `Auf ${geschrieben.length} angewandt${uebersprungenText}.`;
+        }
+        return { ausgefuehrt: true, grund, eintraege: geschrieben, mehrteilig, kommando: ausgewertet, hinweise };
+    }
+
+    /**
+     * Ein Kommando AUSWERTEN, ohne zu schreiben — alles, was `fuehreAus` vor dem
+     * Journal prüft. `{grund}` heisst abgelehnt; sonst die Schritte und der Beleg.
+     * `bekanntDazu`: Kennungen, die eine Sammlung schon vergeben hat (E2 über die Teile).
+     */
+    function _bereite(kommando, { subjektVon = null, knotenVon = null, rahmen: rahmenK = null, kennungsgeber = null,
+                                  pruefeWerte = null, felder: felderVorgabe = null,
+                                  hauptSubjekt = null, befunde: moment = [], uebersprungenVorab = 0 } = {},
+                      { bekanntDazu = null } = {}) {
+        const abgelehnt = (grund) => ({ grund });
         const typprofilFuer = (el) => profilFuer(el?.category ?? el?.type, profilSatz.value);
         const rahmenWirksam = rahmenK ?? rahmen.value ?? rahmenOhneBezug();
         // OHNE OBERFLÄCHE (Teil XXIV, K3): das Subjekt eines EIGENEN Bauteils
@@ -857,6 +907,7 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
         for (const plan of aenderungen.wirksamerStand('erzeugt').values()) {
             for (const op of operationenMitKennung(plan?.parameter?.operationen)) if (op?.id) bekannt.add(op.id);
         }
+        for (const id of bekanntDazu ?? []) bekannt.add(id);
         const doppelt = aus.neu.filter(id => bekannt.has(id));
         if (doppelt.length) return abgelehnt(`Die Kennung ${doppelt.join(', ')} gibt es schon — „neu" heisst neu.`);
 
@@ -880,65 +931,77 @@ export const useBearbeitung = defineStore('cde-bearbeitung', () => {
             if (fehler.length) return abgelehnt(`Bezug unzulässig: ${fehler.join(' · ')}`);
         }
 
-        // EINE BEARBEITUNG DARF MEHRERE EINTRÄGE SCHREIBEN (Stufe 14.3).
-        //
-        // „Haltung teilen" ist ein Löschen und zwei Erzeugen. Ein Eintrag hat
-        // trotzdem weiterhin GENAU EIN Subjekt — daran hängen fünfzehn Stellen
-        // im Journal, vom Faltmechanismus bis zum Drei-Wege-Vergleich. Die
-        // Klammer ist ein `vorgang`, kein Bauteil-Array.
-        const mehrteilig = beschreibungen.length > 1;
-        // Was nicht ging, wird GEZÄHLT und gemeldet. „Auf 12 von 15 angewandt"
-        // ist eine Auskunft; ein stilles Überspringen wäre eine Behauptung.
-        const uebersprungenText = uebersprungen
-            ? ` — ${uebersprungen} übersprungen (Bezug fehlt)` : '';
-        // EIN KOMMANDO IST EIN VORGANG (Teil XXIV, K2 — Fabios E1): die
-        // Vorgangskennung IST die Kommandokennung, auch bei einem einzigen
-        // Eintrag. Der Titel bleibt, wie er war: nur mehrteilige Vorgänge
-        // heissen nach dem Werkzeug, ein einzelner Eintrag nach seiner Art.
-        const { ok, eintraege: geschrieben, grund: grundVorgang } = await aenderungen.eintragenVorgang(
-            beschreibungen.map((beschreibung) => {
-              // JE EINTRAG, was der Aufrufer über SEIN Bauteil weiss (O6): am
-              // gemischten Knoten ist eine Haltung geliefert (Basis, Modell),
-              // die andere eigen — ein Vorgabewert für alle träfe eine falsch.
-              const je = jeEintrag?.(beschreibung.globalId) ?? {};
-              return {
-                // Was die Bearbeitung selbst schon sagt, gilt: `erzeugtEintrag`
-                // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
-                // nicht überschreiben.
-                basis: 'basis' in je ? je.basis : basis, modell: je.modell ?? modell,
-                ...beschreibung, wer: kommando.wer ?? '',
-                // DAS BEARBEITETE MODELL (Stufe 4, Lücke L6): was die Bearbeitung
-                // selbst sagt (Erdbau: die Datei des Ur-Geländes), sonst der
-                // Aufrufer je Eintrag, sonst das Subjekt, sonst der Aufrufer — der
-                // nennt nur das ZUERST geladene Modell, und genau das stand bis
-                // hierher in jedem Commit.
-                modellSha: beschreibung.modellSha ?? je.modellSha ?? gegenstand?.modellSha ?? modellSha,
-                // WAS BEIM SETZEN BEKANNT WAR (Stufe 14.4). Eine Momentaufnahme
-                // der Befunde, nicht ihr laufender Stand — der wird abgeleitet
-                // und ändert sich mit dem Modell. Ohne sie ist später nicht zu
-                // unterscheiden, ob jemand das flache Gefälle in Kauf nahm oder
-                // nichts davon wusste.
-                ...(momentMitHinweisen.length ? { befunde: momentMitHinweisen } : {}),
-              };
-            }),
-            {
-                vorgang: kommando.id,
-                // Ein Werkzeug darf seinen Vorgang nach den Werten nennen („Radieren").
-                ...(mehrteilig ? { vorgangTitel: b.vorgangstitel?.(kommando.werte ?? {}) || b.titel } : {}),
-                // Der Beleg: die Absicht, wie sie ausgewertet wurde (mit `neu`).
-                kommando: ausgewertet,
-                ...(kommando.ebene ? { ebene: kommando.ebene } : {}),
-            });
-        if (!ok) return abgelehnt(grundVorgang);
-        let grund = null;
-        if (!geschrieben.length) {
-            grund = beschreibungen[0].globalId
-                ? `Der Wert galt schon — nichts einzutragen.${uebersprungenText}`
-                : 'Dem Bauteil fehlt die GlobalId — es lässt sich nicht eintragen.';
-        } else if (uebersprungen) {
-            grund = `Auf ${geschrieben.length} angewandt${uebersprungenText}.`;
-        }
-        return { ausgefuehrt: true, grund, eintraege: geschrieben, mehrteilig, kommando: ausgewertet, hinweise };
+        return { beschreibungen, ausgewertet, b, uebersprungen, hinweise, momentMitHinweisen, gegenstand, wer: kommando.wer };
+    }
+
+    /** Ein Schritt, wie `eintragenVorgang` ihn nimmt — mit dem, was der Aufrufer je Eintrag weiss. */
+    function _eintragAus(beschreibung, { momentMitHinweisen, gegenstand, wer }, { basis = undefined, modell = undefined,
+                                                                                modellSha = null, jeEintrag = null } = {}) {
+        // JE EINTRAG, was der Aufrufer über SEIN Bauteil weiss (O6): am
+        // gemischten Knoten ist eine Haltung geliefert (Basis, Modell),
+        // die andere eigen — ein Vorgabewert für alle träfe eine falsch.
+        const je = jeEintrag?.(beschreibung.globalId) ?? {};
+        return {
+            // Was die Bearbeitung selbst schon sagt, gilt: `erzeugtEintrag`
+            // setzt `modell: 'cde'`, und das darf ein Vorgabewert von aussen
+            // nicht überschreiben.
+            basis: 'basis' in je ? je.basis : basis, modell: je.modell ?? modell,
+            ...beschreibung, wer: wer ?? '',
+            // DAS BEARBEITETE MODELL (Stufe 4, Lücke L6): was die Bearbeitung
+            // selbst sagt (Erdbau: die Datei des Ur-Geländes), sonst der
+            // Aufrufer je Eintrag, sonst das Subjekt, sonst der Aufrufer — der
+            // nennt nur das ZUERST geladene Modell, und genau das stand bis
+            // hierher in jedem Commit.
+            modellSha: beschreibung.modellSha ?? je.modellSha ?? gegenstand?.modellSha ?? modellSha,
+            // WAS BEIM SETZEN BEKANNT WAR (Stufe 14.4). Eine Momentaufnahme
+            // der Befunde, nicht ihr laufender Stand — der wird abgeleitet
+            // und ändert sich mit dem Modell. Ohne sie ist später nicht zu
+            // unterscheiden, ob jemand das flache Gefälle in Kauf nahm oder
+            // nichts davon wusste.
+            ...(momentMitHinweisen.length ? { befunde: momentMitHinweisen } : {}),
+        };
+    }
+
+    /**
+     * EINE SAMMLUNG AUSFÜHREN (BIMFY, I8): viele Erzeugen-Kommandos als EIN Vorgang.
+     *
+     * Ein Import von 400 Bauteilen war 400 Vorgänge — 400-mal Rückgängig und je
+     * Vorgang ein Sichern. Die Sammlung ist selbst ein Kommando (E1 gilt: der
+     * Vorgang IST das Kommando), ihre Teile stehen ausgewertet in `werte.teile`.
+     * Ein Teil, das die Auswertung ablehnt, fehlt im Beleg und wird gemeldet —
+     * die anderen gelten (wie beim Einzelabsetzen).
+     *
+     * @returns {Promise<{ausgefuehrt, grund, eintraege, mehrteilig, kommando, abgelehnt: {index, grund}[], hinweise}>}
+     */
+    async function _fuehreSammlungAus(kommando, kontext = {}) {
+        const leer = (grund, abgelehnt = []) => ({ ausgefuehrt: false, grund, eintraege: [], mehrteilig: false, kommando, abgelehnt });
+        const fehler = pruefeKommando(kommando);
+        if (fehler.length) return leer(fehler.join(' · '));
+        const vergeben = new Set();
+        const teile = [];
+        const abgelehnt = [];
+        const hinweise = [];
+        const schritte = [];
+        kommando.werte.teile.forEach((teil, index) => {
+            const v = _bereite(teil, kontext, { bekanntDazu: vergeben });
+            if (v.grund) { abgelehnt.push({ index, grund: v.grund }); return; }
+            for (const id of v.ausgewertet.neu ?? []) vergeben.add(id);
+            teile.push(v.ausgewertet);
+            hinweise.push(...v.hinweise);
+            for (const s of v.beschreibungen) schritte.push(_eintragAus(s, v, kontext));
+        });
+        if (!schritte.length) return leer(abgelehnt[0]?.grund ?? 'Die Sammlung ist leer.', abgelehnt);
+        const ausgewertet = { ...kommando, werte: { ...kommando.werte, teile } };
+        const aenderungen = useAenderungen();
+        const { ok, eintraege, grund } = await aenderungen.eintragenVorgang(schritte, {
+            vorgang: kommando.id,
+            vorgangTitel: kommando.werte.titel || 'Sammlung',
+            kommando: ausgewertet,
+            ...(kommando.ebene ? { ebene: kommando.ebene } : {}),
+        });
+        if (!ok) return leer(grund, abgelehnt);
+        return { ausgefuehrt: true, grund: abgelehnt.length ? `${abgelehnt.length} von ${kommando.werte.teile.length} abgelehnt` : null,
+                 eintraege, mehrteilig: eintraege.length > 1, kommando: ausgewertet, abgelehnt, hinweise };
     }
 
     /**

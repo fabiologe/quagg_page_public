@@ -19,9 +19,9 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useCdeStore } from '../stores/useCdeStore.js';
 import { useViewerApi } from './viewerApi.js';
-import { KOMMANDO_SCHEMA, neueKommandoId } from '../services/kommando/Kommando.js';
+import { KOMMANDO_SCHEMA, SAMMLUNG, neueKommandoId } from '../services/kommando/Kommando.js';
 import { subjektAusKennung } from '../services/kommando/Subjekt.js';
-import { modellVon } from '../services/Bauteilrezepte.js';
+import { modellVon, zufallsKennung } from '../services/Bauteilrezepte.js';
 
 export function useKommandoweg() {
     const bearbeitung = useBearbeitung();
@@ -60,5 +60,39 @@ export function useKommandoweg() {
         });
     }
 
-    return { absetzen };
+    /**
+     * Viele Erzeugen-Kommandos als EINE Sammlung absetzen (BIMFY, I8) — ein
+     * Vorgang im Verlauf, ein Rückgängig für den ganzen Import.
+     *
+     * @param {object[]} teile   je `{werkzeug, werte, eingaben}` wie bei `absetzen`
+     * @param {object} [a]       `titel` des Vorgangs, `rahmen`
+     * @returns {Promise<object>} das Ergebnis von `fuehreAus`, mit `abgelehnt: {index, grund}[]`
+     */
+    async function sammeln(teile, { titel = '', rahmen = null } = {}) {
+        if (!bearbeitung.modusAn) {
+            return { ausgefuehrt: false, grund: 'Der Bearbeiten-Modus ist aus.', eintraege: [], mehrteilig: false, kommando: null, abgelehnt: [] };
+        }
+        const wer = cde.bearbeiter || '';
+        const wann = new Date().toISOString();
+        const kommando = {
+            schema: KOMMANDO_SCHEMA, id: neueKommandoId(), werkzeug: SAMMLUNG, ziel: [],
+            werte: {
+                titel,
+                teile: teile.map(({ werkzeug, werte = {}, eingaben = null }) => ({
+                    schema: KOMMANDO_SCHEMA, id: neueKommandoId(), werkzeug, ziel: [], werte,
+                    ...(eingaben ? { eingaben } : {}), wer, wann,
+                })),
+            },
+            wer, wann,
+        };
+        return bearbeitung.fuehreAus(kommando, {
+            ...(rahmen ? { rahmen } : {}),
+            // Die Kennungen vergibt die Oberfläche beim Auswerten (E2) — wie die
+            // Werkzeugleiste; der Beleg nennt sie danach je Teil in `neu`.
+            kennungsgeber: zufallsKennung,
+            jeEintrag: (gid) => ({ modellSha: api.modellShaVon?.(gid) ?? api.getLoadedModelSha?.() ?? null }),
+        });
+    }
+
+    return { absetzen, sammeln };
 }

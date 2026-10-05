@@ -13,7 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { repo } from '../services/RepoFacade.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
+import { KOMMANDO_SCHEMA, SAMMLUNG, pruefeKommando } from '../services/kommando/Kommando.js';
 import { erzeugeKernel } from '../services/geometrie/Kernel.js';
 import { IfcAutor } from '../services/IfcAutor.js';
 import { baueEigenbauPaket } from '../services/EigenbauPaket.js';
@@ -356,5 +356,91 @@ describe('BIMFY · die Tafel, montiert', () => {
         expect(knopf.attributes('disabled')).toBeDefined();
         expect(w.text()).toContain('Erst ein Modell im 3D öffnen');
         w.unmount();
+    });
+});
+
+describe('BIMFY · ein Import, ein Vorgang (I8, Sammlung)', () => {
+    it('die Tafel legt über ihren echten Knopf an: ein Vorgang, Kennungen vergibt sie selbst', async () => {
+        // Bis I8 gab die Tafel ihren Kommandos KEINE Kennungen — jedes Bauteil
+        // wurde abgelehnt („0 neue Kennung(en)"). Die Tests vergaben sie selbst.
+        const { mount } = await import('@vue/test-utils');
+        const { defineComponent, h } = await import('vue');
+        const { provideViewerApi } = await import('../composables/viewerApi.js');
+        const BimfyPanel = (await import('../components/BimfyPanel.vue')).default;
+        const b = useBearbeitung();
+        const ae = useAenderungen();
+        const angewandt = [];
+        const api = { bearbeitenEin: () => { b.modusSetzen(true); return true; }, wendeEintragAn: async (e) => { angewandt.push(e); },
+                      modellShaVon: () => null, getLoadedModelSha: () => 'sha-test' };
+        const Huelle = defineComponent({ setup() { provideViewerApi(api); return () => h(BimfyPanel); } });
+        const w = mount(Huelle, { global: { stubs: { CdeIcon: { template: '<i />' } } } });
+        const text = dxf([LINE('WAND', 0, 0, 6, 0), LWPOLY('Bodenplatte', [[0, 0], [4, 0], [4, 3], [0, 3]], true)]);
+        const datei = Object.assign(new File([text], 'plan.dxf'), { arrayBuffer: async () => new TextEncoder().encode(text).buffer });
+        const input = w.find('input[type="file"]');
+        Object.defineProperty(input.element, 'files', { value: [datei] });
+        await input.trigger('change');
+        await new Promise(r => setTimeout(r, 0));
+        await w.vm.$nextTick();
+        const knopf = w.find('.bf-knopf.primaer');
+        expect(knopf.attributes('disabled')).toBeUndefined();
+        await knopf.trigger('click');
+        await new Promise(r => setTimeout(r, 30));
+        await w.vm.$nextTick();
+        expect(w.text()).toContain('2 Bauteile angelegt');
+        expect(ae.wirksamerStand('erzeugt').size).toBe(2);                 // vorher: 0 (abgelehnt)
+        expect(new Set(ae.eintraege.map(e => e.vorgang)).size).toBe(1);    // vorher: 2
+        expect(ae.eintraege[0].vorgangTitel).toBe('BIMFY: plan.dxf');
+        expect(angewandt).toHaveLength(1);
+        w.unmount();
+    });
+
+    const vier = () => liesDxf(dxf([
+        LINE('WAND', 0, 0, 6, 0),
+        LINE('KANAL', 0, 5, 20, 5),
+        LWPOLY('Bodenplatte', [[0, 0], [4, 0], [4, 3], [0, 3]], true),
+        CIRCLE('SCHACHT', 20, 5, 0.5),
+    ])).geometrien;
+    const sammlung = (teile) => vollesKommando({ werkzeug: SAMMLUNG, werte: { titel: 'BIMFY: test.dxf', teile: teile.map(vollesKommando) } });
+
+    it('vier Kommandos werden EIN Vorgang mit EINEM Beleg — und ein Rückgängig nimmt alles zurück', async () => {
+        const { kommandos } = kommandosFuer(gruppiere(vier()), { basisHoehe: 100 });
+        const b = useBearbeitung();
+        const ae = useAenderungen();
+        const erg = await b.fuehreAus(sammlung(kommandos.map(k => k.kommando)), { kennungsgeber: () => `cde-s${++n}` });
+        expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        expect(erg.abgelehnt).toEqual([]);
+        expect(new Set(erg.eintraege.map(e => e.vorgang)).size).toBe(1);
+        expect(ae.wirksamerStand('erzeugt').size).toBe(4);
+        // Der Beleg ist die Sammlung, ihre Teile stehen ausgewertet darin (mit `neu`).
+        const belege = ae.eintraege.filter(e => e.kommando);
+        expect(belege).toHaveLength(1);
+        expect(belege[0].kommando.werkzeug).toBe(SAMMLUNG);
+        expect(belege[0].kommando.werte.teile.map(t => t.werkzeug)).toEqual(['wand-zeichnen', 'rohr-zeichnen', 'platte-zeichnen', 'schacht-zeichnen']);
+        expect(belege[0].kommando.werte.teile.every(t => t.neu?.length)).toBe(true);
+        expect(belege[0].vorgangTitel).toBe('BIMFY: test.dxf');
+
+        await ae.zurueck('test');                                      // vorher: 4 Klicks
+        expect(ae.wirksamerStand('erzeugt').size).toBe(0);
+    });
+
+    it('ein abgelehntes Teil fehlt und wird mit seiner Nummer gemeldet, die anderen gelten', async () => {
+        const { kommandos } = kommandosFuer(gruppiere(vier()), { basisHoehe: 100 });
+        const b = useBearbeitung();
+        // Zweimal dieselbe Kennung: das zweite Teil darf sie nicht bekommen (E2 über die Teile).
+        const erg = await b.fuehreAus(sammlung(kommandos.slice(0, 2).map(k => k.kommando)), { kennungsgeber: () => 'cde-doppelt' });
+        expect(erg.ausgefuehrt).toBe(true);
+        expect(erg.abgelehnt).toHaveLength(1);
+        expect(erg.abgelehnt[0].index).toBe(1);
+        expect(erg.abgelehnt[0].grund).toMatch(/gibt es schon/);
+        expect(erg.kommando.werte.teile).toHaveLength(1);
+        expect(useAenderungen().wirksamerStand('erzeugt').size).toBe(1);
+    });
+
+    it('die Prüfung: kein Ziel, nur Erzeugen, keine Sammlung in der Sammlung', () => {
+        expect(pruefeKommando(sammlung([]))).toEqual(['Eine Sammlung braucht Teile (werte.teile)']);
+        const innen = sammlung([{ werkzeug: 'wand-zeichnen', eingaben: { zug: [{ ost: 0, nord: 0 }, { ost: 1, nord: 0 }] } }]);
+        expect(pruefeKommando(sammlung([innen]))[0]).toMatch(/Sammlung in einer Sammlung/);
+        expect(pruefeKommando({ ...innen, ziel: ['cde-x'] })[0]).toMatch(/kein Ziel/);
+        expect(pruefeKommando(sammlung([{ werkzeug: 'gibts-nicht' }]))[0]).toMatch(/Teil 1: Das Werkzeug/);
     });
 });

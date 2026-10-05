@@ -30,6 +30,13 @@ import { KOMMANDO_SCHEMA, SYSTEM_PRAEFIX, neueKommandoId } from './Beleg.js';
 // der Journal-Store braucht sie ohne den Werkzeugkatalog.
 export { KOMMANDO_SCHEMA, neueKommandoId };
 
+/**
+ * DIE SAMMLUNG (BIMFY, I8): ein Kommando aus Erzeugen-Kommandos, `werte.teile`,
+ * dazu `werte.titel` für den Vorgang. Kein Werkzeug im Katalog — sie zeichnet
+ * nichts, sie fasst zusammen: ein Import, ein Vorgang, ein Rückgängig (E1).
+ */
+export const SAMMLUNG = 'sammlung';
+
 /** Die Schlitze, die ein Kommando Punkte tragen lässt — benannt wie in `Eingaben.js`. */
 export const PUNKT_SCHLITZE = Object.freeze(['zug', 'umriss']);
 
@@ -243,6 +250,24 @@ function _pruefePunkt(q, wo, fehler, { knotenErlaubt = false } = {}) {
  *
  * @returns {string[]} Fehler — leer heisst: auswertbar
  */
+/** Eine Sammlung: kein Ziel, nur Erzeugen-Teile, jedes für sich gültig. */
+function _pruefeSammlung(k, katalog) {
+    const fehler = [];
+    if (!_text(k.id)) fehler.push('Das Kommando hat keine id');
+    if (!Array.isArray(k.ziel) || k.ziel.length) fehler.push('Eine Sammlung hat kein Ziel — ihre Teile erzeugen');
+    const teile = k.werte?.teile;
+    if (!Array.isArray(teile) || !teile.length) return [...fehler, 'Eine Sammlung braucht Teile (werte.teile)'];
+    teile.forEach((t, i) => {
+        if (t?.werkzeug === SAMMLUNG) { fehler.push(`Teil ${i + 1}: eine Sammlung in einer Sammlung`); return; }
+        const f = pruefeKommando(t, { katalog });
+        if (f.length) { fehler.push(`Teil ${i + 1}: ${f.join(' · ')}`); return; }
+        if (!istErzeugen(nachId(t.werkzeug, katalog))) fehler.push(`Teil ${i + 1}: „${t.werkzeug}" erzeugt nicht — eine Sammlung nimmt nur Erzeugen`);
+    });
+    const ids = teile.map(t => t?.id);
+    if (new Set(ids).size !== ids.length) fehler.push('Zwei Teile tragen dieselbe id');
+    return fehler;
+}
+
 export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
     if (!k || typeof k !== 'object' || Array.isArray(k)) return ['Das Kommando ist kein Objekt'];
     const fehler = [];
@@ -255,6 +280,7 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
         fehler.push(`„${k.werkzeug}" ist ein Systembeleg — ein Nachweis, kein ausführbares Kommando`);
         return fehler;
     }
+    if (k.werkzeug === SAMMLUNG) return _pruefeSammlung(k, katalog);
     const b = _text(k.werkzeug) ? nachId(k.werkzeug, katalog) : null;
     if (!b) fehler.push(`Das Werkzeug „${k.werkzeug ?? '—'}" gibt es nicht`);
 

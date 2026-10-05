@@ -292,22 +292,28 @@ async function anlegen() {
   }
   laeuft.value = true;
   fortschritt.value = 0;
-  const geschrieben = [];
-  const abgelehnt = [];
+  const liste = uebersetzung.value.kommandos;
+  let geschrieben = [];
+  let abgelehnt = [];
   try {
-    for (const { geo, kommando } of uebersetzung.value.kommandos) {
-      const erg = await kommandoweg.absetzen(kommando);
-      if (erg.ausgefuehrt) geschrieben.push(...erg.eintraege);
-      else abgelehnt.push(`${geo.name || geo.ebene || geo.id}: ${erg.grund}`);
-      fortschritt.value++;
-    }
+    // EIN IMPORT, EIN VORGANG (I8): eine Sammlung statt je Bauteil ein Kommando —
+    // ein Eintrag im Verlauf, ein Rückgängig, einmal sichern.
+    const erg = await kommandoweg.sammeln(liste.map(({ kommando }) => kommando),
+                                          { titel: `BIMFY: ${dateiName.value || 'Import'}` });
+    fortschritt.value = liste.length;
+    if (erg.ausgefuehrt) geschrieben = erg.eintraege;
+    abgelehnt = (erg.abgelehnt ?? []).map(({ index, grund }) => {
+      const geo = liste[index]?.geo ?? {};
+      return `${geo.name || geo.ebene || geo.id}: ${grund}`;
+    });
+    if (!erg.ausgefuehrt && !abgelehnt.length) abgelehnt = [erg.grund];
     if (geschrieben.length) await api?.wendeEintragAn?.(geschrieben.length > 1 ? geschrieben : geschrieben[0]);
   } finally {
     laeuft.value = false;
   }
   meldung.value = abgelehnt.length
     ? { art: 'fehler', text: `${geschrieben.length} angelegt, ${abgelehnt.length} abgelehnt — ${abgelehnt[0]}` }
-    : { art: 'ok', text: `${geschrieben.length} Bauteile angelegt. Jedes steht im Verlauf und lässt sich zurücknehmen.` };
+    : { art: 'ok', text: `${geschrieben.length} Bauteile angelegt — ein Vorgang im Verlauf, ein Rückgängig nimmt den ganzen Import zurück.` };
 }
 </script>
 

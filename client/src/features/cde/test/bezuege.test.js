@@ -65,11 +65,18 @@ describe('die Prüfung steht VOR dem Eintragen', () => {
     // geschrieben wird — für die Oberfläche (`ausfuehren` ruft sie) und ohne.
     it('useBearbeitung.fuehreAus ruft pruefeBezuege, bevor es eintragen ruft — und ausfuehren geht über fuehreAus', () => {
         const q = fs.readFileSync(`${WURZEL}stores/useBearbeitung.js`, 'utf8');
-        const start = q.indexOf('async function fuehreAus');
-        const pruefung = q.indexOf('pruefeBezuege(', start);
-        const eintragen = q.indexOf('aenderungen.eintragenVorgang(', start);
-        expect(pruefung).toBeGreaterThan(start);
-        expect(pruefung).toBeLessThan(eintragen);
+        // Seit I8 (Sammlung) prüft `_bereite` — und JEDER Schreibweg ruft es vor dem Eintragen.
+        const bereite = q.indexOf('function _bereite(');
+        const bereiteEnde = q.indexOf('\n    }\n', bereite);
+        expect(q.slice(bereite, bereiteEnde)).toContain('pruefeBezuege(');
+        expect(q.slice(bereite, bereiteEnde)).not.toContain('eintragenVorgang(');
+        for (const weg of ['async function fuehreAus', 'async function _fuehreSammlungAus']) {
+            const start = q.indexOf(weg);
+            const pruefung = q.indexOf('_bereite(', start);
+            const eintragen = q.indexOf('aenderungen.eintragenVorgang(', start);
+            expect(pruefung, weg).toBeGreaterThan(start);
+            expect(pruefung, weg).toBeLessThan(eintragen);
+        }
         const aus = q.indexOf('async function ausfuehren');
         const ende = q.indexOf('\n    }\n', aus);
         expect(q.slice(aus, ende)).toContain('await fuehreAus(kommando');
