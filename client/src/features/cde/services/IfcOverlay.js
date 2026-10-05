@@ -392,7 +392,7 @@ export class IfcOverlay {
             // TIPP-GRIFFE sind WÜRFEL (S10): sie werden angetippt, nicht gezogen,
             // und die Form sagt es, bevor jemand es ausprobiert. Sie sitzen etwas
             // über ihrem Zug-Griff, damit beide getroffen werden können.
-            const tipp = gr.wirkung === 'tipp';
+            const tipp = gr.wirkung === 'tipp' || gr.wirkung === 'loesen';     // „Knoten lösen" (T7) ist auch ein Knopf
             const rr = gr.zeigtBei ? 0.72 : 1;
             const geo = tipp ? new THREE.BoxGeometry(rr * 1.7, rr * 1.7, rr * 1.7) : new THREE.SphereGeometry(rr, 14, 14);
             const kugel = new THREE.Mesh(geo, this._material('flaeche', f, { opacity: 0.95 }));

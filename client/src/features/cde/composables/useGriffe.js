@@ -108,6 +108,11 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
 
     /** Welche Nebengriff-Gruppe per TIPP offen steht (der Finger kann nicht schweben). */
     const offeneGruppe = ref(null);
+    /**
+     * Gelöste Knoten (Teil XXXI, T7): Schlüssel der Eckgriffe, deren Partner NICHT mitziehen. Ein Zustand der
+     * Bedienung, kein Journal — er gilt, bis ein anderes Bauteil gewählt wird.
+     */
+    const geloest = ref(new Set());
     let _getroffen = null;
 
     /** Hat dieser Zug-Griff Nebengriffe, die ein Tipp zeigen könnte? */
@@ -153,7 +158,10 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const ableitung = subjekt?.stand?.bauplan?.ableitung ?? null;
         const vorgang = ableitung ? (e.autor?.ableitungen?.get?.(ableitung) ?? null) : null;
         const alle = griffeFuer({ schaechte, lageStand, subjekt, typprofil: getTypprofil?.() ?? null, subjektHerkunft: herkunft,
-                                  bauform: getBauform?.() ?? null, vorgang });
+                                  bauform: getBauform?.() ?? null, vorgang,
+                                  // Knoten (T7): die anderen eigenen Bauteile — wer hat einen Punkt an derselben Stelle?
+                                  eigene: herkunft === 'cde' ? (aenderungen?.wirksamerStand?.('erzeugt') ?? null) : null,
+                                  geloest: geloest.value });
         // DIE EINE REGEL (`Griffe.js:griffeFrei`) — ECKEN NUR AUF KNOPFDRUCK
         // (Teil XXII, Fabio 2026-09-18), sonst nur die Familie des scharfen
         // Werkzeugs. Ein Erdkörper hat keinen Bauteil-Griff am Klickpunkt: ein
@@ -185,6 +193,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
     // oder weniger. Ohne diese Quelle blieben Stützpunkt-, Kanten- und
     // Tipp-Griffe am Stand von vorher stehen (der Journal-Zähler feuert zu
     // früh: da ist das frische Subjekt noch nicht da).
+    // Gelöste Knoten gelten nur am Bauteil, an dem sie gelöst wurden (T7).
+    watch(() => getSubjekt?.()?.globalId ?? null, () => { if (geloest.value.size) geloest.value = new Set(); });
     watch(() => [bearbeitung?.modusAn, bearbeitung?.scharfId, getSubjekt?.()?.globalId, getBauform?.(), aenderungen?.anzahl,
                  getSubjekt?.()?.stand?.bauplan, bearbeitung?.eckenFuer, bearbeitung?.umbauLaeuft], () => neuBauen());
 
@@ -270,11 +280,12 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         // nach dem Ablegen dorthin zurück.
         const serie = !!bearbeitung?.scharfId;
         const schwellePx = tipp?.typ === 'touch' ? ZUG_SCHWELLE_PX.touch : ZUG_SCHWELLE_PX.sonst;
-        if (g.wirkung === 'tipp') {
-            zug.value = { griff: g, wirkung: 'tipp', pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null, serie,
+        if (g.wirkung === 'tipp' || g.wirkung === 'loesen') {
+            zug.value = { griff: g, wirkung: g.wirkung, pos: { ...g.pos }, bewegt: false, aktiv: [], linien: [], versatz: null, fang: null, serie,
                           startPx: tipp?.px ? { x: tipp.px.x, y: tipp.px.y } : null, schwellePx, weg: false };
             e.griffHervorheben?.(g.key);
-            pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text: g.rolle === 'entfernen' ? 'Stützpunkt entfernen' : 'Stützpunkt einfügen' } : null;
+            const text = g.wirkung === 'loesen' ? g.titel : g.rolle === 'entfernen' ? 'Stützpunkt entfernen' : 'Stützpunkt einfügen';
+            pille.value = tipp?.px ? { x: tipp.px.x, y: tipp.px.y, text } : null;
             return;
         }
         const w = _werkzeugFuer(g);
@@ -359,7 +370,7 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const e = engine.value;
         // Ein Tipp-Griff bewegt nichts. Er gilt wie ein Knopf, solange man ÜBER ihm loslässt (seine Trefferfläche,
         // TREFFER_PX); wer den Finger weiter wegzieht, meinte ihn nicht — jetzt, wo der Finger nicht mehr erst armiert (T4).
-        if (z.wirkung === 'tipp') {
+        if (z.wirkung === 'tipp' || z.wirkung === 'loesen') {
             if (z.startPx && tipp?.px && Math.hypot(tipp.px.x - z.startPx.x, tipp.px.y - z.startPx.y) > TREFFER_PX) z.weg = true;
             return;
         }
@@ -487,6 +498,8 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
             const k = kantenAnEcke(z.griff.ring, z.griff.index, z.pos, { geschlossen: z.griff.geschlossen });
             if (k.length) teile.push(k.map(m => `${m.toFixed(2).replace('.', ',')} m`).join(' | '));
         }
+        // Ein Knoten (T7) sagt, dass er nicht allein geht.
+        if (z.griff.werte?.mit?.length) teile.push(`Knoten · ${z.griff.werte.mit.length + 1} Bauteile`);
         if (z.griff.forderung) teile.push('Forderung');
         if ((z.griff.ecken || z.griff.art === 'mass') && typeof probeMengen === 'function' && z.bewegt) {
             if (mengen.value !== '') teile.push(mengen.value ?? 'Massen …');
@@ -508,6 +521,18 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         const legtAb = !!z && !abbruch && ((z.wirkung === 'tipp' && !z.weg) || z.bewegt);
         if (!legtAb) { e?.zeigeZugbild?.(null); e?.geistLeeren?.(); }
         if (!z) return null;
+        // KNOTEN LÖSEN / VERBINDEN (T7): ein Schalter der Bedienung — nichts wird geschrieben (Tablet-Rezept, Regel 4).
+        if (z.wirkung === 'loesen') {
+            const eltern = z.griff.zeigtBei;
+            if (!abbruch && !z.weg && eltern) {
+                const neu = new Set(geloest.value);
+                if (neu.has(eltern)) neu.delete(eltern); else neu.add(eltern);
+                geloest.value = neu;
+                offeneGruppe.value = eltern;                   // die Gruppe bleibt offen — man sieht, was gilt
+            }
+            neuBauen();
+            return null;
+        }
         // TIPP-GRIFF: der Griff selbst IST die Eingabe — die Werte bringt er mit.
         if (z.wirkung === 'tipp') {
             if (abbruch || z.weg) { neuBauen(); return null; }
@@ -634,5 +659,5 @@ export function useGriffe({ engine, bearbeitung, aenderungen, getSubjekt, getTyp
         engine?.value?.griffHervorheben?.(null);
     }
 
-    return { griffe, zug, pille, mengen, bereit, offeneGruppe, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
+    return { griffe, zug, pille, mengen, bereit, offeneGruppe, geloest, neuBauen, greifen, zugStart, zugBewegt, zugEnde, ablegen, schliesseGruppe };
 }

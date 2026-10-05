@@ -261,6 +261,44 @@ function auswerten(reihe, xVorher) {
             .filter(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && (r.height < 40 || r.width < 40); }).length);
         zahlen.zieleSichtbar = await page.evaluate(() => [...document.querySelectorAll('button, summary, input, select')]
             .filter(b => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; }).length);
+
+        // T7 · Knoten: eine zweite Wand an die (linke, im Bild liegende) Ecke der ersten, die Ecke der ersten mit dem Finger ziehen — geht die
+        // zweite mit? (Teil XXXI, E-T3)
+        await v(page, `pinia._s.get('cde-bearbeitung').abbrechen(); return 1;`);
+        const gidB = await v(page, `
+            const b = pinia._s.get('cde-bearbeitung');
+            const { punktAusWelt } = await import('/src/features/cde/services/kommando/Kommando.js');
+            const { nnAusWelt } = await import('/src/features/cde/services/Hoehenbezug.js');
+            const r = b.rahmen; const a = pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt').get(arg).parameter.punkte[0];
+            const h = nnAusWelt(a[1], r?.hoehenversatz ?? 0); const gid = 'cde-tablet-b-' + Date.now().toString(36);
+            const k = { schema: 1, id: 'tablet-b-' + Date.now().toString(36), werkzeug: 'wand-zeichnen', ziel: [], neu: [gid], wer: 'tabletlauf', wann: new Date().toISOString(),
+                eingaben: { zug: [ { ...punktAusWelt({ x: a[0], z: a[2] }, r), hoehe: h }, { ...punktAusWelt({ x: a[0], z: a[2] - 6 }, r), hoehe: h } ] },
+                werte: { name: 'Tabletwand B', kategorie: 'IFCWALL', hoehe: '', dicke: 0.3, wandhoehe: 2.5 } };
+            const e = await b.fuehreAus(k); if (!e.ausgefuehrt) return null; await api.wendeEintragAn?.(e.eintraege?.[0] ?? e); return gid;`, gid);
+        await warte(9000);
+        if (gidB) {
+            await v(page, `await v.waehleEigenes?.(arg); return 1;`, gid).catch(() => null); await warte(2500);
+            const mitteA = await v(page, `const h = v.engine.autor.huellen?.get(arg); if (!h) return null;
+                const s = v.engine.projectToScreen([(h.min.x + h.max.x) / 2, h.max.y, (h.min.z + h.max.z) / 2]);
+                const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+                return s ? { x: c.left + s.x, y: c.top + s.y } : null;`, gid);
+            if (mitteA && !(await v(page, `return pinia._s.get('cde-bearbeitung').bauteil?.globalId === arg;`, gid))) { await tippe(page, cdp, mitteA); await warte(2500); }
+            const ecke = await v(page, `const c = [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0].getBoundingClientRect();
+                const g = v.griffe.griffe.value.find(x => x.key === 'stuetz:' + arg + ':0'); if (!g) return null;
+                const s = v.engine.projectToScreen([g.pos.x, g.pos.y, g.pos.z]);
+                return { mit: g.werte?.mit ?? [], x: s ? c.left + s.x : null, y: s ? c.top + s.y : null };`, gid);
+            const stand = `const st = pinia._s.get('cde-aenderungen').wirksamerStand('erzeugt'); return { a: st.get(arg[0]).parameter.punkte[0], b: st.get(arg[1]).parameter.punkte[0] };`;
+            const vorher = await v(page, stand, [gid, gidB]);
+            if (ecke?.x != null) {
+                await finger(page, cdp, { x: ecke.x, y: ecke.y }, { x: ecke.x + 60, y: ecke.y + 4 }, { halten: 0, schritte: 8 });
+                await warte(9000);
+            }
+            const nachher = await v(page, stand, [gid, gidB]);
+            const gleich = (p, q) => p.every((x, i) => Math.abs(x - q[i]) < 1e-6);
+            await foto(page, 'knoten');
+            zahlen.knoten = { partner: (ecke?.mit ?? []).includes(gidB), aBewegt: !gleich(vorher.a, nachher.a),
+                              bBewegt: !gleich(vorher.b, nachher.b), gleicherOrt: gleich(nachher.a, nachher.b) };
+        }
     } catch (e) {
         fehler.push(`Ablauf: ${String(e.message).slice(0, 300)}`);
         await page.screenshot({ path: path.join(AUS, 'fehler.png') });

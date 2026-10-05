@@ -284,3 +284,49 @@ Tests `fehlendeGriffe.test.js` (4: Rohr, Schacht, Pfosten über Kommandos und `g
 `schichtGriffe.test.js` (+2: Dicke und Spiegel am Teich P11 ins Journal, Volumen wächst; wo der Setzer gilt). Gegenproben
 rot: kein radial, Feldgriffe nur mit `stand`, kein Massgriff, Setzer nur Erdbau, Dicke ohne `ueber`, Massgriff quer.
 Bewusst gedreht: B7-Zählung (Ecken ohne den neuen Massgriff).
+
+### T7 — Knoten: zusammenfallende Punkte ziehen gemeinsam (2026-10-05, E-T3)
+
+| | vorher | T7 |
+|---|---|---|
+| Zwei Wände an einer Ecke, die Ecke der einen gezogen | die andere reisst ab (gelesen, § 2) | **beide gehen mit**, ein Kommando, ein Rückgängig |
+| Tabletlauf (iPad, Finger ohne Halten): Partner erkannt · A bewegt · B bewegt · gleicher Ort | — | **ja · ja · ja · ja** |
+
+- **Wer im Knoten liegt** (`Griffe.knotenPartner`): andere EIGENE Bauteile mit einem Punkt im Bauplan an derselben Stelle,
+  in allen drei Richtungen auf `netzToleranzM` genau (1 mm) — eine Wand 2 mm daneben oder 2,5 m darüber nicht.
+  Vorgänge (Operationen) bleiben draussen.
+- **Der Eckgriff** trägt die Partner (`werte.mit`, grün) und reicht sie an „Stützpunkt verschieben" weiter: neues
+  verborgenes Feld `mit` (Kennungen, keine Nummern); das Werkzeug zieht je Partner dessen Punkt am ALTEN Ort an
+  denselben neuen (`_knotenNachziehen`, über `bauplanVon`) — mehrteilig, ein Vorgang.
+- **Lösen:** Nebengriff „Knoten lösen (n)" (Würfel, wie die Tipp-Griffe) — ein Schalter der Bedienung, schreibt nichts;
+  danach zieht nur das eigene Bauteil, der Knopf heisst „Knoten verbinden". Gilt bis ein anderes Bauteil gewählt wird.
+- **Pille:** „Knoten · 2 Bauteile" beim Zug.
+- **Nicht in T7:** Kantenzug (Mitte einer Kante) nimmt Knoten an ihren Enden nicht mit; Knoten mit GELIEFERTEN Bauteilen
+  (dort gilt K8: Anschluss deklariert / Koinzidenz); Knoten zwischen Punkt und Kante (T-Stoss).
+
+Test `knoten.test.js` (4: wer im Knoten liegt, Griff mit Partnern, Zug ins Journal als ein Vorgang, Lösen ohne Schreiben);
+Gegenproben rot: keine Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht. Tabletlauf um einen
+Knotenschritt erweitert (zweite Wand an die im Bild liegende Ecke).
+
+### T7 — Knoten: zusammenfallende Punkte ziehen gemeinsam (2026-10-05, E-T3)
+
+| Tabletlauf: zweite Wand an die Ecke der ersten, Ecke mit dem Finger gezogen | vorher [gelesen] | T7 [gemessen] |
+|---|---|---|
+| der Eckgriff kennt die andere Wand | nein | **ja** (grün) |
+| beide Punkte wandern | nein — die Ecke riss ab | **ja, an denselben Ort** |
+| Einträge des Zugs | 1 | 2, in **einem** Vorgang (ein Rückgängig) |
+
+- **Wer im Knoten liegt** (`Griffe.knotenPartner`): andere EIGENE Bauteile mit einem Punkt ihres Bauplans an derselben
+  Stelle — auf die Netztoleranz des Regelwerks genau (`netzToleranzM`, 1 mm), in allen drei Richtungen; Vorgänge
+  (Operationen) bleiben draussen. Der Eckgriff trägt sie als `werte.mit` (Kennungen, keine Nummern) und ist grün.
+- **Das Kommando:** „Stützpunkt verschieben" hat das verborgene Listenfeld `mit`; jeder genannte Partner bewegt seinen
+  Punkt am ALTEN Ort an denselben neuen (`_knotenNachziehen` über `bauplanVon`). Ein Partner ohne Punkt dort bleibt.
+- **Lösen:** ein Nebengriff am Knoten („Knoten lösen (n)", Würfel) — ein Tipp schaltet, geschrieben wird nichts; der
+  gelöste Griff zieht allein, der Nebengriff heisst dann „Knoten verbinden". Gilt, bis ein anderes Bauteil gewählt wird.
+- **Bleibt:** der Kantengriff (Kantenmitte, beide Enden) nimmt keine Knoten mit; Geliefertes ist nie Partner (es hat
+  keinen Bauplan); ein Rohr an einem gelieferten Schacht folgt weiter über `anschluss` (K8), nicht über den Knoten.
+
+Test `knoten.test.js` (4: wer im Knoten liegt — 2 mm daneben und 2,5 m darüber nicht; Griff mit Partner und
+Lösen-Knopf; Zug bewegt A und B in einem Vorgang, C und D bleiben; Lösen schreibt nichts, danach zieht nur A).
+Gegenproben rot: keine Partner, Partner ziehen nicht mit, Lösen schaltet nicht, Höhe zählt nicht. Tabletlauf um den
+Knotenschritt erweitert (Ecke im Bild — der erste Versuch lag am Bildrand, der Zug lief aus der Fläche).

@@ -1042,6 +1042,31 @@ function _hatMasse(rz) {
 }
 const MASS_GRUND = 'Nur an einem eigenen Erdbau-Vorgang, einer Schicht oder einem Raum in der Mulde.';
 
+/** Die Punkte der Knotenpartner am alten Ort nach `neu` (Teil XXXI, T7) — je Partner ein `erzeugt`-Eintrag. */
+function _knotenNachziehen(mit, alt, neu, selbst, bauplanVon) {
+    if (!mit.length || !Array.isArray(alt) || typeof bauplanVon !== 'function') return [];
+    const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
+    const aus = [];
+    for (const gid of new Set(mit.map(String))) {
+        if (gid === selbst) continue;
+        const plan = bauplanVon(gid);
+        const pkt = plan?.parameter?.punkte;
+        if (!plan?.rezept || plan.ableitung || !Array.isArray(pkt)) continue;
+        let bewegt = false;
+        const punkte = pkt.map((q) => {
+            if (Array.isArray(q) && Math.abs(q[0] - alt[0]) <= tol && Math.abs(q[1] - alt[1]) <= tol && Math.abs(q[2] - alt[2]) <= tol) {
+                bewegt = true;
+                return [...neu];
+            }
+            return q;
+        });
+        if (!bewegt) continue;
+        aus.push(erzeugtEintrag({ rezept: plan.rezept, kategorie: plan.kategorie, name: plan.name ?? '', globalId: gid,
+                                  parameter: { ...plan.parameter, punkte } }));
+    }
+    return aus;
+}
+
 function _hatKnickpunkte(rz) {
     return !!rz && (!!rz.erdbau || typeof rz.punktlisten === 'function' || typeof rz.lagelisten === 'function');
 }
@@ -3225,6 +3250,9 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             { name: 'ost', titel: 'Rechtswert', einheit: 'm', typ: 'zahl' },
             { name: 'nord', titel: 'Hochwert', einheit: 'm', typ: 'zahl' },
             { name: 'hoehe', titel: 'Höhe', einheit: 'm NN', typ: 'zahl' },
+            // DER KNOTEN (Teil XXXI, T7 — E-T3): andere eigene Bauteile mit einem Punkt an derselben Stelle ziehen mit.
+            // Kennungen, keine Nummern — welcher ihrer Punkte, sagt der alte Ort. Leer = nur dieses Bauteil.
+            { name: 'mit', titel: 'Knoten mit', typ: 'liste', leerErlaubt: true, verborgen: true },
         ],
         vorbelegung: (el) => {
             const p = el?.stand?.bauplan?.parameter?.punkte?.[0];
@@ -3236,7 +3264,7 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
                 hoehe: _rundeM(nnAusWelt(p[1], el?.hoehenversatz ?? 0)),
             };
         },
-        anwenden: (el, werte) => {
+        anwenden: (el, werte, { bauplanVon = null } = {}) => {
             const plan = el?.stand?.bauplan;
             const punkte = plan?.parameter?.punkte;
             if (!el?.globalId || !plan?.rezept || !Array.isArray(punkte)) return null;
@@ -3250,13 +3278,17 @@ export const BEARBEITUNGEN = Object.freeze(_ausDaten([
             const alt = punkte[i];
             if (Array.isArray(alt) && alt.length >= 3
                 && Math.abs(alt[0] - neu[0]) < 1e-4 && Math.abs(alt[1] - neu[1]) < 1e-4 && Math.abs(alt[2] - neu[2]) < 1e-4) return null;
-            return erzeugtEintrag({
+            const eigen = erzeugtEintrag({
                 rezept: plan.rezept,
                 kategorie: plan.kategorie,
                 name: plan.name ?? '',
                 globalId: el.globalId,
                 parameter: { ...plan.parameter, punkte: punkte.map((p, k) => (k === i ? neu : p)) },
             });
+            // DER KNOTEN (T7): jeder genannte Partner bewegt seinen Punkt am ALTEN Ort an denselben neuen — im selben
+            // Kommando, ein Rückgängig. Ein Partner ohne Punkt dort (inzwischen gelöst, gelöscht) bleibt, wie er ist.
+            const partner = _knotenNachziehen(Array.isArray(werte?.mit) ? werte.mit : [], alt, neu, el.globalId, bauplanVon);
+            return partner.length ? [eigen, ...partner] : eigen;
         },
     },
     {

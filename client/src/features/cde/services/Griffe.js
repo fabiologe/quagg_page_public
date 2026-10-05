@@ -41,6 +41,7 @@
 import { nnAusWelt, weltAusNn } from './Hoehenbezug.js';
 import { achsenErlaubt } from './Achszug.js';
 import { rezeptNach } from './Bauteilrezepte.js';
+import { regelwert } from './regeln/Regelwerk.js';
 import { innenEcken, innenringName } from './gelaende/Innenecken.js';
 import { massWert, querlage } from './gelaende/Eckmasse.js';
 
@@ -218,7 +219,8 @@ function _punktlisten(bauplan) {
  * @param {'geliefert'|'cde'} [q.subjektHerkunft]
  * @returns {Array<object>} Griffe, jeder mit key/globalId/name/herkunft/art/pos/achsen/werkzeug/felder
  */
-export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, typprofil = null, subjektHerkunft = 'geliefert', bauform = null, vorgang = null } = {}) {
+export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, typprofil = null, subjektHerkunft = 'geliefert', bauform = null, vorgang = null,
+                             eigene = null, geloest = null } = {}) {
     const aus = [];
 
     // 1. Schachtgriffe — nur GELIEFERTE: der Ort eines eigenen Schachts lebt im
@@ -277,14 +279,30 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
         punkte.forEach((p, i) => {
             if (!p) return;
             const key = `stuetz:${gid}:${i}`;
+            // KNOTEN (Teil XXXI, T7 — E-T3): liegt hier auch ein Punkt eines anderen eigenen Bauteils, ziehen beide
+            // gemeinsam — Wand an Wand, Rohr am Schacht. „Lösen" (Nebengriff) nimmt sie für diesen Griff heraus.
+            const partner = knotenPartner(p, gid, eigene);
+            const geloestHier = !!geloest?.has?.(key);
+            const mit = partner.length && !geloestHier ? partner : null;
+            const knoten = mit ? { werte: { mit }, farbrolle: 'ok', knoten: mit.length } : {};
             aus.push({
                 key, globalId: gid, name: subjekt.name ?? '',
                 herkunft: 'cde', art: 'stuetzpunkt', index: i,
                 pos: { x: p[0], y: p[1], z: p[2] },
                 // Grundriss mit der Maus; Shift hält die Höhe fest bzw. zieht sie.
                 achsen: 'XZ', alternativ: 'Y',
-                werkzeug: 'stuetzpunkt-verschieben', felder: ['index', 'ost', 'nord', 'hoehe'],
+                werkzeug: 'stuetzpunkt-verschieben', felder: ['index', 'ost', 'nord', 'hoehe', 'mit'], ...knoten,
             });
+            if (partner.length) {
+                aus.push({
+                    key: `loesen:${gid}:${i}`, globalId: gid, name: subjekt.name ?? '',
+                    herkunft: 'cde', art: 'knoten-loesen', index: i,
+                    pos: { x: p[0], y: p[1], z: p[2] }, achsen: 'XZ',
+                    wirkung: 'loesen', farbrolle: geloestHier ? 'ok' : 'warn', zeigtBei: key, nebenVersatz: { x: 0, y: -2.2 },
+                    titel: geloestHier ? 'Knoten verbinden' : `Knoten lösen (${partner.length})`,
+                    werkzeug: 'stuetzpunkt-verschieben', felder: [],
+                });
+            }
             // Der HÖHENGRIFF — derselbe Stützpunkt, aber in der Höhe. Er ist
             // der Ersatz für die Shift-Taste, die es auf dem Tablet nicht
             // gibt; mit Maus bleibt Shift die Abkürzung.
@@ -293,7 +311,8 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
                 herkunft: 'cde', art: 'stuetzpunkt', index: i,
                 pos: { x: p[0], y: p[1], z: p[2] }, achsen: 'Y',
                 rolle: 'hoehe', zeigtBei: key, nebenVersatz: { x: 1.7, y: 2.2 },
-                werkzeug: 'stuetzpunkt-verschieben', felder: ['index', 'ost', 'nord', 'hoehe'],
+                werkzeug: 'stuetzpunkt-verschieben', felder: ['index', 'ost', 'nord', 'hoehe', 'mit'],
+                ...(mit ? { werte: { mit } } : {}),
             });
             // Der Entfernen-Griff (S10) — nur, wenn genug übrig bleibt; sonst
             // wäre es ein toter Knopf (Gesetz 10), denn `anwenden` gäbe null.
@@ -488,6 +507,30 @@ export function griffeFuer({ schaechte = [], lageStand = null, subjekt = null, t
     }
 
     return aus;
+}
+
+/**
+ * DIE KNOTENPARTNER eines Punkts (Teil XXXI, T7): andere EIGENE Bauteile, die einen Punkt ihres Bauplans an derselben
+ * Stelle haben — auf die Netztoleranz des Regelwerks genau, in allen drei Richtungen (eine Wand auf einer Platte
+ * steht nicht im Knoten mit deren Ecke, wenn sie höher beginnt). Nur Rezepte mit Punkten im Bauplan; Vorgänge
+ * (Operationen) und Verdecktes (`null`-Stand) bleiben draussen.
+ * @param {number[]} p             [x, y, z] in Welt
+ * @param {string}   selbst        GlobalId des Subjekts
+ * @param {Map<string, object>|null} eigene  wirksamer Stand `erzeugt` (GlobalId → Bauplan)
+ * @returns {string[]}  GlobalIds, sortiert
+ */
+export function knotenPartner(p, selbst, eigene) {
+    if (!eigene?.entries || !Array.isArray(p)) return [];
+    const tol = Math.max(1e-6, Number(regelwert('netzToleranzM')) || 0.001);
+    const aus = [];
+    for (const [gid, plan] of eigene.entries()) {
+        if (gid === selbst || !plan?.parameter || plan.ableitung) continue;
+        if (rezeptNach(plan.rezept)?.punkteIn !== 'parameter') continue;
+        const pkt = plan.parameter.punkte;
+        if (!Array.isArray(pkt)) continue;
+        if (pkt.some(q => Array.isArray(q) && Math.abs(q[0] - p[0]) <= tol && Math.abs(q[1] - p[1]) <= tol && Math.abs(q[2] - p[2]) <= tol)) aus.push(gid);
+    }
+    return aus.sort();
 }
 
 /**
