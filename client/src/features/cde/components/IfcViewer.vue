@@ -1996,6 +1996,8 @@ provideViewerApi({
    * @returns {Promise<{weg, angewandt, nurFestlegung, grund}>}
    */
   wendeEintragAn: (eintragOderListe) => wendeEintragAn(eintragOderListe),
+  /** Bearbeiten einschalten, mit den echten Sperren (BIMFY und andere Tafeln ohne Werkzeug). */
+  bearbeitenEin: () => bearbeitenEin(),
 
   baueErzeugteNeu,
 });

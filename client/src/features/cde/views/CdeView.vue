@@ -460,6 +460,7 @@
           :captureViewpoint="() => viewerRef?.captureViewpoint() ?? null"
           @toggle-mode="onToggleIssueMode"
         />
+        <BimfyPanel v-else-if="panels.isOpen('bimfy')" />
       </CdePanel>
       <!-- EINE Reiterleiste rechts (Abnahme E7) — die Struktur öffnet links. -->
       <CdeReiterleiste />
@@ -543,6 +544,7 @@ import CdeToolbox from '../components/CdeToolbox.vue';
 import IfcVectorStyleEditor from '../components/IfcVectorStyleEditor.vue';
 import IfcAnnotations from '../components/IfcAnnotations.vue';
 import IfcAenderungenTab from '../components/IfcAenderungenTab.vue';
+import BimfyPanel from '../components/BimfyPanel.vue';
 import CdeIcon from '../components/ui/CdeIcon.vue';
 import CdePanel from '../components/ui/CdePanel.vue';
 import { useCdeStore, ISO_STATUS, resolveWatermarkText } from '../stores/useCdeStore.js';

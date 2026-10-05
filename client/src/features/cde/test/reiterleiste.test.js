@@ -21,9 +21,9 @@ const namen = (w) => w.findAll('.cr-knopf').map(k => k.text());
 describe('CdeReiterleiste — eine Leiste für alle Tafeln', () => {
     beforeEach(() => { localStorage.clear(); setActivePinia(createPinia()); });
 
-    it('im 3D: Struktur, dann Bauteil, Verlauf, Mengen, Notizen — ein Strich trennt links von rechts', () => {
+    it('im 3D: Struktur, dann Bauteil, Verlauf, Mengen, Notizen, BIMFY — ein Strich trennt links von rechts', () => {
         const w = mount(CdeReiterleiste, STUB);
-        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen']);
+        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen', 'BIMFY']);
         expect(w.findAll('.cr-trenner')).toHaveLength(1);
         w.unmount();
     });
@@ -34,7 +34,7 @@ describe('CdeReiterleiste — eine Leiste für alle Tafeln', () => {
         ansicht.setzeStand({ hatModell: true });
         ansicht.setzeModus('lageplan');
         await w.vm.$nextTick();
-        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen', 'Plan']);
+        expect(namen(w)).toEqual(['Modelle', 'Bauteil', 'Verlauf', 'Mengen', 'Notizen', 'BIMFY', 'Plan']);
         ansicht.setzeModus('3d');
         await w.vm.$nextTick();
         expect(namen(w)).not.toContain('Plan');

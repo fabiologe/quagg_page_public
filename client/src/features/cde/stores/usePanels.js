@@ -37,6 +37,8 @@ export const PANEL_DEFS = Object.freeze([
   { id: 'verlauf',  titel: 'Verlauf',                             icon: 'verlauf', seite: 'right', breite: 360 },
   { id: 'cockpit',  titel: 'Mengen und Kosten', kurz: 'Mengen',   icon: 'cockpit', seite: 'right', breite: 540 },
   { id: 'issues',   titel: 'Notizen',                             icon: 'issues',  seite: 'right', breite: 330 },
+  // BIMFY: Zeichnung, Kanalnetz, Punktliste → IFC-Bauteile (über die Zeichenwerkzeuge).
+  { id: 'bimfy',    titel: 'BIMFY',                               icon: 'bimfy',   seite: 'right', breite: 400 },
   { id: 'plan',     titel: 'Planinhalt',        kurz: 'Plan',     icon: 'karte',   seite: 'right', breite: 340, nurIn: 'lageplan' },
 ]);
 

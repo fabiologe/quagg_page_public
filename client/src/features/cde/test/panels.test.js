@@ -20,7 +20,7 @@ describe('usePanels', () => {
     await p.bereit
     // Kassensturz H1: die Reiterleiste zeigt die Tafeln in dieser Reihenfolge —
     // erst was man mit der Auswahl tut, dann was man nachliest.
-    expect(p.defs.map(d => d.id)).toEqual(['struktur', 'bauteil', 'verlauf', 'cockpit', 'issues', 'plan'])
+    expect(p.defs.map(d => d.id)).toEqual(['struktur', 'bauteil', 'verlauf', 'cockpit', 'issues', 'bimfy', 'plan'])
     expect(p.aktivLinks).toBeNull()
     expect(p.aktivRechts).toBeNull()
   })

@@ -64,6 +64,7 @@ Feature.
 - `components/` — Viewer, Panels, `PruefberichtPanel.vue`; Bausteine in `ui/` (Dialog, Icon, Panel).
 - `services/` — reine Logik: Engine, Quelle, Autor, Paket, Kategorien, IDS, Prüfbericht, Herkunft, Bauwerksstruktur, dazu `bauform/`, `geometrie/`, `gelaende/`, `ableitung/`.
 - `stores/` (Pinia), `composables/`, `styles/theme.css` (Tokens und Bausteine).
+- `services/bimfy/` + `components/BimfyPanel.vue` — BIMFY: DXF (Vermessung/CAD), ISYBAU-XML, XYZ/CSV, GeoJSON, OBJ/STL → Kommandos der Zeichenwerkzeuge (`<rezept>-zeichnen`), kein eigener Schreibweg. Tafel rechts unter „Notizen“.
 - `data/` — erzeugt, von Hand nur `fachbereiche.js`.
 - `test/` — Vitest; echte Modelle `BIM26_*.ifc` und `IFCOUT_*.IFC` liegen hier.
 

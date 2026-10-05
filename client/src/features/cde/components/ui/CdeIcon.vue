@@ -50,6 +50,8 @@ import {
   House, ChevronsUp, Anchor, Sofa, Fence, Grid2x2, Cog, Droplets,
   // Kopfleiste und Reiterleisten (Kassensturz H1)
   Ellipsis, ExternalLink, Wrench, FileOutput, SunMoon,
+  // BIMFY: Geometrie wird Bauteil
+  WandSparkles,
 } from 'lucide-vue-next';
 
 const ICONS = {
@@ -173,6 +175,7 @@ const ICONS = {
   'overview':     Map,
   'vector':       PenTool,
   'bim':          HardHat,
+  'bimfy':        WandSparkles,
 
   // ── Ampel (IDS-Prüfung, Statuszeilen) ──
   // Eigene Namen statt farbiger Kreis-Emoji: die Farbe kommt aus der CSS-Klasse,
@@ -224,7 +227,7 @@ defineExpose({ has: (n) => n in ICONS });
 <script>
 export const ICON_NAMES = [
   // Kopfleiste und Reiterleisten (Kassensturz H1)
-  'mehr', 'extern', 'werkzeuge', 'ausgeben', 'farbmodus',
+  'mehr', 'extern', 'werkzeuge', 'ausgeben', 'farbmodus', 'bimfy',
   'fit', 'view-top', 'view-front', 'view-side', 'view-reset',
   'layers', 'section', 'coords', 'measure', 'views', 'issues', 'help',
   'search', 'command', 'zoom-to', 'isolate', 'visible', 'hidden', 'locate',
