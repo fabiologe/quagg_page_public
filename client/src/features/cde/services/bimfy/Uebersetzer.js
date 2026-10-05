@@ -106,7 +106,11 @@ export const KASTENSCHACHT_WAHL = Object.freeze({
 export const KUNSTSTOFFSCHACHT_WAHL = Object.freeze({
     id: 'vorlage:kunststoffschacht', titel: 'Kunststoffschacht (Teil für Teil)', kategorieVorgabe: 'IFCDISTRIBUTIONCHAMBERELEMENT',
 });
-const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL, KUNSTSTOFFSCHACHT_WAHL];
+/** DER STRASSENABLAUF ALS WAHL (BIMFY I12): der Gully, Teil für Teil. */
+export const STRASSENABLAUF_WAHL = Object.freeze({
+    id: 'vorlage:strassenablauf', titel: 'Straßenablauf (Teil für Teil)', kategorieVorgabe: 'IFCWASTETERMINAL',
+});
+const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL, KUNSTSTOFFSCHACHT_WAHL, STRASSENABLAUF_WAHL];
 /** Die Vorlage, deren Kette das Muster einer Geometrie gerechnet hat — oder null. Eine Stelle für alle (I11). */
 const _vorlageVon = (geo) => {
     const id = geo?.isybau && geo?.muster?.kopf?.vorlage;
@@ -292,6 +296,7 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
     if (wahl?.rezept === NORMSCHACHT_WAHL.id) return normschachtKommando(geo, wahl, { versatz, umrechnen });
     if (wahl?.rezept === KASTENSCHACHT_WAHL.id) return kastenschachtKommando(geo, wahl, { versatz, umrechnen });
     if (wahl?.rezept === KUNSTSTOFFSCHACHT_WAHL.id) return kunststoffschachtKommando(geo, wahl, { versatz, umrechnen });
+    if (wahl?.rezept === STRASSENABLAUF_WAHL.id) return strassenablaufKommando(geo, wahl, { versatz, umrechnen });
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -567,5 +572,16 @@ export function kunststoffschachtKommando(geo, wahl = {}, { versatz = null, umre
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', tiefe: k.tiefe, di: k.di,
                  deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')) },
+    };
+}
+
+/** Das Kommando „Straßenablauf aus Vorlage" (I12): die Ablaufmitte auf der Sohle, Tiefe und Schlammart aus der Kette. */
+export function strassenablaufKommando(geo, wahl = {}, { versatz = null, umrechnen = null } = {}) {
+    if (_vorlageVon(geo) !== STRASSENABLAUF_WAHL) return { fehler: 'Für diesen Knoten hat das Regelwerk keinen Straßenablauf gerechnet' };
+    const k = geo.muster.kopf;
+    return {
+        werkzeug: 'bauwerk-aus-vorlage-strassenablauf',
+        eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
+        werte: { name: wahl.name || geo.name || 'Straßenablauf', hoehe: '', tiefe: k.tiefe, schlamm: k.schlamm === 'nass' ? 2 : 1, richtung: 0 },
     };
 }

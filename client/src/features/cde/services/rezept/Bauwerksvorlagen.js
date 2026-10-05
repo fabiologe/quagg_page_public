@@ -20,6 +20,7 @@ import { normschacht } from '../bimfy/muster/Normschacht.js';
 import { KASTEN_ANNAHMEN, KASTEN_BEGEHBAR_M, kastenschacht } from '../bimfy/muster/Kastenschacht.js';
 import { RING_WANDDICKE } from '../bimfy/muster/Normwerte.js';
 import { kunststoffschacht, kunststoffWand } from '../bimfy/muster/Kunststoffschacht.js';
+import { ABLAUF_ANNAHMEN, strassenablauf } from '../bimfy/muster/Strassenablauf.js';
 
 /** Welche Bauplanfelder eine Vorlage an einem Teil SETZT — der Rest bleibt beim Neuauswerten. */
 const RING_GESTEUERT = Object.freeze(['punkte', 'aussen', 'innen', 'aussenOben', 'innenOben', 'boden', 'deckel',
@@ -434,9 +435,59 @@ const KUNSTSTOFFSCHACHT = Object.freeze({
     },
 });
 
+/**
+ * DER STRASSENABLAUF (BIMFY I12): Aufsatz, Auflagering, Schaft, Boden mit
+ * Ablauf — Trockenschlamm mit Eimer oder Nassschlamm mit Schlammfang (REwS
+ * 2021, 5.6.3). Ein IfcWasteTerminal GULLYSUMP, seine Teile zerlegen ihn.
+ */
+const STRASSENABLAUF = Object.freeze({
+    id: 'strassenablauf',
+    titel: 'Straßenablauf',
+    ort: Object.freeze({ punkt: 'Ablaufmitte', hoehe: 'Sohle des Ablaufs' }),
+    felder: Object.freeze([
+        zahl('tiefe', 'Tiefe (Oberkante Aufsatz über der Ablaufsohle)', 1.25, { min: 0.4, max: 4 }),
+        wahl('schlamm', 'Schlamm (1 = trocken mit Eimer, 2 = nass mit Schlammfang)', 1, { min: 1, max: 2 }),
+        wahl('richtung', 'Richtung des Aufsatzes (Grad, 0 = Ost)', 0),
+    ]),
+    bauwerk: { name: 'Straßenablauf', art: 'ablauf' },
+    knotenRadius() {
+        return ABLAUF_ANNAHMEN.di.wert / 2 + ABLAUF_ANNAHMEN.wand.wert;
+    },
+    pruefe(w) {
+        return this.kette(w, 0).kopf ? null : 'Zu flach für einen Straßenablauf.';
+    },
+    kette(w, sohle = 0) {
+        return strassenablauf({ name: 'Ablauf', ort: { ost: 0, nord: 0 }, sohle, deckel: sohle + w.tiefe,
+                                schlamm: Math.round(w.schlamm) === 2 ? 'nass' : 'trocken' }, { quelle: 'vorlage' });
+    },
+    rollen(w, ort) {
+        const { teile, kopf } = this.kette(w, ort.y);
+        if (!kopf) return [];
+        const r = grad(w.richtung);
+        const aus = [];
+        const teil = (rolle, rezept, name, t, parameter) => aus.push({ rolle, rezept, name, parameter: { ...parameter, herleitung: t.herleitung } });
+        const achse = (t) => [welt(0, t.unten, 0), welt(0, t.oben, 0)];
+        for (const t of teile) {
+            if (t.rolle === 'boden') {
+                teil('boden', 'schachtunterteil', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, boden: t.boden, objektTyp: 'Ablaufboden' });
+            } else if (t.rolle === 'schaft') {
+                teil('schaft', 'schachtring', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, objektTyp: 'Ablaufschaft' });
+            } else if (t.rolle === 'auflagering') {
+                teil('auflagering1', 'auflagering', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen });
+            } else if (t.rolle === 'aufsatz') {
+                teil('aufsatz', 'kastenabdeckung', t.name, t, { punkte: [...achse(t), inRichtung(r, 1, t.unten)], laenge: t.laenge, breite: t.breite,
+                                                                 wand: t.wand, deckel: t.oben - t.unten, objektTyp: 'Aufsatz Straßenablauf' });
+            } else if (t.rolle === 'eimer') {
+                teil('eimer', 'schachtunterteil', t.name, t, { punkte: achse(t), aussen: t.dAussen, innen: t.dInnen, boden: t.boden, objektTyp: 'Schlammeimer' });
+            }
+        }
+        return aus.map(a => ({ ...a, kategorie: null }));
+    },
+});
+
 export const BAUWERKSVORLAGEN = Object.freeze({ [RECHTECKKAMMER.id]: RECHTECKKAMMER, [ZWEIKAMMER_RUEB.id]: ZWEIKAMMER_RUEB,
                                                 [NORMSCHACHT.id]: NORMSCHACHT, [KASTENSCHACHT.id]: KASTENSCHACHT,
-                                                [KUNSTSTOFFSCHACHT.id]: KUNSTSTOFFSCHACHT });
+                                                [KUNSTSTOFFSCHACHT.id]: KUNSTSTOFFSCHACHT, [STRASSENABLAUF.id]: STRASSENABLAUF });
 
 /** Was an diesen Werten nicht baubar ist — oder null. Jede Vorlage darf es sagen (`pruefe`). */
 export function vorlageGrund(vorlage, w) {

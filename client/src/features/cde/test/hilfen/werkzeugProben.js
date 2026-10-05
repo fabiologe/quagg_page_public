@@ -200,6 +200,9 @@ const NEU = [
     // BIMFY I11: der Kunststoffschacht — DI 0,8 m, 1,2 m tief.
     { id: 'bauwerk-aus-vorlage-kunststoffschacht', el: zug(P(750, 100, 0)), zug: [P(750, 100, 0)],
       werte: [{ name: 'GA1', hoehe: '', tiefe: 1.2, di: 0.8, deckelklasse: 0 }] },
+    // BIMFY I12: der Straßenablauf — 1,25 m, Trockenschlamm.
+    { id: 'bauwerk-aus-vorlage-strassenablauf', el: zug(P(760, 100, 0)), zug: [P(760, 100, 0)],
+      werte: [{ name: 'SE1', hoehe: '', tiefe: 1.25, schlamm: 1, richtung: 0 }] },
     // BIMFY I10: Anschlusspunkt und Sonderbauwerk.
     { id: 'anschlusspunkt-zeichnen', el: zug(P(800, 100, 0), P(800, 100.15, 0)), zug: [P(800, 100, 0), P(800, 100.15, 0)],
       werte: [{ name: 'A1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' }] },

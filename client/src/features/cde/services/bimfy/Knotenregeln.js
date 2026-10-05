@@ -13,7 +13,7 @@
  * `beispiel`, an dem sie greift (der Wächter in `bimfyKnotenregeln.test.js`
  * prüft jedes). Zahlen, die man drehen will, stehen in `KNOTEN_VORGABEN`.
  *
- * Bauarten: normschacht, kastenschacht, kunststoffschacht (Vorlagen),
+ * Bauarten: normschacht, kastenschacht, kunststoffschacht, strassenablauf (Vorlagen),
  * formstueck (Rezept anschlusspunkt), huelle (Rezept sonderbauwerk),
  * sonderform (Rezept schacht), auslassen (nichts baubar — gemeldet).
  *
@@ -22,6 +22,7 @@
 import { normschacht } from './muster/Normschacht.js';
 import { kastenschacht } from './muster/Kastenschacht.js';
 import { KONUS_AB_TIEFE, kunststoffschacht } from './muster/Kunststoffschacht.js';
+import { strassenablauf } from './muster/Strassenablauf.js';
 import { herleitung as H } from './muster/Herleitung.js';
 import { B, GRUNDSTUECK_SCHACHT } from './muster/Normwerte.js';
 
@@ -35,6 +36,8 @@ export const KNOTEN_VORGABEN = Object.freeze({
     gaTiefeOhneGelaende: Object.freeze({ wert: 1.0, text: 'kein Geländepunkt (GOK) — Tiefe 1,0 m angenommen' }),
     gaTiefeMin: Object.freeze({ wert: 0.3, text: 'flacher als 0,3 m ist kein Schacht — ein Formstück' }),
     gaInspektionDi: Object.freeze({ wert: 0.4, text: 'flacher als die Konustiefe: nicht besteigbare Inspektionsöffnung DN/ID 400 (DIN 1986-100, Tab. 3: 400 bis < 800 mm bis 3,0 m)' }),
+    strassenablaufFuer: Object.freeze({ wert: Object.freeze(['SE']), text: 'Punktkennungen, an denen ein Straßenablauf sitzt' }),
+    seTiefeOhneGelaende: Object.freeze({ wert: 1.25, text: 'Straßenablauf ohne Oberkante — Tiefe 1,25 m angenommen (normale Bauform)' }),
     gaTiefeMax: Object.freeze({ wert: 6, text: 'tiefer als 6 m ist an einem Gebäudeanschluss unplausibel' }),
 });
 
@@ -169,8 +172,28 @@ export const KNOTENREGELN = Object.freeze([
         },
     },
     {
-        id: 'ap-formstueck', fuer: 'anschlusspunkt', titel: 'Alle anderen (RR, SE, ER …) → Formstück ENTRY',
-        beispiel: { ...GA_BEISPIEL, punktkennung: 'SE' },
+        id: 'se-ohne-gelaende', fuer: 'anschlusspunkt', titel: 'Straßenablauf ohne Oberkante → Tiefe aus der Vorgabe',
+        beispiel: { ...GA_BEISPIEL, punktkennung: 'SE', gelaende: null },
+        versuche: (a) => {
+            if (_fin(a.gelaende) || !V('strassenablaufFuer').includes(a.punktkennung)) return null;
+            return { korrektur: { ...a, gelaende: _r3(a.sohle + V('seTiefeOhneGelaende')), gelaendeAngenommen: true },
+                     befund: befund('ohne_gelaende', `„${a.name}": ${KNOTEN_VORGABEN.seTiefeOhneGelaende.text}.`) };
+        },
+    },
+    {
+        id: 'se-strassenablauf', fuer: 'anschlusspunkt', titel: 'Straßenablauf (SE) → Gully nach REwS 5.6.3',
+        beispiel: { ...GA_BEISPIEL, punktkennung: 'SE', gelaende: 102.45 },
+        versuche: (a) => {
+            if (!V('strassenablaufFuer').includes(a.punktkennung) || !_fin(a.gelaende)) return null;
+            const m = strassenablauf({ name: a.name, ort: a.ort, sohle: a.sohle, deckel: a.gelaende,
+                                       herkunft: { deckel: a.gelaendeAngenommen ? H('annahme', KNOTEN_VORGABEN.seTiefeOhneGelaende.text) : H('isybau', 'Oberkante (GOK)') } });
+            if (!m.kopf) return { befunde: m.befunde };
+            return { bauart: 'strassenablauf', muster: m, grund: 'Straßenablauf: Aufsatz, Auflagering, Schaft, Boden (REwS 2021, 5.6.3)' };
+        },
+    },
+    {
+        id: 'ap-formstueck', fuer: 'anschlusspunkt', titel: 'Alle anderen (RR, ER …) → Formstück ENTRY',
+        beispiel: { ...GA_BEISPIEL, punktkennung: 'RR' },
         versuche: (a) => ({ bauart: 'formstueck', predefinedType: 'ENTRY', grund: `Anschlusspunkt ${a.punktkennung ?? ''}: Wasser tritt ins Netz (AH15, Tab. A-1-2)`.trim() }),
     },
 

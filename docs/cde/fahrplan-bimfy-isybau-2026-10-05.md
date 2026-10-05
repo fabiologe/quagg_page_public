@@ -280,6 +280,19 @@ erweiterbar, damit wir alle möglichen komischen Fehleinträge abfangen können.
 | Anschluss abweichend | 23 | 23 (Sonderform‑Schächte) |
 | Prüftor offen | 0 | 0 |
 
+### I12 · Straßenablauf (gebaut)
+
+Aufbau nach REwS 2021, 5.6.3: Aufsatz, Auflagering, Schaft, Boden mit Ablauf; Trockenschlamm mit
+Eimer (600 mm, niedrige Bauform 250 mm, 5.6.3.2) oder Nassschlamm mit Schlammfang.
+Masse der Betonteile angenommen (DIN 4052 nicht im Bestand): DI 450, Wand 75 mm, Aufsatz
+500 × 500 × 160 mm, Schlammfang 0,5 m.
+
+1. **Schreiber** (`backend/app/ifc/eigenbau.py`): Bauwerksart `ablauf` → IfcWasteTerminal
+   GULLYSUMP, die Teile zerlegen ihn (wie beim Schacht). Test `test_strassenablauf_im_ifc` mit dem
+   Vertrags‑Fixture `paket_strassenablauf.json` aus `bimfyStrassenablauf.test.js`.
+2. **Regeln** `se-ohne-gelaende` (Tiefe 1,25 m angenommen) und `se-strassenablauf`; zu flach → Formstück.
+3. Die echte Datei hat keine SE — gemessen ist am Vertrag und an den Tests.
+
 ### Offen nach I8
 
 1. ~~Netzknoten des Normschachts~~ — gebaut (I9b). ~~Anschlusspunkte und Bauwerke~~ — gebaut (I10).

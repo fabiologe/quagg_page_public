@@ -965,3 +965,36 @@ def test_normschacht_im_ifc(normschacht):
     assert m["AccessCoverLoadRating"] == ("D 400", "IfcText")
     ring = next(t for t in zerlegt.RelatedObjects if t.ObjectType == "Schachtring")
     assert _saetze(ring)["Quagg_CDE"]["Herleitung"][0].startswith("hoehe: norm — Regelbauhöhe 1000 mm (DIN 4034-1:2020-04")
+
+
+STRASSENABLAUF = DATEN / "paket_strassenablauf.json"
+
+
+@pytest.fixture(scope="module")
+def strassenablauf(tmp_path_factory):
+    from app.ifc.pruefe import pruefe
+    paket = json.loads(STRASSENABLAUF.read_text(encoding="utf-8"))
+    ziel = tmp_path_factory.mktemp("strassenablauf") / "strassenablauf.ifc"
+    bericht = baue_datei(paket, ziel, schluessel="strassenablauf")
+    return {"ziel": ziel, "bericht": bericht, "pruefung": pruefe(ziel, ids=[IDS])}
+
+
+def test_strassenablauf_im_ifc(strassenablauf):
+    """Das Paket aus `bimfyStrassenablauf.test.js` (BIMFY I12): ein Strassenablauf aus der
+    Vorlage. Er ist IfcWasteTerminal/GULLYSUMP und das GANZE seiner fuenf Teile
+    (IfcRelAggregates); er selbst steht in der Site. Prueftor ohne offenen Befund."""
+    from app.ifc.pruefe import offen
+    b = strassenablauf["bericht"]
+    assert b["bauteile"] == 5 and b["uebersprungen"] == []
+    assert [w for w in b["warnungen"] if "nicht geschrieben" in w or "unbekannt" in w] == []
+    assert [x for x in strassenablauf["pruefung"]["befunde"] if offen(x)] == []
+    datei = ifcopenshell.open(str(strassenablauf["ziel"]))
+    (ablauf,) = datei.by_type("IfcWasteTerminal")
+    assert (ablauf.PredefinedType, ablauf.Name) == ("GULLYSUMP", "SE1")
+    (zerlegt,) = ablauf.IsDecomposedBy
+    teile = sorted((t.is_a(), t.ObjectType) for t in zerlegt.RelatedObjects)
+    assert teile == sorted([("IfcBuildingElementPart", "Ablaufboden"), ("IfcBuildingElementPart", "Ablaufschaft"),
+                            ("IfcBuildingElementPart", "Auflagering"), ("IfcBuildingElementPart", "Schlammeimer"),
+                            ("IfcDiscreteAccessory", "Aufsatz Straßenablauf")])
+    assert all(not t.ContainedInStructure for t in zerlegt.RelatedObjects)
+    assert ablauf.ContainedInStructure and ablauf.ContainedInStructure[0].RelatingStructure.is_a("IfcSite")

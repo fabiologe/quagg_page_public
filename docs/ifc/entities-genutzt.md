@@ -121,7 +121,7 @@ classDiagram
   style IfcWindow fill:#dcedc8,stroke:#558b2f
 ```
 
-### IfcDistributionElement — 14 genutzt
+### IfcDistributionElement — 16 genutzt
 
 ```mermaid
 classDiagram
@@ -138,11 +138,13 @@ classDiagram
   IfcDistributionFlowElement <|-- IfcFlowTreatmentDevice
   IfcFlowController <|-- IfcElectricDistributionPoint
   IfcFlowController <|-- IfcValve
+  IfcFlowFitting <|-- IfcPipeFitting
   IfcFlowMovingDevice <|-- IfcPump
   IfcFlowSegment <|-- IfcCableCarrierSegment
   IfcFlowSegment <|-- IfcPipeSegment
   IfcFlowStorageDevice <|-- IfcTank
   IfcFlowTerminal <|-- IfcSignal
+  IfcFlowTerminal <|-- IfcWasteTerminal
   IfcFlowTreatmentDevice <|-- IfcFilter
   style IfcCableCarrierSegment fill:#dcedc8,stroke:#558b2f
   style IfcDistributionChamberElement fill:#dcedc8,stroke:#558b2f
@@ -153,11 +155,13 @@ classDiagram
   style IfcFlowFitting fill:#dcedc8,stroke:#558b2f
   style IfcFlowSegment fill:#dcedc8,stroke:#558b2f
   style IfcFlowTreatmentDevice fill:#dcedc8,stroke:#558b2f
+  style IfcPipeFitting fill:#dcedc8,stroke:#558b2f
   style IfcPipeSegment fill:#dcedc8,stroke:#558b2f
   style IfcPump fill:#dcedc8,stroke:#558b2f
   style IfcSignal fill:#dcedc8,stroke:#558b2f
   style IfcTank fill:#dcedc8,stroke:#558b2f
   style IfcValve fill:#dcedc8,stroke:#558b2f
+  style IfcWasteTerminal fill:#dcedc8,stroke:#558b2f
 ```
 
 ### IfcElementComponent — 7 genutzt
@@ -353,6 +357,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcNavigationElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcNavigationElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPavement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPavement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPile](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPile.htm) | Typprofile | nein | IFC4X3_ADD2 |
+| [IfcPipeFitting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeFitting.htm) | Bauteilrezepte | nein | IFC4X3_ADD2 |
 | [IfcPipeSegment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeSegment.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPlate](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPlate.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcProduct](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcProduct.htm) | Verbund | ja | IFC4X3_ADD2 |
@@ -394,6 +399,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcValve](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcValve.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcVirtualElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcVirtualElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWall.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
+| [IfcWasteTerminal](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWasteTerminal.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcWindow](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWindow.htm) | Typprofile | nein | IFC4X3_ADD2 |
 
 ## Ressourcen (nicht unter IfcRoot)

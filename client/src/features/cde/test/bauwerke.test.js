@@ -231,7 +231,7 @@ describe('Z5d — ein Bauwerk ist ein Behälter ohne Körper (E18)', () => {
         expect(istBehaelter(BW)).toBe(true);
         expect(istBehaelter({ rezept: 'platte' })).toBe(false);
         // BIMFY I4: der Schacht ist ein Ganzes aus Teilen — dieselbe Behälter-Mechanik.
-        expect(Object.keys(BAUWERKSARTEN)).toEqual(['anlage', 'baugruppe', 'schacht']);
+        expect(Object.keys(BAUWERKSARTEN)).toEqual(['anlage', 'baugruppe', 'schacht', 'ablauf']);   // I12: der Straßenablauf
     });
     it('die Bauplanprüfung kennt nur die Art — keine Punkte, keine Bauteilklasse', () => {
         expect(pruefeBauplan(BW)).toEqual([]);

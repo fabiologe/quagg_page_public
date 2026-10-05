@@ -76,10 +76,10 @@ describe('Fehleinträge, wie die echte Datei sie hat', () => {
         expect(e.muster.kopf.tiefe).toBe(1);
     });
 
-    it('zu flach für einen Schacht → Formstück ENTRY; ein AP → JUNCTION; ein Straßenablauf → ENTRY', () => {
+    it('zu flach für einen Schacht → Formstück ENTRY; ein AP → JUNCTION; ein Regenfallrohr → ENTRY', () => {
         expect(ordneKnoten({ ...GA, gelaende: 101.35 })).toMatchObject({ bauart: 'formstueck', predefinedType: 'ENTRY', regel: 'ga-zu-flach' });
         expect(ordneKnoten({ ...GA, punktkennung: 'AP' })).toMatchObject({ bauart: 'formstueck', predefinedType: 'JUNCTION' });
-        expect(ordneKnoten({ ...GA, punktkennung: 'SE' })).toMatchObject({ bauart: 'formstueck', predefinedType: 'ENTRY', regel: 'ap-formstueck' });
+        expect(ordneKnoten({ ...GA, punktkennung: 'RR' })).toMatchObject({ bauart: 'formstueck', predefinedType: 'ENTRY', regel: 'ap-formstueck' });
     });
 
     it('ohne Sohle: nichts zu bauen, eine Warnung', () => {

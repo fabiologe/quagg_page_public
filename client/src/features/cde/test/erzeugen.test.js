@@ -87,6 +87,8 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       'bauwerk-aus-vorlage-kastenschacht',
                       // BIMFY I11: der Kunststoffschacht am Gebäudeanschluss.
                       'bauwerk-aus-vorlage-kunststoffschacht',
+                      // BIMFY I12: der Straßenablauf.
+                      'bauwerk-aus-vorlage-strassenablauf',
                       // V5: die Einbauten — aus den vorhandenen Bausteinen.
                       'rechen-zeichnen', 'drossel-zeichnen', 'tauchwand-zeichnen', 'sauberkeitsschicht-zeichnen', 'bettung-zeichnen',
                       // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.

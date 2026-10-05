@@ -14,6 +14,7 @@ const beleg = (norm, stelle, pruefen = false) => Object.freeze({ norm, stelle, .
 
 export const B = Object.freeze({
     ring: beleg('DIN 4034-1:2020-04', '4.3.3.8.4'),
+    strassenablauf: beleg('REwS 2021', '5.6.3 (Unterteile für Straßenabläufe)'),
     grundstueckSchacht: beleg('DIN 1986-100:2016-12', 'Tabelle 3 (Einsteigschächte und Inspektionsöffnungen)'),
     ringStoss: beleg('DIN V 4034-1:2004-08', 'Tabelle 5 (Schachtring mit Muffe SR-M)'),
     ringWand: beleg('DIN 4034-1:2020-04', 'Tabelle 10'),

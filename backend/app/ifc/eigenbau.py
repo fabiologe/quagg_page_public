@@ -475,12 +475,18 @@ def _quellen_json(b: dict) -> str | None:
 # Teil zu seinem Bauwerk hat, ist SCHEMAWISSEN und steht deshalb hier, nicht im
 # Client: in einer Anlage (Raumelement) wird ein Teil ENTHALTEN, in einer
 # Baugruppe (Element) wird es ZERLEGT. Beides zugleich zaehlte es doppelt.
-BAUWERKSARTEN = ("anlage", "baugruppe", "schacht")
+BAUWERKSARTEN = ("anlage", "baugruppe", "schacht", "ablauf")
 # DER SCHACHT (BIMFY I5): ein Element wie die Baugruppe — seine Teile werden
 # ZERLEGT, er selbst wird eingeordnet —, aber als IfcDistributionChamberElement
 # MANHOLE: nur dort gelten Pset_DistributionChamberElementTypeManhole und das Qto.
 # Die ElementAssembly kennt keinen Schacht (IFC4X3_ADD2, nachgesehen).
 SCHACHTKLASSE = ("IfcDistributionChamberElement", "MANHOLE")
+# DER STRASSENABLAUF (BIMFY I12): wie der Schacht ein Element, dessen Teile ihn
+# ZERLEGEN — aber ein Endgeraet der Entwaesserung: IfcWasteTerminal GULLYSUMP
+# (Ablauf mit Schlammraum; IFC4X3_ADD2, IfcWasteTerminalTypeEnum, nachgesehen).
+ABLAUFKLASSE = ("IfcWasteTerminal", "GULLYSUMP")
+# Je Bauwerksart, die selbst ein Element mit PredefinedType ist: (Klasse, Typ).
+ELEMENT_BAUWERKE = {"schacht": SCHACHTKLASSE, "ablauf": ABLAUFKLASSE}
 # DER RAUM (Teil XXVI, Z6): das einzige Raumelement, das als Paket-Bauteil kommt —
 # es hat einen Koerper (den Hohlraum) und Mengen (das Speichervolumen). Es wird
 # ZERLEGT unter seiner Anlage oder der Site (WR41), nie enthalten (WR31). Alle
@@ -508,6 +514,7 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
                                   sie selbst wird spaeter wie ein Bauteil eingeordnet
       schacht                  -> IfcDistributionChamberElement/MANHOLE, sonst wie die
                                   Baugruppe; `merkmale` (bSI) gegen seine Vorlagen geprueft
+      ablauf                   -> IfcWasteTerminal/GULLYSUMP, wie der Schacht
 
     Eltern vor Kindern; eine unbekannte Elternkennung, ein Kreis oder eine Anlage
     in einer Baugruppe werden GENANNT und das Bauwerk an die Site gehaengt — nie
@@ -549,9 +556,9 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
         bezug = (eltern["inst"] if eltern else site).ObjectPlacement
         attrs = dict(GlobalId=guids.guid_aus_cde_id(cid), OwnerHistory=besitz, Name=w.get("name") or None,
                      ObjectPlacement=_platz(f, bezug))
-        if w["art"] == "schacht":
-            inst = f.create_entity(SCHACHTKLASSE[0], **attrs, PredefinedType=SCHACHTKLASSE[1],
-                                   ObjectType=w.get("objectType") or None)
+        if w["art"] in ELEMENT_BAUWERKE:
+            klasse, typ = ELEMENT_BAUWERKE[w["art"]]
+            inst = f.create_entity(klasse, **attrs, PredefinedType=typ, ObjectType=w.get("objectType") or None)
             rolle = "baugruppe"
         elif w["art"] == "baugruppe":
             inst = f.create_entity("IfcElementAssembly", **attrs, PredefinedType="USERDEFINED",
@@ -577,9 +584,9 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
                   schluessel=f"{satz}|{cid}")
         if w.get("klassifikation") is not None:
             _klassifizieren(f, besitz, inst, w.get("klassifikation"), f"{satz}|{cid}", klassen, warnungen, cid)
-        if w["art"] == "schacht" and w.get("merkmale"):
-            _bsi_merkmale(f, besitz, inst, SCHACHTKLASSE[0], SCHACHTKLASSE[1], w.get("merkmale"),
-                          f"{satz}|{cid}", warnungen, cid)
+        if w["art"] in ELEMENT_BAUWERKE and w.get("merkmale"):
+            klasse, typ = ELEMENT_BAUWERKE[w["art"]]
+            _bsi_merkmale(f, besitz, inst, klasse, typ, w.get("merkmale"), f"{satz}|{cid}", warnungen, cid)
         behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None}
         return behaelter[cid]
 

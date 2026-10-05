@@ -682,14 +682,14 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         expect(l1.werte.herleitung ?? '').not.toMatch(/verlängert/);
     });
 
-    it('an einem Formstück (Straßenablauf, kein Körper) wird die Fuge geschlossen — die Höhe bleibt, die Herleitung sagt es', () => {
-        const text = datei(apXml({ name: 'SE1', kennung: 'SE', gok: null }), schachtXml({ ost: 0, nord: 0 }),
-            leitungXml({ name: 'L1', von: 'SE1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 29.72], ende: [0, 0.5] }));
+    it('an einem Formstück (Regenfallrohr, kein Körper) wird die Fuge geschlossen — die Höhe bleibt, die Herleitung sagt es', () => {
+        const text = datei(apXml({ name: 'RR1', kennung: 'RR', gok: null }), schachtXml({ ost: 0, nord: 0 }),
+            leitungXml({ name: 'L1', von: 'RR1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 29.72], ende: [0, 0.5] }));
         const { kommandos } = kommandosFuer(gruppiere(liesIsybau(text).geometrien));
         const l1 = kommandos.find(x => x.geo.name === 'L1').kommando;
-        expect(kommandos.find(x => x.geo.name === 'SE1').kommando.werte.predefinedType).toBe('ENTRY');
+        expect(kommandos.find(x => x.geo.name === 'RR1').kommando.werte.predefinedType).toBe('ENTRY');
         expect(l1.eingaben.zug[0]).toMatchObject({ ost: 0, nord: 30, hoehe: 101.2 });      // vorher: nord 29,72
         expect(l1.eingaben.zug.at(-1)).toMatchObject({ nord: 0.5 });                       // am Schacht bleibt sie an der Innenwand
-        expect(l1.werte.herleitung).toMatch(/Anfang um 0,28 m bis SE1 verlängert/);
+        expect(l1.werte.herleitung).toMatch(/Anfang um 0,28 m bis RR1 verlängert/);
     });
 });

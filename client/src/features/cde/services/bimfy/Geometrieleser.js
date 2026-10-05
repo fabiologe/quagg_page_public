@@ -504,7 +504,7 @@ export function liesIsybau(text) {
                          bauart: e.bauart, regel: { id: e.regel, grund: e.grund, berichtigt: e.berichtigt },
                          muster: e.muster ?? { teile: [], befunde: e.befunde, kopf: null },
                          ...(e.predefinedType ? { predefinedType: e.predefinedType } : {}) };
-        if (e.bauart === 'kunststoffschacht') {
+        if (e.bauart === 'kunststoffschacht' || e.bauart === 'strassenablauf') {
             const k = e.muster.kopf;
             geometrien.push({ art: 'zug', punkte: [{ ...a.ort, hoehe: k.sohle }, { ...a.ort, hoehe: k.deckel }], durchmesser: k.di, ...gemein });
         } else if (e.bauart === 'formstueck') {
@@ -532,7 +532,7 @@ export function liesIsybau(text) {
  */
 /** Der Zusatz der Ebene je Bauart — so trennt die Gruppierung, was verschieden gebaut wird. */
 const ZUSATZ = Object.freeze({
-    kastenschacht: ' (rechteckig)', sonderform: ' (Sonderform)', kunststoffschacht: ' (Kunststoffschacht)',
+    kastenschacht: ' (rechteckig)', sonderform: ' (Sonderform)', kunststoffschacht: ' (Kunststoffschacht)', strassenablauf: ' (Straßenablauf)',
 });
 
 function _isyEbene(art, status, zusatz = '') {

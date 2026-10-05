@@ -361,6 +361,8 @@ export const BAUWERKSARTEN = Object.freeze({
     // BIMFY I4: der Schacht ist selbst das Ganze — seine Teile zerlegen ihn (IfcRelAggregates).
     // BIMFY I9: … und ein KNOTEN im Netz — an seiner Sohle in der Schachtmitte.
     schacht: Object.freeze({ titel: 'Schacht', text: 'ein Schacht aus Fertigteilen (IfcDistributionChamberElement, MANHOLE)', netzknoten: true }),
+    // BIMFY I12: der Straßenablauf — ein Endgerät der Entwässerung, ebenfalls ein Knoten.
+    ablauf: Object.freeze({ titel: 'Straßenablauf', text: 'ein Straßenablauf aus Teilen (IfcWasteTerminal, GULLYSUMP)', netzknoten: true }),
 });
 
 const BAUWERK_REZEPT = Object.freeze({
