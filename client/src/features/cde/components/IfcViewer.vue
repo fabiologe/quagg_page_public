@@ -2932,6 +2932,9 @@ async function _onModelLoaded({ nachspielen: mitNachspielen = true } = {}) {
   // Sie stand bis 2026-09-03 nur hier, und das Entladen liess deshalb den
   // halben Zustand des verschwundenen Modells stehen.
   await _modellmengeNachziehen();
+  // DER ERSTE SCHRITT (Teil XXX, B6): mit einem Modell steht die Palette offen — vorher war die Tafel „Bauteil" zu und
+  // das erste Werkzeug kostete einen Klick auf die rechte Leiste. Eine Tafel, die der Nutzer rechts gewählt hat, bleibt.
+  if (!panels.aktivRechts) panels.open('bauteil');
 
   // T2.4: Load persisted annotations for this model + redraw any visuals.
   // Schlüssel ist die stabile Modell-Identität (IfcProject.GlobalId bzw.

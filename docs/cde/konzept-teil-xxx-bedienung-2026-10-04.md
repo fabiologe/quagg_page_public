@@ -270,3 +270,11 @@ bei einer Ortsgeste heisst jetzt „einen Ort auf Gelände oder Bauteil antippen
 demselben Punkt; ein relativer Weg gehört zum Griff (Gizmo) und kommt mit B5/B7. Gegenproben: ohne `mehrfach` an „Löschen"
 und ohne den Ergänzen-Zweig im Auswahl-Handler — rot.
 
+### B6 — Der erste Schritt (2026-10-04)
+
+Mit einem geladenen Modell steht die Tafel „Bauteil" offen (wenn rechts keine andere Tafel gewählt ist) — die Palette ist
+sofort zu sehen. Messlauf: Klicks bis zur Palette **1 → 0**. Nicht gebaut, mit Grund: das Einpassen der Kamera (sie passt
+nach dem Laden schon ein — `zoomToFit` über die geladenen Modelle, das Modell wirkt nur durch den 1,5-fachen Abstand klein)
+und der Leitfaden-Satz (die Karte sagt beim Zeichnen schon „Punkte ins Gelände setzen — Enter schliesst ab, Esc bricht
+ab"). Die verdeckte Fläche beim Start steigt 4,3 → 5,2 %: dieselben Leisten auf einer schmaleren Zeichenfläche.
+
