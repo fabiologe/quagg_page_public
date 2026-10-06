@@ -366,6 +366,12 @@ export const BAUWERKSARTEN = Object.freeze({
     // BIMFY I12: der Straßenablauf — ein Endgerät der Entwässerung, ebenfalls ein Knoten.
     ablauf: Object.freeze({ titel: 'Straßenablauf', text: 'ein Straßenablauf aus Teilen (IfcWasteTerminal, GULLYSUMP)', netzknoten: true,
                             klasse: 'IFCWASTETERMINAL' }),
+    // OHNE KÖRPER (Fahrplan Sachdaten, Fabio 2026-10-06): ein Netzobjekt, dessen Lage oder Höhe die
+    // Quelle nicht nennt. Ein Element ohne Geometrie — seine Sachdaten am richtigen Objekt, nichts erfunden.
+    anschluss: Object.freeze({ titel: 'Anschlusspunkt ohne Körper', text: 'Lage oder Höhe fehlt in der Quelle (IfcPipeFitting, ohne Geometrie)',
+                               klasse: 'IFCPIPEFITTING', ohneKoerper: true }),
+    leitung: Object.freeze({ titel: 'Leitung ohne Körper', text: 'Lage fehlt in der Quelle (IfcPipeSegment, ohne Geometrie)',
+                             klasse: 'IFCPIPESEGMENT', ohneKoerper: true }),
 });
 
 const BAUWERK_REZEPT = Object.freeze({

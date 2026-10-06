@@ -1053,3 +1053,30 @@ def test_strassenablauf_bsi_aus_sachdaten(strassenablauf):
     assert status.is_a("IfcPropertyEnumeratedValue")
     assert [v.wrappedValue for v in status.EnumerationValues] == ["EXISTING"]
     assert "DEMOLISH" in [v.wrappedValue for v in status.EnumerationReference.EnumerationValues]
+
+
+def test_element_ohne_koerper(tmp_path):
+    """Fahrplan Sachdaten (Fabio 2026-10-06): ein Anschlusspunkt ohne Sohle, eine Leitung
+    ohne Lage — je ein Element OHNE Geometrie und OHNE Platzierung, mit Sachdaten,
+    Ausfuehrung und Common-Satz, in der Site enthalten. Prueftor ohne offenen Befund."""
+    from app.ifc.pruefe import pruefe, offen
+    ziel = tmp_path / "ohne.ifc"
+    bauwerke = [
+        {"cdeId": "cde-A1", "art": "anschluss", "name": "A1", "predefinedType": "ENTRY",
+         "stammdaten": {"Objektbezeichnung": "A1", "Knoten.Anschlusspunkt.Punktkennung": "GA"},
+         "merkmale": {"Pset_PipeFittingTypeCommon": {"Reference": "A1", "Status": "EXISTING"}}},
+        {"cdeId": "cde-L1", "art": "leitung", "name": "L1", "stammdaten": {"Objektbezeichnung": "L1"}},
+    ]
+    probe = _bauteil("cde-probe", "IFCSLAB", ursprung=[410000.0, 5460000.0, 100.0])
+    bericht = baue_datei(_paket(probe, bauwerke=bauwerke, crs="EPSG:25832"), ziel, schluessel="ohne")
+    assert not [w for w in bericht["warnungen"] if "cde-A1" in w or "cde-L1" in w], bericht["warnungen"]
+    f = ifcopenshell.open(str(ziel))
+    (a1,) = [x for x in f.by_type("IfcPipeFitting") if x.Name == "A1"]
+    (l1,) = [x for x in f.by_type("IfcPipeSegment") if x.Name == "L1"]
+    for el in (a1, l1):
+        assert el.Representation is None and el.ObjectPlacement is None
+        assert el.ContainedInStructure and el.ContainedInStructure[0].RelatingStructure.is_a("IfcSite")
+        assert "ISYBAU_Stammdaten" in [r.RelatingPropertyDefinition.Name for r in el.IsDefinedBy]
+    assert (a1.PredefinedType, l1.PredefinedType) == ("ENTRY", "NOTDEFINED")
+    assert "Pset_PipeFittingTypeCommon" in [r.RelatingPropertyDefinition.Name for r in a1.IsDefinedBy]
+    assert [x for x in pruefe(ziel, ids=[IDS])["befunde"] if offen(x)] == []

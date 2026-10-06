@@ -355,6 +355,8 @@ export function bauwerkFuersPaket({ globalId, wert }) {
         art: p.art ?? null,
         name: wert?.name ?? p.name ?? '',
         ...(p.teilVon ? { teilVon: p.teilVon } : {}),
+        // OPTIONAL (Fahrplan Sachdaten): die Ausführung eines Elements ohne Körper — der Schreiber prüft sie.
+        ...(BAUWERKSARTEN[p.art]?.ohneKoerper && p.predefinedType ? { predefinedType: p.predefinedType } : {}),
         // Der Bauwerkstyp als Klassifizierung (Z7) — aus dem Katalog, samt Quelle.
         ...(klassifikation ? { klassifikation } : {}),
         // OPTIONAL (BIMFY I5): die bSI-Merkmale, die eine Vorlage für ihr Bauwerk kennt (der Schacht).

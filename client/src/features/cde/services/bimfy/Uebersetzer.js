@@ -26,7 +26,7 @@
 import { herleitungText } from './muster/Herleitung.js';
 import { G400_BAUWERKSTYP } from './isybau/Schluessel.js';
 import { vorlageNach } from '../rezept/Bauwerksvorlagen.js';
-import { REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
+import { BAUWERKSARTEN, REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
 
 /** Zwei Punkte gelten in der Draufsicht als derselbe Ort (1 cm). */
@@ -110,7 +110,15 @@ export const KUNSTSTOFFSCHACHT_WAHL = Object.freeze({
 export const STRASSENABLAUF_WAHL = Object.freeze({
     id: 'vorlage:strassenablauf', titel: 'Straßenablauf (Teil für Teil)', kategorieVorgabe: 'IFCWASTETERMINAL',
 });
-const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL, KUNSTSTOFFSCHACHT_WAHL, STRASSENABLAUF_WAHL];
+/**
+ * OHNE KÖRPER (Fahrplan Sachdaten, Fabio 2026-10-06): ein Objekt, dessen Lage oder
+ * Höhe die Quelle nicht nennt, wird ein Element ohne Geometrie — ein Bauwerk der
+ * Art „anschluss" oder „leitung" mit seinen Sachdaten. Kein Rezept, eine Wahl.
+ */
+export const OHNE_KOERPER_WAHL = Object.freeze({
+    id: 'ohne-koerper', titel: 'Element ohne Körper (nur Sachdaten)', kategorieVorgabe: null,
+});
+const VORLAGEN_WAHLEN = [NORMSCHACHT_WAHL, KASTENSCHACHT_WAHL, KUNSTSTOFFSCHACHT_WAHL, STRASSENABLAUF_WAHL, OHNE_KOERPER_WAHL];
 /** Die Vorlage, deren Kette das Muster einer Geometrie gerechnet hat — oder null. Eine Stelle für alle (I11). */
 const _vorlageVon = (geo) => {
     const id = geo?.isybau && geo?.muster?.kopf?.vorlage;
@@ -130,6 +138,7 @@ export function klasseFuer(id) {
 
 /** Die Rezepte (und Vorlagen), die zu dieser Geometrie passen. */
 export function rezepteFuer(geo) {
+    if (geo?.art === 'ohneKoerper') return [OHNE_KOERPER_WAHL];
     const formen = formenFuer(geo);
     const vorlage = _vorlageVon(geo);
     return [...(vorlage ? [vorlage] : []), ...bimfyRezepte().filter(r => formen.includes(rezeptform(r)))];
@@ -196,6 +205,9 @@ const _vorgabeKlasse = (id) => String(rezeptNach(id)?.kategorieVorgabe ?? 'IFCBU
  * `grund` sagt in einem Satz, woher er kommt — Ebene, Form oder Vorgabe.
  */
 export function vorschlagFuer(geo) {
+    if (geo?.art === 'ohneKoerper') {
+        return { rezept: OHNE_KOERPER_WAHL.id, kategorie: BAUWERKSARTEN[geo.bauwerksart]?.klasse ?? null, grund: geo.grund ?? 'ohne Lage' };
+    }
     // DAS KNOTENREGELWERK HAT ENTSCHIEDEN (I11): eine Vorlage oder ein Rezept, mit seinem Grund.
     const vorlage = _vorlageVon(geo);
     if (vorlage) return { rezept: vorlage.id, kategorie: vorlage.kategorieVorgabe, grund: geo.regel?.grund ?? vorlage.titel };
@@ -298,6 +310,7 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
     if (wahl?.rezept === KASTENSCHACHT_WAHL.id) return kastenschachtKommando(geo, wahl, { versatz, umrechnen });
     if (wahl?.rezept === KUNSTSTOFFSCHACHT_WAHL.id) return kunststoffschachtKommando(geo, wahl, { versatz, umrechnen });
     if (wahl?.rezept === STRASSENABLAUF_WAHL.id) return strassenablaufKommando(geo, wahl, { versatz, umrechnen });
+    if (wahl?.rezept === OHNE_KOERPER_WAHL.id) return ohneKoerperKommando(geo, wahl);
     const rezept = rezeptNach(wahl?.rezept);
     if (!rezept || !istUebersetzbar(rezept)) return { fehler: `Rezept „${wahl?.rezept}" kann BIMFY nicht füllen` };
     const form = rezeptform(rezept);
@@ -449,6 +462,8 @@ function _verknuepfe(kommandos, kennung) {
     const jeKnoten = new Map();
     for (const { geo, kommando } of kommandos) {
         if (!['schacht', 'anschlusspunkt', 'bauwerk'].includes(geo?.isybau?.art) || !geo.name || jeKnoten.has(geo.name)) continue;
+        // Ein Element ohne Körper ist kein Knoten im Netz — eine Leitung bleibt dort ein loses Ende.
+        if (geo.art === 'ohneKoerper') continue;
         const id = kennung('bauteil');
         kommando.neu = [id];
         // Wie weit der Knoten reicht: ein Formstück hat keinen Körper (0), ein Schacht aus
@@ -598,5 +613,22 @@ function _quellwerte(geo) {
     return {
         ...(sd && Object.keys(sd).length ? { stammdaten: { ...sd } } : {}),
         ...(geo?.isybau?.status === 6 ? { zustand: 'rueckbau' } : {}),
+    };
+}
+
+/**
+ * Das Kommando „Element ohne Körper": ein Bauwerk der Art „anschluss" oder
+ * „leitung", ohne Punkte, mit allen Sachdaten und — am Anschlusspunkt — der
+ * Ausführung, die auch der Formstück-Weg nähme (AH15, Tab. A-1-2).
+ */
+export function ohneKoerperKommando(geo, wahl = {}) {
+    const art = geo?.bauwerksart;
+    if (geo?.art !== 'ohneKoerper' || !BAUWERKSARTEN[art]?.ohneKoerper) return { fehler: 'Nur ein Objekt ohne Lage wird ein Element ohne Körper' };
+    const isy = geo.isybau ?? {};
+    const pt = art === 'anschluss' ? (!isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY') : null;
+    return {
+        werkzeug: 'bauwerk-anlegen',
+        eingaben: {},
+        werte: { name: wahl.name || geo.name || BAUWERKSARTEN[art].titel, art, ...(pt ? { predefinedType: pt } : {}), ..._quellwerte(geo) },
     };
 }

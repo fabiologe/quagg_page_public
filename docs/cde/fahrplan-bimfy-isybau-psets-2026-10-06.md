@@ -186,8 +186,29 @@ sie in der Ansicht sehen, das ist relevant für Massen später".
 
 - Offen P4d: Massen getrennt nach Bestand und Rückbau (Mengenkopf wie
   `Sanierung.mengenNachMassnahme`).
-- Offen: die 34 Werte an 5 Objekten ohne Körper (23 AP ohne Sohle, 11 Leitung
-  ohne Lage).
+
+### P4e · Elemente ohne Körper · **gebaut**
+Fabio, 2026-10-06: „Als Element ohne Geometrie".
+
+- Was BIMFY nicht bauen kann, weil Lage oder Höhe fehlt, wird ein Bauwerk der
+  Art `anschluss` (IfcPipeFitting) oder `leitung` (IfcPipeSegment). Im IFC ein
+  Element OHNE Geometrie und OHNE Platzierung, in der Site enthalten, mit
+  `ISYBAU_Stammdaten`, Common-Satz und Ausführung (JUNCTION/ENTRY wie der
+  Formstück-Weg). Es ist kein Netzknoten, eine Leitung dorthin bleibt lose.
+- Ebene in BIMFY: „ISYBAU … (ohne Körper)", Wahl „Element ohne Körper".
+- Echte Datei:
+
+| | Werte |
+|---|---|
+| in der Datei | 8 844 |
+| im Journal | 8 844 |
+| im IFC (`ISYBAU_Stammdaten`, roh) | **8 844** |
+| Klartexte dazu | 2 028 |
+| Elemente ohne Körper | 5 (4 IfcPipeFitting, 1 IfcPipeSegment) |
+| Prüftor offen | 0 |
+
+- Offen: die Lage (Rechts- und Hochwert) eines Anschlusspunkts ohne Sohle ist
+  Geometrie und zählt nicht zu den Sachdaten. Sie steht noch nicht im IFC.
 
 ### P5 · Keine erfundenen Werte
 - Kein Wert ohne Quelle. Fehlt er in der Datei, fehlt er im IFC.

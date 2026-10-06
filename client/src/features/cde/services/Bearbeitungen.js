@@ -586,7 +586,11 @@ const SETZ_OPERATIONEN = Object.freeze({
                 if (!name || !BAUWERKSARTEN[werte?.art]) return null;
                 const typ = werte?.bauwerkstyp && klassifikationVon(werte.bauwerkstyp) ? { bauwerkstyp: werte.bauwerkstyp } : {};
                 // Die Kennung vergibt der Aufrufer (E2, `neu`) — `erzeugtEintrag` zieht sie.
-                return erzeugtEintrag({ rezept: behaelterRezept(), name, parameter: { art: werte.art, ...typ } });
+                // Ein Element OHNE KÖRPER (Fahrplan Sachdaten): seine Ausführung aus der Quelle.
+                const ausfuehrung = BAUWERKSARTEN[werte.art].ohneKoerper && typeof werte?.predefinedType === 'string' && werte.predefinedType
+                    ? { predefinedType: werte.predefinedType } : {};
+                return erzeugtEintrag({ rezept: behaelterRezept(), name,
+                                        parameter: { art: werte.art, ...typ, ...ausfuehrung, ..._stammdaten(werte) } });
             }
             const plan = el?.stand?.bauplan;
             if (!plan?.rezept) return null;

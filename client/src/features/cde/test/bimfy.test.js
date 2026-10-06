@@ -168,10 +168,12 @@ const ISYBAU = `<?xml version="1.0" encoding="UTF-8"?>
 </Stammdatenkollektiv></Datenkollektive></Identifikation>`;
 
 describe('BIMFY · ISYBAU und Punktdaten', () => {
-    it('ISYBAU: Schächte von Sohle bis Deckel, die Haltung mit Sohlhöhen und DN — ein Anschlusspunkt ohne Höhe gemeldet', () => {
+    it('ISYBAU: Schächte von Sohle bis Deckel, die Haltung mit Sohlhöhen und DN — ein Anschlusspunkt ohne Höhe wird ein Element ohne Körper', () => {
         const { geometrien, warnungen } = liesIsybau(ISYBAU);
         expect(geometrien.map(g => [g.ebene, g.name, g.art])).toEqual([
-            ['ISYBAU Schacht', 'S1', 'zug'], ['ISYBAU Schacht', 'S2', 'zug'], ['ISYBAU Haltung', 'H1', 'zug']]);
+            ['ISYBAU Schacht', 'S1', 'zug'], ['ISYBAU Schacht', 'S2', 'zug'], ['ISYBAU Haltung', 'H1', 'zug'],
+            // Fabio, 2026-10-06: nicht weggelassen — ein Element ohne Geometrie mit seinen Sachdaten.
+            ['ISYBAU Anschlusspunkt (ohne Körper)', 'A1', 'ohneKoerper']]);
         expect(geometrien[0].punkte.map(p => p.hoehe)).toEqual([102, 105]);
         expect(geometrien[2].punkte).toEqual([{ ost: 410000, nord: 5460000, hoehe: 102 }, { ost: 410040, nord: 5460030, hoehe: 101.3 }]);
         expect(geometrien[2].durchmesser).toBe(0.3);
@@ -179,7 +181,8 @@ describe('BIMFY · ISYBAU und Punktdaten', () => {
         expect(warnungen).toEqual(['ISYBAU: Anschlusspunkt „A1" ohne Lage oder Sohle.']);
         const zeilen = gruppiere(geometrien);
         // Seit BIMFY I6 wird ein ISYBAU-Schacht der Normschacht — Teil für Teil, nicht ein Zylinder.
-        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'vorlage:normschacht'], ['ISYBAU Haltung', 'rohr']]);
+        expect(zeilen.map(z => [z.ebene, z.rezept])).toEqual([['ISYBAU Schacht', 'vorlage:normschacht'], ['ISYBAU Haltung', 'rohr'],
+                                                              ['ISYBAU Anschlusspunkt (ohne Körper)', 'ohne-koerper']]);
     });
 
     it('ISYBAU durch den Kommandoweg: Rohr DN 300 mit Wand, zwei Normschächte DN 1000', async () => {
@@ -190,7 +193,12 @@ describe('BIMFY · ISYBAU und Punktdaten', () => {
         expect(kommandos.find(k => k.geo.name === 'H1').kommando.werte.dn).toBe(300);
         expect(kommandos.find(k => k.geo.name === 'S1').kommando).toMatchObject({ werkzeug: 'bauwerk-aus-vorlage-normschacht', werte: { dn: 1 } });
         const paket = await paketAus(useAenderungen());
-        expect(paket.bauwerke.map(w => [w.art, w.name]).sort()).toEqual([['schacht', 'S1'], ['schacht', 'S2']]);
+        expect(paket.bauwerke.map(w => [w.art, w.name]).sort()).toEqual([['anschluss', 'A1'], ['schacht', 'S1'], ['schacht', 'S2']]);
+        // Ohne Körper: die Sachdaten, die Ausführung, der Common-Satz — und kein Teil.
+        const a1 = paket.bauwerke.find(w => w.name === 'A1');
+        expect(a1).toMatchObject({ predefinedType: 'JUNCTION', stammdaten: { Objektbezeichnung: 'A1' },
+                                   merkmale: { Pset_PipeFittingTypeCommon: { Reference: 'A1' } } });
+        expect(paket.bauteile.filter(t => t.teilVon === a1.cdeId)).toEqual([]);
         expect(paket.bauteile.filter(t => t.klasse === 'IFCPIPESEGMENT').map(t => t.name)).toEqual(['H1']);
         expect(paket.bauteile.filter(t => t.objektTyp === 'Schachtring').length).toBeGreaterThanOrEqual(4);
     });

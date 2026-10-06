@@ -526,7 +526,7 @@ def _quellen_json(b: dict) -> str | None:
 # Teil zu seinem Bauwerk hat, ist SCHEMAWISSEN und steht deshalb hier, nicht im
 # Client: in einer Anlage (Raumelement) wird ein Teil ENTHALTEN, in einer
 # Baugruppe (Element) wird es ZERLEGT. Beides zugleich zaehlte es doppelt.
-BAUWERKSARTEN = ("anlage", "baugruppe", "schacht", "ablauf")
+BAUWERKSARTEN = ("anlage", "baugruppe", "schacht", "ablauf", "anschluss", "leitung")
 # DER SCHACHT (BIMFY I5): ein Element wie die Baugruppe — seine Teile werden
 # ZERLEGT, er selbst wird eingeordnet —, aber als IfcDistributionChamberElement
 # MANHOLE: nur dort gelten Pset_DistributionChamberElementTypeManhole und das Qto.
@@ -537,7 +537,12 @@ SCHACHTKLASSE = ("IfcDistributionChamberElement", "MANHOLE")
 # (Ablauf mit Schlammraum; IFC4X3_ADD2, IfcWasteTerminalTypeEnum, nachgesehen).
 ABLAUFKLASSE = ("IfcWasteTerminal", "GULLYSUMP")
 # Je Bauwerksart, die selbst ein Element mit PredefinedType ist: (Klasse, Typ).
-ELEMENT_BAUWERKE = {"schacht": SCHACHTKLASSE, "ablauf": ABLAUFKLASSE}
+# OHNE KOERPER (Fahrplan Sachdaten, Fabio 2026-10-06): ein Netzobjekt, dessen Lage
+# oder Hoehe die Quelle nicht nennt — ein Anschlusspunkt ohne Sohle, eine Leitung
+# ohne Lage. Es wird ein Element OHNE Geometrie und OHNE Platzierung: nichts
+# Erfundenes, aber seine Sachdaten stehen am richtigen Objekt.
+OHNE_KOERPER = {"anschluss": ("IfcPipeFitting", "NOTDEFINED"), "leitung": ("IfcPipeSegment", "NOTDEFINED")}
+ELEMENT_BAUWERKE = {"schacht": SCHACHTKLASSE, "ablauf": ABLAUFKLASSE, **OHNE_KOERPER}
 # DER RAUM (Teil XXVI, Z6): das einzige Raumelement, das als Paket-Bauteil kommt —
 # es hat einen Koerper (den Hohlraum) und Mengen (das Speichervolumen). Es wird
 # ZERLEGT unter seiner Anlage oder der Site (WR41), nie enthalten (WR31). Alle
@@ -606,9 +611,14 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
             eltern = None
         bezug = (eltern["inst"] if eltern else site).ObjectPlacement
         attrs = dict(GlobalId=guids.guid_aus_cde_id(cid), OwnerHistory=besitz, Name=w.get("name") or None,
-                     ObjectPlacement=_platz(f, bezug))
+                     ObjectPlacement=None if w["art"] in OHNE_KOERPER else _platz(f, bezug))
         if w["art"] in ELEMENT_BAUWERKE:
             klasse, typ = ELEMENT_BAUWERKE[w["art"]]
+            if w["art"] in OHNE_KOERPER and w.get("predefinedType"):
+                # Die Ausfuehrung aus der Quelle (ENTRY am Gebaeudeanschluss) — gegen das Schema geprueft.
+                typ, warnung = _predefined(klasse, w.get("predefinedType"))
+                if warnung:
+                    warnungen.append(f"{cid}: {warnung}")
             inst = f.create_entity(klasse, **attrs, PredefinedType=typ, ObjectType=w.get("objectType") or None)
             rolle = "baugruppe"
         elif w["art"] == "baugruppe":
@@ -639,7 +649,7 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
         if w["art"] in ELEMENT_BAUWERKE and w.get("merkmale"):
             klasse, typ = ELEMENT_BAUWERKE[w["art"]]
             _bsi_merkmale(f, besitz, inst, klasse, typ, w.get("merkmale"), f"{satz}|{cid}", warnungen, cid)
-        behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None}
+        behaelter[cid] = {"inst": inst, "rolle": rolle, "eltern": eltern_id if eltern else None, "art": w["art"]}
         return behaelter[cid]
 
     for cid in eintraege:
@@ -948,7 +958,8 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
                 if not enthalten.get(cid) and not zerlegt.get(cid)
                 and not any(x["eltern"] == cid for x in behaelter.values())]
         for cid in leer:
-            warnungen.append(f"{cid}: Bauwerk ohne Teile")
+            if behaelter[cid].get("art") not in OHNE_KOERPER:     # ein Element ohne Koerper hat keine Teile
+                warnungen.append(f"{cid}: Bauwerk ohne Teile")
         # V08 des Prueftors: jedes Bauteil gehoert einer Fachmodell-Gruppe an —
         # Erdbau und Eigenbau getrennt, damit ein Empfaenger den Aushub findet,
         # ohne Rezeptnamen zu kennen.
