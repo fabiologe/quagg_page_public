@@ -360,9 +360,11 @@ export const BAUWERKSARTEN = Object.freeze({
     baugruppe: Object.freeze({ titel: 'Baugruppe', text: 'Bauteile, die als Einheit geliefert oder montiert werden (IfcElementAssembly)' }),
     // BIMFY I4: der Schacht ist selbst das Ganze — seine Teile zerlegen ihn (IfcRelAggregates).
     // BIMFY I9: … und ein KNOTEN im Netz — an seiner Sohle in der Schachtmitte.
-    schacht: Object.freeze({ titel: 'Schacht', text: 'ein Schacht aus Fertigteilen (IfcDistributionChamberElement, MANHOLE)', netzknoten: true }),
+    schacht: Object.freeze({ titel: 'Schacht', text: 'ein Schacht aus Fertigteilen (IfcDistributionChamberElement, MANHOLE)', netzknoten: true,
+                             klasse: 'IFCDISTRIBUTIONCHAMBERELEMENT' }),
     // BIMFY I12: der Straßenablauf — ein Endgerät der Entwässerung, ebenfalls ein Knoten.
-    ablauf: Object.freeze({ titel: 'Straßenablauf', text: 'ein Straßenablauf aus Teilen (IfcWasteTerminal, GULLYSUMP)', netzknoten: true }),
+    ablauf: Object.freeze({ titel: 'Straßenablauf', text: 'ein Straßenablauf aus Teilen (IfcWasteTerminal, GULLYSUMP)', netzknoten: true,
+                            klasse: 'IFCWASTETERMINAL' }),
 });
 
 const BAUWERK_REZEPT = Object.freeze({

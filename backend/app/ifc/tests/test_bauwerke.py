@@ -1019,3 +1019,21 @@ def test_strassenablauf_isybau_stammdaten(strassenablauf):
         assert not [r for r in teil.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
                     and r.RelatingPropertyDefinition.Name == "ISYBAU_Stammdaten"]
 
+
+
+def test_strassenablauf_bsi_aus_sachdaten(strassenablauf):
+    """Fahrplan Sachdaten P4: Objektbezeichnung und Status der Quelle stehen
+    zusaetzlich im bSI-Satz der Klasse, gegen die Vorlage getypt
+    (Reference IfcIdentifier, Status als Aufzaehlung aus der bSI-Werteliste)."""
+    datei = ifcopenshell.open(str(strassenablauf["ziel"]))
+    (ablauf,) = datei.by_type("IfcWasteTerminal")
+    (satz,) = [r.RelatingPropertyDefinition for r in ablauf.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+               and r.RelatingPropertyDefinition.Name == "Pset_WasteTerminalTypeCommon"]
+    werte = {p.Name: p for p in satz.HasProperties}
+    assert set(werte) == {"Reference", "Status"}
+    ref, status = werte["Reference"], werte["Status"]
+    assert (ref.NominalValue.is_a(), ref.NominalValue.wrappedValue) == ("IfcIdentifier", "SE1")
+    # Status ist in der Vorlage eine Aufzaehlung: IfcPropertyEnumeratedValue mit der bSI-Liste.
+    assert status.is_a("IfcPropertyEnumeratedValue")
+    assert [v.wrappedValue for v in status.EnumerationValues] == ["EXISTING"]
+    assert "DEMOLISH" in [v.wrappedValue for v in status.EnumerationReference.EnumerationValues]

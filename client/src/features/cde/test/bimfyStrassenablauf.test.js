@@ -77,12 +77,16 @@ describe('Vorlage · über den Kommandoweg', () => {
             ['IFCBUILDINGELEMENTPART', 'Schlammeimer'], ['IFCDISCRETEACCESSORY', 'Aufsatz Straßenablauf']]);
         expect(p.bauteile.every(t => t.teilVon === 'cde-SE1')).toBe(true);
         // Die Sachdaten am Bauwerk, unverändert — an keinem Teil.
-        expect(p.bauwerke[0].stammdaten).toEqual(STAMMDATEN);
+        // P4: dahinter die Klartexte der Schlüssel, und Reference/Status im Common-Satz der Klasse.
+        expect(p.bauwerke[0].stammdaten).toEqual({ ...STAMMDATEN, Status_Text: 'vorhanden', 'Knoten.KnotenTyp_Text': 'Anschlusspunkt',
+                                                   'Knoten.Anschlusspunkt.Punktkennung_Text': 'Straßenablauf' });
+        expect(p.bauwerke[0].merkmale.Pset_WasteTerminalTypeCommon).toEqual({ Reference: 'SE1', Status: 'EXISTING' });
         expect(p.bauteile.filter(t => t.stammdaten)).toEqual([]);
         if (process.env.STRASSENABLAUF_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(p));
         expect(existsSync(FIXTURE), 'Fixture fehlt: STRASSENABLAUF_VERTRAG_SCHREIBEN=1 …').toBe(true);
         const alt = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-        expect(alt.bauwerke[0].stammdaten).toEqual(STAMMDATEN);
+        expect(alt.bauwerke[0].stammdaten).toEqual(p.bauwerke[0].stammdaten);
+        expect(alt.bauwerke[0].merkmale).toEqual(p.bauwerke[0].merkmale);
         expect(alt.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]))
             .toEqual(p.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]));
     });

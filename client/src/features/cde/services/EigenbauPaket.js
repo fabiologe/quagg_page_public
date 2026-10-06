@@ -47,8 +47,9 @@
 import { BAUTEILFARBEN, farbeFuer } from './Bauteilfarben.js';
 import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
-import { lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
+import { BAUWERKSARTEN, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
 import { vorlageNach } from './rezept/Bauwerksvorlagen.js';
+import { bildeAb } from './bimfy/isybau/Abbildung.js';
 import { herleitungText } from './bimfy/muster/Herleitung.js';
 
 export const PAKET_VERSION = 2;
@@ -189,6 +190,10 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         merkmale[satz] = { ...(merkmale[satz] ?? {}), ...werte };
     }
     const klasse = String(teil.kategorie ?? plan.kategorie ?? '').toUpperCase();
+    // SACHDATEN DER QUELLE (Fahrplan Sachdaten P4): Klartexte und bSI-Merkmale, wo IFC ein Feld hat.
+    // Ein Merkmal hat EINE Quelle — was Felder, Lage oder Rechnung schon setzen, bleibt.
+    const abbildung = bildeAb(plan?.parameter?.stammdaten, { klasse });
+    _fuegeAn(merkmale, abbildung.merkmale);
     const f = farbeFuer(klasse, farbsatz);
     const q = plan?.parameter?.quellen ?? {};
     const ur = q.gelaende ? wirtVon(plan, stand, exportiert, historie) : null;
@@ -230,7 +235,7 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         // OPTIONAL (Teil XXVI, Z5d): das Bauwerk, zu dem dieses Teil gehört (E17: EIN Wert).
         ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
         // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten der Quelle, unverändert → `ISYBAU_Stammdaten`.
-        ..._stammdaten(plan?.parameter),
+        ..._stammdaten(plan?.parameter, abbildung.texte),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
         // Schreibers ist (Raster, der Erdbau). Ein Erdbau-Paket bleibt so, wie es war.
         ...(teil.mengenMethode && teil.mengenMethode !== 'raster' ? { mengenMethode: teil.mengenMethode } : {}),
@@ -341,6 +346,8 @@ export function baueEigenbauPaket({ teile = [], kanten = [], stand = new Map(), 
 export function bauwerkFuersPaket({ globalId, wert }) {
     const p = wert?.parameter ?? {};
     const klassifikation = p.bauwerkstyp ? klassifikationVon(p.bauwerkstyp) : null;
+    const abbildung = bildeAb(p.stammdaten, { klasse: BAUWERKSARTEN[p.art]?.klasse });
+    const merkmale = _fuegeAn(_bauwerkMerkmale(p) ?? {}, abbildung.merkmale);
     return {
         cdeId: globalId,
         art: p.art ?? null,
@@ -349,16 +356,26 @@ export function bauwerkFuersPaket({ globalId, wert }) {
         // Der Bauwerkstyp als Klassifizierung (Z7) — aus dem Katalog, samt Quelle.
         ...(klassifikation ? { klassifikation } : {}),
         // OPTIONAL (BIMFY I5): die bSI-Merkmale, die eine Vorlage für ihr Bauwerk kennt (der Schacht).
-        ...(_bauwerkMerkmale(p) ? { merkmale: _bauwerkMerkmale(p) } : {}),
+        // … und die bSI-Merkmale aus den Sachdaten (Fahrplan Sachdaten P4).
+        ...(Object.keys(merkmale).length ? { merkmale } : {}),
         // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten hängen am Bauwerk, nicht an den Teilen.
-        ..._stammdaten(p),
+        ..._stammdaten(p, abbildung.texte),
     };
 }
 
-/** Die Sachdaten eines Bauplans fürs Paket — nur wenn welche da sind (ein Paket ohne bleibt, was es war). */
-function _stammdaten(p) {
+/**
+ * Die Sachdaten eines Bauplans fürs Paket — roh, dahinter die Klartexte der
+ * Schlüssel (P4). Nur wenn welche da sind (ein Paket ohne bleibt, was es war).
+ */
+function _stammdaten(p, texte = {}) {
     const sd = p?.stammdaten;
-    return sd && typeof sd === 'object' && Object.keys(sd).length ? { stammdaten: { ...sd } } : {};
+    return sd && typeof sd === 'object' && Object.keys(sd).length ? { stammdaten: { ...sd, ...texte } } : {};
+}
+
+/** Merkmale anfügen, ohne ein schon gesetztes zu überschreiben (ein Merkmal, eine Quelle). */
+function _fuegeAn(ziel, dazu) {
+    for (const [satz, werte] of Object.entries(dazu ?? {})) ziel[satz] = { ...werte, ...(ziel[satz] ?? {}) };
+    return ziel;
 }
 
 /** Die bSI-Merkmale eines Bauwerks aus seiner Vorlage — oder null. */

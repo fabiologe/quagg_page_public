@@ -275,7 +275,9 @@ def _merkmale(f, besitz, objekt, satzname: str, werte: dict, schluessel: str):
     Die Sachdaten einer Quelle tragen deren Namen (`ISYBAU_Stammdaten`).
     """
     eigenschaften = [
-        f.create_entity("IfcPropertySingleValue", Name=str(k), NominalValue=_wert(f, v))
+        # Ein fertiges Merkmal (die Aufzaehlung aus `_bsi_merkmale`) bleibt, wie es ist.
+        v if isinstance(v, ifcopenshell.entity_instance) and v.is_a("IfcProperty")
+        else f.create_entity("IfcPropertySingleValue", Name=str(k), NominalValue=_wert(f, v))
         for k, v in werte.items() if v is not None and v != "" and v != []
     ]
     if not eigenschaften:
@@ -417,6 +419,17 @@ def _nach_vorlage(typ: str, wert):
     return float(wert)
 
 
+def _aufzaehlung(f, name: str, typ: str, liste):
+    """Die Werteliste einer bSI-Aufzaehlung — EINMAL je Datei, von allen Merkmalen geteilt."""
+    ziel = f"PEnum_{name}"
+    werte = tuple(liste)
+    for e in f.by_type("IfcPropertyEnumeration"):
+        if e.Name == ziel and tuple(v.wrappedValue for v in e.EnumerationValues) == werte:
+            return e
+    return f.create_entity("IfcPropertyEnumeration", Name=ziel,
+                           EnumerationValues=[f.create_entity(typ, w) for w in werte])
+
+
 def _bsi_merkmale(f, besitz, el, klasse: str, pt, merkmale, schluessel: str, warnungen: list, cde_id: str) -> int:
     """bSI-Merkmalssaetze aus dem Paket (Teil XXVI, Z3) — nur, was die Vorlage fuer DIESE Klasse kennt.
 
@@ -439,10 +452,20 @@ def _bsi_merkmale(f, besitz, el, klasse: str, pt, merkmale, schluessel: str, war
         if vorlage is None or not str(vorlage.get("art", "")).startswith("PSET_") or vorlage["name"] not in gilt:
             warnungen.append(f"{cde_id}: Merkmalssatz {satzname} gilt nicht fuer {klasse} — nicht geschrieben")
             continue
-        typen = {m[0]: (m[1], m[2]) for m in vorlage["merkmale"]}
+        typen = {m[0]: (m[1], m[2], m[4] if len(m) > 4 else None) for m in vorlage["merkmale"]}
         getypt = {}
         for name, wert in (werte or {}).items():
-            art, typ = typen.get(name, (None, None))
+            art, typ, liste = typen.get(name, (None, None, None))
+            if art == "P_ENUMERATEDVALUE" and liste:
+                # Fahrplan Sachdaten P4: `Status` ist eine Aufzaehlung — nur ein Wert aus der Liste.
+                if not isinstance(wert, str) or wert not in liste:
+                    warnungen.append(f"{cde_id}: {vorlage['name']}.{name} erwartet einen Wert aus {liste}, bekam {wert!r} — nicht geschrieben")
+                    continue
+                getypt[name] = f.create_entity(
+                    "IfcPropertyEnumeratedValue", Name=name,
+                    EnumerationValues=[f.create_entity(typ, wert)],
+                    EnumerationReference=_aufzaehlung(f, name, typ, liste))
+                continue
             if art != "P_SINGLEVALUE":
                 warnungen.append(f"{cde_id}: {vorlage['name']}.{name} "
                                  + ("steht nicht in der Vorlage" if art is None else f"ist kein Einzelwert ({art})")

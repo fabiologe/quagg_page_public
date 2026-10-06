@@ -117,24 +117,48 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 - Schlüsseltexte (`Material_Text = Beton`, P‑E3) noch nicht. Sie kommen mit P4,
   weil dieselbe Tabelle auch die bSI-Abbildung speist.
 
-### P4 · bSI-Felder, wo sie passen
-| ISYBAU | IFC | Bemerkung |
-|---|---|---|
-| Objektbezeichnung | `Name`, `Pset_*Common.Reference` | |
-| Status (in Betrieb, geplant, ausser Betrieb, verfüllt) | `Pset_*Common.Status` (NEW, EXISTING, DEMOLISH, TEMPORARY, OTHER) | Abbildung als Tabelle mit Grund je Zeile |
-| Baujahr | `Pset_ConstructionOccurence.InstallationDate` (Jahr als Datum 01.01.) | Rohwert bleibt in `ISYBAU_Stammdaten` |
-| Material | `IfcMaterial` über `IfcRelAssociatesMaterial` | ohne Code KEIN Material |
-| Nennweite, Profilhöhe | `Pset_PipeSegmentTypeCommon.NominalDiameter`, `InnerDiameter`, `OuterDiameter`, `Length` | aus Rohrwand |
-| Sohlhöhe Zulauf | `Pset_PipeSegmentOccurrence.InvertElevation` | Ablauf nur in `ISYBAU_Stammdaten` |
-| Gefälle | `Pset_PipeSegmentOccurrence.Gradient` | aus den Sohlen gerechnet, Herleitung dabei |
-| Schacht Sohle, Deckel | `Pset_DistributionChamberElementTypeManhole.InvertLevel`, `SoffitLevel` | schon da |
-| Abdeckungsklasse | `…Manhole.AccessCoverLoadRating` | |
-| Einstieghilfe | `…Manhole.HasSteps` | |
-| Strassenablauf Masse | `Pset_WasteTerminalTypeGullySump` | |
-| Zustand (falls vorhanden) | `Pset_Condition` | |
+### P4 · bSI-Felder und Klartexte · **gebaut (ohne Material)**
+- Eine Tabelle `bimfy/isybau/Abbildung.js` mit Regeln wie das
+  Knotenregelwerk, jede mit Beispiel und Wächter (`bimfySachdaten.test.js`).
+  Angewandt beim Packen (`EigenbauPaket`), das Journal bleibt roh.
+- **Klartext** (P‑E3): jeder Schlüssel bekommt `<Pfad>_Text` aus
+  `Schluessel.js`, gesucht nach dem letzten Namen im Pfad (beide Formate).
+- **Reference und Status** in `Pset_…Common` je Klasse
+  (DistributionChamberElement, PipeSegmentType, PipeFittingType,
+  WasteTerminalType). Status ist in bSI eine Aufzählung, der Schreiber kann
+  dafür jetzt `IfcPropertyEnumeratedValue` (eine `IfcPropertyEnumeration` je
+  Datei).
 
-Jede Zeile kommt als Regel in eine Tabelle mit `beispiel` und Wächtertest wie
-das Knotenregelwerk. Die Prüfstufe `ids` prüft die bSI-Felder mit.
+| G105 | bSI | Grund |
+|---|---|---|
+| 0 vorhanden | EXISTING | |
+| 1 geplant | NEW | |
+| 2 fiktiv | OTHER | bSI kennt keinen gedachten Bestand |
+| 3 ausser Betrieb | EXISTING | noch im Boden |
+| 4 verdämmt/verfüllt | OTHER | weder Betrieb noch Abbruch |
+| 5 sonstige | OTHER | |
+| 6 rückgebaut | DEMOLISH | AH15: zu löschende Objekte |
+
+- **Baujahr bewusst ohne bSI-Ziel.** IFC kennt nur ein Datum
+  (`InstallationDate`), ein erfundener 1. Januar wäre ein Wert ohne Quelle.
+- Manhole-Pset (Sohle, Wand, Steigeisen, Abdeckungsklasse) kam schon aus dem
+  Muster und bleibt. Ein Merkmal hat eine Quelle, die Abbildung überschreibt nichts.
+- Echte Datei:
+
+| | Wert |
+|---|---|
+| Rohwerte in `ISYBAU_Stammdaten` | 8 464 |
+| Klartexte dazu | 1 963 |
+| Common-Sätze | 292 Schacht/Bauwerk, 304 Rohr, 49 Formstück |
+| Status | 364 EXISTING, 139 NEW, 93 OTHER (49 Träger ohne Status in der Datei) |
+| Warnungen des Schreibers | 0 |
+| Prüftor offen | 0 |
+
+- Ohne Klartext, weil der Code in keiner gelesenen Liste steht (23 Werte):
+  Profilart `DN` 13, Aufbauform `Q` 6 und `VORFL` 1, Bauwerkstyp 7 und 8,
+  SchachtFunktion `A`. Fundstellen offen (ISYBAU 2017 Referenzlisten).
+- **Offen P4b:** Material als `IfcMaterial`. Der Schreiber legt heute kein
+  Material an, das ist ein eigener Schritt mit Prüftor-Regeln.
 
 ### P5 · Keine erfundenen Werte
 - Kein Wert ohne Quelle. Fehlt er in der Datei, fehlt er im IFC.
