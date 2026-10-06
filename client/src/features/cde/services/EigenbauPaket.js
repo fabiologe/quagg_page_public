@@ -229,6 +229,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         ...(herleitungText(plan?.parameter?.herleitung) ? { herleitung: herleitungText(plan.parameter.herleitung) } : {}),
         // OPTIONAL (Teil XXVI, Z5d): das Bauwerk, zu dem dieses Teil gehört (E17: EIN Wert).
         ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
+        // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten der Quelle, unverändert → `ISYBAU_Stammdaten`.
+        ..._stammdaten(plan?.parameter),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
         // Schreibers ist (Raster, der Erdbau). Ein Erdbau-Paket bleibt so, wie es war.
         ...(teil.mengenMethode && teil.mengenMethode !== 'raster' ? { mengenMethode: teil.mengenMethode } : {}),
@@ -348,7 +350,15 @@ export function bauwerkFuersPaket({ globalId, wert }) {
         ...(klassifikation ? { klassifikation } : {}),
         // OPTIONAL (BIMFY I5): die bSI-Merkmale, die eine Vorlage für ihr Bauwerk kennt (der Schacht).
         ...(_bauwerkMerkmale(p) ? { merkmale: _bauwerkMerkmale(p) } : {}),
+        // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten hängen am Bauwerk, nicht an den Teilen.
+        ..._stammdaten(p),
     };
+}
+
+/** Die Sachdaten eines Bauplans fürs Paket — nur wenn welche da sind (ein Paket ohne bleibt, was es war). */
+function _stammdaten(p) {
+    const sd = p?.stammdaten;
+    return sd && typeof sd === 'object' && Object.keys(sd).length ? { stammdaten: { ...sd } } : {};
 }
 
 /** Die bSI-Merkmale eines Bauwerks aus seiner Vorlage — oder null. */

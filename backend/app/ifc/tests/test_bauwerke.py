@@ -998,3 +998,24 @@ def test_strassenablauf_im_ifc(strassenablauf):
                             ("IfcDiscreteAccessory", "Aufsatz Straßenablauf")])
     assert all(not t.ContainedInStructure for t in zerlegt.RelatedObjects)
     assert ablauf.ContainedInStructure and ablauf.ContainedInStructure[0].RelatingStructure.is_a("IfcSite")
+
+
+def test_strassenablauf_isybau_stammdaten(strassenablauf):
+    """Fahrplan Sachdaten P3: die Sachdaten der ISYBAU-Quelle stehen als
+    `ISYBAU_Stammdaten` am Bauwerk, jeder Wert als IfcText wie in der Datei
+    (Umlaut, Dezimalkomma), und an keinem Teil."""
+    paket = json.loads(STRASSENABLAUF.read_text(encoding="utf-8"))
+    erwartet = paket["bauwerke"][0]["stammdaten"]
+    datei = ifcopenshell.open(str(strassenablauf["ziel"]))
+    (ablauf,) = datei.by_type("IfcWasteTerminal")
+    saetze = [r.RelatingPropertyDefinition for r in ablauf.IsDefinedBy
+              if r.is_a("IfcRelDefinesByProperties") and r.RelatingPropertyDefinition.Name == "ISYBAU_Stammdaten"]
+    assert len(saetze) == 1
+    gelesen = {p.Name: p.NominalValue.wrappedValue for p in saetze[0].HasProperties}
+    assert gelesen == erwartet
+    assert all(p.NominalValue.is_a("IfcText") for p in saetze[0].HasProperties)
+    (zerlegt,) = ablauf.IsDecomposedBy
+    for teil in zerlegt.RelatedObjects:
+        assert not [r for r in teil.IsDefinedBy if r.is_a("IfcRelDefinesByProperties")
+                    and r.RelatingPropertyDefinition.Name == "ISYBAU_Stammdaten"]
+

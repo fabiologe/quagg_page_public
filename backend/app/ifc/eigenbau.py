@@ -79,6 +79,10 @@ from .schema import ZIELSCHEMA
 from .verbund import VerbundUnmoeglich, zielgeruest
 
 PSET_CDE = "Quagg_CDE"
+# Die Sachdaten der Quelle, unveraendert (Fahrplan Sachdaten P3, Fabio 2026-10-06).
+# Kein `Quagg_`: es sind nicht unsere Daten, sondern die der ISYBAU-Datei. `Pset_`
+# bleibt bSI vorbehalten; was dorthin passt, kommt in P4 zusaetzlich.
+PSET_ISYBAU = "ISYBAU_Stammdaten"
 PSET_VORGANG = "Quagg_Vorgang"
 PAKET_VERSION = 2
 
@@ -240,11 +244,35 @@ def _wert(f, v):
     return f.create_entity("IfcText", str(v))
 
 
+def _stammdaten(f, besitz, objekt, stammdaten, schluessel: str, warnungen: list, cde_id) -> int:
+    """Die Sachdaten der Quelle als `ISYBAU_Stammdaten` — jeder Wert als IfcText.
+
+    Der Wert bleibt Text, wie er in der Datei steht (`Status = 0`, `Schachttiefe =
+    3,00`): ein Code ist kein Zaehlwert, und ein Dezimalkomma ist Teil der Quelle.
+    Ein Pfad ist ein IfcIdentifier, also hoechstens 255 Zeichen. Gibt die Zahl
+    der geschriebenen Werte zurueck.
+    """
+    if not stammdaten:
+        return 0
+    if not isinstance(stammdaten, dict):
+        warnungen.append(f"{cde_id}: stammdaten ist keine Tabelle — uebergangen")
+        return 0
+    werte = {}
+    for pfad, wert in stammdaten.items():
+        if not isinstance(pfad, str) or not pfad or len(pfad) > 255 or not isinstance(wert, str):
+            warnungen.append(f"{cde_id}: Sachdatum {str(pfad)[:40]!r} uebergangen (Pfad bis 255 Zeichen, Wert als Text)")
+            continue
+        werte[pfad] = wert
+    satz = _merkmale(f, besitz, objekt, PSET_ISYBAU, werte, schluessel=schluessel)
+    return len(satz.HasProperties) if satz else 0
+
+
 def _merkmale(f, besitz, objekt, satzname: str, werte: dict, schluessel: str):
     """Merkmalssatz mit abgeleiteten GlobalIds.
 
     Eigene Saetze tragen das Praefix `Quagg_` — `Pset_` ist bSI-reserviert und
     kommt nur ueber `_bsi_merkmale`, gegen die Vorlage geprueft (Teil XXVI, Z3).
+    Die Sachdaten einer Quelle tragen deren Namen (`ISYBAU_Stammdaten`).
     """
     eigenschaften = [
         f.create_entity("IfcPropertySingleValue", Name=str(k), NominalValue=_wert(f, v))
@@ -582,6 +610,7 @@ def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> 
                             RelatedObjects=[inst])
         _merkmale(f, besitz, inst, PSET_CDE, {"CdeId": cid, "Rezept": "bauwerk", "Art": w["art"]},
                   schluessel=f"{satz}|{cid}")
+        _stammdaten(f, besitz, inst, w.get("stammdaten"), f"{satz}|{cid}", warnungen, cid)
         if w.get("klassifikation") is not None:
             _klassifizieren(f, besitz, inst, w.get("klassifikation"), f"{satz}|{cid}", klassen, warnungen, cid)
         if w["art"] in ELEMENT_BAUWERKE and w.get("merkmale"):
@@ -767,6 +796,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
             mengen_n += 1
         merkmale_n += _bsi_merkmale(f, besitz, el, klasse, pt, b.get("merkmale"), f"{satz}|{cde_id}",
                                     warnungen, cde_id)
+        _stammdaten(f, besitz, el, b.get("stammdaten"), f"{satz}|{cde_id}", warnungen, cde_id)
         docs, geliefert = _quelldokumente_von(b, quell_dokumente)
         if docs:
             quelle = {"QuellDokument": "; ".join(str(d.get("datei") or d["sha256"][:12]) for d in docs),

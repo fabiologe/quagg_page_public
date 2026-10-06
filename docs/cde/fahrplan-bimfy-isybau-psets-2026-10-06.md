@@ -91,12 +91,31 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
   sein (`MAX_REPO_BYTES`). Ein Netz anderthalbmal so gross wie dieses reisst
   die Grenze, mit oder ohne Sachdaten. Eigene Aufgabe, nicht Teil dieses Plans.
 
-### P3 · Vollständig ins IFC (eigenbau.py)
-- Ein `IfcPropertySet ISYBAU_Stammdaten` je Bauwerk und Haltung.
-- Schlüssel bekommen ihren Text aus `isybau/Schluessel.js` bzw. der
-  Python-Seite. Die Tabelle liegt an EINEM Ort und wird erzeugt, nicht doppelt
-  gepflegt (Muster `generiere_client`).
-- Wächterzahl `im IFC`: 8 844. Gezählt wird mit ifcopenshell aus der Datei.
+### P3 · Vollständig ins IFC (eigenbau.py) · **gebaut**
+- `EigenbauPaket` gibt `stammdaten` an Bauteil und Bauwerk weiter (optional,
+  ein Paket ohne bleibt Byte für Byte gleich, keine neue Paketversion).
+- `eigenbau._stammdaten` schreibt je Träger einen `IfcPropertySet
+  ISYBAU_Stammdaten`, jeder Wert `IfcText` wie in der Datei. Kein Präfix
+  `Quagg_`, weil es Daten der Quelle sind, nicht unsere (Fabio, P‑E1).
+- Vertrag: `paket_strassenablauf.json` trägt jetzt Sachdaten mit Umlaut und
+  Dezimalkomma, `test_strassenablauf_isybau_stammdaten` liest sie aus der
+  IFC-Datei zurück (alter Schreiber rot, neuer grün).
+- Echte Datei, vom XML bis ins IFC:
+
+| | Werte |
+|---|---|
+| in der Datei | 8 844 |
+| im Journal | 8 464 |
+| im Paket | 8 464 |
+| im IFC (`ISYBAU_Stammdaten`) | 8 464 |
+| Träger | 292 Schächte und Bauwerke, 304 Rohre, 49 Formstücke |
+| Prüftor offen | 0 |
+
+- Noch nicht im IFC: 346 Werte an rückgebauten Objekten (Zeile aus) und 34 an
+  5 Objekten ohne Körper. Vorschlag `ISYBAU_Uebergangen` am `IfcSite` bleibt
+  offen, dafür braucht das Journal einen Eintrag ohne Bauteil.
+- Schlüsseltexte (`Material_Text = Beton`, P‑E3) noch nicht. Sie kommen mit P4,
+  weil dieselbe Tabelle auch die bSI-Abbildung speist.
 
 ### P4 · bSI-Felder, wo sie passen
 | ISYBAU | IFC | Bemerkung |

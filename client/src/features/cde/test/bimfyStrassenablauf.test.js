@@ -58,11 +58,15 @@ describe('Regel · SE wird ein Straßenablauf', () => {
 describe('Vorlage · über den Kommandoweg', () => {
     beforeEach(() => { repo.setBackend(new Speicher()); setActivePinia(createPinia()); });
     afterEach(() => repo.setBackend(null));
+    // Wie ein ISYBAU-Straßeneinlauf sie trägt (Fahrplan Sachdaten P3) — mit Umlaut und Dezimalkomma.
+    const STAMMDATEN = { Objektbezeichnung: 'SE1', Objektart: '2', Status: '0', Entwaesserungsart: 'KR',
+                         'Knoten.KnotenTyp': '1', 'Knoten.Anschlusspunkt.Punktkennung': 'SE', 'Lage.Strassenname': 'Am Mühlbach',
+                         Kommentar: 'Höhe 101,25 aus Aufmaß' };
     const KENNUNGEN = ['cde-SE1', 'cde-SEB', 'cde-SES', 'cde-SEA', 'cde-SEU', 'cde-SEE'];
 
     it('der Vertrag mit dem Schreiber: Bauwerk „ablauf", fünf Teile, ein Knoten im Netz', async () => {
         const erg = await useBearbeitung().fuehreAus(k('bauwerk-aus-vorlage-strassenablauf', {
-            neu: KENNUNGEN, eingaben: { zug: [e(5, -5, 100)] }, werte: { name: 'SE1', hoehe: '', tiefe: 1.25, schlamm: 1, richtung: 0 } }));
+            neu: KENNUNGEN, eingaben: { zug: [e(5, -5, 100)] }, werte: { name: 'SE1', hoehe: '', tiefe: 1.25, schlamm: 1, richtung: 0, stammdaten: STAMMDATEN } }));
         expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
         const stand = useAenderungen().wirksamerStand('erzeugt');
         expect(eigeneNetzauskunft(stand).knoten.map(x => x.name)).toEqual(['SE1']);
@@ -72,9 +76,13 @@ describe('Vorlage · über den Kommandoweg', () => {
             ['IFCBUILDINGELEMENTPART', 'Ablaufboden'], ['IFCBUILDINGELEMENTPART', 'Ablaufschaft'], ['IFCBUILDINGELEMENTPART', 'Auflagering'],
             ['IFCBUILDINGELEMENTPART', 'Schlammeimer'], ['IFCDISCRETEACCESSORY', 'Aufsatz Straßenablauf']]);
         expect(p.bauteile.every(t => t.teilVon === 'cde-SE1')).toBe(true);
+        // Die Sachdaten am Bauwerk, unverändert — an keinem Teil.
+        expect(p.bauwerke[0].stammdaten).toEqual(STAMMDATEN);
+        expect(p.bauteile.filter(t => t.stammdaten)).toEqual([]);
         if (process.env.STRASSENABLAUF_VERTRAG_SCHREIBEN) writeFileSync(FIXTURE, JSON.stringify(p));
         expect(existsSync(FIXTURE), 'Fixture fehlt: STRASSENABLAUF_VERTRAG_SCHREIBEN=1 …').toBe(true);
         const alt = JSON.parse(readFileSync(FIXTURE, 'utf8'));
+        expect(alt.bauwerke[0].stammdaten).toEqual(STAMMDATEN);
         expect(alt.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]))
             .toEqual(p.bauteile.map(x => [x.cdeId, x.klasse, x.predefinedType, x.objektTyp, x.teilVon]));
     });
