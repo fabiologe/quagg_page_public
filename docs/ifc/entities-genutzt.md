@@ -357,8 +357,8 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcNavigationElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcNavigationElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPavement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPavement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPile](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPile.htm) | Typprofile | nein | IFC4X3_ADD2 |
-| [IfcPipeFitting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeFitting.htm) | Bauteilrezepte | nein | IFC4X3_ADD2 |
-| [IfcPipeSegment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeSegment.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
+| [IfcPipeFitting](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeFitting.htm) | Bauteilrezepte, Eigenbau | nein | IFC4X3_ADD2 |
+| [IfcPipeSegment](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPipeSegment.htm) | Bauteilrezepte, Eigenbau, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcPlate](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcPlate.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcProduct](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcProduct.htm) | Verbund | ja | IFC4X3_ADD2 |
 | [IfcProject](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcProject.htm) | Verbund | nein | IFC4X3_ADD2 |
