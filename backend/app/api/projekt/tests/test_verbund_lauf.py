@@ -731,3 +731,50 @@ def test_weggelassen_kommt_ins_register_mit_autor(frische_db, app_conn, projekte
     text = (o.pfad / cde.ORDNER / st["dokument"]["datei"]).read_text(encoding="latin-1")
     assert re.search(r"FILE_NAME\('[^']*','[^']*',\('Anna Muster'\),\('Ingenieurbuero Muster'\)", text)
     assert "'Ausgelassen'" in text and "'Kanalgraben Nord'" in text
+
+
+# ── Gelaende aus XYZ / ASCII-Grid (Fahrplan BIMFY XYZ, X3) ──────────────────
+
+def _asc(pfad: Path, n=33, x0=410000.0, y0=5460000.0) -> Path:
+    import math
+    zeilen = "\n".join(" ".join(f"{100 + 2 * math.sin(i / 7) * math.cos(j / 9):.2f}" for i in range(n)) for j in range(n))
+    pfad.write_text(f"ncols {n}\nnrows {n}\nxllcenter {x0}\nyllcenter {y0}\ncellsize 1\nNODATA_value -9999\n{zeilen}\n")
+    return pfad
+
+
+@braucht_werkzeug
+def test_gelaende_ueber_die_echte_schnittstelle(frische_db, app_conn, projekte_wurzel, tmp_path):
+    """Rohdatei hochladen, Auftrag starten, abholen: `Gelaende_<Name>_R01.ifc` im Register,
+    Herkunft mit der Rohdatei als Quelle, geprueft ohne Fehler."""
+    p = projekte.anlegen(app_conn, name="Gelaendetest", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        roh = _hochladen(c, p["id"], _asc(tmp_path / "dgm1.asc"))
+        assert roh["art"] == "sonstiges"
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{roh['sha256']}/gelaende", json={"crs": "EPSG:25832"})
+        assert r.status_code == 202, r.text
+        assert r.json()["modus"] == "gelaende"
+        st = _warte(c, p["id"], r.json()["lauf_id"])
+    assert st["zustand"] == "geprueft", st.get("fehler") or st.get("offen")
+    dok = st["dokument"]
+    assert dok["datei"] == "Gelaende_dgm1_R01.ifc"
+    o = ordner.finde(p["id"])
+    eintrag = next(d for d in cde.register(o) if d["sha256"] == dok["sha256"])
+    assert eintrag["art"] == "modell"
+    assert eintrag["herkunft"]["art"] == "gelaende"
+    assert [q["sha256"] for q in eintrag["herkunft"]["quellen"]] == [roh["sha256"]]
+    assert b"IFCTRIANGULATEDIRREGULARNETWORK" in (o.pfad / cde.ORDNER / dok["datei"]).read_bytes()
+
+
+def test_gelaende_sagt_nein_ohne_bezugssystem_und_bei_falscher_datei(frische_db, app_conn, projekte_wurzel, tmp_path):
+    p = projekte.anlegen(app_conn, name="Gelaendenein", honorarmodell="pauschal", akteur="pytest")
+    with TestClient(_app()) as c:
+        roh = _hochladen(c, p["id"], _asc(tmp_path / "dgm.asc", n=5))
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{roh['sha256']}/gelaende", json={"crs": " "})
+        assert r.status_code == 422 and "Bezugssystem" in r.text
+        pdf = tmp_path / "plan.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
+        plan = _hochladen(c, p["id"], pdf)
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{plan['sha256']}/gelaende", json={"crs": "EPSG:25832"})
+        assert r.status_code == 422 and "XYZ oder ASCII-Grid" in r.text
+        r = c.post(f"/FastAPI/projekte/{p['id']}/cde/{'0' * 64}/gelaende", json={"crs": "EPSG:25832"})
+        assert r.status_code == 404

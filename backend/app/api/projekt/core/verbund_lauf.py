@@ -59,7 +59,7 @@ MAX_LAEUFE = 10                                         # je Projekt aufbewahrt
 MAX_EIGENBAU = 100 * 1024 * 1024                        # Paket des CDE-Eigenbaus (JSON)
 FERTIG = ("geprueft", "abgelehnt", "fehler", "abgebrochen")
 MODI = ("verbund", "erdbau")
-PRAEFIX = {"verbund": cde.VERBUND_PRAEFIX, "erdbau": cde.ERDBAU_PRAEFIX}
+PRAEFIX = {"verbund": cde.VERBUND_PRAEFIX, "erdbau": cde.ERDBAU_PRAEFIX, "gelaende": cde.GELAENDE_PRAEFIX}
 # `herkunft.art` erzeugter Dokumente — keine taugt als Gelaende eines Erdbaus.
 ERZEUGT = ("verbund", "erdbau")
 # v- = Verbund/Erdbau, p- = Pruefung eines Registerdokuments (Stufe 4b).
@@ -479,6 +479,48 @@ async def pruefung_starten(o: ordner.Ordner, sha256: str, *, akteur: str) -> dic
     _ordner_der_laeufe[lauf_id] = laufordner
     _aufraeumen(o, behalte=lauf_id)
     return {"lauf_id": lauf_id, "zustand": "wartet", "modus": "pruefe", "quellen": [d["datei"]]}
+
+
+async def gelaende_starten(o: ordner.Ordner, sha256: str, *, akteur: str, crs: str | None,
+                           toleranz: float | None = None, name: str | None = None) -> dict:
+    """Eine Rasterdatei aus dem Register (XYZ oder ASCII-Grid) als Gelaende (Fahrplan BIMFY XYZ, X3).
+
+    Derselbe Unterprozess (`cli.py`, Modus "gelaende") und Laufordner-Vertrag wie der
+    Verbund; das Ergebnis wird wie ein Verbund eingetragen: `Gelaende_<Name>_Rnn.ifc`,
+    Herkunft mit der Rohdatei als Quelle. Kein ERZEUGT im Sinne der Quellenliste — ein
+    Gelaende ist danach eine Quelle wie jede Lieferung. Das Bezugssystem ist das des
+    Projekts (die Datei hat keines); ohne es lehnt der Server ab, statt zu raten.
+    """
+    d = next((x for x in cde.register(o) if x.get("sha256") == sha256), None)
+    if d is None:
+        raise cde.CdeUnbekannt(sha256)
+    if not str(d.get("datei", "")).lower().endswith(cde.GELAENDE_ENDUNGEN):
+        raise cde.CdeAbgelehnt(f"{d.get('datei')}: ein Gelaende entsteht aus XYZ oder ASCII-Grid ({', '.join(cde.GELAENDE_ENDUNGEN)})")
+    crs = (crs or "").strip().upper() or None
+    if not crs:
+        raise cde.CdeAbgelehnt("ohne Bezugssystem des Projekts kein Gelaende — XYZ und ASCII-Grid tragen keines")
+    pfad = o.pfad / cde.ORDNER / d["datei"]
+    if not pfad.is_file():
+        raise cde.CdeAbgelehnt(f"{d['datei']} fehlt im Projektordner")
+    _spur_und_werkzeug()
+
+    name = (name or Path(d["datei"]).stem).strip() or "Gelaende"
+    lauf_id = f"g-{int(time.time()):x}-{secrets.token_hex(3)}"
+    laufordner = _laufordner(o, lauf_id)
+    laufordner.mkdir(parents=True)
+    _schreibe(laufordner / "auftrag.json", {
+        "modus": "gelaende", "sha256": sha256, "datei": str(pfad), "dokument": d["datei"], "crs": crs,
+        "name": name, "satz_name": name, "schluessel": f"gelaende/{sha256[:12]}", "bearbeiter": akteur,
+        **({"toleranz": float(toleranz)} if toleranz else {}),
+        # Die Rohdatei als Quelle — fuer die Herkunft im Manifest (`_herkunft`).
+        "quellen": [{"sha256": sha256, "name": d["datei"], "revision": d.get("revision")}],
+    })
+    _schreibe(laufordner / "status.json", {"zustand": "wartet", "akteur": akteur, "modus": "gelaende",
+                                          "angenommen": cde._jetzt(), "quellen": [d["datei"]], "weggelassen": []})
+    _laufend[lauf_id] = asyncio.create_task(_fahre(o, lauf_id))
+    _ordner_der_laeufe[lauf_id] = laufordner
+    _aufraeumen(o, behalte=lauf_id)
+    return {"lauf_id": lauf_id, "zustand": "wartet", "modus": "gelaende", "quellen": [d["datei"]]}
 
 
 async def _fahre(o: ordner.Ordner, lauf_id: str) -> None:

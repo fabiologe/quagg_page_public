@@ -227,6 +227,9 @@ export function dokumentAusManifest(d) {
     };
 }
 
+/** Ab dieser Länge (Zeichen JSON) packt das RemoteBackend einen Wert mit gzip. */
+export const GZIP_AB = 64 * 1024;
+
 export class RemoteBackend {
     /**
      * @param {number} projektId  Projektnummer (Ordnername)
@@ -294,6 +297,32 @@ export class RemoteBackend {
      * ohnehin sofort per PUT auf dem Server, die frische Antwort enthält sie
      * also — und dazu alles, was Kollegen inzwischen geschrieben haben.
      */
+    /**
+     * GROSSE WERTE GEPACKT (2026-10-06, die 4-MB-Grenze): ab GZIP_AB Zeichen geht der
+     * Wert gzip-gepackt (`Content-Encoding: gzip`, gemessen Faktor ~13 am Journal).
+     * Ein Server von vorher kann das nicht lesen — dann EINMAL ungepackt nach, und
+     * dieser Tab packt nicht mehr. Ein 409 (Journal-Wächter) ist kein Packfehler.
+     */
+    async _putGepackt(api, url, value) {
+        const text = JSON.stringify(value);
+        let gepackt = null;
+        if (!this._gzipAus && text.length >= GZIP_AB && typeof CompressionStream !== 'undefined') {
+            // Packen darf das Speichern nie verhindern: geht es nicht, geht der Wert roh.
+            try { gepackt = await new Response(new Response(text).body.pipeThrough(new CompressionStream('gzip'))).arrayBuffer(); }
+            catch { gepackt = null; }
+        }
+        if (gepackt) {
+            try {
+                return await api.put(url, gepackt, { headers: { 'Content-Encoding': 'gzip', 'Content-Type': 'application/json' } });
+            } catch (e) {
+                const s = e?.response?.status;
+                if (s === 409 || !s) throw e;            // Wächter oder Netz: kein Grund, ungepackt zu wiederholen
+                console.warn('[CDE remote] gepackt abgelehnt — ungepackt nach', s);
+                this._gzipAus = true;
+            }
+        }
+        return api.put(url, value);
+    }
     async getFrisch(fullKey) {
         // Scheitert der Abruf, WIRFT er (T3): der Mehrbenutzer-Wächter darf
         // „unerreichbar" nicht als „dort liegt nichts" lesen. Der alte Cache
@@ -313,7 +342,7 @@ export class RemoteBackend {
         try {
             await this._laden();
             const api = await this._client();
-            await api.put(`/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`, value);
+            await this._putGepackt(api, `/projekte/${this.projektId}/cde/repo/${encodeURIComponent(this._kurz(fullKey))}`, value);
             // Erst NACH dem PUT in den Cache — sonst bliebe bei einem Fehler
             // ein Wert stehen, der nie auf dem Server ankam.
             this._cache?.set(fullKey, value);

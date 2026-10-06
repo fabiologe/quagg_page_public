@@ -861,6 +861,40 @@ async def cde_pruefung_starten(projekt_id: int, sha256: str, nutzer=Depends(_gat
         raise HTTPException(status_code=503, detail=str(fehler))
 
 
+class GelaendeAuftrag(BaseModel):
+    """Ein Gelaende aus einer Rasterdatei des Registers (Fahrplan BIMFY XYZ, X3)."""
+    crs: str
+    toleranz: float | None = None
+    name: str | None = None
+
+
+@router.post("/{projekt_id}/cde/{sha256}/gelaende", status_code=202)
+async def cde_gelaende_starten(projekt_id: int, sha256: str, eingabe: GelaendeAuftrag, nutzer=Depends(_gate)):
+    """XYZ oder ASCII-Grid aus dem Register als Gelaende-Modell. Abgeholt wie der Verbund
+    ueber GET /{id}/cde/verbund/{lauf_id}; fertig steht `Gelaende_<Name>_Rnn.ifc` im Register."""
+    with db.pool().connection() as conn:
+        try:
+            projekte.lesen(conn, projekt_id)
+            o = _ordner_oder_422(projekt_id)
+        except projekte.ProjektUnbekannt as fehler:
+            raise HTTPException(status_code=404, detail=f"unbekannt: {fehler.args[0]}")
+        except (projekte.ProjektAbgelehnt, ordner.OrdnerFehler) as fehler:
+            raise HTTPException(status_code=422, detail=str(fehler))
+        except ordner.OrdnerNichtBereit as fehler:
+            raise HTTPException(status_code=503, detail=str(fehler))
+    try:
+        return await verbund_lauf.gelaende_starten(o, sha256, akteur=nutzer.username, crs=eingabe.crs,
+                                                   toleranz=eingabe.toleranz, name=eingabe.name)
+    except cde.CdeUnbekannt as fehler:
+        raise HTTPException(status_code=404, detail=f"unbekannt: {fehler.args[0]}")
+    except cde.CdeAbgelehnt as fehler:
+        raise HTTPException(status_code=422, detail=str(fehler))
+    except verbund_lauf.VerbundBesetzt as fehler:
+        raise HTTPException(status_code=409, detail=str(fehler))
+    except (verbund_lauf.WerkzeugFehlt, ordner.OrdnerNichtBereit) as fehler:
+        raise HTTPException(status_code=503, detail=str(fehler))
+
+
 @router.post("/{projekt_id}/cde/upload", status_code=201)
 async def cde_hochladen(projekt_id: int, datei: UploadFile = File(...), art: str | None = Query(default=None),
                         status: str = Query(default="WIP"),
@@ -904,7 +938,11 @@ def cde_repo_lesen(projekt_id: int):
 
 @router.put("/{projekt_id}/cde/repo/{key}")
 async def cde_repo_setzen(projekt_id: int, key: str, request: Request, nutzer=Depends(_gate)):
-    wert = await request.json()
+    # gzip-gepackt oder roh (2026-10-06): ein grosses Journal reist gepackt, auf der Platte bleibt JSON.
+    try:
+        wert = cde.nutzlast_lesen(await request.body(), request.headers.get("content-encoding"), key)
+    except cde.CdeAbgelehnt as fehler:
+        raise HTTPException(status_code=422, detail=str(fehler))
     with db.pool().connection() as conn:
         def lauf():
             projekte.lesen(conn, projekt_id)

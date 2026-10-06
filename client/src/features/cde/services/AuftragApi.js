@@ -88,6 +88,21 @@ export const AuftragApi = {
         return (await api.post(`/projekte/${id}/cde/${sha256}/pruefung`)).data;
     },
 
+    /** Eine Datei ins Register laden (Rohdaten eines Geländes, Fahrplan BIMFY XYZ, X3). */
+    async hochladen(id, blob, name) {
+        const form = new FormData();
+        form.append('datei', blob, name);
+        return (await api.post(`/projekte/${id}/cde/upload`, form, { params: { status: 'WIP' } })).data;
+    },
+
+    /**
+     * XYZ oder ASCII-Grid aus dem Register als Gelände-Modell (`Gelaende_<Name>_Rnn.ifc`).
+     * `crs` ist das Bezugssystem des Projekts — die Datei hat keins. Abgeholt über `verbundStatus`.
+     */
+    async gelaendeStarten(id, sha256, { crs, toleranz = null, name = null } = {}) {
+        return (await api.post(`/projekte/${id}/cde/${sha256}/gelaende`, { crs, toleranz, name })).data;
+    },
+
     /**
      * Der GANZE Prüfbericht eines Laufs (IFC-Konsistenz, Stufe 6) — jeder Befund mit
      * Text und Beispielen. 404, sobald der Laufordner weggeräumt ist (MAX_LAEUFE).

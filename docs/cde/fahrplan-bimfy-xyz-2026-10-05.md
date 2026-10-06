@@ -1,6 +1,6 @@
 # BIMFY · XYZ und Punktdaten — wohin damit
 
-**Fahrplan, Stand 2026-10-06. X1 und X2 gebaut, X3 wartet auf den Server‑Neustart.** Fabio, 2026-10-06:
+**Fahrplan, Stand 2026-10-06. X1, X2 und X3 gebaut; X3 wirkt nach dem Server‑Neustart.** Fabio, 2026-10-06:
 „du brauchst keine Datei, das ist eine klassische XYZ‑Datei oder ein ASCII‑Grid“ — X0 entfällt, gemessen
 wird an erzeugten Rastern. X‑E1 bis X‑E6 wie empfohlen. Jede Aussage sagt, ob sie **gelesen**, **gemessen** oder
 **eingeschätzt** ist.
@@ -107,11 +107,12 @@ Eine Bestandsaufnahme mit Codes bleibt eine Punktliste.
 | erstes Fehlermaß (Hypotenusen‑Mitte) zum Vergleich | 3 cm bei 2 cm, nachgeschärft 304 000 Punkte |
 | Prüftor | 0 offen |
 
-**X3 · Der Weg aus BIMFY — wartet.** Noch zu bauen, alles in `app/api` (wirkt erst nach
-`pm2 restart quagg-api`): `gelaende_starten` in `verbund_lauf.py` (Rohdatei aus dem Register,
-`modus: "gelaende"`, CRS des Projekts), `Gelaende` in `ERZEUGT_MUSTER` und `PRAEFIX`, `.xyz`/`.asc`
-im Register, eine Route, im Client der Knopf „Als Gelände anlegen“ (Rohdatei hochladen, Auftrag
-starten, Modell laden).
+**X3 · Der Weg aus BIMFY — gebaut, wirkt nach `pm2 restart quagg-api`.** Server:
+`verbund_lauf.gelaende_starten`, `POST /{id}/cde/{sha256}/gelaende` `{crs}`, `Gelaende` in
+`ERZEUGT_MUSTER` und `PRAEFIX`. Client: in der BIMFY-Tafel „Als Gelände anlegen“ mit Bezugssystem
+(vorgeschlagen: das des Projekts, sonst aus den Ostwerten), lädt die Rohdatei ins Register, startet
+den Auftrag, holt ab und meldet `Gelaende_<Name>_R01.ifc`. Übergabe:
+`docs/cde/uebergabe-server-gelaende-journal-2026-10-06.md`.
 
 ### X0 · Messen mit echten Dateien
 

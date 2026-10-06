@@ -90,10 +90,9 @@ describe('Abnahme Teil XXVI — die Kammer, nur über Kommandos', () => {
 
         // Jeder Vorgang trägt seinen Beleg, der Vorgang IST das Kommando (E1).
         expect(ae.eintraege.filter(e => e.kommando).length).toBe(KAMMER().length);
-        // Die Datei verlangt die Stufe, die Bauwerke lesen kann (E23) — Stufe 7 (Texttabelle)
-        // nur, wenn sie Texte auslagert; die Kammer wiederholt keine.
-        expect(speicher.journal().mindestClient).toBe(6);
-        expect(speicher.journal().texte).toBeUndefined();
+        // Die Datei verlangt die Stufe, die dieser Client schreibt (E23, seit 2026-10-06 Stufe 7);
+        // die Texttabelle bleibt leer, wenn sich nichts wiederholt.
+        expect(speicher.journal().mindestClient).toBe(JOURNAL_KENNT);
         expect(JOURNAL_KENNT).toBe(7);
 
         const paket = await paketAus(ae);

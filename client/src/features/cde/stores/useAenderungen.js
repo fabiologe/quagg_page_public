@@ -710,7 +710,9 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 // Wer weniger kennt, liest nur (siehe `_uebernimmV2`). Stufe 4
                 // (K4b): Kanten speichern ihre Sohle — ein Client ohne diese
                 // Lesart baute sie um DN/2 zu tief.
-                ...(stufe3 ? { mindestClient: Math.min(schreibStufe(), 6) } : {}),
+                // Stufe 7 IMMER, nicht nur mit Texten: der Server-Wächter lehnt ein Journal ab,
+                // dessen Stufe unter die gespeicherte fällt — eines mit Texten, dann ohne, liefe hinein.
+                ...(stufe3 ? { mindestClient: Math.min(schreibStufe(), 7) } : {}),
                 commits: commitsJe[ebene].value.map((c, i) => ({
                     ...c, schrittIds: undefined,
                     schritte: nimm(commitSchritte[i].length),
@@ -734,12 +736,9 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
             };
             // STUFE 7: wiederholte lange Texte (Herleitungen, Vorgangstitel) EINMAL in `texte`.
-            // Nur dann verlangt die Datei Stufe 7 — ohne Wiederholung bleibt sie lesbar wie bisher.
             if (schreibStufe() >= 7) {
                 const { wert, texte } = texteAuslagern({ commits: nutzlast.commits, sitzung: nutzlast.sitzung });
-                if (texte.length) {
-                    Object.assign(nutzlast, wert, { texte, mindestClient: Math.max(nutzlast.mindestClient ?? 0, 7) });
-                }
+                if (texte.length) Object.assign(nutzlast, wert, { texte });
             }
             const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
             // DER SERVER-WÄCHTER (Fahrplan R9): auf dem Server liegt ein Journal

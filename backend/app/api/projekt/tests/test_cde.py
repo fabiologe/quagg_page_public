@@ -550,3 +550,31 @@ def test_entfernen_mit_unlesbarem_journal_wird_abgewiesen(frische_db, app_conn, 
     weg = c.delete(f"/FastAPI/projekte/{p['id']}/cde/{d['sha256']}")
     assert weg.status_code == 422 and "unlesbar" in weg.json()["detail"]
     assert (o.pfad / "CDE" / "Gelaende.ifc").is_file()                      # vorher: verschoben
+
+
+def test_journal_gzip_und_groessere_grenze(frische_db, app_conn, projekte_wurzel):
+    """Das Journal reist gzip-gepackt (2026-10-06) und darf bis 32 MB gross sein; auf der
+    Platte steht lesbares JSON. Andere Schluessel bleiben bei 4 MB; eine Zip-Bombe faellt durch."""
+    import gzip
+    p = projekte.anlegen(app_conn, name="Gzip", honorarmodell="pauschal", akteur="pytest")
+    o = ordner.finde(p["id"])
+    c = _client()
+    journal = {"version": 2, "commits": [{"id": "c1", "schritte": [{"id": f"s{i}", "x": "y" * 1000} for i in range(5000)]}]}
+    roh = json.dumps(journal).encode()
+    assert len(roh) > cde.MAX_REPO_BYTES                         # groesser als die alte Grenze
+    r = c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:aenderungen", content=gzip.compress(roh),
+              headers={"Content-Encoding": "gzip", "Content-Type": "application/json"})
+    assert r.status_code == 200, r.text
+    auf_platte = (o.pfad / "CDE" / "_repo" / "global:aenderungen.json").read_text(encoding="utf-8")
+    assert json.loads(auf_platte) == journal                     # lesbares JSON, kein gzip
+    # Ungepackt wie bisher.
+    assert c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:saved-views", json=[1]).status_code == 200
+    # Ein anderer Schluessel bleibt bei 4 MB.
+    gross = gzip.compress(json.dumps({"a": "0" * (5 * 1024 * 1024)}).encode())
+    r = c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:planinhalt", content=gross,
+              headers={"Content-Encoding": "gzip", "Content-Type": "application/json"})
+    assert r.status_code == 422
+    bombe = gzip.compress(b'{"a":"' + b"0" * (40 * 1024 * 1024) + b'"}')
+    r = c.put(f"/FastAPI/projekte/{p['id']}/cde/repo/global:aenderungen", content=bombe,
+              headers={"Content-Encoding": "gzip", "Content-Type": "application/json"})
+    assert r.status_code == 422

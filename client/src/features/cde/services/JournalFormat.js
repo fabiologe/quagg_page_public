@@ -61,7 +61,9 @@ export const JOURNAL_KENNT = 7;
  * Stufe 7 (2026-10-06, die 4-MB-Grenze): die Texttabelle (`texteAuslagern`).
  * Leser und Schreiber wieder in EINER Auslieferung — ein älterer Tab sähe
  * `{"§": 12}` statt einer Herleitung; mit `mindestClient: 7` liest er nur.
- * Verlangt wird Stufe 7 nur, wenn wirklich Texte ausgelagert sind.
+ * Verlangt wird Stufe 7 IMMER (nicht nur mit Texten): der Server-Wächter
+ * (`cde._journal_waechter`) lehnt ein Journal ab, dessen Stufe unter die
+ * gespeicherte fällt.
  */
 export const SCHREIBT_AUSGELIEFERT = 7;
 let _schreibt = SCHREIBT_AUSGELIEFERT;

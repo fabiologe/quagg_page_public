@@ -56,7 +56,14 @@
     <div v-if="gelaende" class="bf-gelaende">
       <p><CdeIcon name="info" :size="12" /> <b>Gelände erkannt:</b> {{ gelaendeText }}</p>
       <p class="bf-hinweis">Ein DGM wird ein eigenes Modell im Register (IfcGeographicElement TERRAIN, ausgedünnt auf
-        2 cm Höhentoleranz), kein Bauteil im Verlauf. Den Server-Auftrag schaltet erst ein Neustart des Servers frei.</p>
+        2 cm Höhentoleranz), kein Bauteil im Verlauf.</p>
+      <div class="bf-gelaende-zeile">
+        <label>Bezugssystem <input v-model="gelaendeCrs" class="bf-crs" placeholder="EPSG:25832" /></label>
+        <button class="bf-knopf primaer" :disabled="!gelaendeBereit" :title="gelaendeGrund" @click="gelaendeAnlegen">
+          <CdeIcon :name="gelaendeLauf && !gelaendeFertig ? 'busy' : 'bimfy'" :size="14" /> Als Gelände anlegen
+        </button>
+      </div>
+      <p v-if="gelaendeMeldung" class="bf-meldung" :class="gelaendeMeldung.art">{{ gelaendeMeldung.text }}</p>
     </div>
     <ul v-if="warnungen.length" class="bf-warnungen">
       <li v-for="(w, i) in warnungen" :key="i"><CdeIcon name="warn" :size="12" /> {{ w }}</li>
@@ -141,13 +148,15 @@
  * das Cockpit und das Merkmalsfenster. Danach wird der Vorgang über
  * `wendeEintragAn` ans Modell gebracht, wie jede andere Bearbeitung.
  */
-import { computed, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
 import CdeIcon from './ui/CdeIcon.vue';
 import CdeCardHeader from './ui/CdeCardHeader.vue';
 import CdeIconButton from './ui/CdeIconButton.vue';
 import { useKommandoweg } from '../composables/useKommandoweg.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
+import { useCdeStore } from '../stores/useCdeStore.js';
+import { AuftragApi } from '../services/AuftragApi.js';
 import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { rezeptNach, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
 import { ANNAHME, FORMATE, endungVon, liesGeometrien } from '../services/bimfy/Geometrieleser.js';
@@ -177,6 +186,72 @@ const geometrien = shallowRef([]);
 const warnungen = ref([]);
 const gelaende = ref(null);
 const gelaendeText = computed(() => (gelaende.value ? gelaendeSatz(gelaende.value) : ''));
+
+// ── Gelände anlegen (Fahrplan XYZ, X3): Rohdatei ins Register, Server-Auftrag, abholen ──
+const cdeStore = useCdeStore();
+const gelaendeCrs = ref('');
+const gelaendeLauf = ref(null);
+const gelaendeMeldung = ref(null);
+const gelaendeFertig = computed(() => !!gelaendeLauf.value && !['wartet', 'laeuft'].includes(gelaendeLauf.value.zustand)
+  && !(gelaendeLauf.value.zustand === 'geprueft' && !gelaendeLauf.value.dokument));
+const gelaendeGrund = computed(() => (!cdeStore.auftrag?.id ? 'Erst einen Auftrag öffnen — das Gelände kommt in sein Register.'
+  : !/^EPSG:\d+$/i.test(gelaendeCrs.value.trim()) ? 'Bezugssystem als EPSG-Code angeben (z. B. EPSG:25832).'
+  : gelaendeLauf.value && !gelaendeFertig.value ? 'Der Auftrag läuft.' : ''));
+const gelaendeBereit = computed(() => !!gelaende.value && !gelaendeGrund.value);
+let gelaendeUhr = null;
+
+/** Das Bezugssystem vorschlagen: das des Projekts, sonst aus den Ostwerten der Datei. */
+function gelaendeCrsVorschlagen(g) {
+  const rahmen = bearbeitung.rahmen ?? rahmenOhneBezug();
+  const ursprung = rahmen.nachProjekt({ x: 0, y: 0, z: 0 });
+  const sys = (Math.abs(ursprung.ost) > 1000 ? erkenneSystem(ursprung.ost) : null) ?? erkenneSystem(g.ausdehnung.minO);
+  gelaendeCrs.value = sys?.epsg ?? '';
+}
+
+async function gelaendeAnlegen() {
+  const id = cdeStore.auftrag?.id;
+  gelaendeMeldung.value = null;
+  try {
+    const blob = new Blob([dateiText.value], { type: 'text/plain' });
+    let dok;
+    try { dok = await AuftragApi.hochladen(id, blob, dateiName.value); }
+    catch (e) {
+      // Liegt die Rohdatei schon im Register (gleicher Name), nimmt der Auftrag sie von dort.
+      if (e?.response?.status !== 422) throw e;
+      dok = ((await AuftragApi.register(id))?.dokumente ?? []).find(d => d.datei === dateiName.value);
+      if (!dok) throw e;
+    }
+    gelaendeLauf.value = await AuftragApi.gelaendeStarten(id, dok.sha256, { crs: gelaendeCrs.value.trim().toUpperCase() });
+    gelaendeAbholen(gelaendeLauf.value.lauf_id);
+  } catch (e) {
+    const status = e?.response?.status;
+    gelaendeMeldung.value = { art: 'fehler', text: status === 404 || status === 405
+      ? 'Der Server kennt den Gelände-Auftrag noch nicht — er braucht einen Neustart.'
+      : (e?.response?.data?.detail || e?.message || 'Das Gelände ließ sich nicht anlegen.') };
+  }
+}
+
+function gelaendeAbholen(laufId, fehlversuche = 0) {
+  clearTimeout(gelaendeUhr);
+  gelaendeUhr = setTimeout(async () => {
+    const id = cdeStore.auftrag?.id;
+    try {
+      const st = await AuftragApi.verbundStatus(id, laufId);
+      gelaendeLauf.value = st;
+      if (!gelaendeFertig.value) { gelaendeAbholen(laufId); return; }
+      if (st.dokument) {
+        await cdeStore.uebernehmeRegister(await AuftragApi.register(id), id);
+        gelaendeMeldung.value = { art: 'ok', text: `${st.dokument.datei} liegt im Register — dort laden wie jedes Modell.` };
+      } else {
+        gelaendeMeldung.value = { art: 'fehler', text: st.fehler || (st.offen ?? []).join(' · ') || `Auftrag ${st.zustand}.` };
+      }
+    } catch (e) {
+      if (fehlversuche < 5) { gelaendeAbholen(laufId, fehlversuche + 1); return; }
+      gelaendeMeldung.value = { art: 'fehler', text: `Abholen misslang: ${e?.response?.data?.detail || e?.message || e}` };
+    }
+  }, 2000);
+}
+onBeforeUnmount(() => clearTimeout(gelaendeUhr));
 const zeilen = ref([]);
 const laeuft = ref(false);
 const fortschritt = ref(0);
@@ -191,6 +266,8 @@ function lesen() {
   geometrien.value = aus.geometrien;
   warnungen.value = aus.warnungen;
   gelaende.value = aus.gelaende ?? null;
+  gelaendeLauf.value = null; gelaendeMeldung.value = null;
+  if (gelaende.value) gelaendeCrsVorschlagen(gelaende.value);
   zeilen.value = gruppiere(aus.geometrien);
   meldung.value = null;
 }
@@ -379,6 +456,8 @@ async function anlegen() {
 .bf-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
 .bf-gelaende { display: grid; gap: 2px; font-size: var(--cde-font-xs); }
 .bf-gelaende p { margin: 0; }
+.bf-gelaende-zeile { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.bf-crs { width: 9rem; font: inherit; }
 .bf-knick { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
 .bf-knick.warnung { color: var(--cde-warn); }
 .bf-knick summary { cursor: pointer; display: flex; align-items: center; gap: 4px; }

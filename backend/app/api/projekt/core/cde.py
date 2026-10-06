@@ -110,6 +110,9 @@ ARTEN = ("modell", "plan", "bcf", "regelwerk", "sonstiges")
 SATZ_ZWECKE = ("bestand", "variante", "vorzug", "ausschreibung")
 ENDUNGEN = {".ifc": "modell", ".ifczip": "modell", ".pdf": "plan", ".dxf": "plan", ".dwg": "plan",
             ".bcf": "bcf", ".bcfzip": "bcf", ".ids": "regelwerk"}
+# Rohdaten eines Gelaendes (Fahrplan BIMFY XYZ, X3): bleiben `sonstiges` im Register und
+# werden ueber `verbund_lauf.gelaende_starten` zu einem erzeugten Modell `Gelaende_…_Rnn.ifc`.
+GELAENDE_ENDUNGEN = (".xyz", ".asc", ".txt", ".csv")
 MAX_GROESSE = 400 * 1024 * 1024
 CHUNK = 1024 * 1024
 # Streng, damit DELETE /cde/{sha256} nicht versehentlich auf /cde/repo passt:
@@ -358,10 +361,11 @@ def _registriere(conn, o: ordner.Ordner, *, name: str, sha: str, groesse: int, a
 
 VERBUND_PRAEFIX = "Verbund_"
 ERDBAU_PRAEFIX = "Erdbau_"
+GELAENDE_PRAEFIX = "Gelaende_"
 # Erzeugte Container heissen nach EINER Regel (Fahrplan Erdbau-Container, E3):
 # Praefix, Satzname in ASCII, Revision — `Erdbau_Boeschung_Sued_R02.ifc`.
 # Lieferungen bleiben, wie sie geliefert wurden.
-ERZEUGT_MUSTER = re.compile(r"^(Verbund|Erdbau)_[A-Za-z0-9_\-]+_R\d{2,}\.ifc$")
+ERZEUGT_MUSTER = re.compile(r"^(Verbund|Erdbau|Gelaende)_[A-Za-z0-9_\-]+_R\d{2,}\.ifc$")
 _UMLAUTE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
 
 
@@ -844,6 +848,36 @@ def journale_mit(o: ordner.Ordner, sha256: str) -> list[dict]:
 
 REPO_ORDNER = "_repo"
 MAX_REPO_BYTES = 4 * 1024 * 1024
+# DAS JOURNAL darf groesser sein (2026-10-06, BIMFY: ein echtes ISYBAU-Netz brauchte 3,1 MB,
+# 74 % der alten Grenze). Es kommt gzip-gepackt (Faktor ~13 gemessen) und liegt als
+# lesbares JSON auf der Platte — der Server liest es selbst (`_bezuege`).
+MAX_JOURNAL_BYTES = 32 * 1024 * 1024
+
+
+def ist_journal(key: str) -> bool:
+    return key == JOURNAL_KEY or key.endswith(f":{JOURNAL_KEY}")
+
+
+def nutzlast_lesen(roh: bytes, kodierung: str | None, key: str):
+    """Der Wert eines PUT auf das Repository: JSON, wahlweise gzip-gepackt (`Content-Encoding: gzip`).
+
+    Entpackt wird mit Deckel — eine kleine gepackte Datei darf nicht zu einer
+    riesigen aufgehen (Zip-Bombe): hoechstens die Grenze des Schluessels plus 1 Byte.
+    """
+    import zlib
+    grenze = MAX_JOURNAL_BYTES if ist_journal(key) else MAX_REPO_BYTES
+    if (kodierung or "").strip().lower() == "gzip":
+        entpacker = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            roh = entpacker.decompress(roh, grenze + 1)
+        except zlib.error as fehler:
+            raise CdeAbgelehnt(f"wert fuer {key}: gzip nicht lesbar ({fehler})") from fehler
+        if len(roh) > grenze or entpacker.unconsumed_tail:
+            raise CdeAbgelehnt(f"wert fuer {key} groesser als {grenze // (1024 * 1024)} MB")
+    try:
+        return json.loads(roh.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as fehler:
+        raise CdeAbgelehnt(f"wert fuer {key}: kein JSON ({fehler})") from fehler
 _KEY_MUSTER = re.compile(r"^[A-Za-z0-9:_.\-]{1,160}$")
 
 
@@ -890,8 +924,9 @@ def _ablage_lesen(pfad: Path) -> dict:
 def _ablage_setzen(pfad: Path, key: str, wert) -> None:
     repo_key_pruefen(key)
     text = json.dumps(wert, ensure_ascii=False)
-    if len(text.encode("utf-8")) > MAX_REPO_BYTES:
-        raise CdeAbgelehnt(f"wert fuer {key} groesser als {MAX_REPO_BYTES // (1024 * 1024)} MB")
+    grenze = MAX_JOURNAL_BYTES if ist_journal(key) else MAX_REPO_BYTES
+    if len(text.encode("utf-8")) > grenze:
+        raise CdeAbgelehnt(f"wert fuer {key} groesser als {grenze // (1024 * 1024)} MB")
     pfad.mkdir(parents=True, exist_ok=True)
     ziel = pfad / f"{key}.json"
     temp = pfad / f".tmp-{uuid.uuid4().hex}"
