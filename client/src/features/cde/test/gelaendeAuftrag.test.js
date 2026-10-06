@@ -80,5 +80,5 @@ describe('BIMFY · Als Gelände anlegen', () => {
         expect(AuftragApi.gelaendeStarten).toHaveBeenCalledWith(7, 'a'.repeat(64), { crs: 'EPSG:25832' });
         expect(w.find('.bf-gelaende .bf-meldung').text()).toContain('Gelaende_dgm_R01.ifc liegt im Register');
         w.unmount();
-    });
+    }, 20000);   // mountet das ganze Panel — in der vollen Reihe unter Last über 5 s
 });

@@ -324,8 +324,8 @@ const TreeNode = defineComponent({
 .node-row.is-aussparung .node-label { font-style: italic; }
 .node-row.is-verweis .node-label { color: var(--cde-text-dim); }
 .node-row.is-gruppe .node-label { color: var(--cde-text-soft); }
-/* Der Zustand eines eigenen Bauteils (Zustand.js) — Rückbau rot, im Baum wie in 3D und Plan. */
-.node-row.ist-rueckbau .node-label { text-decoration: line-through; text-decoration-color: var(--cde-danger); }
+/* Der Zustand eines eigenen Bauteils (Zustand.js) — Neubau rot, Rückbau gelb, im Baum wie in 3D und Plan. */
+.node-row.ist-rueckbau .node-label { text-decoration: line-through; text-decoration-color: var(--cde-amber); }
 .node-zustand {
   font-size: 0.62rem;
   padding: 0 0.3rem;
@@ -333,7 +333,8 @@ const TreeNode = defineComponent({
   white-space: nowrap;
   flex-shrink: 0;
 }
-.node-zustand.zustand-rueckbau { color: var(--cde-danger); background: var(--cde-danger-soft); }
+.node-zustand.zustand-rueckbau { color: var(--cde-amber); background: color-mix(in srgb, var(--cde-amber) 18%, transparent); }
+.node-zustand.zustand-neubau { color: var(--cde-danger); background: var(--cde-danger-soft); }
 /* Teil XXI (E3): „verdeckt von …" am Vorgangsknoten — leise, aber lesbar. */
 .node-hinweis {
   font-size: 0.66rem;

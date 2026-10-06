@@ -1317,8 +1317,8 @@ function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
     const EIGEN = { r: 21, g: 101, b: 192 };   // ein eigener Ton — nicht Rotstift, nicht Bauteil
     doc.setLineWidth(0.45);
     for (const e of erzeugte) {
-        // DER ZUSTAND (Zustand.js): Rückbau in seinem Ton, gestrichelt — Strich UND Farbe,
-        // damit es auch schwarz-weiss gedruckt lesbar bleibt.
+        // DER ZUSTAND (Zustand.js): Bestand grau, Neubau rot, Rückbau gelb und gestrichelt —
+        // Strich UND Farbe, damit es auch schwarz-weiss gedruckt lesbar bleibt.
         const bild = zustandsbild(e?.zustand)?.plan ?? null;
         const ton = bild ?? EIGEN;
         doc.setDrawColor(ton.r, ton.g, ton.b);

@@ -29,6 +29,7 @@ import { G400_BAUWERKSTYP } from './isybau/Schluessel.js';
 import { vorlageNach } from '../rezept/Bauwerksvorlagen.js';
 import { BAUWERKSARTEN, REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
 import { koerperform, formklasse } from './Koerperform.js';
+import { zustandAusIsybau } from '../Zustand.js';
 
 /** Zwei Punkte gelten in der Draufsicht als derselbe Ort (1 cm). */
 const ORT_M = 0.01;
@@ -673,15 +674,17 @@ export function strassenablaufKommando(geo, wahl = {}, { versatz = null, umrechn
 
 /**
  * Was die Quelle über ein Objekt sagt, für das Kommando: alle ISYBAU-Sachdaten
- * (Fahrplan Sachdaten P2) und der Zustand — Status 6 „rückgebaut" (AH15 G105)
- * wird als Rückbau gebaut und markiert (Fabio, 2026-10-06), nicht weggelassen.
+ * (Fahrplan Sachdaten P2) und der Zustand aus dem Status (AH15 G105, Zustand.js):
+ * 0/3/4 Bestand, 1 „geplant" Neubau, 6 „rückgebaut" Rückbau — gebaut und markiert,
+ * nicht weggelassen (Fabio, 2026-10-06). 2 fiktiv und 5 sonstige bleiben ohne.
  */
 function _quellwerte(geo) {
+    const zustand = zustandAusIsybau(geo?.isybau?.status);
     // OHNE KÖRPER: die Lage (Rechts-/Hochwert, auch ohne Höhe) steht nirgends sonst — sie kommt roh dazu.
     const sd = { ...(geo?.isybau?.stammdaten ?? {}), ...(geo?.art === 'ohneKoerper' ? geo.isybau?.geometriedaten ?? {} : {}) };
     return {
         ...(Object.keys(sd).length ? { stammdaten: sd } : {}),
-        ...(geo?.isybau?.status === 6 ? { zustand: 'rueckbau' } : {}),
+        ...(zustand ? { zustand } : {}),
     };
 }
 

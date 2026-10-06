@@ -316,8 +316,8 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
     return { modelId, name: 'Eigenbau', sha256: null, eigenbau: true, wurzel, gruppen: null, knoten: stand.size };
 }
 
-/** Der Zustand am Knoten (Zustand.js): Schlüssel und Titel, damit der Baum ihn zeigt — oder nichts. */
+/** Der Zustand am Knoten (Zustand.js): Schlüssel und Titel, damit der Baum ihn zeigt — der Bestand als Normalfall nicht. */
 function _zustandsmerk(z) {
     const bild = zustandsbild(z);
-    return bild ? { zustand: z, zustandTitel: bild.titel } : {};
+    return bild?.abzeichen ? { zustand: z, zustandTitel: bild.titel } : {};
 }

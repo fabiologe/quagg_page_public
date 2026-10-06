@@ -511,7 +511,7 @@ describe('Abnahme I7 · Format 2017, wie es echte Dateien schreiben (nachgestell
         expect(k.zug[1]).toMatchObject({ ost: 2564696.715, hoehe: 208.3 });
     });
 
-    it('HoeheAufbau 0 ist unbekannt, Konus 0 + Platte 0 auch — es wird ein Regelschacht mit Hals; Rückgebautes wird als Rückbau gebaut', () => {
+    it('HoeheAufbau 0 ist unbekannt, Konus 0 + Platte 0 auch — es wird ein Regelschacht mit Hals; Rückgebautes wird als Rückbau gebaut, Vorhandenes als Bestand', () => {
         const { geometrien } = liesIsybau(XML2017);
         const s1 = geometrien.find(g => g.name === 'S1');
         expect(s1.muster.kopf.oberteil).toBe('hals');
@@ -521,9 +521,10 @@ describe('Abnahme I7 · Format 2017, wie es echte Dateien schreiben (nachgestell
         expect(zeilen.map(z => [z.ebene, z.aktiv])).toEqual([['ISYBAU Schacht', true], ['ISYBAU Haltung (rückgebaut)', true]]);
         const { kommandos } = kommandosFuer(zeilen);
         const zustand = (name) => kommandos.find(k => k.geo.name === name)?.kommando.werte.zustand;
-        expect(kommandos.filter(k => k.kommando.werte.zustand).map(k => k.geo.isybau.status)).toEqual(
-            kommandos.filter(k => k.geo.isybau.status === 6).map(() => 6));
-        expect(zustand('S1')).toBeUndefined();
+        // Status 6 → Rückbau, 0 → Bestand (Zustand.js) — jedes Kommando trägt seinen.
+        const erwartet = { 0: 'bestand', 6: 'rueckbau' };
+        expect(kommandos.map(k => k.kommando.werte.zustand)).toEqual(kommandos.map(k => erwartet[k.geo.isybau.status]));
+        expect(zustand('S1')).toBe('bestand');
     });
 
     it('Lagebezug: CRSLage → EPSG, Gauss-Krüger 2 ↔ UTM 32 hin und zurück auf den Millimeter', async () => {

@@ -137,6 +137,42 @@
     </div>
   </div>
 
+  <!-- MASSEN NACH ZUSTAND (Fabio, 2026-10-06): Bestand, Neubau und Rückbau
+       getrennt — aus dem Journal, je Netzobjekt (Zustandsmengen.js). -->
+  <div class="cde-card">
+    <CdeCardHeader icon="quality" titel="Massen nach Zustand" />
+    <div v-if="!zustandsmengen.zeilen.length" class="cde-state-msg">
+      <CdeIcon name="info" :size="22" />
+      Noch keine eigenen Leitungen oder Bauwerke.
+    </div>
+    <div v-else class="cde-table-wrap">
+      <table class="cde-table">
+        <thead>
+          <tr><th>Position</th><th>DN</th><th>Material</th>
+              <th v-for="z in zustandsmengen.zustaende" :key="z" :class="`zustand-${z}`">{{ zustandsTitel(z) }}</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(z, i) in zustandsmengen.zeilen" :key="i">
+            <td>{{ z.titel }}</td>
+            <td class="mono">{{ z.dn ?? '—' }}</td>
+            <td>{{ z.material ?? '—' }}</td>
+            <td v-for="s in zustandsmengen.zustaende" :key="s" class="mono">{{ mengeText(z, s) }}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3"><strong>Leitungen</strong></td>
+            <td v-for="s in zustandsmengen.zustaende" :key="s" class="mono"><strong>{{ (zustandsmengen.summe[s]?.laenge ?? 0).toFixed(2) }} m</strong></td>
+          </tr>
+          <tr>
+            <td colspan="3"><strong>Stück</strong></td>
+            <td v-for="s in zustandsmengen.zustaende" :key="s" class="mono"><strong>{{ zustandsmengen.summe[s]?.stueck ?? 0 }}</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
   <!-- ERDMASSEN (Stufe 15). Nichts davon ist gespeichert: jede Zeile
        entsteht aus dem Journal (Quelle + Operationsliste) und der Ableitung
        des Quellrasters — Ausgangszustand gegen geformten Zustand, Aushub
@@ -183,6 +219,7 @@ import { useAenderungen } from '../stores/useAenderungen.js';
 import { useViewerApi } from '../composables/viewerApi.js';
 import { mengenNachMassnahme, massnahmeNach } from '../services/Sanierung.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
+import { mengenNachZustand, zustandsTitel } from '../services/Zustandsmengen.js';
 
 const aenderungen = useAenderungen();
 const api = useViewerApi();
@@ -209,6 +246,17 @@ const sanierung = computed(() => {
     merkmale: new Map(bauteile.map(b => [b.globalId, b.merkmale ?? {}])),
   });
 });
+
+/** Massen nach Zustand — rein aus dem Journal (Zustandsmengen.js). */
+const zustandsmengen = computed(() => {
+  void aenderungen.anzahl;
+  return mengenNachZustand(aenderungen.wirksamerStand('erzeugt'));
+});
+const mengeText = (zeile, z) => {
+  const v = zeile.werte[z];
+  if (!v) return '—';
+  return zeile.einheit === 'm' ? `${v.toFixed(2)} m` : String(v);
+};
 
 /**
  * Erdmassen — asynchron, weil das Quellraster über die Engine abgeleitet
@@ -304,6 +352,9 @@ function fmt(n) {
 </script>
 
 <style scoped>
+th.zustand-neubau { color: var(--cde-danger); }
+th.zustand-rueckbau { color: var(--cde-amber); }
+th.zustand-bestand { color: var(--cde-text-dim); }
 /* Leitfarbe dieser Kachel — Kopf, Summenleiste und Tabelle lesen sie
    (Definition der Bausteine: styles/theme.css). */
 .vol-tab { --card-accent: var(--cde-violet); font-size: 0.78rem; color: var(--cde-text); }

@@ -196,8 +196,34 @@ sie in der Ansicht sehen, das ist relevant für Massen später".
 | Journal | 2,81 MB | 2,92 MB |
 | Prüftor offen | 0 | 0 |
 
-- Offen P4d: Massen getrennt nach Bestand und Rückbau (Mengenkopf wie
-  `Sanierung.mengenNachMassnahme`).
+- Farbe seit P4d: Rückbau gelb (0xf9a825), Neubau übernimmt Rot.
+
+### P4d · Bestand, Neubau, Rückbau und ihre Massen · **gebaut**
+Fabio, 2026-10-06: „gleiche nun ab mit dem Neubau", Antwort: Bestand, Rückbau, Neubau.
+
+- `Zustand.js` kennt drei Zustände, jeder nennt seine ISYBAU-Codes (G105):
+  0/3/4 Bestand, 1 „geplant" Neubau, 6 „rückgebaut" Rückbau. 2 fiktiv und
+  5 sonstige bleiben ohne (`zustandAusIsybau`).
+- Farben nach Tiefbau-Gewohnheit: Bestand grau, Neubau rot, Rückbau gelb und
+  gestrichelt. Bestand färbt im 3D und im Paket nicht um (`zustandsfarbe`
+  gibt null), nur der Plan zeichnet ihn grau. Der Strukturbaum zeigt nur
+  Neubau und Rückbau als Abzeichen (`abzeichen`).
+- `services/Zustandsmengen.js` `mengenNachZustand(stand)`: rein aus dem
+  Journal. Leitungen in m je DN und Material (räumliche Achslänge), Bögen als
+  Formstück in Stück, Bauwerke und Einzelknoten in Stück je Art. Die Teile
+  eines Bauwerks zählen nicht einzeln, eine Baugruppe „Leitung" nur über ihre
+  Stücke. Tafel „Massen nach Zustand" im Mengen-Reiter (`IfcVolumeTab.vue`).
+- Echte Datei (Status: 367× 0, 140× 1, 52× 2, 31× 4, 10× 5, 20× 6, 50 ohne):
+
+| | Bestand | Neubau | Rückbau | ohne Angabe |
+|---|---|---|---|---|
+| Bauplaene mit Zustand | 398 | 140 | 20 | (Teile erben) |
+| Leitungen | 4 279,23 m | 1 505,53 m | 66,41 m | 204,21 m |
+| Stück (Bauwerke, Knoten, Bögen) | 204 | 77 | 17 | 107 |
+| Paketteile umgefärbt | 0 | 390 rot | 66 gelb | |
+
+- „ohne Angabe" sind fiktive (2), sonstige (5) und Objekte ohne Status.
+  Abgelehnt 0, Paket 1 847 Teile, keine übersprungen.
 
 ### P4e · Elemente ohne Körper · **gebaut**
 Fabio, 2026-10-06: „Als Element ohne Geometrie".

@@ -43,7 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
-import { zustandVon, zustandsbild } from './Zustand.js';
+import { zustandVon, zustandsfarbe } from './Zustand.js';
 import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istBehaelter, istEigen, mengenMethodeVon, mengenVon, merkmaleVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
@@ -943,7 +943,7 @@ export class IfcAutor {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
-            const bild = zustandsbild(zustandVon(schritt.wert, (g) => plaene.get(g)));
+            const bild = zustandsfarbe(zustandVon(schritt.wert, (g) => plaene.get(g)));
             zuErzeugen.push({ schritt, kanten: gebaut.kanten ?? null, bauteil: {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
                 predefinedType: gebaut.predefinedType ?? null,
