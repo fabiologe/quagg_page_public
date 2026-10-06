@@ -466,7 +466,8 @@ function _amKnickTeilen({ geo, kommando }, kennung) {
     if (rezeptNach(kommando.werkzeug.slice(0, -'-zeichnen'.length))?.netzrolle !== 'kante') return null;
     const da = wand?.dAussen ?? (Number(kommando.werte?.dn) > 0 ? Number(kommando.werte.dn) / 1000 : null);
     const { stuecke, boegen, befunde } = teileLeitung(zug, { da, material: geo.isybau.material, name: kommando.werte?.name ?? geo.name });
-    if (!boegen.length) return null;
+    // Ohne Bogen bleibt es ein Rohr — ein kleiner Knick in der Muffe wird trotzdem genannt.
+    if (!boegen.length) return befunde.length ? [{ geo, kommando, befunde }] : null;
     const { stammdaten, zustand, ...rohrwerte } = kommando.werte ?? {};
     const name = rohrwerte.name || geo.name || 'Leitung';
     const gruppe = kennung('bauteil');
@@ -542,6 +543,31 @@ function _verknuepfe(kommandos, kennung) {
             kommando.werte.herleitung = kommando.werte.herleitung ? `${kommando.werte.herleitung}; ${satz}` : satz;
         }
     }
+}
+
+/** Die Knick-Befunde (I13) in der Reihenfolge, in der die Tafel sie zeigt, mit ihrem Titel. */
+export const KNICK_BEFUNDE = Object.freeze({
+    kein_regelbogen: 'ohne genauen Regelbogen — gebaut mit dem gemessenen Winkel',
+    reinigungsoeffnung: 'Richtungsänderung über 30° — Reinigungsöffnung prüfen (DIN 1986-100)',
+    bogen_eng: 'zu wenig Platz — Bogen mit kleinerem Radius',
+    knick_in_muffe: 'kleiner Knick — in der Muffe, kein Formstück',
+});
+
+/**
+ * Die Knick-Befunde einer Übersetzung für die Tafel (I13): je Regel ein Titel,
+ * die Anzahl und jede Zeile mit dem Namen der Leitung. Rein — aus den Kommandos.
+ * @returns {{regel, titel, schwere, zeilen: string[]}[]}
+ */
+export function knickBefunde(kommandos) {
+    const je = new Map();
+    for (const e of kommandos ?? []) {
+        for (const b of e.befunde ?? []) {
+            if (!KNICK_BEFUNDE[b.regel]) continue;
+            if (!je.has(b.regel)) je.set(b.regel, { regel: b.regel, titel: KNICK_BEFUNDE[b.regel], schwere: b.schwere, zeilen: [] });
+            je.get(b.regel).zeilen.push(`${e.geo?.name ?? 'Leitung'}: ${b.text}`);
+        }
+    }
+    return Object.keys(KNICK_BEFUNDE).filter(r => je.has(r)).map(r => je.get(r));
 }
 
 /** Bis zu dieser Fuge schliesst BIMFY eine Leitung an ihren Anschlusspunkt an (I10). */

@@ -375,6 +375,34 @@ describe('BIMFY · die Tafel, montiert', () => {
     });
 });
 
+describe('BIMFY · die Tafel nennt, was an den Knicken gebaut wird (I13)', () => {
+    it('eine Leitung mit 90°-Knick: ein Hinweis „Reinigungsöffnung prüfen" mit dem Namen der Leitung', async () => {
+        const { mount } = await import('@vue/test-utils');
+        const BimfyPanel = (await import('../components/BimfyPanel.vue')).default;
+        const w = mount(BimfyPanel, { global: { stubs: { CdeIcon: { template: '<i />' } } } });
+        const text = `<?xml version="1.0" encoding="UTF-8"?>
+<Identifikation><Datenkollektive><Stammdatenkollektiv>
+  <AbwassertechnischeAnlage><Objektbezeichnung>L7</Objektbezeichnung><Objektart>1</Objektart>
+    <Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt>
+      <Kante><Start><Rechtswert>410000</Rechtswert><Hochwert>5460000</Hochwert><Punkthoehe>101</Punkthoehe></Start><Ende><Rechtswert>410010</Rechtswert><Hochwert>5460000</Hochwert><Punkthoehe>100,9</Punkthoehe></Ende></Kante>
+      <Kante><Start><Rechtswert>410010</Rechtswert><Hochwert>5460000</Hochwert><Punkthoehe>100,9</Punkthoehe></Start><Ende><Rechtswert>410010</Rechtswert><Hochwert>5460010</Hochwert><Punkthoehe>100,8</Punkthoehe></Ende></Kante>
+    </Polygon></Polygone></Geometriedaten></Geometrie>
+    <Kante><KantenTyp>1</KantenTyp><Material>PVC</Material><Profil><Profilart>0</Profilart><Profilhoehe>150</Profilhoehe></Profil><Leitung></Leitung></Kante>
+  </AbwassertechnischeAnlage>
+</Stammdatenkollektiv></Datenkollektive></Identifikation>`;
+        const datei = Object.assign(new File([text], 'netz.xml'), { arrayBuffer: async () => new TextEncoder().encode(text).buffer });
+        const input = w.find('input[type="file"]');
+        Object.defineProperty(input.element, 'files', { value: [datei] });
+        await input.trigger('change');
+        await new Promise(r => setTimeout(r, 0));
+        await w.vm.$nextTick();
+        const knicke = w.findAll('.bf-knick summary').map(x => x.text());
+        expect(knicke).toEqual([expect.stringMatching(/^1 × Richtungsänderung über 30°/)]);
+        expect(w.find('.bf-knick li').text()).toMatch(/^L7: Knick 90\.0°/);
+        w.unmount();
+    });
+});
+
 describe('BIMFY · ein Import, ein Vorgang (I8, Sammlung)', () => {
     it('die Tafel legt über ihren echten Knopf an: ein Vorgang, Kennungen vergibt sie selbst', async () => {
         // Bis I8 gab die Tafel ihren Kommandos KEINE Kennungen — jedes Bauteil

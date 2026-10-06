@@ -347,4 +347,4 @@ Fabio, 2026-10-06: „was ist mit Knicken in Polylinien, muss dort nicht ein Kr�
 | Befunde | — | 29 ohne genauen Regelbogen, 23 Reinigungsöffnung prüfen, 2 eng, 1 in der Muffe |
 | Schreiber Warnungen / Prüftor offen | 0 / 0 | 0 / 0 |
 
-- Offen: die Knick-Befunde stehen am Kommando, in der BIMFY-Tafel noch nicht.
+- Die Knick-Befunde zeigt die BIMFY-Tafel je Regel aufklappbar, jede Zeile mit dem Namen der Leitung (`knickBefunde`).

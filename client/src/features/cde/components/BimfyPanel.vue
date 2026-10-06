@@ -98,6 +98,11 @@
         <CdeIcon name="warn" :size="12" />
         {{ uebersetzung.fehler.length }} lassen sich so nicht anlegen — {{ uebersetzung.fehler[0].fehler }}
       </p>
+      <!-- I13: was an den Knicken der Leitungen gebaut wird — je Regel eine Zeile, aufklappbar. -->
+      <details v-for="b in knicke" :key="b.regel" class="bf-knick" :class="b.schwere">
+        <summary><CdeIcon :name="b.schwere === 'warnung' ? 'warn' : 'info'" :size="12" /> {{ b.zeilen.length }} × {{ b.titel }}</summary>
+        <ul><li v-for="(z, i) in b.zeilen" :key="i">{{ z }}</li></ul>
+      </details>
       <p v-if="!kommandoweg" class="bf-hinweis">
         <CdeIcon name="info" :size="12" /> Erst ein Modell im 3D öffnen — BIMFY legt die Bauteile dort an.
       </p>
@@ -140,7 +145,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { rezeptNach, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
 import { ANNAHME, FORMATE, endungVon, liesGeometrien } from '../services/bimfy/Geometrieleser.js';
-import { ausdehnung, gruppiere, klasseFuer, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
+import { ausdehnung, gruppiere, klasseFuer, knickBefunde, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
 import { lagesystemVon, umrechner } from '../services/bimfy/Lagebezug.js';
 import { erkenneSystem, systemNach } from '../services/Koordinatensysteme.js';
 
@@ -250,6 +255,8 @@ const optionen = computed(() => {
 });
 
 const uebersetzung = computed(() => kommandosFuer(zeilen.value, optionen.value));
+/** Die Knick-Befunde (I13) — aus derselben Übersetzung, die angelegt wird. */
+const knicke = computed(() => knickBefunde(uebersetzung.value.kommandos));
 
 /** Draufsicht: Nord oben, eine Breite von 1000 Einheiten. */
 const vorschau = computed(() => {
@@ -360,6 +367,10 @@ async function anlegen() {
 
 .bf-fuss { display: grid; gap: var(--cde-gap-sm); }
 .bf-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.bf-knick { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.bf-knick.warnung { color: var(--cde-warn); }
+.bf-knick summary { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.bf-knick ul { margin: 2px 0 0 18px; padding: 0; max-height: 8rem; overflow: auto; color: var(--cde-text-dim); }
 .bf-knopf {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
   padding: 0.45rem 0.7rem; border-radius: var(--cde-radius-sm); border: 1px solid var(--cde-accent-line);
