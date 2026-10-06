@@ -477,13 +477,19 @@ describe('Abnahme I7 · Format 2017, wie es echte Dateien schreiben (nachgestell
         expect(k.zug[1]).toMatchObject({ ost: 2564696.715, hoehe: 208.3 });
     });
 
-    it('HoeheAufbau 0 ist unbekannt, Konus 0 + Platte 0 auch — es wird ein Regelschacht mit Hals; Rückgebautes ist abgewählt', () => {
+    it('HoeheAufbau 0 ist unbekannt, Konus 0 + Platte 0 auch — es wird ein Regelschacht mit Hals; Rückgebautes wird als Rückbau gebaut', () => {
         const { geometrien } = liesIsybau(XML2017);
         const s1 = geometrien.find(g => g.name === 'S1');
         expect(s1.muster.kopf.oberteil).toBe('hals');
         expect(s1.muster.befunde.map(b => b.regel)).toEqual(['konus_und_platte_nein']);
         const zeilen = gruppiere(geometrien);
-        expect(zeilen.map(z => [z.ebene, z.aktiv])).toEqual([['ISYBAU Schacht', true], ['ISYBAU Haltung (rückgebaut)', false]]);
+        // Fabio, 2026-10-06: Rückgebautes zählt für die Massen — es wird gebaut und als Rückbau markiert.
+        expect(zeilen.map(z => [z.ebene, z.aktiv])).toEqual([['ISYBAU Schacht', true], ['ISYBAU Haltung (rückgebaut)', true]]);
+        const { kommandos } = kommandosFuer(zeilen);
+        const zustand = (name) => kommandos.find(k => k.geo.name === name)?.kommando.werte.zustand;
+        expect(kommandos.filter(k => k.kommando.werte.zustand).map(k => k.geo.isybau.status)).toEqual(
+            kommandos.filter(k => k.geo.isybau.status === 6).map(() => 6));
+        expect(zustand('S1')).toBeUndefined();
     });
 
     it('Lagebezug: CRSLage → EPSG, Gauss-Krüger 2 ↔ UTM 32 hin und zurück auf den Millimeter', async () => {

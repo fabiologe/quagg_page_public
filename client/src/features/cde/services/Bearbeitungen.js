@@ -30,6 +30,7 @@
  * Journal, dessen „zurück" nicht zurückführt.
  */
 
+import { istZustand } from './Zustand.js';
 import { BAUFORMEN, guetegenuegt } from './bauform/Bauformen.js';
 import { REZEPTE, ableitungsSchritte, erzeugtEintrag, rezeptNach, drehePunktliste, spiegelePunktliste, schwerpunktXZ,
          versetzePunktliste, trimmePunktliste, teilePunktlisteAnStation, teileRingMitGerade, vereinigeRinge,
@@ -60,8 +61,12 @@ import { KG_DEFAULT_RULES, kgOptionen } from './Din276Defaults.js';
  */
 
 /** Die Sachdaten einer Quelle als Parameter — eine Kopie, nur wenn welche da sind. */
-const _stammdaten = (werte) => (werte?.stammdaten && typeof werte.stammdaten === 'object' && Object.keys(werte.stammdaten).length
-    ? { stammdaten: { ...werte.stammdaten } } : {});
+const _stammdaten = (werte) => ({
+    ...(werte?.stammdaten && typeof werte.stammdaten === 'object' && Object.keys(werte.stammdaten).length
+        ? { stammdaten: { ...werte.stammdaten } } : {}),
+    // Der Zustand (Zustand.js): Rückbau — am Bauteil bzw. am Bauwerk, die Teile erben ihn.
+    ...(istZustand(werte?.zustand) ? { zustand: werte.zustand } : {}),
+});
 
 export const EINGABEN = Object.freeze({
     wert:   'nur Formularwerte',

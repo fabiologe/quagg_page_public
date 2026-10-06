@@ -43,6 +43,7 @@ import * as THREE from 'three';
 import { boxenAktuell } from './DeltaBoxen.js';
 import * as FRAGS from '@thatopen/fragments';
 import { BAUTEILFARBEN, ERDKOERPER_ABSENKUNG, farbeFuer, materialWerte } from './Bauteilfarben.js';
+import { zustandVon, zustandsbild } from './Zustand.js';
 import { baueAusBauplan, baueMitAbleitung, geometrieAusTeil, istAbleitung, istAnzeigeform, istBehaelter, istEigen, mengenMethodeVon, mengenVon, merkmaleVon, predefinedTypeVon, rezeptNach } from './Bauteilrezepte.js';
 import { neuerAbleitungslauf } from './ableitung/Ableitungslauf.js';
 import { ueberholteTeile, verdraengteAnzeigen } from './ableitung/Bezuege.js';
@@ -464,7 +465,12 @@ export class IfcAutor {
      * seit 2026-09-17 in `materialWerte` (ein Ort, zwei Leser).
      */
     _materialFuer(kategorie) {
-        const werte = materialWerte(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN));
+        return this._materialAus(farbeFuer(kategorie, this._farbsatz ?? BAUTEILFARBEN));
+    }
+
+    /** Das Material zu einem Katalogeintrag `{farbe, deckkraft, zweiseitig?}` — auch dem eines Zustands (Zustand.js). */
+    _materialAus(eintrag) {
+        const werte = materialWerte(eintrag);
         if (!werte) return new THREE.MeshLambertMaterial();
         return new THREE.MeshLambertMaterial({
             color: werte.color,
@@ -911,6 +917,8 @@ export class IfcAutor {
         const zuErzeugen = [];
         const bauwerke = new Map();
         this.bauwerke = bauwerke;
+        // DER ZUSTAND (Zustand.js): ein Rückbau-Teil — auch als Teil eines Rückbau-Bauwerks — sieht anders aus.
+        const plaene = new Map(schritte.map(s => [s.globalId, s.wert]));
 
         for (const schritt of schritte) {
             if (verdraengtVon.has(schritt.globalId)) { verdraengt.push(schritt.globalId); continue; }
@@ -935,9 +943,11 @@ export class IfcAutor {
                 misserfolge.push({ ...schritt, grund: gebaut.fehler.join(' · ') });
                 continue;
             }
+            const bild = zustandsbild(zustandVon(schritt.wert, (g) => plaene.get(g)));
             zuErzeugen.push({ schritt, kanten: gebaut.kanten ?? null, bauteil: {
                 kategorie: gebaut.kategorie, name: gebaut.name, geometrie: gebaut.geometrie,
                 predefinedType: gebaut.predefinedType ?? null,
+                ...(bild ? { material: this._materialAus(bild) } : {}),
                 // Die im Journal vergebene Kennung mitgeben — dann findet auch
                 // `getLocalIdsByGuids` das erzeugte Bauteil, nicht nur die
                 // Karte aus diesem einen Lauf.

@@ -19,6 +19,7 @@
  * IfcQuelle je Modell), der Suchindex die Namen.
  */
 import { getEntityInfo } from '../data/entity-schema.js';
+import { zustandVon, zustandsbild } from './Zustand.js';
 
 const KATEGORIE_AUSHUB = 'IFCEARTHWORKSCUT';
 
@@ -233,7 +234,8 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
     for (const [gid, wert] of stand) {
         if (!istBehaelter(wert)) continue;
         bauwerke.set(gid, { localId: null, modelId, category: 'BAUWERK', gruppe: true, bauwerk: gid, globalId: gid,
-                            name: wert?.name || 'Bauwerk', art: wert?.parameter?.art ?? null, children: [] });
+                            name: wert?.name || 'Bauwerk', art: wert?.parameter?.art ?? null, children: [],
+                            ..._zustandsmerk(zustandVon(wert)) });
     }
     const elternVon = (gid) => stand.get(gid)?.parameter?.teilVon ?? null;
     const imKreis = (gid) => {
@@ -255,7 +257,8 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
             : leer?.has?.(gid) ? ' (leer)'
             : ' (nicht gebaut)';
         return { localId, modelId, category: wert?.kategorie ?? null, name: `${wert?.name || 'Teil ohne Namen'}${zusatz}`,
-                 globalId: gid, children: [], ...(localId == null ? { nichtImRaum: true } : {}) };
+                 globalId: gid, children: [], ...(localId == null ? { nichtImRaum: true } : {}),
+                 ..._zustandsmerk(zustandVon(wert, (g) => stand.get(g))) };
     };
     const vorgaenge = new Map();
     const uebrige = [];
@@ -311,4 +314,10 @@ export function eigenbauBaum({ stand = new Map(), karte = new Map(), titel = new
     const wurzel = { localId: null, modelId, category: 'EIGENBAU', gruppe: true, name: 'Eigenbau',
                      children: [...wurzelBauwerke, ...vorgaenge.values(), ...uebrige] };
     return { modelId, name: 'Eigenbau', sha256: null, eigenbau: true, wurzel, gruppen: null, knoten: stand.size };
+}
+
+/** Der Zustand am Knoten (Zustand.js): Schlüssel und Titel, damit der Baum ihn zeigt — oder nichts. */
+function _zustandsmerk(z) {
+    const bild = zustandsbild(z);
+    return bild ? { zustand: z, zustandTitel: bild.titel } : {};
 }

@@ -160,6 +160,35 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 - **Offen P4b:** Material als `IfcMaterial`. Der Schreiber legt heute kein
   Material an, das ist ein eigener Schritt mit Prüftor-Regeln.
 
+### P4c · Rückbau mitbauen und markieren · **gebaut**
+Fabio, 2026-10-06: „rückgebaute Elemente sollten geflaggt werden, man soll
+sie in der Ansicht sehen, das ist relevant für Massen später".
+
+- `services/Zustand.js`: EINE Regel. `parameter.zustand = 'rueckbau'` am
+  Bauteil oder am Bauwerk, die Teile erben über `teilVon`. Eine Vorlage, die
+  ihre Teile neu rechnet, verliert die Markierung so nicht.
+- BIMFY setzt sie aus ISYBAU Status 6 und baut die Zeilen „(rückgebaut)"
+  jetzt mit (vorher abgewählt). Das Kommando nimmt nur bekannte Zustände.
+- Ansicht: 3D rot durchscheinend (0xc62828, Deckkraft 0,45), Lageplan rot und
+  gestrichelt (auch Symbole, Strich und Farbe für den S/W-Druck),
+  Strukturbaum mit Hinweis „Rückbau" und durchgestrichenem Namen.
+- Export: Paketfarbe rot, im IFC `Pset_…Common.Status = DEMOLISH`.
+- Echte Datei:
+
+| | vorher | nachher |
+|---|---|---|
+| ISYBAU-Werte im Journal und im IFC | 8 464 | 8 810 |
+| Bauwerke/Bauteile mit Rückbau | 0 | 20 (66 Teile im Paket rot) |
+| `Status = DEMOLISH` im IFC | 0 | 20 |
+| Netz: Knoten / lose Enden / abweichend | 341 / 33 / 23 | 358 / 2 / 33 |
+| Journal | 2,81 MB | 2,92 MB |
+| Prüftor offen | 0 | 0 |
+
+- Offen P4d: Massen getrennt nach Bestand und Rückbau (Mengenkopf wie
+  `Sanierung.mengenNachMassnahme`).
+- Offen: die 34 Werte an 5 Objekten ohne Körper (23 AP ohne Sohle, 11 Leitung
+  ohne Lage).
+
 ### P5 · Keine erfundenen Werte
 - Kein Wert ohne Quelle. Fehlt er in der Datei, fehlt er im IFC.
 - Was BIMFY ergänzt (Norm, Annahme), steht in der Herleitung und nie in

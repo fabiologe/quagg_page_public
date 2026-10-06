@@ -50,6 +50,7 @@ import { klassifikationVon } from './katalog/Bauwerkstypen.js';
 import { BAUWERKSARTEN, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
 import { vorlageNach } from './rezept/Bauwerksvorlagen.js';
 import { bildeAb } from './bimfy/isybau/Abbildung.js';
+import { zustandVon, zustandsbild } from './Zustand.js';
 import { herleitungText } from './bimfy/muster/Herleitung.js';
 
 export const PAKET_VERSION = 2;
@@ -194,7 +195,8 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
     // Ein Merkmal hat EINE Quelle — was Felder, Lage oder Rechnung schon setzen, bleibt.
     const abbildung = bildeAb(plan?.parameter?.stammdaten, { klasse });
     _fuegeAn(merkmale, abbildung.merkmale);
-    const f = farbeFuer(klasse, farbsatz);
+    // Der Zustand (Zustand.js) färbt vor dem Typ: ein Rückbau ist auch in der Datei rot.
+    const f = zustandsbild(zustandVon(plan, (g) => stand?.get?.(g))) ?? farbeFuer(klasse, farbsatz);
     const q = plan?.parameter?.quellen ?? {};
     const ur = q.gelaende ? wirtVon(plan, stand, exportiert, historie) : null;
     const aushub = istAushub(klasse);          // Wurzel im Baum (Kategorien.js): Wirt = Ur-Gelände

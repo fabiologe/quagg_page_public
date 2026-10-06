@@ -35,6 +35,7 @@
  * Stelle und wird nirgends noch einmal entschieden.
  */
 
+import { zustandVon } from './Zustand.js';
 import { formeNach, verschiebeOperationen, kopienAlsVerweise } from './gelaende/Operationen.js';
 import { dreieckeAusRaster, dreieckeMitFlicken } from './geometrie/SurfaceOps.js';
 import { ENTITY_META } from '../data/entity-schema.js';
@@ -449,12 +450,14 @@ export function rezeptNach(id) {
  * kein unsichtbarer Nullstrich mehr. Der Lageplan zeichnet direkt aus dem
  * Journal; diese Regel steht hier, damit Canvas und Test dieselbe fragen.
  */
-export function planbildVon(bauplan) {
+export function planbildVon(bauplan, bauplanVon = null) {
     const punkte = bauplan?.parameter?.punkte;
     const rezept = rezeptNach(bauplan?.rezept);
     const symbol = rezept?.symbol && symbolNach(rezept.symbol) ? rezept.symbol : null;
     if (!Array.isArray(punkte) || punkte.length < (symbol ? 1 : 2)) return null;
-    return { punkte, name: bauplan.name, geschlossen: !!rezept?.geschlossen, symbol };
+    // Der Zustand (Zustand.js): ein Rückbau-Teil zeichnet der Plan in seinem eigenen Ton und Strich.
+    const zustand = zustandVon(bauplan, bauplanVon);
+    return { punkte, name: bauplan.name, geschlossen: !!rezept?.geschlossen, symbol, ...(zustand ? { zustand } : {}) };
 }
 
 /**

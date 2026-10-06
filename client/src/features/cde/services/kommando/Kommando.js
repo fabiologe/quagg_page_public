@@ -21,6 +21,7 @@
  *
  * Rein: kein Vue, kein Store, keine Engine.
  */
+import { ZUSTAENDE, istZustand } from '../Zustand.js';
 import { ADRESSEN, eingabeArt, nachId, werkzeugKatalog, GRUPPEN } from '../Bearbeitungen.js';
 import { eingabenFuer } from '../Eingaben.js';
 import { nnAusWelt, weltAusNn } from '../Hoehenbezug.js';
@@ -342,6 +343,9 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
         }
     }
     fehler.push(...pruefeStammdaten(k.werte?.stammdaten));
+    if (k.werte?.zustand !== undefined && !istZustand(k.werte.zustand)) {
+        fehler.push(`werte.zustand „${k.werte.zustand}" gibt es nicht (${Object.keys(ZUSTAENDE).join(', ')})`);
+    }
     if (k.ebene !== undefined && !['auftrag', 'stand'].includes(k.ebene)) fehler.push(`ebene „${k.ebene}" gibt es nicht (auftrag, stand)`);
     return fehler;
 }

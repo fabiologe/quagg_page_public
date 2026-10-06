@@ -124,7 +124,7 @@ const TreeNode = defineComponent({
       return h('div', { class: 'tree-node' }, [
         h('div', {
           class: ['node-row', { open: isOpen, 'is-storey': isStorey, 'is-aussparung': node.aussparung,
-                               'is-verweis': node.verweis, 'is-gruppe': node.gruppe }],
+                               'is-verweis': node.verweis, 'is-gruppe': node.gruppe, [`ist-${node.zustand}`]: !!node.zustand }],
           style: { paddingLeft: `${0.4 + depth * 0.9}rem` },
           onClick: hasChildren ? toggleExpand : undefined,
         }, [
@@ -150,6 +150,11 @@ const TreeNode = defineComponent({
           // sähe man einen Vorgang ohne Körper und wüsste nicht, warum.
           node.verdecktVon?.length
             ? h('span', { class: 'node-hinweis' }, `verdeckt von ${node.verdecktVon.join(', ')}`)
+            : null,
+
+          // Der Zustand (Zustand.js) — ein Rückbau steht am Knoten, nicht nur in der Farbe.
+          node.zustandTitel
+            ? h('span', { class: ['node-zustand', `zustand-${node.zustand}`] }, node.zustandTitel)
             : null,
 
           node.vorgang && vorgangAuge
@@ -319,6 +324,16 @@ const TreeNode = defineComponent({
 .node-row.is-aussparung .node-label { font-style: italic; }
 .node-row.is-verweis .node-label { color: var(--cde-text-dim); }
 .node-row.is-gruppe .node-label { color: var(--cde-text-soft); }
+/* Der Zustand eines eigenen Bauteils (Zustand.js) — Rückbau rot, im Baum wie in 3D und Plan. */
+.node-row.ist-rueckbau .node-label { text-decoration: line-through; text-decoration-color: var(--cde-danger); }
+.node-zustand {
+  font-size: 0.62rem;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.node-zustand.zustand-rueckbau { color: var(--cde-danger); background: var(--cde-danger-soft); }
 /* Teil XXI (E3): „verdeckt von …" am Vorgangsknoten — leise, aber lesbar. */
 .node-hinweis {
   font-size: 0.66rem;

@@ -244,8 +244,9 @@ export function gruppiere(geometrien) {
             const v = vorschlagFuer(g);
             zeilen.set(schluessel, {
                 schluessel, ebene: g.ebene ?? '', art: g.art, geometrien: [],
-                // Rückgebautes (ISYBAU Status 6) bietet BIMFY an, legt es aber nicht von sich aus an.
-                rezept: v.rezept, kategorie: v.kategorie, grund: v.grund, aktiv: !!v.rezept && !/rückgebaut/.test(g.ebene ?? ''),
+                // Rückgebautes (ISYBAU Status 6) wird mitgebaut und als Rückbau markiert (Zustand.js) —
+                // es zählt für die Massen (Fabio, 2026-10-06). Bis dahin war die Zeile abgewählt.
+                rezept: v.rezept, kategorie: v.kategorie, grund: v.grund, aktiv: !!v.rezept,
             });
         }
         zeilen.get(schluessel).geometrien.push(g);
@@ -397,7 +398,7 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
     // I10: die Ausführung aus ISYBAU — ein AP verbindet, die anderen führen Wasser zu
     // (AH15, Tab. A-1-2); ein Bauwerk heisst nach seinem Typ (G400).
     const isy = geo.isybau;
-    Object.assign(werte, _stammdatenWerte(geo));
+    Object.assign(werte, _quellwerte(geo));
     if (isy?.art === 'anschlusspunkt' && 'predefinedType' in werte) {
         werte.predefinedType = geo.predefinedType ?? (!isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY');
     }
@@ -536,7 +537,7 @@ export function normschachtKommando(geo, wahl = {}, { versatz = null, umrechnen 
     return {
         werkzeug: 'bauwerk-aus-vorlage-normschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) , ..._stammdatenWerte(geo) },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) , ..._quellwerte(geo) },
     };
 }
 
@@ -560,7 +561,7 @@ export function kastenschachtKommando(geo, wahl = {}, { versatz = null, umrechne
     return {
         werkzeug: 'bauwerk-aus-vorlage-kastenschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) , ..._stammdatenWerte(geo) },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) , ..._quellwerte(geo) },
     };
 }
 
@@ -572,7 +573,7 @@ export function kunststoffschachtKommando(geo, wahl = {}, { versatz = null, umre
         werkzeug: 'bauwerk-aus-vorlage-kunststoffschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', tiefe: k.tiefe, di: k.di,
-                 deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')), ..._stammdatenWerte(geo) },
+                 deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')), ..._quellwerte(geo) },
     };
 }
 
@@ -583,12 +584,19 @@ export function strassenablaufKommando(geo, wahl = {}, { versatz = null, umrechn
     return {
         werkzeug: 'bauwerk-aus-vorlage-strassenablauf',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Straßenablauf', hoehe: '', tiefe: k.tiefe, schlamm: k.schlamm === 'nass' ? 2 : 1, richtung: 0, ..._stammdatenWerte(geo) },
+        werte: { name: wahl.name || geo.name || 'Straßenablauf', hoehe: '', tiefe: k.tiefe, schlamm: k.schlamm === 'nass' ? 2 : 1, richtung: 0, ..._quellwerte(geo) },
     };
 }
 
-/** Alle ISYBAU-Sachdaten eines Objekts für das Kommando (Fahrplan Sachdaten P2) — leer, wenn keine da sind. */
-function _stammdatenWerte(geo) {
+/**
+ * Was die Quelle über ein Objekt sagt, für das Kommando: alle ISYBAU-Sachdaten
+ * (Fahrplan Sachdaten P2) und der Zustand — Status 6 „rückgebaut" (AH15 G105)
+ * wird als Rückbau gebaut und markiert (Fabio, 2026-10-06), nicht weggelassen.
+ */
+function _quellwerte(geo) {
     const sd = geo?.isybau?.stammdaten;
-    return sd && Object.keys(sd).length ? { stammdaten: { ...sd } } : {};
+    return {
+        ...(sd && Object.keys(sd).length ? { stammdaten: { ...sd } } : {}),
+        ...(geo?.isybau?.status === 6 ? { zustand: 'rueckbau' } : {}),
+    };
 }

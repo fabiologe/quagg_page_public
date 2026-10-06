@@ -27,6 +27,7 @@ import { styleToLegacy } from './VectorStyleEngine.js';
 import { trianglePlaneIntersect } from './SectionContour.js';
 import { computeUtmCrosses, formatUtmLabel } from './UtmGrid.js';
 import { drawPlanSymbol } from './PlanSymbols.js';
+import { zustandsbild } from './Zustand.js';
 import { strichUmriss } from '@/services/tinte/InkGeometry';
 import { longestSegment, normalizeTextAngle } from './AxisAnnotations.js';
 
@@ -1313,10 +1314,15 @@ function _anyOverlap(bb, list) {
  * @param {Array<{punkte, geschlossen, name, symbol?}>} erzeugte  Punkte in Welt-XZ
  */
 function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
-    doc.setLineDashPattern([], 0);
+    const EIGEN = { r: 21, g: 101, b: 192 };   // ein eigener Ton — nicht Rotstift, nicht Bauteil
     doc.setLineWidth(0.45);
-    doc.setDrawColor(21, 101, 192);        // ein eigener Ton — nicht Rotstift, nicht Bauteil
     for (const e of erzeugte) {
+        // DER ZUSTAND (Zustand.js): Rückbau in seinem Ton, gestrichelt — Strich UND Farbe,
+        // damit es auch schwarz-weiss gedruckt lesbar bleibt.
+        const bild = zustandsbild(e?.zustand)?.plan ?? null;
+        const ton = bild ?? EIGEN;
+        doc.setDrawColor(ton.r, ton.g, ton.b);
+        doc.setLineDashPattern(bild?.strich ? [...bild.strich] : [], 0);
         const papier = (e?.punkte ?? [])
             .map(p => [toX(p[0] ?? p.x), toY(p[2] ?? p.z)]);
         // MIT SYMBOL (Teil XXIII, A5): das Rezept sagt, dass es im Plan ein
@@ -1326,11 +1332,11 @@ function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
             const px = papier.reduce((a, q) => a + q[0], 0) / papier.length;
             const py = papier.reduce((a, q) => a + q[1], 0) / papier.length;
             if (!_inBounds(px, py, M, dw, dh)) continue;
-            drawPlanSymbol(doc, e.symbol, px, py, 3, { r: 21, g: 101, b: 192 });
+            drawPlanSymbol(doc, e.symbol, px, py, 3, ton, { strich: bild?.strich ?? null });
             doc.setLineWidth(0.45);
             if (e.name) {
                 doc.setFontSize(7);
-                doc.setTextColor(21, 101, 192);
+                doc.setTextColor(ton.r, ton.g, ton.b);
                 doc.text(String(e.name), px + 2, py - 1.2);
                 doc.setTextColor(0, 0, 0);
             }
@@ -1345,12 +1351,13 @@ function _drawErzeugte(doc, erzeugte, toX, toY, M, dw, dh) {
         }
         if (e.name) {
             doc.setFontSize(7);
-            doc.setTextColor(21, 101, 192);
+            doc.setTextColor(ton.r, ton.g, ton.b);
             doc.text(String(e.name), papier[0][0] + 1.2, papier[0][1] - 1.2);
             doc.setTextColor(0, 0, 0);
         }
     }
     doc.setLineWidth(0.2);
+    doc.setLineDashPattern([], 0);
     doc.setDrawColor(0, 0, 0);
 }
 

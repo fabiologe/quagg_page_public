@@ -84,14 +84,15 @@ export function planSymbole() {
  * @param {{r,g,b}} rgb   Linienfarbe
  * @returns {boolean}     false wenn unbekanntes Symbol (Caller behält Kontur)
  */
-export function drawPlanSymbol(doc, name, cx, cy, sizeMm, rgb) {
+export function drawPlanSymbol(doc, name, cx, cy, sizeMm, rgb, { strich = null } = {}) {
     const r = Math.max(0.6, sizeMm / 2);
     const sym = symbolNach(name);
     if (!sym) return false;
 
     doc.setDrawColor(rgb?.r ?? 0, rgb?.g ?? 0, rgb?.b ?? 0);
     doc.setLineWidth(0.3);
-    doc.setLineDashPattern([], 0);
+    // Gestrichelt nur auf Wunsch (ein Rückbau, Zustand.js) — sonst durchgezogen wie bisher.
+    doc.setLineDashPattern(Array.isArray(strich) ? [...strich] : [], 0);
     const X = (u) => cx + r * u, Y = (v) => cy + r * v;
     let fuellung = false;
     for (const f of sym.formen) {

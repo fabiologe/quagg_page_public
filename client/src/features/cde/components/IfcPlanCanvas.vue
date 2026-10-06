@@ -134,9 +134,10 @@ const erzeugtePunkte = computed(() => {
   // Katalogstand lässt die Liste dann neu rechnen (Teil XXIII, A5).
   void bearbeitung.katalogStand;
   const out = [];
-  for (const [, bauplan] of aenderungen.wirksamerStand('erzeugt')) {
-    // Zug oder Symbol — die Regel steht im Katalog (`planbildVon`).
-    const bild = planbildVon(bauplan);
+  const stand = aenderungen.wirksamerStand('erzeugt');
+  for (const [, bauplan] of stand) {
+    // Zug oder Symbol — die Regel steht im Katalog (`planbildVon`); der Zustand erbt vom Bauwerk.
+    const bild = planbildVon(bauplan, (g) => stand.get(g));
     if (bild) out.push(bild);
   }
   return out;
