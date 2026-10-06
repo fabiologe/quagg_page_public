@@ -16,7 +16,7 @@ import { subjektAusStand } from '../services/kommando/Subjekt.js';
 describe('Die Eigenschaften, nach denen gefragt wird', () => {
     it('wer seine Ecken in `parameter.punkte` trägt, sagt es', () => {
         const mit = Object.values(REZEPTE).filter(r => r.punkteIn === 'parameter').map(r => r.id).sort();
-        expect(mit).toEqual(['anschlusspunkt', 'auflagering', 'berme', 'bettung', 'drossel', 'flaeche', 'kastenabdeckung', 'kastenplatte', 'kastenunterteil',
+        expect(mit).toEqual(['anschlusspunkt', 'auflagering', 'berme', 'bettung', 'bogen', 'drossel', 'flaeche', 'kastenabdeckung', 'kastenplatte', 'kastenunterteil',
                              'linie', 'pfosten', 'platte', 'raum', 'rechen',
                              'rigole', 'rohr', 'sauberkeitsschicht', 'schacht', 'schachtabdeckung', 'schachthals', 'schachtplatte',
                              'schachtring', 'schachtunterteil', 'sonderbauwerk', 'steigeisen', 'streifenfundament', 'tauchwand', 'ueberlaufschwelle', 'wand']);

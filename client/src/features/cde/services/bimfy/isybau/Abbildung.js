@@ -142,7 +142,7 @@ export function bildeAb(stammdaten, kontext = {}) {
  * Material: ein Betonring „aus der Norm" ist eine Annahme, keine Angabe.
  */
 export const MATERIALFELD_JE_REZEPT = Object.freeze({
-    rohr: ['Material'],
+    rohr: ['Material'], bogen: ['Material'],
     schachtunterteil: ['MaterialUnterteil'],
     kastenunterteil: ['MaterialUnterteil', 'MaterialAufbau'],
     berme: ['MaterialGerinne'],

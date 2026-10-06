@@ -94,7 +94,9 @@ describe('Die Erzeugen-Leiste zeigt nur, was aus einem Zug baut', () => {
                       // V6: die Rigole — ein Kieskörper mit Hohlraumanteil.
                       'rigole-zeichnen',
                       // BIMFY I10: Anschlusspunkt (Formstück im Netz) und Sonderbauwerk (Hülle aus dem Umriss).
-                      'anschlusspunkt-zeichnen', 'sonderbauwerk-zeichnen'].sort());
+                      'anschlusspunkt-zeichnen', 'sonderbauwerk-zeichnen',
+                      // Der Bogen am Knick einer Leitung (Fabio, 2026-10-06).
+                      'bogen-zeichnen'].sort());
         // Die Regel, nicht die Liste: jedes Erzeugen-Werkzeug nennt ein Rezept,
         // das aus Punkten baut, und verlangt mindestens einen Punkt (A4: der
         // Pfosten steht an EINEM Ort).

@@ -67,8 +67,9 @@ const HEUTE = Object.freeze({
     // BIMFY I10: +6 — Anschlusspunkt und Sonderbauwerk zeichnen, je Ausführung und Objekttyp setzen — 157/134.
     // BIMFY I11: +1 Kunststoffschacht aus Vorlage — 158/135.
     // BIMFY I12: +1 Straßenablauf aus Vorlage — 159/136.
-    werkzeuge: 159,
-    ausgefuehrt: 136,
+    // Bogen am Knick: +6 — zeichnen, DN, Wanddicke, DN-Bezug, Ausführung, Objekttyp setzen — 165/142.
+    werkzeuge: 165,
+    ausgefuehrt: 142,
     geliefert: 23,
     /** EIGENES Ziel und trotzdem abgelehnt. Seit V3 keines mehr. */
     offen: Object.freeze([]),

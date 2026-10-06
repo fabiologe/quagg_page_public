@@ -458,12 +458,34 @@ function _fachmodellKnotenUmriss(globalId, plan) {
     const radius = Math.max(...p.map(q => Math.hypot(q.x - mitte.x, q.z - mitte.z)));
     return { knoten: [{ globalId, name: plan.name ?? '', punkt: mitte, hoehenbezug: 'sohle', radius }] };
 }
+/**
+ * Ein Knoten in der MITTE eines Zugs (`knoten: {punkt: 'mitte', radius: 'enden'}`, der Bogen):
+ * am mittleren Punkt auf seiner SOHLE, so weit wie die Enden reichen — die Rohrstücke
+ * davor und dahinter enden dort und hängen am Bogen.
+ */
+function _fachmodellKnotenMitte(d) {
+    const sohlen = _sohlen(d.geometrie, _vorgabeIn(d.felder));
+    return (globalId, plan) => {
+        const roh = plan?.parameter?.punkte;
+        if (!Array.isArray(roh) || roh.length < 2) return {};
+        const p = roh.map(punktXYZ);
+        const m = Math.floor(p.length / 2);
+        const sohle = sohlen ? sohlen.lies(plan.parameter)[m] : p[m].y;
+        const mitte = { x: p[m].x, y: Number.isFinite(sohle) ? sohle : p[m].y, z: p[m].z };
+        const radius = Math.max(...[p[0], p.at(-1)].map(q => Math.hypot(q.x - mitte.x, q.z - mitte.z)));
+        return { knoten: [{ globalId, name: plan.name ?? '', punkt: mitte, hoehenbezug: 'sohle', radius }] };
+    };
+}
 const _fachmodellNichts = () => ({});
 const _fachmodellGelaende = (globalId) => ({ gelaende: [globalId] });
 
 function _fachmodell(d) {
     if (d.netzrolle === 'kante') return _fachmodellKante(d);
-    if (d.netzrolle === 'knoten') return d.knoten?.punkt === 'schwerpunkt' ? _fachmodellKnotenUmriss : _fachmodellKnoten;
+    if (d.netzrolle === 'knoten') {
+        if (d.knoten?.punkt === 'schwerpunkt') return _fachmodellKnotenUmriss;
+        if (d.knoten?.punkt === 'mitte') return _fachmodellKnotenMitte(d);
+        return _fachmodellKnoten;
+    }
     if (d.gelaendeform) return _fachmodellGelaende;
     return _fachmodellNichts;
 }

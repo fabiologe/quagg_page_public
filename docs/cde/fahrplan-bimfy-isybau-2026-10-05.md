@@ -320,3 +320,31 @@ für Beton‑ und Steinzeugrohre. Bis dahin stehen dort Annahmen, und sie heisse
 3. Was nicht aufgeht, ist ein Befund, nicht still verschluckt.
 4. Keine Normtabellen ins öffentliche Repo, nur einzelne Masse mit Norm und Stelle.
 5. Ein Commit je Stufe mit Test und Gegenprobe; `backend/app/ifc` nur mit Gold.
+
+## I13 · Am Knick ein Bogen · **gebaut**
+Fabio, 2026-10-06: „was ist mit Knicken in Polylinien, muss dort nicht ein Krümmer rein?"
+
+- Muster `bimfy/muster/Leitungszug.js`: je Knick im Grundriss
+  - bis zur Abwinkelung der Muffe (2° bis dn 315, DIN EN 1401-1:2009-07,
+    Dichtheit nach EN 1277 Bedingung B; darüber 1° als Annahme) kein Formstück,
+  - sonst ein Bogen aus Regelwinkeln, höchstens zwei: PVC-U 15/30/45/67,5/87,5°
+    (DIN EN 1401-1), PP/PE 15/30/45/87,5° (DIN EN 1852-1:2018-03), sonst
+    15/30/45/90° als Annahme. Gebaut wird der gemessene Winkel; ein Rest, den
+    kein Regelbogen deckt, steht in der Herleitung und als Befund,
+  - über 30° Hinweis Reinigungsöffnung (DIN 1986-100:2016-12).
+  - Radius = Aussendurchmesser (Annahme), bei zu wenig Platz kleiner (Befund).
+- Rezept `bogen`: IfcPipeFitting BEND, gezeichnet wie ein Rohr auf der Sohle,
+  im Netz ein Knoten im Scheitel (`knoten: {punkt: 'mitte', radius: 'enden'}`).
+- BIMFY teilt nach dem Verknüpfen: die Leitung wird eine Baugruppe
+  (IfcElementAssembly, ObjectType „Leitung") mit Sachdaten und Zustand,
+  darunter Bögen und Rohrstücke (`teilVon`), die an den Bögen hängen.
+  Material und Rückbau erben die Teile vom Ganzen.
+
+| echte Datei | vorher | nachher |
+|---|---|---|
+| Knicke in Leitungen (Haltungen: 0) | 42, auf Gehrung gestreckt | 42 Bögen in 37 Leitungen |
+| Netz Knoten / lose Enden / abweichend | 358 / 2 / 33 | 400 / 2 / 33 |
+| Befunde | — | 29 ohne genauen Regelbogen, 23 Reinigungsöffnung prüfen, 2 eng, 1 in der Muffe |
+| Schreiber Warnungen / Prüftor offen | 0 / 0 | 0 / 0 |
+
+- Offen: die Knick-Befunde stehen am Kommando, in der BIMFY-Tafel noch nicht.

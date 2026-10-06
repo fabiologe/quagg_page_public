@@ -82,6 +82,9 @@ function welt() {
     // BIMFY I10: ein Anschlusspunkt und ein Sonderbauwerk (Hülle aus dem Umriss).
     zeichne(erzeugt, 'anschlusspunkt-zeichnen', 'cde-AP1', { name: 'AP1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' },
             [P(130, 99, 0), P(130, 99.15, 0)]);
+    // Der Bogen am Knick (Fabio, 2026-10-06): ein Viertelkreis R 0,5 m auf der Sohle.
+    zeichne(erzeugt, 'bogen-zeichnen', 'cde-BO1', { name: 'BO1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'BEND', objektTyp: '' },
+            [P(150, 99, 0), P(150.15, 99, 0.04), P(150.35, 99, 0.15), P(150.46, 99, 0.35), P(150.5, 99, 0.5)]);
     zeichne(erzeugt, 'sonderbauwerk-zeichnen', 'cde-SB1', { name: 'SB1', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', bauwerkshoehe: 3,
                                                             predefinedType: 'USERDEFINED', objektTyp: 'Becken' },
             [P(140, 98, 0), P(143, 98, 0), P(143, 98, 2), P(140, 98, 2)]);
@@ -206,6 +209,9 @@ const NEU = [
     // BIMFY I10: Anschlusspunkt und Sonderbauwerk.
     { id: 'anschlusspunkt-zeichnen', el: zug(P(800, 100, 0), P(800, 100.15, 0)), zug: [P(800, 100, 0), P(800, 100.15, 0)],
       werte: [{ name: 'A1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'ENTRY', objektTyp: '' }] },
+    { id: 'bogen-zeichnen', el: zug(P(850, 100, 0), P(850.15, 100, 0.04), P(850.5, 100, 0.5)),
+      zug: [P(850, 100, 0), P(850.15, 100, 0.04), P(850.5, 100, 0.5)],
+      werte: [{ name: 'B1', kategorie: 'IFCPIPEFITTING', hoehe: '', dn: 150, predefinedType: 'BEND', objektTyp: '' }] },
     { id: 'sonderbauwerk-zeichnen', el: zug(P(900, 100, 0), P(903, 100, 0), P(903, 100, 2), P(900, 100, 2)),
       zug: [P(900, 100, 0), P(903, 100, 0), P(903, 100, 2), P(900, 100, 2)],
       werte: [{ name: 'RÜ', kategorie: 'IFCDISTRIBUTIONCHAMBERELEMENT', hoehe: '', bauwerkshoehe: 3.5, predefinedType: 'USERDEFINED', objektTyp: 'Regenüberlauf' }] },
@@ -259,6 +265,11 @@ const NEU = [
     // Fund 8: die Ausführung (PredefinedType) und der Objekttyp.
     { id: 'anschlusspunkt-predefinedType-setzen', el: eigen('cde-AP1'), werte: [{ predefinedType: 'JUNCTION' }] },
     { id: 'anschlusspunkt-objektTyp-setzen', el: eigen('cde-AP1'), werte: [{ objektTyp: 'Stutzen' }] },
+    { id: 'bogen-predefinedType-setzen', el: eigen('cde-BO1'), werte: [{ predefinedType: 'TRANSITION' }] },
+    { id: 'bogen-objektTyp-setzen', el: eigen('cde-BO1'), werte: [{ objektTyp: 'Bogen 45°' }] },
+    { id: 'bogen-dn-setzen', el: eigen('cde-BO1'), werte: [{ dn: 200 }] },
+    { id: 'bogen-wanddicke-setzen', el: eigen('cde-BO1'), werte: [{ wanddicke: 6 }] },
+    { id: 'bogen-dnBezug-setzen', el: eigen('cde-BO1'), werte: [{ dnBezug: 'aussen' }] },
     { id: 'sonderbauwerk-predefinedType-setzen', el: eigen('cde-SB1'), werte: [{ predefinedType: 'SUMP' }] },
     { id: 'sonderbauwerk-objektTyp-setzen', el: eigen('cde-SB1'), werte: [{ objektTyp: 'Regenüberlauf' }] },
     { id: 'platte-predefinedType-setzen', el: eigen('cde-PL1'), werte: [{ predefinedType: 'BASESLAB' }] },

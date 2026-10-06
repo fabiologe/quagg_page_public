@@ -20,6 +20,7 @@ import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bim
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
 import { ringStoss } from '../services/bimfy/muster/Normwerte.js';
+import { regelboegen, teileLeitung, REGELBOEGEN } from '../services/bimfy/muster/Leitungszug.js';
 import { kastenschacht } from '../services/bimfy/muster/Kastenschacht.js';
 import { vorschlagFuer } from '../services/bimfy/Uebersetzer.js';
 import { eigeneNetzauskunft } from '../services/CdeAchsen.js';
@@ -141,6 +142,39 @@ describe('ISYBAU-Leser · alle Sachdaten (Fahrplan Sachdaten P1)', () => {
         const s = liesIsybauDaten(xml).schaechte[0].stammdaten;
         expect(s['Knoten.Schacht.Einstieghilfe']).toBe('1');
         expect(s['Knoten.Schacht.Einstieghilfe[2]']).toBe('2');
+    });
+});
+
+describe('Muster · Leitungszug — am Knick ein Bogen', () => {
+    it('Regelbögen: der nächste aus höchstens zwei, gleich nah: der einfachere', () => {
+        expect(regelboegen(60, REGELBOEGEN.pvc.winkel)).toEqual({ boegen: [30, 30], rest: 0 });   // gleich genau wie 45 + 15, sanfter
+        expect(regelboegen(90, REGELBOEGEN.pvc.winkel)).toEqual({ boegen: [45, 45], rest: 0 });
+        expect(regelboegen(52, REGELBOEGEN.pp.winkel)).toEqual({ boegen: [45], rest: 7 });
+        expect(regelboegen(30, REGELBOEGEN.pp.winkel)).toEqual({ boegen: [30], rest: 0 });
+    });
+    it('90° in PVC: zwei Stücke, ein Bogen 45° + 45°, Tangente R·tan(45°) = 0,16 m, Scheitel in der Mitte', () => {
+        const zug = [{ ost: 0, nord: 0, hoehe: 100 }, { ost: 10, nord: 0, hoehe: 99.9 }, { ost: 10, nord: 10, hoehe: 99.8 }];
+        const { stuecke, boegen, befunde } = teileLeitung(zug, { da: 0.16, material: 'PVC' });
+        expect(boegen).toHaveLength(1);
+        expect(boegen[0]).toMatchObject({ winkel: 90, regel: [45, 45], rest: 0, radius: 0.16 });
+        expect(stuecke.map(s => [r3(s[0].ost), r3(s[0].nord), r3(s.at(-1).ost), r3(s.at(-1).nord)])).toEqual([[0, 0, 9.84, 0], [10, 0.16, 10, 10]]);
+        const b = boegen[0].punkte;
+        expect([b[0].ost, b[0].nord, b.at(-1).ost, b.at(-1).nord].map(r3)).toEqual([9.84, 0, 10, 0.16]);
+        expect(b.length % 2).toBe(1);                                    // ein mittlerer Punkt: der Netzknoten
+        for (const p of b) expect(r3(Math.hypot(p.ost - 9.84, p.nord - 0.16))).toBe(0.16);
+        // Die Höhen folgen der Stationierung: am Tangentenpunkt 0,16 m vor dem Knick.
+        expect(r3(stuecke[0].at(-1).hoehe)).toBe(r3(100 - 0.1 * 9.84 / 10));
+        expect(befunde.map(f => f.regel)).toEqual(['reinigungsoeffnung']);
+    });
+    it('ein Knick bis 2° bleibt in der Muffe; ohne Regelbogen ein Befund', () => {
+        const flach = teileLeitung([{ ost: 0, nord: 0 }, { ost: 10, nord: 0 }, { ost: 20, nord: 0.3 }], { da: 0.16, material: 'PVC' });
+        expect(flach.boegen).toEqual([]);
+        expect(flach.befunde.map(f => f.regel)).toEqual(['knick_in_muffe']);
+        const w = 22 * Math.PI / 180;
+        const schief = teileLeitung([{ ost: 0, nord: 0 }, { ost: 10, nord: 0 }, { ost: 10 + 10 * Math.cos(w), nord: 10 * Math.sin(w) }], { da: 0.16, material: 'PP' });
+        expect(schief.boegen[0].regel).toEqual([15]);
+        expect(schief.befunde.map(f => f.regel)).toEqual(['kein_regelbogen']);
+        expect(schief.boegen[0].herleitung.rest).toMatchObject({ art: 'isybau', text: expect.stringMatching(/von keinem Regelbogen gedeckt/) });
     });
 });
 
@@ -738,6 +772,39 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         expect(s1Teile.find(t => t.rezept === 'schachtabdeckung').material).toMatchObject({ name: 'duktiles Gusseisen' });
         expect(s1Teile.find(t => t.rezept === 'schachtunterteil').material).toMatchObject({ name: 'Beton' });
         expect(stand.filter(p => p.parameter?.teilVon && p.parameter?.stammdaten)).toEqual([]);
+    });
+
+    it('eine Leitung mit Knick: Baugruppe „Leitung" mit Sachdaten, zwei Rohrstücke, ein Bogen — im Netz geschlossen', async () => {
+        const knickGeo = `<Geometrie><Geometriedaten><Polygone><Polygon><PolygonArt>3</PolygonArt>
+            <Kante><Start><Rechtswert>0</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>102</Punkthoehe></Start><Ende><Rechtswert>20</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>101,8</Punkthoehe></Ende></Kante>
+            <Kante><Start><Rechtswert>20</Rechtswert><Hochwert>0</Hochwert><Punkthoehe>101,8</Punkthoehe></Start><Ende><Rechtswert>20</Rechtswert><Hochwert>20</Hochwert><Punkthoehe>101,6</Punkthoehe></Ende></Kante>
+          </Polygon></Polygone></Geometriedaten></Geometrie>`;
+        const text = datei(schachtXml({ name: 'S1', ost: 0, nord: 0 }), schachtXml({ name: 'S2', ost: 20, nord: 20, sohle: '101,60' }),
+                           haltungXml({ name: 'L1', von: 'S1', bis: 'S2', oben: '102,00', unten: '101,60', dn: 160, material: 'PVC', geometrie: knickGeo }));
+        const { geometrien } = liesIsybau(text);
+        const { kommandos } = kommandosFuer(gruppiere(geometrien));
+        const fuerL1 = kommandos.filter(k => k.geo.name === 'L1').map(k => k.kommando.werkzeug);
+        expect(fuerL1).toEqual(['bauwerk-anlegen', 'bogen-zeichnen', 'rohr-zeichnen', 'rohr-zeichnen']);
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-bo-${++n}`, ziel: [], wer: 'test', wann: '2026-10-06T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-bo-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const stand = useAenderungen().wirksamerStand('erzeugt');
+        const { netz, knoten } = eigeneNetzauskunft(stand);
+        expect(knoten.map(x => x.name).sort()).toEqual([expect.stringMatching(/^Bogen 45° \+ 45°/), 'S1', 'S2']);
+        expect(netz.loseEnden).toEqual([]);
+        expect(netz.abweichend).toEqual([]);
+        const paket = await paketAus(useAenderungen());
+        const gruppe = paket.bauwerke.find(w => w.name === 'L1');
+        expect(gruppe).toMatchObject({ art: 'baugruppe', objectType: 'Leitung', stammdaten: { Objektbezeichnung: 'L1', 'Kante.Material': 'PVC' } });
+        const teile = paket.bauteile.filter(t => t.teilVon === gruppe.cdeId);
+        expect(teile.map(t => [t.klasse, t.predefinedType ?? null]).sort()).toEqual([['IFCPIPEFITTING', 'BEND'], ['IFCPIPESEGMENT', null], ['IFCPIPESEGMENT', null]]);
+        // Material und Herleitung: vom Ganzen, Regelwinkel aus der Norm.
+        expect(teile.every(t => t.material?.name === 'Polyvinylchlorid')).toBe(true);
+        expect(teile.find(t => t.klasse === 'IFCPIPEFITTING').herleitung).toMatch(/DIN EN 1401-1/);
     });
 
     it('das Kommando weist Sachdaten zurück, die keine Texttabelle sind', () => {

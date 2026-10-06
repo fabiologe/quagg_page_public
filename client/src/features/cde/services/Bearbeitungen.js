@@ -589,6 +589,8 @@ const SETZ_OPERATIONEN = Object.freeze({
                 // Ein Element OHNE KÖRPER (Fahrplan Sachdaten): seine Ausführung aus der Quelle.
                 const ausfuehrung = BAUWERKSARTEN[werte.art].ohneKoerper && typeof werte?.predefinedType === 'string' && werte.predefinedType
                     ? { predefinedType: werte.predefinedType } : {};
+                // Der Fachbegriff einer Baugruppe (ObjectType, z. B. „Leitung").
+                if (werte.art === 'baugruppe' && typeof werte?.objektTyp === 'string' && werte.objektTyp.trim()) ausfuehrung.objektTyp = werte.objektTyp.trim();
                 return erzeugtEintrag({ rezept: behaelterRezept(), name,
                                         parameter: { art: werte.art, ...typ, ...ausfuehrung, ..._stammdaten(werte) } });
             }
@@ -891,6 +893,9 @@ function zeichenBearbeitung(rezept) {
                 ...(werte.vorlage ? { vorlage: String(werte.vorlage) } : {}),
                 // Die Sachdaten der Quelle, unverändert (Fahrplan Sachdaten P2).
                 ..._stammdaten(werte),
+                // Teil eines Bauwerks von Anfang an (die Leitung mit Bögen, Fabio 2026-10-06) —
+                // dieselbe EINE Angabe, die „Zu Bauwerk hinzufügen" setzt (E17).
+                ...(typeof werte.teilVon === 'string' && werte.teilVon ? { teilVon: werte.teilVon } : {}),
             };
             // DER ANSCHLUSS (Teil XXIV, K8 — Fabios E6): beginnt oder endet eine
             // KANTE auf einem Knoten, nennt der Bauplan ihn. Das Netz nimmt die

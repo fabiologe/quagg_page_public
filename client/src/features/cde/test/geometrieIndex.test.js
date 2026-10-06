@@ -99,6 +99,7 @@ describe('jeder Bauweg liefert indizierte Geometrie', () => {
         // BIMFY I9: die Teile des Kastenschachts (Mitte unten, Mitte oben, Längsachse; Masse in m).
         // BIMFY I10: Anschlusspunkt (Sohle, oben) und Sonderbauwerk (Umriss auf der Sohle).
         anschlusspunkt: { punkte: [[0, 0, 0], [0, 0.15, 0]], dn: 150 },
+        bogen: { punkte: [[0, 0, 0], [0.29, 0, 0.04], [0.5, 0, 0.15], [0.62, 0, 0.29], [0.65, 0, 0.5]], dn: 150 },
         sonderbauwerk: { punkte: [[0, 0, 0], [3, 0, 0], [3, 0, -2], [0, 0, -2]], bauwerkshoehe: 3.5 },
         kastenunterteil: { punkte: [[0, -0.2, 0], [0, 1.4, 0], [1, -0.2, 0]], laenge: 1, breite: 1, wand: 0.15, boden: 0.2 },
         kastenplatte: { punkte: [[0, 1.4, 0], [0, 1.6, 0], [1, 1.4, 0]], laenge: 1, breite: 1, wand: 0.15, deckel: 0.2, oeffnung: 0.625 },

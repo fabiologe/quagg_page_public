@@ -24,6 +24,7 @@
  * Rein: kein Vue, kein Store, keine Engine.
  */
 import { herleitungText } from './muster/Herleitung.js';
+import { teileLeitung } from './muster/Leitungszug.js';
 import { G400_BAUWERKSTYP } from './isybau/Schluessel.js';
 import { vorlageNach } from '../rezept/Bauwerksvorlagen.js';
 import { BAUWERKSARTEN, REZEPTE, rezeptNach, warumNichtSchreibbar, zufallsKennung } from '../Bauteilrezepte.js';
@@ -448,7 +449,48 @@ export function kommandosFuer(zeilen, opt = {}) {
         });
     }
     _verknuepfe(kommandos, opt.kennung ?? zufallsKennung);
-    return { kommandos, fehler };
+    // AM KNICK EIN BOGEN (Fabio, 2026-10-06): erst verknüpft (Enden an den Schächten, Fuge
+    // geschlossen), dann geteilt — die Mitte wird Rohrstücke und Bögen, die Enden bleiben.
+    return { kommandos: kommandos.flatMap(e => _amKnickTeilen(e, opt.kennung ?? zufallsKennung) ?? [e]), fehler };
+}
+
+/**
+ * Eine Leitung mit Knicken als Baugruppe: das Ganze trägt Name, Sachdaten und Zustand
+ * (IfcElementAssembly), darunter die Bögen (IfcPipeFitting BEND, Netzknoten im Scheitel)
+ * und die Rohrstücke dazwischen, die an den Bögen hängen. Ohne Bogen: null (bleibt ein Rohr).
+ */
+function _amKnickTeilen({ geo, kommando }, kennung) {
+    const zug = kommando?.eingaben?.zug;
+    const wand = geo?.muster?.rohrwand;
+    if (!geo?.isybau || !Array.isArray(zug) || zug.length < 3 || !kommando.werkzeug?.endsWith('-zeichnen')) return null;
+    if (rezeptNach(kommando.werkzeug.slice(0, -'-zeichnen'.length))?.netzrolle !== 'kante') return null;
+    const da = wand?.dAussen ?? (Number(kommando.werte?.dn) > 0 ? Number(kommando.werte.dn) / 1000 : null);
+    const { stuecke, boegen, befunde } = teileLeitung(zug, { da, material: geo.isybau.material, name: kommando.werte?.name ?? geo.name });
+    if (!boegen.length) return null;
+    const { stammdaten, zustand, ...rohrwerte } = kommando.werte ?? {};
+    const name = rohrwerte.name || geo.name || 'Leitung';
+    const gruppe = kennung('bauteil');
+    const ids = boegen.map(() => kennung('bauteil'));
+    const aus = [{ geo, kommando: {
+        werkzeug: 'bauwerk-anlegen', eingaben: {}, neu: [gruppe],
+        werte: { name, art: 'baugruppe', objektTyp: 'Leitung', ...(stammdaten ? { stammdaten } : {}), ...(zustand ? { zustand } : {}) },
+    }, teil: 'gruppe', befunde }];
+    boegen.forEach((b, i) => aus.push({ geo, teil: 'bogen', kommando: {
+        werkzeug: 'bogen-zeichnen', neu: [ids[i]],
+        eingaben: { zug: b.punkte.map(p => ({ ost: _r3(p.ost), nord: _r3(p.nord), ...(_fin(p.hoehe) ? { hoehe: _r3(p.hoehe) } : {}) })) },
+        werte: { name: b.name, kategorie: 'IFCPIPEFITTING', hoehe: '', teilVon: gruppe, predefinedType: 'BEND', objektTyp: `Bogen ${b.regel.join(' + ')}°`,
+                 ...['dn', 'wanddicke', 'dnBezug'].reduce((o, f) => (rohrwerte[f] !== undefined ? { ...o, [f]: rohrwerte[f] } : o), {}),
+                 herleitung: herleitungText(b.herleitung) },
+    } }));
+    stuecke.forEach((st, i) => {
+        const punkte = st.map(p => ({ ost: _r3(p.ost), nord: _r3(p.nord), ...(_fin(p.hoehe) ? { hoehe: _r3(p.hoehe) } : {}) }));
+        // Die Enden: am Anfang und am Schluss, was die Leitung schon hatte (Schacht, Fuge), dazwischen der Bogen.
+        punkte[0] = i === 0 ? { ...zug[0] } : { ...punkte[0], knoten: ids[i - 1] };
+        punkte[punkte.length - 1] = i === stuecke.length - 1 ? { ...zug.at(-1) } : { ...punkte.at(-1), knoten: ids[i] };
+        aus.push({ geo, teil: 'stueck', kommando: { ...kommando, eingaben: { ...kommando.eingaben, zug: punkte },
+                                                     werte: { ...rohrwerte, name: `${name} · ${i + 1}`, teilVon: gruppe } } });
+    });
+    return aus;
 }
 
 /**

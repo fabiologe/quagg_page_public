@@ -282,6 +282,36 @@ export const EINGEBAUTE_REZEPTE = Object.freeze([
     },
     {
         /**
+         * DER BOGEN (Fabio, 2026-10-06: „muss am Knick nicht ein Krümmer rein?"):
+         * ein Formstück (IfcPipeFitting BEND) zwischen zwei Rohrstücken. Gezeichnet
+         * wie ein Rohr auf seiner Sohle — der Zug ist der Kreisbogen —, im Netz aber
+         * ein KNOTEN im Scheitel (dem mittleren Punkt), der bis zu seinen Enden reicht.
+         * Welche Regelbögen es sind, steht im Namen und in der Herleitung.
+         */
+        id: 'bogen',
+        titel: 'Bogen',
+        icon: 'laengsschnitt',
+        bauform: 'achse+profil',
+        kategorieVorgabe: 'IFCPIPEFITTING',
+        mindestPunkte: 3,
+        geschlossen: false,
+        felder: [
+            NAME, TYP,
+            { name: 'hoehe', titel: 'Sohlhöhe', einheit: 'm', typ: 'zahl', leerErlaubt: true },
+            { name: 'dn', titel: 'DN', einheit: 'mm', typ: 'zahl', min: 50, max: 4000, gueltig: { ueber: 0 }, vorgabe: 150, setzbar: true },
+            { name: 'wanddicke', titel: 'Wanddicke (leer = ohne Wand)', einheit: 'mm', typ: 'zahl', min: 1, max: 500,
+              gueltig: { ueber: 0 }, leerErlaubt: true, setzbar: true },
+            { name: 'dnBezug', titel: 'DN misst (leer = innen)', typ: 'auswahl', leerErlaubt: true, setzbar: true, vorgabe: 'innen',
+              optionen: [{ wert: 'innen', titel: 'innen (Beton, Steinzeug)' }, { wert: 'aussen', titel: 'aussen (Kunststoff, DN/OD)' }] },
+            ...ausfuehrung('BEND'),
+            { name: 'herleitung', titel: 'Herleitung der Masse', typ: 'text', leerErlaubt: true },
+        ],
+        netzrolle: 'knoten',
+        knoten: { punkt: 'mitte', radius: 'enden' },
+        geometrie: { art: 'sweep', profil: { art: 'kreisring', durchmesser: 'dn', wanddicke: 'wanddicke', bezug: 'dnBezug', einheit: 'mm', ecken: 12 } },
+    },
+    {
+        /**
          * DAS SONDERBAUWERK (BIMFY I10, ISYBAU KnotenTyp 2): Regenüberlauf,
          * Becken, Pumpwerk — vermessen ist der Umriss, dazu Sohle und Deckel.
          * Gebaut wird der HÜLLKÖRPER: der Umriss auf der Sohle, so hoch wie bis
