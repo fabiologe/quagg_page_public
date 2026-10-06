@@ -10,7 +10,7 @@
 |---|---|
 | Objekte | 670 |
 | Sachdatenwerte ohne Geometrie | 8 844 |
-| verschiedene Felder (Pfade) | 53 (28 an Knoten, 25 an Kanten) |
+| verschiedene Felder (Pfade) | 44 (53, wenn Knoten und Kante getrennt zählen) |
 | davon kommen bei isyifc an | etwa 8 bis 13 (`QG_ISYBAU_Data`, `C_Attribute`) |
 | davon kommen bei BIMFY an | Name, Nennweite, Manhole-Pset aus dem Muster, Herleitung |
 
@@ -48,10 +48,27 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 
 ## Stufen
 
-### P1 · Alles lesen (Isybauleser)
-- Der Leser sammelt je Objekt jedes Blatt des XML-Baums als `{pfad, wert}`,
-  ohne Handliste. Geometrie (Punkte, Kanten) bleibt aussen vor und wird gezählt.
-- Wächterzahl `gelesen`: 8 844 von 8 844.
+### P1 · Alles lesen (Isybauleser) · **gebaut**
+- `isybau/Isybauleser.stammdatenVon(obj)` sammelt je Objekt jedes Blatt mit
+  Text ausser der Geometrie als `{pfad: wert}`, ohne Handliste. Der Wert bleibt
+  Text wie in der Datei. Ein wiederholter Name zählt mit (`…[2]`).
+- Jedes gelesene Objekt trägt `stammdaten`. `liesIsybau` meldet
+  `sachdaten: {werte, gelesen, ohne}`. Jedes übergangene Objekt steht in `ohne`
+  mit Anzahl und Grund.
+- Echte Datei (670 Objekte):
+
+| | Werte |
+|---|---|
+| in der Datei (ausser Geometrie) | 8 844 (44 Pfade) |
+| an BIMFY-Geometrien | 8 810 |
+| Anschlusspunkte ohne Sohle, ausgelassen (Regel `ap-ohne-sohle`) | 23 |
+| Leitungen ohne Lage und ohne bekannte Knoten | 11 |
+| Summe | 8 844 |
+
+- Gegenprobe gezählt mit Python an derselben Datei (ISO-8859-1): 8 844.
+- Offen für P3: die 34 Werte der 5 übergangenen Objekte. Vorschlag: ein
+  `IfcProxy`-freier Weg, nämlich als Liste im Satz `ISYBAU_Übergangen` am
+  `IfcSite`, damit auch sie im IFC stehen.
 
 ### P2 · Durch den Kommandoweg tragen
 - Die Sammlung gibt jedem Bauwerk und jeder Haltung `werte.isybau` mit

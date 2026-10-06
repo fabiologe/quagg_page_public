@@ -456,7 +456,10 @@ export function liesPunktliste(text, { reihenfolge = null } = {}) {
  * weiss (`isybau`) und was das Muster daraus macht (`muster`).
  */
 export function liesIsybau(text) {
-    const { schaechte, kanten, anschlusspunkte = [], bauwerke = [], warnungen, gezaehlt } = liesIsybauDaten(text);
+    const { schaechte, kanten, anschlusspunkte = [], bauwerke = [], warnungen, gezaehlt, sachdaten } = liesIsybauDaten(text);
+    // Fahrplan Sachdaten P1/P6: jedes übergangene Objekt nimmt seine Werte mit — gezählt, mit Grund.
+    const ohne = [];
+    const uebergeht = (o, grund) => ohne.push({ name: o.name, werte: Object.keys(o.stammdaten ?? {}).length, grund });
     const nachName = new Map(schaechte.map(s => [s.name, s]));
     // Für Kanten ohne eigene Geometrie zählen alle Knoten — auch Anschlusspunkte und Bauwerke (I10).
     const knotenNach = new Map([...nachName,
@@ -465,7 +468,7 @@ export function liesIsybau(text) {
 
     // DIE SCHÄCHTE (I11: durch das Knotenregelwerk) — Normschacht, Kasten oder Sonderform.
     for (const s of schaechte) {
-        if (!s.ort) { warnungen.push(`ISYBAU: Schacht „${s.name}" ohne Lage übergangen`); continue; }
+        if (!s.ort) { warnungen.push(`ISYBAU: Schacht „${s.name}" ohne Lage übergangen`); uebergeht(s, 'Schacht ohne Lage'); continue; }
         const e = ordneKnoten(s, { anschluesse: anschluesseVon(s, kanten, nachName) });
         const muster = e.muster ?? { teile: [], befunde: e.befunde, kopf: null };
         const zDeckel = s.deckelHoehe, zSohle = s.sohle?.hoehe;
@@ -482,7 +485,7 @@ export function liesIsybau(text) {
 
     for (const k of kanten) {
         const punkte = kantenzugMitSohle(k, (n) => knotenNach.get(n));
-        if (!punkte) { warnungen.push(`ISYBAU: ${k.art} „${k.name}" ohne Lage und ohne bekannte Knoten übergangen`); continue; }
+        if (!punkte) { warnungen.push(`ISYBAU: ${k.art} „${k.name}" ohne Lage und ohne bekannte Knoten übergangen`); uebergeht(k, `${k.art} ohne Lage`); continue; }
         const dn = k.profil?.hoehe ?? k.profil?.breite ?? null;
         const wand = dn && (k.profil?.art === 0 || k.profil?.art === 4 || k.profil?.art === null) ? rohrwand({ dn, material: k.material, baulaenge: k.rohrlaenge }) : null;
         if (k.profil && ![0, 4, null].includes(k.profil.art)) {
@@ -490,6 +493,7 @@ export function liesIsybau(text) {
         }
         const g = _linienform(punkte, { ebene: _isyEbene(k.art[0].toUpperCase() + k.art.slice(1), k.status), name: k.name });
         if (g) geometrien.push({ ...g, ...(dn ? { durchmesser: dn } : {}), isybau: k, ...(wand ? { muster: { rohrwand: wand } } : {}) });
+        else uebergeht(k, `${k.art} ohne Linie`);
     }
 
     // DIE ANSCHLUSSPUNKTE UND BAUWERKE (I10, I11: durch das Knotenregelwerk) —
@@ -499,7 +503,7 @@ export function liesIsybau(text) {
         const a = e.knoten;
         const titel = a.art === 'bauwerk' ? 'Bauwerk' : `Anschlusspunkt${a.punktkennung ? ` ${a.punktkennung}` : ''}`;
         for (const b of e.befunde.filter(b => b.schwere === 'warnung')) warnungen.push(`ISYBAU: ${b.text}`);
-        if (e.bauart === 'auslassen') continue;
+        if (e.bauart === 'auslassen') { uebergeht(a, `ausgelassen (${e.regel})`); continue; }
         const gemein = { ebene: _isyEbene(titel, a.status, ZUSATZ[e.bauart] ?? ''), name: a.name, dreiD: true, isybau: a,
                          bauart: e.bauart, regel: { id: e.regel, grund: e.grund, berichtigt: e.berichtigt },
                          muster: e.muster ?? { teile: [], befunde: e.befunde, kopf: null },
@@ -516,13 +520,17 @@ export function liesIsybau(text) {
                               koerperhoehe: a.deckel - a.sohle, ...gemein });
         } else if (e.bauart === 'sonderform') {
             geometrien.push({ art: 'zug', punkte: [{ ...a.ort, hoehe: a.sohle }, { ...a.ort, hoehe: a.deckel }], durchmesser: 1, ...gemein });
+        } else {
+            uebergeht(a, `keine Form für Bauart ${e.bauart}`);
         }
     }
 
     for (const [art, n] of Object.entries(gezaehlt)) {
         if (n) warnungen.push(`ISYBAU: ${n} × ${art === 'andere' ? 'andere Objektart' : art} übergangen`);
     }
-    return { geometrien, warnungen };
+    if (sachdaten.ohneObjekt) ohne.push({ name: null, werte: sachdaten.ohneObjekt, grund: 'andere Objektart' });
+    const gelesen = geometrien.reduce((n, g) => n + Object.keys(g.isybau?.stammdaten ?? {}).length, 0);
+    return { geometrien, warnungen, sachdaten: { werte: sachdaten.werte, gelesen, ohne } };
 }
 
 /**

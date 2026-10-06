@@ -52,7 +52,32 @@ const _kinder = (el, name) => {
 function _baum(el) {
     const kinder = [];
     for (let k = el.firstElementChild; k; k = k.nextElementSibling) kinder.push(_baum(k));
-    return { n: el.localName.toLowerCase(), c: kinder, t: kinder.length ? '' : (el.textContent ?? '') };
+    return { n: el.localName.toLowerCase(), o: el.localName, c: kinder, t: kinder.length ? '' : (el.textContent ?? '') };
+}
+
+/**
+ * ALLE Sachdaten eines Objekts, ohne Handliste (Fahrplan Sachdaten P1): jedes
+ * Blatt mit Text ausser der Geometrie, als `{pfad: wert}`. Der Pfad ist der
+ * ISYBAU-Pfad ohne Wurzel, Punkte als Trenner (`Knoten.Schacht.Schachttiefe`).
+ * Wiederholt sich ein Name unter einem Eltern, zählt `[2]`, `[3]` … mit.
+ * Der Wert bleibt Text, so wie er in der Datei steht.
+ */
+export function stammdatenVon(obj) {
+    const aus = {};
+    const lauf = (el, pfad) => {
+        const je = new Map();
+        for (const k of el.c) {
+            if (k.n === 'geometrie') continue;
+            const nr = (je.get(k.n) ?? 0) + 1;
+            je.set(k.n, nr);
+            const name = nr > 1 ? `${k.o}[${nr}]` : k.o;
+            const p = pfad ? `${pfad}.${name}` : name;
+            if (k.c.length) lauf(k, p);
+            else if (k.t.trim()) aus[p] = k.t.trim();
+        }
+    };
+    lauf(obj, '');
+    return aus;
 }
 /** Ein Pfad aus direkten Kindern, `a/b/c` — das erste Element oder null. */
 function _pfad(el, pfad) {
@@ -164,6 +189,7 @@ function _kopf(obj, geo) {
         baujahr: _int(obj, 'Baujahr'),
         entwaesserungsart: _code(obj, 'Entwaesserungsart'),
         kommentar: _text(obj, 'Kommentar') || null,
+        stammdaten: stammdatenVon(obj),
     };
 }
 
@@ -344,7 +370,8 @@ function _bauwerk(obj) {
 
 /**
  * Eine ISYBAU-XML lesen.
- * @returns {{schaechte: object[], kanten: object[], anschlusspunkte: object[], bauwerke: object[], warnungen: string[], gezaehlt: object}}
+ * @returns {{schaechte: object[], kanten: object[], anschlusspunkte: object[], bauwerke: object[], warnungen: string[], gezaehlt: object,
+ *            sachdaten: {werte: number, ohneObjekt: number}}}
  */
 export function liesIsybauDaten(text) {
     if (typeof DOMParser === 'undefined') throw new Error('kein XML-Leser in dieser Umgebung');
@@ -364,22 +391,27 @@ export function liesIsybauDaten(text) {
     const warn = (t) => warnungen.push(`ISYBAU: ${t}`);
     if (leer) warn(`${leer} leere Elemente „<></>" entfernt — die Datei war kein gültiges XML`);
     const schaechte = [], kanten = [], anschlusspunkte = [], bauwerke = [];
+    // `werte`: alle Sachdatenwerte der Datei, `ohneObjekt`: die an Objekten, die
+    // kein Muster liest (Fahrplan Sachdaten P6 nennt sie mit Grund).
     const gezaehlt = { andere: 0 };
+    const sachdaten = { werte: 0, ohneObjekt: 0 };
     for (const o of objekte) {
+        const zahl = Object.keys(stammdatenVon(o)).length;
+        sachdaten.werte += zahl;
         const art = _int(o, 'Objektart');
         if (art === 2) {
             const typ = _int(o, 'Knoten/KnotenTyp');
             if (typ === 0) schaechte.push(_schacht(o, warn));
             else if (typ === 1) anschlusspunkte.push(_anschlusspunkt(o));
             else if (typ === 2) bauwerke.push(_bauwerk(o));
-            else gezaehlt.andere++;
+            else { gezaehlt.andere++; sachdaten.ohneObjekt += zahl; }
         } else if (art === 1) {
             kanten.push(_kante(o, warn));
         } else {
-            gezaehlt.andere++;
+            gezaehlt.andere++; sachdaten.ohneObjekt += zahl;
         }
     }
-    return { schaechte, kanten, anschlusspunkte, bauwerke, warnungen, gezaehlt };
+    return { schaechte, kanten, anschlusspunkte, bauwerke, warnungen, gezaehlt, sachdaten };
 }
 
 /**

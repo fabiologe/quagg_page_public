@@ -112,6 +112,38 @@ describe('ISYBAU-Leser (Format 2013, AH15 Anhang A-7)', () => {
     });
 });
 
+describe('ISYBAU-Leser · alle Sachdaten (Fahrplan Sachdaten P1)', () => {
+    it('jedes Blatt ausser der Geometrie, mit Pfad und Text wie in der Datei', () => {
+        const xml = datei(schachtXml(), haltungXml());
+        const { schaechte, kanten, sachdaten } = liesIsybauDaten(xml);
+        const s = schaechte[0].stammdaten, h = kanten[0].stammdaten;
+        expect(s).toMatchObject({ Objektbezeichnung: 'S1', Status: '0', Entwaesserungsart: 'KS',
+                                  'Knoten.Schacht.Schachttiefe': '3,00', 'Knoten.Schacht.Abdeckung.Abdeckungsklasse': 'D',
+                                  'Knoten.Schacht.Unterteil.MaterialGerinne': 'B' });
+        expect(Object.keys(s).some(k => k.startsWith('Geometrie'))).toBe(false);
+        expect(h['Kante.Haltung.HaltungsFunktion']).toBe('0');
+        // Gegenprobe: so viele Blätter mit Text stehen ausserhalb der Geometrie in der Datei.
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        let blaetter = 0;
+        for (const el of doc.getElementsByTagName('*')) {
+            if (el.children.length || !el.textContent.trim()) continue;
+            let p = el, geo = false;
+            while (p) { if (p.localName === 'Geometrie') geo = true; p = p.parentElement; }
+            if (!geo) blaetter++;
+        }
+        expect(sachdaten.werte).toBe(blaetter);
+        expect(Object.keys(s).length + Object.keys(h).length).toBe(blaetter);
+        expect(sachdaten.ohneObjekt).toBe(0);
+    });
+
+    it('ein wiederholter Name zählt mit, nichts überschreibt sich', () => {
+        const xml = datei(schachtXml({ extra: '<Einstieghilfe>1</Einstieghilfe><Einstieghilfe>2</Einstieghilfe>' }));
+        const s = liesIsybauDaten(xml).schaechte[0].stammdaten;
+        expect(s['Knoten.Schacht.Einstieghilfe']).toBe('1');
+        expect(s['Knoten.Schacht.Einstieghilfe[2]']).toBe('2');
+    });
+});
+
 describe('Muster · Höhen füllen', () => {
     it('2,18 m: zwei Regelringe, der Rest in Auflageringen 100 + 80 mm', () => {
         expect(fuelleHoehe(2.18)).toEqual({ ringe: [1, 1], auflageringe: [0.1, 0.08], rest: 0 });
