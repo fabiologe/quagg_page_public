@@ -67,7 +67,7 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 
 - Gegenprobe gezählt mit Python an derselben Datei (ISO-8859-1): 8 844.
 - Offen für P3: die 34 Werte der 5 übergangenen Objekte. Vorschlag: ein
-  `IfcProxy`-freier Weg, nämlich als Liste im Satz `ISYBAU_Übergangen` am
+  eigener Satz `ISYBAU_Uebergangen` am
   `IfcSite`, damit auch sie im IFC stehen.
 
 ### P2 · Durch den Kommandoweg tragen
