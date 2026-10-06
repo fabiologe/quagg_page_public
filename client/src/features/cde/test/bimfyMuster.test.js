@@ -15,7 +15,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { KOMMANDO_SCHEMA, pruefeStammdaten } from '../services/kommando/Kommando.js';
 import { gruppiere, kommandosFuer } from '../services/bimfy/Uebersetzer.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
-import { Speicher } from './hilfen/vorlagenKommandos.js';
+import { paketAus, Speicher } from './hilfen/vorlagenKommandos.js';
 import { liesIsybauDaten, bogenPunkte, kantenzugMitSohle } from '../services/bimfy/isybau/Isybauleser.js';
 import { normschacht, fuelleHoehe, steigeisenHoehen, KETTE_TOLERANZ_M } from '../services/bimfy/muster/Normschacht.js';
 import { rohrwand } from '../services/bimfy/muster/Rohrwand.js';
@@ -729,6 +729,14 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         expect(mit.map(p => p.name).sort()).toEqual(['GA1', 'H1', 'L1', 'RÜ1', 'S1']);
         expect(mit.reduce((z, p) => z + Object.keys(p.parameter.stammdaten).length, 0)).toBe(sachdaten.werte);
         expect(mit.find(p => p.name === 'S1').parameter.stammdaten['Knoten.Schacht.Abdeckung.Abdeckungsklasse']).toBe('D');
+        // P4b: das Material im Paket — das Rohr aus seiner Kante, die Ringe aus dem Aufbau ihres Schachts.
+        const paket = await paketAus(useAenderungen());
+        expect(paket.bauteile.find(t => t.name === 'H1').material).toEqual({ name: 'Steinzeug', quelle: 'ISYBAU Kante.Material = STZ' });
+        const s1 = [...useAenderungen().wirksamerStand('erzeugt')].find(([, w]) => w.name === 'S1' && w.rezept === 'bauwerk')[0];
+        const s1Teile = paket.bauteile.filter(t => t.teilVon === s1);
+        expect(s1Teile.filter(t => t.rezept === 'schachtring').every(t => t.material?.name === 'Beton' && t.material.kategorie === 'concrete')).toBe(true);
+        expect(s1Teile.find(t => t.rezept === 'schachtabdeckung').material).toMatchObject({ name: 'duktiles Gusseisen' });
+        expect(s1Teile.find(t => t.rezept === 'schachtunterteil').material).toMatchObject({ name: 'Beton' });
         expect(stand.filter(p => p.parameter?.teilVon && p.parameter?.stammdaten)).toEqual([]);
     });
 

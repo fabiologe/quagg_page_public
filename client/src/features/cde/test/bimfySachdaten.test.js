@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { ABBILDUNGSREGELN, COMMON_SATZ, STATUS_NACH_BSI, SCHLUESSEL_JE_FELD, bildeAb } from '../services/bimfy/isybau/Abbildung.js';
 import { PSET_TEMPLATES } from '../data/pset-templates.js';
+import * as ABB from '../services/bimfy/isybau/Abbildung.js';
 
 describe('Abbildung · Wächter', () => {
     for (const r of ABBILDUNGSREGELN) {
@@ -46,5 +47,27 @@ describe('Abbildung · bildeAb', () => {
     });
     it('jede Schlüsselliste ist eine Tabelle Code → Text', () => {
         for (const [feld, liste] of Object.entries(SCHLUESSEL_JE_FELD)) expect(Object.keys(liste).length, feld).toBeGreaterThan(1);
+    });
+});
+
+describe('Abbildung · Material (P4b)', () => {
+    it('das Rohr aus seiner Kante, das Schachtteil aus seinem Bauwerk, je Rezept das passende Feld', () => {
+        const { materialVon } = ABB;
+        expect(materialVon({ 'Kante.Material': 'B' }, 'rohr')).toEqual({ name: 'Beton', kategorie: 'concrete', code: 'B', pfad: 'Kante.Material' });
+        const schacht = { 'Knoten.Schacht.Aufbau.MaterialAufbau': 'MA', 'Knoten.Schacht.Unterteil.MaterialUnterteil': 'OB' };
+        expect(materialVon(schacht, 'schachtring')).toMatchObject({ name: 'Mauerwerk', kategorie: null });
+        expect(materialVon(schacht, 'schachtunterteil')).toMatchObject({ name: 'Ortbeton', kategorie: 'concrete' });
+        expect(materialVon({ 'Knoten.Schacht.Aufbau.MaterialAufbau': 'B' }, 'kastenunterteil')).toMatchObject({ name: 'Beton' });
+    });
+    it('ohne Feld kein Material; unbekannter Code bleibt als Name; Steighilfen nach G307 ohne Kategorie', () => {
+        const { materialVon } = ABB;
+        expect(materialVon({ 'Kante.Material': 'B' }, 'schachtring')).toBeNull();
+        expect(materialVon({}, 'rohr')).toBeNull();
+        expect(materialVon({ 'Kante.Material': 'XYZ' }, 'rohr')).toEqual({ name: 'XYZ', kategorie: null, code: 'XYZ', pfad: 'Kante.Material' });
+        expect(materialVon({ 'Knoten.Schacht.MaterialSteighilfen': '3' }, 'steigeisen')).toMatchObject({ name: 'nichtrostender Stahl', kategorie: null });
+    });
+    it('jede Kategorie ist eine der IFC-Empfehlung', () => {
+        const ifc = new Set(['concrete', 'steel', 'aluminium', 'block', 'brick', 'stone', 'wood', 'glass', 'gypsum', 'plastic', 'earth']);
+        for (const k of Object.values(ABB.MATERIALKATEGORIE)) expect(ifc.has(k), k).toBe(true);
     });
 });

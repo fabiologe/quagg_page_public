@@ -374,6 +374,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcRelAssignsToGroup](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssignsToGroup.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelAssociatesClassification](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssociatesClassification.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcRelAssociatesDocument](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssociatesDocument.htm) | Herkunft | nein | IFC4X3_ADD2 |
+| [IfcRelAssociatesMaterial](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelAssociatesMaterial.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcRelContainedInSpatialStructure](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelContainedInSpatialStructure.htm) | Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcRelDeclares](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelDeclares.htm) | Eigenbau, Verbund | nein | IFC4X3_ADD2 |
 | [IfcRelDefinesByProperties](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcRelDefinesByProperties.htm) | Eigenbau, Herkunft, Verbund | nein | IFC4X3_ADD2 |
@@ -423,6 +424,7 @@ Geometrie, Einheiten, Werte, Stile — ohne GlobalId, deshalb nicht im Baum oben
 | IfcIndexedPolyCurve | Eigenbau |
 | IfcLocalPlacement | Eigenbau, Verbund |
 | IfcMapConversion | Verbund |
+| IfcMaterial | Eigenbau |
 | IfcOrganization | Verbund |
 | IfcOwnerHistory | Eigenbau, Verbund |
 | IfcPerson | Verbund |

@@ -49,7 +49,7 @@ import { istAbzug, istAushub } from './Kategorien.js';
 import { klassifikationVon } from './katalog/Bauwerkstypen.js';
 import { BAUWERKSARTEN, lagemerkmaleVon, objektTypVon, rechenmerkmaleVon } from './Bauteilrezepte.js';
 import { vorlageNach } from './rezept/Bauwerksvorlagen.js';
-import { bildeAb } from './bimfy/isybau/Abbildung.js';
+import { bildeAb, materialVon } from './bimfy/isybau/Abbildung.js';
 import { zustandVon, zustandsbild } from './Zustand.js';
 import { herleitungText } from './bimfy/muster/Herleitung.js';
 
@@ -238,6 +238,10 @@ export function bauteilFuersPaket(teil, { nachProjekt, stand, exportiert, farbsa
         ...(plan?.parameter?.teilVon ? { teilVon: plan.parameter.teilVon } : {}),
         // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten der Quelle, unverändert → `ISYBAU_Stammdaten`.
         ..._stammdaten(plan?.parameter, abbildung.texte),
+        // OPTIONAL (Fahrplan Sachdaten P4b): das Material aus der Quelle — vom Rohr selbst, beim Schachtteil
+        // vom Bauwerk. Ohne Angabe keins (eine Norm-Annahme ist keine Materialangabe).
+        ..._material(materialVon(plan?.parameter?.stammdaten ?? stand?.get?.(plan?.parameter?.teilVon)?.parameter?.stammdaten,
+                                 plan?.rezept)),
         // OPTIONAL (Z4): wie gemessen wurde — nur, wenn es NICHT die Vorgabe des
         // Schreibers ist (Raster, der Erdbau). Ein Erdbau-Paket bleibt so, wie es war.
         ...(teil.mengenMethode && teil.mengenMethode !== 'raster' ? { mengenMethode: teil.mengenMethode } : {}),
@@ -364,7 +368,14 @@ export function bauwerkFuersPaket({ globalId, wert }) {
         ...(Object.keys(merkmale).length ? { merkmale } : {}),
         // OPTIONAL (Fahrplan Sachdaten P3): die Sachdaten hängen am Bauwerk, nicht an den Teilen.
         ..._stammdaten(p, abbildung.texte),
+        // OPTIONAL (P4b): das Material eines Elements ohne Körper (die Leitung nennt ihres).
+        ..._material(materialVon(p.stammdaten, `bauwerk:${p.art}`)),
     };
+}
+
+/** Das Material fürs Paket — `{name, kategorie?, quelle}` oder nichts. */
+function _material(m) {
+    return m ? { material: { name: m.name, ...(m.kategorie ? { kategorie: m.kategorie } : {}), quelle: `ISYBAU ${m.pfad} = ${m.code}` } } : {};
 }
 
 /**

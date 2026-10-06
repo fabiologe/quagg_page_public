@@ -62,12 +62,14 @@ function _baum(el) {
  * Wiederholt sich ein Name unter einem Eltern, zählt `[2]`, `[3]` … mit.
  * Der Wert bleibt Text, so wie er in der Datei steht.
  */
-export function stammdatenVon(obj) {
+export function stammdatenVon(obj, { nurGeometrie = false } = {}) {
     const aus = {};
     const lauf = (el, pfad) => {
         const je = new Map();
         for (const k of el.c) {
-            if (k.n === 'geometrie') continue;
+            // Die Geometrie ist keine Sachangabe — ausser für ein Objekt, aus dem kein Körper
+            // wird: dann steht sie roh im Satz (`nurGeometrie`, Fabio 2026-10-06).
+            if (!pfad && (k.n === 'geometrie') !== nurGeometrie) continue;
             const nr = (je.get(k.n) ?? 0) + 1;
             je.set(k.n, nr);
             const name = nr > 1 ? `${k.o}[${nr}]` : k.o;
@@ -190,6 +192,8 @@ function _kopf(obj, geo) {
         entwaesserungsart: _code(obj, 'Entwaesserungsart'),
         kommentar: _text(obj, 'Kommentar') || null,
         stammdaten: stammdatenVon(obj),
+        // Die Geometrie roh, als Text wie in der Datei — gebraucht nur, wenn kein Körper entsteht.
+        geometriedaten: stammdatenVon(obj, { nurGeometrie: true }),
     };
 }
 

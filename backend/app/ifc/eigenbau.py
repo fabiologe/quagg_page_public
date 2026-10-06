@@ -558,6 +558,43 @@ def _platz(f, bezug):
             "IfcAxis2Placement3D", Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))))
 
 
+# Die Kategorien von IfcMaterial, die IFC 4.3 empfiehlt (IfcMaterial, Informal Propositions).
+MATERIALKATEGORIEN = ("concrete", "steel", "aluminium", "block", "brick", "stone", "wood", "glass", "gypsum", "plastic", "earth")
+
+
+def _materialien_zuordnen(f, besitz, je_material: dict, satz: str, warnungen: list) -> int:
+    """Ein IfcMaterial je Name, EINE IfcRelAssociatesMaterial je Material an alle seine Elemente
+    (Fahrplan Sachdaten P4b). `je_material`: {name: {"kategorie", "quelle", "elemente"}}.
+    Eine unbekannte Kategorie faellt weg und wird genannt — nie geraten."""
+    n = 0
+    for name, m in sorted(je_material.items()):
+        kategorie = m.get("kategorie")
+        if kategorie and kategorie not in MATERIALKATEGORIEN:
+            warnungen.append(f"Material {name}: Kategorie {kategorie!r} unbekannt — ohne Kategorie geschrieben")
+            kategorie = None
+        mat = f.create_entity("IfcMaterial", Name=name, Category=kategorie)
+        if m.get("quelle"):
+            mat.Description = "; ".join(sorted(m["quelle"]))[:250]
+        f.create_entity("IfcRelAssociatesMaterial", GlobalId=guids.guid_aus_cde_id(f"{satz}|material|{name}"),
+                        OwnerHistory=besitz, RelatedObjects=m["elemente"], RelatingMaterial=mat)
+        n += 1
+    return n
+
+
+def _material_merken(je_material: dict, eintrag, el, warnungen: list, cid) -> None:
+    """Das Material eines Paketeintrags zum Element merken — oder nennen, warum nicht."""
+    m = eintrag.get("material") if isinstance(eintrag, dict) else None
+    if not m:
+        return
+    if not isinstance(m, dict) or not isinstance(m.get("name"), str) or not m["name"].strip():
+        warnungen.append(f"{cid}: Material ohne Namen — nicht zugeordnet")
+        return
+    ziel = je_material.setdefault(m["name"].strip(), {"kategorie": m.get("kategorie"), "quelle": set(), "elemente": []})
+    if m.get("quelle"):
+        ziel["quelle"].add(str(m["quelle"]).split(" = ")[0])
+    ziel["elemente"].append(el)
+
+
 def _bauwerke_anlegen(f, besitz, site, bauwerke, satz: str, warnungen: list) -> dict:
     """Die Behaelter eines Pakets: Bauwerke, in denen Bauteile stehen (Teil XXVI, Z5a).
 
@@ -720,6 +757,11 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     # DIE BAUWERKE zuerst (Teil XXVI, Z5a): ein Teil wird relativ zu seinem Behaelter platziert.
     behaelter_warnungen = []
     behaelter = _bauwerke_anlegen(f, besitz, site, paket.get("bauwerke"), satz, behaelter_warnungen)
+    # DAS MATERIAL (Fahrplan Sachdaten P4b): gesammelt, am Ende EINE Zuordnung je Material.
+    je_material = {}
+    for w in paket.get("bauwerke") or []:
+        if isinstance(w, dict) and w.get("cdeId") in behaelter:
+            _material_merken(je_material, w, behaelter[w["cdeId"]]["inst"], behaelter_warnungen, w["cdeId"])
 
     stile = {}
     produkte, uebersprungen, warnungen = [], [], list(behaelter_warnungen)
@@ -830,6 +872,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         merkmale_n += _bsi_merkmale(f, besitz, el, klasse, pt, b.get("merkmale"), f"{satz}|{cde_id}",
                                     warnungen, cde_id)
         _stammdaten(f, besitz, el, b.get("stammdaten"), f"{satz}|{cde_id}", warnungen, cde_id)
+        _material_merken(je_material, b, el, warnungen, cde_id)
         docs, geliefert = _quelldokumente_von(b, quell_dokumente)
         if docs:
             quelle = {"QuellDokument": "; ".join(str(d.get("datei") or d["sha256"][:12]) for d in docs),
@@ -1029,6 +1072,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
     else:
         warnungen.append("keine Bauteile geschrieben — die Datei traegt nur das Geruest")
 
+    materialien_n = _materialien_zuordnen(f, besitz, je_material, satz, warnungen)
     Path(ziel).parent.mkdir(parents=True, exist_ok=True)
     f.write(str(ziel))
     return {
@@ -1042,6 +1086,7 @@ def baue_datei(paket: dict, ziel, *, schluessel: str = "cde", projektname: str |
         "stile": len(stile),
         "mengen": mengen_n,
         "merkmalsaetze": merkmale_n,
+        "materialien": materialien_n,
         "bauwerke": len(behaelter),
         "raeume": len(raeume),
         "tragwerke": tragwerke,

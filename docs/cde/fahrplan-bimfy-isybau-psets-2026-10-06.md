@@ -207,8 +207,26 @@ Fabio, 2026-10-06: „Als Element ohne Geometrie".
 | Elemente ohne Körper | 5 (4 IfcPipeFitting, 1 IfcPipeSegment) |
 | Prüftor offen | 0 |
 
-- Offen: die Lage (Rechts- und Hochwert) eines Anschlusspunkts ohne Sohle ist
-  Geometrie und zählt nicht zu den Sachdaten. Sie steht noch nicht im IFC.
+- **Lage ohne Höhe (gebaut):** ein Element ohne Körper trägt seine Geometrie
+  roh in `ISYBAU_Stammdaten` (`Geometrie.Geometriedaten.Knoten.Punkt.Rechtswert`
+  usw.), im Lagesystem der Datei. Eine Platzierung braucht eine Höhe; eine
+  erfundene gäbe es nicht. Echte Datei: 19 Lagewerte an den 5 Elementen.
+
+### P4b · Material als IfcMaterial · **gebaut**
+- `Abbildung.materialVon(stammdaten, rezept)`: je Rezept des Teils das
+  ISYBAU-Feld (Rohr `Material`, Ring/Konus/Platte/Auflagering `MaterialAufbau`,
+  Unterteil `MaterialUnterteil`, Abdeckung `MaterialAbdeckung`, Berme
+  `MaterialGerinne`, Steigeisen `MaterialSteighilfen` nach G307). Ein
+  Schachtteil fragt sein Bauwerk. Ohne Angabe KEIN Material (die Norm-Annahme
+  „Betonring" ist keine Materialangabe).
+- Kategorie nach IFC-Empfehlung (concrete, steel, plastic, brick, earth …) nur,
+  wo der Code sie eindeutig nennt. Guss, Steinzeug, Mauerwerk, Faserzement
+  bleiben ohne.
+- Schreiber: ein `IfcMaterial` je Name, Quelle in `Description`, EINE
+  `IfcRelAssociatesMaterial` je Material an alle Elemente (auch ohne Körper).
+- Echte Datei: 538 Elemente mit Material, 9 Materialien (Stahlbeton 275,
+  Polypropylen 161, Beton 44, PVC 26, PVC-U 17, Kunststoff 6, Mauerwerk 6,
+  GFK 2, Steinzeug 1). Schreiber 0 Warnungen, Prüftor 0 offen.
 
 ### P5 · Keine erfundenen Werte
 - Kein Wert ohne Quelle. Fehlt er in der Datei, fehlt er im IFC.

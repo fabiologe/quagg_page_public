@@ -609,9 +609,10 @@ export function strassenablaufKommando(geo, wahl = {}, { versatz = null, umrechn
  * wird als Rückbau gebaut und markiert (Fabio, 2026-10-06), nicht weggelassen.
  */
 function _quellwerte(geo) {
-    const sd = geo?.isybau?.stammdaten;
+    // OHNE KÖRPER: die Lage (Rechts-/Hochwert, auch ohne Höhe) steht nirgends sonst — sie kommt roh dazu.
+    const sd = { ...(geo?.isybau?.stammdaten ?? {}), ...(geo?.art === 'ohneKoerper' ? geo.isybau?.geometriedaten ?? {} : {}) };
     return {
-        ...(sd && Object.keys(sd).length ? { stammdaten: { ...sd } } : {}),
+        ...(Object.keys(sd).length ? { stammdaten: sd } : {}),
         ...(geo?.isybau?.status === 6 ? { zustand: 'rueckbau' } : {}),
     };
 }

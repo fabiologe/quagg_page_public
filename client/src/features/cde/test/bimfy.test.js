@@ -196,10 +196,17 @@ describe('BIMFY · ISYBAU und Punktdaten', () => {
         expect(paket.bauwerke.map(w => [w.art, w.name]).sort()).toEqual([['anschluss', 'A1'], ['schacht', 'S1'], ['schacht', 'S2']]);
         // Ohne Körper: die Sachdaten, die Ausführung, der Common-Satz — und kein Teil.
         const a1 = paket.bauwerke.find(w => w.name === 'A1');
+        // Die Lage ohne Höhe steht nirgends sonst — roh im Satz, wie in der Datei (Fabio, 2026-10-06).
+        expect(a1.stammdaten).toMatchObject({ 'Geometrie.Geometriedaten.Knoten.Punkt.Rechtswert': '410001',
+                                              'Geometrie.Geometriedaten.Knoten.Punkt.Hochwert': '5460001' });
+        // … nur dort: ein gebautes Objekt trägt seine Geometrie als Körper, nicht als Text.
+        expect(paket.bauwerke.filter(w => Object.keys(w.stammdaten ?? {}).some(k => k.startsWith('Geometrie'))).map(w => w.name)).toEqual(['A1']);
         expect(a1).toMatchObject({ predefinedType: 'JUNCTION', stammdaten: { Objektbezeichnung: 'A1' },
                                    merkmale: { Pset_PipeFittingTypeCommon: { Reference: 'A1' } } });
         expect(paket.bauteile.filter(t => t.teilVon === a1.cdeId)).toEqual([]);
         expect(paket.bauteile.filter(t => t.klasse === 'IFCPIPESEGMENT').map(t => t.name)).toEqual(['H1']);
+        // P4b: H1 nennt kein Material — also hat es keins (nichts erfunden).
+        expect(paket.bauteile.find(t => t.name === 'H1')).not.toHaveProperty('material');
         expect(paket.bauteile.filter(t => t.objektTyp === 'Schachtring').length).toBeGreaterThanOrEqual(4);
     });
 

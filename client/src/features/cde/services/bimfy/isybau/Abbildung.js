@@ -132,3 +132,66 @@ export function bildeAb(stammdaten, kontext = {}) {
     }
     return aus;
 }
+
+// ── Material (Fahrplan Sachdaten P4b) ─────────────────────────────────────
+
+/**
+ * Welches ISYBAU-Feld das Material eines Teils nennt — je Rezept des Teils, in
+ * Reihenfolge (das erste vorhandene gilt). Ein Rohr nennt es selbst (`Material`
+ * der Kante), ein Schachtteil über sein Bauwerk. Was hier fehlt, bekommt KEIN
+ * Material: ein Betonring „aus der Norm" ist eine Annahme, keine Angabe.
+ */
+export const MATERIALFELD_JE_REZEPT = Object.freeze({
+    rohr: ['Material'],
+    schachtunterteil: ['MaterialUnterteil'],
+    kastenunterteil: ['MaterialUnterteil', 'MaterialAufbau'],
+    berme: ['MaterialGerinne'],
+    schachtring: ['MaterialAufbau'], schachthals: ['MaterialAufbau'], schachtplatte: ['MaterialAufbau'],
+    kastenplatte: ['MaterialAufbau'], auflagering: ['MaterialAufbau'],
+    schachtabdeckung: ['MaterialAbdeckung'], kastenabdeckung: ['MaterialAbdeckung'],
+    steigeisen: ['MaterialSteighilfen'],
+    // Ein Element ohne Körper (Bauwerksart „leitung") trägt das Material seiner Kante.
+    'bauwerk:leitung': ['Material'],
+});
+
+/**
+ * Die Kategorie von IfcMaterial (IFC 4.3: concrete, steel, aluminium, block,
+ * brick, stone, wood, glass, gypsum, plastic, earth) — nur, wo der Code sie
+ * eindeutig nennt. Guss, Steinzeug, Faserzement haben keine: sie bleibt leer.
+ */
+export const MATERIALKATEGORIE = Object.freeze({
+    B: 'concrete', BS: 'concrete', OB: 'concrete', SB: 'concrete', SPB: 'concrete', SFB: 'concrete', SZB: 'concrete',
+    PCC: 'concrete', PC: 'concrete', PHB: 'concrete',
+    ST: 'steel', CNS: 'steel', EIS: 'steel',
+    PE: 'plastic', PEHD: 'plastic', PP: 'plastic', PVC: 'plastic', PVCU: 'plastic', KST: 'plastic', GFK: 'plastic', PH: 'plastic',
+    ZG: 'brick',
+    BOD: 'earth',
+});
+
+/** Das erste Feld mit diesem letzten Namen in den Sachdaten — `[pfad, wert]` oder null. */
+function _feld(sd, name) {
+    for (const [pfad, wert] of Object.entries(sd ?? {})) {
+        if (pfad.split('.').at(-1) === name && String(wert).trim()) return [pfad, String(wert).trim()];
+    }
+    return null;
+}
+
+/**
+ * Das Material eines Teils aus den Sachdaten seiner Quelle — oder null.
+ * @param {Record<string,string>} stammdaten  die des Rohrs bzw. des Bauwerks
+ * @param {string} rezept  das Rezept des Teils (`schachtring`, `rohr`, `bauwerk:leitung` …)
+ * @returns {{name: string, kategorie: string|null, code: string, pfad: string}|null}
+ */
+export function materialVon(stammdaten, rezept) {
+    for (const feld of MATERIALFELD_JE_REZEPT[rezept] ?? []) {
+        const f = _feld(stammdaten, feld);
+        if (!f) continue;
+        const [pfad, code] = f;
+        const liste = SCHLUESSEL_JE_FELD[feld];
+        const name = liste?.[code] ?? liste?.[code.toUpperCase()];
+        // Ein Code ausserhalb der Liste bleibt, wie er ist — als Name, ohne Kategorie.
+        const kategorie = feld === 'MaterialSteighilfen' ? null : (MATERIALKATEGORIE[code.toUpperCase()] ?? null);
+        return { name: name ?? code, kategorie, code, pfad };
+    }
+    return null;
+}

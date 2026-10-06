@@ -18,6 +18,9 @@ flowchart LR
   IfcRelAssociatesDocument{{IfcRelAssociatesDocument}}
   IfcRelAssociatesDocument -->|"RelatedObjects (Menge)"| IfcDefinitionSelect
   IfcDocumentSelect -->|"RelatingDocument"| IfcRelAssociatesDocument
+  IfcRelAssociatesMaterial{{IfcRelAssociatesMaterial}}
+  IfcRelAssociatesMaterial -->|"RelatedObjects (Menge)"| IfcDefinitionSelect
+  IfcMaterialSelect -->|"RelatingMaterial"| IfcRelAssociatesMaterial
   IfcRelContainedInSpatialStructure{{IfcRelContainedInSpatialStructure}}
   IfcRelContainedInSpatialStructure -->|"RelatedElements (Menge)"| IfcProduct
   IfcSpatialElement -->|"RelatingStructure"| IfcRelContainedInSpatialStructure
@@ -39,6 +42,7 @@ flowchart LR
   style IfcClassificationSelect stroke-dasharray: 4 3
   style IfcDefinitionSelect stroke-dasharray: 4 3
   style IfcDocumentSelect stroke-dasharray: 4 3
+  style IfcMaterialSelect stroke-dasharray: 4 3
   style IfcPropertySetDefinitionSelect stroke-dasharray: 4 3
 ```
 

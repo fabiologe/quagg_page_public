@@ -1080,3 +1080,26 @@ def test_element_ohne_koerper(tmp_path):
     assert (a1.PredefinedType, l1.PredefinedType) == ("ENTRY", "NOTDEFINED")
     assert "Pset_PipeFittingTypeCommon" in [r.RelatingPropertyDefinition.Name for r in a1.IsDefinedBy]
     assert [x for x in pruefe(ziel, ids=[IDS])["befunde"] if offen(x)] == []
+
+
+def test_material_aus_der_quelle(tmp_path):
+    """Fahrplan Sachdaten P4b: das Material aus dem Paket wird EIN IfcMaterial je Name
+    (Kategorie nach IFC-Empfehlung, Quelle in der Beschreibung) und EINE Zuordnung je
+    Material an alle Elemente — auch an ein Element ohne Koerper. Ohne Angabe keins."""
+    from app.ifc.pruefe import pruefe, offen
+    ziel = tmp_path / "material.ifc"
+    beton = {"name": "Beton", "kategorie": "concrete", "quelle": "ISYBAU Kante.Material = B"}
+    teile = [_bauteil(f"cde-r{i}", "IFCSLAB", ursprung=[410000.0 + 10 * i, 5460000.0, 100.0], material=beton) for i in (1, 2)]
+    teile.append(_bauteil("cde-ohne", "IFCSLAB", ursprung=[410050.0, 5460000.0, 100.0]))
+    bauwerke = [{"cdeId": "cde-L1", "art": "leitung", "name": "L1",
+                 "material": {"name": "Steinzeug", "quelle": "ISYBAU Kante.Material = STZ"}}]
+    bericht = baue_datei(_paket(*teile, bauwerke=bauwerke, crs="EPSG:25832"), ziel, schluessel="material")
+    assert bericht["materialien"] == 2
+    f = ifcopenshell.open(str(ziel))
+    mats = {m.Name: m for m in f.by_type("IfcMaterial")}
+    assert set(mats) == {"Beton", "Steinzeug"}
+    assert (mats["Beton"].Category, mats["Steinzeug"].Category) == ("concrete", None)
+    assert mats["Beton"].Description == "ISYBAU Kante.Material"
+    rels = {r.RelatingMaterial.Name: sorted(o.Name for o in r.RelatedObjects) for r in f.by_type("IfcRelAssociatesMaterial")}
+    assert rels == {"Beton": ["cde-r1", "cde-r2"], "Steinzeug": ["L1"]}
+    assert [x for x in pruefe(ziel, ids=[IDS])["befunde"] if offen(x)] == []
