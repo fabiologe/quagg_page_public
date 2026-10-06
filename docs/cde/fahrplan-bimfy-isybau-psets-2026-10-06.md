@@ -154,9 +154,15 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 | Warnungen des Schreibers | 0 |
 | Prüftor offen | 0 |
 
-- Ohne Klartext, weil der Code in keiner gelesenen Liste steht (23 Werte):
-  Profilart `DN` 13, Aufbauform `Q` 6 und `VORFL` 1, Bauwerkstyp 7 und 8,
-  SchachtFunktion `A`. Fundstellen offen (ISYBAU 2017 Referenzlisten).
+- **Codes ohne Klartext geklärt (2026-10-06, NormRAG):** „Q“ (Aufbauform), „DN“ (Profilart) und „A“
+  (SchachtFunktion) sind Codes des Austauschformats **DWA-M 150** (2010-04, Referenztabellen 118 „Form“,
+  106 „Profilart“, 116 „Knotenart“), nicht ISYBAU — vermutlich vom Konverter übernommen. Sie bekommen
+  Klartext mit Herkunft und den ISYBAU-Gegenwert (Q → E eckig, DN → 0 Kreis, A → Auslaufbauwerk) und einen
+  Befund `fremdcode`. Bauwerkstyp 6 bis 13 stehen in AH15 Tab. A-7-219 hinter dem Seitenumbruch (6 Pumpe,
+  7 Wehr/Überlauf, 8 Drossel, 9 Schieber, 10 Rechen, 11 Sieb, 12 Versickerungsanlage,
+  13 Regenwassernutzungsanlage). Echte Datei: von 23 bleibt **1** ohne Klartext („VORFL“ in Aufbauform, in
+  keiner Liste — ein Fehleintrag), 27 Fremdcodes mit Befund, Klartexte 2 028 → 2 057. ISYBAU 2017 ist nicht
+  im Bestand; ob es die Listen geändert hat, ist offen.
 - **Offen P4b:** Material als `IfcMaterial`. Der Schreiber legt heute kein
   Material an, das ist ein eigener Schritt mit Prüftor-Regeln.
 

@@ -71,3 +71,19 @@ describe('Abbildung · Material (P4b)', () => {
         for (const k of Object.values(ABB.MATERIALKATEGORIE)) expect(ifc.has(k), k).toBe(true);
     });
 });
+
+describe('Abbildung · fremde Codes und G400 (Fahrplan Sachdaten, 23 Codes)', () => {
+    it('DWA-M-150-Codes bekommen Klartext mit Herkunft und einen Befund; VORFL bleibt ohne', () => {
+        const e = bildeAb({ 'Knoten.Schacht.Aufbau.Aufbauform': 'Q', 'Kante.Profil.Profilart': 'DN',
+                            'Knoten.Schacht.SchachtFunktion': 'A', 'Knoten.Schacht.Aufbau.Aufbauform[2]': 'VORFL' });
+        expect(e.texte['Knoten.Schacht.Aufbau.Aufbauform_Text']).toBe('quadratisch (DWA-M 150, Referenztabelle 118 „Form"; in ISYBAU: E (eckig))');
+        expect(e.texte['Kante.Profil.Profilart_Text']).toMatch(/^kreisförmig \(DWA-M 150/);
+        expect(e.texte['Knoten.Schacht.SchachtFunktion_Text']).toMatch(/^Auslass/);
+        expect(e.texte).not.toHaveProperty('Knoten.Schacht.Aufbau.Aufbauform[2]_Text');
+        expect(e.befunde.map(b => b.regel).sort()).toEqual(['fremdcode', 'fremdcode', 'fremdcode', 'klartext-unbekannt']);
+    });
+    it('Bauwerkstyp 6 bis 13 aus AH15 (über den Seitenumbruch)', () => {
+        expect(bildeAb({ 'Knoten.Bauwerk.Bauwerkstyp': '7' }).texte['Knoten.Bauwerk.Bauwerkstyp_Text']).toBe('Wehr/Überlauf');
+        expect(bildeAb({ 'Knoten.Bauwerk.Bauwerkstyp': '8' }).texte['Knoten.Bauwerk.Bauwerkstyp_Text']).toBe('Drossel');
+    });
+});

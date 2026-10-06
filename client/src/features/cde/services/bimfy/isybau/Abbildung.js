@@ -20,7 +20,7 @@
 import {
     G102_MATERIAL, G105_STATUS, G205_PROFILART, G300_KNOTENTYP, G301_SCHACHTFUNKTION, G302_DECKELFORM,
     G303_DECKELTYP, G304_ABDECKUNGSKLASSE, G305_AUFBAUFORM, G306_STEIGHILFE, G307_MATERIAL_STEIGHILFE,
-    G308_UNTERTEILFORM, G309_GERINNEFORM, G310_PUNKTKENNUNG, G400_BAUWERKSTYP,
+    G308_UNTERTEILFORM, G309_GERINNEFORM, G310_PUNKTKENNUNG, G400_BAUWERKSTYP, DWA_M150_FREMDCODES,
 } from './Schluessel.js';
 
 /** Die Endung des Klartexts neben seinem Schlüssel. */
@@ -80,11 +80,17 @@ export const ABBILDUNGSREGELN = Object.freeze([
         regel(sd) {
             const texte = {}, befunde = [];
             for (const [pfad, wert] of Object.entries(sd)) {
-                const liste = SCHLUESSEL_JE_FELD[pfad.split('.').at(-1).replace(/\[\d+\]$/, '')];
+                const feld = pfad.split('.').at(-1).replace(/\[\d+\]$/, '');
+                const liste = SCHLUESSEL_JE_FELD[feld];
                 if (!liste) continue;
                 const text = liste[wert] ?? liste[String(wert).toUpperCase()];
+                const fremd = DWA_M150_FREMDCODES[feld]?.[String(wert).toUpperCase()];
                 if (text) texte[`${pfad}${TEXT_ENDUNG}`] = text;
-                else befunde.push({ regel: 'klartext-unbekannt', text: `${pfad} = „${wert}" steht in keiner Schlüsselliste — ohne Klartext` });
+                else if (fremd) {
+                    // Ein M-150-Wert: Klartext mit Herkunft, und gesagt, dass ISYBAU ihn nicht kennt.
+                    texte[`${pfad}${TEXT_ENDUNG}`] = `${fremd.text} (DWA-M 150, ${fremd.stelle}; in ISYBAU: ${fremd.isybau})`;
+                    befunde.push({ regel: 'fremdcode', text: `${pfad} = „${wert}" ist ein DWA-M-150-Code, kein ISYBAU-Code` });
+                } else befunde.push({ regel: 'klartext-unbekannt', text: `${pfad} = „${wert}" steht in keiner Schlüsselliste — ohne Klartext` });
             }
             return { texte, befunde };
         },

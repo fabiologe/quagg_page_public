@@ -83,9 +83,23 @@ export const G310_PUNKTKENNUNG = Object.freeze({
     RR: 'Regenfallrohr', SE: 'Straßenablauf',
 });
 
-/** G400 Bauwerkstyp (Tab. A-7-219) — gelesen sind 1 bis 5, der Rest heisst nach seiner Nummer. */
+/** G400 Bauwerkstyp (Tab. A-7-219, über den Seitenumbruch S. 761/762 — 1 bis 13, danach beginnt G401). */
 export const G400_BAUWERKSTYP = Object.freeze({
     1: 'Pumpwerk', 2: 'Becken', 3: 'Behandlungsanlage', 4: 'Kläranlage', 5: 'Auslaufbauwerk',
+    6: 'Pumpe', 7: 'Wehr/Überlauf', 8: 'Drossel', 9: 'Schieber', 10: 'Rechen', 11: 'Sieb',
+    12: 'Versickerungsanlage', 13: 'Regenwassernutzungsanlage',
+});
+
+/**
+ * FREMDE CODES: Werte aus dem Austauschformat DWA-M 150 (2010-04), die in echten
+ * ISYBAU-Dateien stehen, obwohl ISYBAU sie nicht kennt — vermutlich von einem
+ * Konverter übernommen. Je Feld der M-150-Wert, seine Fundstelle und was er in
+ * ISYBAU wäre. Ein Klartext, keine Umdeutung der Rohdaten.
+ */
+export const DWA_M150_FREMDCODES = Object.freeze({
+    Aufbauform: Object.freeze({ Q: Object.freeze({ text: 'quadratisch', stelle: 'Referenztabelle 118 „Form"', isybau: 'E (eckig)' }) }),
+    Profilart: Object.freeze({ DN: Object.freeze({ text: 'kreisförmig', stelle: 'Referenztabelle 106 „Profilart"', isybau: '0 (Kreisprofil)' }) }),
+    SchachtFunktion: Object.freeze({ A: Object.freeze({ text: 'Auslass', stelle: 'Referenztabelle 116 „Knotenart"', isybau: 'Bauwerk, Bauwerkstyp 5 (Auslaufbauwerk)' }) }),
 });
 
 /** V106 Punktattribut Abwasser (Tab. A-7-268) — die für die Geometrie tragenden. */
