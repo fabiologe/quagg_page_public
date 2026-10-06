@@ -28,6 +28,7 @@
 import { liesIsybauDaten, kantenzugMitSohle } from './isybau/Isybauleser.js';
 import { ordneKnoten } from './Knotenregeln.js';
 import { rohrwand } from './muster/Rohrwand.js';
+import { rasterAusAsciiGrid, rasterAusPunkten } from './Punktanalyse.js';
 
 /** Durchmesser eines Anschlusspunkts — ISYBAU nennt keinen; DN 150 wie der kleinste Hausanschluss (Annahme). */
 export const ANSCHLUSSPUNKT_DN_M = 0.15;
@@ -36,7 +37,8 @@ export const ANSCHLUSSPUNKT_DN_M = 0.15;
 export const FORMATE = Object.freeze({
     dxf:     { titel: 'DXF (CAD, Vermessungsplan)', zOben: true },
     xml:     { titel: 'ISYBAU-XML (Kanalnetz)', zOben: true },
-    xyz:     { titel: 'XYZ-Punktdaten',          zOben: true },
+    xyz:     { titel: 'XYZ-Punktdaten oder DGM-Raster', zOben: true },
+    asc:     { titel: 'ASCII-Grid (DGM)',        zOben: true },
     csv:     { titel: 'Punktliste CSV',          zOben: true },
     txt:     { titel: 'Punktliste TXT',          zOben: true },
     geojson: { titel: 'GeoJSON (GIS, 2D/3D)',   zOben: true },
@@ -77,6 +79,7 @@ export function liesGeometrien(name, text, opt = {}) {
     try {
         if (format === 'dxf') aus = liesDxf(text);
         else if (format === 'xml') aus = liesIsybau(text);
+        else if (format === 'asc') aus = { geometrien: [], warnungen: [], gelaende: rasterAusAsciiGrid(text) };
         else if (format === 'xyz' || format === 'csv' || format === 'txt') aus = liesPunktliste(text, opt);
         else if (format === 'geojson' || format === 'json') aus = liesGeoJson(text);
         else if (format === 'obj') aus = liesObj(text, { zOben });
@@ -86,7 +89,7 @@ export function liesGeometrien(name, text, opt = {}) {
     }
     // Kennungen erst hier — eine Reihenfolge, gleich welcher Leser.
     aus.geometrien.forEach((g, i) => { g.id = `g${i + 1}`; g.quelle = name; });
-    if (!aus.geometrien.length) aus.warnungen.push(`„${name}": keine Geometrie gefunden`);
+    if (!aus.geometrien.length && !aus.gelaende) aus.warnungen.push(`„${name}": keine Geometrie gefunden`);
     return { format, ...aus };
 }
 
@@ -434,6 +437,9 @@ export function liesPunktliste(text, { reihenfolge = null } = {}) {
             warnungen.push('Punktliste: erste Spalte als Hochwert gelesen (Nord/Ost) — bitte prüfen');
         }
     }
+    // EIN RASTER IST EIN GELÄNDE (Fahrplan XYZ, X1): keine Million Einzelbauteile.
+    const gelaende = rasterAusPunkten(roh.map(p => ({ ost: nordOst ? p.b : p.a, nord: nordOst ? p.a : p.b, hoehe: p.h })));
+    if (gelaende) return { geometrien: [], warnungen, gelaende };
     const geometrien = roh.map(p => ({
         art: 'punkt',
         punkte: [_punkt(nordOst ? p.b : p.a, nordOst ? p.a : p.b, p.h)],

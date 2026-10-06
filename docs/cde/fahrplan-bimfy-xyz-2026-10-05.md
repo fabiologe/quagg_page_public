@@ -1,7 +1,8 @@
 # BIMFY · XYZ und Punktdaten — wohin damit
 
-**Fahrplan, Stand 2026-10-05. Geplant, nicht gebaut.** Gebaut wird erst nach Freigabe der
-Entscheidungen X‑E1 bis X‑E6. Jede Aussage sagt, ob sie **gelesen**, **gemessen** oder
+**Fahrplan, Stand 2026-10-06. X1 und X2 gebaut, X3 wartet auf den Server‑Neustart.** Fabio, 2026-10-06:
+„du brauchst keine Datei, das ist eine klassische XYZ‑Datei oder ein ASCII‑Grid“ — X0 entfällt, gemessen
+wird an erzeugten Rastern. X‑E1 bis X‑E6 wie empfohlen. Jede Aussage sagt, ob sie **gelesen**, **gemessen** oder
 **eingeschätzt** ist.
 
 Grundlage ist BIMFY auf dem Branch `cde-bimfy` (Tafel unter „Notizen“, Leser in
@@ -77,6 +78,40 @@ BIMFY‑Gebiet), F und G (auch Gelände, aber mit Vorarbeit) und I bis K (gar ke
 ## 4 · Stufen
 
 Jede Stufe beginnt mit einer Zahl von heute und endet mit derselben Zahl danach.
+
+### Stand 2026-10-06 (gebaut)
+
+**X1 · Erkennen (Client)** — `services/bimfy/Punktanalyse.js`: ein XYZ ab 100 Punkten auf
+regelmäßigem Raster (mindestens halb gefüllt) und jedes `.asc` sind ein Gelände. BIMFY zerlegt es
+nicht mehr in Einzelbauteile, die Tafel zeigt „Gelände erkannt: XYZ‑Raster 1001 × 1001, Raster 1 m, …“.
+Eine Bestandsaufnahme mit Codes bleibt eine Punktliste.
+
+**X2 · Gelände auf dem Server** — `backend/app/ifc/gelaende.py`, `cli.py` Modus `gelaende`:
+- Lesen: ESRI‑ASCII‑Grid (Ecke/Mitte, NODATA, Nord zuerst) und XYZ‑Raster (Leerzeichen, Tab,
+  Semikolon, Dezimalkomma). Eine unregelmäßige Aufnahme wird abgewiesen (Delaunay mit
+  Bruchkanten ist X5), nicht geraten.
+- Ausdünnen: RTIN (rechtwinklige Dreiecke an der Hypotenuse geteilt), **exaktes** Fehlermaß
+  (größte Abweichung jedes Rasterpunkts von der Ebene seines Dreiecks), dadurch **rissfrei** und die
+  Toleranz im ersten Durchgang eingehalten. Lücken bleiben Lücken. Ab 2048 Zellen gekachelt mit
+  vollem Rand. Ohne scipy, nur numpy.
+- Schreiben: IFC 4.3, `IfcGeographicElement/TERRAIN` mit `IfcTriangulatedIrregularNetwork`, Punkte
+  relativ zu einem Ursprung, Georeferenz aus dem Projekt, `Quagg_Gelaende` (Quelle, Raster,
+  Toleranz, gemessene größte Abweichung), Fachmodell‑Gruppe „Gelände“.
+
+| gemessen (erzeugtes DGM1, 1001 × 1001, 1 m, auf cm gerundet) | Wert |
+|---|---|
+| Rasterpunkte | 1 002 001 |
+| Netzpunkte / Dreiecke bei 2 cm | 78 912 / 156 378 |
+| größte Abweichung (nachgemessen an jedem Rasterpunkt) | 0,020 m |
+| Netz rechnen | 8,8 s |
+| erstes Fehlermaß (Hypotenusen‑Mitte) zum Vergleich | 3 cm bei 2 cm, nachgeschärft 304 000 Punkte |
+| Prüftor | 0 offen |
+
+**X3 · Der Weg aus BIMFY — wartet.** Noch zu bauen, alles in `app/api` (wirkt erst nach
+`pm2 restart quagg-api`): `gelaende_starten` in `verbund_lauf.py` (Rohdatei aus dem Register,
+`modus: "gelaende"`, CRS des Projekts), `Gelaende` in `ERZEUGT_MUSTER` und `PRAEFIX`, `.xyz`/`.asc`
+im Register, eine Route, im Client der Knopf „Als Gelände anlegen“ (Rohdatei hochladen, Auftrag
+starten, Modell laden).
 
 ### X0 · Messen mit echten Dateien
 

@@ -52,6 +52,12 @@
       <CdeIcon :name="lage.warn ? 'warn' : 'coords'" :size="12" /> {{ lage.text }}
     </p>
 
+    <!-- Fahrplan XYZ, X1: ein Raster ist ein Gelände — eigenes Modell im Register, keine Einzelbauteile. -->
+    <div v-if="gelaende" class="bf-gelaende">
+      <p><CdeIcon name="info" :size="12" /> <b>Gelände erkannt:</b> {{ gelaendeText }}</p>
+      <p class="bf-hinweis">Ein DGM wird ein eigenes Modell im Register (IfcGeographicElement TERRAIN, ausgedünnt auf
+        2 cm Höhentoleranz), kein Bauteil im Journal. Den Server-Auftrag schaltet erst ein Neustart des Servers frei.</p>
+    </div>
     <ul v-if="warnungen.length" class="bf-warnungen">
       <li v-for="(w, i) in warnungen" :key="i"><CdeIcon name="warn" :size="12" /> {{ w }}</li>
     </ul>
@@ -145,6 +151,7 @@ import { useBearbeitung } from '../stores/useBearbeitung.js';
 import { rahmenOhneBezug } from '../services/kommando/Kommando.js';
 import { rezeptNach, warumNichtSchreibbar } from '../services/Bauteilrezepte.js';
 import { ANNAHME, FORMATE, endungVon, liesGeometrien } from '../services/bimfy/Geometrieleser.js';
+import { gelaendeSatz } from '../services/bimfy/Punktanalyse.js';
 import { ausdehnung, gruppiere, klasseFuer, knickBefunde, kommandosFuer, rezepteFuerZeile } from '../services/bimfy/Uebersetzer.js';
 import { lagesystemVon, umrechner } from '../services/bimfy/Lagebezug.js';
 import { erkenneSystem, systemNach } from '../services/Koordinatensysteme.js';
@@ -168,6 +175,8 @@ const ziehtDarueber = ref(false);
 
 const geometrien = shallowRef([]);
 const warnungen = ref([]);
+const gelaende = ref(null);
+const gelaendeText = computed(() => (gelaende.value ? gelaendeSatz(gelaende.value) : ''));
 const zeilen = ref([]);
 const laeuft = ref(false);
 const fortschritt = ref(0);
@@ -181,6 +190,7 @@ function lesen() {
   format.value = aus.format;
   geometrien.value = aus.geometrien;
   warnungen.value = aus.warnungen;
+  gelaende.value = aus.gelaende ?? null;
   zeilen.value = gruppiere(aus.geometrien);
   meldung.value = null;
 }
@@ -215,7 +225,7 @@ const neuLesen = () => lesen();
 
 function verwerfen() {
   dateiName.value = ''; dateiText.value = ''; format.value = '';
-  geometrien.value = []; warnungen.value = []; zeilen.value = []; meldung.value = null;
+  geometrien.value = []; warnungen.value = []; zeilen.value = []; meldung.value = null; gelaende.value = null;
 }
 
 const klasseVon = (id) => klasseFuer(id);
@@ -367,6 +377,8 @@ async function anlegen() {
 
 .bf-fuss { display: grid; gap: var(--cde-gap-sm); }
 .bf-hinweis { margin: 0; font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
+.bf-gelaende { display: grid; gap: 2px; font-size: var(--cde-font-xs); }
+.bf-gelaende p { margin: 0; }
 .bf-knick { font-size: var(--cde-font-xs); color: var(--cde-text-dim); }
 .bf-knick.warnung { color: var(--cde-warn); }
 .bf-knick summary { cursor: pointer; display: flex; align-items: center; gap: 4px; }

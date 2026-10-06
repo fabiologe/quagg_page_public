@@ -157,6 +157,38 @@ def _dokument_pruefen(ordner: Path, auftrag: dict, bericht_pfad: Path, status: d
     status.update(zustand="geprueft", verstoesse=len(offen), offen=[f"{b['id']} {b['titel']}" for b in offen])
 
 
+def _gelaende_bauen(ordner: Path, auftrag: dict, ziel: Path, bericht_pfad: Path, status: dict, melde) -> None:
+    """Modus "gelaende": eine Rasterdatei aus dem Register wird `verbund.ifc` (TERRAIN, TIN).
+
+    Derselbe Vertrag wie der Verbund: Ergebnis im Laufordner, Pruefung, zweiter Motor,
+    Zustand "geprueft" oder "abgelehnt". Eingetragen wird es vom Server wie ein Verbund
+    (Praefix `Gelaende_`). Das Bezugssystem ist das des Projekts — die Datei hat keins.
+    """
+    from .gelaende import TOLERANZ_M, lies, schreibe_gelaende
+    datei = Path(auftrag["datei"])
+    if not datei.is_file():
+        raise ValueError(f"{datei.name} liegt nicht im Register-Ordner")
+    melde(f"Gelaende lesen: {datei.name}")
+    raster = lies(datei)
+    melde(f"ausduennen und schreiben: {raster.punkte} Rasterpunkte, Raster {raster.dx:g} m")
+    bericht = schreibe_gelaende(raster, ziel, crs=auftrag.get("crs"), name=auftrag.get("name") or datei.stem,
+                                toleranz=float(auftrag.get("toleranz") or TOLERANZ_M),
+                                schluessel=auftrag.get("schluessel") or "gelaende",
+                                bearbeiter=auftrag.get("bearbeiter") or "", firma=_angabe(auftrag, None, "organisation"))
+    bericht.update(modus="gelaende", quelle=datei.name, sha256=auftrag.get("sha256"), werkzeug=H.werkzeug())
+    schreibe_json(bericht_pfad, bericht)
+    melde("pruefen: Schema, Regeln")
+    befunde = pruefe(ziel)["befunde"]
+    melde("pruefen: zweiter Motor (web-ifc)")
+    deckel_aufheben()
+    befunde.append(zweiter_motor(ziel, bericht_pfad))
+    offen = [b for b in befunde if ist_offen(b)]
+    bericht.update(befunde=befunde, verstoesse=len(offen), speicher=speicher())
+    schreibe_json(bericht_pfad, bericht)
+    status.update(zustand="abgelehnt" if offen else "geprueft", verstoesse=len(offen),
+                  offen=[f"{b['id']} {b['titel']}" for b in offen])
+
+
 def _angabe(auftrag: dict, paket: dict | None, schluessel: str) -> str:
     """Eine Angabe aus dem Ausgeben-Dialog (Fahrplan Klare Ablaeufe, S4 neu): Autor, Organisation.
 
@@ -190,6 +222,9 @@ def lauf(ordner: Path) -> int:
         if (auftrag.get("modus") or "verbund") == "pruefe":
             # Ein einzelnes Registerdokument durch das Tor (Stufe 4b) — kein Verbund.
             _dokument_pruefen(ordner, auftrag, bericht_pfad, status, melde)
+        elif auftrag.get("modus") == "gelaende":
+            # Ein DGM aus XYZ oder ASCII-Grid (Fahrplan BIMFY XYZ, X2) — ein erzeugtes Modell.
+            _gelaende_bauen(ordner, auftrag, verbund, bericht_pfad, status, melde)
         else:
             if not auftrag.get("quellen"):
                 raise ValueError("auftrag.json nennt keine Quelle")
