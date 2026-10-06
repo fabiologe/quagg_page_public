@@ -175,6 +175,19 @@ def test_wand_mit_tragend_und_aussen_besteht_die_ids(tmp_path):
     assert _verfehlt(mit) == []
 
 
+def test_status_als_aufzaehlung(tmp_path):
+    """Fahrplan Sachdaten P4: `Status` ist in bSI eine Aufzaehlung — geschrieben als
+    IfcPropertyEnumeratedValue, die Werteliste EINMAL je Datei."""
+    ziel = tmp_path / "status.ifc"
+    teile = [_bauteil(f"cde-probe-{i}", "IFCSLAB", merkmale={"Pset_SlabCommon": {"Status": "EXISTING"}}) for i in (1, 2)]
+    bericht = baue_datei(_paket(*teile), ziel, schluessel="probe")
+    assert bericht["merkmalsaetze"] == 2 and not [w for w in bericht["warnungen"] if "Pset_" in w]
+    f = ifcopenshell.open(str(ziel))
+    werte = f.by_type("IfcPropertyEnumeratedValue")
+    assert [v.EnumerationValues[0].wrappedValue for v in werte] == ["EXISTING", "EXISTING"]
+    assert len(f.by_type("IfcPropertyEnumeration")) == 1
+
+
 def test_ein_satz_fuer_eine_andere_klasse_wird_genannt_nicht_geschrieben(tmp_path):
     """Der Planer hat aus der Platte einen Belag gemacht: Pset_SlabCommon gilt fuer IfcCovering nicht."""
     ziel = tmp_path / "belag.ifc"
@@ -184,14 +197,17 @@ def test_ein_satz_fuer_eine_andere_klasse_wird_genannt_nicht_geschrieben(tmp_pat
     assert any("Pset_SlabCommon gilt nicht fuer IfcCovering" in w for w in bericht["warnungen"])
 
 
-@pytest.mark.parametrize("werte, grund", [
-    ({"LoadBearing": "ja"}, "erwartet IfcBoolean"),            # ein Text wird kein Wahrheitswert
-    ({"Tragfaehig": True}, "steht nicht in der Vorlage"),       # ein Merkmal, das es nicht gibt
-    ({"Status": "NEW"}, "ist kein Einzelwert"),                 # Aufzaehlung — nicht in dieser Stufe
+@pytest.mark.parametrize("satz, werte, grund", [
+    ("Pset_SlabCommon", {"LoadBearing": "ja"}, "erwartet IfcBoolean"),       # ein Text wird kein Wahrheitswert
+    ("Pset_SlabCommon", {"Tragfaehig": True}, "steht nicht in der Vorlage"),  # ein Merkmal, das es nicht gibt
+    # Aufzaehlung (seit Fahrplan Sachdaten P4 geschrieben): nur ein Wert aus der bSI-Liste.
+    ("Pset_SlabCommon", {"Status": "ABGERISSEN"}, "erwartet einen Wert aus"),
+    # Grenzwerte, Tabellen, Verweise bleiben ungeschrieben — und werden genannt.
+    ("Pset_EnvironmentalCondition", {"ReferenceEnvironmentTemperature": 20.0}, "ist kein Einzelwert"),
 ])
-def test_was_nicht_zur_vorlage_passt_wird_genannt(tmp_path, werte, grund):
+def test_was_nicht_zur_vorlage_passt_wird_genannt(tmp_path, satz, werte, grund):
     ziel = tmp_path / "x.ifc"
-    bericht = baue_datei(_paket(_bauteil("cde-probe", "IFCSLAB", merkmale={"Pset_SlabCommon": werte})),
+    bericht = baue_datei(_paket(_bauteil("cde-probe", "IFCSLAB", merkmale={satz: werte})),
                          ziel, schluessel="probe")
     assert bericht["merkmalsaetze"] == 0 and _merkmale_in(ziel) == {}
     assert any(grund in w for w in bericht["warnungen"]), bericht["warnungen"]

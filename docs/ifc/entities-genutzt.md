@@ -399,7 +399,7 @@ Die Beziehungen stehen mit ihren Enden in [beziehungen.md](beziehungen.md).
 | [IfcValve](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcValve.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
 | [IfcVirtualElement](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcVirtualElement.htm) | Typprofile | nein | IFC4X3_ADD2 |
 | [IfcWall](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWall.htm) | Bauteilrezepte, Typprofile | nein | IFC4X3_ADD2 |
-| [IfcWasteTerminal](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWasteTerminal.htm) | Eigenbau | nein | IFC4X3_ADD2 |
+| [IfcWasteTerminal](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWasteTerminal.htm) | Bauteilrezepte, Eigenbau | nein | IFC4X3_ADD2 |
 | [IfcWindow](https://ifc43-docs.standards.buildingsmart.org/IFC/RELEASE/IFC4x3/HTML/lexical/IfcWindow.htm) | Typprofile | nein | IFC4X3_ADD2 |
 
 ## Ressourcen (nicht unter IfcRoot)
@@ -430,6 +430,9 @@ Geometrie, Einheiten, Werte, Stile — ohne GlobalId, deshalb nicht im Baum oben
 | IfcPresentationLayerAssignment | Verbund |
 | IfcProductDefinitionShape | Eigenbau |
 | IfcProjectedCRS | Verbund |
+| IfcProperty | Eigenbau |
+| IfcPropertyEnumeratedValue | Eigenbau |
+| IfcPropertyEnumeration | Eigenbau |
 | IfcPropertySingleValue | Eigenbau, Herkunft, Verbund |
 | IfcQuantityArea | Eigenbau |
 | IfcQuantityCount | Eigenbau |
