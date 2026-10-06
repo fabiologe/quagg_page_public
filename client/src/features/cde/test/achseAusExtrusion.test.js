@@ -6,7 +6,7 @@
  * die es so nie gab. Hier läuft der echte Weg über eine echte Datei.
  *
  * Der Beweis steckt in den Daten selbst. Der ISYBAU-Schreiber legt an jedes
- * Rohr `QG_ISYBAU_Data` mit `Sohlenhoehe` und `Deckelhoehe` — und die
+ * Rohr `QG_ISYBAU_Data` mit `SohlhoeheZulauf`/`SohlhoeheAblauf` (ältere Dateien: `Sohlenhoehe`/`Deckelhoehe`) — und die
  * bedeuten am ROHR (anders als am Schacht) die Sohlhöhe am ANFANG und am ENDE.
  * Zwei unabhängige Quellen für dieselbe Größe: die Geometrie und das Pset.
  * Stimmen sie überein, ist die Achse richtig gelesen.
@@ -61,9 +61,12 @@ describe.runIf(vorhanden)('6275_ENQUIER: 24 Haltungen', () => {
         let geprueft = 0;
         for (const a of achsen) {
             const w = psets.get(a.expressId);
-            if (!Number.isFinite(w?.Sohlenhoehe)) continue;
-            expect(a.polyline[0].y, `Anfang #${a.expressId}`).toBeCloseTo(w.Sohlenhoehe, 3);
-            expect(a.polyline.at(-1).y, `Ende #${a.expressId}`).toBeCloseTo(w.Deckelhoehe, 3);
+            // Neue isyifc-Dateien: SohlhoeheZulauf/Ablauf. Ältere (bis 2026-10)
+            // schrieben die Sohle Ablauf unter dem Namen Deckelhoehe.
+            const zu = w?.SohlhoeheZulauf ?? w?.Sohlenhoehe, ab = w?.SohlhoeheAblauf ?? w?.Deckelhoehe;
+            if (!Number.isFinite(zu)) continue;
+            expect(a.polyline[0].y, `Anfang #${a.expressId}`).toBeCloseTo(zu, 3);
+            expect(a.polyline.at(-1).y, `Ende #${a.expressId}`).toBeCloseTo(ab, 3);
             geprueft++;
         }
         expect(geprueft).toBe(24);

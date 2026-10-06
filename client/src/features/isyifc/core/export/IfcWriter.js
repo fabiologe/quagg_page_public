@@ -277,7 +277,11 @@ export class IsybauToIfc {
         const propIds = [];
         const eRef = elementIfcId.ref ? elementIfcId.ref : elementIfcId;
         
+        // Nur was gemessen ist: ein fehlender Wert bleibt weg und wird nicht 0
+        // (vorher stand Baujahr 0 oder Sohlenhoehe 0 in der Datei).
         const addProp = (name, type, val) => {
+            if (val == null || val === '') return;
+            if (type !== 'TEXT' && !Number.isFinite(Number(val))) return;
             let pId = this.idCounter++;
             this.lines.push(`#${pId}= ${this.writePropertySingleValue(name, type, val)};`);
             propIds.push(`#${pId}`);
@@ -285,22 +289,24 @@ export class IsybauToIfc {
 
         // QG_ISYBAU_Data mapping
         addProp('Objektbezeichnung', 'TEXT', data.id || 'Unknown');
-        addProp('Kanalart', 'TEXT', attributes.systemType || 'Unknown');
-        addProp('Material', 'TEXT', resolveMaterialName(attributes.material));
-        addProp('Baujahr', 'INTEGER', attributes.year || 0);
+        addProp('Kanalart', 'TEXT', attributes.systemType);
+        addProp('Material', 'TEXT', attributes.material ? resolveMaterialName(attributes.material) : null);
+        addProp('Baujahr', 'INTEGER', attributes.year);
 
         if (isManhole) {
-            addProp('Sohlenhoehe', 'REAL', data.geometry?.bottomZ || 0);
-            addProp('Deckelhoehe', 'REAL', data.geometry?.coverZ || 0);
-            addProp('Profilbreite', 'REAL', data.geometry?.width || 0);
-            addProp('Profilhoehe', 'REAL', data.geometry?.height || 0);
+            addProp('Sohlenhoehe', 'REAL', data.geometry?.bottomZ);
+            addProp('Deckelhoehe', 'REAL', data.geometry?.coverZ);
+            addProp('Profilbreite', 'REAL', data.geometry?.width);
+            addProp('Profilhoehe', 'REAL', data.geometry?.height);
         } else {
-            const width = data.profile?.width || 0.3;
-            const height = data.profile?.height || width;
-            addProp('Profilbreite', 'REAL', width);
-            addProp('Profilhoehe', 'REAL', height);
-            addProp('Sohlenhoehe', 'REAL', data.sohleZulauf || 0); // mapped bottomZ for edges via sohleZulauf
-            addProp('Deckelhoehe', 'REAL', data.sohleAblauf || 0); // mapped coverZ equivalent via sohleAblauf
+            // Eine Haltung hat keinen Deckel. Bis 2026-10 stand hier
+            // Sohlenhoehe = Sohle Zulauf und Deckelhoehe = Sohle Ablauf. Jetzt
+            // heissen beide, was sie sind. Ältere Dateien lesen die Leser noch
+            // mit dem alten Namen (cde/test/achseAusExtrusion.test.js).
+            addProp('Profilbreite', 'REAL', data.profile?.width);
+            addProp('Profilhoehe', 'REAL', data.profile?.height ?? data.profile?.width);
+            addProp('SohlhoeheZulauf', 'REAL', data.sohleZulauf);
+            addProp('SohlhoeheAblauf', 'REAL', data.sohleAblauf);
         }
 
         // Create the IFCPROPERTYSET

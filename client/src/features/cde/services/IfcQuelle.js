@@ -500,7 +500,9 @@ export class IfcQuelle {
      *
      * In Fabios Netzen hängt an jedem Bauteil ein `QG_ISYBAU_Data` mit acht
      * Feldern: Objektbezeichnung, Kanalart, Material, Baujahr, Sohlenhoehe,
-     * Deckelhoehe, Profilbreite, Profilhoehe.
+     * Deckelhoehe, Profilbreite, Profilhoehe. Am Rohr schreibt isyifc seit
+     * 2026-10 SohlhoeheZulauf und SohlhoeheAblauf statt Sohlenhoehe und
+     * Deckelhoehe, und ein fehlender Wert fehlt (vorher 0).
      *
      * FLACH, ohne Satznamen: die Namen sind innerhalb einer Datei eindeutig,
      * und ein zweistufiger Zugriff („welcher Satz war das nochmal?") hilft

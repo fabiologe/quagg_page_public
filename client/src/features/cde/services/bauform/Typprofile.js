@@ -281,7 +281,9 @@ export const EINGEBAUTE_PROFILE = Object.freeze({
             // die Schachttiefe — und die entscheidet über Einstieg,
             // Absturzbauwerk und Überdeckung der abgehenden Haltung. In
             // Fabios Dateien stehen beide im Merkmalssatz `QG_ISYBAU_Data`
-            // und meinen dort, anders als am Rohr, wirklich Sohle und Deckel.
+            // und meinen dort wirklich Sohle und Deckel. Am Rohr hiess bis
+            // 2026-10 die Sohle Ablauf `Deckelhoehe`; neue Dateien schreiben
+            // dort `SohlhoeheZulauf` und `SohlhoeheAblauf`.
             deckelhoehe: { label: 'Deckelhöhe', einheit: 'm NN', typ: 'zahl' },
         },
     },

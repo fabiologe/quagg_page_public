@@ -1,0 +1,110 @@
+# Fahrplan · ISYBAU-Sachdaten verlustfrei und IFC-konform (2026-10-06)
+
+> Ziel (Fabio): „eine IFC-konforme Aufarbeitung der Daten ohne Verlust".
+> Jeder Sachdatenwert einer ISYBAU-Datei steht nachher im IFC, an dem Element,
+> zu dem er gehört, und wo IFC ein eigenes Feld kennt, steht er auch dort.
+
+## Ausgangslage, gemessen an der echten Datei
+
+| Grösse | Wert |
+|---|---|
+| Objekte | 670 |
+| Sachdatenwerte ohne Geometrie | 8 844 |
+| verschiedene Felder (Pfade) | 53 (28 an Knoten, 25 an Kanten) |
+| davon kommen bei isyifc an | etwa 8 bis 13 (`QG_ISYBAU_Data`, `C_Attribute`) |
+| davon kommen bei BIMFY an | Name, Nennweite, Manhole-Pset aus dem Muster, Herleitung |
+
+Beispiele für verlorene Felder sind Status, Entwässerungsart, Abwasserart,
+Schachtfunktion, Strasse, Ortsteil, Kommentar, alte Bezeichnung, Punktkennung
+und Bauwerkstyp.
+
+## Erledigt vorab · isyifc Haltungsfehler (P0)
+
+`isyifc/core/export/IfcWriter.buildProperties` schrieb an Haltungen
+`Deckelhoehe = Sohle Ablauf` und für fehlende Werte `0` (Baujahr 0, Sohle 0).
+
+| | vorher | nachher |
+|---|---|---|
+| Haltung | `Sohlenhoehe` (Zulauf), `Deckelhoehe` (Ablauf) | `SohlhoeheZulauf`, `SohlhoeheAblauf` |
+| fehlender Wert | `0` bzw. `Unknown`, `Beton`, Profil 0,3 | fehlt |
+| Schacht | Sohle und Deckel | unverändert |
+| Test `isyifc/test/psetHaltung.test.js` | 3 rot | 3 grün |
+
+Ältere Dateien bleiben lesbar. `cde/test/achseAusExtrusion.test.js` liest
+erst die neuen Namen und fällt auf die alten zurück. Offen bleibt in isyifc,
+dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
+(siehe P5).
+
+## Entscheidungen
+
+| Nr | Frage | Vorschlag |
+|---|---|---|
+| P‑E1 | Name des vollständigen Satzes | `ISYBAU_Stammdaten` (eigener Präfix, kein `Pset_`, damit kein bSI-Name belegt wird) |
+| P‑E2 | Feldnamen darin | der ISYBAU-Pfad ohne Wurzel, Punkte als Trenner, z. B. `Knoten.Schacht.Schachtfunktion` |
+| P‑E3 | Schlüsselwerte | Rohwert bleibt, die Bedeutung kommt als zweiter Wert `…_Text` dazu (z. B. `Material = B`, `Material_Text = Beton`) |
+| P‑E4 | wo der Satz hängt | am Bauwerk (Schacht, Ablauf) bzw. an der Haltung, nicht an jedem Ring oder Rohrstück |
+| P‑E5 | `QG_ISYBAU_Data` auch aus BIMFY | ja, als Spiegel der acht alten Felder mit den neuen Haltungsnamen, solange ein Leser ihn erwartet |
+| P‑E6 | Einheiten | Längen und Höhen als `IfcLengthMeasure`, Jahre als `IfcInteger`, Datum als `IfcDate`, sonst `IfcLabel` bzw. `IfcText` |
+
+## Stufen
+
+### P1 · Alles lesen (Isybauleser)
+- Der Leser sammelt je Objekt jedes Blatt des XML-Baums als `{pfad, wert}`,
+  ohne Handliste. Geometrie (Punkte, Kanten) bleibt aussen vor und wird gezählt.
+- Wächterzahl `gelesen`: 8 844 von 8 844.
+
+### P2 · Durch den Kommandoweg tragen
+- Die Sammlung gibt jedem Bauwerk und jeder Haltung `werte.isybau` mit
+  (eine flache Tabelle). Das Journal speichert sie, Undo nimmt sie mit.
+- Wächterzahl `im Journal`: 8 844.
+
+### P3 · Vollständig ins IFC (eigenbau.py)
+- Ein `IfcPropertySet ISYBAU_Stammdaten` je Bauwerk und Haltung.
+- Schlüssel bekommen ihren Text aus `isybau/Schluessel.js` bzw. der
+  Python-Seite. Die Tabelle liegt an EINEM Ort und wird erzeugt, nicht doppelt
+  gepflegt (Muster `generiere_client`).
+- Wächterzahl `im IFC`: 8 844. Gezählt wird mit ifcopenshell aus der Datei.
+
+### P4 · bSI-Felder, wo sie passen
+| ISYBAU | IFC | Bemerkung |
+|---|---|---|
+| Objektbezeichnung | `Name`, `Pset_*Common.Reference` | |
+| Status (in Betrieb, geplant, ausser Betrieb, verfüllt) | `Pset_*Common.Status` (NEW, EXISTING, DEMOLISH, TEMPORARY, OTHER) | Abbildung als Tabelle mit Grund je Zeile |
+| Baujahr | `Pset_ConstructionOccurence.InstallationDate` (Jahr als Datum 01.01.) | Rohwert bleibt in `ISYBAU_Stammdaten` |
+| Material | `IfcMaterial` über `IfcRelAssociatesMaterial` | ohne Code KEIN Material |
+| Nennweite, Profilhöhe | `Pset_PipeSegmentTypeCommon.NominalDiameter`, `InnerDiameter`, `OuterDiameter`, `Length` | aus Rohrwand |
+| Sohlhöhe Zulauf | `Pset_PipeSegmentOccurrence.InvertElevation` | Ablauf nur in `ISYBAU_Stammdaten` |
+| Gefälle | `Pset_PipeSegmentOccurrence.Gradient` | aus den Sohlen gerechnet, Herleitung dabei |
+| Schacht Sohle, Deckel | `Pset_DistributionChamberElementTypeManhole.InvertLevel`, `SoffitLevel` | schon da |
+| Abdeckungsklasse | `…Manhole.AccessCoverLoadRating` | |
+| Einstieghilfe | `…Manhole.HasSteps` | |
+| Strassenablauf Masse | `Pset_WasteTerminalTypeGullySump` | |
+| Zustand (falls vorhanden) | `Pset_Condition` | |
+
+Jede Zeile kommt als Regel in eine Tabelle mit `beispiel` und Wächtertest wie
+das Knotenregelwerk. Die Prüfstufe `ids` prüft die bSI-Felder mit.
+
+### P5 · Keine erfundenen Werte
+- Kein Wert ohne Quelle. Fehlt er in der Datei, fehlt er im IFC.
+- Was BIMFY ergänzt (Norm, Annahme), steht in der Herleitung und nie in
+  `ISYBAU_Stammdaten`.
+- isyifc folgt nach: `createMaterial` ohne Code legt kein Material an.
+
+### P6 · Wächter und Abnahme
+- Ein Test an der echten Datei zählt `gelesen`, `im Journal`, `im IFC` und
+  nennt jede Abweichung mit Grund (Feldpfad, Objekt, warum).
+- Ziel 8 844 / 8 844 / 8 844. Der heutige Stand je Weg wird in P1 gezählt
+  (bisher nur nach Feldern gezählt, 8 bis 13 von 53).
+- Rückweg: die CDE liest `ISYBAU_Stammdaten` über `IfcQuelle.merkmale()` und
+  zeigt die Werte in der Bauteiltafel.
+
+## Grenzen
+- Kein Feature importiert aus einem anderen. Die Schlüsseltabellen von isyifc
+  werden nicht importiert, BIMFY hat eigene in `isybau/Schluessel.js`.
+- Die echte ISYBAU-Datei und Normtabellen kommen nicht ins Repo.
+- `backend/app/ifc/*` wirkt sofort. Jede Stufe endet mit Syntaxprüfung und
+  grüner IFC-Suite.
+
+## Reihenfolge
+P1 → P2 → P3 bringen die Vollständigkeit. P4 macht sie IFC-konform. P5 und P6
+laufen bei jeder Stufe mit.
