@@ -43,7 +43,7 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 | P‑E2 | Feldnamen darin | der ISYBAU-Pfad ohne Wurzel, Punkte als Trenner, z. B. `Knoten.Schacht.Schachtfunktion` |
 | P‑E3 | Schlüsselwerte | Rohwert bleibt, die Bedeutung kommt als zweiter Wert `…_Text` dazu (z. B. `Material = B`, `Material_Text = Beton`) |
 | P‑E4 | wo der Satz hängt | am Bauwerk (Schacht, Ablauf) bzw. an der Haltung, nicht an jedem Ring oder Rohrstück |
-| P‑E5 | `QG_ISYBAU_Data` auch aus BIMFY | ja, als Spiegel der acht alten Felder mit den neuen Haltungsnamen, solange ein Leser ihn erwartet |
+| P‑E5 | `QG_ISYBAU_Data` auch aus BIMFY | **nein (Fabio, 2026-10-06)**. BIMFY schreibt nur `ISYBAU_Stammdaten` und die bSI-Psets. Alte Dateien liest die CDE weiter |
 | P‑E6 | Einheiten | Längen und Höhen als `IfcLengthMeasure`, Jahre als `IfcInteger`, Datum als `IfcDate`, sonst `IfcLabel` bzw. `IfcText` |
 
 ## Stufen
