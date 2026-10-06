@@ -12,7 +12,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { repo } from '../services/RepoFacade.js';
 import { useAenderungen } from '../stores/useAenderungen.js';
 import { useBearbeitung } from '../stores/useBearbeitung.js';
-import { KOMMANDO_SCHEMA } from '../services/kommando/Kommando.js';
+import { KOMMANDO_SCHEMA, pruefeStammdaten } from '../services/kommando/Kommando.js';
 import { gruppiere, kommandosFuer } from '../services/bimfy/Uebersetzer.js';
 import { rezeptNach } from '../services/Bauteilrezepte.js';
 import { Speicher } from './hilfen/vorlagenKommandos.js';
@@ -701,6 +701,36 @@ describe('BIMFY I10 · Anschlusspunkte und Bauwerke aus ISYBAU', () => {
         const huelle = [...stand.values()].find(p => p.rezept === 'sonderbauwerk');
         const kp = rezeptNach('sonderbauwerk').formAus(huelle.parameter, 'koerper');
         expect(meshVolume(kp.positions, kp.positions.length / 9).volume).toBeCloseTo(48, 6);
+    });
+
+    it('trägt jeden ISYBAU-Wert ins Journal: am Bauwerk, an der Kante, nicht an den Teilen (Fahrplan Sachdaten P2)', async () => {
+        const text = datei(apXml(), schachtXml({ ost: 0, nord: 0 }), bwXml(),
+            leitungXml({ name: 'L1', von: 'GA1', bis: 'S1', oben: '101,20', unten: '102,05', start: [0, 30], ende: [0, 0.6] }),
+            haltungXml({ name: 'H1', von: 'S1', bis: 'RÜ1', oben: '102,00', unten: '101,70' }));
+        const { geometrien, sachdaten } = liesIsybau(text);
+        expect(sachdaten.gelesen).toBe(sachdaten.werte);
+        const { kommandos } = kommandosFuer(gruppiere(geometrien));
+        const b = useBearbeitung();
+        let n = 0;
+        for (const { kommando } of kommandos) {
+            const erg = await b.fuehreAus({ schema: KOMMANDO_SCHEMA, id: `ko-p2-${++n}`, ziel: [], wer: 'test', wann: '2026-10-06T12:00:00Z', ...kommando },
+                                          { kennungsgeber: () => `cde-p2-${++n}` });
+            expect(erg.ausgefuehrt, erg.grund ?? '').toBe(true);
+        }
+        const stand = [...useAenderungen().wirksamerStand('erzeugt').values()];
+        const mit = stand.filter(p => p.parameter?.stammdaten);
+        // Jedes ISYBAU-Objekt genau einmal: fünf Träger, alle Werte, kein Teil trägt sie doppelt.
+        expect(mit.map(p => p.name).sort()).toEqual(['GA1', 'H1', 'L1', 'RÜ1', 'S1']);
+        expect(mit.reduce((z, p) => z + Object.keys(p.parameter.stammdaten).length, 0)).toBe(sachdaten.werte);
+        expect(mit.find(p => p.name === 'S1').parameter.stammdaten['Knoten.Schacht.Abdeckung.Abdeckungsklasse']).toBe('D');
+        expect(stand.filter(p => p.parameter?.teilVon && p.parameter?.stammdaten)).toEqual([]);
+    });
+
+    it('das Kommando weist Sachdaten zurück, die keine Texttabelle sind', () => {
+        expect(pruefeStammdaten({ 'Kante.Material': 'B' })).toEqual([]);
+        expect(pruefeStammdaten({ Baujahr: 1987 })[0]).toMatch(/bleibt Text/);
+        expect(pruefeStammdaten(['x'])[0]).toMatch(/Tabelle/);
+        expect(pruefeStammdaten({ ['x'.repeat(256)]: 'a' })[0]).toMatch(/255/);
     });
 
     it('am Gebäudeanschluss (jetzt ein Schacht) endet die Leitung an seiner Wand — verknüpft, nicht verlängert', () => {

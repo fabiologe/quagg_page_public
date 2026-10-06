@@ -70,10 +70,26 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
   eigener Satz `ISYBAU_Uebergangen` am
   `IfcSite`, damit auch sie im IFC stehen.
 
-### P2 · Durch den Kommandoweg tragen
-- Die Sammlung gibt jedem Bauwerk und jeder Haltung `werte.isybau` mit
-  (eine flache Tabelle). Das Journal speichert sie, Undo nimmt sie mit.
-- Wächterzahl `im Journal`: 8 844.
+### P2 · Durch den Kommandoweg tragen · **gebaut**
+- Der Übersetzer gibt jedem Kommando `werte.stammdaten` mit (Zeichnen und
+  alle vier Vorlagen). `pruefeKommando` verlangt eine Tabelle `{pfad: text}`,
+  Pfade bis 255 Zeichen.
+- Das Werkzeug legt sie als `parameter.stammdaten` ab. Beim Rohr am Rohr,
+  bei einer Vorlage am Bauwerk und nie an den Teilen (P‑E4).
+- Echte Datei:
+
+| | Werte |
+|---|---|
+| an BIMFY-Geometrien | 8 810 |
+| in den Kommandos | 8 464 |
+| im Journal | 8 464 |
+| Zeilen „rückgebaut" (Status 6), in BIMFY von Haus aus aus | 346 |
+
+- Journal der echten Datei 2,30 MB vorher, 2,81 MB nachher (+22 %). Die
+  Werte stehen zweimal darin, im Beleg (`kommando.werte`) und im Bauteil.
+- **Offen:** der Schlüssel `aenderungen` darf am Server höchstens 4 MiB gross
+  sein (`MAX_REPO_BYTES`). Ein Netz anderthalbmal so gross wie dieses reisst
+  die Grenze, mit oder ohne Sachdaten. Eigene Aufgabe, nicht Teil dieses Plans.
 
 ### P3 · Vollständig ins IFC (eigenbau.py)
 - Ein `IfcPropertySet ISYBAU_Stammdaten` je Bauwerk und Haltung.

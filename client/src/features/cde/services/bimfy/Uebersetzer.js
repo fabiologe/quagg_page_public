@@ -397,6 +397,7 @@ export function kommandoFuer(geo, wahl, { versatz = null, basisHoehe = null, umr
     // I10: die Ausführung aus ISYBAU — ein AP verbindet, die anderen führen Wasser zu
     // (AH15, Tab. A-1-2); ein Bauwerk heisst nach seinem Typ (G400).
     const isy = geo.isybau;
+    Object.assign(werte, _stammdatenWerte(geo));
     if (isy?.art === 'anschlusspunkt' && 'predefinedType' in werte) {
         werte.predefinedType = geo.predefinedType ?? (!isy.punktkennung || isy.punktkennung === 'AP' ? 'JUNCTION' : 'ENTRY');
     }
@@ -535,7 +536,7 @@ export function normschachtKommando(geo, wahl = {}, { versatz = null, umrechnen 
     return {
         werkzeug: 'bauwerk-aus-vorlage-normschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...normschachtWerte(geo) , ..._stammdatenWerte(geo) },
     };
 }
 
@@ -559,7 +560,7 @@ export function kastenschachtKommando(geo, wahl = {}, { versatz = null, umrechne
     return {
         werkzeug: 'bauwerk-aus-vorlage-kastenschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) },
+        werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', ...kastenschachtWerte(geo) , ..._stammdatenWerte(geo) },
     };
 }
 
@@ -571,7 +572,7 @@ export function kunststoffschachtKommando(geo, wahl = {}, { versatz = null, umre
         werkzeug: 'bauwerk-aus-vorlage-kunststoffschacht',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
         werte: { name: wahl.name || geo.name || 'Schacht', hoehe: '', tiefe: k.tiefe, di: k.di,
-                 deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')) },
+                 deckelklasse: Math.max(0, KLASSEN.indexOf(k.klasse ?? '')), ..._stammdatenWerte(geo) },
     };
 }
 
@@ -582,6 +583,12 @@ export function strassenablaufKommando(geo, wahl = {}, { versatz = null, umrechn
     return {
         werkzeug: 'bauwerk-aus-vorlage-strassenablauf',
         eingaben: { zug: [_punkt({ ost: k.ort.ost, nord: k.ort.nord }, { versatz, hoehe: k.sohle, umrechnen })] },
-        werte: { name: wahl.name || geo.name || 'Straßenablauf', hoehe: '', tiefe: k.tiefe, schlamm: k.schlamm === 'nass' ? 2 : 1, richtung: 0 },
+        werte: { name: wahl.name || geo.name || 'Straßenablauf', hoehe: '', tiefe: k.tiefe, schlamm: k.schlamm === 'nass' ? 2 : 1, richtung: 0, ..._stammdatenWerte(geo) },
     };
+}
+
+/** Alle ISYBAU-Sachdaten eines Objekts für das Kommando (Fahrplan Sachdaten P2) — leer, wenn keine da sind. */
+function _stammdatenWerte(geo) {
+    const sd = geo?.isybau?.stammdaten;
+    return sd && Object.keys(sd).length ? { stammdaten: { ...sd } } : {};
 }

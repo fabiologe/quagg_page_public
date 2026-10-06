@@ -341,6 +341,7 @@ export function pruefeKommando(k, { katalog = werkzeugKatalog() } = {}) {
             }
         }
     }
+    fehler.push(...pruefeStammdaten(k.werte?.stammdaten));
     if (k.ebene !== undefined && !['auftrag', 'stand'].includes(k.ebene)) fehler.push(`ebene „${k.ebene}" gibt es nicht (auftrag, stand)`);
     return fehler;
 }
@@ -389,4 +390,20 @@ export function kommandoAusZustand({ werkzeug, werte = {}, subjekte = [], punkte
         werte: adressiert,
     };
     return { kommando, ziele, ohneKennung };
+}
+
+/**
+ * Die Sachdaten aus einer Quelle (Fahrplan Sachdaten P2): eine flache Tabelle
+ * `{pfad: text}`, die das Bauteil unverändert trägt. Ein Pfad ist ein
+ * Merkmalsname im IFC (IfcIdentifier) — höchstens 255 Zeichen.
+ */
+export function pruefeStammdaten(sd) {
+    if (sd === undefined) return [];
+    if (!sd || typeof sd !== 'object' || Array.isArray(sd)) return ['werte.stammdaten muss eine Tabelle {pfad: text} sein'];
+    const fehler = [];
+    for (const [pfad, wert] of Object.entries(sd)) {
+        if (!pfad || pfad.length > 255) fehler.push(`werte.stammdaten: Pfad „${pfad.slice(0, 40)}…" leer oder länger als 255 Zeichen`);
+        if (typeof wert !== 'string') fehler.push(`werte.stammdaten.${pfad}: der Wert bleibt Text, wie er in der Quelle steht`);
+    }
+    return fehler;
 }

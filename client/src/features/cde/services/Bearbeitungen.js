@@ -58,6 +58,11 @@ import { KG_DEFAULT_RULES, kgOptionen } from './Din276Defaults.js';
  * eine Bearbeitung ein ZWEITES Bauteil als Bezug will (Rohr an Schacht) —
  * dann, und nicht auf Vorrat.
  */
+
+/** Die Sachdaten einer Quelle als Parameter — eine Kopie, nur wenn welche da sind. */
+const _stammdaten = (werte) => (werte?.stammdaten && typeof werte.stammdaten === 'object' && Object.keys(werte.stammdaten).length
+    ? { stammdaten: { ...werte.stammdaten } } : {});
+
 export const EINGABEN = Object.freeze({
     wert:   'nur Formularwerte',
     zug:    'ein gezeichneter Linienzug im Lageplan',
@@ -875,6 +880,8 @@ function zeichenBearbeitung(rezept) {
                 // trägt das Bauteil deren Id. Kein Formularfeld — der Bezug
                 // entsteht beim Start aus der Bibliothek (`vorbelegeAusVorlage`).
                 ...(werte.vorlage ? { vorlage: String(werte.vorlage) } : {}),
+                // Die Sachdaten der Quelle, unverändert (Fahrplan Sachdaten P2).
+                ..._stammdaten(werte),
             };
             // DER ANSCHLUSS (Teil XXIV, K8 — Fabios E6): beginnt oder endet eine
             // KANTE auf einem Knoten, nennt der Bauplan ihn. Das Netz nimmt die
@@ -1634,6 +1641,8 @@ function vorlageWerkzeug(vorlage) {
             const { name: _n, ...art } = vorlage.bauwerk;
             const schritte = [erzeugtEintrag({ rezept: behaelterRezept(), name, globalId: bauwerk, parameter: {
                 ...art,
+                // Die Sachdaten hängen am Bauwerk, nicht an jedem Teil (Fahrplan Sachdaten P‑E4).
+                ..._stammdaten(werte),
                 bauwerksvorlage: { id: vorlage.id, werte: w, rahmen, rollen,
                                    stand: Object.fromEntries(teile.map(t => [t.rolle, gesteuerterStand(t.rezept, t.parameter)])) },
             } })];
