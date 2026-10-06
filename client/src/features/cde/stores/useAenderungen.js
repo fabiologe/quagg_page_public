@@ -34,7 +34,7 @@ import { deltaZwischen, nennenswert, verschiebeEintrag } from '../services/Journ
 import { modellVon, rezeptNach } from '../services/Bauteilrezepte.js';
 import { BAUFORMEN } from '../services/bauform/Bauformen.js';
 
-import { JOURNAL_KENNT, entfalte, ohneAbgeleitetes, schreibStufe, verdichte } from '../services/JournalFormat.js';
+import { JOURNAL_KENNT, entfalte, ohneAbgeleitetes, schreibStufe, texteAuslagern, texteEinlagern, verdichte } from '../services/JournalFormat.js';
 import { systemBeleg } from '../services/kommando/Beleg.js';
 const REPO_KEY = 'aenderungen';
 
@@ -733,6 +733,14 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
                 // (Lücke ⑤) — ohne Modell noch unbekannt, dann fehlt er ehrlich.
                 ...(_versatzMerkerJe[ebene] ? { versatzMerker: _versatzMerkerJe[ebene] } : {}),
             };
+            // STUFE 7: wiederholte lange Texte (Herleitungen, Vorgangstitel) EINMAL in `texte`.
+            // Nur dann verlangt die Datei Stufe 7 — ohne Wiederholung bleibt sie lesbar wie bisher.
+            if (schreibStufe() >= 7) {
+                const { wert, texte } = texteAuslagern({ commits: nutzlast.commits, sitzung: nutzlast.sitzung });
+                if (texte.length) {
+                    Object.assign(nutzlast, wert, { texte, mindestClient: Math.max(nutzlast.mindestClient ?? 0, 7) });
+                }
+            }
             const ok = await ablage.set(REPO_KEY, JSON.parse(JSON.stringify(nutzlast)));
             // DER SERVER-WÄCHTER (Fahrplan R9): auf dem Server liegt ein Journal
             // für neuere Clients. Dann liest dieser Tab ab jetzt nur — wie beim
@@ -758,6 +766,14 @@ export const useAenderungen = defineStore('cde-aenderungen', () => {
         // wird angezeigt, aber nie überschrieben.
         if ((Number(roh.mindestClient) || 0) > JOURNAL_KENNT) {
             nurLesen.value = { ebene, grund: 'Dieser Verlauf wurde mit einer neueren CDE geschrieben — bitte die Seite neu laden.' };
+        }
+        // STUFE 7: die Texttabelle zurück an ihre Stellen — vor allem anderen.
+        if (Array.isArray(roh.texte) && roh.texte.length) {
+            const { wert, fehlend: ohneText } = texteEinlagern({ commits: roh.commits, sitzung: roh.sitzung }, roh.texte);
+            roh = { ...roh, ...wert };
+            if (ohneText.length) {
+                nurLesen.value = { ebene, grund: `Der Verlauf verweist auf ${ohneText.length} fehlende Texte — er wird nur gelesen, nichts wird überschrieben.` };
+            }
         }
         // Pfadschritte entfalten — in der Reihenfolge, in der sie verdichtet wurden.
         const alleRoh = [...(roh.commits ?? []).flatMap(c => (Array.isArray(c.schritte) ? c.schritte : [])),

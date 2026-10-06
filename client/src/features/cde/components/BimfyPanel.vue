@@ -56,7 +56,7 @@
     <div v-if="gelaende" class="bf-gelaende">
       <p><CdeIcon name="info" :size="12" /> <b>Gelände erkannt:</b> {{ gelaendeText }}</p>
       <p class="bf-hinweis">Ein DGM wird ein eigenes Modell im Register (IfcGeographicElement TERRAIN, ausgedünnt auf
-        2 cm Höhentoleranz), kein Bauteil im Journal. Den Server-Auftrag schaltet erst ein Neustart des Servers frei.</p>
+        2 cm Höhentoleranz), kein Bauteil im Verlauf. Den Server-Auftrag schaltet erst ein Neustart des Servers frei.</p>
     </div>
     <ul v-if="warnungen.length" class="bf-warnungen">
       <li v-for="(w, i) in warnungen" :key="i"><CdeIcon name="warn" :size="12" /> {{ w }}</li>

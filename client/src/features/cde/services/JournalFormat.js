@@ -38,7 +38,7 @@
  * seit Teil XXVI (Z5d): Bauwerke — ein Behälter ohne Körper (Rezept mit
  * `behaelter`) und `parameter.teilVon` an seinen Teilen.
  */
-export const JOURNAL_KENNT = 6;
+export const JOURNAL_KENNT = 7;
 
 /**
  * Was dieser Client SCHREIBT. A7a lieferte die Leser mit 2 aus (2026-09-18
@@ -57,8 +57,13 @@ export const JOURNAL_KENNT = 6;
  * Ganzes aus — und nicht jedes Werkzeug trägt ein unbekanntes Feld wie
  * `teilVon` sicher weiter. Mit Stufe 6 liest er nur. Preis, offen: bis zum
  * Neuladen zeigt er die Teile ohne ihr Bauwerk.
+ *
+ * Stufe 7 (2026-10-06, die 4-MB-Grenze): die Texttabelle (`texteAuslagern`).
+ * Leser und Schreiber wieder in EINER Auslieferung — ein älterer Tab sähe
+ * `{"§": 12}` statt einer Herleitung; mit `mindestClient: 7` liest er nur.
+ * Verlangt wird Stufe 7 nur, wenn wirklich Texte ausgelagert sind.
  */
-export const SCHREIBT_AUSGELIEFERT = 6;
+export const SCHREIBT_AUSGELIEFERT = 7;
 let _schreibt = SCHREIBT_AUSGELIEFERT;
 export function schreibStufe() { return _schreibt; }
 
@@ -199,4 +204,74 @@ export function entfalte(schritte) {
         return neu;
     });
     return { schritte: aus, fehlend };
+}
+
+// ── Texttabelle (Stufe 7) ──────────────────────────────────────────────────
+
+/**
+ * DIE TEXTTABELLE (Stufe 7, 2026-10-06): lange Texte, die sich wiederholen — die
+ * Herleitung jedes Schachtteils („dInnen: annahme — …"), der Vorgangstitel an
+ * jedem Schritt —, stehen EINMAL in `texte` und an ihrer Stelle `{"§": i}`.
+ * Gemessen an Fabios echtem Netz: 3,11 MB, davon 650 KB Herleitungen allein
+ * am Bauplan (die 4-MB-Grenze des Servers, `MAX_REPO_BYTES`).
+ *
+ * Nur unter den Schlüsseln aus `TEXT_FELDER` (und darin tief) — nie eine
+ * Kennung, Quelle oder Modellsumme: der Server liest das Journal selbst
+ * (`cde._bezuege`, globalId und Quellen) und sieht dieselben Werte wie vorher.
+ * Im Speicher bleibt alles voll; nur die Datei trägt Verweise.
+ */
+export const TEXT_FELDER = Object.freeze(new Set(['herleitung', 'vorgangTitel', 'hinweis', 'titel']));
+/** Ab dieser Länge lohnt ein Verweis (`{"§":123}` sind 9 Zeichen). */
+export const TEXT_AB = 16;
+const VERWEIS = '§';
+
+function _texteLaufen(wert, imFeld, besuch) {
+    if (typeof wert === 'string') return imFeld && wert.length >= TEXT_AB ? besuch(wert) : wert;
+    if (Array.isArray(wert)) {
+        let anders = false;
+        const aus = wert.map(v => { const n = _texteLaufen(v, imFeld, besuch); if (n !== v) anders = true; return n; });
+        return anders ? aus : wert;
+    }
+    if (_objekt(wert)) {
+        let aus = null;
+        for (const [k, v] of Object.entries(wert)) {
+            const n = _texteLaufen(v, imFeld || TEXT_FELDER.has(k), besuch);
+            if (n !== v) { aus ??= { ...wert }; aus[k] = n; }
+        }
+        return aus ?? wert;
+    }
+    return wert;
+}
+
+/**
+ * Wiederholte lange Texte in eine Tabelle legen.
+ * @returns {{ wert: object, texte: string[] }}  `texte` leer: nichts ausgelagert, `wert` unverändert
+ */
+export function texteAuslagern(nutzlast) {
+    const zaehler = new Map();
+    _texteLaufen(nutzlast, false, (t) => { zaehler.set(t, (zaehler.get(t) ?? 0) + 1); return t; });
+    const texte = [], index = new Map();
+    for (const [t, n] of zaehler) if (n >= 2) { index.set(t, texte.length); texte.push(t); }
+    if (!texte.length) return { wert: nutzlast, texte };
+    const wert = _texteLaufen(nutzlast, false, (t) => (index.has(t) ? { [VERWEIS]: index.get(t) } : t));
+    return { wert, texte };
+}
+
+/** Die Verweise wieder durch ihre Texte ersetzen. Ein Verweis ohne Text ist ein Befund (`fehlend`). */
+export function texteEinlagern(wert, texte) {
+    const fehlend = [];
+    const lauf = (v) => {
+        if (Array.isArray(v)) return v.map(lauf);
+        if (_objekt(v)) {
+            const schluessel = Object.keys(v);
+            if (schluessel.length === 1 && schluessel[0] === VERWEIS && Number.isInteger(v[VERWEIS])) {
+                const t = texte?.[v[VERWEIS]];
+                if (typeof t !== 'string') { fehlend.push(v[VERWEIS]); return v; }
+                return t;
+            }
+            return Object.fromEntries(schluessel.map(k => [k, lauf(v[k])]));
+        }
+        return v;
+    };
+    return { wert: Array.isArray(texte) && texte.length ? lauf(wert) : wert, fehlend };
 }

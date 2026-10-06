@@ -87,9 +87,15 @@ dass `createMaterial` ohne Code weiter ein `IfcMaterial 'Beton'` anlegt
 
 - Journal der echten Datei 2,30 MB vorher, 2,81 MB nachher (+22 %). Die
   Werte stehen zweimal darin, im Beleg (`kommando.werte`) und im Bauteil.
-- **Offen:** der Schlüssel `aenderungen` darf am Server höchstens 4 MiB gross
-  sein (`MAX_REPO_BYTES`). Ein Netz anderthalbmal so gross wie dieses reisst
-  die Grenze, mit oder ohne Sachdaten. Eigene Aufgabe, nicht Teil dieses Plans.
+- **Die 4-MB-Grenze (2026-10-06):** gespeichert werden 3,11 MB (74 % von `MAX_REPO_BYTES`).
+  Schritt 1 gebaut: **Journal-Stufe 7, die Texttabelle** (`JournalFormat.texteAuslagern`): wiederholte
+  lange Texte unter `herleitung`, `vorgangTitel`, `hinweis`, `titel` stehen einmal in `texte`, an ihrer
+  Stelle `{"§": i}`. Kennungen, Quellen und Modellsummen bleiben, der Server liest sie wie vorher.
+  Stufe 7 wird nur verlangt, wenn Texte ausgelagert sind; ältere Tabs lesen dann nur.
+  Echte Datei: **3,11 → 2,62 MB**. Aufteilung danach: Sammelbeleg 645 KB (davon 259 KB Sachdaten
+  doppelt), Vorlagenstand 312 KB, Herleitungen 287 KB, Sachdaten 262 KB, Verwaltung 382 KB.
+  **gzip: 205 KB.** Schritt 2 braucht den Server (Neustart, Fabios OK): gzip-Transport annehmen und
+  die Grenze für das Journal anheben — die Datei auf der Platte bleibt lesbares JSON.
 
 ### P3 · Vollständig ins IFC (eigenbau.py) · **gebaut**
 - `EigenbauPaket` gibt `stammdaten` an Bauteil und Bauwerk weiter (optional,
